@@ -1,11 +1,10 @@
-import { ARCFLIGHT_ACTOR_DOCUMENT_TYPES, ARCFLIGHT_ITEM_DOCUMENT_TYPES } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_DOCUMENT_TYPES } from "../config/constants.js";
 import { ArkengineItem } from "./arkengine-item.js";
 import { ArkengineModItem } from "./arkengine-mod-item.js";
 import { CargoItem } from "./cargo-item.js";
 import { CrewAssetItem } from "./crew-item.js";
 import { HullItem } from "./hull-item.js";
 import { RoomItem } from "./room-item.js";
-import { ShipActor } from "./ship-actor.js";
 import { ShipUpgradeItem } from "./ship-upgrade-item.js";
 import { WeaponItem } from "./weapon-item.js";
 
@@ -42,10 +41,6 @@ class ArcflightTypeDataModel extends foundry.abstract.TypeDataModel {
   }
 }
 
-export class ShipActorDataModel extends ArcflightTypeDataModel {
-  static documentClass = ShipActor;
-}
-
 export class HullItemDataModel extends ArcflightTypeDataModel {
   static documentClass = HullItem;
 }
@@ -78,9 +73,7 @@ export class CrewAssetItemDataModel extends ArcflightTypeDataModel {
   static documentClass = CrewAssetItem;
 }
 
-export const arcflightActorDataModels = Object.freeze({
-  [ARCFLIGHT_ACTOR_DOCUMENT_TYPES.SHIP]: ShipActorDataModel
-});
+export const arcflightActorDataModels = Object.freeze({});
 
 export const arcflightItemDataModels = Object.freeze({
   [ARCFLIGHT_ITEM_DOCUMENT_TYPES.HULL]: HullItemDataModel,
@@ -95,6 +88,5 @@ export const arcflightItemDataModels = Object.freeze({
 
 /** Register Arcflight module sub-type system data models for Foundry v13. */
 export function registerArcflightDataModels() {
-  Object.assign(CONFIG.Actor.dataModels, arcflightActorDataModels);
   Object.assign(CONFIG.Item.dataModels, arcflightItemDataModels);
 }

@@ -23,9 +23,6 @@
     }
   ],
   "documentTypes": {
-    "Actor": {
-      "ship": {}
-    },
     "Item": {
       "hull": {},
       "arkengine": {},
