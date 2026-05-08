@@ -1,4 +1,13 @@
-const ArcflightBaseItem = globalThis.CONFIG?.Item?.documentClass ?? globalThis.Item;
+/**
+ * Stable Foundry Item base for Arcflight item documents.
+ *
+ * PF2E replaces CONFIG.Item.documentClass with a type-dispatching proxy. Arcflight
+ * item classes must not inherit from that proxy: PF2E may route construction for
+ * Arcflight item types back to these subclasses, causing recursive construction.
+ * Extending the global Foundry Item document keeps Arcflight item instances valid
+ * without entering the active system's proxy inheritance chain.
+ */
+const ArcflightBaseItem = globalThis.Item;
 
 /**
  * Lightweight base item for Arcflight document architecture.
