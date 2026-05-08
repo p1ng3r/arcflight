@@ -34,6 +34,11 @@
   flex: 1;
 }
 
+.arcflight-sheet__field--checkbox {
+  align-items: center;
+  flex-direction: row;
+}
+
 .arcflight-sheet__field > span,
 .arcflight-sheet__type,
 .arcflight-sheet__hint {

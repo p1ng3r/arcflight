@@ -1,5 +1,4 @@
 import { ARCFLIGHT } from "./config/constants.js";
-import { ArcflightActor } from "./documents/arcflight-actor.js";
 import { ArcflightItem } from "./documents/arcflight-item.js";
 import {
   arcflightActorDataModels,
@@ -18,14 +17,24 @@ import {
   registerArcflightDocumentClasses,
   registerArcflightPf2eDocumentClasses
 } from "./documents/registration.js";
-import { ShipActor } from "./documents/ship-actor.js";
 import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
 import { WeaponItem } from "./documents/weapon-item.js";
+import { registerArcflightSheets } from "./sheets/registration.js";
+
+function isArcflightVehicle(actor) {
+  return actor?.type === "vehicle" && actor.getFlag?.(ARCFLIGHT.MODULE_ID, "enabled") === true;
+}
+
+async function setArcflightVehicleEnabled(actor, enabled = true) {
+  if (actor?.type !== "vehicle" || typeof actor.setFlag !== "function") {
+    throw new Error("Arcflight ships must be PF2E vehicle actors.");
+  }
+
+  return actor.setFlag(ARCFLIGHT.MODULE_ID, "enabled", Boolean(enabled));
+}
 
 const documentClasses = Object.freeze({
-  ArcflightActor,
   ArcflightItem,
-  ShipActor,
   HullItem,
   ArkengineItem,
   ArkengineModItem,
@@ -47,6 +56,8 @@ Hooks.once("init", () => {
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
     documents: documentClasses,
+    isArcflightVehicle,
+    setArcflightVehicleEnabled,
     documentRegistries: Object.freeze({
       Actor: arcflightActorDocumentClasses,
       Item: arcflightItemDocumentClasses
@@ -59,14 +70,14 @@ Hooks.once("init", () => {
 
   game.arcflight = CONFIG.arcflight;
 
-  // TODO: Re-enable Arcflight sheet imports and registration here after the module safe-load path is verified.
+  registerArcflightSheets().catch((error) => {
+    console.warn("Arcflight | Sheet registration failed; continuing startup.", error);
+  });
 });
 
 export {
   ARCFLIGHT,
-  ArcflightActor,
   ArcflightItem,
-  ShipActor,
   HullItem,
   ArkengineItem,
   ArkengineModItem,
@@ -82,5 +93,7 @@ export {
   arcflightItemDataModels,
   registerArcflightDataModels,
   registerArcflightDocumentClasses,
-  registerArcflightPf2eDocumentClasses
+  registerArcflightPf2eDocumentClasses,
+  isArcflightVehicle,
+  setArcflightVehicleEnabled
 };

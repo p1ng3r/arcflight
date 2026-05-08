@@ -1,5 +1,4 @@
 {
-  "TYPES.Actor.arcflight.ship": "Ship",
   "TYPES.Item.arcflight.hull": "Hull",
   "TYPES.Item.arcflight.arkengine": "Arkengine",
   "TYPES.Item.arcflight.arkengineMod": "Arkengine Mod",

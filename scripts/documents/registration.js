@@ -1,17 +1,14 @@
-import { ARCFLIGHT_ACTOR_DOCUMENT_TYPES, ARCFLIGHT_ITEM_DOCUMENT_TYPES } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_DOCUMENT_TYPES } from "../config/constants.js";
 import { ArkengineItem } from "./arkengine-item.js";
 import { ArkengineModItem } from "./arkengine-mod-item.js";
 import { CargoItem } from "./cargo-item.js";
 import { CrewAssetItem } from "./crew-item.js";
 import { HullItem } from "./hull-item.js";
 import { RoomItem } from "./room-item.js";
-import { ShipActor } from "./ship-actor.js";
 import { ShipUpgradeItem } from "./ship-upgrade-item.js";
 import { WeaponItem } from "./weapon-item.js";
 
-export const arcflightActorDocumentClasses = Object.freeze({
-  [ARCFLIGHT_ACTOR_DOCUMENT_TYPES.SHIP]: ShipActor
-});
+export const arcflightActorDocumentClasses = Object.freeze({});
 
 export const arcflightItemDocumentClasses = Object.freeze({
   [ARCFLIGHT_ITEM_DOCUMENT_TYPES.HULL]: HullItem,
@@ -130,17 +127,15 @@ function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClas
 
 /** Register Arcflight document class dispatch for Foundry v13. */
 export function registerArcflightDocumentClasses() {
-  CONFIG.Actor.documentClass = createArcflightDocumentProxy("Actor", CONFIG.Actor.documentClass, arcflightActorDocumentClasses);
   CONFIG.Item.documentClass = createArcflightDocumentProxy("Item", CONFIG.Item.documentClass, arcflightItemDocumentClasses);
 }
 
 /** Register Arcflight document classes with PF2E's type-specific document registries when present. */
 export function registerArcflightPf2eDocumentClasses() {
-  const actorRegistered = registerPf2eDocumentClasses("Actor", arcflightActorDocumentClasses);
   const itemRegistered = registerPf2eDocumentClasses("Item", arcflightItemDocumentClasses);
 
   return {
-    Actor: actorRegistered,
+    Actor: false,
     Item: itemRegistered
   };
 }
