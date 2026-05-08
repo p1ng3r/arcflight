@@ -1,9 +1,10 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_WEAPON_ARCS, ARCFLIGHT_WEAPON_SIZES } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_DOCUMENT_TYPES, ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_WEAPON_ARCS, ARCFLIGHT_WEAPON_SIZES } from "../config/constants.js";
 import { ArcflightItem } from "./arcflight-item.js";
 
 /** Future-safe ship weapon item skeleton. */
 export class WeaponItem extends ArcflightItem {
-  static arcflightType = ARCFLIGHT_ITEM_TYPES.WEAPON;
+  static arcflightSubtype = ARCFLIGHT_ITEM_TYPES.WEAPON;
+  static arcflightType = ARCFLIGHT_ITEM_DOCUMENT_TYPES.WEAPON;
 
   /** @override */
   static defaultSystemData() {

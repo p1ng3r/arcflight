@@ -1,3 +1,5 @@
 # documents
 
-Placeholder for future Arcflight Phase 1+ resources. No gameplay implementation exists here during Phase 0.
+Arcflight document architecture for Foundry VTT v13.
+
+Phase 1B registers module-provided Actor and Item sub-types and wires them to lightweight Arcflight document classes and matching TypeDataModel shells. These classes only define future-safe data containers; sheets, templates, travel, combat, AP/RAP logic, station gameplay, installation workflows, and derived gameplay math are intentionally out of scope.
