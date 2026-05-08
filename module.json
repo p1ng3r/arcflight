@@ -9,10 +9,10 @@
     "minimum": "13",
     "verified": "13"
   },
-  "scripts": [
-    "scripts/arcflight.js"
-  ],
   "styles": [
     "styles/arcflight.css"
+  ],
+  "esmodules": [
+    "scripts/arcflight.js"
   ]
 }
