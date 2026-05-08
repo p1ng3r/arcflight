@@ -15,7 +15,8 @@ import { RoomItem } from "./documents/room-item.js";
 import {
   arcflightActorDocumentClasses,
   arcflightItemDocumentClasses,
-  registerArcflightDocumentClasses
+  registerArcflightDocumentClasses,
+  registerArcflightPf2eDocumentClasses
 } from "./documents/registration.js";
 import { ShipActor } from "./documents/ship-actor.js";
 import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
@@ -40,6 +41,7 @@ Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
 
   registerArcflightDataModels();
+  registerArcflightPf2eDocumentClasses();
   registerArcflightDocumentClasses();
 
   CONFIG.arcflight = Object.freeze({
@@ -77,5 +79,6 @@ export {
   arcflightActorDataModels,
   arcflightItemDataModels,
   registerArcflightDataModels,
-  registerArcflightDocumentClasses
+  registerArcflightDocumentClasses,
+  registerArcflightPf2eDocumentClasses
 };
