@@ -1,0 +1,113 @@
+<section class="arcflight-sheet arcflight-ship-sheet">
+  <header class="arcflight-sheet__header">
+    <img class="arcflight-sheet__image" src="{{actor.img}}" alt="{{actor.name}}" data-edit="img" data-action="editImage">
+    <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+      <span>Ship Name</span>
+      <input type="text" name="name" value="{{actor.name}}" {{#unless editable}}disabled{{/unless}}>
+    </label>
+  </header>
+
+  <section class="arcflight-sheet__section">
+    <h2>Resources</h2>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field">
+        <span>Hull Value</span>
+        <input type="number" name="system.resources.hull.value" value="{{system.resources.hull.value}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Hull Max</span>
+        <input type="number" name="system.resources.hull.max" value="{{system.resources.hull.max}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Lifeveil Value</span>
+        <input type="number" name="system.resources.lifeveil.value" value="{{system.resources.lifeveil.value}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Lifeveil Max</span>
+        <input type="number" name="system.resources.lifeveil.max" value="{{system.resources.lifeveil.max}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Strain Value</span>
+        <input type="number" name="system.resources.strain.value" value="{{system.resources.strain.value}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Strain Max</span>
+        <input type="number" name="system.resources.strain.max" value="{{system.resources.strain.max}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+    </div>
+  </section>
+
+  <section class="arcflight-sheet__section">
+    <h2>Ship Values</h2>
+    <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field">
+        <span>Morale</span>
+        <input type="number" name="system.morale" value="{{system.morale}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Supplies</span>
+        <input type="number" name="system.supplies" value="{{system.supplies}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Combat Speed</span>
+        <input type="number" name="system.mobility.combatSpeed" value="{{system.mobility.combatSpeed}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Maneuverability</span>
+        <input type="number" name="system.mobility.maneuverability" value="{{system.mobility.maneuverability}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Base AP</span>
+        <input type="number" name="system.actions.baseAP" value="{{system.actions.baseAP}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <label class="arcflight-sheet__field">
+        <span>Base RAP</span>
+        <input type="number" name="system.actions.baseRAP" value="{{system.actions.baseRAP}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+    </div>
+  </section>
+
+  <section class="arcflight-sheet__section">
+    <h2>Installed Containers</h2>
+    <div class="arcflight-installed">
+      <article>
+        <h3>Hull</h3>
+        <p>{{#if installed.hull}}{{installed.hull}}{{else}}No hull installed.{{/if}}</p>
+      </article>
+      <article>
+        <h3>Arkengine</h3>
+        <p>{{#if installed.arkengine}}{{installed.arkengine}}{{else}}No arkengine installed.{{/if}}</p>
+      </article>
+      <article>
+        <h3>Weapons</h3>
+        <ul>
+          {{#each installed.weapons}}
+            <li>{{this}}</li>
+          {{else}}
+            <li>No weapons installed.</li>
+          {{/each}}
+        </ul>
+      </article>
+      <article>
+        <h3>Rooms</h3>
+        <ul>
+          {{#each installed.rooms}}
+            <li>{{this}}</li>
+          {{else}}
+            <li>No rooms installed.</li>
+          {{/each}}
+        </ul>
+      </article>
+      <article>
+        <h3>Upgrades</h3>
+        <ul>
+          {{#each installed.upgrades}}
+            <li>{{this}}</li>
+          {{else}}
+            <li>No upgrades installed.</li>
+          {{/each}}
+        </ul>
+      </article>
+    </div>
+  </section>
+</section>

@@ -1,0 +1,38 @@
+<section class="arcflight-sheet arcflight-item-sheet">
+  <header class="arcflight-sheet__header">
+    <img class="arcflight-sheet__image" src="{{item.img}}" alt="{{item.name}}" data-edit="img" data-action="editImage">
+    <div class="arcflight-sheet__identity">
+      <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+        <span>Item Name</span>
+        <input type="text" name="name" value="{{item.name}}" {{#unless editable}}disabled{{/unless}}>
+      </label>
+      <p class="arcflight-sheet__type">{{typeLabel}}</p>
+    </div>
+  </header>
+
+  <section class="arcflight-sheet__section">
+    <h2>Common System Data</h2>
+    <label class="arcflight-sheet__field">
+      <span>Source</span>
+      <input type="text" name="system.source" value="{{system.source}}" {{#unless editable}}disabled{{/unless}}>
+    </label>
+    <label class="arcflight-sheet__field">
+      <span>Notes</span>
+      <textarea name="system.notes" rows="4" {{#unless editable}}disabled{{/unless}}>{{system.notes}}</textarea>
+    </label>
+  </section>
+
+  <section class="arcflight-sheet__section">
+    <h2>Type-Specific System Data</h2>
+    <p class="arcflight-sheet__hint">Placeholder data view for future Arcflight item sheet extensions.</p>
+    <dl class="arcflight-system-list">
+      {{#each systemEntries}}
+        <dt>{{key}}</dt>
+        <dd><pre>{{value}}</pre></dd>
+      {{else}}
+        <dt>None</dt>
+        <dd><pre>No system data yet.</pre></dd>
+      {{/each}}
+    </dl>
+  </section>
+</section>
