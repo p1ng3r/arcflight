@@ -21,7 +21,7 @@ import {
 import { ShipActor } from "./documents/ship-actor.js";
 import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
 import { WeaponItem } from "./documents/weapon-item.js";
-import { ArcflightItemSheet, ShipSheet, registerArcflightSheets } from "./sheets/registration.js";
+import { registerArcflightSheets } from "./sheets/registration.js";
 
 const documentClasses = Object.freeze({
   ArcflightActor,
@@ -35,18 +35,15 @@ const documentClasses = Object.freeze({
   ShipUpgradeItem,
   CargoItem,
   CrewAssetItem,
-  CrewItem,
-  ShipSheet,
-  ArcflightItemSheet
+  CrewItem
 });
 
-Hooks.once("init", () => {
+Hooks.once("init", async () => {
   console.log("Arcflight | Initializing module");
 
   registerArcflightDataModels();
   registerArcflightPf2eDocumentClasses();
   registerArcflightDocumentClasses();
-  registerArcflightSheets();
 
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
@@ -62,6 +59,12 @@ Hooks.once("init", () => {
   });
 
   game.arcflight = CONFIG.arcflight;
+
+  try {
+    await registerArcflightSheets();
+  } catch (error) {
+    console.warn("Arcflight | Sheet registration failed; document registration remains active.", error);
+  }
 });
 
 export {
@@ -85,7 +88,5 @@ export {
   registerArcflightDataModels,
   registerArcflightDocumentClasses,
   registerArcflightPf2eDocumentClasses,
-  ShipSheet,
-  ArcflightItemSheet,
   registerArcflightSheets
 };
