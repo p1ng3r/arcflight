@@ -1,4 +1,4 @@
-import { ARCFLIGHT_ACTOR_TYPES } from "../config/constants.js";
+import { ARCFLIGHT_ACTOR_DOCUMENT_TYPES, ARCFLIGHT_ACTOR_TYPES } from "../config/constants.js";
 import { ArcflightActor } from "./arcflight-actor.js";
 
 /**
@@ -9,7 +9,8 @@ import { ArcflightActor } from "./arcflight-actor.js";
  * derived gameplay math.
  */
 export class ShipActor extends ArcflightActor {
-  static arcflightType = ARCFLIGHT_ACTOR_TYPES.SHIP;
+  static arcflightSubtype = ARCFLIGHT_ACTOR_TYPES.SHIP;
+  static arcflightType = ARCFLIGHT_ACTOR_DOCUMENT_TYPES.SHIP;
 
   /** @override */
   static defaultSystemData() {

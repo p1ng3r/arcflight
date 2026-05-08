@@ -14,5 +14,20 @@
   ],
   "esmodules": [
     "scripts/arcflight.js"
-  ]
+  ],
+  "documentTypes": {
+    "Actor": {
+      "ship": {}
+    },
+    "Item": {
+      "hull": {},
+      "arkengine": {},
+      "arkengineMod": {},
+      "weapon": {},
+      "room": {},
+      "shipUpgrade": {},
+      "cargo": {},
+      "crewAsset": {}
+    }
+  }
 }

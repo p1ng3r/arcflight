@@ -1,9 +1,10 @@
-import { ARCFLIGHT_INSTALL_SLOTS, ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
+import { ARCFLIGHT_INSTALL_SLOTS, ARCFLIGHT_ITEM_DOCUMENT_TYPES, ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
 import { ArcflightItem } from "./arcflight-item.js";
 
 /** Future-safe hull item skeleton. */
 export class HullItem extends ArcflightItem {
-  static arcflightType = ARCFLIGHT_ITEM_TYPES.HULL;
+  static arcflightSubtype = ARCFLIGHT_ITEM_TYPES.HULL;
+  static arcflightType = ARCFLIGHT_ITEM_DOCUMENT_TYPES.HULL;
 
   /** @override */
   static defaultSystemData() {

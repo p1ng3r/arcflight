@@ -1,9 +1,10 @@
-import { ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_DOCUMENT_TYPES, ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
 import { ArcflightItem } from "./arcflight-item.js";
 
 /** Future-safe cargo item skeleton. */
 export class CargoItem extends ArcflightItem {
-  static arcflightType = ARCFLIGHT_ITEM_TYPES.CARGO;
+  static arcflightSubtype = ARCFLIGHT_ITEM_TYPES.CARGO;
+  static arcflightType = ARCFLIGHT_ITEM_DOCUMENT_TYPES.CARGO;
 
   /** @override */
   static defaultSystemData() {
