@@ -26,18 +26,32 @@ export const arcflightItemDocumentClasses = Object.freeze({
 
 const proxyCache = new WeakMap();
 
+function getDocumentConfig(documentName) {
+  return globalThis.CONFIG?.[documentName] ?? null;
+}
+
+function setDocumentConfigValue(documentName, property, value) {
+  const config = getDocumentConfig(documentName);
+  if (!config) throw new Error(`CONFIG.${documentName} is not available.`);
+  config[property] = value;
+}
+
+function isConstructableDocumentClass(value) {
+  return typeof value === "function";
+}
+
 function getExistingTypeOptions(options) {
   return Array.isArray(options?.types) ? options.types : options?.types ? [options.types] : [];
 }
 
 function getKnownDocumentTypes(documentName) {
-  const typeLabels = CONFIG[documentName]?.typeLabels;
+  const typeLabels = getDocumentConfig(documentName)?.typeLabels;
   if (typeLabels && typeof typeLabels === "object") return Object.keys(typeLabels);
 
   const pf2eDocumentClasses = getPf2eDocumentClasses(documentName);
   if (pf2eDocumentClasses) return Object.keys(pf2eDocumentClasses);
 
-  const dataModels = CONFIG[documentName]?.dataModels;
+  const dataModels = getDocumentConfig(documentName)?.dataModels;
   return dataModels && typeof dataModels === "object" ? Object.keys(dataModels) : [];
 }
 
@@ -57,8 +71,12 @@ function createDialogWithArcflightTypes(documentName, createDialog, arcflightCla
 }
 
 function getPf2eDocumentClasses(documentName) {
-  const pf2eDocumentConfig = CONFIG.PF2E?.[documentName];
-  const documentClasses = pf2eDocumentConfig?.documentClasses;
+  const pf2eConfig = globalThis.CONFIG?.PF2E;
+  if (!pf2eConfig || typeof pf2eConfig !== "object") return null;
+
+  const pf2eDocumentConfig = (pf2eConfig[documentName] ??= {});
+  const documentClasses = (pf2eDocumentConfig.documentClasses ??= {});
+
   return documentClasses && typeof documentClasses === "object" ? documentClasses : null;
 }
 
@@ -108,6 +126,8 @@ function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClas
   const cachedProxy = proxyCache.get(fallbackClass);
   if (cachedProxy) return cachedProxy;
 
+  if (!isConstructableDocumentClass(fallbackClass)) throw new Error(`CONFIG.${documentName}.documentClass is not available.`);
+
   const proxy = new Proxy(fallbackClass, {
     construct(target, args) {
       const [data] = args;
@@ -128,10 +148,32 @@ function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClas
   return proxy;
 }
 
+function registerArcflightDocumentClass(documentName, arcflightClasses) {
+  const config = getDocumentConfig(documentName);
+  if (!config) throw new Error(`CONFIG.${documentName} is not available.`);
+
+  const proxy = createArcflightDocumentProxy(documentName, config.documentClass, arcflightClasses);
+  setDocumentConfigValue(documentName, "documentClass", proxy);
+  return true;
+}
+
 /** Register Arcflight document class dispatch for Foundry v13. */
 export function registerArcflightDocumentClasses() {
-  CONFIG.Actor.documentClass = createArcflightDocumentProxy("Actor", CONFIG.Actor.documentClass, arcflightActorDocumentClasses);
-  CONFIG.Item.documentClass = createArcflightDocumentProxy("Item", CONFIG.Item.documentClass, arcflightItemDocumentClasses);
+  const results = { Actor: false, Item: false };
+
+  try {
+    results.Actor = registerArcflightDocumentClass("Actor", arcflightActorDocumentClasses);
+  } catch (error) {
+    console.warn("Arcflight | Could not install Actor document proxy; continuing with PF2E/data-model registration only.", error);
+  }
+
+  try {
+    results.Item = registerArcflightDocumentClass("Item", arcflightItemDocumentClasses);
+  } catch (error) {
+    console.warn("Arcflight | Could not install Item document proxy; continuing with PF2E/data-model registration only.", error);
+  }
+
+  return results;
 }
 
 /** Register Arcflight document classes with PF2E's type-specific document registries when present. */

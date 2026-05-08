@@ -9,9 +9,17 @@ import { ShipActor } from "./ship-actor.js";
 import { ShipUpgradeItem } from "./ship-upgrade-item.js";
 import { WeaponItem } from "./weapon-item.js";
 
+const ArcflightTypeDataModelBase = globalThis.foundry?.abstract?.TypeDataModel ?? class {};
+
+function getFoundryDataFields() {
+  const fields = globalThis.foundry?.data?.fields;
+  if (!fields) throw new Error("Foundry data fields are not available.");
+  return fields;
+}
+
 function createFieldFromDefaultValue(value) {
-  const fields = foundry.data.fields;
-  const initial = () => foundry.utils.deepClone(value);
+  const fields = getFoundryDataFields();
+  const initial = () => globalThis.foundry?.utils?.deepClone(value) ?? structuredClone(value);
 
   if (Array.isArray(value)) return new fields.ArrayField(new fields.AnyField(), { initial });
   if (value === null) return new fields.ObjectField({ required: false, nullable: true, initial: null });
@@ -34,7 +42,7 @@ function createSchemaFromDefaultData(defaultData) {
   return Object.fromEntries(Object.entries(defaultData).map(([key, value]) => [key, createFieldFromDefaultValue(value)]));
 }
 
-class ArcflightTypeDataModel extends foundry.abstract.TypeDataModel {
+class ArcflightTypeDataModel extends ArcflightTypeDataModelBase {
   static documentClass = null;
 
   static defineSchema() {
@@ -93,8 +101,21 @@ export const arcflightItemDataModels = Object.freeze({
   [ARCFLIGHT_ITEM_DOCUMENT_TYPES.CREW_ASSET]: CrewAssetItemDataModel
 });
 
+function ensureDataModelRegistry(documentName) {
+  const config = globalThis.CONFIG?.[documentName];
+  if (!config) throw new Error(`CONFIG.${documentName} is not available.`);
+
+  if (!config.dataModels || typeof config.dataModels !== "object") config.dataModels = {};
+  return config.dataModels;
+}
+
 /** Register Arcflight module sub-type system data models for Foundry v13. */
 export function registerArcflightDataModels() {
-  Object.assign(CONFIG.Actor.dataModels, arcflightActorDataModels);
-  Object.assign(CONFIG.Item.dataModels, arcflightItemDataModels);
+  Object.assign(ensureDataModelRegistry("Actor"), arcflightActorDataModels);
+  Object.assign(ensureDataModelRegistry("Item"), arcflightItemDataModels);
+
+  return {
+    Actor: arcflightActorDataModels,
+    Item: arcflightItemDataModels
+  };
 }

@@ -37,14 +37,17 @@ const documentClasses = Object.freeze({
   CrewItem
 });
 
-Hooks.once("init", () => {
-  console.log("Arcflight | Initializing module");
+function runStartupStep(label, registrationStep) {
+  try {
+    return registrationStep();
+  } catch (error) {
+    console.error(`Arcflight | ${label} failed; continuing startup with that feature disabled.`, error);
+    return null;
+  }
+}
 
-  registerArcflightDataModels();
-  registerArcflightPf2eDocumentClasses();
-  registerArcflightDocumentClasses();
-
-  CONFIG.arcflight = Object.freeze({
+function exposeArcflightApi() {
+  const api = Object.freeze({
     constants: ARCFLIGHT,
     documents: documentClasses,
     documentRegistries: Object.freeze({
@@ -57,10 +60,28 @@ Hooks.once("init", () => {
     })
   });
 
-  game.arcflight = CONFIG.arcflight;
+  if (globalThis.CONFIG) globalThis.CONFIG.arcflight = api;
+  if (globalThis.game) globalThis.game.arcflight = api;
+
+  return api;
+}
+
+function initializeArcflight() {
+  console.log("Arcflight | Initializing module");
+
+  runStartupStep("Data model registration", registerArcflightDataModels);
+  runStartupStep("PF2E document class registration", registerArcflightPf2eDocumentClasses);
+  runStartupStep("Foundry document proxy registration", registerArcflightDocumentClasses);
+  runStartupStep("API exposure", exposeArcflightApi);
 
   // TODO: Re-enable Arcflight sheet imports and registration here after the module safe-load path is verified.
-});
+}
+
+if (globalThis.Hooks?.once) {
+  globalThis.Hooks.once("init", initializeArcflight);
+} else {
+  console.warn("Arcflight | Foundry Hooks API is not available; init registration skipped.");
+}
 
 export {
   ARCFLIGHT,
@@ -82,5 +103,6 @@ export {
   arcflightItemDataModels,
   registerArcflightDataModels,
   registerArcflightDocumentClasses,
-  registerArcflightPf2eDocumentClasses
+  registerArcflightPf2eDocumentClasses,
+  initializeArcflight
 };

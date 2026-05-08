@@ -1,3 +1,5 @@
+const ArcflightActorBase = globalThis.Actor ?? class {};
+
 /**
  * Lightweight base actor for Arcflight document architecture.
  *
@@ -5,7 +7,7 @@
  * a default-container hook for future Arcflight actor types without introducing
  * gameplay behavior during the data-architecture phase.
  */
-export class ArcflightActor extends Actor {
+export class ArcflightActor extends ArcflightActorBase {
   /** @returns {object} Future-safe default system containers for this actor. */
   static defaultSystemData() {
     return {};
@@ -13,7 +15,7 @@ export class ArcflightActor extends Actor {
 
   /** @override */
   prepareBaseData() {
-    super.prepareBaseData();
+    super.prepareBaseData?.();
     this._ensureSystemContainers(this.constructor.defaultSystemData());
   }
 
@@ -25,7 +27,8 @@ export class ArcflightActor extends Actor {
    * @protected
    */
   _ensureSystemContainers(defaults) {
-    const utils = foundry.utils;
+    const utils = globalThis.foundry?.utils;
+    if (!utils) return;
     const visit = (value, path) => {
       const current = path ? utils.getProperty(this.system, path) : this.system;
 

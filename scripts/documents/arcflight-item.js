@@ -1,10 +1,12 @@
+const ArcflightItemBase = globalThis.Item ?? class {};
+
 /**
  * Lightweight base item for Arcflight document architecture.
  *
  * Item subclasses should define future-safe data containers only. Rules,
  * calculations, automation, and UI behavior belong to later gameplay pillars.
  */
-export class ArcflightItem extends Item {
+export class ArcflightItem extends ArcflightItemBase {
   /** @returns {object} Future-safe default system containers for this item. */
   static defaultSystemData() {
     return {
@@ -17,7 +19,7 @@ export class ArcflightItem extends Item {
 
   /** @override */
   prepareBaseData() {
-    super.prepareBaseData();
+    super.prepareBaseData?.();
     this._ensureSystemContainers(this.constructor.defaultSystemData());
   }
 
@@ -28,7 +30,8 @@ export class ArcflightItem extends Item {
    * @protected
    */
   _ensureSystemContainers(defaults) {
-    const utils = foundry.utils;
+    const utils = globalThis.foundry?.utils;
+    if (!utils) return;
     const visit = (value, path) => {
       const current = path ? utils.getProperty(this.system, path) : this.system;
 

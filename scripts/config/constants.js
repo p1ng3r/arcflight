@@ -6,14 +6,14 @@
  */
 export const ARCFLIGHT_MODULE_ID = "arcflight";
 
-export const getArcflightDocumentType = (subtype) => `${ARCFLIGHT_MODULE_ID}.${subtype}`;
+export const getArcflightDocumentType = (subtype) => subtype;
 
 export const ARCFLIGHT_ACTOR_TYPES = Object.freeze({
   SHIP: "ship"
 });
 
 export const ARCFLIGHT_ACTOR_DOCUMENT_TYPES = Object.freeze({
-  SHIP: getArcflightDocumentType(ARCFLIGHT_ACTOR_TYPES.SHIP)
+  SHIP: ARCFLIGHT_ACTOR_TYPES.SHIP
 });
 
 export const ARCFLIGHT_ITEM_TYPES = Object.freeze({
@@ -28,14 +28,14 @@ export const ARCFLIGHT_ITEM_TYPES = Object.freeze({
 });
 
 export const ARCFLIGHT_ITEM_DOCUMENT_TYPES = Object.freeze({
-  HULL: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.HULL),
-  ARKENGINE: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.ARKENGINE),
-  ARKENGINE_MOD: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD),
-  WEAPON: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.WEAPON),
-  ROOM: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.ROOM),
-  SHIP_UPGRADE: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE),
-  CARGO: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.CARGO),
-  CREW_ASSET: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.CREW_ASSET)
+  HULL: ARCFLIGHT_ITEM_TYPES.HULL,
+  ARKENGINE: ARCFLIGHT_ITEM_TYPES.ARKENGINE,
+  ARKENGINE_MOD: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+  WEAPON: ARCFLIGHT_ITEM_TYPES.WEAPON,
+  ROOM: ARCFLIGHT_ITEM_TYPES.ROOM,
+  SHIP_UPGRADE: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+  CARGO: ARCFLIGHT_ITEM_TYPES.CARGO,
+  CREW_ASSET: ARCFLIGHT_ITEM_TYPES.CREW_ASSET
 });
 
 export const ARCFLIGHT_SHIP_RESOURCES = Object.freeze({
