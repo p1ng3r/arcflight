@@ -1,10 +1,12 @@
+const ArcflightBaseItem = globalThis.CONFIG?.Item?.documentClass ?? globalThis.Item;
+
 /**
  * Lightweight base item for Arcflight document architecture.
  *
  * Item subclasses should define future-safe data containers only. Rules,
  * calculations, automation, and UI behavior belong to later gameplay pillars.
  */
-export class ArcflightItem extends Item {
+export class ArcflightItem extends ArcflightBaseItem {
   /** @returns {object} Future-safe default system containers for this item. */
   static defaultSystemData() {
     return {

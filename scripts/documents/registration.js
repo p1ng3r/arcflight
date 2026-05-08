@@ -59,6 +59,20 @@ function getPf2eDocumentClasses(documentName) {
   return documentClasses && typeof documentClasses === "object" ? documentClasses : null;
 }
 
+function getCoreDocumentClass(documentName) {
+  return documentName === "Item" ? globalThis.Item : globalThis.Actor;
+}
+
+function isDocumentClassForName(documentName, DocumentClass) {
+  const CoreDocumentClass = getCoreDocumentClass(documentName);
+
+  return (
+    typeof DocumentClass === "function" &&
+    typeof CoreDocumentClass === "function" &&
+    (DocumentClass === CoreDocumentClass || DocumentClass.prototype instanceof CoreDocumentClass)
+  );
+}
+
 function registerPf2eDocumentClasses(documentName, arcflightClasses) {
   const documentClasses = getPf2eDocumentClasses(documentName);
   if (!documentClasses) {
@@ -67,6 +81,11 @@ function registerPf2eDocumentClasses(documentName, arcflightClasses) {
   }
 
   for (const [documentType, DocumentClass] of Object.entries(arcflightClasses)) {
+    if (!isDocumentClassForName(documentName, DocumentClass)) {
+      console.warn(`Arcflight | Refusing to register ${documentType} in PF2E ${documentName}.documentClasses because it is not a ${documentName} document class.`);
+      continue;
+    }
+
     const existingClass = documentClasses[documentType];
 
     if (existingClass === DocumentClass) continue;
@@ -127,7 +146,17 @@ function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClas
 
 /** Register Arcflight document class dispatch for Foundry v13. */
 export function registerArcflightDocumentClasses() {
-  CONFIG.Item.documentClass = createArcflightDocumentProxy("Item", CONFIG.Item.documentClass, arcflightItemDocumentClasses);
+  const itemDocumentClasses = Object.fromEntries(
+    Object.entries(arcflightItemDocumentClasses).filter(([documentType, DocumentClass]) => {
+      const valid = isDocumentClassForName("Item", DocumentClass);
+      if (!valid) {
+        console.warn(`Arcflight | Refusing to register ${documentType} in CONFIG.Item.documentClass because it is not an Item document class.`);
+      }
+      return valid;
+    })
+  );
+
+  CONFIG.Item.documentClass = createArcflightDocumentProxy("Item", CONFIG.Item.documentClass, itemDocumentClasses);
 }
 
 /** Register Arcflight document classes with PF2E's type-specific document registries when present. */

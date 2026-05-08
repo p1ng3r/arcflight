@@ -33,6 +33,14 @@ function createSchemaFromDefaultData(defaultData) {
   return Object.fromEntries(Object.entries(defaultData).map(([key, value]) => [key, createFieldFromDefaultValue(value)]));
 }
 
+function isTypeDataModelClass(DataModelClass) {
+  return (
+    typeof DataModelClass === "function" &&
+    typeof foundry.abstract.TypeDataModel === "function" &&
+    (DataModelClass === foundry.abstract.TypeDataModel || DataModelClass.prototype instanceof foundry.abstract.TypeDataModel)
+  );
+}
+
 class ArcflightTypeDataModel extends foundry.abstract.TypeDataModel {
   static documentClass = null;
 
@@ -88,5 +96,15 @@ export const arcflightItemDataModels = Object.freeze({
 
 /** Register Arcflight module sub-type system data models for Foundry v13. */
 export function registerArcflightDataModels() {
-  Object.assign(CONFIG.Item.dataModels, arcflightItemDataModels);
+  const itemDataModels = Object.fromEntries(
+    Object.entries(arcflightItemDataModels).filter(([documentType, DataModelClass]) => {
+      const valid = isTypeDataModelClass(DataModelClass);
+      if (!valid) {
+        console.warn(`Arcflight | Refusing to register ${documentType} in CONFIG.Item.dataModels because it is not a TypeDataModel class.`);
+      }
+      return valid;
+    })
+  );
+
+  Object.assign(CONFIG.Item.dataModels, itemDataModels);
 }
