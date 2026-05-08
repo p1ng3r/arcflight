@@ -34,6 +34,8 @@ export class ShipActor extends ArcflightActor {
         recommended: 0,
         maximum: 0
       },
+      morale: 0,
+      supplies: 0,
       mobility: {
         combatSpeed: 0,
         maneuverability: 0

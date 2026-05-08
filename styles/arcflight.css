@@ -1,1 +1,98 @@
-/* Arcflight Phase 0 stylesheet placeholder. */
+.arcflight.sheet {
+  --arcflight-gap: 0.75rem;
+}
+
+.arcflight-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--arcflight-gap);
+  padding: 0.75rem;
+}
+
+.arcflight-sheet__header {
+  display: flex;
+  align-items: center;
+  gap: var(--arcflight-gap);
+}
+
+.arcflight-sheet__image {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: 1px solid var(--color-border-light-primary);
+}
+
+.arcflight-sheet__identity,
+.arcflight-sheet__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.arcflight-sheet__field--grow,
+.arcflight-sheet__identity {
+  flex: 1;
+}
+
+.arcflight-sheet__field > span,
+.arcflight-sheet__type,
+.arcflight-sheet__hint {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12);
+}
+
+.arcflight-sheet__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-sheet__section h2,
+.arcflight-sheet__section h3 {
+  margin: 0;
+}
+
+.arcflight-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-grid--resources,
+.arcflight-grid--ship-values {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-installed {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-installed article,
+.arcflight-system-list {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-installed ul,
+.arcflight-installed p {
+  margin-bottom: 0;
+}
+
+.arcflight-system-list dt {
+  font-weight: bold;
+}
+
+.arcflight-system-list dd {
+  margin: 0 0 0.5rem;
+}
+
+.arcflight-system-list pre {
+  margin: 0;
+  white-space: pre-wrap;
+}

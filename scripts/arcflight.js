@@ -21,6 +21,7 @@ import {
 import { ShipActor } from "./documents/ship-actor.js";
 import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
 import { WeaponItem } from "./documents/weapon-item.js";
+import { ArcflightItemSheet, ShipSheet, registerArcflightSheets } from "./sheets/registration.js";
 
 const documentClasses = Object.freeze({
   ArcflightActor,
@@ -34,7 +35,9 @@ const documentClasses = Object.freeze({
   ShipUpgradeItem,
   CargoItem,
   CrewAssetItem,
-  CrewItem
+  CrewItem,
+  ShipSheet,
+  ArcflightItemSheet
 });
 
 Hooks.once("init", () => {
@@ -43,6 +46,7 @@ Hooks.once("init", () => {
   registerArcflightDataModels();
   registerArcflightPf2eDocumentClasses();
   registerArcflightDocumentClasses();
+  registerArcflightSheets();
 
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
@@ -80,5 +84,8 @@ export {
   arcflightItemDataModels,
   registerArcflightDataModels,
   registerArcflightDocumentClasses,
-  registerArcflightPf2eDocumentClasses
+  registerArcflightPf2eDocumentClasses,
+  ShipSheet,
+  ArcflightItemSheet,
+  registerArcflightSheets
 };
