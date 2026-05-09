@@ -38,6 +38,20 @@ export const ARCFLIGHT_ITEM_DOCUMENT_TYPES = Object.freeze({
   CREW_ASSET: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.CREW_ASSET)
 });
 
+export const ARCFLIGHT_PLATFORM_EXPANSION_SLOTS = Object.freeze({
+  voidSkiff: 1,
+  sloop: 2,
+  cutter: 3,
+  brigantine: 4,
+  frigate: 4,
+  galleon: 6,
+  hammerhead: 5,
+  arkcruiser: 7,
+  dreadCaravel: 6,
+  cathedralShip: 7,
+  leviathanClassPlatform: "district-scale"
+});
+
 export const ARCFLIGHT_SHIP_RESOURCES = Object.freeze({
   HULL: "hull",
   LIFEVEIL: "lifeveil",
@@ -117,5 +131,6 @@ export const ARCFLIGHT = Object.freeze({
   ARKENGINE_CLASSES: ARCFLIGHT_ARKENGINE_CLASSES,
   INSTALL_SLOTS: ARCFLIGHT_INSTALL_SLOTS,
   COMMON_TAGS: ARCFLIGHT_COMMON_TAGS,
-  COMMON_TRAITS: ARCFLIGHT_COMMON_TRAITS
+  COMMON_TRAITS: ARCFLIGHT_COMMON_TRAITS,
+  PLATFORM_EXPANSION_SLOTS: ARCFLIGHT_PLATFORM_EXPANSION_SLOTS
 });

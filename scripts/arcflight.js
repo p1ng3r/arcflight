@@ -1,4 +1,4 @@
-import { ARCFLIGHT } from "./config/constants.js";
+import { ARCFLIGHT, ARCFLIGHT_PLATFORM_EXPANSION_SLOTS } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { createArcflightItem, getArcflightItemDocumentType } from "./documents/creation.js";
 import {
@@ -121,5 +121,6 @@ export {
   getComponentType,
   getComponentData,
   getDefaultArcflightComponentData,
-  arcflightComponentDefaults
+  arcflightComponentDefaults,
+  ARCFLIGHT_PLATFORM_EXPANSION_SLOTS
 };

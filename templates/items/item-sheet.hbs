@@ -45,21 +45,74 @@
         <span>Source</span>
         <input type="text" name="{{arcflightFlagPath}}.source" value="{{componentData.source}}" {{#unless editable}}disabled{{/unless}}>
       </label>
-      <label class="arcflight-sheet__field">
-        <span>Notes</span>
-        <textarea name="{{arcflightFlagPath}}.notes" rows="4" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea>
-      </label>
+      {{#unless isHull}}
+        <label class="arcflight-sheet__field">
+          <span>Notes</span>
+          <textarea name="{{arcflightFlagPath}}.notes" rows="4" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea>
+        </label>
+      {{/unless}}
     </section>
 
     {{#if isHull}}
       <section class="arcflight-sheet__section">
-        <h2>Hull</h2>
-        <label class="arcflight-sheet__field"><span>Hull Integrity Placeholders</span><input type="text" name="{{arcflightFlagPath}}.hullIntegrity" value="{{componentData.hullIntegrity}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Lifeveil Placeholders</span><input type="text" name="{{arcflightFlagPath}}.lifeveil" value="{{componentData.lifeveil}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Crew Limits</span><input type="text" name="{{arcflightFlagPath}}.crewLimits" value="{{componentData.crewLimits}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Weapon Mounts</span><input type="text" name="{{arcflightFlagPath}}.weaponMounts" value="{{componentData.weaponMounts}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Room Slots</span><input type="text" name="{{arcflightFlagPath}}.roomSlots" value="{{componentData.roomSlots}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Arkengine Compatibility</span><input type="text" name="{{arcflightFlagPath}}.arkengineCompatibility" value="{{componentData.arkengineCompatibility}}" {{#unless editable}}disabled{{/unless}}></label>
+        <h2>Hull Identity</h2>
+        <div class="arcflight-grid arcflight-grid--two-column">
+          <label class="arcflight-sheet__field"><span>Platform</span><input type="text" name="{{arcflightFlagPath}}.identity.platform" value="{{componentData.identity.platform}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Display Name</span><input type="text" name="{{arcflightFlagPath}}.identity.displayName" value="{{componentData.identity.displayName}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Size Category</span><input type="text" name="{{arcflightFlagPath}}.identity.sizeCategory" value="{{componentData.identity.sizeCategory}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Role</span><input type="text" name="{{arcflightFlagPath}}.identity.role" value="{{componentData.identity.role}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Rarity</span><input type="text" name="{{arcflightFlagPath}}.identity.rarity" value="{{componentData.identity.rarity}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Origin</span><input type="text" name="{{arcflightFlagPath}}.identity.origin" value="{{componentData.identity.origin}}" {{#unless editable}}disabled{{/unless}}></label>
+        </div>
+        <label class="arcflight-sheet__field"><span>Description</span><textarea name="{{arcflightFlagPath}}.identity.description" rows="4" {{#unless editable}}disabled{{/unless}}>{{componentData.identity.description}}</textarea></label>
+      </section>
+
+      <section class="arcflight-sheet__section">
+        <h2>Hull Core Stats</h2>
+        <div class="arcflight-grid arcflight-grid--two-column">
+          <label class="arcflight-sheet__field"><span>Hull Integrity</span><input type="number" name="{{arcflightFlagPath}}.coreStats.hullIntegrity" value="{{componentData.coreStats.hullIntegrity}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Armor Class</span><input type="number" name="{{arcflightFlagPath}}.coreStats.armorClass" value="{{componentData.coreStats.armorClass}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Bludgeoning Resistance</span><input type="number" name="{{arcflightFlagPath}}.coreStats.physicalResistances.bludgeoning" value="{{componentData.coreStats.physicalResistances.bludgeoning}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Piercing Resistance</span><input type="number" name="{{arcflightFlagPath}}.coreStats.physicalResistances.piercing" value="{{componentData.coreStats.physicalResistances.piercing}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Slashing Resistance</span><input type="number" name="{{arcflightFlagPath}}.coreStats.physicalResistances.slashing" value="{{componentData.coreStats.physicalResistances.slashing}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Strain Capacity</span><input type="number" name="{{arcflightFlagPath}}.coreStats.strainCapacity" value="{{componentData.coreStats.strainCapacity}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Lifeveil Capacity</span><input type="number" name="{{arcflightFlagPath}}.coreStats.lifeveilCapacity" value="{{componentData.coreStats.lifeveilCapacity}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Cargo Capacity</span><input type="number" name="{{arcflightFlagPath}}.coreStats.cargoCapacity" value="{{componentData.coreStats.cargoCapacity}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Detection</span><input type="text" name="{{arcflightFlagPath}}.coreStats.detection" value="{{componentData.coreStats.detection}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Combat Speed</span><input type="text" name="{{arcflightFlagPath}}.coreStats.combatSpeed" value="{{componentData.coreStats.combatSpeed}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Maneuverability</span><input type="text" name="{{arcflightFlagPath}}.coreStats.maneuverability" value="{{componentData.coreStats.maneuverability}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Base AP</span><input type="number" name="{{arcflightFlagPath}}.coreStats.baseAP" value="{{componentData.coreStats.baseAP}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Base RAP</span><input type="number" name="{{arcflightFlagPath}}.coreStats.baseRAP" value="{{componentData.coreStats.baseRAP}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+        </div>
+      </section>
+
+      <section class="arcflight-sheet__section">
+        <h2>Crew, Rooms, and Mounts</h2>
+        <div class="arcflight-grid arcflight-grid--two-column">
+          <label class="arcflight-sheet__field"><span>Minimum Crew</span><input type="number" name="{{arcflightFlagPath}}.crew.minimum" value="{{componentData.crew.minimum}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Recommended Crew</span><input type="number" name="{{arcflightFlagPath}}.crew.recommended" value="{{componentData.crew.recommended}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Maximum Crew</span><input type="number" name="{{arcflightFlagPath}}.crew.maximum" value="{{componentData.crew.maximum}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Core Rooms</span><input type="text" name="{{arcflightFlagPath}}.rooms.coreRooms" value="{{componentData.rooms.coreRooms}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Expansion Slots</span><input type="text" name="{{arcflightFlagPath}}.rooms.expansionSlots" value="{{componentData.rooms.expansionSlots}}" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Fore Mounts</span><input type="number" name="{{arcflightFlagPath}}.weaponMounts.fore" value="{{componentData.weaponMounts.fore}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Port Mounts</span><input type="number" name="{{arcflightFlagPath}}.weaponMounts.port" value="{{componentData.weaponMounts.port}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Starboard Mounts</span><input type="number" name="{{arcflightFlagPath}}.weaponMounts.starboard" value="{{componentData.weaponMounts.starboard}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field"><span>Aft Mounts</span><input type="number" name="{{arcflightFlagPath}}.weaponMounts.aft" value="{{componentData.weaponMounts.aft}}" data-dtype="Number" {{#unless editable}}disabled{{/unless}}></label>
+        </div>
+      </section>
+
+      <section class="arcflight-sheet__section">
+        <h2>Compatibility, Rules, and Notes</h2>
+        <label class="arcflight-sheet__field"><span>Preferred Arkengine</span><input type="text" name="{{arcflightFlagPath}}.arkengineCompatibility.preferred" value="{{componentData.arkengineCompatibility.preferred}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Allowed Arkengines</span><input type="text" name="{{arcflightFlagPath}}.arkengineCompatibility.allowed" value="{{componentData.arkengineCompatibility.allowed}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Arkengine Notes</span><textarea name="{{arcflightFlagPath}}.arkengineCompatibility.notes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.arkengineCompatibility.notes}}</textarea></label>
+        <div class="arcflight-grid arcflight-grid--two-column">
+          <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><span>Can Operate Below Minimum Crew</span><input type="hidden" name="{{arcflightFlagPath}}.rules.canOperateBelowMinimumCrew" value="false" data-dtype="Boolean"><input type="checkbox" name="{{arcflightFlagPath}}.rules.canOperateBelowMinimumCrew" value="true" data-dtype="Boolean" {{checked componentData.rules.canOperateBelowMinimumCrew}} {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><span>Uses General Expansion Slots Only</span><input type="hidden" name="{{arcflightFlagPath}}.rules.usesGeneralExpansionSlotsOnly" value="false" data-dtype="Boolean"><input type="checkbox" name="{{arcflightFlagPath}}.rules.usesGeneralExpansionSlotsOnly" value="true" data-dtype="Boolean" {{checked componentData.rules.usesGeneralExpansionSlotsOnly}} {{#unless editable}}disabled{{/unless}}></label>
+          <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><span>One Room Per Expansion Slot</span><input type="hidden" name="{{arcflightFlagPath}}.rules.oneRoomPerExpansionSlot" value="false" data-dtype="Boolean"><input type="checkbox" name="{{arcflightFlagPath}}.rules.oneRoomPerExpansionSlot" value="true" data-dtype="Boolean" {{checked componentData.rules.oneRoomPerExpansionSlot}} {{#unless editable}}disabled{{/unless}}></label>
+        </div>
+        <label class="arcflight-sheet__field"><span>Design Intent</span><textarea name="{{arcflightFlagPath}}.notes.designIntent" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.notes.designIntent}}</textarea></label>
+        <label class="arcflight-sheet__field"><span>GM Notes</span><textarea name="{{arcflightFlagPath}}.notes.gmNotes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.notes.gmNotes}}</textarea></label>
       </section>
     {{/if}}
 
