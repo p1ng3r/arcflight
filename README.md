@@ -25,6 +25,8 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createCoreHull(platformKey, operation?)`
 - `game.arcflight.createHull(platformKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
+- `game.arcflight.CORE_HULL_PLATFORM_KEYS`
+- `game.arcflight.getCoreHullPlatformKeys()`
 - `game.arcflight.getDefaultComponentData(componentType)`
 - `game.arcflight.getDefaultShipData()`
 - `game.arcflight.isArcflightItem(item)`
