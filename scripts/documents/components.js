@@ -107,14 +107,29 @@ export function getDefaultArcflightComponentFlags(componentType, data = {}) {
   };
 }
 
+function getArcflightFlag(item, key) {
+  // Arcflight component metadata lives on document flags, never PF2E system data.
+  return item?.flags?.[ARCFLIGHT_MODULE_ID]?.[key] ?? item?.getFlag?.(ARCFLIGHT_MODULE_ID, key);
+}
+
+export function getArcflightComponentFlags(item) {
+  const directFlags = item?.flags?.[ARCFLIGHT_MODULE_ID] ?? {};
+
+  return {
+    enabled: getArcflightFlag(item, "enabled"),
+    componentType: getArcflightFlag(item, "componentType"),
+    system: getArcflightFlag(item, "system") ?? directFlags.system ?? {}
+  };
+}
+
 export function isArcflightItem(item) {
-  return item?.type === ARCFLIGHT_COMPONENT_ITEM_TYPE && item.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true;
+  return item?.type === ARCFLIGHT_COMPONENT_ITEM_TYPE && getArcflightFlag(item, "enabled") === true;
 }
 
 export function getComponentType(item) {
   if (!isArcflightItem(item)) return null;
 
-  const componentType = item.getFlag(ARCFLIGHT_MODULE_ID, "componentType");
+  const componentType = getArcflightFlag(item, "componentType");
   return arcflightComponentDefaults[componentType] ? componentType : null;
 }
 
@@ -122,6 +137,6 @@ export function getComponentData(item) {
   const componentType = getComponentType(item);
   if (!componentType) return null;
 
-  const flagData = item.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
+  const flagData = getArcflightFlag(item, "system") ?? {};
   return foundry.utils.mergeObject(getDefaultArcflightComponentData(componentType), flagData, { inplace: false });
 }
