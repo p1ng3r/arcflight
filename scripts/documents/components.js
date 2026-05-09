@@ -94,10 +94,45 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: Object.freeze({
-    ...commonComponentData,
-    modCategory: "",
-    compatibleEngineClasses: "",
-    effectSummary: ""
+    identity: {
+      modCategory: "",
+      model: "",
+      manufacturer: "",
+      grade: ""
+    },
+    installation: {
+      installed: false,
+      installedOn: "",
+      slot: "",
+      requirements: "",
+      notes: ""
+    },
+    compatibility: {
+      engineClasses: "",
+      engines: "",
+      hulls: "",
+      restrictions: "",
+      notes: ""
+    },
+    effects: {
+      summary: "",
+      affectedSubsystem: "",
+      mechanicalNotes: ""
+    },
+    tradeoffs: {
+      strainCost: 0,
+      powerDraw: 0,
+      drawback: "",
+      notes: ""
+    },
+    traits: "",
+    state: {
+      active: false,
+      disabled: false,
+      condition: "",
+      notes: ""
+    },
+    notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.WEAPON]: Object.freeze({
     ...commonComponentData,
@@ -167,12 +202,52 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ROOM]: Object.freeze({
-    ...commonComponentData,
-    roomCategory: "",
-    utilitySummary: "",
-    downtimePlaceholder: "",
-    craftingPlaceholder: "",
-    recoveryPlaceholder: ""
+    identity: {
+      roomCategory: "",
+      model: "",
+      manufacturer: "",
+      grade: ""
+    },
+    slotUsage: {
+      slots: 1,
+      size: "",
+      location: "",
+      notes: ""
+    },
+    installation: {
+      installed: false,
+      installedOn: "",
+      deck: "",
+      roomSlot: "",
+      notes: ""
+    },
+    utility: {
+      summary: "",
+      downtime: "",
+      crafting: "",
+      recovery: "",
+      notes: ""
+    },
+    restrictions: {
+      access: "",
+      crewRequired: 0,
+      requirements: "",
+      notes: ""
+    },
+    upkeep: {
+      supplyCost: 0,
+      maintenance: "",
+      staffing: "",
+      notes: ""
+    },
+    state: {
+      operational: false,
+      disabled: false,
+      condition: "",
+      notes: ""
+    },
+    traits: "",
+    notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: Object.freeze({
     ...commonComponentData,
@@ -181,9 +256,50 @@ export const arcflightComponentDefaults = Object.freeze({
     effectSummary: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CARGO]: Object.freeze({
-    ...commonComponentData,
-    cargoUnits: "",
-    specialHandlingNotes: ""
+    identity: {
+      cargoType: "",
+      origin: "",
+      owner: "",
+      manifestId: ""
+    },
+    cargo: {
+      units: 0,
+      bulk: "",
+      contents: "",
+      handlingNotes: ""
+    },
+    value: {
+      price: "",
+      currency: "",
+      appraisalNotes: ""
+    },
+    storage: {
+      location: "",
+      container: "",
+      requiredRoom: "",
+      notes: ""
+    },
+    risk: {
+      fragile: false,
+      hazardous: false,
+      illegal: false,
+      perishable: false,
+      notes: ""
+    },
+    use: {
+      purpose: "",
+      consumed: false,
+      delivery: "",
+      notes: ""
+    },
+    state: {
+      secured: false,
+      damaged: false,
+      condition: "",
+      notes: ""
+    },
+    traits: "",
+    notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: Object.freeze({
     ...commonComponentData,

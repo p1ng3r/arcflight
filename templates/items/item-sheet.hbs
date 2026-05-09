@@ -34,22 +34,24 @@
         <span>Component Type</span>
         <input type="text" name="flags.arcflight.componentType" value="{{componentType}}" disabled>
       </label>
-      <label class="arcflight-sheet__field">
-        <span>Tags</span>
-        <input type="text" name="{{arcflightFlagPath}}.tags" value="{{componentData.tags}}" {{#unless editable}}disabled{{/unless}}>
-      </label>
-      <label class="arcflight-sheet__field">
-        <span>Traits</span>
-        <input type="text" name="{{arcflightFlagPath}}.traits" value="{{componentData.traits}}" {{#unless editable}}disabled{{/unless}}>
-      </label>
-      <label class="arcflight-sheet__field">
-        <span>Source</span>
-        <input type="text" name="{{arcflightFlagPath}}.source" value="{{componentData.source}}" {{#unless editable}}disabled{{/unless}}>
-      </label>
-      <label class="arcflight-sheet__field">
-        <span>Notes</span>
-        <textarea name="{{arcflightFlagPath}}.notes" rows="4" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea>
-      </label>
+      {{#unless usesLockedPhaseOneSchema}}
+        <label class="arcflight-sheet__field">
+          <span>Tags</span>
+          <input type="text" name="{{arcflightFlagPath}}.tags" value="{{componentData.tags}}" {{#unless editable}}disabled{{/unless}}>
+        </label>
+        <label class="arcflight-sheet__field">
+          <span>Traits</span>
+          <input type="text" name="{{arcflightFlagPath}}.traits" value="{{componentData.traits}}" {{#unless editable}}disabled{{/unless}}>
+        </label>
+        <label class="arcflight-sheet__field">
+          <span>Source</span>
+          <input type="text" name="{{arcflightFlagPath}}.source" value="{{componentData.source}}" {{#unless editable}}disabled{{/unless}}>
+        </label>
+        <label class="arcflight-sheet__field">
+          <span>Notes</span>
+          <textarea name="{{arcflightFlagPath}}.notes" rows="4" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea>
+        </label>
+      {{/unless}}
     </section>
 
     {{#if isHull}}
@@ -125,9 +127,48 @@
     {{#if isArkengineMod}}
       <section class="arcflight-sheet__section">
         <h2>Arkengine Mod</h2>
-        <label class="arcflight-sheet__field"><span>Mod Category</span><input type="text" name="{{arcflightFlagPath}}.modCategory" value="{{componentData.modCategory}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Compatible Engine Classes</span><input type="text" name="{{arcflightFlagPath}}.compatibleEngineClasses" value="{{componentData.compatibleEngineClasses}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Effect Summary Placeholder</span><input type="text" name="{{arcflightFlagPath}}.effectSummary" value="{{componentData.effectSummary}}" {{#unless editable}}disabled{{/unless}}></label>
+        <h3>Identity</h3>
+        <label class="arcflight-sheet__field"><span>Mod Category</span><input type="text" name="{{arcflightFlagPath}}.identity.modCategory" value="{{componentData.identity.modCategory}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Model</span><input type="text" name="{{arcflightFlagPath}}.identity.model" value="{{componentData.identity.model}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Manufacturer</span><input type="text" name="{{arcflightFlagPath}}.identity.manufacturer" value="{{componentData.identity.manufacturer}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Grade</span><input type="text" name="{{arcflightFlagPath}}.identity.grade" value="{{componentData.identity.grade}}" {{#unless editable}}disabled{{/unless}}></label>
+
+        <h3>Installation</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.installation.installed" {{#if componentData.installation.installed}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Installed</span></label>
+        <label class="arcflight-sheet__field"><span>Installed On</span><input type="text" name="{{arcflightFlagPath}}.installation.installedOn" value="{{componentData.installation.installedOn}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Slot</span><input type="text" name="{{arcflightFlagPath}}.installation.slot" value="{{componentData.installation.slot}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Requirements</span><input type="text" name="{{arcflightFlagPath}}.installation.requirements" value="{{componentData.installation.requirements}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Installation Notes</span><textarea name="{{arcflightFlagPath}}.installation.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.installation.notes}}</textarea></label>
+
+        <h3>Compatibility</h3>
+        <label class="arcflight-sheet__field"><span>Engine Classes</span><input type="text" name="{{arcflightFlagPath}}.compatibility.engineClasses" value="{{componentData.compatibility.engineClasses}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Engines</span><input type="text" name="{{arcflightFlagPath}}.compatibility.engines" value="{{componentData.compatibility.engines}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Hulls</span><input type="text" name="{{arcflightFlagPath}}.compatibility.hulls" value="{{componentData.compatibility.hulls}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Restrictions</span><input type="text" name="{{arcflightFlagPath}}.compatibility.restrictions" value="{{componentData.compatibility.restrictions}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Compatibility Notes</span><textarea name="{{arcflightFlagPath}}.compatibility.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.compatibility.notes}}</textarea></label>
+
+        <h3>Effects</h3>
+        <label class="arcflight-sheet__field"><span>Summary</span><input type="text" name="{{arcflightFlagPath}}.effects.summary" value="{{componentData.effects.summary}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Affected Subsystem</span><input type="text" name="{{arcflightFlagPath}}.effects.affectedSubsystem" value="{{componentData.effects.affectedSubsystem}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Mechanical Notes</span><textarea name="{{arcflightFlagPath}}.effects.mechanicalNotes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.effects.mechanicalNotes}}</textarea></label>
+
+        <h3>Tradeoffs</h3>
+        <label class="arcflight-sheet__field"><span>Strain Cost</span><input type="number" name="{{arcflightFlagPath}}.tradeoffs.strainCost" value="{{componentData.tradeoffs.strainCost}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Power Draw</span><input type="number" name="{{arcflightFlagPath}}.tradeoffs.powerDraw" value="{{componentData.tradeoffs.powerDraw}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Drawback</span><input type="text" name="{{arcflightFlagPath}}.tradeoffs.drawback" value="{{componentData.tradeoffs.drawback}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Tradeoff Notes</span><textarea name="{{arcflightFlagPath}}.tradeoffs.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.tradeoffs.notes}}</textarea></label>
+
+        <h3>Traits</h3>
+        <label class="arcflight-sheet__field"><span>Traits</span><input type="text" name="{{arcflightFlagPath}}.traits" value="{{componentData.traits}}" {{#unless editable}}disabled{{/unless}}></label>
+
+        <h3>State</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.active" {{#if componentData.state.active}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Active</span></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.disabled" {{#if componentData.state.disabled}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Disabled</span></label>
+        <label class="arcflight-sheet__field"><span>Condition</span><input type="text" name="{{arcflightFlagPath}}.state.condition" value="{{componentData.state.condition}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>State Notes</span><textarea name="{{arcflightFlagPath}}.state.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.state.notes}}</textarea></label>
+
+        <h3>Notes</h3>
+        <label class="arcflight-sheet__field"><span>Arkengine Mod Notes</span><textarea name="{{arcflightFlagPath}}.notes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea></label>
       </section>
     {{/if}}
 
@@ -207,11 +248,55 @@
     {{#if isRoom}}
       <section class="arcflight-sheet__section">
         <h2>Room</h2>
-        <label class="arcflight-sheet__field"><span>Room Category</span><input type="text" name="{{arcflightFlagPath}}.roomCategory" value="{{componentData.roomCategory}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Utility Summary</span><input type="text" name="{{arcflightFlagPath}}.utilitySummary" value="{{componentData.utilitySummary}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Downtime Placeholder</span><input type="text" name="{{arcflightFlagPath}}.downtimePlaceholder" value="{{componentData.downtimePlaceholder}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Crafting Placeholder</span><input type="text" name="{{arcflightFlagPath}}.craftingPlaceholder" value="{{componentData.craftingPlaceholder}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Recovery Placeholder</span><input type="text" name="{{arcflightFlagPath}}.recoveryPlaceholder" value="{{componentData.recoveryPlaceholder}}" {{#unless editable}}disabled{{/unless}}></label>
+        <h3>Identity</h3>
+        <label class="arcflight-sheet__field"><span>Room Category</span><input type="text" name="{{arcflightFlagPath}}.identity.roomCategory" value="{{componentData.identity.roomCategory}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Model</span><input type="text" name="{{arcflightFlagPath}}.identity.model" value="{{componentData.identity.model}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Manufacturer</span><input type="text" name="{{arcflightFlagPath}}.identity.manufacturer" value="{{componentData.identity.manufacturer}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Grade</span><input type="text" name="{{arcflightFlagPath}}.identity.grade" value="{{componentData.identity.grade}}" {{#unless editable}}disabled{{/unless}}></label>
+
+        <h3>Slot Usage</h3>
+        <label class="arcflight-sheet__field"><span>Slots</span><input type="number" name="{{arcflightFlagPath}}.slotUsage.slots" value="{{componentData.slotUsage.slots}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Size</span><input type="text" name="{{arcflightFlagPath}}.slotUsage.size" value="{{componentData.slotUsage.size}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Location</span><input type="text" name="{{arcflightFlagPath}}.slotUsage.location" value="{{componentData.slotUsage.location}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Slot Notes</span><textarea name="{{arcflightFlagPath}}.slotUsage.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.slotUsage.notes}}</textarea></label>
+
+        <h3>Installation</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.installation.installed" {{#if componentData.installation.installed}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Installed</span></label>
+        <label class="arcflight-sheet__field"><span>Installed On</span><input type="text" name="{{arcflightFlagPath}}.installation.installedOn" value="{{componentData.installation.installedOn}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Deck</span><input type="text" name="{{arcflightFlagPath}}.installation.deck" value="{{componentData.installation.deck}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Room Slot</span><input type="text" name="{{arcflightFlagPath}}.installation.roomSlot" value="{{componentData.installation.roomSlot}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Installation Notes</span><textarea name="{{arcflightFlagPath}}.installation.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.installation.notes}}</textarea></label>
+
+        <h3>Utility</h3>
+        <label class="arcflight-sheet__field"><span>Summary</span><input type="text" name="{{arcflightFlagPath}}.utility.summary" value="{{componentData.utility.summary}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Downtime</span><input type="text" name="{{arcflightFlagPath}}.utility.downtime" value="{{componentData.utility.downtime}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Crafting</span><input type="text" name="{{arcflightFlagPath}}.utility.crafting" value="{{componentData.utility.crafting}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Recovery</span><input type="text" name="{{arcflightFlagPath}}.utility.recovery" value="{{componentData.utility.recovery}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Utility Notes</span><textarea name="{{arcflightFlagPath}}.utility.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.utility.notes}}</textarea></label>
+
+        <h3>Restrictions</h3>
+        <label class="arcflight-sheet__field"><span>Access</span><input type="text" name="{{arcflightFlagPath}}.restrictions.access" value="{{componentData.restrictions.access}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Crew Required</span><input type="number" name="{{arcflightFlagPath}}.restrictions.crewRequired" value="{{componentData.restrictions.crewRequired}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Requirements</span><input type="text" name="{{arcflightFlagPath}}.restrictions.requirements" value="{{componentData.restrictions.requirements}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Restriction Notes</span><textarea name="{{arcflightFlagPath}}.restrictions.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.restrictions.notes}}</textarea></label>
+
+        <h3>Upkeep</h3>
+        <label class="arcflight-sheet__field"><span>Supply Cost</span><input type="number" name="{{arcflightFlagPath}}.upkeep.supplyCost" value="{{componentData.upkeep.supplyCost}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Maintenance</span><input type="text" name="{{arcflightFlagPath}}.upkeep.maintenance" value="{{componentData.upkeep.maintenance}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Staffing</span><input type="text" name="{{arcflightFlagPath}}.upkeep.staffing" value="{{componentData.upkeep.staffing}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Upkeep Notes</span><textarea name="{{arcflightFlagPath}}.upkeep.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.upkeep.notes}}</textarea></label>
+
+        <h3>State</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.operational" {{#if componentData.state.operational}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Operational</span></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.disabled" {{#if componentData.state.disabled}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Disabled</span></label>
+        <label class="arcflight-sheet__field"><span>Condition</span><input type="text" name="{{arcflightFlagPath}}.state.condition" value="{{componentData.state.condition}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>State Notes</span><textarea name="{{arcflightFlagPath}}.state.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.state.notes}}</textarea></label>
+
+        <h3>Traits</h3>
+        <label class="arcflight-sheet__field"><span>Traits</span><input type="text" name="{{arcflightFlagPath}}.traits" value="{{componentData.traits}}" {{#unless editable}}disabled{{/unless}}></label>
+
+        <h3>Notes</h3>
+        <label class="arcflight-sheet__field"><span>Room Notes</span><textarea name="{{arcflightFlagPath}}.notes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea></label>
       </section>
     {{/if}}
 
@@ -227,8 +312,53 @@
     {{#if isCargo}}
       <section class="arcflight-sheet__section">
         <h2>Cargo</h2>
-        <label class="arcflight-sheet__field"><span>Cargo Units</span><input type="text" name="{{arcflightFlagPath}}.cargoUnits" value="{{componentData.cargoUnits}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Special Handling Notes</span><textarea name="{{arcflightFlagPath}}.specialHandlingNotes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.specialHandlingNotes}}</textarea></label>
+        <h3>Identity</h3>
+        <label class="arcflight-sheet__field"><span>Cargo Type</span><input type="text" name="{{arcflightFlagPath}}.identity.cargoType" value="{{componentData.identity.cargoType}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Origin</span><input type="text" name="{{arcflightFlagPath}}.identity.origin" value="{{componentData.identity.origin}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Owner</span><input type="text" name="{{arcflightFlagPath}}.identity.owner" value="{{componentData.identity.owner}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Manifest ID</span><input type="text" name="{{arcflightFlagPath}}.identity.manifestId" value="{{componentData.identity.manifestId}}" {{#unless editable}}disabled{{/unless}}></label>
+
+        <h3>Cargo</h3>
+        <label class="arcflight-sheet__field"><span>Units</span><input type="number" name="{{arcflightFlagPath}}.cargo.units" value="{{componentData.cargo.units}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Bulk</span><input type="text" name="{{arcflightFlagPath}}.cargo.bulk" value="{{componentData.cargo.bulk}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Contents</span><input type="text" name="{{arcflightFlagPath}}.cargo.contents" value="{{componentData.cargo.contents}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Handling Notes</span><textarea name="{{arcflightFlagPath}}.cargo.handlingNotes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.cargo.handlingNotes}}</textarea></label>
+
+        <h3>Value</h3>
+        <label class="arcflight-sheet__field"><span>Price</span><input type="text" name="{{arcflightFlagPath}}.value.price" value="{{componentData.value.price}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Currency</span><input type="text" name="{{arcflightFlagPath}}.value.currency" value="{{componentData.value.currency}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Appraisal Notes</span><textarea name="{{arcflightFlagPath}}.value.appraisalNotes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.value.appraisalNotes}}</textarea></label>
+
+        <h3>Storage</h3>
+        <label class="arcflight-sheet__field"><span>Location</span><input type="text" name="{{arcflightFlagPath}}.storage.location" value="{{componentData.storage.location}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Container</span><input type="text" name="{{arcflightFlagPath}}.storage.container" value="{{componentData.storage.container}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Required Room</span><input type="text" name="{{arcflightFlagPath}}.storage.requiredRoom" value="{{componentData.storage.requiredRoom}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Storage Notes</span><textarea name="{{arcflightFlagPath}}.storage.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.storage.notes}}</textarea></label>
+
+        <h3>Risk</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.risk.fragile" {{#if componentData.risk.fragile}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Fragile</span></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.risk.hazardous" {{#if componentData.risk.hazardous}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Hazardous</span></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.risk.illegal" {{#if componentData.risk.illegal}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Illegal</span></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.risk.perishable" {{#if componentData.risk.perishable}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Perishable</span></label>
+        <label class="arcflight-sheet__field"><span>Risk Notes</span><textarea name="{{arcflightFlagPath}}.risk.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.risk.notes}}</textarea></label>
+
+        <h3>Use</h3>
+        <label class="arcflight-sheet__field"><span>Purpose</span><input type="text" name="{{arcflightFlagPath}}.use.purpose" value="{{componentData.use.purpose}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.use.consumed" {{#if componentData.use.consumed}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Consumed</span></label>
+        <label class="arcflight-sheet__field"><span>Delivery</span><input type="text" name="{{arcflightFlagPath}}.use.delivery" value="{{componentData.use.delivery}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Use Notes</span><textarea name="{{arcflightFlagPath}}.use.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.use.notes}}</textarea></label>
+
+        <h3>State</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.secured" {{#if componentData.state.secured}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Secured</span></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.damaged" {{#if componentData.state.damaged}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Damaged</span></label>
+        <label class="arcflight-sheet__field"><span>Condition</span><input type="text" name="{{arcflightFlagPath}}.state.condition" value="{{componentData.state.condition}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>State Notes</span><textarea name="{{arcflightFlagPath}}.state.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.state.notes}}</textarea></label>
+
+        <h3>Traits</h3>
+        <label class="arcflight-sheet__field"><span>Traits</span><input type="text" name="{{arcflightFlagPath}}.traits" value="{{componentData.traits}}" {{#unless editable}}disabled{{/unless}}></label>
+
+        <h3>Notes</h3>
+        <label class="arcflight-sheet__field"><span>Cargo Notes</span><textarea name="{{arcflightFlagPath}}.notes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea></label>
       </section>
     {{/if}}
 
