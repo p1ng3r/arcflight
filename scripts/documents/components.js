@@ -302,10 +302,48 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: Object.freeze({
-    ...commonComponentData,
-    upgradeCategory: "",
-    installLocation: "",
-    effectSummary: ""
+    identity: {
+      upgradeCategory: "",
+      model: "",
+      manufacturer: "",
+      grade: ""
+    },
+    installation: {
+      installed: false,
+      installedOn: "",
+      location: "",
+      requirements: "",
+      notes: ""
+    },
+    compatibility: {
+      hulls: "",
+      arkengines: "",
+      rooms: "",
+      restrictions: "",
+      notes: ""
+    },
+    effects: {
+      summary: "",
+      statModifiers: "",
+      resourceModifiers: "",
+      special: "",
+      notes: ""
+    },
+    limits: {
+      maxInstalled: 0,
+      powerDraw: 0,
+      strainCost: 0,
+      restrictions: "",
+      notes: ""
+    },
+    state: {
+      active: false,
+      disabled: false,
+      condition: "",
+      notes: ""
+    },
+    traits: "",
+    notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CARGO]: Object.freeze({
     identity: {
@@ -354,11 +392,41 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: Object.freeze({
-    ...commonComponentData,
-    role: "",
-    stationAffinity: "",
-    factionIdentity: "",
-    specialistAction: ""
+    identity: {
+      role: "",
+      stationAffinity: "",
+      factionIdentity: "",
+      title: ""
+    },
+    crew: {
+      count: 0,
+      minimum: 0,
+      quality: "",
+      assignment: "",
+      notes: ""
+    },
+    capabilities: {
+      primary: "",
+      specialistAction: "",
+      proficiencies: "",
+      bonuses: "",
+      notes: ""
+    },
+    limits: {
+      upkeep: 0,
+      availability: "",
+      restrictions: "",
+      notes: ""
+    },
+    state: {
+      active: false,
+      injured: false,
+      unavailable: false,
+      condition: "",
+      notes: ""
+    },
+    traits: "",
+    notes: ""
   })
 });
 

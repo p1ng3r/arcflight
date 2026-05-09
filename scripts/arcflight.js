@@ -30,10 +30,18 @@ import {
 import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
 import { WeaponItem } from "./documents/weapon-item.js";
 import { arcflightItemTypeLabels, registerArcflightItemTypeLabels } from "./documents/item-types.js";
+import {
+  ARCFLIGHT_SHIP_ACTOR_TYPE,
+  arcflightShipDefaults,
+  getArcflightShipData,
+  getDefaultArcflightShipData
+} from "./documents/ships.js";
 import { registerArcflightSheets } from "./sheets/registration.js";
 
 function isArcflightVehicle(actor) {
-  return actor?.type === "vehicle" && actor.getFlag?.(ARCFLIGHT.MODULE_ID, "enabled") === true;
+  return actor?.type === "vehicle"
+    && actor.getFlag?.(ARCFLIGHT.MODULE_ID, "enabled") === true
+    && actor.getFlag?.(ARCFLIGHT.MODULE_ID, "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE;
 }
 
 async function setArcflightVehicleEnabled(actor, enabled = true) {
@@ -41,7 +49,21 @@ async function setArcflightVehicleEnabled(actor, enabled = true) {
     throw new Error("Arcflight ships must be PF2E vehicle actors.");
   }
 
-  return actor.setFlag(ARCFLIGHT.MODULE_ID, "enabled", Boolean(enabled));
+  if (!enabled) {
+    return actor.setFlag(ARCFLIGHT.MODULE_ID, "enabled", false);
+  }
+
+  const existingShipData = actor.getFlag(ARCFLIGHT.MODULE_ID, "system") ?? {};
+
+  return actor.update({
+    [`flags.${ARCFLIGHT.MODULE_ID}.enabled`]: true,
+    [`flags.${ARCFLIGHT.MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
+    [`flags.${ARCFLIGHT.MODULE_ID}.system`]: foundry.utils.mergeObject(
+      getDefaultArcflightShipData(),
+      foundry.utils.deepClone(existingShipData),
+      { inplace: false }
+    )
+  });
 }
 
 const documentClasses = Object.freeze({
@@ -71,7 +93,10 @@ Hooks.once("init", () => {
     getComponentType,
     getComponentData,
     getDefaultComponentData: getDefaultArcflightComponentData,
+    getDefaultShipData: getDefaultArcflightShipData,
+    getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
+    shipDefaults: arcflightShipDefaults,
     devTools: createArcflightDevTools(),
     documentRegistries: Object.freeze({
       Actor: arcflightActorDocumentClasses,
@@ -121,5 +146,9 @@ export {
   getComponentType,
   getComponentData,
   getDefaultArcflightComponentData,
-  arcflightComponentDefaults
+  arcflightComponentDefaults,
+  ARCFLIGHT_SHIP_ACTOR_TYPE,
+  arcflightShipDefaults,
+  getArcflightShipData,
+  getDefaultArcflightShipData
 };

@@ -33,7 +33,9 @@ const suggestedWeaponTypeOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT
 const lockedPhaseOneSchemaTypes = Object.freeze(new Set([
   ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
   ARCFLIGHT_ITEM_TYPES.ROOM,
-  ARCFLIGHT_ITEM_TYPES.CARGO
+  ARCFLIGHT_ITEM_TYPES.CARGO,
+  ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
+  ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE
 ]));
 
 const componentTypeOptions = Object.freeze(
