@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+
+- Removed legacy `name` and `type` keys from the module manifest so Foundry VTT v13 no longer reports unknown manifest keys while keeping `id` and `title` unchanged.
 ### Phase 2.5 - Installed Hull + Derived Ship Stats
 
 - Added the ship actor architecture layer under `flags.arcflight.system.installed`, `base`, `derived`, and `current`.
