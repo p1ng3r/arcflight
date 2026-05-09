@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Removed legacy `name` and `type` keys from the module manifest so Foundry VTT v13 no longer reports unknown manifest keys while keeping `id` and `title` unchanged.
+
 ### Phase 2 - Hull Framework
 
 - Added the locked Core Hull Statout V1 data set with 11 lower-case kebab-case hull platform entries.

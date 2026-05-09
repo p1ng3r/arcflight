@@ -1,10 +1,8 @@
 {
   "id": "arcflight",
-  "name": "arcflight",
   "title": "Arcflight",
   "description": "A Foundry VTT module scaffold for PF2E-compatible fantasy voidfaring campaigns.",
   "version": "0.0.0",
-  "type": "module",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
