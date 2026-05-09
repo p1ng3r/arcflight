@@ -28,6 +28,33 @@
   </section>
 
   <section class="arcflight-sheet__section">
+    <h2>Installed Hull</h2>
+    <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.hullName}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Platform</span><input type="text" value="{{arcflight.system.installed.hullPlatform}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.hullItemId}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>UUID</span><input type="text" value="{{arcflight.system.installed.hullUuid}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Install hulls with <code>game.arcflight.installHull(shipActor, hullItem)</code>. Installation stores references and copied base hull data on the vehicle actor without mutating the hull item.</p>
+  </section>
+
+  <section class="arcflight-sheet__section">
+    <h2>Hull Architecture</h2>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Base Hull</span><input type="number" value="{{arcflight.system.base.hull.hullIntegrity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Derived Hull</span><input type="number" value="{{arcflight.system.derived.hullIntegrity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Current Hull</span><input type="number" name="{{arcflightSystemPath}}.current.hull" value="{{arcflight.system.current.hull}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Base Lifeveil</span><input type="number" value="{{arcflight.system.base.hull.lifeveilCapacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Derived Lifeveil</span><input type="number" value="{{arcflight.system.derived.lifeveilCapacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Current Lifeveil</span><input type="number" name="{{arcflightSystemPath}}.current.lifeveil" value="{{arcflight.system.current.lifeveil}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Base Strain</span><input type="number" value="{{arcflight.system.base.hull.strainCapacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Derived Strain</span><input type="number" value="{{arcflight.system.derived.strainCapacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Current Strain</span><input type="number" name="{{arcflightSystemPath}}.current.strain" value="{{arcflight.system.current.strain}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Current Morale</span><input type="number" name="{{arcflightSystemPath}}.current.morale" value="{{arcflight.system.current.morale}}" {{#unless editable}}disabled{{/unless}}></label>
+    </div>
+  </section>
+
+  <section class="arcflight-sheet__section">
     <h2>Identity</h2>
     <label class="arcflight-sheet__field"><span>Vessel Class</span><input type="text" name="{{arcflightSystemPath}}.identity.vesselClass" value="{{arcflight.system.identity.vesselClass}}" {{#unless editable}}disabled{{/unless}}></label>
     <label class="arcflight-sheet__field"><span>Registry</span><input type="text" name="{{arcflightSystemPath}}.identity.registry" value="{{arcflight.system.identity.registry}}" {{#unless editable}}disabled{{/unless}}></label>

@@ -12,8 +12,12 @@ import {
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   arcflightShipDefaults,
+  calculateDerivedShipStats,
   getArcflightShipData,
-  getDefaultArcflightShipData
+  getDefaultArcflightShipData,
+  installHull,
+  installHullOnShip,
+  recalculateShipStats
 } from "./documents/ships.js";
 import { registerArcflightSheets } from "./sheets/registration.js";
 
@@ -66,6 +70,10 @@ Hooks.once("init", () => {
     getComponentData,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
+    installHull,
+    installHullOnShip,
+    recalculateShipStats,
+    calculateDerivedShipStats,
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
     shipDefaults: arcflightShipDefaults,
@@ -90,6 +98,10 @@ export {
   CORE_HULL_PLATFORM_KEYS,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
+  installHull,
+  installHullOnShip,
+  recalculateShipStats,
+  calculateDerivedShipStats,
   getArcflightItemDocumentType,
   isArcflightItem,
   getComponentType,

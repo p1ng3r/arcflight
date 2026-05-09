@@ -34,6 +34,9 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.getComponentData(item)`
 - `game.arcflight.isArcflightVehicle(actor)`
 - `game.arcflight.setArcflightVehicleEnabled(actor, enabled?)`
+- `game.arcflight.installHull(shipActor, hullItem)`
+- `game.arcflight.installHullOnShip(shipActor, hullItem)`
+- `game.arcflight.recalculateShipStats(shipActor)`
 
 ## Implemented Component Types
 
@@ -83,6 +86,32 @@ await game.arcflight.createCoreHull("sloop");
 
 The helper creates a normal PF2E equipment item and stores hull data under `flags.arcflight.system`; it does not create custom Item subtypes and does not affect normal PF2E equipment.
 
+## Phase 2.5 Installed Hull + Derived Ship Stats
+
+Arcflight ship actors now reserve a forward-compatible architecture layer under `flags.arcflight.system`:
+
+```js
+flags.arcflight.system.installed // source item references
+flags.arcflight.system.base      // copied immutable hull chassis values
+flags.arcflight.system.derived   // calculated ship stats
+flags.arcflight.system.current   // runtime ship state
+```
+
+A hull remains a normal PF2E `equipment` item and continues to store its component data under `flags.arcflight.system`. Installing a hull copies the hull's base chassis data onto the PF2E vehicle actor; it does not mutate the hull item or permanently rewrite core hull definitions.
+
+Use the console helpers to install and recalculate hull-derived stats:
+
+```js
+const hull = await game.arcflight.createCoreHull("brigantine");
+const ship = game.actors.find((actor) => actor.type === "vehicle");
+
+await game.arcflight.setArcflightVehicleEnabled(ship, true);
+await game.arcflight.installHull(ship, hull);
+await game.arcflight.recalculateShipStats(ship);
+```
+
+For Phase 2.5, derived values intentionally equal the installed base hull values. Future phases can layer arkengines, rooms, mods, weapons, crew, conditions, and temporary effects into `derived` while preserving `current` as separate runtime state for hull, lifeveil, strain, and morale.
+
 ## Current Module Behavior
 
 When the module is enabled, the browser console should log:
@@ -95,7 +124,7 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 
 ## Testing Notes
 
-Phase 2 has no travel or combat automation to exercise. Development checks should validate that the 11 locked hull entries load as ESM data, preserve Hull Statout V1 values, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`.
+Phase 2.5 has no travel or combat automation to exercise. Development checks should validate that the 11 locked hull entries load as ESM data, preserve Hull Statout V1 values, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
 
 ## Future Direction
 
