@@ -1,4 +1,12 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import {
+  ARCFLIGHT_ARKENGINE_CLASSES,
+  ARCFLIGHT_ITEM_TYPES,
+  ARCFLIGHT_MODULE_ID,
+  ARCFLIGHT_RELOAD_STATES,
+  ARCFLIGHT_SUGGESTED_WEAPON_TYPES,
+  ARCFLIGHT_WEAPON_ARCS,
+  ARCFLIGHT_WEAPON_SIZES
+} from "../config/constants.js";
 import {
   getArcflightComponentFlags,
   getComponentData,
@@ -11,6 +19,17 @@ import { arcflightTemplatePath } from "./sheet-helpers.js";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ItemSheetV2 } = foundry.applications.sheets;
+
+
+function objectValuesToOptions(values) {
+  return Object.values(values).map((value) => ({ value, label: value }));
+}
+
+const arkengineClassOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_ARKENGINE_CLASSES));
+const weaponArcOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_WEAPON_ARCS));
+const weaponSizeOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_WEAPON_SIZES));
+const reloadStateOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_RELOAD_STATES));
+const suggestedWeaponTypeOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_SUGGESTED_WEAPON_TYPES));
 
 const componentTypeOptions = Object.freeze(
   Object.values(ARCFLIGHT_ITEM_TYPES).map((componentType) => ({
@@ -61,6 +80,11 @@ export class ArcflightItemSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
       componentType,
       componentData,
       componentTypeOptions,
+      arkengineClassOptions,
+      weaponArcOptions,
+      weaponSizeOptions,
+      reloadStateOptions,
+      suggestedWeaponTypeOptions,
       isHull: componentType === ARCFLIGHT_ITEM_TYPES.HULL,
       isArkengine: componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE,
       isArkengineMod: componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
