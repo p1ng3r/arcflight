@@ -3,6 +3,7 @@ import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { createArcflightItem, getArcflightItemDocumentType } from "./documents/creation.js";
 import {
   arcflightComponentDefaults,
+  getDefaultArcflightComponentData,
   getComponentData,
   getComponentType,
   isArcflightItem
@@ -69,6 +70,7 @@ Hooks.once("init", () => {
     isArcflightItem,
     getComponentType,
     getComponentData,
+    getDefaultComponentData: getDefaultArcflightComponentData,
     componentDefaults: arcflightComponentDefaults,
     devTools: createArcflightDevTools(),
     documentRegistries: Object.freeze({
@@ -118,5 +120,6 @@ export {
   isArcflightItem,
   getComponentType,
   getComponentData,
+  getDefaultArcflightComponentData,
   arcflightComponentDefaults
 };

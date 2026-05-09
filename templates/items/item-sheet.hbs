@@ -13,10 +13,18 @@
   {{#unless arcflightEnabled}}
     <section class="arcflight-sheet__section">
       <h2>PF2E Equipment</h2>
-      <p class="arcflight-sheet__hint">
-        This item is normal PF2E equipment. Arcflight component fields only appear when
-        <code>flags.arcflight.enabled</code> is true.
-      </p>
+      <p class="arcflight-sheet__hint">This equipment item is not an Arcflight component.</p>
+      <label class="arcflight-sheet__field">
+        <span>Component Type</span>
+        <select data-arcflight-component-type {{#unless editable}}disabled{{/unless}}>
+          {{#each componentTypeOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <button type="button" data-arcflight-convert-component {{#unless editable}}disabled{{/unless}}>
+        Convert to Arcflight Component
+      </button>
     </section>
   {{else}}
     <section class="arcflight-sheet__section">
