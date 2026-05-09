@@ -1,6 +1,12 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { createArcflightItem, getArcflightItemDocumentType } from "./documents/creation.js";
+import {
+  arcflightComponentDefaults,
+  getComponentData,
+  getComponentType,
+  isArcflightItem
+} from "./documents/components.js";
 import { ArcflightItem } from "./documents/arcflight-item.js";
 import {
   arcflightActorDataModels,
@@ -50,17 +56,8 @@ const documentClasses = Object.freeze({
   CrewItem
 });
 
-// PF2E builds its item implementation from its type-specific registry during startup.
-// Seed that registry at module evaluation time so Arcflight sub-types are
-// available before either Foundry or PF2E handles live item creation.
-registerArcflightPf2eDocumentClasses();
-
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
-
-  registerArcflightDataModels();
-  registerArcflightItemTypeLabels();
-  ensureArcflightDocumentRegistration();
 
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
@@ -69,6 +66,10 @@ Hooks.once("init", () => {
     setArcflightVehicleEnabled,
     createItem: createArcflightItem,
     getItemDocumentType: getArcflightItemDocumentType,
+    isArcflightItem,
+    getComponentType,
+    getComponentData,
+    componentDefaults: arcflightComponentDefaults,
     devTools: createArcflightDevTools(),
     documentRegistries: Object.freeze({
       Actor: arcflightActorDocumentClasses,
@@ -88,14 +89,6 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.once("setup", () => {
-  registerArcflightItemTypeLabels();
-  ensureArcflightDocumentRegistration();
-});
-Hooks.once("ready", () => {
-  registerArcflightItemTypeLabels();
-  ensureArcflightDocumentRegistration();
-});
 
 export {
   ARCFLIGHT,
@@ -121,5 +114,9 @@ export {
   registerArcflightPf2eDocumentClasses,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
-  getArcflightItemDocumentType
+  getArcflightItemDocumentType,
+  isArcflightItem,
+  getComponentType,
+  getComponentData,
+  arcflightComponentDefaults
 };
