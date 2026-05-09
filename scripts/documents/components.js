@@ -84,6 +84,8 @@ export const arcflightComponentDefaults = Object.freeze({
     resistanceTendencies: [],
     traits: [],
     variantFamily: "",
+    allowedVariantFamilies: [],
+    modSlotProfile: "",
     role: "",
     designNotes: "",
     coreSystems: [],

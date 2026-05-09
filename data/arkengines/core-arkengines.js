@@ -1,3 +1,5 @@
+import { ARKENGINE_VARIANT_KEYS } from "./arkengine-variants.js";
+
 const CORE_SYSTEMS = Object.freeze([
   "Aetherite Core",
   "Pressure Lattice",
@@ -20,7 +22,9 @@ function arkengine({
   modSlots,
   resistanceTendencies,
   identity,
-  variantFamily = "core",
+  variantFamily = "",
+  allowedVariantFamilies = ARKENGINE_VARIANT_KEYS,
+  modSlotProfile = "standard",
   role = identity,
   traits = []
 }) {
@@ -37,6 +41,8 @@ function arkengine({
     resistanceTendencies: Object.freeze([...resistanceTendencies]),
     traits: Object.freeze([...traits]),
     variantFamily,
+    allowedVariantFamilies: Object.freeze([...allowedVariantFamilies]),
+    modSlotProfile,
     role,
     designNotes: identity,
     coreSystems: CORE_SYSTEMS,
@@ -58,6 +64,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 3,
     resistanceTendencies: ["electricity"],
     identity: "unstable skiff-grade starter engine",
+    variantFamily: "stormwake",
     traits: ["unstable", "skiff-grade", "starter"]
   }),
   "lanterncoil-arkengine": arkengine({
@@ -72,6 +79,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 3,
     resistanceTendencies: ["fire", "cold"],
     identity: "common civilian voyage engine",
+    variantFamily: "longhaul",
     traits: ["civilian", "common", "voyage"]
   }),
   "tidewake-arkengine": arkengine({
@@ -86,6 +94,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 4,
     resistanceTendencies: ["cold", "void"],
     identity: "reliable explorer-class engine",
+    variantFamily: "deepveil",
     traits: ["reliable", "explorer-class", "voyage"]
   }),
   "iron-choir-engine": arkengine({
@@ -100,6 +109,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 4,
     resistanceTendencies: ["fire", "electricity"],
     identity: "militarized pressure lattice engine",
+    variantFamily: "choirbound",
     traits: ["militarized", "pressure-lattice", "warship"]
   }),
   "furnaceheart-drive": arkengine({
@@ -114,6 +124,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 4,
     resistanceTendencies: ["fire"],
     identity: "heavy cargo and industrial engine",
+    variantFamily: "longhaul",
     traits: ["heavy", "cargo", "industrial"]
   }),
   "voidbreaker-arkengine": arkengine({
@@ -128,6 +139,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 5,
     resistanceTendencies: ["force", "fire"],
     identity: "aggressive assault-pattern engine",
+    variantFamily: "choirbound",
     traits: ["aggressive", "assault-pattern", "warship"]
   }),
   "deepwake-veil-engine": arkengine({
@@ -142,6 +154,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 5,
     resistanceTendencies: ["cold", "void"],
     identity: "deep-void endurance engine",
+    variantFamily: "deepveil",
     traits: ["deep-void", "endurance", "veil"]
   }),
   "crownfire-arkengine": arkengine({
@@ -156,6 +169,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 5,
     resistanceTendencies: ["force", "electricity"],
     identity: "elite flagship-grade engine",
+    variantFamily: "riftburn",
     traits: ["elite", "flagship-grade", "crownfire"]
   }),
   "sanctum-choir-core": arkengine({
@@ -170,6 +184,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 5,
     resistanceTendencies: ["spirit", "void", "vitality"],
     identity: "ritual-focused Lifeveil engine",
+    variantFamily: "pilgrim",
     traits: ["ritual", "lifeveil", "sanctum"]
   }),
   "worldbinder-arkengine": arkengine({
@@ -184,6 +199,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 6,
     resistanceTendencies: ["force", "void", "spirit"],
     identity: "mythic reality-binding engine",
+    variantFamily: "riftburn",
     traits: ["mythic", "reality-binding", "worldbinder"]
   }),
   "leviathan-heart-core": arkengine({
@@ -198,6 +214,7 @@ export const CORE_ARKENGINES = Object.freeze({
     modSlots: 7,
     resistanceTendencies: ["broad energy resistance"],
     identity: "city-scale arkengine infrastructure",
+    variantFamily: "leviathan",
     traits: ["leviathan", "city-scale", "infrastructure"]
   })
 });

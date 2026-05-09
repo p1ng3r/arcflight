@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Phase 3.5 - Arkengine Variants + Mod Slot Foundation
+
+- Added the locked 9-family arkengine variant data set with display names, identities, descriptions, effects summaries, traits, and `derivedModifiers` placeholders.
+- Exposed `game.arcflight.ARKENGINE_VARIANT_KEYS`, `getArkengineVariantKeys()`, `getArkengineVariant(variantKey)`, and `getArkengineVariants()`.
+- Extended core arkengine data with variant families, allowed variant families, and a mod slot profile placeholder without changing existing arkengine stat values.
+- Added ship-side installed arkengine mod tracking under `flags.arcflight.system.installed.arkengineMods` and `arkengineModSlots` with capacity, used, and available counts.
+- Updated derived ship stats and the ship sheet to show arkengine variant family plus mod slot capacity, used, and available values.
+- Kept this phase architecture/data-only; no travel, combat, overcharge resolution, hard burn resolution, station actions, AP/RAP spending, mod item installation behavior, generators, or automation-heavy systems were added.
+
 ### Phase 3 - Arkengine Framework
 
 - Added the locked core arkengine data set with 11 lower-case kebab-case arkengine entries.

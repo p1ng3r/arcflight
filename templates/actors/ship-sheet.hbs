@@ -48,15 +48,18 @@
       <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.arkengineItemId}}" disabled></label>
       <label class="arcflight-sheet__field"><span>UUID</span><input type="text" value="{{arcflight.system.installed.arkengineUuid}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Voyage Hex Days</span><input type="text" value="{{arcflight.system.derived.voyageSpeedTravelHexDays}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Variant Family</span><input type="text" value="{{arcflight.system.derived.arkengineVariantFamily}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Spell Rank</span><input type="text" value="{{arcflight.system.base.arkengine.spellRankRequired}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Lifeveil Mod</span><input type="number" value="{{arcflight.system.base.arkengine.lifeveilModifier}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Strain Mod</span><input type="number" value="{{arcflight.system.base.arkengine.strainModifier}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Hard Burn Strain</span><input type="number" value="{{arcflight.system.derived.hardBurnStrainCost}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Overcharge Risk</span><input type="text" value="{{arcflight.system.derived.overchargeRisk}}" disabled></label>
-      <label class="arcflight-sheet__field"><span>Mod Slots</span><input type="number" value="{{arcflight.system.derived.arkengineModSlots}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Mod Slots Capacity</span><input type="number" value="{{arcflight.system.derived.arkengineModSlots}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Mod Slots Used</span><input type="number" value="{{arcflight.system.derived.arkengineModSlotsUsed}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Mod Slots Available</span><input type="number" value="{{arcflight.system.derived.arkengineModSlotsAvailable}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Resistance Tendencies</span><input type="text" value="{{arcflight.system.derived.resistanceTendencies}}" disabled></label>
     </div>
-    <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Voyage speed belongs to arkengines and lower travel hex day values are faster.</p>
+    <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Variant family and mod slot values are tracked only; mod gameplay is not implemented yet.</p>
   </section>
 
   <section class="arcflight-sheet__section">

@@ -4,6 +4,13 @@ import { createArcflightItem, createArkengine, createCoreArkengine, createCoreHu
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS, getCoreHull, getCoreHullPlatformKeys } from "../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS, CORE_ARKENGINES, getCoreArkengine, getCoreArkengineKeys } from "../data/arkengines/core-arkengines.js";
 import {
+  ARKENGINE_VARIANT_KEYS,
+  ARKENGINE_VARIANTS,
+  getArkengineVariant,
+  getArkengineVariantKeys,
+  getArkengineVariants
+} from "../data/arkengines/arkengine-variants.js";
+import {
   arcflightComponentDefaults,
   getDefaultArcflightComponentData,
   getComponentData,
@@ -66,12 +73,18 @@ Hooks.once("init", () => {
     getCoreArkengine,
     getCoreHullPlatformKeys,
     getCoreArkengineKeys,
+    getArkengineVariantKeys,
+    getArkengineVariant,
+    getArkengineVariants,
     CORE_HULL_PLATFORM_KEYS,
     CORE_ARKENGINE_KEYS,
+    ARKENGINE_VARIANT_KEYS,
     coreHulls: CORE_HULLS,
     coreArkengines: CORE_ARKENGINES,
+    arkengineVariants: ARKENGINE_VARIANTS,
     coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
     coreArkengineKeys: CORE_ARKENGINE_KEYS,
+    arkengineVariantKeys: ARKENGINE_VARIANT_KEYS,
     getItemDocumentType: getArcflightItemDocumentType,
     getDefaultComponentData: getDefaultArcflightComponentData,
     getDefaultShipData: getDefaultArcflightShipData,
@@ -110,10 +123,15 @@ export {
   getCoreArkengine,
   getCoreHullPlatformKeys,
   getCoreArkengineKeys,
+  getArkengineVariantKeys,
+  getArkengineVariant,
+  getArkengineVariants,
   CORE_HULLS,
   CORE_ARKENGINES,
+  ARKENGINE_VARIANTS,
   CORE_HULL_PLATFORM_KEYS,
   CORE_ARKENGINE_KEYS,
+  ARKENGINE_VARIANT_KEYS,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
   installArkengine,
