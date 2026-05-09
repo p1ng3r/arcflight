@@ -14,6 +14,7 @@ import { RoomItem } from "./documents/room-item.js";
 import {
   arcflightActorDocumentClasses,
   arcflightItemDocumentClasses,
+  ensureArcflightDocumentRegistration,
   registerArcflightDocumentClasses,
   registerArcflightPf2eDocumentClasses
 } from "./documents/registration.js";
@@ -46,12 +47,16 @@ const documentClasses = Object.freeze({
   CrewItem
 });
 
+// PF2E builds its item implementation from its type-specific registry during startup.
+// Seed that registry at module evaluation time so Arcflight sub-types are
+// available before either Foundry or PF2E handles live item creation.
+registerArcflightPf2eDocumentClasses();
+
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
 
   registerArcflightDataModels();
-  registerArcflightPf2eDocumentClasses();
-  registerArcflightDocumentClasses();
+  ensureArcflightDocumentRegistration();
 
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
@@ -75,6 +80,9 @@ Hooks.once("init", () => {
   });
 });
 
+Hooks.once("setup", ensureArcflightDocumentRegistration);
+Hooks.once("ready", ensureArcflightDocumentRegistration);
+
 export {
   ARCFLIGHT,
   ArcflightItem,
@@ -92,6 +100,7 @@ export {
   arcflightActorDataModels,
   arcflightItemDataModels,
   registerArcflightDataModels,
+  ensureArcflightDocumentRegistration,
   registerArcflightDocumentClasses,
   registerArcflightPf2eDocumentClasses,
   isArcflightVehicle,

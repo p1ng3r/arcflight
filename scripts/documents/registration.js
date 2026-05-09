@@ -22,39 +22,51 @@ export const arcflightItemDocumentClasses = Object.freeze({
 });
 
 const proxyCache = new WeakMap();
+const proxyMetadata = new WeakMap();
+
+function getProxyTarget(DocumentClass) {
+  return proxyMetadata.get(DocumentClass)?.target ?? DocumentClass;
+}
 
 function getExistingTypeOptions(options) {
   return Array.isArray(options?.types) ? options.types : options?.types ? [options.types] : [];
 }
 
 function getKnownDocumentTypes(documentName) {
-  const typeLabels = CONFIG[documentName]?.typeLabels;
+  const typeLabels = globalThis.CONFIG?.[documentName]?.typeLabels;
   if (typeLabels && typeof typeLabels === "object") return Object.keys(typeLabels);
 
   const pf2eDocumentClasses = getPf2eDocumentClasses(documentName);
   if (pf2eDocumentClasses) return Object.keys(pf2eDocumentClasses);
 
-  const dataModels = CONFIG[documentName]?.dataModels;
+  const dataModels = globalThis.CONFIG?.[documentName]?.dataModels;
   return dataModels && typeof dataModels === "object" ? Object.keys(dataModels) : [];
 }
 
 function createDialogWithArcflightTypes(documentName, createDialog, arcflightClasses) {
-  return function arcflightCreateDialog(data, createOptions, options = {}) {
+  return function arcflightCreateDialog(data, createOptions, options = {}, renderOptions = {}) {
+    registerPf2eDocumentClasses(documentName, arcflightClasses);
     const existingTypes = getExistingTypeOptions(options);
-    if (existingTypes.length > 0) return createDialog.call(this, data, createOptions, options);
+    if (existingTypes.length > 0) return createDialog.call(this, data, createOptions, options, renderOptions);
 
     const arcflightTypes = Object.keys(arcflightClasses);
     const baseTypes = getKnownDocumentTypes(documentName);
 
-    return createDialog.call(this, data, createOptions, {
-      ...options,
-      types: Array.from(new Set([...baseTypes, ...arcflightTypes]))
-    });
+    return createDialog.call(
+      this,
+      data,
+      createOptions,
+      {
+        ...options,
+        types: Array.from(new Set([...baseTypes, ...arcflightTypes]))
+      },
+      renderOptions
+    );
   };
 }
 
 function getPf2eDocumentClasses(documentName) {
-  const pf2eDocumentConfig = CONFIG.PF2E?.[documentName];
+  const pf2eDocumentConfig = globalThis.CONFIG?.PF2E?.[documentName];
   const documentClasses = pf2eDocumentConfig?.documentClasses;
   return documentClasses && typeof documentClasses === "object" ? documentClasses : null;
 }
@@ -121,12 +133,18 @@ function registerPf2eDocumentClasses(documentName, arcflightClasses) {
  * @returns {typeof foundry.abstract.Document}
  */
 function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClasses) {
-  const cachedProxy = proxyCache.get(fallbackClass);
+  const existingMetadata = proxyMetadata.get(fallbackClass);
+  if (existingMetadata?.documentName === documentName) return fallbackClass;
+
+  const targetClass = getProxyTarget(fallbackClass);
+  const cachedProxy = proxyCache.get(targetClass);
   if (cachedProxy) return cachedProxy;
 
-  const proxy = new Proxy(fallbackClass, {
+  const proxy = new Proxy(targetClass, {
     construct(target, args) {
       const [data] = args;
+      registerPf2eDocumentClasses(documentName, arcflightClasses);
+
       const DocumentClass = arcflightClasses[data?.type] ?? target;
       return Reflect.construct(DocumentClass, args, DocumentClass);
     },
@@ -134,13 +152,21 @@ function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClas
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
 
+      if ((property === "create" || property === "createDocuments") && typeof value === "function") {
+        return function arcflightCreateWithRegisteredPf2eClasses(...args) {
+          registerPf2eDocumentClasses(documentName, arcflightClasses);
+          return value.apply(this, args);
+        };
+      }
+
       if (property !== "createDialog" || typeof value !== "function") return value;
 
       return createDialogWithArcflightTypes(documentName, value, arcflightClasses);
     }
   });
 
-  proxyCache.set(fallbackClass, proxy);
+  proxyCache.set(targetClass, proxy);
+  proxyMetadata.set(proxy, { documentName, target: targetClass });
   return proxy;
 }
 
@@ -156,7 +182,19 @@ export function registerArcflightDocumentClasses() {
     })
   );
 
-  CONFIG.Item.documentClass = createArcflightDocumentProxy("Item", CONFIG.Item.documentClass, itemDocumentClasses);
+  const itemConfig = globalThis.CONFIG?.Item;
+  if (!itemConfig?.documentClass) return;
+
+  const currentItemDocumentClass = itemConfig.documentClass;
+  const nextItemDocumentClass = createArcflightDocumentProxy("Item", currentItemDocumentClass, itemDocumentClasses);
+  if (nextItemDocumentClass !== currentItemDocumentClass) itemConfig.documentClass = nextItemDocumentClass;
+}
+
+/** Ensure all Arcflight document registrations are in place for the current startup phase. */
+export function ensureArcflightDocumentRegistration() {
+  const pf2eRegistration = registerArcflightPf2eDocumentClasses();
+  registerArcflightDocumentClasses();
+  return pf2eRegistration;
 }
 
 /** Register Arcflight document classes with PF2E's type-specific document registries when present. */
