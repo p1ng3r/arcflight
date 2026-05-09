@@ -1,4 +1,5 @@
 import { ARCFLIGHT } from "./config/constants.js";
+import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightItem } from "./documents/arcflight-item.js";
 import {
   arcflightActorDataModels,
@@ -63,6 +64,7 @@ Hooks.once("init", () => {
     documents: documentClasses,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
+    devTools: createArcflightDevTools(),
     documentRegistries: Object.freeze({
       Actor: arcflightActorDocumentClasses,
       Item: arcflightItemDocumentClasses

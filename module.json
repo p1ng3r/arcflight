@@ -24,14 +24,14 @@
   ],
   "documentTypes": {
     "Item": {
-      "hull": {},
-      "arkengine": {},
-      "arkengineMod": {},
-      "weapon": {},
-      "room": {},
-      "shipUpgrade": {},
-      "cargo": {},
-      "crewAsset": {}
+      "arcflight.hull": {},
+      "arcflight.arkengine": {},
+      "arcflight.arkengineMod": {},
+      "arcflight.weapon": {},
+      "arcflight.room": {},
+      "arcflight.shipUpgrade": {},
+      "arcflight.cargo": {},
+      "arcflight.crewAsset": {}
     }
   }
 }
