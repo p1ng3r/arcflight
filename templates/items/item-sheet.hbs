@@ -10,6 +10,7 @@
     </div>
   </header>
 
+  <div class="arcflight-sheet__body">
   {{#unless arcflightEnabled}}
     <section class="arcflight-sheet__section">
       <h2>PF2E Equipment</h2>
@@ -241,6 +242,7 @@
       </section>
     {{/if}}
   {{/unless}}
+  </div>
   <datalist id="arcflight-arkengine-classes">
     {{#each arkengineClassOptions}}<option value="{{value}}">{{label}}</option>{{/each}}
   </datalist>
