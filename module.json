@@ -21,17 +21,5 @@
       "name": "English",
       "path": "lang/en.json"
     }
-  ],
-  "documentTypes": {
-    "Item": {
-      "arcflight.hull": {},
-      "arcflight.arkengine": {},
-      "arcflight.arkengineMod": {},
-      "arcflight.weapon": {},
-      "arcflight.room": {},
-      "arcflight.shipUpgrade": {},
-      "arcflight.cargo": {},
-      "arcflight.crewAsset": {}
-    }
-  }
+  ]
 }

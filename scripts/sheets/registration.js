@@ -1,4 +1,4 @@
-import { ARCFLIGHT_ITEM_DOCUMENT_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 
 const PF2E_VEHICLE_ACTOR_TYPE = "vehicle";
 
@@ -55,9 +55,9 @@ export async function registerArcflightSheets() {
     try {
       const ItemSheetClass = await loadArcflightItemSheetClass();
       items.registerSheet(ARCFLIGHT_MODULE_ID, ItemSheetClass, {
-        types: Object.values(ARCFLIGHT_ITEM_DOCUMENT_TYPES),
-        makeDefault: true,
-        label: "Arcflight Item Sheet"
+        types: ["equipment"],
+        makeDefault: false,
+        label: "Arcflight Component Sheet"
       });
       registered.ArcflightItemSheet = ItemSheetClass;
     } catch (error) {

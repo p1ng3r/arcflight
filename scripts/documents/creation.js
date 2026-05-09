@@ -1,53 +1,56 @@
-import { ARCFLIGHT_ITEM_DOCUMENT_TYPES, ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
-import { arcflightItemDocumentClasses, ensureArcflightDocumentRegistration } from "./registration.js";
-
-const arcflightSubtypeToDocumentType = Object.freeze({
-  [ARCFLIGHT_ITEM_TYPES.HULL]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.HULL,
-  [ARCFLIGHT_ITEM_TYPES.ARKENGINE]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.ARKENGINE,
-  [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.ARKENGINE_MOD,
-  [ARCFLIGHT_ITEM_TYPES.WEAPON]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.WEAPON,
-  [ARCFLIGHT_ITEM_TYPES.ROOM]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.ROOM,
-  [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.SHIP_UPGRADE,
-  [ARCFLIGHT_ITEM_TYPES.CARGO]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.CARGO,
-  [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: ARCFLIGHT_ITEM_DOCUMENT_TYPES.CREW_ASSET
-});
+import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import {
+  ARCFLIGHT_COMPONENT_ITEM_TYPE,
+  arcflightComponentTypeLabels,
+  getDefaultArcflightComponentFlags,
+  normalizeArcflightComponentType
+} from "./components.js";
 
 function getArcflightItemDocumentType(type) {
-  if (arcflightItemDocumentClasses[type]) return type;
-  const documentType = arcflightSubtypeToDocumentType[type];
-  if (documentType) return documentType;
-
-  throw new Error(`Arcflight | ${type} is not a registered Arcflight item type.`);
+  normalizeArcflightComponentType(type);
+  return ARCFLIGHT_COMPONENT_ITEM_TYPE;
 }
 
 /**
- * Create an Arcflight item without patching core or PF2E document creation.
+ * Create an Arcflight component as a PF2E equipment item.
  *
- * This helper is intentionally explicit for PF2E worlds whose Create Item dialog
- * filters out module-provided Item sub-types even when Foundry can create them.
+ * Arcflight component data is stored under flags.arcflight.system so PF2E owns
+ * the equipment item's normal system data and normal PF2E equipment remains
+ * unaffected.
  *
- * @param {string} type Arcflight document type, such as "arcflight.hull", or subtype, such as "hull".
+ * @param {string} componentType Arcflight component type, such as "hull" or "weapon".
  * @param {object} [data]
  * @param {object} [operation]
  * @returns {Promise<Item|null>}
  */
-export async function createArcflightItem(type, data = {}, operation = {}) {
-  ensureArcflightDocumentRegistration();
+export async function createArcflightItem(componentType, data = {}, operation = {}) {
+  const normalizedType = normalizeArcflightComponentType(componentType);
+  const { flags = {}, system: componentSystem = {}, ...itemData } = data ?? {};
+  const arcflightFlagData = getDefaultArcflightComponentFlags(normalizedType, componentSystem);
+  const providedArcflightFlags = flags?.[ARCFLIGHT_MODULE_ID] ?? {};
+  const providedFlagSystem = providedArcflightFlags.system ?? {};
 
-  const documentType = getArcflightItemDocumentType(type);
-  const DocumentClass = arcflightItemDocumentClasses[documentType];
-  const defaultName = game.i18n?.localize?.(`TYPES.Item.${documentType}`) || documentType;
   const source = foundry.utils.mergeObject(
     {
-      name: defaultName,
-      type: documentType,
-      system: DocumentClass.defaultSystemData()
+      name: arcflightComponentTypeLabels[normalizedType] ?? `Arcflight ${normalizedType}`,
+      type: ARCFLIGHT_COMPONENT_ITEM_TYPE,
+      flags: {
+        ...flags,
+        [ARCFLIGHT_MODULE_ID]: foundry.utils.mergeObject(arcflightFlagData, providedArcflightFlags, { inplace: false })
+      }
     },
-    data,
+    itemData,
     { inplace: false }
   );
 
-  source.type = documentType;
+  source.type = ARCFLIGHT_COMPONENT_ITEM_TYPE;
+  source.flags[ARCFLIGHT_MODULE_ID].enabled = true;
+  source.flags[ARCFLIGHT_MODULE_ID].componentType = normalizedType;
+  source.flags[ARCFLIGHT_MODULE_ID].system = foundry.utils.mergeObject(
+    arcflightFlagData.system,
+    providedFlagSystem,
+    { inplace: false }
+  );
 
   return Item.create(source, operation);
 }
