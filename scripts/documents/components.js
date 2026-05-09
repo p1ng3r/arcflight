@@ -253,52 +253,60 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ROOM]: Object.freeze({
+    componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
     identity: {
-      roomCategory: "",
-      model: "",
-      manufacturer: "",
-      grade: ""
-    },
-    slotUsage: {
-      slots: 1,
-      size: "",
-      location: "",
-      notes: ""
+      id: "",
+      displayName: "",
+      roomType: "utility",
+      rarity: "common",
+      origin: "",
+      role: "",
+      description: ""
     },
     installation: {
-      installed: false,
-      installedOn: "",
-      deck: "",
-      roomSlot: "",
-      notes: ""
+      expansionSlotsRequired: 1,
+      canInstallDuringTravel: false,
+      requiresPortOrDock: true,
+      installCost: "",
+      installTimeDays: 0,
+      playerAssistCostReductionMaxPercent: 0
     },
     utility: {
-      summary: "",
-      downtime: "",
-      crafting: "",
-      recovery: "",
-      notes: ""
+      downtimeFunctions: [],
+      enabledActivities: [],
+      supportedSkills: [],
+      craftingTags: [],
+      recoveryTags: [],
+      repairTags: [],
+      socialTags: [],
+      survivalTags: []
     },
-    restrictions: {
-      access: "",
-      crewRequired: 0,
-      requirements: "",
+    mechanicalEffects: {
+      allowedInCombat: false,
+      allowedDuringTravelEvent: false,
+      outsideCombatDcModifier: 0,
+      outsideCombatRecoveryModifier: 0,
+      outsideCombatCraftingModifier: 0,
       notes: ""
     },
     upkeep: {
-      supplyCost: 0,
-      maintenance: "",
-      staffing: "",
+      supplyCostPerVoyage: 0,
+      crewRequired: 0,
       notes: ""
     },
     state: {
-      operational: false,
-      disabled: false,
-      condition: "",
-      notes: ""
+      systemState: "Functional"
     },
-    traits: "",
-    notes: ""
+    restrictions: {
+      noDirectCombatBonuses: true,
+      noDirectTravelStatBonuses: true,
+      oneRoomPerExpansionSlot: true
+    },
+    traits: [],
+    notes: {
+      designIntent: "",
+      gmNotes: ""
+    }
   }),
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: Object.freeze({
     identity: {

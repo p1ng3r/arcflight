@@ -6,9 +6,9 @@ Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaig
 
 Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
-## Current Phase 3.5 Architecture
+## Current Phase 4 Architecture
 
-Phase 3.5 keeps the PF2E-compatible module architecture, the hull and arkengine framework, and adds arkengine variant data plus mod slot tracking foundations.
+Phase 4 keeps the PF2E-compatible module architecture, the hull and arkengine framework, and adds the room framework for core ship infrastructure and installed expansion rooms.
 
 - **PF2E vehicle actors are Arcflight ships.** A vehicle becomes an Arcflight ship only when Arcflight flags are enabled on that existing PF2E actor.
 - **PF2E equipment items are Arcflight components.** Hulls, arkengines, arkengine mods, weapons, rooms, ship upgrades, cargo, and crew assets are all equipment items with Arcflight flags.
@@ -26,13 +26,17 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createHull(platformKey, operation?)`
 - `game.arcflight.createCoreArkengine(engineKey, operation?)`
 - `game.arcflight.createArkengine(engineKey, operation?)`
+- `game.arcflight.createCoreRoom(roomKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
 - `game.arcflight.getCoreArkengine(engineKey)`
+- `game.arcflight.getCoreRoom(roomKey)`
 - `game.arcflight.CORE_HULL_PLATFORM_KEYS`
 - `game.arcflight.CORE_ARKENGINE_KEYS`
+- `game.arcflight.CORE_ROOM_KEYS`
 - `game.arcflight.ARKENGINE_VARIANT_KEYS`
 - `game.arcflight.getCoreHullPlatformKeys()`
 - `game.arcflight.getCoreArkengineKeys()`
+- `game.arcflight.getCoreRoomKeys()`
 - `game.arcflight.getArkengineVariantKeys()`
 - `game.arcflight.getArkengineVariant(variantKey)`
 - `game.arcflight.getArkengineVariants()`
@@ -47,6 +51,8 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.installHullOnShip(shipActor, hullItem)`
 - `game.arcflight.installArkengine(shipActor, arkengineItem)`
 - `game.arcflight.installArkengineOnShip(shipActor, arkengineItem)`
+- `game.arcflight.installRoom(shipActor, roomItem)`
+- `game.arcflight.installRoomOnShip(shipActor, roomItem)`
 - `game.arcflight.recalculateShipStats(shipActor)`
 
 ## Implemented Component Types
@@ -199,7 +205,52 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 ## Testing Notes
 
 Phase 3.5 has no travel, combat, or arkengine mod gameplay automation to exercise. Development checks should validate that the 11 locked hull entries and 11 locked arkengine entries and 9 locked arkengine variant families load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
+## Phase 4 Room Framework
+
+Arcflight rooms are PF2E `equipment` items with Arcflight flags only:
+
+```js
+flags.arcflight.enabled = true;
+flags.arcflight.componentType = "room";
+flags.arcflight.system = { /* room schema data */ };
+```
+
+Rooms are ship infrastructure. They support downtime utility, crafting support, recovery support, narrative identity, ship lifestyle features, and logistical play. Rooms do **not** provide direct combat or direct travel stat buffs: they do not directly modify combat speed, AP, RAP, weapon damage, travel speed, or maneuverability.
+
+Phase 4 distinguishes two room categories:
+
+- **Core Rooms** are mandatory hull infrastructure. Every standard Arcflight hull is assumed to have the Arkengine Chamber, Helm, Crew Quarters, Galley & Mess, Cargo Hold, and Officer Wardroom. Core room references are generated onto the ship under `flags.arcflight.system.base.coreRooms` and `flags.arcflight.system.installed.coreRooms`; they do not consume expansion room slots.
+- **Expansion Rooms** are player-installed infrastructure. They consume hull expansion room slots, may be stored as cargo when not installed, and only provide their utility while installed. Installed expansion room references live under `flags.arcflight.system.installed.rooms`.
+
+Expansion room slot tracking lives under:
+
+```js
+flags.arcflight.system.installed.roomSlots = {
+  capacity: 0,
+  used: 0,
+  available: 0
+};
+```
+
+Slot capacity comes from the installed hull's `rooms.expansionSlots`, while used slots are counted only from installed expansion rooms. Core rooms never count against expansion room slots.
+
+The starter room data set lives in `data/rooms/core-rooms.js` and includes `workshop`, `alchemy-lab`, `infirmary`, `greenhouse`, `observatory`, `shrine`, `archive`, `expanded-cargo-hold`, `brig`, and `luxury-quarters`. Create and install a room with the console helpers:
+
+```js
+const hull = await game.arcflight.createCoreHull("brigantine");
+const engine = await game.arcflight.createCoreArkengine("tidewake-arkengine");
+const room = await game.arcflight.createCoreRoom("workshop");
+const ship = game.actors.find((actor) => actor.type === "vehicle");
+
+await game.arcflight.setArcflightVehicleEnabled(ship, true);
+await game.arcflight.installHull(ship, hull);
+await game.arcflight.installArkengine(ship, engine);
+await game.arcflight.installRoom(ship, room);
+```
+
+The room installer stores source references and copied utility data on the ship actor without mutating the room item, hull item, or arkengine item.
+
 
 ## Future Direction
 
-Arcflight remains data-driven in direction. Future phases may add room, weapon, arkengine mod, and compendium workflows before travel, combat, ship progression, crew/faction systems, or GM tooling automation.
+Arcflight remains data-driven in direction. Future phases may add weapon, arkengine mod, room compendium, and cargo workflows before travel, combat, ship progression, crew/faction systems, or GM tooling automation.

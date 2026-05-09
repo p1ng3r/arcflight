@@ -141,3 +141,21 @@
   margin: 0;
   white-space: pre-wrap;
 }
+
+.arcflight-room-lists {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-room-lists article {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-room-lists ul,
+.arcflight-room-lists p {
+  margin-bottom: 0;
+}
