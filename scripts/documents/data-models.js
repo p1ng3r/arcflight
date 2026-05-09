@@ -106,5 +106,17 @@ export function registerArcflightDataModels() {
     })
   );
 
-  Object.assign(CONFIG.Item.dataModels, itemDataModels);
+  const dataModels = globalThis.CONFIG?.Item?.dataModels;
+  if (!dataModels || typeof dataModels !== "object") {
+    console.debug("Arcflight | CONFIG.Item.dataModels is not available; skipping Arcflight item data model registration.");
+    return false;
+  }
+
+  if (!Object.isExtensible(dataModels)) {
+    console.warn("Arcflight | CONFIG.Item.dataModels is not extensible; skipping Arcflight item data model registration.");
+    return false;
+  }
+
+  Object.assign(dataModels, itemDataModels);
+  return true;
 }
