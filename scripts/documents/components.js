@@ -115,9 +115,61 @@ export const arcflightComponentDefaults = Object.freeze({
       notes: ""
     },
     effects: {
-      summary: "",
-      affectedSubsystem: "",
-      mechanicalNotes: ""
+      statModifiers: {
+        hullIntegrity: 0,
+        lifeveil: 0,
+        crewLimits: 0,
+        weaponMounts: 0,
+        roomSlots: 0,
+        handling: 0,
+        notes: ""
+      },
+      fuelingModifiers: {
+        fuelCapacity: 0,
+        fuelCurrent: 0,
+        consumption: "",
+        refuelNotes: "",
+        notes: ""
+      },
+      strainModifiers: {
+        capacity: 0,
+        current: 0,
+        recovery: "",
+        thresholdNotes: "",
+        notes: ""
+      },
+      lifeveilModifiers: {
+        output: 0,
+        stability: 0,
+        supportedCrew: 0,
+        energyResistanceModifiers: {
+          acid: 0,
+          cold: 0,
+          electricity: 0,
+          fire: 0,
+          force: 0,
+          mental: 0,
+          poison: 0,
+          sonic: 0,
+          vitality: 0,
+          void: 0,
+          notes: ""
+        },
+        notes: ""
+      },
+      voyageModifiers: {
+        rating: 0,
+        speed: "",
+        endurance: "",
+        navigationNotes: "",
+        notes: ""
+      },
+      overchargeModifiers: {
+        enabled: false,
+        limit: 0,
+        risk: "",
+        notes: ""
+      }
     },
     tradeoffs: {
       strainCost: 0,
