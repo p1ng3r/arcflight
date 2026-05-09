@@ -1,5 +1,4 @@
 import {
-  ARCFLIGHT_ARKENGINE_CLASSES,
   ARCFLIGHT_ITEM_TYPES,
   ARCFLIGHT_MODULE_ID,
   ARCFLIGHT_RELOAD_STATES,
@@ -73,57 +72,23 @@ export const arcflightComponentDefaults = Object.freeze({
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE]: Object.freeze({
     ...commonComponentData,
-    identity: {
-      engineClass: ARCFLIGHT_ARKENGINE_CLASSES.STANDARD,
-      model: "",
-      manufacturer: "",
-      grade: "",
-      spellRankRequirement: 0
-    },
-    fueling: {
-      fuelType: "",
-      fuelCapacity: 0,
-      fuelCurrent: 0,
-      consumption: "",
-      refuelNotes: ""
-    },
-    voyage: {
-      rating: 0,
-      speed: "",
-      endurance: "",
-      navigationNotes: ""
-    },
-    lifeveil: {
-      output: 0,
-      stability: 0,
-      supportedCrew: 0,
-      notes: ""
-    },
-    strain: {
-      capacity: 0,
-      current: 0,
-      recovery: "",
-      thresholdNotes: ""
-    },
-    overcharge: {
-      enabled: false,
-      limit: 0,
-      risk: "",
-      notes: ""
-    },
-    mods: {
-      slots: 0,
-      installed: "",
-      notes: ""
-    },
-    subsystems: {
-      conduits: "",
-      stabilizers: "",
-      regulators: "",
-      notes: ""
-    },
-    traits: "",
-    notes: ""
+    engineClass: "",
+    displayName: "",
+    spellRankRequired: 0,
+    travelHexDays: 0,
+    lifeveilModifier: 0,
+    strainModifier: 0,
+    overchargeRisk: "",
+    hardBurnStrainCost: 0,
+    modSlots: 0,
+    resistanceTendencies: [],
+    traits: [],
+    variantFamily: "",
+    role: "",
+    designNotes: "",
+    coreSystems: [],
+    hardBurnProfile: "",
+    overchargeProfile: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: Object.freeze({
     identity: {
