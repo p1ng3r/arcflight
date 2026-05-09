@@ -1,5 +1,6 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
+import { createArcflightItem, getArcflightItemDocumentType } from "./documents/creation.js";
 import { ArcflightItem } from "./documents/arcflight-item.js";
 import {
   arcflightActorDataModels,
@@ -21,6 +22,7 @@ import {
 } from "./documents/registration.js";
 import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
 import { WeaponItem } from "./documents/weapon-item.js";
+import { arcflightItemTypeLabels, registerArcflightItemTypeLabels } from "./documents/item-types.js";
 import { registerArcflightSheets } from "./sheets/registration.js";
 
 function isArcflightVehicle(actor) {
@@ -57,6 +59,7 @@ Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
 
   registerArcflightDataModels();
+  registerArcflightItemTypeLabels();
   ensureArcflightDocumentRegistration();
 
   CONFIG.arcflight = Object.freeze({
@@ -64,6 +67,8 @@ Hooks.once("init", () => {
     documents: documentClasses,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
+    createItem: createArcflightItem,
+    getItemDocumentType: getArcflightItemDocumentType,
     devTools: createArcflightDevTools(),
     documentRegistries: Object.freeze({
       Actor: arcflightActorDocumentClasses,
@@ -72,7 +77,8 @@ Hooks.once("init", () => {
     dataModels: Object.freeze({
       Actor: arcflightActorDataModels,
       Item: arcflightItemDataModels
-    })
+    }),
+    itemTypeLabels: arcflightItemTypeLabels
   });
 
   game.arcflight = CONFIG.arcflight;
@@ -82,8 +88,14 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.once("setup", ensureArcflightDocumentRegistration);
-Hooks.once("ready", ensureArcflightDocumentRegistration);
+Hooks.once("setup", () => {
+  registerArcflightItemTypeLabels();
+  ensureArcflightDocumentRegistration();
+});
+Hooks.once("ready", () => {
+  registerArcflightItemTypeLabels();
+  ensureArcflightDocumentRegistration();
+});
 
 export {
   ARCFLIGHT,
@@ -102,9 +114,12 @@ export {
   arcflightActorDataModels,
   arcflightItemDataModels,
   registerArcflightDataModels,
+  registerArcflightItemTypeLabels,
+  createArcflightItem,
   ensureArcflightDocumentRegistration,
   registerArcflightDocumentClasses,
   registerArcflightPf2eDocumentClasses,
   isArcflightVehicle,
-  setArcflightVehicleEnabled
+  setArcflightVehicleEnabled,
+  getArcflightItemDocumentType
 };
