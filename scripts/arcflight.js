@@ -1,6 +1,7 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
-import { createArcflightItem, getArcflightItemDocumentType } from "./documents/creation.js";
+import { createArcflightItem, createCoreHull, createHull, getArcflightItemDocumentType } from "./documents/creation.js";
+import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS, getCoreHull } from "../data/hulls/core-hulls.js";
 import {
   arcflightComponentDefaults,
   getDefaultArcflightComponentData,
@@ -50,6 +51,11 @@ Hooks.once("init", () => {
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
     createItem: createArcflightItem,
+    createCoreHull,
+    createHull,
+    getCoreHull,
+    coreHulls: CORE_HULLS,
+    coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
     getItemDocumentType: getArcflightItemDocumentType,
     getDefaultComponentData: getDefaultArcflightComponentData,
     getDefaultShipData: getDefaultArcflightShipData,
@@ -74,6 +80,11 @@ Hooks.once("init", () => {
 export {
   ARCFLIGHT,
   createArcflightItem,
+  createCoreHull,
+  createHull,
+  getCoreHull,
+  CORE_HULLS,
+  CORE_HULL_PLATFORM_KEYS,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
   getArcflightItemDocumentType,

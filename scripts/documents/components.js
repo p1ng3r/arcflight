@@ -32,12 +32,44 @@ export const arcflightComponentTypeLabels = Object.freeze({
 export const arcflightComponentDefaults = Object.freeze({
   [ARCFLIGHT_ITEM_TYPES.HULL]: Object.freeze({
     ...commonComponentData,
-    hullIntegrity: "",
-    lifeveil: "",
-    crewLimits: "",
-    weaponMounts: "",
-    roomSlots: "",
-    arkengineCompatibility: ""
+    platform: "",
+    hullIntegrity: 0,
+    armorClass: 0,
+    physicalResistances: {
+      bludgeoning: 0,
+      piercing: 0,
+      slashing: 0
+    },
+    strainCapacity: 0,
+    lifeveilCapacity: 0,
+    cargoCapacity: 0,
+    detection: 0,
+    combatSpeed: 0,
+    maneuverability: 0,
+    baseAP: 0,
+    baseRAP: 0,
+    crew: {
+      minimum: 0,
+      recommended: 0,
+      maximum: 0
+    },
+    rooms: {
+      coreRooms: [],
+      expansionSlots: 0
+    },
+    weaponMounts: {
+      [ARCFLIGHT_WEAPON_ARCS.FORE]: [],
+      [ARCFLIGHT_WEAPON_ARCS.PORT]: [],
+      [ARCFLIGHT_WEAPON_ARCS.STARBOARD]: [],
+      [ARCFLIGHT_WEAPON_ARCS.AFT]: []
+    },
+    arkengineCompatibility: {
+      preferred: "",
+      allowed: []
+    },
+    traits: [],
+    role: "",
+    designNotes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE]: Object.freeze({
     ...commonComponentData,

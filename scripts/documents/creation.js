@@ -1,4 +1,5 @@
-import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { getCoreHull } from "../../data/hulls/core-hulls.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -51,5 +52,31 @@ export async function createArcflightItem(componentType, data = {}, operation = 
 
   return Item.create(source, operation);
 }
+
+function deepCloneData(data) {
+  if (typeof foundry !== "undefined" && foundry.utils?.deepClone) return foundry.utils.deepClone(data);
+  return structuredClone(data);
+}
+
+/**
+ * Create one of Arcflight's locked Phase 2 core hulls as a PF2E equipment item.
+ *
+ * @param {string} platformKey Lower-case kebab-case core hull platform key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreHull(platformKey, operation = {}) {
+  const hullData = getCoreHull(platformKey);
+  if (!hullData) {
+    throw new Error(`Arcflight | ${platformKey} is not a supported core hull platform.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.HULL, {
+    name: hullData.platform,
+    system: deepCloneData(hullData)
+  }, operation);
+}
+
+export const createHull = createCoreHull;
 
 export { getArcflightItemDocumentType };

@@ -105,7 +105,8 @@
 }
 
 .arcflight-grid--resources,
-.arcflight-grid--ship-values {
+.arcflight-grid--ship-values,
+.arcflight-grid--hull-values {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
