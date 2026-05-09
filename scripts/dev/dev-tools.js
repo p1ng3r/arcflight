@@ -10,7 +10,7 @@ function isTemporaryArcflightTestItem(item) {
 }
 
 /**
- * Build temporary development-only helpers for cleaning bad Phase 0 test data.
+ * Build temporary development-only helpers for cleaning legacy pre-stabilization test data.
  *
  * These helpers deliberately operate only on world Items from game.items and do
  * not touch compendium content or embedded actor items.
@@ -18,7 +18,7 @@ function isTemporaryArcflightTestItem(item) {
 export function createArcflightDevTools() {
   return Object.freeze({
     /**
-     * TEMPORARY DEV CLEANUP TOOLING: delete known bad Arcflight world test items.
+     * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
      *
      * Deletes only world items whose name is "test", "Arkengine", or
      * "arkengine" and whose type starts with "arcflight.". Compendium items are

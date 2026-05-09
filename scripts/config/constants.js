@@ -6,14 +6,8 @@
  */
 export const ARCFLIGHT_MODULE_ID = "arcflight";
 
-export const getArcflightDocumentType = (subtype) => `${ARCFLIGHT_MODULE_ID}.${subtype}`;
-
 export const ARCFLIGHT_ACTOR_TYPES = Object.freeze({
   SHIP: "ship"
-});
-
-export const ARCFLIGHT_ACTOR_DOCUMENT_TYPES = Object.freeze({
-  SHIP: getArcflightDocumentType(ARCFLIGHT_ACTOR_TYPES.SHIP)
 });
 
 export const ARCFLIGHT_ITEM_TYPES = Object.freeze({
@@ -25,17 +19,6 @@ export const ARCFLIGHT_ITEM_TYPES = Object.freeze({
   SHIP_UPGRADE: "shipUpgrade",
   CARGO: "cargo",
   CREW_ASSET: "crewAsset"
-});
-
-export const ARCFLIGHT_ITEM_DOCUMENT_TYPES = Object.freeze({
-  HULL: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.HULL),
-  ARKENGINE: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.ARKENGINE),
-  ARKENGINE_MOD: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD),
-  WEAPON: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.WEAPON),
-  ROOM: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.ROOM),
-  SHIP_UPGRADE: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE),
-  CARGO: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.CARGO),
-  CREW_ASSET: getArcflightDocumentType(ARCFLIGHT_ITEM_TYPES.CREW_ASSET)
 });
 
 export const ARCFLIGHT_SHIP_RESOURCES = Object.freeze({
@@ -151,9 +134,7 @@ export const ARCFLIGHT_COMMON_TRAITS = Object.freeze({
 export const ARCFLIGHT = Object.freeze({
   MODULE_ID: ARCFLIGHT_MODULE_ID,
   ACTOR_TYPES: ARCFLIGHT_ACTOR_TYPES,
-  ACTOR_DOCUMENT_TYPES: ARCFLIGHT_ACTOR_DOCUMENT_TYPES,
   ITEM_TYPES: ARCFLIGHT_ITEM_TYPES,
-  ITEM_DOCUMENT_TYPES: ARCFLIGHT_ITEM_DOCUMENT_TYPES,
   SHIP_RESOURCES: ARCFLIGHT_SHIP_RESOURCES,
   WEAPON_ARCS: ARCFLIGHT_WEAPON_ARCS,
   WEAPON_SIZES: ARCFLIGHT_WEAPON_SIZES,

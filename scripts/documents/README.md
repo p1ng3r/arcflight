@@ -1,5 +1,8 @@
 # documents
 
-Arcflight document architecture for Foundry VTT v13.
+Phase 1 document helpers keep Arcflight PF2E-compatible:
 
-Phase 1B registers module-provided Actor and Item sub-types and wires them to lightweight Arcflight document classes and matching TypeDataModel shells. These classes only define future-safe data containers; sheets, templates, travel, combat, AP/RAP logic, station gameplay, installation workflows, and derived gameplay math are intentionally out of scope.
+- Ship data helpers operate on existing PF2E `vehicle` actors through `flags.arcflight.system`.
+- Component helpers operate on existing PF2E `equipment` items through `flags.arcflight.system`.
+- No custom Actor or Item document subtypes are registered.
+- No `Item.create` or `Item.createDocuments` monkey-patches are used.
