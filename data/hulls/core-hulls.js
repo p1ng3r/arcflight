@@ -380,6 +380,10 @@ export const CORE_HULLS = Object.freeze({
 
 export const CORE_HULL_PLATFORM_KEYS = Object.freeze(Object.keys(CORE_HULLS));
 
+export function getCoreHullPlatformKeys() {
+  return CORE_HULL_PLATFORM_KEYS;
+}
+
 export function getCoreHull(platformKey) {
   return CORE_HULLS[platformKey] ?? null;
 }
