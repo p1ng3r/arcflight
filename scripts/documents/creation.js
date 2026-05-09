@@ -26,9 +26,10 @@ function getArcflightItemDocumentType(type) {
 export async function createArcflightItem(componentType, data = {}, operation = {}) {
   const normalizedType = normalizeArcflightComponentType(componentType);
   const { flags = {}, system: componentSystem = {}, ...itemData } = data ?? {};
-  const arcflightFlagData = getDefaultArcflightComponentFlags(normalizedType, componentSystem);
   const providedArcflightFlags = flags?.[ARCFLIGHT_MODULE_ID] ?? {};
   const providedFlagSystem = providedArcflightFlags.system ?? {};
+  const fullComponentSystem = foundry.utils.mergeObject(componentSystem, providedFlagSystem, { inplace: false });
+  const arcflightFlagData = getDefaultArcflightComponentFlags(normalizedType, fullComponentSystem);
 
   const source = foundry.utils.mergeObject(
     {
@@ -46,11 +47,7 @@ export async function createArcflightItem(componentType, data = {}, operation = 
   source.type = ARCFLIGHT_COMPONENT_ITEM_TYPE;
   source.flags[ARCFLIGHT_MODULE_ID].enabled = true;
   source.flags[ARCFLIGHT_MODULE_ID].componentType = normalizedType;
-  source.flags[ARCFLIGHT_MODULE_ID].system = foundry.utils.mergeObject(
-    arcflightFlagData.system,
-    providedFlagSystem,
-    { inplace: false }
-  );
+  source.flags[ARCFLIGHT_MODULE_ID].system = arcflightFlagData.system;
 
   return Item.create(source, operation);
 }

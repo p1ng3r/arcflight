@@ -73,7 +73,51 @@ export const ARCFLIGHT_ARKENGINE_CLASSES = Object.freeze({
   REFINED: "refined",
   EXPERIMENTAL: "experimental",
   ANCIENT: "ancient",
+  PROTOTYPE: "prototype",
+  RELIC: "relic",
   PLACEHOLDER: "placeholder"
+});
+
+export const ARCFLIGHT_RELOAD_STATES = Object.freeze({
+  READY: "ready",
+  LOADED: "loaded",
+  RELOADING: "reloading",
+  SPENT: "spent",
+  DISABLED: "disabled"
+});
+
+export const ARCFLIGHT_WEAPON_SIZE_DEFAULTS = Object.freeze({
+  [ARCFLIGHT_WEAPON_SIZES.LIGHT]: Object.freeze({
+    mountSlots: 1,
+    crewRequired: 1,
+    strainCost: 0
+  }),
+  [ARCFLIGHT_WEAPON_SIZES.MEDIUM]: Object.freeze({
+    mountSlots: 1,
+    crewRequired: 2,
+    strainCost: 1
+  }),
+  [ARCFLIGHT_WEAPON_SIZES.HEAVY]: Object.freeze({
+    mountSlots: 2,
+    crewRequired: 3,
+    strainCost: 2
+  }),
+  [ARCFLIGHT_WEAPON_SIZES.CAPITAL]: Object.freeze({
+    mountSlots: 3,
+    crewRequired: 5,
+    strainCost: 4
+  })
+});
+
+export const ARCFLIGHT_SUGGESTED_WEAPON_TYPES = Object.freeze({
+  BALLISTA: "ballista",
+  CANNON: "cannon",
+  CATAPULT: "catapult",
+  HARPOON: "harpoon",
+  LANCE: "lance",
+  PROJECTOR: "projector",
+  TORPEDO: "torpedo",
+  OTHER: "other"
 });
 
 export const ARCFLIGHT_INSTALL_SLOTS = Object.freeze({
@@ -115,6 +159,9 @@ export const ARCFLIGHT = Object.freeze({
   WEAPON_SIZES: ARCFLIGHT_WEAPON_SIZES,
   ROOM_CATEGORIES: ARCFLIGHT_ROOM_CATEGORIES,
   ARKENGINE_CLASSES: ARCFLIGHT_ARKENGINE_CLASSES,
+  RELOAD_STATES: ARCFLIGHT_RELOAD_STATES,
+  WEAPON_SIZE_DEFAULTS: ARCFLIGHT_WEAPON_SIZE_DEFAULTS,
+  SUGGESTED_WEAPON_TYPES: ARCFLIGHT_SUGGESTED_WEAPON_TYPES,
   INSTALL_SLOTS: ARCFLIGHT_INSTALL_SLOTS,
   COMMON_TAGS: ARCFLIGHT_COMMON_TAGS,
   COMMON_TRAITS: ARCFLIGHT_COMMON_TRAITS

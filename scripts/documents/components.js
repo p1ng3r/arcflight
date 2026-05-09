@@ -1,4 +1,13 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import {
+  ARCFLIGHT_ARKENGINE_CLASSES,
+  ARCFLIGHT_ITEM_TYPES,
+  ARCFLIGHT_MODULE_ID,
+  ARCFLIGHT_RELOAD_STATES,
+  ARCFLIGHT_SUGGESTED_WEAPON_TYPES,
+  ARCFLIGHT_WEAPON_ARCS,
+  ARCFLIGHT_WEAPON_SIZE_DEFAULTS,
+  ARCFLIGHT_WEAPON_SIZES
+} from "../config/constants.js";
 
 export const ARCFLIGHT_COMPONENT_ITEM_TYPE = "equipment";
 
@@ -32,11 +41,57 @@ export const arcflightComponentDefaults = Object.freeze({
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE]: Object.freeze({
     ...commonComponentData,
-    class: "",
-    spellRankRequirement: "",
-    strainCapacity: "",
-    modSlots: "",
-    hardBurnMetadata: ""
+    identity: {
+      engineClass: ARCFLIGHT_ARKENGINE_CLASSES.STANDARD,
+      model: "",
+      manufacturer: "",
+      grade: "",
+      spellRankRequirement: 0
+    },
+    fueling: {
+      fuelType: "",
+      fuelCapacity: 0,
+      fuelCurrent: 0,
+      consumption: "",
+      refuelNotes: ""
+    },
+    voyage: {
+      rating: 0,
+      speed: "",
+      endurance: "",
+      navigationNotes: ""
+    },
+    lifeveil: {
+      output: 0,
+      stability: 0,
+      supportedCrew: 0,
+      notes: ""
+    },
+    strain: {
+      capacity: 0,
+      current: 0,
+      recovery: "",
+      thresholdNotes: ""
+    },
+    overcharge: {
+      enabled: false,
+      limit: 0,
+      risk: "",
+      notes: ""
+    },
+    mods: {
+      slots: 0,
+      installed: "",
+      notes: ""
+    },
+    subsystems: {
+      conduits: "",
+      stabilizers: "",
+      regulators: "",
+      notes: ""
+    },
+    traits: "",
+    notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: Object.freeze({
     ...commonComponentData,
@@ -46,12 +101,70 @@ export const arcflightComponentDefaults = Object.freeze({
   }),
   [ARCFLIGHT_ITEM_TYPES.WEAPON]: Object.freeze({
     ...commonComponentData,
-    firingArcs: "",
-    reload: "",
-    crewRequirement: "",
-    rangeBands: "",
-    damageProfile: "",
-    weaponTraits: ""
+    identity: {
+      weaponType: ARCFLIGHT_SUGGESTED_WEAPON_TYPES.BALLISTA,
+      size: ARCFLIGHT_WEAPON_SIZES.LIGHT,
+      model: "",
+      manufacturer: "",
+      grade: ""
+    },
+    mounting: {
+      arc: ARCFLIGHT_WEAPON_ARCS.FORE,
+      mountSlots: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].mountSlots,
+      mountType: "",
+      notes: ""
+    },
+    attack: {
+      bonus: 0,
+      damage: "",
+      damageType: "",
+      critical: "",
+      notes: ""
+    },
+    rangeBands: {
+      close: 0,
+      near: 0,
+      far: 0,
+      extreme: 0,
+      notes: ""
+    },
+    reload: {
+      state: ARCFLIGHT_RELOAD_STATES.READY,
+      actions: 0,
+      value: "",
+      notes: ""
+    },
+    crew: {
+      required: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].crewRequired,
+      station: "",
+      notes: ""
+    },
+    strain: {
+      cost: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].strainCost,
+      generated: 0,
+      notes: ""
+    },
+    shipStatModifiers: {
+      hull: 0,
+      lifeveil: 0,
+      speed: 0,
+      handling: 0,
+      notes: ""
+    },
+    traits: "",
+    installation: {
+      installed: false,
+      installedOn: "",
+      slot: "",
+      notes: ""
+    },
+    state: {
+      armed: false,
+      disabled: false,
+      condition: "",
+      notes: ""
+    },
+    notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ROOM]: Object.freeze({
     ...commonComponentData,
