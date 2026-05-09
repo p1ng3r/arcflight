@@ -6,9 +6,9 @@ Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaig
 
 Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
-## Current Phase 2 Architecture
+## Current Phase 3 Architecture
 
-Phase 2 keeps the Phase 1 PF2E-compatible module architecture and adds the first gameplay-facing Core content structure: locked hull platform data.
+Phase 3 keeps the PF2E-compatible module architecture and adds the arkengine framework alongside the locked hull platform data.
 
 - **PF2E vehicle actors are Arcflight ships.** A vehicle becomes an Arcflight ship only when Arcflight flags are enabled on that existing PF2E actor.
 - **PF2E equipment items are Arcflight components.** Hulls, arkengines, arkengine mods, weapons, rooms, ship upgrades, cargo, and crew assets are all equipment items with Arcflight flags.
@@ -24,9 +24,14 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createItem(componentType, data?, operation?)`
 - `game.arcflight.createCoreHull(platformKey, operation?)`
 - `game.arcflight.createHull(platformKey, operation?)`
+- `game.arcflight.createCoreArkengine(engineKey, operation?)`
+- `game.arcflight.createArkengine(engineKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
+- `game.arcflight.getCoreArkengine(engineKey)`
 - `game.arcflight.CORE_HULL_PLATFORM_KEYS`
+- `game.arcflight.CORE_ARKENGINE_KEYS`
 - `game.arcflight.getCoreHullPlatformKeys()`
+- `game.arcflight.getCoreArkengineKeys()`
 - `game.arcflight.getDefaultComponentData(componentType)`
 - `game.arcflight.getDefaultShipData()`
 - `game.arcflight.isArcflightItem(item)`
@@ -36,6 +41,8 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.setArcflightVehicleEnabled(actor, enabled?)`
 - `game.arcflight.installHull(shipActor, hullItem)`
 - `game.arcflight.installHullOnShip(shipActor, hullItem)`
+- `game.arcflight.installArkengine(shipActor, arkengineItem)`
+- `game.arcflight.installArkengineOnShip(shipActor, arkengineItem)`
 - `game.arcflight.recalculateShipStats(shipActor)`
 
 ## Implemented Component Types
@@ -110,7 +117,47 @@ await game.arcflight.installHull(ship, hull);
 await game.arcflight.recalculateShipStats(ship);
 ```
 
-For Phase 2.5, derived values intentionally equal the installed base hull values. Future phases can layer arkengines, rooms, mods, weapons, crew, conditions, and temporary effects into `derived` while preserving `current` as separate runtime state for hull, lifeveil, strain, and morale.
+Phase 3 layers arkengine effects onto hull-derived values while preserving `current` as separate runtime state for hull, lifeveil, strain, and morale. Future phases can layer rooms, mods, weapons, crew, conditions, and temporary effects into `derived`.
+
+
+## Phase 3 Arkengine Framework
+
+Arcflight arkengines are PF2E `equipment` items with Arcflight flags only:
+
+```js
+flags.arcflight.enabled = true;
+flags.arcflight.componentType = "arkengine";
+flags.arcflight.system = { /* arkengine schema data */ };
+```
+
+Arkengines install onto Arcflight-enabled PF2E vehicle actors. Installation stores source item references under `flags.arcflight.system.installed`, copies clean arkengine base data to `flags.arcflight.system.base.arkengine`, and recalculates derived ship stats without mutating the source arkengine item.
+
+Voyage speed belongs to the arkengine, not the hull. Its scale is inverse: lower `travelHexDays` values are faster and more powerful strategic travel capability, while higher values are slower and weaker. Combat speed remains hull-owned.
+
+The locked core arkengine entries live in `data/arkengines/core-arkengines.js` and use lower-case kebab-case engine keys:
+
+- `emberwake-sparkdrive`
+- `lanterncoil-arkengine`
+- `tidewake-arkengine`
+- `iron-choir-engine`
+- `furnaceheart-drive`
+- `voidbreaker-arkengine`
+- `deepwake-veil-engine`
+- `crownfire-arkengine`
+- `sanctum-choir-core`
+- `worldbinder-arkengine`
+- `leviathan-heart-core`
+
+Each core arkengine records voyage speed, spell rank requirement, Lifeveil modifier, strain modifier, overcharge risk, hard burn strain cost, mod slots, resistance tendencies, traits, role/design notes, and the implied internal core systems: Aetherite Core, Pressure Lattice, Veil Projector, Cooling System, Regulator, Fuel Matrix, and Channeling Assembly. These internal systems are descriptive only in Phase 3 and are not separate installed components.
+
+To create and install a locked core arkengine in Foundry, call for example:
+
+```js
+const engine = await game.arcflight.createCoreArkengine("tidewake-arkengine");
+await game.arcflight.installArkengine(ship, engine);
+```
+
+Phase 3 remains architecture/data-only. It does not implement travel gameplay, combat rounds, AP/RAP spending, station actions, voyage events, initiative, firing systems, damage automation, condition gameplay, overcharge resolution, hard burn resolution, GM generators, fleet systems, or salvage systems.
 
 ## Current Module Behavior
 
@@ -124,8 +171,8 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 
 ## Testing Notes
 
-Phase 2.5 has no travel or combat automation to exercise. Development checks should validate that the 11 locked hull entries load as ESM data, preserve Hull Statout V1 values, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
+Phase 3 has no travel or combat automation to exercise. Development checks should validate that the 11 locked hull entries and 11 locked arkengine entries load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
 
 ## Future Direction
 
-Arcflight remains data-driven in direction. Future phases may add arkengine, room, weapon, installation, and compendium workflows before travel, combat, ship progression, crew/faction systems, or GM tooling automation.
+Arcflight remains data-driven in direction. Future phases may add room, weapon, arkengine mod, and compendium workflows before travel, combat, ship progression, crew/faction systems, or GM tooling automation.

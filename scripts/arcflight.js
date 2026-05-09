@@ -1,7 +1,8 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
-import { createArcflightItem, createCoreHull, createHull, getArcflightItemDocumentType } from "./documents/creation.js";
+import { createArcflightItem, createArkengine, createCoreArkengine, createCoreHull, createHull, getArcflightItemDocumentType } from "./documents/creation.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS, getCoreHull, getCoreHullPlatformKeys } from "../data/hulls/core-hulls.js";
+import { CORE_ARKENGINE_KEYS, CORE_ARKENGINES, getCoreArkengine, getCoreArkengineKeys } from "../data/arkengines/core-arkengines.js";
 import {
   arcflightComponentDefaults,
   getDefaultArcflightComponentData,
@@ -15,6 +16,8 @@ import {
   calculateDerivedShipStats,
   getArcflightShipData,
   getDefaultArcflightShipData,
+  installArkengine,
+  installArkengineOnShip,
   installHull,
   installHullOnShip,
   recalculateShipStats
@@ -57,11 +60,18 @@ Hooks.once("init", () => {
     createItem: createArcflightItem,
     createCoreHull,
     createHull,
+    createCoreArkengine,
+    createArkengine,
     getCoreHull,
+    getCoreArkengine,
     getCoreHullPlatformKeys,
+    getCoreArkengineKeys,
     CORE_HULL_PLATFORM_KEYS,
+    CORE_ARKENGINE_KEYS,
     coreHulls: CORE_HULLS,
+    coreArkengines: CORE_ARKENGINES,
     coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
+    coreArkengineKeys: CORE_ARKENGINE_KEYS,
     getItemDocumentType: getArcflightItemDocumentType,
     getDefaultComponentData: getDefaultArcflightComponentData,
     getDefaultShipData: getDefaultArcflightShipData,
@@ -72,6 +82,8 @@ Hooks.once("init", () => {
     setArcflightVehicleEnabled,
     installHull,
     installHullOnShip,
+    installArkengine,
+    installArkengineOnShip,
     recalculateShipStats,
     calculateDerivedShipStats,
     getShipData: getArcflightShipData,
@@ -92,12 +104,20 @@ export {
   createArcflightItem,
   createCoreHull,
   createHull,
+  createCoreArkengine,
+  createArkengine,
   getCoreHull,
+  getCoreArkengine,
   getCoreHullPlatformKeys,
+  getCoreArkengineKeys,
   CORE_HULLS,
+  CORE_ARKENGINES,
   CORE_HULL_PLATFORM_KEYS,
+  CORE_ARKENGINE_KEYS,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
+  installArkengine,
+  installArkengineOnShip,
   installHull,
   installHullOnShip,
   recalculateShipStats,

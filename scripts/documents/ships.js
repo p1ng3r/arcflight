@@ -3,11 +3,15 @@ import { getComponentData, getComponentType } from "./components.js";
 
 export const ARCFLIGHT_SHIP_ACTOR_TYPE = "arcflightShip";
 
-const emptyInstalledHull = Object.freeze({
+const emptyInstalledState = Object.freeze({
   hullItemId: "",
   hullUuid: "",
   hullPlatform: "",
-  hullName: ""
+  hullName: "",
+  arkengineItemId: "",
+  arkengineUuid: "",
+  arkengineKey: "",
+  arkengineName: ""
 });
 
 const emptyCurrentShipState = Object.freeze({
@@ -18,7 +22,8 @@ const emptyCurrentShipState = Object.freeze({
 });
 
 const emptyBaseShipState = Object.freeze({
-  hull: Object.freeze({})
+  hull: Object.freeze({}),
+  arkengine: Object.freeze({})
 });
 
 const emptyDerivedShipState = Object.freeze({
@@ -53,7 +58,16 @@ const emptyDerivedShipState = Object.freeze({
   }),
   traits: Object.freeze([]),
   role: "",
-  designNotes: ""
+  designNotes: "",
+  voyageSpeedTravelHexDays: 0,
+  resistanceTendencies: Object.freeze([]),
+  energyResistances: Object.freeze([]),
+  arkengineModSlots: 0,
+  hardBurnStrainCost: 0,
+  overchargeRisk: "",
+  spellRankRequired: 0,
+  arkengineLifeveilModifier: 0,
+  arkengineStrainModifier: 0
 });
 
 export const arcflightShipDefaults = Object.freeze({
@@ -64,7 +78,7 @@ export const arcflightShipDefaults = Object.freeze({
     owner: "",
     origin: ""
   }),
-  installed: emptyInstalledHull,
+  installed: emptyInstalledState,
   base: emptyBaseShipState,
   derived: emptyDerivedShipState,
   current: emptyCurrentShipState,
@@ -149,9 +163,30 @@ function countWeaponMountsByArc(weaponMounts = {}) {
   return Object.values(weaponMounts).reduce((total, mounts) => total + (Array.isArray(mounts) ? mounts.length : 0), 0);
 }
 
-function deriveShipStatsFromBaseHull(baseHull = {}) {
-  const hull = cloneData(baseHull ?? {});
-  return foundry.utils.mergeObject(cloneData(emptyDerivedShipState), hull, { inplace: false });
+function numericValue(value, fallback = 0) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function deriveShipStatsFromBase(base = {}) {
+  const hull = cloneData(base.hull ?? {});
+  const arkengine = cloneData(base.arkengine ?? {});
+  const derived = foundry.utils.mergeObject(cloneData(emptyDerivedShipState), hull, { inplace: false });
+
+  derived.lifeveilCapacity = numericValue(hull.lifeveilCapacity) + numericValue(arkengine.lifeveilModifier);
+  derived.strainCapacity = numericValue(hull.strainCapacity) + numericValue(arkengine.strainModifier);
+  derived.voyageSpeedTravelHexDays = numericValue(arkengine.travelHexDays);
+  derived.resistanceTendencies = Array.isArray(arkengine.resistanceTendencies)
+    ? cloneData(arkengine.resistanceTendencies)
+    : [];
+  derived.energyResistances = cloneData(derived.resistanceTendencies);
+  derived.arkengineModSlots = numericValue(arkengine.modSlots);
+  derived.hardBurnStrainCost = numericValue(arkengine.hardBurnStrainCost);
+  derived.overchargeRisk = arkengine.overchargeRisk ?? "";
+  derived.spellRankRequired = arkengine.spellRankRequired ?? 0;
+  derived.arkengineLifeveilModifier = numericValue(arkengine.lifeveilModifier);
+  derived.arkengineStrainModifier = numericValue(arkengine.strainModifier);
+
+  return derived;
 }
 
 function getLegacyDerivedStatsFromDerived(derived = {}) {
@@ -167,6 +202,28 @@ function getLegacyDerivedStatsFromDerived(derived = {}) {
 
 function hasInstalledHull(systemData = {}) {
   return Boolean(systemData.installed?.hullItemId || systemData.installed?.hullUuid || systemData.installed?.hullPlatform);
+}
+
+function hasInstalledArkengine(systemData = {}) {
+  return Boolean(systemData.installed?.arkengineItemId || systemData.installed?.arkengineUuid || systemData.installed?.arkengineKey);
+}
+
+function buildLegacyResources(systemData, current, derived) {
+  return foundry.utils.mergeObject(systemData.resources ?? {}, {
+    hull: {
+      value: current.hull,
+      max: derived.hullIntegrity ?? 0
+    },
+    lifeveil: {
+      value: current.lifeveil,
+      max: derived.lifeveilCapacity ?? 0
+    },
+    strain: {
+      value: current.strain,
+      max: derived.strainCapacity ?? 0
+    },
+    morale: current.morale
+  }, { inplace: false });
 }
 
 function hasRuntimeValue(current = {}, key) {
@@ -198,7 +255,7 @@ export function getDefaultArcflightShipFlags(data = {}) {
 }
 
 export function calculateDerivedShipStats(base = {}) {
-  return deriveShipStatsFromBaseHull(base.hull ?? {});
+  return deriveShipStatsFromBase(base);
 }
 
 export async function recalculateShipStats(shipActor) {
@@ -214,8 +271,13 @@ export async function recalculateShipStats(shipActor) {
     { inplace: false }
   );
 
+  const existingCurrent = cloneData(systemData.current ?? {});
+  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
+  const legacyResources = buildLegacyResources(systemData, current, derived);
+
   return shipActor.update({
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
 }
@@ -232,7 +294,8 @@ export async function installHull(shipActor, hullItem) {
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
   const baseHull = cloneData(getComponentData(hullItem));
-  const derived = calculateDerivedShipStats({ hull: baseHull });
+  const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
+  const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine });
   const firstHullInstall = !hasInstalledHull(rawSystemData);
   const existingCurrent = cloneData(rawSystemData.current ?? {});
   const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
@@ -247,29 +310,15 @@ export async function installHull(shipActor, hullItem) {
     getLegacyDerivedStatsFromDerived(derived),
     { inplace: false }
   );
-  const legacyResources = foundry.utils.mergeObject(systemData.resources ?? {}, {
-    hull: {
-      value: current.hull,
-      max: derived.hullIntegrity ?? 0
-    },
-    lifeveil: {
-      value: current.lifeveil,
-      max: derived.lifeveilCapacity ?? 0
-    },
-    strain: {
-      value: current.strain,
-      max: derived.strainCapacity ?? 0
-    },
-    morale: current.morale
-  }, { inplace: false });
+  const legacyResources = buildLegacyResources(systemData, current, derived);
 
   return shipActor.update({
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: {
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
       hullItemId: hullItem.id ?? "",
       hullUuid: hullItem.uuid ?? "",
       hullPlatform: baseHull.platform ?? "",
       hullName: hullItem.name ?? baseHull.platform ?? ""
-    },
+    }, { inplace: false }),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: baseHull,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
@@ -283,4 +332,51 @@ export async function installHull(shipActor, hullItem) {
   });
 }
 
+export async function installArkengine(shipActor, arkengineItem) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | installArkengine requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  if (getComponentType(arkengineItem) !== ARCFLIGHT_ITEM_TYPES.ARKENGINE) {
+    throw new Error("Arcflight | installArkengine requires an Arcflight arkengine component item.");
+  }
+
+  const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
+  const systemData = getArcflightShipData(shipActor);
+  const baseHull = cloneData(systemData.base?.hull ?? {});
+  const baseArkengine = cloneData(getComponentData(arkengineItem));
+  const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine });
+  const firstArkengineInstall = !hasInstalledArkengine(rawSystemData);
+  const existingCurrent = cloneData(rawSystemData.current ?? {});
+  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
+
+  if (!hasRuntimeValue(existingCurrent, "hull")) current.hull = derived.hullIntegrity ?? 0;
+  if (firstArkengineInstall && !hasRuntimeValue(existingCurrent, "lifeveil")) current.lifeveil = derived.lifeveilCapacity ?? 0;
+  if (!hasRuntimeValue(existingCurrent, "strain")) current.strain = 0;
+  if (!hasRuntimeValue(existingCurrent, "morale")) current.morale = systemData.resources?.morale ?? 0;
+
+  const legacyDerivedStats = foundry.utils.mergeObject(
+    systemData.derivedStats ?? {},
+    getLegacyDerivedStatsFromDerived(derived),
+    { inplace: false }
+  );
+  const legacyResources = buildLegacyResources(systemData, current, derived);
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
+      arkengineItemId: arkengineItem.id ?? "",
+      arkengineUuid: arkengineItem.uuid ?? "",
+      arkengineKey: baseArkengine.engineClass ?? "",
+      arkengineName: arkengineItem.name ?? baseArkengine.displayName ?? baseArkengine.engineClass ?? ""
+    }, { inplace: false }),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.arkengine`]: baseArkengine,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengine`]: arkengineItem.name ?? baseArkengine.displayName ?? baseArkengine.engineClass ?? "",
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
+  });
+}
+
 export const installHullOnShip = installHull;
+export const installArkengineOnShip = installArkengine;

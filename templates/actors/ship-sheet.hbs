@@ -38,6 +38,27 @@
     <p class="arcflight-sheet__hint">Install hulls with <code>game.arcflight.installHull(shipActor, hullItem)</code>. Installation stores references and copied base hull data on the vehicle actor without mutating the hull item.</p>
   </section>
 
+
+
+  <section class="arcflight-sheet__section">
+    <h2>Installed Arkengine</h2>
+    <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.arkengineName}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Engine Key</span><input type="text" value="{{arcflight.system.installed.arkengineKey}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.arkengineItemId}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>UUID</span><input type="text" value="{{arcflight.system.installed.arkengineUuid}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Voyage Hex Days</span><input type="text" value="{{arcflight.system.derived.voyageSpeedTravelHexDays}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Spell Rank</span><input type="text" value="{{arcflight.system.base.arkengine.spellRankRequired}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Lifeveil Mod</span><input type="number" value="{{arcflight.system.base.arkengine.lifeveilModifier}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Strain Mod</span><input type="number" value="{{arcflight.system.base.arkengine.strainModifier}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Hard Burn Strain</span><input type="number" value="{{arcflight.system.derived.hardBurnStrainCost}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Overcharge Risk</span><input type="text" value="{{arcflight.system.derived.overchargeRisk}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Mod Slots</span><input type="number" value="{{arcflight.system.derived.arkengineModSlots}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Resistance Tendencies</span><input type="text" value="{{arcflight.system.derived.resistanceTendencies}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Voyage speed belongs to arkengines and lower travel hex day values are faster.</p>
+  </section>
+
   <section class="arcflight-sheet__section">
     <h2>Hull Architecture</h2>
     <div class="arcflight-grid arcflight-grid--resources">

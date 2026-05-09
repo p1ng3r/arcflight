@@ -1,5 +1,6 @@
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getCoreHull } from "../../data/hulls/core-hulls.js";
+import { getCoreArkengine } from "../../data/arkengines/core-arkengines.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -76,6 +77,27 @@ export async function createCoreHull(platformKey, operation = {}) {
     system: deepCloneData(hullData)
   }, operation);
 }
+
+/**
+ * Create one of Arcflight's locked Phase 3 core arkengines as a PF2E equipment item.
+ *
+ * @param {string} engineKey Lower-case kebab-case core arkengine key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreArkengine(engineKey, operation = {}) {
+  const arkengineData = getCoreArkengine(engineKey);
+  if (!arkengineData) {
+    throw new Error(`Arcflight | ${engineKey} is not a supported core arkengine.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.ARKENGINE, {
+    name: arkengineData.displayName,
+    system: deepCloneData(arkengineData)
+  }, operation);
+}
+
+export const createArkengine = createCoreArkengine;
 
 export const createHull = createCoreHull;
 
