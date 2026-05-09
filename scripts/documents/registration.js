@@ -21,50 +21,6 @@ export const arcflightItemDocumentClasses = Object.freeze({
   [ARCFLIGHT_ITEM_DOCUMENT_TYPES.CREW_ASSET]: CrewAssetItem
 });
 
-const proxyCache = new WeakMap();
-const proxyMetadata = new WeakMap();
-
-function getProxyTarget(DocumentClass) {
-  return proxyMetadata.get(DocumentClass)?.target ?? DocumentClass;
-}
-
-function getExistingTypeOptions(options) {
-  return Array.isArray(options?.types) ? options.types : options?.types ? [options.types] : [];
-}
-
-function getKnownDocumentTypes(documentName) {
-  const typeLabels = globalThis.CONFIG?.[documentName]?.typeLabels;
-  if (typeLabels && typeof typeLabels === "object") return Object.keys(typeLabels);
-
-  const pf2eDocumentClasses = getPf2eDocumentClasses(documentName);
-  if (pf2eDocumentClasses) return Object.keys(pf2eDocumentClasses);
-
-  const dataModels = globalThis.CONFIG?.[documentName]?.dataModels;
-  return dataModels && typeof dataModels === "object" ? Object.keys(dataModels) : [];
-}
-
-function createDialogWithArcflightTypes(documentName, createDialog, arcflightClasses) {
-  return function arcflightCreateDialog(data, createOptions, options = {}, renderOptions = {}) {
-    registerPf2eDocumentClasses(documentName, arcflightClasses);
-    const existingTypes = getExistingTypeOptions(options);
-    if (existingTypes.length > 0) return createDialog.call(this, data, createOptions, options, renderOptions);
-
-    const arcflightTypes = Object.keys(arcflightClasses);
-    const baseTypes = getKnownDocumentTypes(documentName);
-
-    return createDialog.call(
-      this,
-      data,
-      createOptions,
-      {
-        ...options,
-        types: Array.from(new Set([...baseTypes, ...arcflightTypes]))
-      },
-      renderOptions
-    );
-  };
-}
-
 function getPf2eDocumentClasses(documentName) {
   const pf2eDocumentConfig = globalThis.CONFIG?.PF2E?.[documentName];
   const documentClasses = pf2eDocumentConfig?.documentClasses;
@@ -123,78 +79,20 @@ function registerPf2eDocumentClasses(documentName, arcflightClasses) {
 }
 
 /**
- * Build a Foundry document implementation proxy which dispatches Arcflight
- * module sub-types to their specific Arcflight classes while preserving the
- * active system's implementation for every non-Arcflight document type.
+ * Static Arcflight document class registration for Foundry v13/PF2E.
  *
- * @param {"Actor"|"Item"} documentName
- * @param {typeof foundry.abstract.Document} fallbackClass
- * @param {Record<string, typeof foundry.abstract.Document>} arcflightClasses
- * @returns {typeof foundry.abstract.Document}
+ * Arcflight intentionally does not replace CONFIG.Item.documentClass and does
+ * not wrap Item.create or Item.createDocuments. Supported Arcflight item types
+ * come from module.json documentTypes, CONFIG.Item.dataModels, and PF2E's
+ * type-specific documentClasses registry when PF2E exposes it safely.
  */
-function createArcflightDocumentProxy(documentName, fallbackClass, arcflightClasses) {
-  const existingMetadata = proxyMetadata.get(fallbackClass);
-  if (existingMetadata?.documentName === documentName) return fallbackClass;
-
-  const targetClass = getProxyTarget(fallbackClass);
-  const cachedProxy = proxyCache.get(targetClass);
-  if (cachedProxy) return cachedProxy;
-
-  const proxy = new Proxy(targetClass, {
-    construct(target, args) {
-      const [data] = args;
-      registerPf2eDocumentClasses(documentName, arcflightClasses);
-
-      const DocumentClass = arcflightClasses[data?.type] ?? target;
-      return Reflect.construct(DocumentClass, args, DocumentClass);
-    },
-
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-
-      if ((property === "create" || property === "createDocuments") && typeof value === "function") {
-        return function arcflightCreateWithRegisteredPf2eClasses(...args) {
-          registerPf2eDocumentClasses(documentName, arcflightClasses);
-          return value.apply(this, args);
-        };
-      }
-
-      if (property !== "createDialog" || typeof value !== "function") return value;
-
-      return createDialogWithArcflightTypes(documentName, value, arcflightClasses);
-    }
-  });
-
-  proxyCache.set(targetClass, proxy);
-  proxyMetadata.set(proxy, { documentName, target: targetClass });
-  return proxy;
-}
-
-/** Register Arcflight document class dispatch for Foundry v13. */
 export function registerArcflightDocumentClasses() {
-  const itemDocumentClasses = Object.fromEntries(
-    Object.entries(arcflightItemDocumentClasses).filter(([documentType, DocumentClass]) => {
-      const valid = isDocumentClassForName("Item", DocumentClass);
-      if (!valid) {
-        console.warn(`Arcflight | Refusing to register ${documentType} in CONFIG.Item.documentClass because it is not an Item document class.`);
-      }
-      return valid;
-    })
-  );
-
-  const itemConfig = globalThis.CONFIG?.Item;
-  if (!itemConfig?.documentClass) return;
-
-  const currentItemDocumentClass = itemConfig.documentClass;
-  const nextItemDocumentClass = createArcflightDocumentProxy("Item", currentItemDocumentClass, itemDocumentClasses);
-  if (nextItemDocumentClass !== currentItemDocumentClass) itemConfig.documentClass = nextItemDocumentClass;
+  return registerArcflightPf2eDocumentClasses();
 }
 
 /** Ensure all Arcflight document registrations are in place for the current startup phase. */
 export function ensureArcflightDocumentRegistration() {
-  const pf2eRegistration = registerArcflightPf2eDocumentClasses();
-  registerArcflightDocumentClasses();
-  return pf2eRegistration;
+  return registerArcflightPf2eDocumentClasses();
 }
 
 /** Register Arcflight document classes with PF2E's type-specific document registries when present. */
