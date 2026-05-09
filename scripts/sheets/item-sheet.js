@@ -46,7 +46,7 @@ export class ArcflightItemSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
     tag: "form",
     position: {
       width: 560,
-      height: "auto"
+      height: 640
     },
     window: {
       resizable: true

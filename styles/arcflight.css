@@ -2,17 +2,51 @@
   --arcflight-gap: 0.75rem;
 }
 
-.arcflight-sheet {
+.arcflight.sheet.item {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.arcflight.sheet.item .window-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.arcflight.sheet.item .window-content > .standard-form {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.arcflight-sheet {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: var(--arcflight-gap);
+  min-height: 0;
+  overflow: hidden;
   padding: 0.75rem;
 }
 
 .arcflight-sheet__header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--arcflight-gap);
+}
+
+.arcflight-sheet__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--arcflight-gap);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .arcflight-sheet__image {
