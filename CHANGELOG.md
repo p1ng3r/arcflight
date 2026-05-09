@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Phase 4 - Room Framework
+
+- Added normalized room component defaults under `flags.arcflight.system` for identity, installation, utility tags, mechanical effects, upkeep, state, restrictions, traits, and notes.
+- Added locked core room references for Arkengine Chamber, Helm, Crew Quarters, Galley & Mess, Cargo Hold, and Officer Wardroom as hull-provided ship infrastructure that does not consume expansion room slots.
+- Added starter expansion room data for Workshop, Alchemy Lab, Infirmary, Greenhouse, Observatory, Shrine, Archive, Expanded Cargo Hold, Brig, and Luxury Quarters.
+- Exposed `game.arcflight.CORE_ROOM_KEYS`, `getCoreRoomKeys()`, `getCoreRoom(roomKey)`, `createCoreRoom(roomKey)`, `installRoom(shipActor, roomItem)`, and `installRoomOnShip(shipActor, roomItem)`.
+- Added ship-side installed room tracking under `flags.arcflight.system.installed.rooms` plus `roomSlots` capacity, used, and available counts sourced from the installed hull.
+- Updated derived recalculation and the ship sheet to show core rooms, installed expansion rooms, room states, and slot usage without applying room data to combat speed, AP, RAP, voyage speed, weapon damage, or maneuverability.
+- Kept rooms as infrastructure/downtime/logistical support only; no combat, travel, drag/drop, or gameplay automation was added.
+
 ### Phase 3.5 - Arkengine Variants + Mod Slot Foundation
 
 - Added the locked 9-family arkengine variant data set with display names, identities, descriptions, effects summaries, traits, and `derivedModifiers` placeholders.
