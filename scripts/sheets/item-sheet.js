@@ -30,6 +30,11 @@ const weaponArcOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_WEAPON_AR
 const weaponSizeOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_WEAPON_SIZES));
 const reloadStateOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_RELOAD_STATES));
 const suggestedWeaponTypeOptions = Object.freeze(objectValuesToOptions(ARCFLIGHT_SUGGESTED_WEAPON_TYPES));
+const lockedPhaseOneSchemaTypes = Object.freeze(new Set([
+  ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+  ARCFLIGHT_ITEM_TYPES.ROOM,
+  ARCFLIGHT_ITEM_TYPES.CARGO
+]));
 
 const componentTypeOptions = Object.freeze(
   Object.values(ARCFLIGHT_ITEM_TYPES).map((componentType) => ({
@@ -93,6 +98,7 @@ export class ArcflightItemSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
       isShipUpgrade: componentType === ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
       isCargo: componentType === ARCFLIGHT_ITEM_TYPES.CARGO,
       isCrewAsset: componentType === ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
+      usesLockedPhaseOneSchema: lockedPhaseOneSchemaTypes.has(componentType),
       arcflightFlagPath: `flags.${ARCFLIGHT_MODULE_ID}.system`
     };
   }
