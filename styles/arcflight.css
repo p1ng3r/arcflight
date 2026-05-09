@@ -2,12 +2,14 @@
   --arcflight-gap: 0.75rem;
 }
 
+.arcflight.sheet.actor,
 .arcflight.sheet.item {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
+.arcflight.sheet.actor .window-content,
 .arcflight.sheet.item .window-content {
   display: flex;
   flex: 1;
@@ -16,6 +18,9 @@
   overflow: hidden;
 }
 
+.arcflight.sheet.actor .window-content > form,
+.arcflight.sheet.actor .window-content > .standard-form,
+.arcflight.sheet.item .window-content > form,
 .arcflight.sheet.item .window-content > .standard-form {
   display: flex;
   flex: 1;
