@@ -20,7 +20,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     tag: "form",
     position: {
       width: 560,
-      height: "auto"
+      height: 640
     },
     window: {
       resizable: true
