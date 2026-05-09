@@ -1,6 +1,7 @@
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getCoreHull } from "../../data/hulls/core-hulls.js";
 import { getCoreArkengine } from "../../data/arkengines/core-arkengines.js";
+import { getCoreRoom } from "../../data/rooms/core-rooms.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -94,6 +95,26 @@ export async function createCoreArkengine(engineKey, operation = {}) {
   return createArcflightItem(ARCFLIGHT_ITEM_TYPES.ARKENGINE, {
     name: arkengineData.displayName,
     system: deepCloneData(arkengineData)
+  }, operation);
+}
+
+
+/**
+ * Create one of Arcflight's Phase 4 room framework entries as a PF2E equipment item.
+ *
+ * @param {string} roomKey Lower-case kebab-case room key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreRoom(roomKey, operation = {}) {
+  const roomData = getCoreRoom(roomKey);
+  if (!roomData) {
+    throw new Error(`Arcflight | ${roomKey} is not a supported core room.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.ROOM, {
+    name: roomData.identity?.displayName ?? roomKey,
+    system: deepCloneData(roomData)
   }, operation);
 }
 

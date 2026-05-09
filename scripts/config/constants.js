@@ -42,13 +42,15 @@ export const ARCFLIGHT_WEAPON_SIZES = Object.freeze({
 });
 
 export const ARCFLIGHT_ROOM_CATEGORIES = Object.freeze({
-  COMMAND: "command",
-  CREW: "crew",
-  ENGINEERING: "engineering",
-  CARGO: "cargo",
-  DEFENSE: "defense",
+  CRAFTING: "crafting",
+  RECOVERY: "recovery",
+  SURVIVAL: "survival",
   UTILITY: "utility",
-  SPECIAL: "special"
+  SOCIAL: "social",
+  LOGISTICS: "logistics",
+  OCCULT: "occult",
+  LUXURY: "luxury",
+  CONTAINMENT: "containment"
 });
 
 export const ARCFLIGHT_ARKENGINE_CLASSES = Object.freeze({

@@ -62,6 +62,43 @@
     <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Variant family and mod slot values are tracked only; mod gameplay is not implemented yet.</p>
   </section>
 
+
+  <section class="arcflight-sheet__section">
+    <h2>Room Framework</h2>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Expansion Slots Capacity</span><input type="number" value="{{arcflight.system.installed.roomSlots.capacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Expansion Slots Used</span><input type="number" value="{{arcflight.system.installed.roomSlots.used}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Expansion Slots Available</span><input type="number" value="{{arcflight.system.installed.roomSlots.available}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Core rooms are mandatory hull infrastructure and do not consume expansion room slots. Expansion rooms provide utility only while installed and do not grant direct combat or travel stat bonuses.</p>
+    <div class="arcflight-room-lists">
+      <article>
+        <h3>Core Rooms</h3>
+        {{#if arcflight.system.installed.coreRooms.length}}
+          <ul>
+            {{#each arcflight.system.installed.coreRooms}}
+              <li><strong>{{this.name}}</strong> — {{this.role}} <em>({{this.systemState}})</em></li>
+            {{/each}}
+          </ul>
+        {{else}}
+          <p class="arcflight-sheet__hint">Install or recalculate a hull to populate locked core room references.</p>
+        {{/if}}
+      </article>
+      <article>
+        <h3>Installed Expansion Rooms</h3>
+        {{#if arcflight.system.installed.rooms.length}}
+          <ul>
+            {{#each arcflight.system.installed.rooms}}
+              <li><strong>{{this.name}}</strong> — {{this.roomType}}; {{this.expansionSlotsRequired}} slot(s); <em>{{this.systemState}}</em></li>
+            {{/each}}
+          </ul>
+        {{else}}
+          <p class="arcflight-sheet__hint">Install expansion rooms with <code>game.arcflight.installRoom(shipActor, roomItem)</code>.</p>
+        {{/if}}
+      </article>
+    </div>
+  </section>
+
   <section class="arcflight-sheet__section">
     <h2>Hull Architecture</h2>
     <div class="arcflight-grid arcflight-grid--resources">
