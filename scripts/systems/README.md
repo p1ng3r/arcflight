@@ -1,3 +1,3 @@
 # systems
 
-Placeholder for future Arcflight Phase 1+ resources. No gameplay implementation exists here during Phase 0.
+Reserved for future gameplay pillars. Phase 1 intentionally does not implement travel, combat, ship progression, crew/faction systems, or GM tooling.

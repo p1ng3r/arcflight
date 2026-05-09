@@ -430,12 +430,8 @@ export const arcflightComponentDefaults = Object.freeze({
   })
 });
 
-const arcflightDocumentTypeToComponentType = Object.freeze(
-  Object.fromEntries(Object.values(ARCFLIGHT_ITEM_TYPES).map((componentType) => [`${ARCFLIGHT_MODULE_ID}.${componentType}`, componentType]))
-);
-
 export function normalizeArcflightComponentType(componentType) {
-  const normalizedType = arcflightDocumentTypeToComponentType[componentType] ?? componentType;
+  const normalizedType = componentType;
   if (!arcflightComponentDefaults[normalizedType]) {
     throw new Error(`Arcflight | ${componentType} is not a supported Arcflight component type.`);
   }

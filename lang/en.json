@@ -1,10 +1,11 @@
 {
-  "TYPES.Item.arcflight.hull": "Hull",
-  "TYPES.Item.arcflight.arkengine": "Arkengine",
-  "TYPES.Item.arcflight.arkengineMod": "Arkengine Mod",
-  "TYPES.Item.arcflight.weapon": "Ship Weapon",
-  "TYPES.Item.arcflight.room": "Ship Room",
-  "TYPES.Item.arcflight.shipUpgrade": "Ship Upgrade",
-  "TYPES.Item.arcflight.cargo": "Cargo",
-  "TYPES.Item.arcflight.crewAsset": "Crew Asset"
+  "ARCFLIGHT.Component.Hull": "Hull",
+  "ARCFLIGHT.Component.Arkengine": "Arkengine",
+  "ARCFLIGHT.Component.ArkengineMod": "Arkengine Mod",
+  "ARCFLIGHT.Component.Weapon": "Ship Weapon",
+  "ARCFLIGHT.Component.Room": "Ship Room",
+  "ARCFLIGHT.Component.ShipUpgrade": "Ship Upgrade",
+  "ARCFLIGHT.Component.Cargo": "Cargo",
+  "ARCFLIGHT.Component.CrewAsset": "Crew Asset",
+  "ARCFLIGHT.Ship": "Arcflight Ship"
 }

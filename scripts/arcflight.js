@@ -8,28 +8,6 @@ import {
   getComponentType,
   isArcflightItem
 } from "./documents/components.js";
-import { ArcflightItem } from "./documents/arcflight-item.js";
-import {
-  arcflightActorDataModels,
-  arcflightItemDataModels,
-  registerArcflightDataModels
-} from "./documents/data-models.js";
-import { ArkengineItem } from "./documents/arkengine-item.js";
-import { ArkengineModItem } from "./documents/arkengine-mod-item.js";
-import { CargoItem } from "./documents/cargo-item.js";
-import { CrewAssetItem, CrewItem } from "./documents/crew-item.js";
-import { HullItem } from "./documents/hull-item.js";
-import { RoomItem } from "./documents/room-item.js";
-import {
-  arcflightActorDocumentClasses,
-  arcflightItemDocumentClasses,
-  ensureArcflightDocumentRegistration,
-  registerArcflightDocumentClasses,
-  registerArcflightPf2eDocumentClasses
-} from "./documents/registration.js";
-import { ShipUpgradeItem } from "./documents/ship-upgrade-item.js";
-import { WeaponItem } from "./documents/weapon-item.js";
-import { arcflightItemTypeLabels, registerArcflightItemTypeLabels } from "./documents/item-types.js";
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   arcflightShipDefaults,
@@ -66,47 +44,24 @@ async function setArcflightVehicleEnabled(actor, enabled = true) {
   });
 }
 
-const documentClasses = Object.freeze({
-  ArcflightItem,
-  HullItem,
-  ArkengineItem,
-  ArkengineModItem,
-  WeaponItem,
-  RoomItem,
-  ShipUpgradeItem,
-  CargoItem,
-  CrewAssetItem,
-  CrewItem
-});
-
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
 
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
-    documents: documentClasses,
-    isArcflightVehicle,
-    setArcflightVehicleEnabled,
     createItem: createArcflightItem,
     getItemDocumentType: getArcflightItemDocumentType,
+    getDefaultComponentData: getDefaultArcflightComponentData,
+    getDefaultShipData: getDefaultArcflightShipData,
     isArcflightItem,
     getComponentType,
     getComponentData,
-    getDefaultComponentData: getDefaultArcflightComponentData,
-    getDefaultShipData: getDefaultArcflightShipData,
+    isArcflightVehicle,
+    setArcflightVehicleEnabled,
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
     shipDefaults: arcflightShipDefaults,
-    devTools: createArcflightDevTools(),
-    documentRegistries: Object.freeze({
-      Actor: arcflightActorDocumentClasses,
-      Item: arcflightItemDocumentClasses
-    }),
-    dataModels: Object.freeze({
-      Actor: arcflightActorDataModels,
-      Item: arcflightItemDataModels
-    }),
-    itemTypeLabels: arcflightItemTypeLabels
+    devTools: createArcflightDevTools()
   });
 
   game.arcflight = CONFIG.arcflight;
@@ -116,29 +71,9 @@ Hooks.once("init", () => {
   });
 });
 
-
 export {
   ARCFLIGHT,
-  ArcflightItem,
-  HullItem,
-  ArkengineItem,
-  ArkengineModItem,
-  WeaponItem,
-  RoomItem,
-  ShipUpgradeItem,
-  CargoItem,
-  CrewAssetItem,
-  CrewItem,
-  arcflightActorDocumentClasses,
-  arcflightItemDocumentClasses,
-  arcflightActorDataModels,
-  arcflightItemDataModels,
-  registerArcflightDataModels,
-  registerArcflightItemTypeLabels,
   createArcflightItem,
-  ensureArcflightDocumentRegistration,
-  registerArcflightDocumentClasses,
-  registerArcflightPf2eDocumentClasses,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
   getArcflightItemDocumentType,
