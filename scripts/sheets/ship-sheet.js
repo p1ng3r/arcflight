@@ -1,41 +1,16 @@
-import { arcflightTemplatePath, prepareInstalledContainers } from "./sheet-helpers.js";
+import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
+import { arcflightTemplatePath } from "./sheet-helpers.js";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ActorSheetV2 } = foundry.applications.sheets;
 
-const DEFAULT_ARCFLIGHT_SHIP_FLAGS = Object.freeze({
-  enabled: false,
-  resources: {
-    hull: {
-      value: 0,
-      max: 0
-    },
-    lifeveil: {
-      value: 0,
-      max: 0
-    },
-    strain: {
-      value: 0,
-      max: 0
-    }
-  },
-  morale: 0,
-  supplies: 0,
-  installed: {
-    hull: null,
-    arkengine: null,
-    weapons: [],
-    rooms: [],
-    upgrades: []
-  }
-});
-
 function prepareArcflightShipFlags(actor) {
-  return foundry.utils.mergeObject(
-    foundry.utils.deepClone(DEFAULT_ARCFLIGHT_SHIP_FLAGS),
-    foundry.utils.deepClone(actor.flags?.arcflight ?? {}),
-    { inplace: false }
-  );
+  return {
+    enabled: actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true,
+    actorType: actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") ?? "",
+    system: getArcflightShipData(actor)
+  };
 }
 
 /** Lightweight ApplicationV2 sheet foundation for Arcflight PF2E vehicle actors. */
@@ -63,6 +38,37 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   };
 
   /** @override */
+  _onRender(context, options) {
+    super._onRender(context, options);
+
+    this.element
+      .querySelector?.("[data-arcflight-enable-ship]")
+      ?.addEventListener("click", this.#onEnableArcflightShip.bind(this));
+  }
+
+  async #onEnableArcflightShip(event) {
+    event.preventDefault();
+
+    if (this.document?.type !== "vehicle") {
+      ui.notifications?.warn?.("Arcflight ships must be PF2E vehicle actors.");
+      return;
+    }
+
+    const existingShipData = this.document.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
+
+    await this.document.update({
+      [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
+      [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
+      [`flags.${ARCFLIGHT_MODULE_ID}.system`]: foundry.utils.mergeObject(
+        getArcflightShipData(this.document),
+        foundry.utils.deepClone(existingShipData),
+        { inplace: false }
+      )
+    });
+
+    this.render(true);
+  }
+
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const arcflight = prepareArcflightShipFlags(this.document);
@@ -71,7 +77,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       ...context,
       actor: this.document,
       arcflight,
-      installed: prepareInstalledContainers(arcflight.installed)
+      arcflightActorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
+      arcflightSystemPath: `flags.${ARCFLIGHT_MODULE_ID}.system`
     };
   }
 }
