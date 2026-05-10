@@ -2,6 +2,7 @@ import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.j
 import { getCoreHull } from "../../data/hulls/core-hulls.js";
 import { getCoreArkengine } from "../../data/arkengines/core-arkengines.js";
 import { getCoreRoom } from "../../data/rooms/core-rooms.js";
+import { getCoreShipUpgrade } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -115,6 +116,25 @@ export async function createCoreRoom(roomKey, operation = {}) {
   return createArcflightItem(ARCFLIGHT_ITEM_TYPES.ROOM, {
     name: roomData.identity?.displayName ?? roomKey,
     system: deepCloneData(roomData)
+  }, operation);
+}
+
+/**
+ * Create one of Arcflight's Phase 4.5 standard ship upgrade entries as a PF2E equipment item.
+ *
+ * @param {string} upgradeKey Lower-case kebab-case ship upgrade key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreShipUpgrade(upgradeKey, operation = {}) {
+  const upgradeData = getCoreShipUpgrade(upgradeKey);
+  if (!upgradeData) {
+    throw new Error(`Arcflight | ${upgradeKey} is not a supported core ship upgrade.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, {
+    name: upgradeData.identity?.displayName ?? upgradeKey,
+    system: deepCloneData(upgradeData)
   }, operation);
 }
 

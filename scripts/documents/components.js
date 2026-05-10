@@ -309,48 +309,47 @@ export const arcflightComponentDefaults = Object.freeze({
     }
   }),
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: Object.freeze({
+    componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
     identity: {
-      upgradeCategory: "",
-      model: "",
-      manufacturer: "",
-      grade: ""
+      id: "",
+      displayName: "",
+      upgradeType: "",
+      rarity: "standard",
+      origin: "",
+      role: "",
+      description: ""
     },
     installation: {
-      installed: false,
-      installedOn: "",
-      location: "",
-      requirements: "",
-      notes: ""
-    },
-    compatibility: {
-      hulls: "",
-      arkengines: "",
-      rooms: "",
-      restrictions: "",
-      notes: ""
+      requiresPortOrDock: true,
+      canInstallDuringTravel: false,
+      installCost: "",
+      installTimeDays: 0,
+      playerAssistCostReductionMaxPercent: 0
     },
     effects: {
-      summary: "",
-      statModifiers: "",
-      resourceModifiers: "",
-      special: "",
-      notes: ""
+      derivedStatModifiers: [],
+      conditionInteractions: [],
+      operationalEffects: [],
+      systemInteractions: [],
+      stationInteractions: [],
+      eventInteractions: []
     },
-    limits: {
-      maxInstalled: 0,
-      powerDraw: 0,
-      strainCost: 0,
-      restrictions: "",
+    restrictions: {
+      unique: false,
+      maxInstances: 1,
+      requiredHullTags: [],
+      blockedHullTags: [],
+      requiredArkengineTags: [],
       notes: ""
     },
     state: {
-      active: false,
-      disabled: false,
-      condition: "",
-      notes: ""
+      systemState: "Functional"
     },
-    traits: "",
-    notes: ""
+    traits: [],
+    notes: {
+      designIntent: "",
+      gmNotes: ""
+    }
   }),
   [ARCFLIGHT_ITEM_TYPES.CARGO]: Object.freeze({
     identity: {

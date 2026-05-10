@@ -6,9 +6,9 @@ Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaig
 
 Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
-## Current Phase 4 Architecture
+## Current Phase 4.5 Architecture
 
-Phase 4 keeps the PF2E-compatible module architecture, the hull and arkengine framework, and adds the room framework for core ship infrastructure and installed expansion rooms.
+Phase 4.5 keeps the PF2E-compatible module architecture, the hull, arkengine, and room frameworks, and adds the Ship Upgrades framework for permanent installed ship improvements.
 
 - **PF2E vehicle actors are Arcflight ships.** A vehicle becomes an Arcflight ship only when Arcflight flags are enabled on that existing PF2E actor.
 - **PF2E equipment items are Arcflight components.** Hulls, arkengines, arkengine mods, weapons, rooms, ship upgrades, cargo, and crew assets are all equipment items with Arcflight flags.
@@ -27,16 +27,20 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createCoreArkengine(engineKey, operation?)`
 - `game.arcflight.createArkengine(engineKey, operation?)`
 - `game.arcflight.createCoreRoom(roomKey, operation?)`
+- `game.arcflight.createCoreShipUpgrade(upgradeKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
 - `game.arcflight.getCoreArkengine(engineKey)`
 - `game.arcflight.getCoreRoom(roomKey)`
+- `game.arcflight.getCoreShipUpgrade(upgradeKey)`
 - `game.arcflight.CORE_HULL_PLATFORM_KEYS`
 - `game.arcflight.CORE_ARKENGINE_KEYS`
 - `game.arcflight.CORE_ROOM_KEYS`
+- `game.arcflight.CORE_SHIP_UPGRADE_KEYS`
 - `game.arcflight.ARKENGINE_VARIANT_KEYS`
 - `game.arcflight.getCoreHullPlatformKeys()`
 - `game.arcflight.getCoreArkengineKeys()`
 - `game.arcflight.getCoreRoomKeys()`
+- `game.arcflight.getCoreShipUpgradeKeys()`
 - `game.arcflight.getArkengineVariantKeys()`
 - `game.arcflight.getArkengineVariant(variantKey)`
 - `game.arcflight.getArkengineVariants()`
@@ -53,6 +57,8 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.installArkengineOnShip(shipActor, arkengineItem)`
 - `game.arcflight.installRoom(shipActor, roomItem)`
 - `game.arcflight.installRoomOnShip(shipActor, roomItem)`
+- `game.arcflight.installShipUpgrade(shipActor, upgradeItem)`
+- `game.arcflight.installShipUpgradeOnShip(shipActor, upgradeItem)`
 - `game.arcflight.recalculateShipStats(shipActor)`
 
 ## Implemented Component Types
@@ -67,6 +73,50 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `shipUpgrade`
 - `cargo`
 - `crewAsset`
+
+## Phase 4.5 Ship Upgrades Framework
+
+Ship Upgrades are permanent installed ship improvements. They are not rooms, arkengines, arkengine mods, or runtime effects. Rooms remain interior spaces and downtime/logistical infrastructure; Ship Upgrades are permanent modifications to how the vessel operates or structural/operational additions to the vessel itself. Arkengine Mods affect the engine; Ship Upgrades affect the ship.
+
+Ship Upgrades may represent structural retrofits, operational enhancements, tactical infrastructure, command systems, military refits, exposed ship hardware, visible vessel components, and vessel-wide enhancement packages. The Phase 4.5 data set implements Standard upgrades only; future rarity tiers may add uncommon, rare, epic, and legendary upgrades.
+
+Ship Upgrades are PF2E `equipment` items with Arcflight flags only:
+
+```js
+flags.arcflight.enabled = true;
+flags.arcflight.componentType = "shipUpgrade";
+flags.arcflight.system = { /* ship upgrade schema data */ };
+```
+
+The locked Standard upgrade entries live in `data/ship-upgrades/core-ship-upgrades.js` and include 16 keys:
+
+- `reinforced-structural-ribbing`
+- `expanded-cargo-lattice`
+- `stabilized-helm-relays`
+- `fleet-signal-array`
+- `reinforced-ram-prow`
+- `emergency-veil-relay`
+- `void-anchor-array`
+- `deep-void-reinforcement`
+- `arc-conduit-stabilizers`
+- `lookout-spire`
+- `reinforced-void-sails`
+- `auxiliary-command-roost`
+- `pressure-redistribution-network`
+- `detection-spire`
+- `docking-claw-system`
+- `propulsion-stabilization-fins`
+
+Use the console helpers to create and install upgrades:
+
+```js
+const upgrade = await game.arcflight.createCoreShipUpgrade("reinforced-structural-ribbing");
+await game.arcflight.installShipUpgrade(shipActor, upgrade);
+```
+
+Installing a Ship Upgrade appends copied installation state to `flags.arcflight.system.installed.shipUpgrades`, updates `shipUpgradeSlots` with a default capacity of 3, and recalculates actor-owned derived stats. Upgrade items, hull items, arkengine items, and room items are not mutated. Current runtime values remain separate under `flags.arcflight.system.current`.
+
+Phase 4.5 supports direct derived-stat modifiers for `hullIntegrity`, `armorClass`, `strainCapacity`, `lifeveilCapacity`, `cargoCapacity`, `detection`, `combatSpeed`, `maneuverability`, `baseAP`, `baseRAP`, and `resistanceTendencies` using `add`, `subtract`, `set`, and `append` modes. Placeholder condition, operational, system, station, and event interactions are stored as data for later systems, but Phase 4.5 does not resolve combat rounds, travel gameplay, AP/RAP spending, station actions, voyage events, weapon firing, Hard Burn, Overcharge, condition gameplay, automation-heavy gameplay, or GM generators.
 
 
 ## Phase 2 Core Hull Framework
@@ -253,4 +303,4 @@ The room installer stores source references and copied utility data on the ship 
 
 ## Future Direction
 
-Arcflight remains data-driven in direction. Future phases may add weapon, arkengine mod, room compendium, and cargo workflows before travel, combat, ship progression, crew/faction systems, or GM tooling automation.
+Arcflight remains data-driven in direction. Future phases may add weapon, arkengine mod, ship upgrade compendium, room compendium, and cargo workflows before travel, combat, ship progression, crew/faction systems, or GM tooling automation.

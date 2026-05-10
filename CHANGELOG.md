@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Phase 4.5 - Ship Upgrades Framework
+
+- Added normalized ship upgrade component defaults under `flags.arcflight.system` for identity, installation, effects, restrictions, state, traits, and notes.
+- Added 16 Standard core ship upgrade entries for structural, military, command, detection, logistics, defensive, cargo, voidfaring, catastrophe, adaptation, power distribution, propulsion support, lookout, helm system, and sail system use cases.
+- Exposed `game.arcflight.CORE_SHIP_UPGRADE_KEYS`, `getCoreShipUpgradeKeys()`, `getCoreShipUpgrade(upgradeKey)`, `createCoreShipUpgrade(upgradeKey)`, `installShipUpgrade(shipActor, upgradeItem)`, and `installShipUpgradeOnShip(shipActor, upgradeItem)`.
+- Added ship-side installed upgrade tracking under `flags.arcflight.system.installed.shipUpgrades` plus `shipUpgradeSlots` capacity, used, and available counts with a default capacity of 3.
+- Updated derived ship stat recalculation so installed Ship Upgrades can apply `add`, `subtract`, `set`, and `append` modifiers to supported actor-owned derived stats without mutating hull, arkengine, room, or upgrade items.
+- Updated the ship sheet to show installed Ship Upgrades, slot usage, upgrade category, rarity, state, and direct derived-stat effect summaries.
+- Documented that Ship Upgrades are permanent vessel improvements, not rooms or arkengine mods, and kept placeholder gameplay interactions stored but unresolved.
+- Kept this phase architecture/data-only; no combat rounds, travel gameplay, AP/RAP spending, station action resolution, voyage events, weapon firing, Hard Burn resolution, Overcharge resolution, condition gameplay resolution, automation-heavy gameplay, or GM generators were added.
+
 ### Phase 4 - Room Framework
 
 - Added normalized room component defaults under `flags.arcflight.system` for identity, installation, utility tags, mechanical effects, upkeep, state, restrictions, traits, and notes.
