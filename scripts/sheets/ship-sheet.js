@@ -13,6 +13,18 @@ function prepareArcflightShipFlags(actor) {
   };
 }
 
+function prepareStationRows(stations = {}) {
+  return Object.values(stations.definitions ?? {}).map((station) => {
+    const assignment = stations.assignments?.[station.key] ?? null;
+
+    return {
+      ...station,
+      assignment,
+      assigneeName: assignment?.name || "Unassigned"
+    };
+  });
+}
+
 /** Lightweight ApplicationV2 sheet foundation for Arcflight PF2E vehicle actors. */
 export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
   static DEFAULT_OPTIONS = {
@@ -54,16 +66,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       return;
     }
 
-    const existingShipData = this.document.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
-
     await this.document.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
       [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
-      [`flags.${ARCFLIGHT_MODULE_ID}.system`]: foundry.utils.mergeObject(
-        getArcflightShipData(this.document),
-        foundry.utils.deepClone(existingShipData),
-        { inplace: false }
-      )
+      [`flags.${ARCFLIGHT_MODULE_ID}.system`]: getArcflightShipData(this.document)
     });
 
     this.render(true);
@@ -73,10 +79,13 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const context = await super._prepareContext(options);
     const arcflight = prepareArcflightShipFlags(this.document);
 
+    const stations = prepareStationRows(arcflight.system.stations);
+
     return {
       ...context,
       actor: this.document,
       arcflight,
+      stations,
       arcflightActorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
       arcflightSystemPath: `flags.${ARCFLIGHT_MODULE_ID}.system`
     };

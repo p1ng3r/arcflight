@@ -1,6 +1,7 @@
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getComponentData, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
+import { CORE_STATIONS, STATION_KEYS, getStation } from "../../data/stations/core-stations.js";
 
 export const ARCFLIGHT_SHIP_ACTOR_TYPE = "arcflightShip";
 
@@ -157,6 +158,10 @@ export const arcflightShipDefaults = Object.freeze({
     manifest: "",
     notes: ""
   }),
+  stations: Object.freeze({
+    definitions: CORE_STATIONS,
+    assignments: Object.freeze(Object.fromEntries(STATION_KEYS.map((stationKey) => [stationKey, null])))
+  }),
   conditions: Object.freeze({
     active: "",
     damage: "",
@@ -181,6 +186,57 @@ export const arcflightShipDefaults = Object.freeze({
 
 function cloneData(data) {
   return foundry.utils.deepClone(data);
+}
+
+
+function getDefaultStationAssignments() {
+  return Object.fromEntries(STATION_KEYS.map((stationKey) => [stationKey, null]));
+}
+
+function normalizeStationAssignment(stationKey, assignment) {
+  if (!assignment || assignment.assigneeType === "none") return null;
+
+  return {
+    stationKey,
+    assigneeType: assignment.assigneeType ?? "actor",
+    actorId: assignment.actorId ?? "",
+    actorUuid: assignment.actorUuid ?? "",
+    crewAssetId: assignment.crewAssetId ?? "",
+    crewAssetUuid: assignment.crewAssetUuid ?? "",
+    name: assignment.name ?? "",
+    notes: assignment.notes ?? ""
+  };
+}
+
+export function getDefaultStationState(existingStations = {}) {
+  const existingAssignments = existingStations.assignments ?? {};
+  const assignments = getDefaultStationAssignments();
+
+  for (const stationKey of STATION_KEYS) {
+    assignments[stationKey] = normalizeStationAssignment(stationKey, existingAssignments[stationKey]);
+  }
+
+  return {
+    definitions: cloneData(CORE_STATIONS),
+    assignments
+  };
+}
+
+function buildActorStationAssignment(stationKey, assignee, options = {}) {
+  if (!assignee) return null;
+
+  const assigneeType = options.assigneeType ?? (assignee.type === "npc" ? "npc" : "actor");
+
+  return {
+    stationKey,
+    assigneeType,
+    actorId: assignee.id ?? "",
+    actorUuid: assignee.uuid ?? "",
+    crewAssetId: options.crewAssetId ?? "",
+    crewAssetUuid: options.crewAssetUuid ?? "",
+    name: options.name ?? assignee.name ?? "",
+    notes: options.notes ?? ""
+  };
 }
 
 function countWeaponMountsByArc(weaponMounts = {}) {
@@ -550,15 +606,21 @@ export function getDefaultArcflightShipData() {
 
 export function getArcflightShipData(actor) {
   const flagData = actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "system") ?? actor?.flags?.[ARCFLIGHT_MODULE_ID]?.system ?? {};
+  const systemData = foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(flagData), { inplace: false });
 
-  return foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(flagData), { inplace: false });
+  systemData.stations = getDefaultStationState(systemData.stations);
+
+  return systemData;
 }
 
 export function getDefaultArcflightShipFlags(data = {}) {
+  const system = foundry.utils.mergeObject(getDefaultArcflightShipData(), data, { inplace: false });
+  system.stations = getDefaultStationState(system.stations);
+
   return {
     enabled: true,
     actorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
-    system: foundry.utils.mergeObject(getDefaultArcflightShipData(), data, { inplace: false })
+    system
   };
 }
 
@@ -587,7 +649,10 @@ export async function recalculateShipStats(shipActor) {
   const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
+  const stations = getDefaultStationState(systemData.stations);
+
   return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.coreRooms`]: coreRooms,
@@ -859,6 +924,45 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: nextInstalled.shipUpgrades.map((upgrade) => upgrade.name).join(", "),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0
+  });
+}
+
+
+export async function assignStation(shipActor, stationKey, assignee = null, options = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | assignStation requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  if (!getStation(stationKey)) {
+    throw new Error(`Arcflight | Unknown station key: ${stationKey}`);
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const stations = getDefaultStationState(systemData.stations);
+  const assignment = buildActorStationAssignment(stationKey, assignee, options);
+
+  stations.assignments[stationKey] = assignment;
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations
+  });
+}
+
+export async function clearStationAssignment(shipActor, stationKey) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | clearStationAssignment requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  if (!getStation(stationKey)) {
+    throw new Error(`Arcflight | Unknown station key: ${stationKey}`);
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const stations = getDefaultStationState(systemData.stations);
+  stations.assignments[stationKey] = null;
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations
   });
 }
 

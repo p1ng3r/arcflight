@@ -128,6 +128,29 @@
     </div>
   </section>
 
+
+  <section class="arcflight-sheet__section">
+    <h2>Station Framework</h2>
+    <p class="arcflight-sheet__hint">Stations are crew duty roles and operating positions stored on this ship actor. They are separate from rooms, do not require room installation, and do not add station actions or AP/RAP controls in this phase.</p>
+    <div class="arcflight-station-list">
+      {{#each stations}}
+        <article class="arcflight-station-list__station">
+          <header>
+            <h3>{{this.displayName}}</h3>
+            <span class="arcflight-station-list__assignment">{{this.assigneeName}}</span>
+          </header>
+          <p>{{this.role}}</p>
+          <p class="arcflight-sheet__hint">{{this.description}}</p>
+          {{#if this.assignment}}
+            <p class="arcflight-sheet__hint">Assigned as {{this.assignment.assigneeType}}. Reference: {{this.assignment.actorUuid}}{{this.assignment.crewAssetUuid}}</p>
+          {{else}}
+            <p class="arcflight-sheet__hint">Unassigned</p>
+          {{/if}}
+        </article>
+      {{/each}}
+    </div>
+  </section>
+
   <section class="arcflight-sheet__section">
     <h2>Ship Upgrades</h2>
     <div class="arcflight-grid arcflight-grid--resources">

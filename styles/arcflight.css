@@ -159,3 +159,33 @@
 .arcflight-room-lists p {
   margin-bottom: 0;
 }
+
+.arcflight-station-list {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-station-list__station {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-station-list__station header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-station-list__station p {
+  margin-bottom: 0.25rem;
+}
+
+.arcflight-station-list__assignment {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12);
+  font-style: italic;
+}
