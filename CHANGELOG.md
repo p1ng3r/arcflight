@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Phase 4 - Arkengine Mods Framework
+
+- Added normalized arkengine mod component defaults under `flags.arcflight.system` for identity, installation, effects, restrictions, state, traits, and notes.
+- Added 10 Standard starter core arkengine mod entries for pressure, Lifeveil, cooling, fueling, overcharge, void stability, harmonic, deep-void, and core bracing use cases.
+- Exposed `game.arcflight.CORE_ARKENGINE_MOD_KEYS`, `getCoreArkengineModKeys()`, `getCoreArkengineMod(modKey)`, `createCoreArkengineMod(modKey)`, `installArkengineMod(shipActor, modItem)`, and `installArkengineModOnShip(shipActor, modItem)`.
+- Added ship-side installed arkengine mod tracking under `flags.arcflight.system.installed.arkengineMods` plus `arkengineModSlots` capacity, used, and available counts sourced from the installed arkengine and installed mod slot costs.
+- Updated derived ship stat recalculation so installed Arkengine Mods apply only supported arkengine-related modifiers before room and Ship Upgrade layers and without mutating hull, arkengine, room, ship upgrade, or mod items.
+- Updated the ship sheet to show installed Arkengine Mods, slot usage, mod type, rarity, state, and direct derived-stat effect summaries.
+- Documented that Arkengine Mods are engine-only tuning, Ship Upgrades are broader vessel improvements, and Rooms are infrastructure spaces.
+- Kept this phase architecture/data-only beyond installation and stat recalculation; no Hard Burn resolution, Overcharge resolution, travel gameplay, combat gameplay, AP/RAP spending, station actions, voyage events, damage automation, condition gameplay, GM generators, or drag/drop installation was added.
+
 ### Phase 4.5 - Ship Upgrades Framework
 
 - Added normalized ship upgrade component defaults under `flags.arcflight.system` for identity, installation, effects, restrictions, state, traits, and notes.

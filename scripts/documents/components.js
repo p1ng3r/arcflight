@@ -93,97 +93,52 @@ export const arcflightComponentDefaults = Object.freeze({
     overchargeProfile: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: Object.freeze({
+    componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
     identity: {
-      modCategory: "",
-      model: "",
-      manufacturer: "",
-      grade: ""
+      id: "",
+      displayName: "",
+      modType: "",
+      rarity: "standard",
+      origin: "",
+      role: "",
+      description: ""
     },
     installation: {
-      installed: false,
-      installedOn: "",
-      slot: "",
-      requirements: "",
-      notes: ""
-    },
-    compatibility: {
-      engineClasses: "",
-      engines: "",
-      hulls: "",
-      restrictions: "",
-      notes: ""
+      modSlotsRequired: 1,
+      requiresPortOrDock: true,
+      canInstallDuringTravel: false,
+      installCost: "",
+      installTimeDays: 0,
+      playerAssistCostReductionMaxPercent: 0
     },
     effects: {
-      statModifiers: {
-        hullIntegrity: 0,
-        lifeveil: 0,
-        crewLimits: 0,
-        weaponMounts: 0,
-        roomSlots: 0,
-        handling: 0,
-        notes: ""
-      },
-      fuelingModifiers: {
-        fuelCapacity: 0,
-        fuelCurrent: 0,
-        consumption: "",
-        refuelNotes: "",
-        notes: ""
-      },
-      strainModifiers: {
-        capacity: 0,
-        current: 0,
-        recovery: "",
-        thresholdNotes: "",
-        notes: ""
-      },
-      lifeveilModifiers: {
-        output: 0,
-        stability: 0,
-        supportedCrew: 0,
-        energyResistanceModifiers: {
-          acid: 0,
-          cold: 0,
-          electricity: 0,
-          fire: 0,
-          force: 0,
-          mental: 0,
-          poison: 0,
-          sonic: 0,
-          vitality: 0,
-          void: 0,
-          notes: ""
-        },
-        notes: ""
-      },
-      voyageModifiers: {
-        rating: 0,
-        speed: "",
-        endurance: "",
-        navigationNotes: "",
-        notes: ""
-      },
-      overchargeModifiers: {
-        enabled: false,
-        limit: 0,
-        risk: "",
-        notes: ""
-      }
+      derivedStatModifiers: [],
+      hardBurnInteractions: [],
+      overchargeInteractions: [],
+      fuelInteractions: [],
+      lifeveilInteractions: [],
+      strainInteractions: [],
+      resistanceInteractions: [],
+      roomInteractions: [],
+      systemInteractions: []
     },
-    tradeoffs: {
-      strainCost: 0,
-      powerDraw: 0,
-      drawback: "",
+    restrictions: {
+      unique: false,
+      maxInstances: 1,
+      requiredArkengineTags: [],
+      blockedArkengineTags: [],
+      requiredVariantFamilies: [],
+      blockedVariantFamilies: [],
       notes: ""
     },
-    traits: "",
     state: {
-      active: false,
-      disabled: false,
-      condition: "",
-      notes: ""
+      systemState: "Functional"
     },
-    notes: ""
+    traits: [],
+    notes: {
+      designIntent: "",
+      gmNotes: ""
+    }
   }),
   [ARCFLIGHT_ITEM_TYPES.WEAPON]: Object.freeze({
     ...commonComponentData,

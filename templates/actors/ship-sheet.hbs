@@ -59,9 +59,38 @@
       <label class="arcflight-sheet__field"><span>Mod Slots Available</span><input type="number" value="{{arcflight.system.derived.arkengineModSlotsAvailable}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Resistance Tendencies</span><input type="text" value="{{arcflight.system.derived.resistanceTendencies}}" disabled></label>
     </div>
-    <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Variant family and mod slot values are tracked only; mod gameplay is not implemented yet.</p>
+    <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Variant family and mod slot values are tracked separately from source arkengine item data.</p>
   </section>
 
+  <section class="arcflight-sheet__section">
+    <h2>Arkengine Mods</h2>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Mod Slots Capacity</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.capacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Mod Slots Used</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.used}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Mod Slots Available</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.available}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Arkengine Mods are engine-only tuning components installed into the current arkengine with <code>game.arcflight.installArkengineMod(shipActor, modItem)</code>. They are not generic ship upgrades and do not mutate hull, arkengine, room, or ship upgrade items.</p>
+    {{#if arcflight.system.installed.arkengineMods.length}}
+      <ul>
+        {{#each arcflight.system.installed.arkengineMods}}
+          <li>
+            <strong>{{this.name}}</strong> — {{this.modType}}; {{this.rarity}}; {{this.modSlotsRequired}} slot(s); <em>{{this.systemState}}</em>
+            {{#if this.effects.derivedStatModifiers.length}}
+              <ul>
+                {{#each this.effects.derivedStatModifiers}}
+                  <li>{{this.summary}}</li>
+                {{/each}}
+              </ul>
+            {{else}}
+              <span class="arcflight-sheet__hint">Placeholder interactions only.</span>
+            {{/if}}
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p class="arcflight-sheet__hint">No arkengine mods installed.</p>
+    {{/if}}
+  </section>
 
   <section class="arcflight-sheet__section">
     <h2>Room Framework</h2>
