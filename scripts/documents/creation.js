@@ -35,7 +35,7 @@ export async function createArcflightItem(componentType, data = {}, operation = 
   const providedArcflightFlags = flags?.[ARCFLIGHT_MODULE_ID] ?? {};
   const providedFlagSystem = providedArcflightFlags.system ?? {};
   const fullComponentSystem = foundry.utils.mergeObject(componentSystem, providedFlagSystem, { inplace: false });
-  const arcflightFlagData = getDefaultArcflightComponentFlags(normalizedType, fullComponentSystem);
+  const arcflightFlagData = getDefaultArcflightComponentFlags(normalizedType, deepCloneData(fullComponentSystem));
 
   const source = foundry.utils.mergeObject(
     {
@@ -53,7 +53,7 @@ export async function createArcflightItem(componentType, data = {}, operation = 
   source.type = ARCFLIGHT_COMPONENT_ITEM_TYPE;
   source.flags[ARCFLIGHT_MODULE_ID].enabled = true;
   source.flags[ARCFLIGHT_MODULE_ID].componentType = normalizedType;
-  source.flags[ARCFLIGHT_MODULE_ID].system = arcflightFlagData.system;
+  source.flags[ARCFLIGHT_MODULE_ID].system = deepCloneData(arcflightFlagData.system);
 
   return Item.create(source, operation);
 }
@@ -77,7 +77,7 @@ export async function createCoreHull(platformKey, operation = {}) {
   }
 
   return createArcflightItem(ARCFLIGHT_ITEM_TYPES.HULL, {
-    name: hullData.platform,
+    name: hullData.displayName ?? hullData.platform,
     system: deepCloneData(hullData)
   }, operation);
 }
@@ -179,7 +179,10 @@ export async function createCoreCrewAsset(crewAssetKey, operation = {}) {
 }
 
 export const createArkengine = createCoreArkengine;
-
+export const createArkengineMod = createCoreArkengineMod;
+export const createCrewAsset = createCoreCrewAsset;
 export const createHull = createCoreHull;
+export const createRoom = createCoreRoom;
+export const createShipUpgrade = createCoreShipUpgrade;
 
 export { getArcflightItemDocumentType };

@@ -37,8 +37,16 @@ function weaponMounts(specification) {
   );
 }
 
+function titleCasePlatform(platform) {
+  return platform
+    .split("-")
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
 function hull({
   platform,
+  displayName = titleCasePlatform(platform),
   hullIntegrity,
   armorClass,
   physicalResistances,
@@ -59,7 +67,9 @@ function hull({
   traits = []
 }) {
   return Object.freeze({
+    componentType: "hull",
     platform,
+    displayName,
     hullIntegrity,
     armorClass,
     physicalResistances: {

@@ -734,7 +734,7 @@ export async function installHull(shipActor, hullItem) {
     hullItemId: hullItem.id ?? "",
     hullUuid: hullItem.uuid ?? "",
     hullPlatform: baseHull.platform ?? "",
-    hullName: hullItem.name ?? baseHull.platform ?? "",
+    hullName: hullItem.name ?? baseHull.displayName ?? baseHull.platform ?? "",
     coreRooms
   }, { inplace: false });
   nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
@@ -762,7 +762,7 @@ export async function installHull(shipActor, hullItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.hull`]: hullItem.name ?? baseHull.platform ?? "",
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.hull`]: hullItem.name ?? baseHull.displayName ?? baseHull.platform ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.minimum`]: derived.crew?.minimum ?? 0,

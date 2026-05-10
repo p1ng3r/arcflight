@@ -32,7 +32,9 @@ export const arcflightComponentTypeLabels = Object.freeze({
 export const arcflightComponentDefaults = Object.freeze({
   [ARCFLIGHT_ITEM_TYPES.HULL]: Object.freeze({
     ...commonComponentData,
+    componentType: ARCFLIGHT_ITEM_TYPES.HULL,
     platform: "",
+    displayName: "",
     hullIntegrity: 0,
     armorClass: 0,
     physicalResistances: {
@@ -73,6 +75,7 @@ export const arcflightComponentDefaults = Object.freeze({
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE]: Object.freeze({
     ...commonComponentData,
+    componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE,
     engineClass: "",
     displayName: "",
     spellRankRequired: 0,
