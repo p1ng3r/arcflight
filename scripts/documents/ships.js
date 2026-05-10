@@ -514,7 +514,8 @@ const SUPPORTED_ARKENGINE_MODIFIER_TARGETS = new Set([
   "hardBurnStrainCost",
   "overchargeRisk",
   "resistanceTendencies",
-  "arkengineModSlots"
+  "arkengineModSlots",
+  "fuelSlots"
 ]);
 
 function applyDerivedModifier(derived, modifier = {}, supportedTargets, label) {
