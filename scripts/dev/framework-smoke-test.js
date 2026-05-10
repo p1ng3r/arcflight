@@ -10,7 +10,13 @@ import {
 import {
   addCrewAsset,
   assignStation,
+  clearCrewRoster,
+  clearInstalledArkengineMods,
+  clearInstalledRooms,
+  clearInstalledShipUpgrades,
+  clearShipBuild,
   clearStationAssignment,
+  clearStationAssignments,
   getArcflightShipData,
   getDefaultArcflightShipFlags,
   installArkengine,
@@ -234,6 +240,39 @@ export async function runFrameworkSmokeTest(options = {}) {
     await clearStationAssignment(actor, "engineer");
     shipData = getArcflightShipData(actor);
     checkEqual(result, "Engineer station assignment clears", null, shipData.stations.assignments.engineer);
+
+    await assignStation(actor, "engineer", crewEntry, { assigneeType: "crewAsset" });
+    await clearStationAssignments(actor);
+    shipData = getArcflightShipData(actor);
+    check(result, "All station assignments clear", Object.values(shipData.stations.assignments).every((assignment) => assignment === null), true, shipData.stations.assignments);
+
+    await clearInstalledShipUpgrades(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes ship upgrades", 0, shipData.installed.shipUpgrades.length);
+    checkEqual(result, "Clear helper resets ship upgrade slots", 3, shipData.installed.shipUpgradeSlots.available);
+
+    await clearInstalledArkengineMods(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes arkengine mods", 0, shipData.installed.arkengineMods.length);
+    checkEqual(result, "Clear helper preserves arkengine mod capacity", 4, shipData.installed.arkengineModSlots.capacity);
+
+    await clearInstalledRooms(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes rooms", 0, shipData.installed.rooms.length);
+
+    await clearCrewRoster(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes named crew", 0, shipData.crew.namedCrew.length);
+    checkEqual(result, "Clear helper resets generic crew", 0, shipData.crew.currentGenericCrew);
+
+    await clearShipBuild(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Full clear removes installed rooms", 0, shipData.installed.rooms.length);
+    checkEqual(result, "Full clear removes installed ship upgrades", 0, shipData.installed.shipUpgrades.length);
+    checkEqual(result, "Full clear removes installed arkengine mods", 0, shipData.installed.arkengineMods.length);
+    checkEqual(result, "Full clear removes named crew", 0, shipData.crew.namedCrew.length);
+    checkEqual(result, "Full clear resets hull reference", "", shipData.installed.hullItemId);
+    checkEqual(result, "Full clear resets arkengine reference", "", shipData.installed.arkengineItemId);
   } catch (error) {
     check(result, "Smoke test threw unexpected error", false, "no unexpected error", error.message, error.stack ?? error.message);
     console.error("Arcflight | Framework smoke test failed with an unexpected error.", error);
