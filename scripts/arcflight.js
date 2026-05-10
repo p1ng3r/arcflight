@@ -1,5 +1,6 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
+import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
   createArcflightItem,
   createArkengine,
@@ -169,6 +170,7 @@ Hooks.once("init", () => {
     clearStationAssignment,
     assignShipStation: assignStation,
     clearShipStation: clearStationAssignment,
+    runFrameworkSmokeTest,
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
     shipDefaults: arcflightShipDefaults,
@@ -249,6 +251,7 @@ export {
   calculateDerivedShipStats,
   assignStation,
   clearStationAssignment,
+  runFrameworkSmokeTest,
   getArcflightItemDocumentType,
   isArcflightItem,
   getComponentType,

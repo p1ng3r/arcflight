@@ -86,6 +86,18 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.clearStationAssignment(shipActor, stationKey)`
 - `game.arcflight.assignShipStation(shipActor, stationKey, assignee, options?)`
 - `game.arcflight.clearShipStation(shipActor, stationKey)`
+- `game.arcflight.runFrameworkSmokeTest(options?)`
+
+
+## Developer Smoke Test Helper
+
+Arcflight includes a temporary developer-facing framework smoke test helper for quick validation after refactors. Run it from the Foundry console:
+
+```js
+await game.arcflight.runFrameworkSmokeTest({ cleanup: true });
+```
+
+The helper creates temporary Arcflight component items and a marked PF2E vehicle actor named `Arcflight Smoke Test Ship` when needed, enables Arcflight on that test vehicle, installs the framework components, checks duplicate install behavior, validates derived values and slot usage, assigns and clears the Engineer station, logs a console pass/fail table, and returns a structured result object. With `cleanup: true`, it deletes only the documents created or marked by the helper. It does not mutate Arcflight source definitions, balance data, or normal PF2E equipment/vehicles.
 
 ## Implemented Component Types
 
