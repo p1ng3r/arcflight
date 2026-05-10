@@ -109,6 +109,33 @@ function prepareCrewEntry(entry = {}) {
   };
 }
 
+function numericDisplayValue(value, fallback = 0) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function prepareFuelingDisplay(system = {}) {
+  const derived = system.derived ?? {};
+  const current = system.current ?? {};
+  const fueling = system.base?.arkengine?.fueling ?? {};
+  const requiredSpellRank = numericDisplayValue(fueling.requiredSpellRank);
+  const fuelSlots = numericDisplayValue(derived.fuelSlots, numericDisplayValue(fueling.fuelSlots));
+  const maxStoredSpellRanks = numericDisplayValue(
+    derived.maxStoredSpellRanks,
+    numericDisplayValue(fueling.maxStoredSpellRanks, requiredSpellRank * fuelSlots)
+  );
+
+  return {
+    fuelSlots,
+    maxStoredSpellRanks,
+    currentStoredSpellRanks: numericDisplayValue(current.storedSpellRanks),
+    normalHexCost: numericDisplayValue(derived.normalHexCost, requiredSpellRank),
+    hardBurnHexCost: numericDisplayValue(derived.hardBurnHexCost, Math.ceil(requiredSpellRank * 1.5)),
+    leanBurnHexCost: numericDisplayValue(derived.leanBurnHexCost, Math.ceil(requiredSpellRank / 2)),
+    stealthBurnHexCost: numericDisplayValue(derived.stealthBurnHexCost, Math.ceil(requiredSpellRank * 1.5))
+  };
+}
+
 function prepareSlotState(slotState = {}, fallbackCapacity = 0) {
   const capacity = Number.isFinite(Number(slotState?.capacity)) ? Number(slotState.capacity) : fallbackCapacity;
   const used = Number.isFinite(Number(slotState?.used)) ? Number(slotState.used) : 0;
@@ -149,6 +176,7 @@ function prepareArcflightShipViewData(arcflight) {
   system.installed.arkengineModSlots = prepareSlotState(system.installed.arkengineModSlots);
   system.installed.roomSlots = prepareSlotState(system.installed.roomSlots);
   system.installed.shipUpgradeSlots = prepareSlotState(system.installed.shipUpgradeSlots, 3);
+  system.fuelingDisplay = prepareFuelingDisplay(system);
   system.crew = system.crew ?? {};
   system.crew.namedCrew = arrayOrEmpty(system.crew.namedCrew).map(prepareCrewEntry);
 
