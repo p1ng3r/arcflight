@@ -168,6 +168,32 @@ function getSheetActor(sheet) {
   return sheet?.actor ?? sheet?.document ?? null;
 }
 
+async function confirmClearShipBuild(actor) {
+  const actorName = actor?.name ?? "this ship";
+  const escapedActorName = foundry.utils.escapeHTML(actorName);
+  const title = "Clear Arcflight Ship Build";
+  const content = `<p>Clear the Arcflight ship build for <strong>${escapedActorName}</strong>?</p><p>This removes installed build references from the actor but does not delete source items, compendium items, or the actor.</p>`;
+  const dialogV2 = foundry.applications.api.DialogV2;
+
+  if (typeof dialogV2?.confirm === "function") {
+    return await dialogV2.confirm({
+      window: { title },
+      content,
+      rejectClose: false
+    });
+  }
+
+  if (typeof globalThis.Dialog?.confirm === "function") {
+    return await globalThis.Dialog.confirm({
+      title,
+      content,
+      defaultYes: false
+    });
+  }
+
+  return globalThis.confirm?.(`Clear the Arcflight ship build for ${actorName}?`) === true;
+}
+
 async function enableArcflightShip(actor) {
   return actor.update({
     [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
@@ -277,6 +303,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.element
       .querySelector?.("[data-arcflight-apply-clean-build]")
       ?.addEventListener("click", this.#onApplyCleanExampleBuild.bind(this));
+
+    this.element
+      .querySelector?.("[data-arcflight-clear-build]")
+      ?.addEventListener("click", this.#onClearBuild.bind(this));
   }
 
   #onChangeExampleBuild(event) {
@@ -320,6 +350,35 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not apply that example ship build.");
       console.warn("Arcflight | Example ship build apply failed.", error);
+    }
+  }
+
+  async #onClearBuild(event) {
+    event.preventDefault();
+
+    const actor = getSheetActor(this);
+    if (!isArcflightShipEnabled(actor)) {
+      ui.notifications?.warn?.("Clear Build requires an Arcflight-enabled PF2E vehicle actor.");
+      return;
+    }
+
+    const clearShipBuild = game?.arcflight?.clearShipBuild;
+    if (typeof clearShipBuild !== "function") {
+      ui.notifications?.warn?.("Arcflight clear build helper is not available.");
+      return;
+    }
+
+    const confirmed = await confirmClearShipBuild(actor);
+    if (!confirmed) return;
+
+    try {
+      await clearShipBuild(actor);
+      this.#selectedExampleBuildKey = "";
+      this.render(true);
+      ui.notifications?.info?.("Arcflight ship build cleared.");
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not clear this ship build.");
+      console.warn("Arcflight | Ship build clear failed.", error);
     }
   }
 
