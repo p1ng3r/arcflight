@@ -182,6 +182,11 @@ export async function runFrameworkSmokeTest(options = {}) {
     await installShipUpgrade(actor, componentItems.shipUpgrade);
     await addCrewAsset(actor, componentItems.crewAsset);
 
+    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1 };
+    await actor.update({
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
+    });
+
     let shipData = getArcflightShipData(actor);
     const crewEntry = shipData.crew.namedCrew[0];
     await assignStation(actor, "engineer", crewEntry, { assigneeType: "crewAsset" });
@@ -206,6 +211,14 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Room slots used", 1, shipData.installed.roomSlots.used);
     checkEqual(result, "Arkengine mod slots used", 1, shipData.installed.arkengineModSlots.used);
     checkEqual(result, "Ship upgrade slots used", 1, shipData.installed.shipUpgradeSlots.used);
+    checkEqual(result, "Room slots shape has available", 3, shipData.installed.roomSlots.available);
+    checkEqual(result, "Arkengine mod slots shape has available", 2, shipData.installed.arkengineModSlots.available);
+    checkEqual(result, "Ship upgrade slots shape has available", 2, shipData.installed.shipUpgradeSlots.available);
+
+    checkEqual(result, "Current hull preserved", preservedCurrent.hull, shipData.current.hull);
+    checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
+    checkEqual(result, "Current strain preserved", preservedCurrent.strain, shipData.current.strain);
+    checkEqual(result, "Current morale preserved", preservedCurrent.morale, shipData.current.morale);
 
     const engineerAssignment = shipData.stations.assignments.engineer;
     check(result, "Engineer station assignment exists", Boolean(engineerAssignment), "assignment", engineerAssignment?.name ?? null);

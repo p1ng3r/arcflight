@@ -305,15 +305,19 @@ function getArkengineModSlotCost(mod = {}) {
   return numericValue(mod.modSlotsRequired ?? mod.installation?.modSlotsRequired, 1);
 }
 
-function getArkengineModSlotState(arkengine = {}, installed = {}) {
-  const capacity = numericValue(arkengine.modSlots);
-  const used = getInstalledArkengineMods(installed).reduce((total, mod) => total + getArkengineModSlotCost(mod), 0);
-
+function buildSlotState(capacity, used) {
   return {
     capacity,
     used,
     available: capacity - used
   };
+}
+
+function getArkengineModSlotState(arkengine = {}, installed = {}, derived = null) {
+  const capacity = numericValue(derived?.arkengineModSlots ?? arkengine.modSlots);
+  const used = getInstalledArkengineMods(installed).reduce((total, mod) => total + getArkengineModSlotCost(mod), 0);
+
+  return buildSlotState(capacity, used);
 }
 
 function getInstalledRooms(installed = {}) {
@@ -324,11 +328,7 @@ function getRoomSlotState(hull = {}, installed = {}) {
   const capacity = numericValue(hull.rooms?.expansionSlots);
   const used = getInstalledRooms(installed).reduce((total, room) => total + numericValue(room.expansionSlotsRequired, 1), 0);
 
-  return {
-    capacity,
-    used,
-    available: capacity - used
-  };
+  return buildSlotState(capacity, used);
 }
 
 function getInstalledShipUpgrades(installed = {}) {
@@ -349,11 +349,7 @@ function getShipUpgradeSlotState(installed = {}) {
   const capacity = Number.isFinite(existingCapacity) ? existingCapacity : 3;
   const used = getInstalledShipUpgrades(installed).reduce((total, upgrade) => total + numericValue(upgrade.slotCost, 1), 0);
 
-  return {
-    capacity,
-    used,
-    available: capacity - used
-  };
+  return buildSlotState(capacity, used);
 }
 
 function buildInstalledArkengineModEntry(modItem) {
@@ -437,6 +433,7 @@ function buildInstalledShipUpgradeEntry(upgradeItem) {
     upgradeType: upgradeData.identity?.upgradeType ?? "",
     rarity: upgradeData.identity?.rarity ?? "standard",
     systemState: upgradeData.state?.systemState ?? "Functional",
+    slotCost: numericValue(upgradeData.installation?.slotCost, 1),
     effects: cloneData(upgradeData.effects ?? {}),
     restrictions: cloneData(upgradeData.restrictions ?? {}),
     traits: cloneData(upgradeData.traits ?? [])
@@ -575,9 +572,13 @@ function buildInstalledRoomEntry(roomItem) {
 function deriveShipStatsFromBase(base = {}, installed = {}) {
   const hull = cloneData(base.hull ?? {});
   const arkengine = cloneData(base.arkengine ?? {});
-  const arkengineModSlots = getArkengineModSlotState(arkengine, installed);
   const roomSlots = getRoomSlotState(hull, installed);
   const coreRooms = getCoreRoomsFromHull(hull);
+
+  // Calculation order is intentionally linear: hull base -> arkengine base ->
+  // arkengine mods -> ship upgrades -> final derived slot/readout fields.
+  // Future gameplay hooks (travel, hard burn, overcharge, combat, morale,
+  // events) should consume these results rather than mutate source items.
   const derived = foundry.utils.mergeObject(cloneData(emptyDerivedShipState), hull, { inplace: false });
 
   derived.lifeveilCapacity = numericValue(hull.lifeveilCapacity) + numericValue(arkengine.lifeveilModifier);
@@ -587,9 +588,6 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
     ? cloneData(arkengine.resistanceTendencies)
     : [];
   derived.arkengineVariantFamily = arkengine.variantFamily ?? "";
-  derived.arkengineModSlots = arkengineModSlots.capacity;
-  derived.arkengineModSlotsUsed = arkengineModSlots.used;
-  derived.arkengineModSlotsAvailable = arkengineModSlots.available;
   derived.hardBurnStrainCost = numericValue(arkengine.hardBurnStrainCost);
   derived.overchargeRisk = arkengine.overchargeRisk ?? "";
   derived.spellRankRequired = arkengine.spellRankRequired ?? 0;
@@ -597,17 +595,19 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
   derived.arkengineStrainModifier = numericValue(arkengine.strainModifier);
 
   applyArkengineModDerivedStatModifiers(derived, installed);
+  applyShipUpgradeDerivedStatModifiers(derived, installed);
 
-  derived.energyResistances = cloneData(derived.resistanceTendencies);
+  const arkengineModSlots = getArkengineModSlotState(arkengine, installed, derived);
+  derived.arkengineModSlots = arkengineModSlots.capacity;
   derived.arkengineModSlotsUsed = arkengineModSlots.used;
-  derived.arkengineModSlotsAvailable = numericValue(derived.arkengineModSlots) - arkengineModSlots.used;
+  derived.arkengineModSlotsAvailable = arkengineModSlots.available;
+  derived.energyResistances = cloneData(derived.resistanceTendencies);
   derived.rooms = foundry.utils.mergeObject(cloneData(derived.rooms ?? {}), {
     coreRooms,
     expansionSlots: roomSlots.capacity,
     expansionSlotsUsed: roomSlots.used,
     expansionSlotsAvailable: roomSlots.available
   }, { inplace: false });
-  applyShipUpgradeDerivedStatModifiers(derived, installed);
 
   return derived;
 }
@@ -653,6 +653,53 @@ function hasRuntimeValue(current = {}, key) {
   return current[key] !== undefined && current[key] !== null && current[key] !== "";
 }
 
+function getCurrentFallback(systemData = {}, key) {
+  if (hasRuntimeValue(systemData.current, key)) return systemData.current[key];
+
+  if (key === "hull") return systemData.resources?.hull?.value;
+  if (key === "lifeveil") return systemData.resources?.lifeveil?.value;
+  if (key === "strain") return systemData.resources?.strain?.value;
+  if (key === "morale") return systemData.resources?.morale;
+
+  return undefined;
+}
+
+function shouldInitializeRuntimeValue(existingCurrent = {}, key, shouldInitialize = false) {
+  return !hasRuntimeValue(existingCurrent, key)
+    || (shouldInitialize && numericValue(existingCurrent[key]) <= 0);
+}
+
+function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
+  const fallbackCurrent = {
+    hull: getCurrentFallback(systemData, "hull"),
+    lifeveil: getCurrentFallback(systemData, "lifeveil"),
+    strain: getCurrentFallback(systemData, "strain"),
+    morale: getCurrentFallback(systemData, "morale")
+  };
+  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), cloneData(fallbackCurrent), { inplace: false });
+
+  if (shouldInitializeRuntimeValue(current, "hull", initialize.hull)) current.hull = derived.hullIntegrity ?? 0;
+  if (shouldInitializeRuntimeValue(current, "lifeveil", initialize.lifeveil)) current.lifeveil = derived.lifeveilCapacity ?? 0;
+  if (shouldInitializeRuntimeValue(current, "strain", initialize.strain)) current.strain = 0;
+  if (shouldInitializeRuntimeValue(current, "morale", initialize.morale)) current.morale = 0;
+
+  current.hull = numericValue(current.hull);
+  current.lifeveil = numericValue(current.lifeveil);
+  current.strain = numericValue(current.strain);
+  current.morale = numericValue(current.morale);
+
+  return current;
+}
+
+function alignInstalledSlotStates(installed = {}, base = {}, derived = {}) {
+  const nextInstalled = cloneData(installed ?? {});
+  nextInstalled.arkengineModSlots = getArkengineModSlotState(base.arkengine, nextInstalled, derived);
+  nextInstalled.roomSlots = getRoomSlotState(base.hull, nextInstalled);
+  nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
+
+  return nextInstalled;
+}
+
 function isArcflightShipActor(actor) {
   return actor?.type === "vehicle"
     && actor.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true
@@ -695,19 +742,18 @@ export async function recalculateShipStats(shipActor) {
   }
 
   const systemData = getArcflightShipData(shipActor);
-  const derived = calculateDerivedShipStats(systemData.base, systemData.installed);
-  const arkengineModSlots = getArkengineModSlotState(systemData.base?.arkengine, systemData.installed);
-  const roomSlots = getRoomSlotState(systemData.base?.hull, systemData.installed);
-  const shipUpgradeSlots = getShipUpgradeSlotState(systemData.installed);
   const coreRooms = getCoreRoomsFromHull(systemData.base?.hull);
+  const base = foundry.utils.mergeObject(cloneData(systemData.base ?? {}), { coreRooms }, { inplace: false });
+  const installed = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), { coreRooms }, { inplace: false });
+  const derived = calculateDerivedShipStats(base, installed);
+  const nextInstalled = alignInstalledSlotStates(installed, base, derived);
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
     getLegacyDerivedStatsFromDerived(derived),
     { inplace: false }
   );
 
-  const existingCurrent = cloneData(systemData.current ?? {});
-  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
+  const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
   const stations = getDefaultStationState(systemData.stations);
@@ -716,10 +762,8 @@ export async function recalculateShipStats(shipActor) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.coreRooms`]: coreRooms,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkengineModSlots`]: arkengineModSlots,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.roomSlots`]: roomSlots,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgradeSlots`]: shipUpgradeSlots,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
@@ -749,14 +793,13 @@ export async function installHull(shipActor, hullItem) {
   nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
   nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
   const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: baseHull, arkengine: baseArkengine }, derived);
   const firstHullInstall = !hasInstalledHull(rawSystemData);
-  const existingCurrent = cloneData(rawSystemData.current ?? {});
-  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
-
-  if (firstHullInstall || !hasRuntimeValue(existingCurrent, "hull")) current.hull = derived.hullIntegrity ?? 0;
-  if (firstHullInstall || !hasRuntimeValue(existingCurrent, "lifeveil")) current.lifeveil = derived.lifeveilCapacity ?? 0;
-  if (firstHullInstall || !hasRuntimeValue(existingCurrent, "strain")) current.strain = 0;
-  if (!hasRuntimeValue(existingCurrent, "morale")) current.morale = systemData.resources?.morale ?? 0;
+  const current = buildCurrentShipState(systemData, derived, {
+    hull: firstHullInstall,
+    lifeveil: firstHullInstall,
+    strain: firstHullInstall
+  });
 
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
@@ -766,7 +809,7 @@ export async function installHull(shipActor, hullItem) {
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
   return shipActor.update({
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: baseHull,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
@@ -809,14 +852,13 @@ export async function installArkengine(shipActor, arkengineItem) {
   nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
   nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
   const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: baseHull, arkengine: baseArkengine }, derived);
   const firstArkengineInstall = !hasInstalledArkengine(rawSystemData);
-  const existingCurrent = cloneData(rawSystemData.current ?? {});
-  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
-
-  if (!hasRuntimeValue(existingCurrent, "hull")) current.hull = derived.hullIntegrity ?? 0;
-  if (firstArkengineInstall && !hasRuntimeValue(existingCurrent, "lifeveil")) current.lifeveil = derived.lifeveilCapacity ?? 0;
-  if (!hasRuntimeValue(existingCurrent, "strain")) current.strain = 0;
-  if (!hasRuntimeValue(existingCurrent, "morale")) current.morale = systemData.resources?.morale ?? 0;
+  const current = buildCurrentShipState(systemData, derived, {
+    hull: false,
+    lifeveil: firstArkengineInstall,
+    strain: false
+  });
 
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
@@ -826,7 +868,7 @@ export async function installArkengine(shipActor, arkengineItem) {
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
   return shipActor.update({
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.arkengine`]: baseArkengine,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
@@ -856,6 +898,10 @@ export async function installArkengineMod(shipActor, modItem) {
   const coreRooms = getCoreRoomsFromHull(baseHull);
   const installedArkengineMods = getInstalledArkengineMods(systemData.installed);
   const modEntry = buildInstalledArkengineModEntry(modItem);
+  if (hasInstalledEntry(installedArkengineMods, modEntry)) {
+    console.warn(`Arcflight | ${modEntry.name} is already installed as an arkengine mod on this ship; skipping duplicate install.`);
+    return shipActor;
+  }
 
   validateArkengineModEntryForEngine(modEntry, baseArkengine, systemData.installed);
 
@@ -873,22 +919,23 @@ export async function installArkengineMod(shipActor, modItem) {
   }
 
   const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: baseHull, arkengine: baseArkengine }, derived);
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
     getLegacyDerivedStatsFromDerived(derived),
     { inplace: false }
   );
-  const existingCurrent = cloneData(systemData.current ?? {});
-  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
+  const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
   return shipActor.update({
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: nextInstalled.arkengineMods.map((mod) => mod.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: alignedInstalled.arkengineMods.map((mod) => mod.name).join(", ")
   });
 }
 
@@ -930,18 +977,23 @@ export async function installRoom(shipActor, roomItem) {
   }
 
   const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: baseHull, arkengine: baseArkengine }, derived);
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
     getLegacyDerivedStatsFromDerived(derived),
     { inplace: false }
   );
+  const current = buildCurrentShipState(systemData, derived);
+  const legacyResources = buildLegacyResources(systemData, current, derived);
 
   return shipActor.update({
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: nextInstalled.rooms.map((room) => room.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: alignedInstalled.rooms.map((room) => room.name).join(", ")
   });
 }
 
@@ -978,22 +1030,23 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   }
 
   const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: baseHull, arkengine: baseArkengine }, derived);
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
     getLegacyDerivedStatsFromDerived(derived),
     { inplace: false }
   );
-  const existingCurrent = cloneData(systemData.current ?? {});
-  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
+  const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
   return shipActor.update({
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: nextInstalled.shipUpgrades.map((upgrade) => upgrade.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: alignedInstalled.shipUpgrades.map((upgrade) => upgrade.name).join(", "),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0
   });
 }
