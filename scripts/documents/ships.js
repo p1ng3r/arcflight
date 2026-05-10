@@ -1,6 +1,8 @@
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getComponentData, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
+import { getHullPattern } from "../../data/hulls/hull-patterns.js";
+import { getArkenginePattern } from "../../data/arkengines/arkengine-patterns.js";
 import { CORE_STATIONS, STATION_KEYS, getStation } from "../../data/stations/core-stations.js";
 
 export const ARCFLIGHT_SHIP_ACTOR_TYPE = "arcflightShip";
@@ -10,10 +12,12 @@ const emptyInstalledState = Object.freeze({
   hullUuid: "",
   hullPlatform: "",
   hullName: "",
+  hullPattern: Object.freeze({}),
   arkengineItemId: "",
   arkengineUuid: "",
   arkengineKey: "",
   arkengineName: "",
+  arkenginePattern: Object.freeze({}),
   arkengineMods: Object.freeze([]),
   arkengineModSlots: Object.freeze({
     capacity: 0,
@@ -533,6 +537,106 @@ function applyDerivedModifier(derived, modifier = {}, supportedTargets, label) {
   console.warn(`Arcflight | Skipping unsupported ${label} modifier mode: ${mode}`);
 }
 
+function normalizeDerivedStatModifiers(derivedStatModifiers = {}) {
+  if (Array.isArray(derivedStatModifiers)) return derivedStatModifiers.map((modifier) => cloneData(modifier));
+
+  return Object.entries(derivedStatModifiers ?? {}).map(([target, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return { target, mode: value.mode ?? "add", value: value.value, summary: value.summary ?? "" };
+    }
+
+    return { target, mode: "add", value };
+  });
+}
+
+const PATTERN_DERIVED_STAT_TARGET_ALIASES = Object.freeze({
+  travelHexDays: "voyageSpeedTravelHexDays"
+});
+
+function withPatternTargetAlias(modifier = {}) {
+  const target = PATTERN_DERIVED_STAT_TARGET_ALIASES[modifier.target] ?? modifier.target;
+
+  return { ...modifier, target };
+}
+
+const SUPPORTED_HULL_PATTERN_MODIFIER_TARGETS = new Set([
+  "hullIntegrity",
+  "armorClass",
+  "strainCapacity",
+  "lifeveilCapacity",
+  "cargoCapacity",
+  "detection",
+  "combatSpeed",
+  "maneuverability",
+  "baseAP",
+  "baseRAP",
+  "resistanceTendencies",
+  "traits"
+]);
+
+function applyHullPatternDerivedStatModifiers(derived, installed = {}) {
+  const pattern = installed.hullPattern;
+  if (pattern?.appliesTo !== "hull") return;
+
+  for (const modifier of normalizeDerivedStatModifiers(pattern.derivedStatModifiers)) {
+    applyDerivedModifier(derived, withPatternTargetAlias(modifier), SUPPORTED_HULL_PATTERN_MODIFIER_TARGETS, "hull pattern");
+  }
+}
+
+const IGNORED_FUTURE_ARKENGINE_PATTERN_MODIFIER_TARGETS = new Set([
+  "overchargeRiskStep"
+]);
+
+const SUPPORTED_ARKENGINE_PATTERN_MODIFIER_TARGETS = new Set([
+  "voyageSpeedTravelHexDays",
+  "lifeveilCapacity",
+  "strainCapacity",
+  "hardBurnStrainCost",
+  "overchargeRisk",
+  "resistanceTendencies",
+  "arkengineModSlots",
+  "combatSpeed",
+  "fuelSlots",
+  "maxStoredSpellRanks",
+  "normalHexCost",
+  "hardBurnHexCost",
+  "leanBurnHexCost",
+  "stealthBurnHexCost",
+  "arkengineLifeveilModifier",
+  "arkengineStrainModifier"
+]);
+
+function expandArkenginePatternModifier(modifier = {}) {
+  if (modifier.target === "lifeveilModifier") {
+    return [
+      { ...modifier, target: "lifeveilCapacity" },
+      { ...modifier, target: "arkengineLifeveilModifier" }
+    ];
+  }
+
+  if (modifier.target === "strainModifier") {
+    return [
+      { ...modifier, target: "strainCapacity" },
+      { ...modifier, target: "arkengineStrainModifier" }
+    ];
+  }
+
+  return [withPatternTargetAlias(modifier)];
+}
+
+function applyArkenginePatternDerivedStatModifiers(derived, installed = {}) {
+  const pattern = installed.arkenginePattern;
+  if (pattern?.appliesTo !== "arkengine") return;
+
+  for (const modifier of normalizeDerivedStatModifiers(pattern.derivedStatModifiers)) {
+    if (IGNORED_FUTURE_ARKENGINE_PATTERN_MODIFIER_TARGETS.has(modifier.target)) continue;
+
+    for (const expandedModifier of expandArkenginePatternModifier(modifier)) {
+      applyDerivedModifier(derived, expandedModifier, SUPPORTED_ARKENGINE_PATTERN_MODIFIER_TARGETS, "arkengine pattern");
+    }
+  }
+}
+
 function applyArkengineModDerivedStatModifiers(derived, installed = {}) {
   for (const mod of getInstalledArkengineMods(installed)) {
     const modifiers = Array.isArray(mod.effects?.derivedStatModifiers) ? mod.effects.derivedStatModifiers : [];
@@ -623,14 +727,16 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
   const roomSlots = getRoomSlotState(hull, installed);
   const coreRooms = getCoreRoomsFromHull(hull);
 
-  // Calculation order is intentionally linear: hull base -> arkengine base ->
-  // arkengine mods -> ship upgrades -> final derived slot/readout fields.
+  // Calculation order is intentionally linear: hull base -> hull pattern ->
+  // arkengine base/effects -> arkengine pattern -> arkengine mods ->
+  // ship upgrades -> final derived slot/readout fields.
   // Future gameplay hooks (travel, hard burn, overcharge, combat, morale,
   // events) should consume these results rather than mutate source items.
   const derived = foundry.utils.mergeObject(cloneData(emptyDerivedShipState), hull, { inplace: false });
+  applyHullPatternDerivedStatModifiers(derived, installed);
 
-  derived.lifeveilCapacity = numericValue(hull.lifeveilCapacity) + numericValue(arkengine.lifeveilModifier);
-  derived.strainCapacity = numericValue(hull.strainCapacity) + numericValue(arkengine.strainModifier);
+  derived.lifeveilCapacity = numericValue(derived.lifeveilCapacity) + numericValue(arkengine.lifeveilModifier);
+  derived.strainCapacity = numericValue(derived.strainCapacity) + numericValue(arkengine.strainModifier);
   derived.voyageSpeedTravelHexDays = numericValue(arkengine.travelHexDays);
   derived.resistanceTendencies = Array.isArray(arkengine.resistanceTendencies)
     ? cloneData(arkengine.resistanceTendencies)
@@ -646,6 +752,7 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
   derived.maxStoredSpellRanks = numericValue(arkengine.fueling?.maxStoredSpellRanks);
   foundry.utils.mergeObject(derived, getArkengineFuelingCosts(arkengine.fueling), { inplace: true });
 
+  applyArkenginePatternDerivedStatModifiers(derived, installed);
   applyArkengineModDerivedStatModifiers(derived, installed);
   applyShipUpgradeDerivedStatModifiers(derived, installed);
 
@@ -822,6 +929,60 @@ export async function recalculateShipStats(shipActor) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
+}
+
+function getPatternSnapshot(pattern) {
+  return cloneData(pattern ?? {});
+}
+
+function validatePatternAppliesTo(pattern, appliesTo, helperName) {
+  if (!pattern) {
+    throw new Error(`Arcflight | ${helperName} requires a known ${appliesTo} pattern key.`);
+  }
+
+  if (pattern.appliesTo !== appliesTo) {
+    throw new Error(`Arcflight | ${helperName} received a pattern that does not apply to ${appliesTo} components.`);
+  }
+}
+
+export async function setHullPattern(shipActor, patternKey) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | setHullPattern requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  if (!hasInstalledHull(systemData)) {
+    throw new Error("Arcflight | setHullPattern requires an installed hull before a hull pattern can be selected.");
+  }
+
+  const pattern = getHullPattern(patternKey);
+  validatePatternAppliesTo(pattern, "hull", "setHullPattern");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.hullPattern`]: getPatternSnapshot(pattern)
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+export async function setArkenginePattern(shipActor, patternKey) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | setArkenginePattern requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  if (!hasInstalledArkengine(systemData)) {
+    throw new Error("Arcflight | setArkenginePattern requires an installed arkengine before an arkengine pattern can be selected.");
+  }
+
+  const pattern = getArkenginePattern(patternKey);
+  validatePatternAppliesTo(pattern, "arkengine", "setArkenginePattern");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkenginePattern`]: getPatternSnapshot(pattern)
+  });
+
+  return recalculateShipStats(shipActor);
 }
 
 export async function installHull(shipActor, hullItem) {

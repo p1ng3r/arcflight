@@ -60,7 +60,9 @@ import {
   installShipUpgrade,
   installShipUpgradeOnShip,
   recalculateShipStats,
-  removeCrewAsset
+  removeCrewAsset,
+  setArkenginePattern,
+  setHullPattern
 } from "./documents/ships.js";
 import { registerArcflightSheets } from "./sheets/registration.js";
 
@@ -164,6 +166,8 @@ Hooks.once("init", () => {
     getComponentData,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
+    setHullPattern,
+    setArkenginePattern,
     addCrewAsset,
     removeCrewAsset,
     installHull,
@@ -257,6 +261,8 @@ export {
   removeCrewAsset,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
+  setHullPattern,
+  setArkenginePattern,
   installArkengine,
   installArkengineMod,
   installArkengineModOnShip,
