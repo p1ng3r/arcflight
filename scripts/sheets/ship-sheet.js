@@ -1,3 +1,5 @@
+import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengines/arkengine-patterns.js";
+import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getComponentType } from "../documents/components.js";
 import {
@@ -8,7 +10,9 @@ import {
   installArkengineMod,
   installHull,
   installRoom,
-  installShipUpgrade
+  installShipUpgrade,
+  setArkenginePattern,
+  setHullPattern
 } from "../documents/ships.js";
 import { arcflightTemplatePath } from "./sheet-helpers.js";
 
@@ -49,6 +53,18 @@ function displayNameForEntry(entry = {}) {
 
 function displayNameForInstalledSingle(name, fallback = "") {
   return humanizeIdentifier(name || fallback);
+}
+
+function preparePatternOptions(patternKeys = [], getPattern, selectedKey = "") {
+  return arrayOrEmpty(patternKeys).map((key) => {
+    const pattern = getPattern(key) ?? {};
+
+    return {
+      value: key,
+      label: displayNameForEntry({ ...pattern, key }),
+      selected: key === selectedKey
+    };
+  });
 }
 
 function prepareInstalledEntry(entry = {}) {
@@ -93,6 +109,18 @@ function prepareArcflightShipViewData(arcflight) {
   );
   system.installed.hasHull = Boolean(system.installed.hullItemId || system.installed.hullUuid || system.installed.hullName);
   system.installed.hasArkengine = Boolean(system.installed.arkengineItemId || system.installed.arkengineUuid || system.installed.arkengineName);
+  system.installed.hullPatternKey = system.installed.hullPattern?.key ?? "";
+  system.installed.arkenginePatternKey = system.installed.arkenginePattern?.key ?? "";
+  system.installed.hullPatternOptions = preparePatternOptions(
+    getHullPatternKeys(),
+    getHullPattern,
+    system.installed.hullPatternKey
+  );
+  system.installed.arkenginePatternOptions = preparePatternOptions(
+    getArkenginePatternKeys(),
+    getArkenginePattern,
+    system.installed.arkenginePatternKey
+  );
   system.installed.arkengineMods = arrayOrEmpty(system.installed.arkengineMods).map(prepareInstalledEntry);
   system.installed.coreRooms = arrayOrEmpty(system.installed.coreRooms).map(prepareInstalledEntry);
   system.installed.rooms = arrayOrEmpty(system.installed.rooms).map(prepareInstalledEntry);
@@ -187,6 +215,44 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const builder = this.element.querySelector?.("[data-arcflight-ship-builder]");
     builder?.addEventListener("dragover", this.#onDragOverShipBuilder.bind(this));
     builder?.addEventListener("drop", this.#onDropShipBuilder.bind(this));
+
+    this.element
+      .querySelector?.("[data-arcflight-hull-pattern]")
+      ?.addEventListener("change", this.#onChangeHullPattern.bind(this));
+
+    this.element
+      .querySelector?.("[data-arcflight-arkengine-pattern]")
+      ?.addEventListener("change", this.#onChangeArkenginePattern.bind(this));
+  }
+
+  async #onChangeHullPattern(event) {
+    event.preventDefault();
+
+    const patternKey = event.currentTarget?.value ?? "";
+    if (!patternKey) return;
+
+    try {
+      await setHullPattern(this.document, patternKey);
+      this.render(true);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not set that hull pattern.");
+      console.warn("Arcflight | Hull pattern selection failed.", error);
+    }
+  }
+
+  async #onChangeArkenginePattern(event) {
+    event.preventDefault();
+
+    const patternKey = event.currentTarget?.value ?? "";
+    if (!patternKey) return;
+
+    try {
+      await setArkenginePattern(this.document, patternKey);
+      this.render(true);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not set that arkengine pattern.");
+      console.warn("Arcflight | Arkengine pattern selection failed.", error);
+    }
   }
 
   #onDragOverShipBuilder(event) {
