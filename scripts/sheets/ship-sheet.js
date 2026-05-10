@@ -164,6 +164,29 @@ function isArcflightShipEnabled(actor) {
     && actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE;
 }
 
+function getSheetActor(sheet) {
+  return sheet?.actor ?? sheet?.document ?? null;
+}
+
+async function enableArcflightShip(actor) {
+  return actor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
+    [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system`]: getArcflightShipData(actor)
+  });
+}
+
+async function ensureArcflightShipEnabled(actor) {
+  if (actor?.type !== "vehicle") {
+    ui.notifications?.warn?.("Arcflight ships must be PF2E vehicle actors.");
+    return null;
+  }
+
+  if (isArcflightShipEnabled(actor)) return actor;
+
+  return await enableArcflightShip(actor) ?? actor;
+}
+
 async function getDroppedItem(event) {
   const dragData = globalThis.TextEditor?.getDragEventData?.(event) ?? {};
   const uuid = dragData.uuid || dragData.itemUuid;
@@ -288,7 +311,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     try {
-      await applyCleanExampleShipBuild(this.document, selectedBuildKey);
+      const actor = await ensureArcflightShipEnabled(getSheetActor(this));
+      if (!actor) return;
+
+      await game.arcflight.applyCleanExampleShipBuild(actor, selectedBuildKey);
       this.#selectedExampleBuildKey = selectedBuildKey;
       this.render(true);
     } catch (error) {
@@ -303,8 +329,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const patternKey = event.currentTarget?.value ?? "";
     if (!patternKey) return;
 
+    const actor = getSheetActor(this);
+
     try {
-      await setHullPattern(this.document, patternKey);
+      await setHullPattern(actor, patternKey);
       this.render(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that hull pattern.");
@@ -318,8 +346,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const patternKey = event.currentTarget?.value ?? "";
     if (!patternKey) return;
 
+    const actor = getSheetActor(this);
+
     try {
-      await setArkenginePattern(this.document, patternKey);
+      await setArkenginePattern(actor, patternKey);
       this.render(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that arkengine pattern.");
@@ -328,14 +358,15 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 
   #onDragOverShipBuilder(event) {
-    if (!isArcflightShipEnabled(this.document)) return;
+    if (!isArcflightShipEnabled(getSheetActor(this))) return;
 
     event.preventDefault();
     event.stopPropagation();
   }
 
   async #onDropShipBuilder(event) {
-    if (!isArcflightShipEnabled(this.document)) return;
+    const actor = getSheetActor(this);
+    if (!isArcflightShipEnabled(actor)) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -349,7 +380,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     try {
-      await install(this.document, item);
+      await install(actor, item);
       this.render(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
@@ -360,23 +391,16 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onEnableArcflightShip(event) {
     event.preventDefault();
 
-    if (this.document?.type !== "vehicle") {
-      ui.notifications?.warn?.("Arcflight ships must be PF2E vehicle actors.");
-      return;
-    }
-
-    await this.document.update({
-      [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
-      [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
-      [`flags.${ARCFLIGHT_MODULE_ID}.system`]: getArcflightShipData(this.document)
-    });
+    const actor = await ensureArcflightShipEnabled(getSheetActor(this));
+    if (!actor) return;
 
     this.render(true);
   }
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(this.document));
+    const actor = getSheetActor(this);
+    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(actor));
 
     const stations = prepareStationRows(arcflight.system.stations);
     const exampleBuildOptions = prepareExampleBuildOptions(this.#selectedExampleBuildKey);
@@ -384,7 +408,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     return {
       ...context,
-      actor: this.document,
+      actor,
       arcflight,
       stations,
       exampleBuildOptions,
