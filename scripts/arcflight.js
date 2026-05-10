@@ -1,12 +1,13 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
-import { createArcflightItem, createArkengine, createCoreArkengine, createCoreArkengineMod, createCoreHull, createCoreRoom, createCoreShipUpgrade, createHull, getArcflightItemDocumentType } from "./documents/creation.js";
+import { createArcflightItem, createArkengine, createCoreArkengine, createCoreArkengineMod, createCoreCrewAsset, createCoreHull, createCoreRoom, createCoreShipUpgrade, createHull, getArcflightItemDocumentType } from "./documents/creation.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS, getCoreHull, getCoreHullPlatformKeys } from "../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS, CORE_ARKENGINES, getCoreArkengine, getCoreArkengineKeys } from "../data/arkengines/core-arkengines.js";
 import { CORE_ROOM_KEYS, CORE_ROOMS, getCoreRoom, getCoreRoomKeys } from "../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS, CORE_SHIP_UPGRADES, getCoreShipUpgrade, getCoreShipUpgradeKeys } from "../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_ARKENGINE_MOD_KEYS, CORE_ARKENGINE_MODS, getCoreArkengineMod, getCoreArkengineModKeys } from "../data/arkengine-mods/core-arkengine-mods.js";
 import { CORE_STATIONS, STATION_KEYS, getStation, getStationKeys, getStations } from "../data/stations/core-stations.js";
+import { CORE_CREW_ASSET_KEYS, CORE_CREW_ASSETS, getCoreCrewAsset, getCoreCrewAssetKeys } from "../data/crew/core-crew-assets.js";
 import {
   ARKENGINE_VARIANT_KEYS,
   ARKENGINE_VARIANTS,
@@ -26,6 +27,7 @@ import {
   arcflightShipDefaults,
   calculateDerivedShipStats,
   getArcflightShipData,
+  addCrewAsset,
   assignStation,
   clearStationAssignment,
   getDefaultArcflightShipData,
@@ -39,7 +41,8 @@ import {
   installRoomOnShip,
   installShipUpgrade,
   installShipUpgradeOnShip,
-  recalculateShipStats
+  recalculateShipStats,
+  removeCrewAsset
 } from "./documents/ships.js";
 import { registerArcflightSheets } from "./sheets/registration.js";
 
@@ -75,17 +78,20 @@ Hooks.once("init", () => {
     createHull,
     createCoreArkengine,
     createCoreArkengineMod,
+    createCoreCrewAsset,
     createArkengine,
     createCoreRoom,
     createCoreShipUpgrade,
     getCoreHull,
     getCoreArkengine,
     getCoreArkengineMod,
+    getCoreCrewAsset,
     getCoreRoom,
     getCoreShipUpgrade,
     getCoreHullPlatformKeys,
     getCoreArkengineKeys,
     getCoreArkengineModKeys,
+    getCoreCrewAssetKeys,
     getCoreRoomKeys,
     getCoreShipUpgradeKeys,
     getArkengineVariantKeys,
@@ -97,6 +103,7 @@ Hooks.once("init", () => {
     CORE_HULL_PLATFORM_KEYS,
     CORE_ARKENGINE_KEYS,
     CORE_ARKENGINE_MOD_KEYS,
+    CORE_CREW_ASSET_KEYS,
     CORE_ROOM_KEYS,
     CORE_SHIP_UPGRADE_KEYS,
     ARKENGINE_VARIANT_KEYS,
@@ -104,6 +111,7 @@ Hooks.once("init", () => {
     coreHulls: CORE_HULLS,
     coreArkengines: CORE_ARKENGINES,
     coreArkengineMods: CORE_ARKENGINE_MODS,
+    coreCrewAssets: CORE_CREW_ASSETS,
     coreRooms: CORE_ROOMS,
     coreShipUpgrades: CORE_SHIP_UPGRADES,
     arkengineVariants: ARKENGINE_VARIANTS,
@@ -111,6 +119,7 @@ Hooks.once("init", () => {
     coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
     coreArkengineKeys: CORE_ARKENGINE_KEYS,
     coreArkengineModKeys: CORE_ARKENGINE_MOD_KEYS,
+    coreCrewAssetKeys: CORE_CREW_ASSET_KEYS,
     coreRoomKeys: CORE_ROOM_KEYS,
     coreShipUpgradeKeys: CORE_SHIP_UPGRADE_KEYS,
     arkengineVariantKeys: ARKENGINE_VARIANT_KEYS,
@@ -123,6 +132,8 @@ Hooks.once("init", () => {
     getComponentData,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
+    addCrewAsset,
+    removeCrewAsset,
     installHull,
     installHullOnShip,
     installArkengine,
@@ -159,17 +170,20 @@ export {
   createHull,
   createCoreArkengine,
   createCoreArkengineMod,
+  createCoreCrewAsset,
   createArkengine,
   createCoreRoom,
   createCoreShipUpgrade,
   getCoreHull,
   getCoreArkengine,
   getCoreArkengineMod,
+  getCoreCrewAsset,
   getCoreRoom,
   getCoreShipUpgrade,
   getCoreHullPlatformKeys,
   getCoreArkengineKeys,
   getCoreArkengineModKeys,
+  getCoreCrewAssetKeys,
   getCoreRoomKeys,
   getCoreShipUpgradeKeys,
   getArkengineVariantKeys,
@@ -181,17 +195,21 @@ export {
   CORE_HULLS,
   CORE_ARKENGINES,
   CORE_ARKENGINE_MODS,
+  CORE_CREW_ASSETS,
   CORE_ROOMS,
   CORE_SHIP_UPGRADES,
   ARKENGINE_VARIANTS,
   CORE_HULL_PLATFORM_KEYS,
   CORE_ARKENGINE_KEYS,
   CORE_ARKENGINE_MOD_KEYS,
+  CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,
   CORE_SHIP_UPGRADE_KEYS,
   ARKENGINE_VARIANT_KEYS,
   CORE_STATIONS,
   STATION_KEYS,
+  addCrewAsset,
+  removeCrewAsset,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
   installArkengine,

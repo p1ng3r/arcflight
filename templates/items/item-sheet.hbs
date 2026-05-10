@@ -556,31 +556,43 @@
     {{#if isCrewAsset}}
       <section class="arcflight-sheet__section">
         <h2>Crew Asset</h2>
+        <p class="arcflight-sheet__hint">Crew assets are named specialists stored as immutable source equipment items. Runtime roster state belongs on the ship actor; this sheet does not add station actions, AP/RAP controls, wages, morale automation, combat automation, or travel automation.</p>
+
         <h3>Identity</h3>
+        <label class="arcflight-sheet__field"><span>ID</span><input type="text" name="{{arcflightFlagPath}}.identity.id" value="{{componentData.identity.id}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Display Name</span><input type="text" name="{{arcflightFlagPath}}.identity.displayName" value="{{componentData.identity.displayName}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Role</span><input type="text" name="{{arcflightFlagPath}}.identity.role" value="{{componentData.identity.role}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Station Affinity</span><input type="text" name="{{arcflightFlagPath}}.identity.stationAffinity" value="{{componentData.identity.stationAffinity}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Faction Identity</span><input type="text" name="{{arcflightFlagPath}}.identity.factionIdentity" value="{{componentData.identity.factionIdentity}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Title</span><input type="text" name="{{arcflightFlagPath}}.identity.title" value="{{componentData.identity.title}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Faction Identity</span><input type="text" name="{{arcflightFlagPath}}.identity.factionIdentity" value="{{componentData.identity.factionIdentity}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Origin</span><input type="text" name="{{arcflightFlagPath}}.identity.origin" value="{{componentData.identity.origin}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Description</span><textarea name="{{arcflightFlagPath}}.identity.description" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.identity.description}}</textarea></label>
 
         <h3>Crew</h3>
         <label class="arcflight-sheet__field"><span>Count</span><input type="number" name="{{arcflightFlagPath}}.crew.count" value="{{componentData.crew.count}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Minimum</span><input type="number" name="{{arcflightFlagPath}}.crew.minimum" value="{{componentData.crew.minimum}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Quality</span><input type="text" name="{{arcflightFlagPath}}.crew.quality" value="{{componentData.crew.quality}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Assignment</span><input type="text" name="{{arcflightFlagPath}}.crew.assignment" value="{{componentData.crew.assignment}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.crew.countsTowardCrewTotal" {{#if componentData.crew.countsTowardCrewTotal}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Counts Toward Crew Total</span></label>
+        <label class="arcflight-sheet__field"><span>Generic Crew Equivalent</span><input type="number" name="{{arcflightFlagPath}}.crew.genericCrewEquivalent" value="{{componentData.crew.genericCrewEquivalent}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Crew Notes</span><textarea name="{{arcflightFlagPath}}.crew.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.crew.notes}}</textarea></label>
+
+        <h3>Station Assignment</h3>
+        <label class="arcflight-sheet__field"><span>Preferred Station</span><input type="text" name="{{arcflightFlagPath}}.stationAssignment.preferredStation" value="{{componentData.stationAssignment.preferredStation}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Assigned Station</span><input type="text" name="{{arcflightFlagPath}}.stationAssignment.assignedStation" value="{{componentData.stationAssignment.assignedStation}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Can Assign To</span><input type="text" name="{{arcflightFlagPath}}.stationAssignment.canAssignTo" value="{{componentData.stationAssignment.canAssignTo}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Assignment Notes</span><textarea name="{{arcflightFlagPath}}.stationAssignment.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.stationAssignment.notes}}</textarea></label>
 
         <h3>Capabilities</h3>
         <label class="arcflight-sheet__field"><span>Primary</span><input type="text" name="{{arcflightFlagPath}}.capabilities.primary" value="{{componentData.capabilities.primary}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Specialist Action Placeholder</span><input type="text" name="{{arcflightFlagPath}}.capabilities.specialistAction" value="{{componentData.capabilities.specialistAction}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Proficiencies</span><input type="text" name="{{arcflightFlagPath}}.capabilities.proficiencies" value="{{componentData.capabilities.proficiencies}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Bonuses</span><input type="text" name="{{arcflightFlagPath}}.capabilities.bonuses" value="{{componentData.capabilities.bonuses}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Specialist Tags</span><input type="text" name="{{arcflightFlagPath}}.capabilities.specialistTags" value="{{componentData.capabilities.specialistTags}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Narrative Permissions</span><input type="text" name="{{arcflightFlagPath}}.capabilities.narrativePermissions" value="{{componentData.capabilities.narrativePermissions}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Capability Notes</span><textarea name="{{arcflightFlagPath}}.capabilities.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.capabilities.notes}}</textarea></label>
 
-        <h3>Limits</h3>
-        <label class="arcflight-sheet__field"><span>Upkeep</span><input type="number" name="{{arcflightFlagPath}}.limits.upkeep" value="{{componentData.limits.upkeep}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Availability</span><input type="text" name="{{arcflightFlagPath}}.limits.availability" value="{{componentData.limits.availability}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Restrictions</span><input type="text" name="{{arcflightFlagPath}}.limits.restrictions" value="{{componentData.limits.restrictions}}" {{#unless editable}}disabled{{/unless}}></label>
-        <label class="arcflight-sheet__field"><span>Limit Notes</span><textarea name="{{arcflightFlagPath}}.limits.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.limits.notes}}</textarea></label>
+        <h3>Effects</h3>
+        <label class="arcflight-sheet__field"><span>Passive Modifiers</span><input type="text" name="{{arcflightFlagPath}}.effects.passiveModifiers" value="{{componentData.effects.passiveModifiers}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Station Interactions</span><input type="text" name="{{arcflightFlagPath}}.effects.stationInteractions" value="{{componentData.effects.stationInteractions}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Operational Effects</span><input type="text" name="{{arcflightFlagPath}}.effects.operationalEffects" value="{{componentData.effects.operationalEffects}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Effect Notes</span><textarea name="{{arcflightFlagPath}}.effects.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.effects.notes}}</textarea></label>
 
         <h3>State</h3>
         <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.state.active" {{#if componentData.state.active}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Active</span></label>
@@ -589,11 +601,19 @@
         <label class="arcflight-sheet__field"><span>Condition</span><input type="text" name="{{arcflightFlagPath}}.state.condition" value="{{componentData.state.condition}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>State Notes</span><textarea name="{{arcflightFlagPath}}.state.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.state.notes}}</textarea></label>
 
+        <h3>Restrictions</h3>
+        <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightFlagPath}}.restrictions.unique" {{#if componentData.restrictions.unique}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Unique</span></label>
+        <label class="arcflight-sheet__field"><span>Max Instances</span><input type="number" name="{{arcflightFlagPath}}.restrictions.maxInstances" value="{{componentData.restrictions.maxInstances}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Required Ship Traits</span><input type="text" name="{{arcflightFlagPath}}.restrictions.requiredShipTraits" value="{{componentData.restrictions.requiredShipTraits}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Blocked Ship Traits</span><input type="text" name="{{arcflightFlagPath}}.restrictions.blockedShipTraits" value="{{componentData.restrictions.blockedShipTraits}}" {{#unless editable}}disabled{{/unless}}></label>
+        <label class="arcflight-sheet__field"><span>Restriction Notes</span><textarea name="{{arcflightFlagPath}}.restrictions.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.restrictions.notes}}</textarea></label>
+
         <h3>Traits</h3>
         <label class="arcflight-sheet__field"><span>Traits</span><input type="text" name="{{arcflightFlagPath}}.traits" value="{{componentData.traits}}" {{#unless editable}}disabled{{/unless}}></label>
 
         <h3>Notes</h3>
-        <label class="arcflight-sheet__field"><span>Crew Asset Notes</span><textarea name="{{arcflightFlagPath}}.notes" rows="3" {{#unless editable}}disabled{{/unless}}>{{componentData.notes}}</textarea></label>
+        <label class="arcflight-sheet__field"><span>Design Intent</span><textarea name="{{arcflightFlagPath}}.notes.designIntent" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.notes.designIntent}}</textarea></label>
+        <label class="arcflight-sheet__field"><span>GM Notes</span><textarea name="{{arcflightFlagPath}}.notes.gmNotes" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.notes.gmNotes}}</textarea></label>
       </section>
     {{/if}}
   {{/unless}}

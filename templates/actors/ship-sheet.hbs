@@ -247,12 +247,23 @@
 
   <section class="arcflight-sheet__section">
     <h2>Crew</h2>
+    <p class="arcflight-sheet__hint">Generic crew is a simple number. Named crew assets are meaningful specialists copied into this ship roster by <code>game.arcflight.addCrewAsset(shipActor, crewItem)</code>; source crew asset items remain immutable.</p>
     <div class="arcflight-grid arcflight-grid--ship-values">
       <label class="arcflight-sheet__field"><span>Minimum</span><input type="number" name="{{arcflightSystemPath}}.crew.minimum" value="{{arcflight.system.crew.minimum}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Recommended</span><input type="number" name="{{arcflightSystemPath}}.crew.recommended" value="{{arcflight.system.crew.recommended}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Maximum</span><input type="number" name="{{arcflightSystemPath}}.crew.maximum" value="{{arcflight.system.crew.maximum}}" {{#unless editable}}disabled{{/unless}}></label>
-      <label class="arcflight-sheet__field"><span>Current</span><input type="number" name="{{arcflightSystemPath}}.crew.current" value="{{arcflight.system.crew.current}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Current Generic Crew</span><input type="number" name="{{arcflightSystemPath}}.crew.currentGenericCrew" value="{{arcflight.system.crew.currentGenericCrew}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Legacy Current</span><input type="number" name="{{arcflightSystemPath}}.crew.current" value="{{arcflight.system.crew.current}}" {{#unless editable}}disabled{{/unless}}></label>
     </div>
+    {{#if arcflight.system.crew.namedCrew.length}}
+      <ul>
+        {{#each arcflight.system.crew.namedCrew}}
+          <li><strong>{{this.name}}</strong> — {{this.identity.role}}; {{this.crew.quality}}; preferred station: {{this.stationAssignment.preferredStation}}</li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p class="arcflight-sheet__hint">No named crew assets are on this ship roster.</p>
+    {{/if}}
     <label class="arcflight-sheet__field"><span>Roster</span><textarea name="{{arcflightSystemPath}}.crew.roster" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.crew.roster}}</textarea></label>
     <label class="arcflight-sheet__field"><span>Crew Notes</span><textarea name="{{arcflightSystemPath}}.crew.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.crew.notes}}</textarea></label>
   </section>
