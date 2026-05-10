@@ -10,6 +10,28 @@ const CORE_SYSTEMS = Object.freeze([
   "Channeling Assembly"
 ]);
 
+const FUEL_COST_FORMULAS = Object.freeze({
+  normalHexCostFormula: "requiredSpellRank",
+  hardBurnHexCostFormula: "ceil(requiredSpellRank * 1.5)",
+  leanBurnHexCostFormula: "ceil(requiredSpellRank / 2)",
+  stealthBurnHexCostFormula: "ceil(requiredSpellRank * 1.5)",
+  overchargeCostFormula: "definedByOverchargeAction"
+});
+
+function buildArkengineFueling(requiredSpellRank, fuelSlots) {
+  const numericRequiredSpellRank = Number.isFinite(Number(requiredSpellRank)) ? Number(requiredSpellRank) : 0;
+  const numericFuelSlots = Number.isFinite(Number(fuelSlots)) ? Number(fuelSlots) : 0;
+
+  return Object.freeze({
+    requiredSpellRank: numericRequiredSpellRank,
+    fuelSlots: numericFuelSlots,
+    maxStoredSpellRanks: numericRequiredSpellRank * numericFuelSlots,
+    currentStoredSpellRanks: 0,
+    ...FUEL_COST_FORMULAS,
+    emergencySpellSlotFuelingAllowed: true
+  });
+}
+
 function arkengine({
   engineClass,
   displayName,
@@ -26,7 +48,10 @@ function arkengine({
   allowedVariantFamilies = ARKENGINE_VARIANT_KEYS,
   modSlotProfile = "standard",
   role = identity,
-  traits = []
+  traits = [],
+  fuelSlots = 0,
+  fuelingRequiredSpellRank = spellRankRequired,
+  ritualCircleRequired = false
 }) {
   return Object.freeze({
     componentType: "arkengine",
@@ -46,7 +71,9 @@ function arkengine({
     modSlotProfile,
     role,
     designNotes: identity,
+    ritualCircleRequired,
     coreSystems: CORE_SYSTEMS,
+    fueling: buildArkengineFueling(fuelingRequiredSpellRank, fuelSlots),
     hardBurnProfile: `Hard burn costs ${hardBurnStrainCost} strain. Phase 3 records this profile only and does not resolve hard burn gameplay.`,
     overchargeProfile: `${overchargeRisk} overcharge risk. Phase 3 records this profile only and does not resolve overcharge gameplay.`
   });
@@ -57,6 +84,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "emberwake-sparkdrive",
     displayName: "Emberwake Sparkdrive",
     spellRankRequired: 1,
+    fuelSlots: 6,
     travelHexDays: 7,
     lifeveilModifier: 0,
     strainModifier: 0,
@@ -72,6 +100,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "lanterncoil-arkengine",
     displayName: "Lanterncoil Arkengine",
     spellRankRequired: 1,
+    fuelSlots: 8,
     travelHexDays: 6,
     lifeveilModifier: 5,
     strainModifier: 1,
@@ -87,6 +116,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "tidewake-arkengine",
     displayName: "Tidewake Arkengine",
     spellRankRequired: 2,
+    fuelSlots: 10,
     travelHexDays: 5,
     lifeveilModifier: 10,
     strainModifier: 2,
@@ -102,6 +132,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "iron-choir-engine",
     displayName: "Iron Choir Engine",
     spellRankRequired: 3,
+    fuelSlots: 10,
     travelHexDays: 4,
     lifeveilModifier: 8,
     strainModifier: 3,
@@ -117,6 +148,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "furnaceheart-drive",
     displayName: "Furnaceheart Drive",
     spellRankRequired: 4,
+    fuelSlots: 12,
     travelHexDays: 4,
     lifeveilModifier: 15,
     strainModifier: 4,
@@ -132,6 +164,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "voidbreaker-arkengine",
     displayName: "Voidbreaker Arkengine",
     spellRankRequired: 4,
+    fuelSlots: 10,
     travelHexDays: 3,
     lifeveilModifier: 10,
     strainModifier: 5,
@@ -147,6 +180,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "deepwake-veil-engine",
     displayName: "Deepwake Veil Engine",
     spellRankRequired: 5,
+    fuelSlots: 14,
     travelHexDays: 3,
     lifeveilModifier: 25,
     strainModifier: 5,
@@ -162,6 +196,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "crownfire-arkengine",
     displayName: "Crownfire Arkengine",
     spellRankRequired: 6,
+    fuelSlots: 12,
     travelHexDays: 2,
     lifeveilModifier: 20,
     strainModifier: 6,
@@ -177,6 +212,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "sanctum-choir-core",
     displayName: "Sanctum Choir Core",
     spellRankRequired: 6,
+    fuelSlots: 16,
     travelHexDays: 3,
     lifeveilModifier: 35,
     strainModifier: 5,
@@ -192,6 +228,7 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "worldbinder-arkengine",
     displayName: "Worldbinder Arkengine",
     spellRankRequired: 7,
+    fuelSlots: 18,
     travelHexDays: 2,
     lifeveilModifier: 40,
     strainModifier: 7,
@@ -207,6 +244,9 @@ export const CORE_ARKENGINES = Object.freeze({
     engineClass: "leviathan-heart-core",
     displayName: "Leviathan Heart Core",
     spellRankRequired: "7 + ritual circle",
+    fuelingRequiredSpellRank: 7,
+    fuelSlots: 30,
+    ritualCircleRequired: true,
     travelHexDays: 1,
     lifeveilModifier: 75,
     strainModifier: 10,

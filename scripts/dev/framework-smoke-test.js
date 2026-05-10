@@ -182,7 +182,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     await installShipUpgrade(actor, componentItems.shipUpgrade);
     await addCrewAsset(actor, componentItems.crewAsset);
 
-    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1 };
+    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
     await actor.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
     });
@@ -207,6 +207,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Derived hull integrity", 180, shipData.derived.hullIntegrity, "Brigantine 160 + Reinforced Structural Ribbing 20.");
     checkEqual(result, "Derived strain capacity", 13, shipData.derived.strainCapacity, "Brigantine 10 + Tidewake 2 + Pressure Lattice Tuning 1.");
     checkEqual(result, "Derived voyage speed travel hex days", 5, shipData.derived.voyageSpeedTravelHexDays);
+    checkEqual(result, "Base arkengine fueling required spell rank", 2, shipData.base.arkengine.fueling?.requiredSpellRank);
+    checkEqual(result, "Base arkengine fueling fuel slots", 10, shipData.base.arkengine.fueling?.fuelSlots);
+    checkEqual(result, "Base arkengine max stored spell ranks", 20, shipData.base.arkengine.fueling?.maxStoredSpellRanks);
+    checkEqual(result, "Derived normal hex fuel cost", 2, shipData.derived.normalHexCost);
+    checkEqual(result, "Derived hard burn hex fuel cost", 3, shipData.derived.hardBurnHexCost);
+    checkEqual(result, "Derived lean burn hex fuel cost", 1, shipData.derived.leanBurnHexCost);
+    checkEqual(result, "Derived stealth burn hex fuel cost", 3, shipData.derived.stealthBurnHexCost);
 
     checkEqual(result, "Room slots used", 1, shipData.installed.roomSlots.used);
     checkEqual(result, "Arkengine mod slots capacity", 4, shipData.installed.arkengineModSlots.capacity);
@@ -220,6 +227,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
     checkEqual(result, "Current strain preserved", preservedCurrent.strain, shipData.current.strain);
     checkEqual(result, "Current morale preserved", preservedCurrent.morale, shipData.current.morale);
+    checkEqual(result, "Current stored spell ranks preserved", preservedCurrent.storedSpellRanks, shipData.current.storedSpellRanks);
 
     const engineerAssignment = shipData.stations.assignments.engineer;
     check(result, "Engineer station assignment exists", Boolean(engineerAssignment), "assignment", engineerAssignment?.name ?? null);

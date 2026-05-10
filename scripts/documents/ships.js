@@ -39,7 +39,8 @@ const emptyCurrentShipState = Object.freeze({
   hull: 0,
   lifeveil: 0,
   strain: 0,
-  morale: 0
+  morale: 0,
+  storedSpellRanks: 0
 });
 
 const emptyCrewState = Object.freeze({
@@ -103,7 +104,14 @@ const emptyDerivedShipState = Object.freeze({
   overchargeRisk: "",
   spellRankRequired: 0,
   arkengineLifeveilModifier: 0,
-  arkengineStrainModifier: 0
+  arkengineStrainModifier: 0,
+  requiredSpellRank: 0,
+  fuelSlots: 0,
+  maxStoredSpellRanks: 0,
+  normalHexCost: 0,
+  hardBurnHexCost: 0,
+  leanBurnHexCost: 0,
+  stealthBurnHexCost: 0
 });
 
 export const arcflightShipDefaults = Object.freeze({
@@ -295,6 +303,46 @@ function countWeaponMountsByArc(weaponMounts = {}) {
 
 function numericValue(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function normalizeArkengineFueling(arkengine = {}) {
+  const existingFueling = cloneData(arkengine.fueling ?? {});
+  const requiredSpellRank = numericValue(
+    existingFueling.requiredSpellRank,
+    numericValue(arkengine.spellRankRequired)
+  );
+  const fuelSlots = numericValue(existingFueling.fuelSlots);
+
+  return {
+    requiredSpellRank,
+    fuelSlots,
+    maxStoredSpellRanks: requiredSpellRank * fuelSlots,
+    currentStoredSpellRanks: numericValue(existingFueling.currentStoredSpellRanks),
+    normalHexCostFormula: existingFueling.normalHexCostFormula ?? "requiredSpellRank",
+    hardBurnHexCostFormula: existingFueling.hardBurnHexCostFormula ?? "ceil(requiredSpellRank * 1.5)",
+    leanBurnHexCostFormula: existingFueling.leanBurnHexCostFormula ?? "ceil(requiredSpellRank / 2)",
+    stealthBurnHexCostFormula: existingFueling.stealthBurnHexCostFormula ?? "ceil(requiredSpellRank * 1.5)",
+    overchargeCostFormula: existingFueling.overchargeCostFormula ?? "definedByOverchargeAction",
+    emergencySpellSlotFuelingAllowed: existingFueling.emergencySpellSlotFuelingAllowed ?? true
+  };
+}
+
+function normalizeArkengineData(arkengine = {}) {
+  const normalizedArkengine = cloneData(arkengine ?? {});
+  normalizedArkengine.fueling = normalizeArkengineFueling(normalizedArkengine);
+
+  return normalizedArkengine;
+}
+
+function getArkengineFuelingCosts(fueling = {}) {
+  const requiredSpellRank = numericValue(fueling.requiredSpellRank);
+
+  return {
+    normalHexCost: requiredSpellRank,
+    hardBurnHexCost: Math.ceil(requiredSpellRank * 1.5),
+    leanBurnHexCost: Math.ceil(requiredSpellRank / 2),
+    stealthBurnHexCost: Math.ceil(requiredSpellRank * 1.5)
+  };
 }
 
 function getInstalledArkengineMods(installed = {}) {
@@ -571,7 +619,7 @@ function buildInstalledRoomEntry(roomItem) {
 
 function deriveShipStatsFromBase(base = {}, installed = {}) {
   const hull = cloneData(base.hull ?? {});
-  const arkengine = cloneData(base.arkengine ?? {});
+  const arkengine = normalizeArkengineData(base.arkengine ?? {});
   const roomSlots = getRoomSlotState(hull, installed);
   const coreRooms = getCoreRoomsFromHull(hull);
 
@@ -593,6 +641,10 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
   derived.spellRankRequired = arkengine.spellRankRequired ?? 0;
   derived.arkengineLifeveilModifier = numericValue(arkengine.lifeveilModifier);
   derived.arkengineStrainModifier = numericValue(arkengine.strainModifier);
+  derived.requiredSpellRank = numericValue(arkengine.fueling?.requiredSpellRank);
+  derived.fuelSlots = numericValue(arkengine.fueling?.fuelSlots);
+  derived.maxStoredSpellRanks = numericValue(arkengine.fueling?.maxStoredSpellRanks);
+  foundry.utils.mergeObject(derived, getArkengineFuelingCosts(arkengine.fueling), { inplace: true });
 
   applyArkengineModDerivedStatModifiers(derived, installed);
   applyShipUpgradeDerivedStatModifiers(derived, installed);
@@ -674,7 +726,8 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
     hull: getCurrentFallback(systemData, "hull"),
     lifeveil: getCurrentFallback(systemData, "lifeveil"),
     strain: getCurrentFallback(systemData, "strain"),
-    morale: getCurrentFallback(systemData, "morale")
+    morale: getCurrentFallback(systemData, "morale"),
+    storedSpellRanks: getCurrentFallback(systemData, "storedSpellRanks")
   };
   const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), cloneData(fallbackCurrent), { inplace: false });
 
@@ -682,11 +735,13 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
   if (shouldInitializeRuntimeValue(current, "lifeveil", initialize.lifeveil)) current.lifeveil = derived.lifeveilCapacity ?? 0;
   if (shouldInitializeRuntimeValue(current, "strain", initialize.strain)) current.strain = 0;
   if (shouldInitializeRuntimeValue(current, "morale", initialize.morale)) current.morale = 0;
+  if (shouldInitializeRuntimeValue(current, "storedSpellRanks", initialize.storedSpellRanks)) current.storedSpellRanks = derived.maxStoredSpellRanks ?? 0;
 
   current.hull = numericValue(current.hull);
   current.lifeveil = numericValue(current.lifeveil);
   current.strain = numericValue(current.strain);
   current.morale = numericValue(current.morale);
+  current.storedSpellRanks = numericValue(current.storedSpellRanks);
 
   return current;
 }
@@ -836,7 +891,7 @@ export async function installArkengine(shipActor, arkengineItem) {
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
   const baseHull = cloneData(systemData.base?.hull ?? {});
-  const baseArkengine = cloneData(getComponentData(arkengineItem));
+  const baseArkengine = normalizeArkengineData(getComponentData(arkengineItem));
   const installedArkengineMods = [];
   const installedArkengineModSlots = getArkengineModSlotState(baseArkengine, { arkengineMods: installedArkengineMods });
   const coreRooms = getCoreRoomsFromHull(baseHull);
@@ -857,7 +912,8 @@ export async function installArkengine(shipActor, arkengineItem) {
   const current = buildCurrentShipState(systemData, derived, {
     hull: false,
     lifeveil: firstArkengineInstall,
-    strain: false
+    strain: false,
+    storedSpellRanks: firstArkengineInstall
   });
 
   const legacyDerivedStats = foundry.utils.mergeObject(
