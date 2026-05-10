@@ -100,6 +100,34 @@
   </section>
 
   <section class="arcflight-sheet__section">
+    <h2>Ship Upgrades</h2>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Upgrade Slots Capacity</span><input type="number" value="{{arcflight.system.installed.shipUpgradeSlots.capacity}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Upgrade Slots Used</span><input type="number" value="{{arcflight.system.installed.shipUpgradeSlots.used}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Upgrade Slots Available</span><input type="number" value="{{arcflight.system.installed.shipUpgradeSlots.available}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Ship Upgrades are permanent vessel improvements, not rooms or arkengine mods. They may modify derived ship stats and store placeholder interactions for later systems without resolving combat, travel, station, or event gameplay.</p>
+    {{#if arcflight.system.installed.shipUpgrades.length}}
+      <ul>
+        {{#each arcflight.system.installed.shipUpgrades}}
+          <li>
+            <strong>{{this.name}}</strong> — {{this.upgradeType}}; {{this.rarity}}; <em>{{this.systemState}}</em>
+            {{#if this.effects.derivedStatModifiers.length}}
+              <ul>
+                {{#each this.effects.derivedStatModifiers}}
+                  <li>{{this.summary}}</li>
+                {{/each}}
+              </ul>
+            {{/if}}
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p class="arcflight-sheet__hint">Install ship upgrades with <code>game.arcflight.installShipUpgrade(shipActor, upgradeItem)</code>.</p>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-sheet__section">
     <h2>Hull Architecture</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Base Hull</span><input type="number" value="{{arcflight.system.base.hull.hullIntegrity}}" disabled></label>
