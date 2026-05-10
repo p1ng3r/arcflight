@@ -6,7 +6,7 @@
         <span>Name</span>
         <input type="text" name="name" value="{{item.name}}" {{#unless editable}}disabled{{/unless}}>
       </label>
-      <p class="arcflight-sheet__type">PF2E equipment{{#if arcflightEnabled}} · Arcflight {{componentType}}{{/if}}</p>
+      <p class="arcflight-sheet__type">PF2E equipment{{#if arcflightEnabled}} · Arcflight {{componentTypeLabel}}{{/if}}</p>
     </div>
   </header>
 
@@ -29,10 +29,11 @@
     </section>
   {{else}}
     <section class="arcflight-sheet__section">
-      <h2>Common Component Data</h2>
+      <h2>{{componentTypeLabel}}</h2>
+      <p class="arcflight-sheet__hint">Display name: <strong>{{componentDisplayName}}</strong>. Arcflight component data is stored in flags; PF2E equipment system data remains owned by PF2E.</p>
       <label class="arcflight-sheet__field">
         <span>Component Type</span>
-        <input type="text" name="flags.arcflight.componentType" value="{{componentType}}" disabled>
+        <input type="text" value="{{componentTypeLabel}}" disabled>
       </label>
       {{#unless usesLockedPhaseOneSchema}}
         <label class="arcflight-sheet__field">
@@ -58,6 +59,7 @@
       <section class="arcflight-sheet__section">
         <h2>Hull</h2>
         <h3>Platform</h3>
+        <label class="arcflight-sheet__field"><span>Display Name</span><input type="text" name="{{arcflightFlagPath}}.displayName" value="{{componentData.displayName}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Platform Key</span><input type="text" name="{{arcflightFlagPath}}.platform" value="{{componentData.platform}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Role</span><textarea name="{{arcflightFlagPath}}.role" rows="2" {{#unless editable}}disabled{{/unless}}>{{componentData.role}}</textarea></label>
 
@@ -223,6 +225,7 @@
     {{#if isArkengineMod}}
       <section class="arcflight-sheet__section">
         <h2>Arkengine Mod</h2>
+        <p class="arcflight-sheet__hint">Arkengine Mods are engine-only tuning components. They are separate from Ship Upgrades and do not resolve overcharge, hard burn, travel, or combat gameplay on this sheet.</p>
         <h3>Identity</h3>
         <label class="arcflight-sheet__field"><span>Mod Category</span><input type="text" name="{{arcflightFlagPath}}.identity.modCategory" value="{{componentData.identity.modCategory}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Model</span><input type="text" name="{{arcflightFlagPath}}.identity.model" value="{{componentData.identity.model}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -394,7 +397,7 @@
     {{#if isRoom}}
       <section class="arcflight-sheet__section">
         <h2>Room</h2>
-        <p class="arcflight-sheet__hint">Rooms are infrastructure for downtime, recovery, crafting, narrative, lifestyle, and logistics. They do not provide direct combat or travel stat buffs.</p>
+        <p class="arcflight-sheet__hint">Rooms are physical ship spaces for downtime, recovery, crafting, narrative, lifestyle, and logistics. They are separate from permanent Ship Upgrades and engine-only Arkengine Mods.</p>
 
         <h3>Identity</h3>
         <label class="arcflight-sheet__field"><span>ID</span><input type="text" name="{{arcflightFlagPath}}.identity.id" value="{{componentData.identity.id}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -452,6 +455,7 @@
     {{#if isShipUpgrade}}
       <section class="arcflight-sheet__section">
         <h2>Ship Upgrade</h2>
+        <p class="arcflight-sheet__hint">Ship Upgrades are permanent vessel improvements. They are not Rooms and are not Arkengine Mods.</p>
         <h3>Identity</h3>
         <label class="arcflight-sheet__field"><span>Upgrade Category</span><input type="text" name="{{arcflightFlagPath}}.identity.upgradeCategory" value="{{componentData.identity.upgradeCategory}}" {{#unless editable}}disabled{{/unless}}></label>
         <label class="arcflight-sheet__field"><span>Model</span><input type="text" name="{{arcflightFlagPath}}.identity.model" value="{{componentData.identity.model}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -556,7 +560,7 @@
     {{#if isCrewAsset}}
       <section class="arcflight-sheet__section">
         <h2>Crew Asset</h2>
-        <p class="arcflight-sheet__hint">Crew assets are named specialists stored as immutable source equipment items. Runtime roster state belongs on the ship actor; this sheet does not add station actions, AP/RAP controls, wages, morale automation, combat automation, or travel automation.</p>
+        <p class="arcflight-sheet__hint">Crew Assets are named or support crew stored as immutable source equipment items. Runtime roster and Station assignment state belongs on the ship actor; this sheet does not add station actions, AP/RAP controls, wages, morale automation, combat automation, or travel automation.</p>
 
         <h3>Identity</h3>
         <label class="arcflight-sheet__field"><span>ID</span><input type="text" name="{{arcflightFlagPath}}.identity.id" value="{{componentData.identity.id}}" {{#unless editable}}disabled{{/unless}}></label>
