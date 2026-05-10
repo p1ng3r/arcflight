@@ -42,6 +42,17 @@ const emptyCurrentShipState = Object.freeze({
   morale: 0
 });
 
+const emptyCrewState = Object.freeze({
+  minimum: 0,
+  recommended: 0,
+  maximum: 0,
+  current: 0,
+  currentGenericCrew: 0,
+  namedCrew: Object.freeze([]),
+  roster: "",
+  notes: ""
+});
+
 const emptyBaseShipState = Object.freeze({
   hull: Object.freeze({}),
   arkengine: Object.freeze({}),
@@ -144,14 +155,7 @@ export const arcflightShipDefaults = Object.freeze({
     roomSlots: 0,
     notes: ""
   }),
-  crew: Object.freeze({
-    minimum: 0,
-    recommended: 0,
-    maximum: 0,
-    current: 0,
-    roster: "",
-    notes: ""
-  }),
+  crew: emptyCrewState,
   cargo: Object.freeze({
     capacity: 0,
     used: 0,
@@ -222,8 +226,54 @@ export function getDefaultStationState(existingStations = {}) {
   };
 }
 
-function buildActorStationAssignment(stationKey, assignee, options = {}) {
+function getDefaultCrewState(existingCrew = {}) {
+  const crew = foundry.utils.mergeObject(cloneData(emptyCrewState), cloneData(existingCrew ?? {}), { inplace: false });
+
+  crew.minimum = numericValue(crew.minimum);
+  crew.recommended = numericValue(crew.recommended);
+  crew.maximum = numericValue(crew.maximum);
+  crew.current = numericValue(crew.current);
+  crew.currentGenericCrew = numericValue(crew.currentGenericCrew, numericValue(crew.current));
+  crew.namedCrew = Array.isArray(crew.namedCrew) ? cloneData(crew.namedCrew) : [];
+
+  return crew;
+}
+
+function isCrewAssetAssignment(assignee, options = {}) {
+  const hasCrewAssetShape = assignee?.identity?.id !== undefined
+    && assignee?.crew !== undefined
+    && assignee?.stationAssignment !== undefined;
+
+  return options.assigneeType === "crewAsset"
+    || assignee?.componentType === ARCFLIGHT_ITEM_TYPES.CREW_ASSET
+    || assignee?.crewAssetId !== undefined
+    || hasCrewAssetShape;
+}
+
+function getCrewAssetAssignmentName(assignee, options = {}) {
+  return options.name
+    ?? assignee?.name
+    ?? assignee?.identity?.displayName
+    ?? assignee?.identity?.title
+    ?? assignee?.identity?.id
+    ?? "";
+}
+
+function buildStationAssignment(stationKey, assignee, options = {}) {
   if (!assignee) return null;
+
+  if (isCrewAssetAssignment(assignee, options)) {
+    return {
+      stationKey,
+      assigneeType: "crewAsset",
+      actorId: "",
+      actorUuid: "",
+      crewAssetId: options.crewAssetId ?? assignee.crewAssetId ?? assignee.itemId ?? assignee.id ?? assignee.identity?.id ?? "",
+      crewAssetUuid: options.crewAssetUuid ?? assignee.crewAssetUuid ?? assignee.itemUuid ?? assignee.uuid ?? "",
+      name: getCrewAssetAssignmentName(assignee, options),
+      notes: options.notes ?? assignee.stationAssignment?.notes ?? ""
+    };
+  }
 
   const assigneeType = options.assigneeType ?? (assignee.type === "npc" ? "npc" : "actor");
 
@@ -609,6 +659,7 @@ export function getArcflightShipData(actor) {
   const systemData = foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(flagData), { inplace: false });
 
   systemData.stations = getDefaultStationState(systemData.stations);
+  systemData.crew = getDefaultCrewState(systemData.crew);
 
   return systemData;
 }
@@ -616,6 +667,7 @@ export function getArcflightShipData(actor) {
 export function getDefaultArcflightShipFlags(data = {}) {
   const system = foundry.utils.mergeObject(getDefaultArcflightShipData(), data, { inplace: false });
   system.stations = getDefaultStationState(system.stations);
+  system.crew = getDefaultCrewState(system.crew);
 
   return {
     enabled: true,
@@ -928,6 +980,95 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
 }
 
 
+function getCrewAssetCountValue(crewAssetEntry = {}) {
+  return numericValue(crewAssetEntry.crew?.genericCrewEquivalent ?? crewAssetEntry.crew?.count, 1);
+}
+
+function buildCrewAssetRosterEntry(crewItem) {
+  const crewData = cloneData(getComponentData(crewItem));
+  const identity = cloneData(crewData.identity ?? {});
+  const key = identity.id ?? crewItem?.slug ?? crewItem?.id ?? "";
+  const displayName = crewItem?.name ?? identity.displayName ?? key;
+
+  identity.id = key;
+  identity.displayName = identity.displayName || displayName;
+
+  return {
+    id: crewItem?.id ?? key,
+    itemId: crewItem?.id ?? "",
+    itemUuid: crewItem?.uuid ?? "",
+    uuid: crewItem?.uuid ?? "",
+    key,
+    name: displayName,
+    componentType: ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
+    identity,
+    crew: cloneData(crewData.crew ?? {}),
+    stationAssignment: cloneData(crewData.stationAssignment ?? {}),
+    capabilities: cloneData(crewData.capabilities ?? {}),
+    effects: cloneData(crewData.effects ?? {}),
+    state: cloneData(crewData.state ?? {}),
+    restrictions: cloneData(crewData.restrictions ?? {}),
+    traits: cloneData(crewData.traits ?? []),
+    notes: cloneData(crewData.notes ?? {})
+  };
+}
+
+function crewAssetMatches(entry = {}, crewIdOrUuid) {
+  return [
+    entry.id,
+    entry.itemId,
+    entry.uuid,
+    entry.itemUuid,
+    entry.key,
+    entry.identity?.id
+  ].filter(Boolean).includes(crewIdOrUuid);
+}
+
+export async function addCrewAsset(shipActor, crewItem) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | addCrewAsset requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  if (getComponentType(crewItem) !== ARCFLIGHT_ITEM_TYPES.CREW_ASSET) {
+    throw new Error("Arcflight | addCrewAsset requires an Arcflight crew asset component item.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const crewState = getDefaultCrewState(systemData.crew);
+  const crewEntry = buildCrewAssetRosterEntry(crewItem);
+  const namedCrew = [...crewState.namedCrew, crewEntry];
+  const currentGenericCrew = crewEntry.crew?.countsTowardCrewTotal === false
+    ? crewState.currentGenericCrew
+    : crewState.currentGenericCrew + getCrewAssetCountValue(crewEntry);
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
+  });
+}
+
+export async function removeCrewAsset(shipActor, crewIdOrUuid) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | removeCrewAsset requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const crewState = getDefaultCrewState(systemData.crew);
+  const removed = crewState.namedCrew.find((entry) => crewAssetMatches(entry, crewIdOrUuid));
+
+  if (!removed) return shipActor;
+
+  const namedCrew = crewState.namedCrew.filter((entry) => !crewAssetMatches(entry, crewIdOrUuid));
+  const currentGenericCrew = removed.crew?.countsTowardCrewTotal === false
+    ? crewState.currentGenericCrew
+    : Math.max(0, crewState.currentGenericCrew - getCrewAssetCountValue(removed));
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
+  });
+}
+
 export async function assignStation(shipActor, stationKey, assignee = null, options = {}) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | assignStation requires an Arcflight-enabled PF2E vehicle actor.");
@@ -939,7 +1080,7 @@ export async function assignStation(shipActor, stationKey, assignee = null, opti
 
   const systemData = getArcflightShipData(shipActor);
   const stations = getDefaultStationState(systemData.stations);
-  const assignment = buildActorStationAssignment(stationKey, assignee, options);
+  const assignment = buildStationAssignment(stationKey, assignee, options);
 
   stations.assignments[stationKey] = assignment;
 

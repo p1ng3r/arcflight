@@ -4,6 +4,7 @@ import { getCoreArkengine } from "../../data/arkengines/core-arkengines.js";
 import { getCoreRoom } from "../../data/rooms/core-rooms.js";
 import { getCoreShipUpgrade } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { getCoreArkengineMod } from "../../data/arkengine-mods/core-arkengine-mods.js";
+import { getCoreCrewAsset } from "../../data/crew/core-crew-assets.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -155,6 +156,25 @@ export async function createCoreArkengineMod(modKey, operation = {}) {
   return createArcflightItem(ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, {
     name: modData.identity?.displayName ?? modKey,
     system: deepCloneData(modData)
+  }, operation);
+}
+
+/**
+ * Create one of Arcflight's Phase 7 core crew assets as a PF2E equipment item.
+ *
+ * @param {string} crewAssetKey Lower-case kebab-case crew asset key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreCrewAsset(crewAssetKey, operation = {}) {
+  const crewAssetData = getCoreCrewAsset(crewAssetKey);
+  if (!crewAssetData) {
+    throw new Error(`Arcflight | ${crewAssetKey} is not a supported core crew asset.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.CREW_ASSET, {
+    name: crewAssetData.identity?.displayName ?? crewAssetKey,
+    system: deepCloneData(crewAssetData)
   }, operation);
 }
 
