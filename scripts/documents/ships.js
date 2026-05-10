@@ -195,9 +195,13 @@ function getInstalledArkengineMods(installed = {}) {
   return Array.isArray(installed.arkengineMods) ? cloneData(installed.arkengineMods) : [];
 }
 
+function getArkengineModSlotCost(mod = {}) {
+  return numericValue(mod.modSlotsRequired ?? mod.installation?.modSlotsRequired, 1);
+}
+
 function getArkengineModSlotState(arkengine = {}, installed = {}) {
   const capacity = numericValue(arkengine.modSlots);
-  const used = getInstalledArkengineMods(installed).length;
+  const used = getInstalledArkengineMods(installed).reduce((total, mod) => total + getArkengineModSlotCost(mod), 0);
 
   return {
     capacity,
@@ -237,6 +241,74 @@ function getShipUpgradeSlotState(installed = {}) {
   };
 }
 
+function buildInstalledArkengineModEntry(modItem) {
+  const modData = cloneData(getComponentData(modItem));
+  const key = modData.identity?.id ?? modItem?.slug ?? modItem?.id ?? "";
+
+  return {
+    itemId: modItem?.id ?? "",
+    uuid: modItem?.uuid ?? "",
+    key,
+    name: modItem?.name ?? modData.identity?.displayName ?? key,
+    componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+    modType: modData.identity?.modType ?? "",
+    rarity: modData.identity?.rarity ?? "standard",
+    origin: modData.identity?.origin ?? "",
+    role: modData.identity?.role ?? "",
+    modSlotsRequired: numericValue(modData.installation?.modSlotsRequired, 1),
+    systemState: modData.state?.systemState ?? "Functional",
+    effects: cloneData(modData.effects ?? {}),
+    restrictions: cloneData(modData.restrictions ?? {}),
+    traits: cloneData(modData.traits ?? []),
+    notes: cloneData(modData.notes ?? {})
+  };
+}
+
+function getArkengineTags(arkengine = {}) {
+  return new Set([
+    arkengine.engineClass,
+    arkengine.variantFamily,
+    ...(Array.isArray(arkengine.traits) ? arkengine.traits : [])
+  ].filter(Boolean));
+}
+
+function validateArkengineModEntryForEngine(modEntry, arkengine = {}, installed = {}) {
+  const restrictions = modEntry.restrictions ?? {};
+  const existingMods = getInstalledArkengineMods(installed);
+  const existingCount = existingMods.filter((existing) => existing.key === modEntry.key).length;
+  const maxInstances = numericValue(restrictions.maxInstances, 1);
+
+  if ((restrictions.unique === true && existingCount > 0) || existingCount >= maxInstances) {
+    throw new Error(`Arcflight | ${modEntry.name} cannot be installed more than ${maxInstances} time(s) on this arkengine.`);
+  }
+
+  const arkengineTags = getArkengineTags(arkengine);
+  const requiredTags = Array.isArray(restrictions.requiredArkengineTags) ? restrictions.requiredArkengineTags : [];
+  const blockedTags = Array.isArray(restrictions.blockedArkengineTags) ? restrictions.blockedArkengineTags : [];
+  const missingTag = requiredTags.find((tag) => !arkengineTags.has(tag));
+  const blockedTag = blockedTags.find((tag) => arkengineTags.has(tag));
+
+  if (missingTag) {
+    throw new Error(`Arcflight | ${modEntry.name} requires an arkengine with the ${missingTag} tag.`);
+  }
+
+  if (blockedTag) {
+    throw new Error(`Arcflight | ${modEntry.name} cannot be installed on an arkengine with the ${blockedTag} tag.`);
+  }
+
+  const variantFamily = arkengine.variantFamily ?? "";
+  const requiredFamilies = Array.isArray(restrictions.requiredVariantFamilies) ? restrictions.requiredVariantFamilies : [];
+  const blockedFamilies = Array.isArray(restrictions.blockedVariantFamilies) ? restrictions.blockedVariantFamilies : [];
+
+  if (requiredFamilies.length > 0 && !requiredFamilies.includes(variantFamily)) {
+    throw new Error(`Arcflight | ${modEntry.name} requires one of these arkengine variant families: ${requiredFamilies.join(", ")}.`);
+  }
+
+  if (blockedFamilies.includes(variantFamily)) {
+    throw new Error(`Arcflight | ${modEntry.name} cannot be installed on ${variantFamily} arkengines.`);
+  }
+}
+
 function buildInstalledShipUpgradeEntry(upgradeItem) {
   const upgradeData = cloneData(getComponentData(upgradeItem));
   const key = upgradeData.identity?.id ?? upgradeItem?.slug ?? upgradeItem?.id ?? "";
@@ -256,34 +328,30 @@ function buildInstalledShipUpgradeEntry(upgradeItem) {
   };
 }
 
-const SUPPORTED_SHIP_UPGRADE_MODIFIER_TARGETS = new Set([
-  "hullIntegrity",
-  "armorClass",
-  "strainCapacity",
+const SUPPORTED_ARKENGINE_MODIFIER_TARGETS = new Set([
+  "voyageSpeedTravelHexDays",
   "lifeveilCapacity",
-  "cargoCapacity",
-  "detection",
-  "combatSpeed",
-  "maneuverability",
-  "baseAP",
-  "baseRAP",
-  "resistanceTendencies"
+  "strainCapacity",
+  "hardBurnStrainCost",
+  "overchargeRisk",
+  "resistanceTendencies",
+  "arkengineModSlots"
 ]);
 
-function applyShipUpgradeModifier(derived, modifier = {}) {
+function applyDerivedModifier(derived, modifier = {}, supportedTargets, label) {
   const target = modifier.target;
   const mode = modifier.mode ?? "add";
   const value = modifier.value;
 
-  if (!SUPPORTED_SHIP_UPGRADE_MODIFIER_TARGETS.has(target)) {
-    console.warn(`Arcflight | Skipping unsupported ship upgrade modifier target: ${target}`);
+  if (!supportedTargets.has(target)) {
+    console.warn(`Arcflight | Skipping unsupported ${label} modifier target: ${target}`);
     return;
   }
 
   if (mode === "append") {
     const existing = Array.isArray(derived[target]) ? derived[target] : [];
     const additions = Array.isArray(value) ? value : [value];
-    derived[target] = [...existing, ...additions];
+    derived[target] = [...new Set([...existing, ...additions])];
     return;
   }
 
@@ -302,7 +370,32 @@ function applyShipUpgradeModifier(derived, modifier = {}) {
     return;
   }
 
-  console.warn(`Arcflight | Skipping unsupported ship upgrade modifier mode: ${mode}`);
+  console.warn(`Arcflight | Skipping unsupported ${label} modifier mode: ${mode}`);
+}
+
+function applyArkengineModDerivedStatModifiers(derived, installed = {}) {
+  for (const mod of getInstalledArkengineMods(installed)) {
+    const modifiers = Array.isArray(mod.effects?.derivedStatModifiers) ? mod.effects.derivedStatModifiers : [];
+    for (const modifier of modifiers) applyDerivedModifier(derived, modifier, SUPPORTED_ARKENGINE_MODIFIER_TARGETS, "arkengine mod");
+  }
+}
+
+const SUPPORTED_SHIP_UPGRADE_MODIFIER_TARGETS = new Set([
+  "hullIntegrity",
+  "armorClass",
+  "strainCapacity",
+  "lifeveilCapacity",
+  "cargoCapacity",
+  "detection",
+  "combatSpeed",
+  "maneuverability",
+  "baseAP",
+  "baseRAP",
+  "resistanceTendencies"
+]);
+
+function applyShipUpgradeModifier(derived, modifier = {}) {
+  applyDerivedModifier(derived, modifier, SUPPORTED_SHIP_UPGRADE_MODIFIER_TARGETS, "ship upgrade");
 }
 
 function applyShipUpgradeDerivedStatModifiers(derived, installed = {}) {
@@ -378,23 +471,27 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
   derived.resistanceTendencies = Array.isArray(arkengine.resistanceTendencies)
     ? cloneData(arkengine.resistanceTendencies)
     : [];
-  derived.energyResistances = cloneData(derived.resistanceTendencies);
   derived.arkengineVariantFamily = arkengine.variantFamily ?? "";
   derived.arkengineModSlots = arkengineModSlots.capacity;
   derived.arkengineModSlotsUsed = arkengineModSlots.used;
   derived.arkengineModSlotsAvailable = arkengineModSlots.available;
-  derived.rooms = foundry.utils.mergeObject(cloneData(derived.rooms ?? {}), {
-    coreRooms,
-    expansionSlots: roomSlots.capacity,
-    expansionSlotsUsed: roomSlots.used,
-    expansionSlotsAvailable: roomSlots.available
-  }, { inplace: false });
   derived.hardBurnStrainCost = numericValue(arkengine.hardBurnStrainCost);
   derived.overchargeRisk = arkengine.overchargeRisk ?? "";
   derived.spellRankRequired = arkengine.spellRankRequired ?? 0;
   derived.arkengineLifeveilModifier = numericValue(arkengine.lifeveilModifier);
   derived.arkengineStrainModifier = numericValue(arkengine.strainModifier);
 
+  applyArkengineModDerivedStatModifiers(derived, installed);
+
+  derived.energyResistances = cloneData(derived.resistanceTendencies);
+  derived.arkengineModSlotsUsed = arkengineModSlots.used;
+  derived.arkengineModSlotsAvailable = numericValue(derived.arkengineModSlots) - arkengineModSlots.used;
+  derived.rooms = foundry.utils.mergeObject(cloneData(derived.rooms ?? {}), {
+    coreRooms,
+    expansionSlots: roomSlots.capacity,
+    expansionSlotsUsed: roomSlots.used,
+    expansionSlotsAvailable: roomSlots.available
+  }, { inplace: false });
   applyShipUpgradeDerivedStatModifiers(derived, installed);
 
   return derived;
@@ -476,6 +573,7 @@ export async function recalculateShipStats(shipActor) {
 
   const systemData = getArcflightShipData(shipActor);
   const derived = calculateDerivedShipStats(systemData.base, systemData.installed);
+  const arkengineModSlots = getArkengineModSlotState(systemData.base?.arkengine, systemData.installed);
   const roomSlots = getRoomSlotState(systemData.base?.hull, systemData.installed);
   const shipUpgradeSlots = getShipUpgradeSlotState(systemData.installed);
   const coreRooms = getCoreRoomsFromHull(systemData.base?.hull);
@@ -493,6 +591,7 @@ export async function recalculateShipStats(shipActor) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.coreRooms`]: coreRooms,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkengineModSlots`]: arkengineModSlots,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.roomSlots`]: roomSlots,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgradeSlots`]: shipUpgradeSlots,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
@@ -612,6 +711,61 @@ export async function installArkengine(shipActor, arkengineItem) {
   });
 }
 
+export async function installArkengineMod(shipActor, modItem) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | installArkengineMod requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  if (getComponentType(modItem) !== ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD) {
+    throw new Error("Arcflight | installArkengineMod requires an Arcflight arkengine mod component item.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  if (!hasInstalledArkengine(systemData)) {
+    throw new Error("Arcflight | installArkengineMod requires an installed arkengine before arkengine mods can be installed.");
+  }
+
+  const baseHull = cloneData(systemData.base?.hull ?? {});
+  const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
+  const coreRooms = getCoreRoomsFromHull(baseHull);
+  const installedArkengineMods = getInstalledArkengineMods(systemData.installed);
+  const modEntry = buildInstalledArkengineModEntry(modItem);
+
+  validateArkengineModEntryForEngine(modEntry, baseArkengine, systemData.installed);
+
+  const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
+    coreRooms,
+    arkengineMods: [...installedArkengineMods, modEntry]
+  }, { inplace: false });
+
+  nextInstalled.arkengineModSlots = getArkengineModSlotState(baseArkengine, nextInstalled);
+  nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
+  nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
+
+  if (nextInstalled.arkengineModSlots.available < 0) {
+    throw new Error("Arcflight | installArkengineMod would exceed this arkengine's mod slot capacity.");
+  }
+
+  const derived = calculateDerivedShipStats({ hull: baseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const legacyDerivedStats = foundry.utils.mergeObject(
+    systemData.derivedStats ?? {},
+    getLegacyDerivedStatsFromDerived(derived),
+    { inplace: false }
+  );
+  const existingCurrent = cloneData(systemData.current ?? {});
+  const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), existingCurrent, { inplace: false });
+  const legacyResources = buildLegacyResources(systemData, current, derived);
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: nextInstalled.arkengineMods.map((mod) => mod.name).join(", ")
+  });
+}
+
 export async function installRoom(shipActor, roomItem) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | installRoom requires an Arcflight-enabled PF2E vehicle actor.");
@@ -710,5 +864,6 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
 
 export const installHullOnShip = installHull;
 export const installArkengineOnShip = installArkengine;
+export const installArkengineModOnShip = installArkengineMod;
 export const installRoomOnShip = installRoom;
 export const installShipUpgradeOnShip = installShipUpgrade;

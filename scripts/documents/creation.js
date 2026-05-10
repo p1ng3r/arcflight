@@ -3,6 +3,7 @@ import { getCoreHull } from "../../data/hulls/core-hulls.js";
 import { getCoreArkengine } from "../../data/arkengines/core-arkengines.js";
 import { getCoreRoom } from "../../data/rooms/core-rooms.js";
 import { getCoreShipUpgrade } from "../../data/ship-upgrades/core-ship-upgrades.js";
+import { getCoreArkengineMod } from "../../data/arkengine-mods/core-arkengine-mods.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -135,6 +136,25 @@ export async function createCoreShipUpgrade(upgradeKey, operation = {}) {
   return createArcflightItem(ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, {
     name: upgradeData.identity?.displayName ?? upgradeKey,
     system: deepCloneData(upgradeData)
+  }, operation);
+}
+
+/**
+ * Create one of Arcflight's Phase 4 core arkengine mods as a PF2E equipment item.
+ *
+ * @param {string} modKey Lower-case kebab-case arkengine mod key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreArkengineMod(modKey, operation = {}) {
+  const modData = getCoreArkengineMod(modKey);
+  if (!modData) {
+    throw new Error(`Arcflight | ${modKey} is not a supported core arkengine mod.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, {
+    name: modData.identity?.displayName ?? modKey,
+    system: deepCloneData(modData)
   }, operation);
 }
 

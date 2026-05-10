@@ -6,9 +6,9 @@ Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaig
 
 Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
-## Current Phase 4.5 Architecture
+## Current Phase 4 Architecture
 
-Phase 4.5 keeps the PF2E-compatible module architecture, the hull, arkengine, and room frameworks, and adds the Ship Upgrades framework for permanent installed ship improvements.
+Phase 4 keeps the PF2E-compatible module architecture, the hull, installed hull, arkengine, and variant slot foundations, and adds the Arkengine Mods framework for engine-only tuning and specialization components. Rooms and Ship Upgrades remain separate systems.
 
 - **PF2E vehicle actors are Arcflight ships.** A vehicle becomes an Arcflight ship only when Arcflight flags are enabled on that existing PF2E actor.
 - **PF2E equipment items are Arcflight components.** Hulls, arkengines, arkengine mods, weapons, rooms, ship upgrades, cargo, and crew assets are all equipment items with Arcflight flags.
@@ -25,20 +25,24 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createCoreHull(platformKey, operation?)`
 - `game.arcflight.createHull(platformKey, operation?)`
 - `game.arcflight.createCoreArkengine(engineKey, operation?)`
+- `game.arcflight.createCoreArkengineMod(modKey, operation?)`
 - `game.arcflight.createArkengine(engineKey, operation?)`
 - `game.arcflight.createCoreRoom(roomKey, operation?)`
 - `game.arcflight.createCoreShipUpgrade(upgradeKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
 - `game.arcflight.getCoreArkengine(engineKey)`
+- `game.arcflight.getCoreArkengineMod(modKey)`
 - `game.arcflight.getCoreRoom(roomKey)`
 - `game.arcflight.getCoreShipUpgrade(upgradeKey)`
 - `game.arcflight.CORE_HULL_PLATFORM_KEYS`
 - `game.arcflight.CORE_ARKENGINE_KEYS`
+- `game.arcflight.CORE_ARKENGINE_MOD_KEYS`
 - `game.arcflight.CORE_ROOM_KEYS`
 - `game.arcflight.CORE_SHIP_UPGRADE_KEYS`
 - `game.arcflight.ARKENGINE_VARIANT_KEYS`
 - `game.arcflight.getCoreHullPlatformKeys()`
 - `game.arcflight.getCoreArkengineKeys()`
+- `game.arcflight.getCoreArkengineModKeys()`
 - `game.arcflight.getCoreRoomKeys()`
 - `game.arcflight.getCoreShipUpgradeKeys()`
 - `game.arcflight.getArkengineVariantKeys()`
@@ -55,6 +59,8 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.installHullOnShip(shipActor, hullItem)`
 - `game.arcflight.installArkengine(shipActor, arkengineItem)`
 - `game.arcflight.installArkengineOnShip(shipActor, arkengineItem)`
+- `game.arcflight.installArkengineMod(shipActor, modItem)`
+- `game.arcflight.installArkengineModOnShip(shipActor, modItem)`
 - `game.arcflight.installRoom(shipActor, roomItem)`
 - `game.arcflight.installRoomOnShip(shipActor, roomItem)`
 - `game.arcflight.installShipUpgrade(shipActor, upgradeItem)`
@@ -73,6 +79,51 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `shipUpgrade`
 - `cargo`
 - `crewAsset`
+
+## Phase 4 Arkengine Mods Framework
+
+Arkengine Mods are engine-only tuning and specialization components. They affect the installed arkengine profile and actor-owned derived stats; they are not generic Ship Upgrades and they are not Rooms. Ship Upgrades remain broader vessel improvements, while Rooms remain infrastructure spaces. Do not mix these systems.
+
+Arkengine Mods are PF2E `equipment` items with Arcflight flags only:
+
+```js
+flags.arcflight.enabled = true;
+flags.arcflight.componentType = "arkengineMod";
+flags.arcflight.system = { /* arkengine mod schema data */ };
+```
+
+The locked starter mod data lives in `data/arkengine-mods/core-arkengine-mods.js` and includes these 10 keys:
+
+- `pressure-lattice-tuning`
+- `veil-projector-focusing`
+- `cooling-loop-expansion`
+- `fuel-matrix-efficiency`
+- `stormwake-injector`
+- `voidglass-regulator`
+- `choir-harmonic-lattice`
+- `overburn-catalysts`
+- `deepwake-stabilizers`
+- `aetherite-core-bracing`
+
+Create and install a core arkengine mod with the console helpers:
+
+```js
+const hull = await game.arcflight.createCoreHull("brigantine");
+const engine = await game.arcflight.createCoreArkengine("tidewake-arkengine");
+const mod = await game.arcflight.createCoreArkengineMod("pressure-lattice-tuning");
+const ship = game.actors.find((actor) => actor.type === "vehicle");
+
+await game.arcflight.setArcflightVehicleEnabled(ship, true);
+await game.arcflight.installHull(ship, hull);
+await game.arcflight.installArkengine(ship, engine);
+await game.arcflight.installArkengineMod(ship, mod);
+```
+
+Installing an Arkengine Mod appends copied installation state under `flags.arcflight.system.installed.arkengineMods`, updates `installed.arkengineModSlots`, and recalculates ship-derived values without mutating the mod item, arkengine item, hull item, room items, or ship upgrade items. Slot capacity comes from the installed arkengine's `modSlots`; used slots come from installed mod slot costs; available slots are `capacity - used`.
+
+Phase 4 supports Arkengine Mod `derivedStatModifiers` only for `voyageSpeedTravelHexDays`, `lifeveilCapacity`, `strainCapacity`, `hardBurnStrainCost`, `overchargeRisk`, `resistanceTendencies`, and `arkengineModSlots`, using `add`, `subtract`, `set`, and `append`. Voyage speed uses inverse scaling: lower `travelHexDays` is faster/more powerful, and higher `travelHexDays` is slower/weaker.
+
+This phase does not implement Hard Burn resolution, Overcharge resolution, travel gameplay, combat gameplay, AP/RAP spending, station actions, voyage events, damage automation, condition gameplay, GM generators, or drag-and-drop installation. Drag-and-drop UX should eventually route Arkengine Mods into installed arkengine mod slots rather than treating them as generic ship upgrades.
 
 ## Phase 4.5 Ship Upgrades Framework
 
@@ -240,7 +291,7 @@ flags.arcflight.system.installed.arkengineModSlots = {
 };
 ```
 
-Derived ship stats expose `arkengineVariantFamily`, `arkengineModSlots`, `arkengineModSlotsUsed`, and `arkengineModSlotsAvailable`. This phase does not implement arkengine mod item installation behavior, mod effects, overcharge resolution, hard burn resolution, travel gameplay, combat gameplay, station actions, AP/RAP spending, generators, or automation-heavy systems.
+Derived ship stats expose `arkengineVariantFamily`, `arkengineModSlots`, `arkengineModSlotsUsed`, and `arkengineModSlotsAvailable`. Phase 4 adds arkengine mod item installation and supported actor-owned derived stat modifiers. Hard Burn resolution, Overcharge resolution, travel gameplay, combat gameplay, station actions, AP/RAP spending, generators, and automation-heavy systems remain unimplemented.
 
 ## Current Module Behavior
 
@@ -254,7 +305,7 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 
 ## Testing Notes
 
-Phase 3.5 has no travel, combat, or arkengine mod gameplay automation to exercise. Development checks should validate that the 11 locked hull entries and 11 locked arkengine entries and 9 locked arkengine variant families load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
+Phase 4 has no travel, combat, Hard Burn, Overcharge, station, event, damage, condition, or GM automation to exercise. Development checks should validate that the locked hull, arkengine, arkengine variant, arkengine mod, room, and ship upgrade data load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
 ## Phase 4 Room Framework
 
 Arcflight rooms are PF2E `equipment` items with Arcflight flags only:
