@@ -2,6 +2,20 @@
 
 Phase 3 introduces locked core arkengine data in `core-arkengines.js`.
 
+Phase 7.5B-1 lightweight arkengine pattern data lives in `arkengine-patterns.js`. Arkengine patterns are data-only configuration records for future "Base Component + Pattern" installs; this phase does not apply modifiers or mutate installed arkengines.
+
+The arkengine pattern keys are:
+
+- `standard`
+- `guild`
+- `military`
+- `experimental`
+- `smuggler`
+- `pilgrim`
+- `stormwake`
+- `deepveil`
+- `longhaul`
+
 Arkengines are PF2E `equipment` items with Arcflight flags:
 
 - `flags.arcflight.enabled = true`
