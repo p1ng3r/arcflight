@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phase 7.5D-1 - Arkengine Mod Content Library Expansion
+
+- Added 12 Standard core arkengine mod entries for fueling, stealth, hard burn, overcharge, Lifeveil, emergency pressure, deep void, speed, ritual, filtration, and cooling use cases.
+- Extended arkengine mod derived-stat support to allow data-driven fuel slot modifiers while keeping mod definitions immutable and gameplay resolution unimplemented.
+- Kept this patch content/data-only; no Hard Burn resolution, Overcharge resolution, fuel spending, travel gameplay, combat gameplay, UI changes, or broad refactors were added.
+
 ### Arkengine Fueling Core Patch
 
 - Added data-only arkengine fueling defaults for required spell rank, fuel slots, maximum stored spell ranks, burn cost formulas, overcharge cost placeholder, and emergency spell-slot fueling permission.

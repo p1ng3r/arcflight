@@ -170,6 +170,123 @@ export const CORE_ARKENGINE_MODS = Object.freeze({
     derivedStatModifiers: [modifier("strainCapacity", "add", 2, "+2 strain capacity")],
     systemInteractions: ["Placeholder: reduced core instability."],
     traits: ["standard", "core-stability", "aetherite"]
+  }),
+  "refined-fuel-siphons": arkengineMod({
+    id: "refined-fuel-siphons",
+    displayName: "Refined Fuel Siphons",
+    modType: "fueling",
+    role: "improves spell-rank fuel handling",
+    derivedStatModifiers: [modifier("fuelSlots", "add", 1, "+1 fuel slot")],
+    fuelInteractions: ["Placeholder: improved refueling efficiency."],
+    traits: ["standard", "fueling", "fuel-siphons"]
+  }),
+  "hushglass-cowl": arkengineMod({
+    id: "hushglass-cowl",
+    displayName: "Hushglass Cowl",
+    modType: "stealth",
+    role: "suppresses arkengine glow and hum",
+    derivedStatModifiers: [modifier("resistanceTendencies", "append", "detectionMasking", "Adds detection masking resistance tendency")],
+    systemInteractions: ["Placeholder: stealth burn support."],
+    traits: ["standard", "stealth", "hushglass"]
+  }),
+  "hard-burn-governor": arkengineMod({
+    id: "hard-burn-governor",
+    displayName: "Hard Burn Governor",
+    modType: "hardBurn",
+    role: "smooths aggressive burn pressure",
+    derivedStatModifiers: [modifier("hardBurnStrainCost", "subtract", 1, "-1 hard burn strain cost; minimum 1 once minimum-bounded modifiers are supported")],
+    hardBurnInteractions: ["Placeholder: safer hard burn handling."],
+    traits: ["standard", "hard-burn", "governor"],
+    gmNotes: "Current modifier helper supports the -1 cost adjustment but not minimum bounds; intended floor is 1 when minimum-bounded derived modifiers are supported."
+  }),
+  "overcharge-grounding-rods": arkengineMod({
+    id: "overcharge-grounding-rods",
+    displayName: "Overcharge Grounding Rods",
+    modType: "overcharge",
+    role: "vents dangerous surge buildup",
+    derivedStatModifiers: [modifier("strainCapacity", "add", 1, "+1 strain capacity")],
+    overchargeInteractions: ["Placeholder: reduced surge severity."],
+    traits: ["standard", "overcharge", "grounding"]
+  }),
+  "lifeveil-harmonic-prism": arkengineMod({
+    id: "lifeveil-harmonic-prism",
+    displayName: "Lifeveil Harmonic Prism",
+    modType: "lifeveil",
+    role: "strengthens atmospheric veil projection",
+    derivedStatModifiers: [modifier("lifeveilCapacity", "add", 10, "+10 Lifeveil capacity")],
+    lifeveilInteractions: ["Placeholder: stronger atmospheric veil projection."],
+    traits: ["standard", "lifeveil", "harmonic", "prism"]
+  }),
+  "emergency-pressure-bypass": arkengineMod({
+    id: "emergency-pressure-bypass",
+    displayName: "Emergency Pressure Bypass",
+    modType: "emergency",
+    role: "redirects dangerous engine pressure during crisis",
+    derivedStatModifiers: [modifier("strainCapacity", "add", 1, "+1 strain capacity")],
+    systemInteractions: ["Placeholder: emergency stabilization."],
+    traits: ["standard", "emergency", "pressure"]
+  }),
+  "deepwake-resonance-baffles": arkengineMod({
+    id: "deepwake-resonance-baffles",
+    displayName: "Deepwake Resonance Baffles",
+    modType: "deepVoid",
+    role: "stabilizes engine rhythm in deep void currents",
+    derivedStatModifiers: [modifier("resistanceTendencies", "append", "deepVoid", "Adds deep void resistance tendency")],
+    resistanceInteractions: ["Placeholder: deep void current stability."],
+    traits: ["standard", "deep-void", "resonance", "stability"]
+  }),
+  "quickspark-injectors": arkengineMod({
+    id: "quickspark-injectors",
+    displayName: "Quickspark Injectors",
+    modType: "speed",
+    role: "improves short-burst propulsion output",
+    derivedStatModifiers: [
+      modifier("voyageSpeedTravelHexDays", "subtract", 1, "-1 travel hex day; lower is faster"),
+      modifier("hardBurnStrainCost", "add", 1, "+1 hard burn strain cost")
+    ],
+    hardBurnInteractions: ["Placeholder: higher hard burn pressure from burst output."],
+    traits: ["standard", "speed", "quickspark"]
+  }),
+  "ritual-channeling-rings": arkengineMod({
+    id: "ritual-channeling-rings",
+    displayName: "Ritual Channeling Rings",
+    modType: "ritual",
+    role: "improves ritual fueling and sanctified engine handling",
+    derivedStatModifiers: [modifier("lifeveilCapacity", "add", 5, "+5 Lifeveil capacity")],
+    fuelInteractions: ["Placeholder: ritual refueling support."],
+    lifeveilInteractions: ["Placeholder: sanctified engine handling."],
+    traits: ["standard", "ritual", "channeling", "lifeveil"]
+  }),
+  "aetheric-filter-mesh": arkengineMod({
+    id: "aetheric-filter-mesh",
+    displayName: "Aetheric Filter Mesh",
+    modType: "filtration",
+    role: "filters unstable spell energy before it reaches the core",
+    derivedStatModifiers: [modifier("strainCapacity", "add", 1, "+1 strain capacity")],
+    fuelInteractions: ["Placeholder: safer emergency spell sacrifice."],
+    traits: ["standard", "filtration", "aetheric"]
+  }),
+  "coldwake-condensers": arkengineMod({
+    id: "coldwake-condensers",
+    displayName: "Coldwake Condensers",
+    modType: "cooling",
+    role: "reinforces cooling systems for long voyages",
+    derivedStatModifiers: [modifier("resistanceTendencies", "append", "cold", "Adds cold resistance tendency")],
+    hardBurnInteractions: ["Placeholder: reduced heat stress."],
+    traits: ["standard", "cooling", "coldwake"]
+  }),
+  "veil-pressure-equalizer": arkengineMod({
+    id: "veil-pressure-equalizer",
+    displayName: "Veil Pressure Equalizer",
+    modType: "lifeveil",
+    role: "balances Lifeveil pressure across the ship",
+    derivedStatModifiers: [
+      modifier("lifeveilCapacity", "add", 5, "+5 Lifeveil capacity"),
+      modifier("strainCapacity", "add", 1, "+1 strain capacity")
+    ],
+    lifeveilInteractions: ["Placeholder: balanced Lifeveil pressure."],
+    strainInteractions: ["Placeholder: smoother veil pressure distribution."],
+    traits: ["standard", "lifeveil", "pressure"]
   })
 });
 
