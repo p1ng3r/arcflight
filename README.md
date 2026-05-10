@@ -32,7 +32,7 @@ The current Framework Foundation includes these data-first systems:
 
 - **Hull** — base vessel platform data and copied ship Base values.
 - **Arkengine** — installed propulsion framework data, variant family fields, spell-rank fueling schema, and derived engine values.
-- **Arkengine Mod** — engine-only tuning components with tracked mod slot usage and placeholder interactions.
+- **Arkengine Mod** — engine-only tuning components with tracked mod slot usage, a 22-entry core content library, and placeholder interactions.
 - **Room** — physical ship spaces, with core rooms and expansion room slot tracking.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking.
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters.
