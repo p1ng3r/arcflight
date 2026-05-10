@@ -29,6 +29,7 @@ function arkengine({
   traits = []
 }) {
   return Object.freeze({
+    componentType: "arkengine",
     engineClass,
     displayName,
     spellRankRequired,

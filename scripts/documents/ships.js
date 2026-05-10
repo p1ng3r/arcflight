@@ -335,6 +335,15 @@ function getInstalledShipUpgrades(installed = {}) {
   return Array.isArray(installed.shipUpgrades) ? cloneData(installed.shipUpgrades) : [];
 }
 
+function hasInstalledEntry(entries = [], entry = {}) {
+  const identifiers = [entry.key, entry.itemId, entry.uuid].filter(Boolean);
+  if (identifiers.length === 0) return false;
+
+  return entries.some((existing) => (
+    [existing.key, existing.itemId, existing.uuid].filter(Boolean).some((identifier) => identifiers.includes(identifier))
+  ));
+}
+
 function getShipUpgradeSlotState(installed = {}) {
   const existingCapacity = Number(installed.shipUpgradeSlots?.capacity);
   const capacity = Number.isFinite(existingCapacity) ? existingCapacity : 3;
@@ -734,7 +743,7 @@ export async function installHull(shipActor, hullItem) {
     hullItemId: hullItem.id ?? "",
     hullUuid: hullItem.uuid ?? "",
     hullPlatform: baseHull.platform ?? "",
-    hullName: hullItem.name ?? baseHull.platform ?? "",
+    hullName: hullItem.name ?? baseHull.displayName ?? baseHull.platform ?? "",
     coreRooms
   }, { inplace: false });
   nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
@@ -762,7 +771,7 @@ export async function installHull(shipActor, hullItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.hull`]: hullItem.name ?? baseHull.platform ?? "",
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.hull`]: hullItem.name ?? baseHull.displayName ?? baseHull.platform ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.minimum`]: derived.crew?.minimum ?? 0,
@@ -902,6 +911,11 @@ export async function installRoom(shipActor, roomItem) {
   }
 
   const installedRooms = getInstalledRooms(systemData.installed);
+  if (hasInstalledEntry(installedRooms, roomEntry)) {
+    console.warn(`Arcflight | ${roomEntry.name} is already installed as a room on this ship; skipping duplicate install.`);
+    return shipActor;
+  }
+
   const coreRooms = getCoreRoomsFromHull(baseHull);
   const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
     coreRooms,
@@ -946,6 +960,11 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   const coreRooms = getCoreRoomsFromHull(baseHull);
   const installedShipUpgrades = getInstalledShipUpgrades(systemData.installed);
   const upgradeEntry = buildInstalledShipUpgradeEntry(upgradeItem);
+  if (hasInstalledEntry(installedShipUpgrades, upgradeEntry)) {
+    console.warn(`Arcflight | ${upgradeEntry.name} is already installed as a ship upgrade on this ship; skipping duplicate install.`);
+    return shipActor;
+  }
+
   const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
     coreRooms,
     shipUpgrades: [...installedShipUpgrades, upgradeEntry]
@@ -1036,6 +1055,11 @@ export async function addCrewAsset(shipActor, crewItem) {
   const systemData = getArcflightShipData(shipActor);
   const crewState = getDefaultCrewState(systemData.crew);
   const crewEntry = buildCrewAssetRosterEntry(crewItem);
+  if (hasInstalledEntry(crewState.namedCrew, crewEntry)) {
+    console.warn(`Arcflight | ${crewEntry.name} is already rostered on this ship; skipping duplicate crew asset.`);
+    return shipActor;
+  }
+
   const namedCrew = [...crewState.namedCrew, crewEntry];
   const currentGenericCrew = crewEntry.crew?.countsTowardCrewTotal === false
     ? crewState.currentGenericCrew

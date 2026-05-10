@@ -1,6 +1,22 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
-import { createArcflightItem, createArkengine, createCoreArkengine, createCoreArkengineMod, createCoreCrewAsset, createCoreHull, createCoreRoom, createCoreShipUpgrade, createHull, getArcflightItemDocumentType } from "./documents/creation.js";
+import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
+import {
+  createArcflightItem,
+  createArkengine,
+  createArkengineMod,
+  createCoreArkengine,
+  createCoreArkengineMod,
+  createCoreCrewAsset,
+  createCoreHull,
+  createCoreRoom,
+  createCoreShipUpgrade,
+  createCrewAsset,
+  createHull,
+  createRoom,
+  createShipUpgrade,
+  getArcflightItemDocumentType
+} from "./documents/creation.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS, getCoreHull, getCoreHullPlatformKeys } from "../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS, CORE_ARKENGINES, getCoreArkengine, getCoreArkengineKeys } from "../data/arkengines/core-arkengines.js";
 import { CORE_ROOM_KEYS, CORE_ROOMS, getCoreRoom, getCoreRoomKeys } from "../data/rooms/core-rooms.js";
@@ -80,8 +96,12 @@ Hooks.once("init", () => {
     createCoreArkengineMod,
     createCoreCrewAsset,
     createArkengine,
+    createArkengineMod,
+    createCrewAsset,
     createCoreRoom,
+    createRoom,
     createCoreShipUpgrade,
+    createShipUpgrade,
     getCoreHull,
     getCoreArkengine,
     getCoreArkengineMod,
@@ -150,6 +170,7 @@ Hooks.once("init", () => {
     clearStationAssignment,
     assignShipStation: assignStation,
     clearShipStation: clearStationAssignment,
+    runFrameworkSmokeTest,
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
     shipDefaults: arcflightShipDefaults,
@@ -172,8 +193,12 @@ export {
   createCoreArkengineMod,
   createCoreCrewAsset,
   createArkengine,
+  createArkengineMod,
+  createCrewAsset,
   createCoreRoom,
+  createRoom,
   createCoreShipUpgrade,
+  createShipUpgrade,
   getCoreHull,
   getCoreArkengine,
   getCoreArkengineMod,
@@ -226,6 +251,7 @@ export {
   calculateDerivedShipStats,
   assignStation,
   clearStationAssignment,
+  runFrameworkSmokeTest,
   getArcflightItemDocumentType,
   isArcflightItem,
   getComponentType,
