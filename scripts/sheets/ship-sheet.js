@@ -67,6 +67,27 @@ function preparePatternOptions(patternKeys = [], getPattern, selectedKey = "") {
   });
 }
 
+function prepareExampleBuildOptions(selectedKey = "") {
+  const arcflightApi = game?.arcflight;
+  const getBuildKeys = arcflightApi?.getExampleShipBuildKeys;
+  const getBuild = arcflightApi?.getExampleShipBuild;
+
+  if (typeof getBuildKeys !== "function" || typeof getBuild !== "function") return [];
+
+  return arrayOrEmpty(getBuildKeys.call(arcflightApi)).map((key) => {
+    const build = getBuild.call(arcflightApi, key) ?? {};
+    const name = build.name || displayNameForEntry({ ...build, key });
+
+    return {
+      value: key,
+      name,
+      role: build.role ?? "",
+      description: build.description ?? "",
+      selected: key === selectedKey
+    };
+  });
+}
+
 function prepareInstalledEntry(entry = {}) {
   return {
     ...entry,
@@ -143,6 +164,29 @@ function isArcflightShipEnabled(actor) {
     && actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE;
 }
 
+function getSheetActor(sheet) {
+  return sheet?.actor ?? sheet?.document ?? null;
+}
+
+async function enableArcflightShip(actor) {
+  return actor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
+    [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system`]: getArcflightShipData(actor)
+  });
+}
+
+async function ensureArcflightShipEnabled(actor) {
+  if (actor?.type !== "vehicle") {
+    ui.notifications?.warn?.("Arcflight ships must be PF2E vehicle actors.");
+    return null;
+  }
+
+  if (isArcflightShipEnabled(actor)) return actor;
+
+  return await enableArcflightShip(actor) ?? actor;
+}
+
 async function getDroppedItem(event) {
   const dragData = globalThis.TextEditor?.getDragEventData?.(event) ?? {};
   const uuid = dragData.uuid || dragData.itemUuid;
@@ -182,6 +226,8 @@ function prepareStationRows(stations = {}) {
 
 /** Lightweight ApplicationV2 sheet foundation for Arcflight PF2E vehicle actors. */
 export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
+  #selectedExampleBuildKey = "";
+
   static DEFAULT_OPTIONS = {
     classes: ["arcflight", "sheet", "actor", "ship", "vehicle"],
     tag: "form",
@@ -223,6 +269,58 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.element
       .querySelector?.("[data-arcflight-arkengine-pattern]")
       ?.addEventListener("change", this.#onChangeArkenginePattern.bind(this));
+
+    this.element
+      .querySelector?.("[data-arcflight-example-build]")
+      ?.addEventListener("change", this.#onChangeExampleBuild.bind(this));
+
+    this.element
+      .querySelector?.("[data-arcflight-apply-clean-build]")
+      ?.addEventListener("click", this.#onApplyCleanExampleBuild.bind(this));
+  }
+
+  #onChangeExampleBuild(event) {
+    this.#selectedExampleBuildKey = event.currentTarget?.value ?? "";
+    const selectedOption = event.currentTarget?.selectedOptions?.[0];
+    const details = this.element.querySelector?.("[data-arcflight-example-build-details]");
+    if (!details) return;
+
+    const name = selectedOption?.dataset?.name ?? "";
+    const role = selectedOption?.dataset?.role ?? "";
+    const description = selectedOption?.dataset?.description ?? "";
+    details.hidden = !this.#selectedExampleBuildKey;
+    details.querySelector?.("[data-arcflight-example-build-name]")?.replaceChildren(name);
+    details.querySelector?.("[data-arcflight-example-build-role]")?.replaceChildren(role);
+    details.querySelector?.("[data-arcflight-example-build-description]")?.replaceChildren(description);
+  }
+
+  async #onApplyCleanExampleBuild(event) {
+    event.preventDefault();
+
+    const selectedBuildKey = this.element.querySelector?.("[data-arcflight-example-build]")?.value
+      ?? this.#selectedExampleBuildKey;
+    if (!selectedBuildKey) {
+      ui.notifications?.warn?.("Select an Arcflight example build before applying a clean build.");
+      return;
+    }
+
+    const applyCleanExampleShipBuild = game?.arcflight?.applyCleanExampleShipBuild;
+    if (typeof applyCleanExampleShipBuild !== "function") {
+      ui.notifications?.warn?.("Arcflight example ship build helpers are not available.");
+      return;
+    }
+
+    try {
+      const actor = await ensureArcflightShipEnabled(getSheetActor(this));
+      if (!actor) return;
+
+      await game.arcflight.applyCleanExampleShipBuild(actor, selectedBuildKey);
+      this.#selectedExampleBuildKey = selectedBuildKey;
+      this.render(true);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not apply that example ship build.");
+      console.warn("Arcflight | Example ship build apply failed.", error);
+    }
   }
 
   async #onChangeHullPattern(event) {
@@ -231,8 +329,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const patternKey = event.currentTarget?.value ?? "";
     if (!patternKey) return;
 
+    const actor = getSheetActor(this);
+
     try {
-      await setHullPattern(this.document, patternKey);
+      await setHullPattern(actor, patternKey);
       this.render(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that hull pattern.");
@@ -246,8 +346,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const patternKey = event.currentTarget?.value ?? "";
     if (!patternKey) return;
 
+    const actor = getSheetActor(this);
+
     try {
-      await setArkenginePattern(this.document, patternKey);
+      await setArkenginePattern(actor, patternKey);
       this.render(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that arkengine pattern.");
@@ -256,14 +358,15 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 
   #onDragOverShipBuilder(event) {
-    if (!isArcflightShipEnabled(this.document)) return;
+    if (!isArcflightShipEnabled(getSheetActor(this))) return;
 
     event.preventDefault();
     event.stopPropagation();
   }
 
   async #onDropShipBuilder(event) {
-    if (!isArcflightShipEnabled(this.document)) return;
+    const actor = getSheetActor(this);
+    if (!isArcflightShipEnabled(actor)) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -277,7 +380,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     try {
-      await install(this.document, item);
+      await install(actor, item);
       this.render(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
@@ -288,31 +391,28 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onEnableArcflightShip(event) {
     event.preventDefault();
 
-    if (this.document?.type !== "vehicle") {
-      ui.notifications?.warn?.("Arcflight ships must be PF2E vehicle actors.");
-      return;
-    }
-
-    await this.document.update({
-      [`flags.${ARCFLIGHT_MODULE_ID}.enabled`]: true,
-      [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
-      [`flags.${ARCFLIGHT_MODULE_ID}.system`]: getArcflightShipData(this.document)
-    });
+    const actor = await ensureArcflightShipEnabled(getSheetActor(this));
+    if (!actor) return;
 
     this.render(true);
   }
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(this.document));
+    const actor = getSheetActor(this);
+    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(actor));
 
     const stations = prepareStationRows(arcflight.system.stations);
+    const exampleBuildOptions = prepareExampleBuildOptions(this.#selectedExampleBuildKey);
+    const selectedExampleBuild = exampleBuildOptions.find((build) => build.selected) ?? null;
 
     return {
       ...context,
-      actor: this.document,
+      actor,
       arcflight,
       stations,
+      exampleBuildOptions,
+      selectedExampleBuild,
       arcflightActorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
       arcflightSystemPath: `flags.${ARCFLIGHT_MODULE_ID}.system`
     };
