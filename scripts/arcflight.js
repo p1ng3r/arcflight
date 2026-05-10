@@ -65,6 +65,12 @@ import {
   setHullPattern
 } from "./documents/ships.js";
 import { registerArcflightSheets } from "./sheets/registration.js";
+import {
+  EXAMPLE_SHIP_BUILD_KEYS,
+  applyExampleShipBuild,
+  getExampleShipBuild,
+  getExampleShipBuildKeys
+} from "./helpers/example-ship-builds.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -138,6 +144,8 @@ Hooks.once("init", () => {
     CORE_SHIP_UPGRADE_KEYS,
     ARKENGINE_VARIANT_KEYS,
     STATION_KEYS,
+    EXAMPLE_SHIP_BUILD_KEYS,
+    exampleShipBuildKeys: EXAMPLE_SHIP_BUILD_KEYS,
     coreHulls: CORE_HULLS,
     coreArkengines: CORE_ARKENGINES,
     hullPatterns: HULL_PATTERNS,
@@ -186,6 +194,9 @@ Hooks.once("init", () => {
     clearStationAssignment,
     assignShipStation: assignStation,
     clearShipStation: clearStationAssignment,
+    getExampleShipBuildKeys,
+    getExampleShipBuild,
+    applyExampleShipBuild,
     runFrameworkSmokeTest,
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
@@ -257,6 +268,10 @@ export {
   ARKENGINE_VARIANT_KEYS,
   CORE_STATIONS,
   STATION_KEYS,
+  EXAMPLE_SHIP_BUILD_KEYS,
+  getExampleShipBuildKeys,
+  getExampleShipBuild,
+  applyExampleShipBuild,
   addCrewAsset,
   removeCrewAsset,
   isArcflightVehicle,
