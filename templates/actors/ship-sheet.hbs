@@ -1,4 +1,4 @@
-<section class="arcflight-sheet arcflight-ship-sheet">
+<section class="arcflight-sheet arcflight-ship-sheet" data-arcflight-ship-builder>
   <header class="arcflight-sheet__header">
     <img class="arcflight-sheet__image" src="{{actor.img}}" alt="{{actor.name}}" data-edit="img" data-action="editImage">
     <label class="arcflight-sheet__field arcflight-sheet__field--grow">
@@ -19,8 +19,8 @@
   <div class="arcflight-sheet__body">
   {{#if arcflight.enabled}}
   <section class="arcflight-sheet__section">
-    <h2>Arcflight Ship Core</h2>
-    <p class="arcflight-sheet__hint">Ship state is stored on this PF2E vehicle actor under <code>flags.arcflight.system</code>. Installed source references, copied Base data, recalculated Derived values, and editable Current runtime values are intentionally separate.</p>
+    <h2>Ship Builder</h2>
+    <p class="arcflight-sheet__hint">Drop Arcflight component items onto this sheet to route them to the matching install helper. Ship state is stored on this PF2E vehicle actor under <code>flags.arcflight.system</code>. Installed source references, copied Base data, recalculated Derived values, and editable Current runtime values are intentionally separate.</p>
     <label class="arcflight-sheet__field">
       <span>Actor Type</span>
       <input type="text" name="flags.arcflight.actorType" value="{{arcflight.actorType}}" disabled>
@@ -28,22 +28,27 @@
   </section>
 
   <section class="arcflight-sheet__section">
-    <h2>Installed Hull</h2>
+    <h2>Hull</h2>
+    {{#if arcflight.system.installed.hasHull}}
     <div class="arcflight-grid arcflight-grid--ship-values">
-      <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.hullName}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.hullDisplayName}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Platform</span><input type="text" value="{{arcflight.system.installed.hullPlatform}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.hullItemId}}" disabled></label>
       <label class="arcflight-sheet__field"><span>UUID</span><input type="text" value="{{arcflight.system.installed.hullUuid}}" disabled></label>
     </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No hull installed.</p>
+    {{/if}}
     <p class="arcflight-sheet__hint">Install hulls with <code>game.arcflight.installHull(shipActor, hullItem)</code>. Installation stores references and copied base hull data on the vehicle actor without mutating the hull item.</p>
   </section>
 
 
 
   <section class="arcflight-sheet__section">
-    <h2>Installed Arkengine</h2>
+    <h2>Arkengine</h2>
+    {{#if arcflight.system.installed.hasArkengine}}
     <div class="arcflight-grid arcflight-grid--ship-values">
-      <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.arkengineName}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.arkengineDisplayName}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Engine Key</span><input type="text" value="{{arcflight.system.installed.arkengineKey}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.arkengineItemId}}" disabled></label>
       <label class="arcflight-sheet__field"><span>UUID</span><input type="text" value="{{arcflight.system.installed.arkengineUuid}}" disabled></label>
@@ -59,11 +64,14 @@
       <label class="arcflight-sheet__field"><span>Arkengine Mod Slots Available</span><input type="number" value="{{arcflight.system.derived.arkengineModSlotsAvailable}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Resistance Tendencies</span><input type="text" value="{{arcflight.system.derived.resistanceTendencies}}" disabled></label>
     </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No arkengine installed.</p>
+    {{/if}}
     <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Variant family and mod slot values are tracked separately from source arkengine item data.</p>
   </section>
 
   <section class="arcflight-sheet__section">
-    <h2>Installed Arkengine Mods</h2>
+    <h2>Arkengine Mods</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Arkengine Mod Slots Capacity</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.capacity}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Arkengine Mod Slots Used</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.used}}" disabled></label>
@@ -93,7 +101,7 @@
   </section>
 
   <section class="arcflight-sheet__section">
-    <h2>Installed Rooms</h2>
+    <h2>Rooms</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Room Slots Capacity</span><input type="number" value="{{arcflight.system.installed.roomSlots.capacity}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Room Slots Used</span><input type="number" value="{{arcflight.system.installed.roomSlots.used}}" disabled></label>
@@ -110,7 +118,7 @@
             {{/each}}
           </ul>
         {{else}}
-          <p class="arcflight-sheet__hint">Install or recalculate a hull to populate locked core room references.</p>
+          <p class="arcflight-sheet__hint">No core rooms installed.</p>
         {{/if}}
       </article>
       <article>
@@ -122,7 +130,7 @@
             {{/each}}
           </ul>
         {{else}}
-          <p class="arcflight-sheet__hint">Install expansion rooms with <code>game.arcflight.installRoom(shipActor, roomItem)</code>.</p>
+          <p class="arcflight-sheet__hint">No rooms installed. Install expansion rooms with <code>game.arcflight.installRoom(shipActor, roomItem)</code>.</p>
         {{/if}}
       </article>
     </div>
@@ -130,7 +138,7 @@
 
 
   <section class="arcflight-sheet__section">
-    <h2>Station Assignments</h2>
+    <h2>Stations</h2>
     <p class="arcflight-sheet__hint">Stations are crew duty roles and operating positions stored on this ship actor. They are separate from Rooms, do not require Room installation, and do not add station actions or AP/RAP controls in this phase.</p>
     <div class="arcflight-station-list">
       {{#each stations}}
@@ -175,23 +183,19 @@
         {{/each}}
       </ul>
     {{else}}
-      <p class="arcflight-sheet__hint">Install ship upgrades with <code>game.arcflight.installShipUpgrade(shipActor, upgradeItem)</code>.</p>
+      <p class="arcflight-sheet__hint">No ship upgrades installed. Install ship upgrades with <code>game.arcflight.installShipUpgrade(shipActor, upgradeItem)</code>.</p>
     {{/if}}
   </section>
 
   <section class="arcflight-sheet__section">
-    <h2>Base / Derived / Current Values</h2>
+    <h2>Derived Summary</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Base Hull</span><input type="number" value="{{arcflight.system.base.hull.hullIntegrity}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Derived Hull</span><input type="number" value="{{arcflight.system.derived.hullIntegrity}}" disabled></label>
-      <label class="arcflight-sheet__field"><span>Current Hull</span><input type="number" name="{{arcflightSystemPath}}.current.hull" value="{{arcflight.system.current.hull}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Base Lifeveil</span><input type="number" value="{{arcflight.system.base.hull.lifeveilCapacity}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Derived Lifeveil</span><input type="number" value="{{arcflight.system.derived.lifeveilCapacity}}" disabled></label>
-      <label class="arcflight-sheet__field"><span>Current Lifeveil</span><input type="number" name="{{arcflightSystemPath}}.current.lifeveil" value="{{arcflight.system.current.lifeveil}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Base Strain</span><input type="number" value="{{arcflight.system.base.hull.strainCapacity}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Derived Strain</span><input type="number" value="{{arcflight.system.derived.strainCapacity}}" disabled></label>
-      <label class="arcflight-sheet__field"><span>Current Strain</span><input type="number" name="{{arcflightSystemPath}}.current.strain" value="{{arcflight.system.current.strain}}" {{#unless editable}}disabled{{/unless}}></label>
-      <label class="arcflight-sheet__field"><span>Current Morale</span><input type="number" name="{{arcflightSystemPath}}.current.morale" value="{{arcflight.system.current.morale}}" {{#unless editable}}disabled{{/unless}}></label>
     </div>
   </section>
 
@@ -218,8 +222,12 @@
   </section>
 
   <section class="arcflight-sheet__section">
-    <h2>Resources</h2>
+    <h2>Current Resources Summary</h2>
     <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Current Hull</span><input type="number" name="{{arcflightSystemPath}}.current.hull" value="{{arcflight.system.current.hull}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Current Lifeveil</span><input type="number" name="{{arcflightSystemPath}}.current.lifeveil" value="{{arcflight.system.current.lifeveil}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Current Strain</span><input type="number" name="{{arcflightSystemPath}}.current.strain" value="{{arcflight.system.current.strain}}" {{#unless editable}}disabled{{/unless}}></label>
+      <label class="arcflight-sheet__field"><span>Current Morale</span><input type="number" name="{{arcflightSystemPath}}.current.morale" value="{{arcflight.system.current.morale}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Hull Value</span><input type="number" name="{{arcflightSystemPath}}.resources.hull.value" value="{{arcflight.system.resources.hull.value}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Hull Max</span><input type="number" name="{{arcflightSystemPath}}.resources.hull.max" value="{{arcflight.system.resources.hull.max}}" {{#unless editable}}disabled{{/unless}}></label>
       <label class="arcflight-sheet__field"><span>Lifeveil Value</span><input type="number" name="{{arcflightSystemPath}}.resources.lifeveil.value" value="{{arcflight.system.resources.lifeveil.value}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -246,7 +254,7 @@
   </section>
 
   <section class="arcflight-sheet__section">
-    <h2>Crew Roster</h2>
+    <h2>Crew</h2>
     <p class="arcflight-sheet__hint">Generic crew is a simple number. Named Crew Assets are meaningful specialists copied into this ship roster by <code>game.arcflight.addCrewAsset(shipActor, crewItem)</code>; source Crew Asset items remain immutable.</p>
     <div class="arcflight-grid arcflight-grid--ship-values">
       <label class="arcflight-sheet__field"><span>Minimum</span><input type="number" name="{{arcflightSystemPath}}.crew.minimum" value="{{arcflight.system.crew.minimum}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -262,7 +270,7 @@
         {{/each}}
       </ul>
     {{else}}
-      <p class="arcflight-sheet__hint">No named crew assets are on this ship roster.</p>
+      <p class="arcflight-sheet__hint">No crew assets assigned.</p>
     {{/if}}
     <label class="arcflight-sheet__field"><span>Roster</span><textarea name="{{arcflightSystemPath}}.crew.roster" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.crew.roster}}</textarea></label>
     <label class="arcflight-sheet__field"><span>Crew Notes</span><textarea name="{{arcflightSystemPath}}.crew.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.crew.notes}}</textarea></label>
