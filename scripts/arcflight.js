@@ -18,7 +18,9 @@ import {
   getArcflightItemDocumentType
 } from "./documents/creation.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS, getCoreHull, getCoreHullPlatformKeys } from "../data/hulls/core-hulls.js";
+import { HULL_PATTERN_KEYS, HULL_PATTERNS, getHullPattern, getHullPatternKeys } from "../data/hulls/hull-patterns.js";
 import { CORE_ARKENGINE_KEYS, CORE_ARKENGINES, getCoreArkengine, getCoreArkengineKeys } from "../data/arkengines/core-arkengines.js";
+import { ARKENGINE_PATTERN_KEYS, ARKENGINE_PATTERNS, getArkenginePattern, getArkenginePatternKeys } from "../data/arkengines/arkengine-patterns.js";
 import { CORE_ROOM_KEYS, CORE_ROOMS, getCoreRoom, getCoreRoomKeys } from "../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS, CORE_SHIP_UPGRADES, getCoreShipUpgrade, getCoreShipUpgradeKeys } from "../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_ARKENGINE_MOD_KEYS, CORE_ARKENGINE_MODS, getCoreArkengineMod, getCoreArkengineModKeys } from "../data/arkengine-mods/core-arkengine-mods.js";
@@ -110,6 +112,10 @@ Hooks.once("init", () => {
     getCoreShipUpgrade,
     getCoreHullPlatformKeys,
     getCoreArkengineKeys,
+    getHullPatternKeys,
+    getHullPattern,
+    getArkenginePatternKeys,
+    getArkenginePattern,
     getCoreArkengineModKeys,
     getCoreCrewAssetKeys,
     getCoreRoomKeys,
@@ -122,6 +128,8 @@ Hooks.once("init", () => {
     getStations,
     CORE_HULL_PLATFORM_KEYS,
     CORE_ARKENGINE_KEYS,
+    HULL_PATTERN_KEYS,
+    ARKENGINE_PATTERN_KEYS,
     CORE_ARKENGINE_MOD_KEYS,
     CORE_CREW_ASSET_KEYS,
     CORE_ROOM_KEYS,
@@ -130,6 +138,8 @@ Hooks.once("init", () => {
     STATION_KEYS,
     coreHulls: CORE_HULLS,
     coreArkengines: CORE_ARKENGINES,
+    hullPatterns: HULL_PATTERNS,
+    arkenginePatterns: ARKENGINE_PATTERNS,
     coreArkengineMods: CORE_ARKENGINE_MODS,
     coreCrewAssets: CORE_CREW_ASSETS,
     coreRooms: CORE_ROOMS,
@@ -138,6 +148,8 @@ Hooks.once("init", () => {
     coreStations: CORE_STATIONS,
     coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
     coreArkengineKeys: CORE_ARKENGINE_KEYS,
+    hullPatternKeys: HULL_PATTERN_KEYS,
+    arkenginePatternKeys: ARKENGINE_PATTERN_KEYS,
     coreArkengineModKeys: CORE_ARKENGINE_MOD_KEYS,
     coreCrewAssetKeys: CORE_CREW_ASSET_KEYS,
     coreRoomKeys: CORE_ROOM_KEYS,
@@ -207,6 +219,10 @@ export {
   getCoreShipUpgrade,
   getCoreHullPlatformKeys,
   getCoreArkengineKeys,
+  getHullPatternKeys,
+  getHullPattern,
+  getArkenginePatternKeys,
+  getArkenginePattern,
   getCoreArkengineModKeys,
   getCoreCrewAssetKeys,
   getCoreRoomKeys,
@@ -219,6 +235,8 @@ export {
   getStations,
   CORE_HULLS,
   CORE_ARKENGINES,
+  HULL_PATTERNS,
+  ARKENGINE_PATTERNS,
   CORE_ARKENGINE_MODS,
   CORE_CREW_ASSETS,
   CORE_ROOMS,
@@ -226,6 +244,8 @@ export {
   ARKENGINE_VARIANTS,
   CORE_HULL_PLATFORM_KEYS,
   CORE_ARKENGINE_KEYS,
+  HULL_PATTERN_KEYS,
+  ARKENGINE_PATTERN_KEYS,
   CORE_ARKENGINE_MOD_KEYS,
   CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,
