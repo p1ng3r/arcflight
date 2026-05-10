@@ -31,6 +31,17 @@
     <h2>Hull</h2>
     {{#if arcflight.system.installed.hasHull}}
     <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field">
+        <span>Hull Pattern</span>
+        <select data-arcflight-hull-pattern {{#unless editable}}disabled{{/unless}}>
+          {{#unless arcflight.system.installed.hullPatternKey}}
+            <option value="" selected disabled>Select a hull pattern</option>
+          {{/unless}}
+          {{#each arcflight.system.installed.hullPatternOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
       <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.hullDisplayName}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Platform</span><input type="text" value="{{arcflight.system.installed.hullPlatform}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.hullItemId}}" disabled></label>
@@ -48,6 +59,17 @@
     <h2>Arkengine</h2>
     {{#if arcflight.system.installed.hasArkengine}}
     <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field">
+        <span>Arkengine Pattern</span>
+        <select data-arcflight-arkengine-pattern {{#unless editable}}disabled{{/unless}}>
+          {{#unless arcflight.system.installed.arkenginePatternKey}}
+            <option value="" selected disabled>Select an arkengine pattern</option>
+          {{/unless}}
+          {{#each arcflight.system.installed.arkenginePatternOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
       <label class="arcflight-sheet__field"><span>Name</span><input type="text" value="{{arcflight.system.installed.arkengineDisplayName}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Engine Key</span><input type="text" value="{{arcflight.system.installed.arkengineKey}}" disabled></label>
       <label class="arcflight-sheet__field"><span>Item ID</span><input type="text" value="{{arcflight.system.installed.arkengineItemId}}" disabled></label>
