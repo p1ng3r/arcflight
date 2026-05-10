@@ -117,6 +117,20 @@
   </section>
 
   <section class="arcflight-sheet__section">
+    <h2>Fueling / Spell-Rank Energy</h2>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Fuel Slots</span><input type="number" value="{{arcflight.system.fuelingDisplay.fuelSlots}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Max Stored Spell Ranks</span><input type="number" value="{{arcflight.system.fuelingDisplay.maxStoredSpellRanks}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Current Stored Spell Ranks</span><input type="number" value="{{arcflight.system.fuelingDisplay.currentStoredSpellRanks}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Normal Burn Hex Cost</span><input type="number" value="{{arcflight.system.fuelingDisplay.normalHexCost}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Hard Burn Hex Cost</span><input type="number" value="{{arcflight.system.fuelingDisplay.hardBurnHexCost}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Lean Burn Hex Cost</span><input type="number" value="{{arcflight.system.fuelingDisplay.leanBurnHexCost}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Stealth Burn Hex Cost</span><input type="number" value="{{arcflight.system.fuelingDisplay.stealthBurnHexCost}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Read-only arkengine fueling values from the ship's derived stats and current stored spell-rank energy. Values show as 0 until an arkengine provides fueling data.</p>
+  </section>
+
+  <section class="arcflight-sheet__section">
     <h2>Arkengine Mods</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Arkengine Mod Slots Capacity</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.capacity}}" disabled></label>
