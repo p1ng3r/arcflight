@@ -209,10 +209,11 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Derived voyage speed travel hex days", 5, shipData.derived.voyageSpeedTravelHexDays);
 
     checkEqual(result, "Room slots used", 1, shipData.installed.roomSlots.used);
+    checkEqual(result, "Arkengine mod slots capacity", 4, shipData.installed.arkengineModSlots.capacity);
     checkEqual(result, "Arkengine mod slots used", 1, shipData.installed.arkengineModSlots.used);
     checkEqual(result, "Ship upgrade slots used", 1, shipData.installed.shipUpgradeSlots.used);
     checkEqual(result, "Room slots shape has available", 3, shipData.installed.roomSlots.available);
-    checkEqual(result, "Arkengine mod slots shape has available", 2, shipData.installed.arkengineModSlots.available);
+    checkEqual(result, "Arkengine mod slots shape has available", 3, shipData.installed.arkengineModSlots.available);
     checkEqual(result, "Ship upgrade slots shape has available", 2, shipData.installed.shipUpgradeSlots.available);
 
     checkEqual(result, "Current hull preserved", preservedCurrent.hull, shipData.current.hull);

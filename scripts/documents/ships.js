@@ -313,8 +313,8 @@ function buildSlotState(capacity, used) {
   };
 }
 
-function getArkengineModSlotState(arkengine = {}, installed = {}, derived = null) {
-  const capacity = numericValue(derived?.arkengineModSlots ?? arkengine.modSlots);
+function getArkengineModSlotState(arkengine = {}, installed = {}) {
+  const capacity = numericValue(arkengine.modSlots);
   const used = getInstalledArkengineMods(installed).reduce((total, mod) => total + getArkengineModSlotCost(mod), 0);
 
   return buildSlotState(capacity, used);
