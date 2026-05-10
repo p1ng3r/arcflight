@@ -42,6 +42,7 @@
         </select>
       </label>
       <button type="button" data-arcflight-apply-clean-build {{#unless editable}}disabled{{/unless}}>Apply Clean Build</button>
+      <button type="button" data-arcflight-clear-build {{#unless editable}}disabled{{/unless}}>Clear Build</button>
     </div>
     <article class="arcflight-example-builds__details" data-arcflight-example-build-details {{#unless selectedExampleBuild}}hidden{{/unless}}>
       <h3 data-arcflight-example-build-name>{{selectedExampleBuild.name}}</h3>
