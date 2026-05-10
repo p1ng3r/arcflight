@@ -6,13 +6,14 @@ Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaig
 
 Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
-## Current Phase 4 Architecture
+## Current Phase 6 Architecture
 
-Phase 4 keeps the PF2E-compatible module architecture, the hull, installed hull, arkengine, and variant slot foundations, and adds the Arkengine Mods framework for engine-only tuning and specialization components. Rooms and Ship Upgrades remain separate systems.
+Phase 6 keeps the PF2E-compatible module architecture, hull, installed hull, arkengine, variant slot, room, ship upgrade, and arkengine mod foundations, and adds the Station Framework for ship-owned operating role assignments. Stations and Rooms are deliberately separate systems: Rooms are physical ship spaces, while Stations are crew duty roles / operating positions.
 
 - **PF2E vehicle actors are Arcflight ships.** A vehicle becomes an Arcflight ship only when Arcflight flags are enabled on that existing PF2E actor.
 - **PF2E equipment items are Arcflight components.** Hulls, arkengines, arkengine mods, weapons, rooms, ship upgrades, cargo, and crew assets are all equipment items with Arcflight flags.
 - **Arcflight data is stored in flags.** Ship and component data live under `flags.arcflight.system`; PF2E-owned `system` data remains untouched.
+- **Stations are ship actor role data, not equipment items.** Station definitions and assignments live under `flags.arcflight.system.stations` on Arcflight-enabled PF2E vehicle actors.
 - **No custom Actor or Item document subtypes are registered.** The manifest does not declare `arcflight.*` document types, and the module does not patch `Item.create` or `Item.createDocuments`.
 
 This keeps normal PF2E vehicles and equipment unaffected unless a user opts into the Arcflight sheets or helper APIs.
@@ -40,6 +41,7 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.CORE_ROOM_KEYS`
 - `game.arcflight.CORE_SHIP_UPGRADE_KEYS`
 - `game.arcflight.ARKENGINE_VARIANT_KEYS`
+- `game.arcflight.STATION_KEYS`
 - `game.arcflight.getCoreHullPlatformKeys()`
 - `game.arcflight.getCoreArkengineKeys()`
 - `game.arcflight.getCoreArkengineModKeys()`
@@ -48,6 +50,9 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.getArkengineVariantKeys()`
 - `game.arcflight.getArkengineVariant(variantKey)`
 - `game.arcflight.getArkengineVariants()`
+- `game.arcflight.getStationKeys()`
+- `game.arcflight.getStation(stationKey)`
+- `game.arcflight.getStations()`
 - `game.arcflight.getDefaultComponentData(componentType)`
 - `game.arcflight.getDefaultShipData()`
 - `game.arcflight.isArcflightItem(item)`
@@ -66,6 +71,10 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.installShipUpgrade(shipActor, upgradeItem)`
 - `game.arcflight.installShipUpgradeOnShip(shipActor, upgradeItem)`
 - `game.arcflight.recalculateShipStats(shipActor)`
+- `game.arcflight.assignStation(shipActor, stationKey, assignee, options?)`
+- `game.arcflight.clearStationAssignment(shipActor, stationKey)`
+- `game.arcflight.assignShipStation(shipActor, stationKey, assignee, options?)`
+- `game.arcflight.clearShipStation(shipActor, stationKey)`
 
 ## Implemented Component Types
 
@@ -79,6 +88,44 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `shipUpgrade`
 - `cargo`
 - `crewAsset`
+
+
+## Phase 6 Station Framework
+
+Stations are Arcflight ship operating roles and assignment records. They are not PF2E equipment items, not installed components, and not rooms. Station data lives on the Arcflight-enabled PF2E vehicle actor under `flags.arcflight.system.stations`.
+
+Rooms remain physical ship spaces such as workshops, helms, wardrooms, cabins, or holds. Stations remain duty roles such as Captain, Pilot / Helm, Navigator, Engineer, Veilwarden, Watchmaster, Gunnery, and Quartermaster. A room may provide narrative context in a later phase, but Phase 6 does not require rooms for stations, does not unlock stations through room installation, does not store station assignments on rooms, and does not store room state on stations.
+
+The locked station keys are exposed through `game.arcflight.STATION_KEYS` and are currently:
+
+- `captain`
+- `pilot`
+- `navigator`
+- `engineer`
+- `veilwarden`
+- `watchmaster`
+- `gunnery`
+- `quartermaster`
+
+Each station definition supports `key`, `displayName`, `role`, `description`, `gameplayDomains`, `primarySkills`, `traits`, and `notes`. Assignment records support `stationKey`, `assigneeType`, `actorId`, `actorUuid`, `crewAssetId`, `crewAssetUuid`, `name`, and `notes`.
+
+Use the console helpers to read station data and manage simple actor assignments:
+
+```js
+game.arcflight.STATION_KEYS;
+game.arcflight.getStationKeys();
+game.arcflight.getStation("engineer");
+game.arcflight.getStations();
+
+const ship = game.actors.find((actor) => actor.type === "vehicle");
+const assignee = game.actors.find((actor) => actor.type !== "vehicle");
+
+await game.arcflight.setArcflightVehicleEnabled(ship, true);
+await game.arcflight.assignStation(ship, "engineer", assignee);
+await game.arcflight.clearStationAssignment(ship, "engineer");
+```
+
+Assigning or clearing a station updates only `flags.arcflight.system.stations.assignments` on the ship actor. It does not mutate the assignee actor, rooms, installed components, hulls, arkengines, upgrades, arkengine mods, or source items, and it does not change derived stats. Phase 6 does not implement station actions, AP/RAP spending, combat rounds, travel gameplay, voyage events, firing systems, overcharge resolution, hard burn resolution, drag/drop crew assignment, room/station dependency rules, or automation-heavy gameplay.
 
 ## Phase 4 Arkengine Mods Framework
 
@@ -305,7 +352,7 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 
 ## Testing Notes
 
-Phase 4 has no travel, combat, Hard Burn, Overcharge, station, event, damage, condition, or GM automation to exercise. Development checks should validate that the locked hull, arkengine, arkengine variant, arkengine mod, room, and ship upgrade data load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
+Phase 6 has no travel, combat, Hard Burn, Overcharge, station action, event, damage, condition, or GM automation to exercise. Development checks should validate that the locked hull, arkengine, arkengine variant, arkengine mod, room, ship upgrade, and station data load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
 ## Phase 4 Room Framework
 
 Arcflight rooms are PF2E `equipment` items with Arcflight flags only:

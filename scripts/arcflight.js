@@ -6,6 +6,7 @@ import { CORE_ARKENGINE_KEYS, CORE_ARKENGINES, getCoreArkengine, getCoreArkengin
 import { CORE_ROOM_KEYS, CORE_ROOMS, getCoreRoom, getCoreRoomKeys } from "../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS, CORE_SHIP_UPGRADES, getCoreShipUpgrade, getCoreShipUpgradeKeys } from "../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_ARKENGINE_MOD_KEYS, CORE_ARKENGINE_MODS, getCoreArkengineMod, getCoreArkengineModKeys } from "../data/arkengine-mods/core-arkengine-mods.js";
+import { CORE_STATIONS, STATION_KEYS, getStation, getStationKeys, getStations } from "../data/stations/core-stations.js";
 import {
   ARKENGINE_VARIANT_KEYS,
   ARKENGINE_VARIANTS,
@@ -25,6 +26,8 @@ import {
   arcflightShipDefaults,
   calculateDerivedShipStats,
   getArcflightShipData,
+  assignStation,
+  clearStationAssignment,
   getDefaultArcflightShipData,
   installArkengine,
   installArkengineMod,
@@ -55,16 +58,10 @@ async function setArcflightVehicleEnabled(actor, enabled = true) {
     return actor.setFlag(ARCFLIGHT.MODULE_ID, "enabled", false);
   }
 
-  const existingShipData = actor.getFlag(ARCFLIGHT.MODULE_ID, "system") ?? {};
-
   return actor.update({
     [`flags.${ARCFLIGHT.MODULE_ID}.enabled`]: true,
     [`flags.${ARCFLIGHT.MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE,
-    [`flags.${ARCFLIGHT.MODULE_ID}.system`]: foundry.utils.mergeObject(
-      getDefaultArcflightShipData(),
-      foundry.utils.deepClone(existingShipData),
-      { inplace: false }
-    )
+    [`flags.${ARCFLIGHT.MODULE_ID}.system`]: getArcflightShipData(actor)
   });
 }
 
@@ -94,24 +91,30 @@ Hooks.once("init", () => {
     getArkengineVariantKeys,
     getArkengineVariant,
     getArkengineVariants,
+    getStationKeys,
+    getStation,
+    getStations,
     CORE_HULL_PLATFORM_KEYS,
     CORE_ARKENGINE_KEYS,
     CORE_ARKENGINE_MOD_KEYS,
     CORE_ROOM_KEYS,
     CORE_SHIP_UPGRADE_KEYS,
     ARKENGINE_VARIANT_KEYS,
+    STATION_KEYS,
     coreHulls: CORE_HULLS,
     coreArkengines: CORE_ARKENGINES,
     coreArkengineMods: CORE_ARKENGINE_MODS,
     coreRooms: CORE_ROOMS,
     coreShipUpgrades: CORE_SHIP_UPGRADES,
     arkengineVariants: ARKENGINE_VARIANTS,
+    coreStations: CORE_STATIONS,
     coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
     coreArkengineKeys: CORE_ARKENGINE_KEYS,
     coreArkengineModKeys: CORE_ARKENGINE_MOD_KEYS,
     coreRoomKeys: CORE_ROOM_KEYS,
     coreShipUpgradeKeys: CORE_SHIP_UPGRADE_KEYS,
     arkengineVariantKeys: ARKENGINE_VARIANT_KEYS,
+    stationKeys: STATION_KEYS,
     getItemDocumentType: getArcflightItemDocumentType,
     getDefaultComponentData: getDefaultArcflightComponentData,
     getDefaultShipData: getDefaultArcflightShipData,
@@ -132,6 +135,10 @@ Hooks.once("init", () => {
     installShipUpgradeOnShip,
     recalculateShipStats,
     calculateDerivedShipStats,
+    assignStation,
+    clearStationAssignment,
+    assignShipStation: assignStation,
+    clearShipStation: clearStationAssignment,
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
     shipDefaults: arcflightShipDefaults,
@@ -168,6 +175,9 @@ export {
   getArkengineVariantKeys,
   getArkengineVariant,
   getArkengineVariants,
+  getStationKeys,
+  getStation,
+  getStations,
   CORE_HULLS,
   CORE_ARKENGINES,
   CORE_ARKENGINE_MODS,
@@ -180,6 +190,8 @@ export {
   CORE_ROOM_KEYS,
   CORE_SHIP_UPGRADE_KEYS,
   ARKENGINE_VARIANT_KEYS,
+  CORE_STATIONS,
+  STATION_KEYS,
   isArcflightVehicle,
   setArcflightVehicleEnabled,
   installArkengine,
@@ -194,6 +206,8 @@ export {
   installShipUpgradeOnShip,
   recalculateShipStats,
   calculateDerivedShipStats,
+  assignStation,
+  clearStationAssignment,
   getArcflightItemDocumentType,
   isArcflightItem,
   getComponentType,

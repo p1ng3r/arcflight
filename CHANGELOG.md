@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Phase 6 - Station Framework
+
+- Added locked Station Framework data for Captain, Pilot / Helm, Navigator, Engineer, Veilwarden, Watchmaster, Gunnery, and Quartermaster.
+- Added ship-owned station definitions and assignment slots under `flags.arcflight.system.stations` on Arcflight-enabled PF2E vehicle actors.
+- Exposed station helper APIs for reading station definitions and assigning or clearing station operators without mutating assignee actors, rooms, installed components, or source items.
+- Updated the ship sheet to display station roles and assignment state while keeping stations decoupled from rooms.
+- Documented that stations are operating roles, rooms are physical spaces, and no station actions, AP/RAP spending, combat, travel, room dependencies, or gameplay automation were added.
+
+
 ### Phase 4 - Arkengine Mods Framework
 
 - Added normalized arkengine mod component defaults under `flags.arcflight.system` for identity, installation, effects, restrictions, state, traits, and notes.
