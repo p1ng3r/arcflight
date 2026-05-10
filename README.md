@@ -31,7 +31,7 @@ This architecture keeps normal PF2E equipment and vehicles functional unless a u
 The current Framework Foundation includes these data-first systems:
 
 - **Hull** — base vessel platform data and copied ship Base values.
-- **Arkengine** — installed propulsion framework data, variant family fields, and derived engine values.
+- **Arkengine** — installed propulsion framework data, variant family fields, spell-rank fueling schema, and derived engine values.
 - **Arkengine Mod** — engine-only tuning components with tracked mod slot usage and placeholder interactions.
 - **Room** — physical ship spaces, with core rooms and expansion room slot tracking.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking.
@@ -59,8 +59,14 @@ Arcflight keeps data ownership explicit:
 1. **Compendium/source item data is content.** Core data modules and created equipment items describe available Hulls, Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets.
 2. **Install helpers copy data onto ships.** Helpers store source item references and framework snapshots under the ship actor's `flags.arcflight.system` tree.
 3. **Source items remain immutable.** A component item can be installed or copied into a ship roster without changing that item.
-4. **Runtime values stay on ships.** Current Hull, Lifeveil, Strain, Morale, crew roster state, station assignments, and installed slot summaries are ship-owned runtime data.
+4. **Runtime values stay on ships.** Current Hull, Lifeveil, Strain, Morale, stored spell ranks, crew roster state, station assignments, and installed slot summaries are ship-owned runtime data.
 5. **Future systems should remain data-driven.** Gameplay pillars should consume Core data instead of hardcoding content into UI or automation logic.
+
+## Arkengine Fueling Framework
+
+Arkengines are treated as propulsion, Lifeveil, and magical power systems that store spell-rank energy rather than ordinary fuel. Core arkengine source data now includes `fueling.requiredSpellRank`, `fueling.fuelSlots`, and `fueling.maxStoredSpellRanks`, with max storage normalized as required spell rank multiplied by fuel slots.
+
+Fueling remains data-only in this patch. Strain continues to represent short-term danger, while stored spell ranks represent long-term engine endurance. Installing an arkengine copies its fueling snapshot into `flags.arcflight.system.base.arkengine.fueling`, derives read-only burn cost summaries under `flags.arcflight.system.derived`, and initializes `flags.arcflight.system.current.storedSpellRanks` only when doing so is safe for ship-owned runtime state. No fuel spending, spell-slot sacrifice UI, travel gameplay, overcharge resolution, hard burn resolution, resource gameplay, or event automation is implemented.
 
 ## Runtime Helpers
 

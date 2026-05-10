@@ -1,6 +1,8 @@
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getComponentData, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
+import { getHullPattern } from "../../data/hulls/hull-patterns.js";
+import { getArkenginePattern } from "../../data/arkengines/arkengine-patterns.js";
 import { CORE_STATIONS, STATION_KEYS, getStation } from "../../data/stations/core-stations.js";
 
 export const ARCFLIGHT_SHIP_ACTOR_TYPE = "arcflightShip";
@@ -10,10 +12,12 @@ const emptyInstalledState = Object.freeze({
   hullUuid: "",
   hullPlatform: "",
   hullName: "",
+  hullPattern: Object.freeze({}),
   arkengineItemId: "",
   arkengineUuid: "",
   arkengineKey: "",
   arkengineName: "",
+  arkenginePattern: Object.freeze({}),
   arkengineMods: Object.freeze([]),
   arkengineModSlots: Object.freeze({
     capacity: 0,
@@ -39,7 +43,8 @@ const emptyCurrentShipState = Object.freeze({
   hull: 0,
   lifeveil: 0,
   strain: 0,
-  morale: 0
+  morale: 0,
+  storedSpellRanks: 0
 });
 
 const emptyCrewState = Object.freeze({
@@ -103,7 +108,14 @@ const emptyDerivedShipState = Object.freeze({
   overchargeRisk: "",
   spellRankRequired: 0,
   arkengineLifeveilModifier: 0,
-  arkengineStrainModifier: 0
+  arkengineStrainModifier: 0,
+  requiredSpellRank: 0,
+  fuelSlots: 0,
+  maxStoredSpellRanks: 0,
+  normalHexCost: 0,
+  hardBurnHexCost: 0,
+  leanBurnHexCost: 0,
+  stealthBurnHexCost: 0
 });
 
 export const arcflightShipDefaults = Object.freeze({
@@ -192,6 +204,21 @@ function cloneData(data) {
   return foundry.utils.deepClone(data);
 }
 
+function buildEmptyInstalledState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(emptyInstalledState), cloneData(overrides), { inplace: false });
+}
+
+function buildEmptyBaseShipState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(emptyBaseShipState), cloneData(overrides), { inplace: false });
+}
+
+function buildEmptyInstalledSystemsState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(arcflightShipDefaults.installedSystems), cloneData(overrides), { inplace: false });
+}
+
+function buildEmptyResourcesState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(arcflightShipDefaults.resources), cloneData(overrides), { inplace: false });
+}
 
 function getDefaultStationAssignments() {
   return Object.fromEntries(STATION_KEYS.map((stationKey) => [stationKey, null]));
@@ -295,6 +322,46 @@ function countWeaponMountsByArc(weaponMounts = {}) {
 
 function numericValue(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function normalizeArkengineFueling(arkengine = {}) {
+  const existingFueling = cloneData(arkengine.fueling ?? {});
+  const requiredSpellRank = numericValue(
+    existingFueling.requiredSpellRank,
+    numericValue(arkengine.spellRankRequired)
+  );
+  const fuelSlots = numericValue(existingFueling.fuelSlots);
+
+  return {
+    requiredSpellRank,
+    fuelSlots,
+    maxStoredSpellRanks: requiredSpellRank * fuelSlots,
+    currentStoredSpellRanks: numericValue(existingFueling.currentStoredSpellRanks),
+    normalHexCostFormula: existingFueling.normalHexCostFormula ?? "requiredSpellRank",
+    hardBurnHexCostFormula: existingFueling.hardBurnHexCostFormula ?? "ceil(requiredSpellRank * 1.5)",
+    leanBurnHexCostFormula: existingFueling.leanBurnHexCostFormula ?? "ceil(requiredSpellRank / 2)",
+    stealthBurnHexCostFormula: existingFueling.stealthBurnHexCostFormula ?? "ceil(requiredSpellRank * 1.5)",
+    overchargeCostFormula: existingFueling.overchargeCostFormula ?? "definedByOverchargeAction",
+    emergencySpellSlotFuelingAllowed: existingFueling.emergencySpellSlotFuelingAllowed ?? true
+  };
+}
+
+function normalizeArkengineData(arkengine = {}) {
+  const normalizedArkengine = cloneData(arkengine ?? {});
+  normalizedArkengine.fueling = normalizeArkengineFueling(normalizedArkengine);
+
+  return normalizedArkengine;
+}
+
+function getArkengineFuelingCosts(fueling = {}) {
+  const requiredSpellRank = numericValue(fueling.requiredSpellRank);
+
+  return {
+    normalHexCost: requiredSpellRank,
+    hardBurnHexCost: Math.ceil(requiredSpellRank * 1.5),
+    leanBurnHexCost: Math.ceil(requiredSpellRank / 2),
+    stealthBurnHexCost: Math.ceil(requiredSpellRank * 1.5)
+  };
 }
 
 function getInstalledArkengineMods(installed = {}) {
@@ -485,6 +552,106 @@ function applyDerivedModifier(derived, modifier = {}, supportedTargets, label) {
   console.warn(`Arcflight | Skipping unsupported ${label} modifier mode: ${mode}`);
 }
 
+function normalizeDerivedStatModifiers(derivedStatModifiers = {}) {
+  if (Array.isArray(derivedStatModifiers)) return derivedStatModifiers.map((modifier) => cloneData(modifier));
+
+  return Object.entries(derivedStatModifiers ?? {}).map(([target, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return { target, mode: value.mode ?? "add", value: value.value, summary: value.summary ?? "" };
+    }
+
+    return { target, mode: "add", value };
+  });
+}
+
+const PATTERN_DERIVED_STAT_TARGET_ALIASES = Object.freeze({
+  travelHexDays: "voyageSpeedTravelHexDays"
+});
+
+function withPatternTargetAlias(modifier = {}) {
+  const target = PATTERN_DERIVED_STAT_TARGET_ALIASES[modifier.target] ?? modifier.target;
+
+  return { ...modifier, target };
+}
+
+const SUPPORTED_HULL_PATTERN_MODIFIER_TARGETS = new Set([
+  "hullIntegrity",
+  "armorClass",
+  "strainCapacity",
+  "lifeveilCapacity",
+  "cargoCapacity",
+  "detection",
+  "combatSpeed",
+  "maneuverability",
+  "baseAP",
+  "baseRAP",
+  "resistanceTendencies",
+  "traits"
+]);
+
+function applyHullPatternDerivedStatModifiers(derived, installed = {}) {
+  const pattern = installed.hullPattern;
+  if (pattern?.appliesTo !== "hull") return;
+
+  for (const modifier of normalizeDerivedStatModifiers(pattern.derivedStatModifiers)) {
+    applyDerivedModifier(derived, withPatternTargetAlias(modifier), SUPPORTED_HULL_PATTERN_MODIFIER_TARGETS, "hull pattern");
+  }
+}
+
+const IGNORED_FUTURE_ARKENGINE_PATTERN_MODIFIER_TARGETS = new Set([
+  "overchargeRiskStep"
+]);
+
+const SUPPORTED_ARKENGINE_PATTERN_MODIFIER_TARGETS = new Set([
+  "voyageSpeedTravelHexDays",
+  "lifeveilCapacity",
+  "strainCapacity",
+  "hardBurnStrainCost",
+  "overchargeRisk",
+  "resistanceTendencies",
+  "arkengineModSlots",
+  "combatSpeed",
+  "fuelSlots",
+  "maxStoredSpellRanks",
+  "normalHexCost",
+  "hardBurnHexCost",
+  "leanBurnHexCost",
+  "stealthBurnHexCost",
+  "arkengineLifeveilModifier",
+  "arkengineStrainModifier"
+]);
+
+function expandArkenginePatternModifier(modifier = {}) {
+  if (modifier.target === "lifeveilModifier") {
+    return [
+      { ...modifier, target: "lifeveilCapacity" },
+      { ...modifier, target: "arkengineLifeveilModifier" }
+    ];
+  }
+
+  if (modifier.target === "strainModifier") {
+    return [
+      { ...modifier, target: "strainCapacity" },
+      { ...modifier, target: "arkengineStrainModifier" }
+    ];
+  }
+
+  return [withPatternTargetAlias(modifier)];
+}
+
+function applyArkenginePatternDerivedStatModifiers(derived, installed = {}) {
+  const pattern = installed.arkenginePattern;
+  if (pattern?.appliesTo !== "arkengine") return;
+
+  for (const modifier of normalizeDerivedStatModifiers(pattern.derivedStatModifiers)) {
+    if (IGNORED_FUTURE_ARKENGINE_PATTERN_MODIFIER_TARGETS.has(modifier.target)) continue;
+
+    for (const expandedModifier of expandArkenginePatternModifier(modifier)) {
+      applyDerivedModifier(derived, expandedModifier, SUPPORTED_ARKENGINE_PATTERN_MODIFIER_TARGETS, "arkengine pattern");
+    }
+  }
+}
+
 function applyArkengineModDerivedStatModifiers(derived, installed = {}) {
   for (const mod of getInstalledArkengineMods(installed)) {
     const modifiers = Array.isArray(mod.effects?.derivedStatModifiers) ? mod.effects.derivedStatModifiers : [];
@@ -571,18 +738,20 @@ function buildInstalledRoomEntry(roomItem) {
 
 function deriveShipStatsFromBase(base = {}, installed = {}) {
   const hull = cloneData(base.hull ?? {});
-  const arkengine = cloneData(base.arkengine ?? {});
+  const arkengine = normalizeArkengineData(base.arkengine ?? {});
   const roomSlots = getRoomSlotState(hull, installed);
   const coreRooms = getCoreRoomsFromHull(hull);
 
-  // Calculation order is intentionally linear: hull base -> arkengine base ->
-  // arkengine mods -> ship upgrades -> final derived slot/readout fields.
+  // Calculation order is intentionally linear: hull base -> hull pattern ->
+  // arkengine base/effects -> arkengine pattern -> arkengine mods ->
+  // ship upgrades -> final derived slot/readout fields.
   // Future gameplay hooks (travel, hard burn, overcharge, combat, morale,
   // events) should consume these results rather than mutate source items.
   const derived = foundry.utils.mergeObject(cloneData(emptyDerivedShipState), hull, { inplace: false });
+  applyHullPatternDerivedStatModifiers(derived, installed);
 
-  derived.lifeveilCapacity = numericValue(hull.lifeveilCapacity) + numericValue(arkengine.lifeveilModifier);
-  derived.strainCapacity = numericValue(hull.strainCapacity) + numericValue(arkengine.strainModifier);
+  derived.lifeveilCapacity = numericValue(derived.lifeveilCapacity) + numericValue(arkengine.lifeveilModifier);
+  derived.strainCapacity = numericValue(derived.strainCapacity) + numericValue(arkengine.strainModifier);
   derived.voyageSpeedTravelHexDays = numericValue(arkengine.travelHexDays);
   derived.resistanceTendencies = Array.isArray(arkengine.resistanceTendencies)
     ? cloneData(arkengine.resistanceTendencies)
@@ -593,7 +762,12 @@ function deriveShipStatsFromBase(base = {}, installed = {}) {
   derived.spellRankRequired = arkengine.spellRankRequired ?? 0;
   derived.arkengineLifeveilModifier = numericValue(arkengine.lifeveilModifier);
   derived.arkengineStrainModifier = numericValue(arkengine.strainModifier);
+  derived.requiredSpellRank = numericValue(arkengine.fueling?.requiredSpellRank);
+  derived.fuelSlots = numericValue(arkengine.fueling?.fuelSlots);
+  derived.maxStoredSpellRanks = numericValue(arkengine.fueling?.maxStoredSpellRanks);
+  foundry.utils.mergeObject(derived, getArkengineFuelingCosts(arkengine.fueling), { inplace: true });
 
+  applyArkenginePatternDerivedStatModifiers(derived, installed);
   applyArkengineModDerivedStatModifiers(derived, installed);
   applyShipUpgradeDerivedStatModifiers(derived, installed);
 
@@ -674,7 +848,8 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
     hull: getCurrentFallback(systemData, "hull"),
     lifeveil: getCurrentFallback(systemData, "lifeveil"),
     strain: getCurrentFallback(systemData, "strain"),
-    morale: getCurrentFallback(systemData, "morale")
+    morale: getCurrentFallback(systemData, "morale"),
+    storedSpellRanks: getCurrentFallback(systemData, "storedSpellRanks")
   };
   const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), cloneData(fallbackCurrent), { inplace: false });
 
@@ -682,11 +857,13 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
   if (shouldInitializeRuntimeValue(current, "lifeveil", initialize.lifeveil)) current.lifeveil = derived.lifeveilCapacity ?? 0;
   if (shouldInitializeRuntimeValue(current, "strain", initialize.strain)) current.strain = 0;
   if (shouldInitializeRuntimeValue(current, "morale", initialize.morale)) current.morale = 0;
+  if (shouldInitializeRuntimeValue(current, "storedSpellRanks", initialize.storedSpellRanks)) current.storedSpellRanks = derived.maxStoredSpellRanks ?? 0;
 
   current.hull = numericValue(current.hull);
   current.lifeveil = numericValue(current.lifeveil);
   current.strain = numericValue(current.strain);
   current.morale = numericValue(current.morale);
+  current.storedSpellRanks = numericValue(current.storedSpellRanks);
 
   return current;
 }
@@ -769,6 +946,240 @@ export async function recalculateShipStats(shipActor) {
   });
 }
 
+
+function assertArcflightShipActor(shipActor, helperName) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error(`Arcflight | ${helperName} requires an Arcflight-enabled PF2E vehicle actor.`);
+  }
+}
+
+function buildCleanCurrentShipState(systemData = {}, preserveCurrentResources = false) {
+  if (preserveCurrentResources) return buildCurrentShipState(systemData, emptyDerivedShipState);
+
+  return cloneData(emptyCurrentShipState);
+}
+
+function buildCleanLegacyResources(systemData = {}, current = {}, preserveCurrentResources = false) {
+  if (preserveCurrentResources) return buildLegacyResources(systemData, current, emptyDerivedShipState);
+
+  return buildEmptyResourcesState();
+}
+
+/**
+ * Clear all installed Arcflight ship build references from a vehicle without
+ * deleting actor items, source items, compendium entries, PF2E data, or the
+ * Arcflight enabled state.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @param {object} options Reset options.
+ * @param {boolean} options.preserveCurrentResources Keep current resource values when true.
+ * @param {boolean} options.preserveCrew Keep named crew and generic crew counts when true.
+ * @param {boolean} options.preserveStations Keep station assignments when true.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearShipBuild(shipActor, options = {}) {
+  assertArcflightShipActor(shipActor, "clearShipBuild");
+
+  const resetOptions = {
+    preserveCurrentResources: false,
+    preserveCrew: false,
+    preserveStations: false,
+    ...options
+  };
+  const systemData = getArcflightShipData(shipActor);
+  const crew = resetOptions.preserveCrew
+    ? getDefaultCrewState(systemData.crew)
+    : getDefaultCrewState({});
+  const stations = resetOptions.preserveStations
+    ? getDefaultStationState(systemData.stations)
+    : getDefaultStationState({});
+  const current = buildCleanCurrentShipState(systemData, resetOptions.preserveCurrentResources);
+  const resources = buildCleanLegacyResources(systemData, current, resetOptions.preserveCurrentResources);
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: buildEmptyInstalledState(),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base`]: buildEmptyBaseShipState(),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: cloneData(emptyDerivedShipState),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: resources,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: cloneData(arcflightShipDefaults.derivedStats),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems`]: buildEmptyInstalledSystemsState(),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew`]: crew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: 0
+  });
+}
+
+/**
+ * Clear expansion rooms installed on a ship. Hull-provided core rooms are kept.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearInstalledRooms(shipActor) {
+  assertArcflightShipActor(shipActor, "clearInstalledRooms");
+
+  const systemData = getArcflightShipData(shipActor);
+  const baseHull = cloneData(systemData.base?.hull ?? {});
+  const roomSlots = getRoomSlotState(baseHull, { rooms: [] });
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.rooms`]: [],
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.roomSlots`]: roomSlots,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: ""
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+/**
+ * Clear installed ship upgrades and reset the Phase 0 upgrade slot track.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearInstalledShipUpgrades(shipActor) {
+  assertArcflightShipActor(shipActor, "clearInstalledShipUpgrades");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgrades`]: [],
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgradeSlots`]: buildSlotState(3, 0),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: ""
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+/**
+ * Clear arkengine mods without uninstalling the arkengine.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearInstalledArkengineMods(shipActor) {
+  assertArcflightShipActor(shipActor, "clearInstalledArkengineMods");
+
+  const systemData = getArcflightShipData(shipActor);
+  const arkengineModSlots = getArkengineModSlotState(systemData.base?.arkengine, { arkengineMods: [] });
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkengineMods`]: [],
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkengineModSlots`]: arkengineModSlots,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: ""
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+/**
+ * Clear the named crew roster.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @param {object} options Clear options.
+ * @param {boolean} options.preserveCurrentGenericCrew Keep generic crew count when true.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearCrewRoster(shipActor, options = {}) {
+  assertArcflightShipActor(shipActor, "clearCrewRoster");
+
+  const systemData = getArcflightShipData(shipActor);
+  const crew = getDefaultCrewState(systemData.crew);
+  crew.namedCrew = [];
+  if (!options.preserveCurrentGenericCrew) crew.currentGenericCrew = 0;
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew`]: crew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: ""
+  });
+}
+
+/**
+ * Clear all station assignments while preserving station definitions.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearStationAssignments(shipActor) {
+  assertArcflightShipActor(shipActor, "clearStationAssignments");
+
+  const systemData = getArcflightShipData(shipActor);
+  const stations = getDefaultStationState(systemData.stations);
+  stations.assignments = getDefaultStationAssignments();
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations
+  });
+}
+
+/**
+ * Clear installed hull and arkengine patterns, then recalculate derived stats.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearComponentPatterns(shipActor) {
+  assertArcflightShipActor(shipActor, "clearComponentPatterns");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.hullPattern`]: {},
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkenginePattern`]: {}
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+function getPatternSnapshot(pattern) {
+  return cloneData(pattern ?? {});
+}
+
+function validatePatternAppliesTo(pattern, appliesTo, helperName) {
+  if (!pattern) {
+    throw new Error(`Arcflight | ${helperName} requires a known ${appliesTo} pattern key.`);
+  }
+
+  if (pattern.appliesTo !== appliesTo) {
+    throw new Error(`Arcflight | ${helperName} received a pattern that does not apply to ${appliesTo} components.`);
+  }
+}
+
+export async function setHullPattern(shipActor, patternKey) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | setHullPattern requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  if (!hasInstalledHull(systemData)) {
+    throw new Error("Arcflight | setHullPattern requires an installed hull before a hull pattern can be selected.");
+  }
+
+  const pattern = getHullPattern(patternKey);
+  validatePatternAppliesTo(pattern, "hull", "setHullPattern");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.hullPattern`]: getPatternSnapshot(pattern)
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+export async function setArkenginePattern(shipActor, patternKey) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | setArkenginePattern requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  if (!hasInstalledArkengine(systemData)) {
+    throw new Error("Arcflight | setArkenginePattern requires an installed arkengine before an arkengine pattern can be selected.");
+  }
+
+  const pattern = getArkenginePattern(patternKey);
+  validatePatternAppliesTo(pattern, "arkengine", "setArkenginePattern");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkenginePattern`]: getPatternSnapshot(pattern)
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
 export async function installHull(shipActor, hullItem) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | installHull requires an Arcflight-enabled PF2E vehicle actor.");
@@ -836,7 +1247,7 @@ export async function installArkengine(shipActor, arkengineItem) {
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
   const baseHull = cloneData(systemData.base?.hull ?? {});
-  const baseArkengine = cloneData(getComponentData(arkengineItem));
+  const baseArkengine = normalizeArkengineData(getComponentData(arkengineItem));
   const installedArkengineMods = [];
   const installedArkengineModSlots = getArkengineModSlotState(baseArkengine, { arkengineMods: installedArkengineMods });
   const coreRooms = getCoreRoomsFromHull(baseHull);
@@ -857,7 +1268,8 @@ export async function installArkengine(shipActor, arkengineItem) {
   const current = buildCurrentShipState(systemData, derived, {
     hull: false,
     lifeveil: firstArkengineInstall,
-    strain: false
+    strain: false,
+    storedSpellRanks: firstArkengineInstall
   });
 
   const legacyDerivedStats = foundry.utils.mergeObject(

@@ -10,7 +10,13 @@ import {
 import {
   addCrewAsset,
   assignStation,
+  clearCrewRoster,
+  clearInstalledArkengineMods,
+  clearInstalledRooms,
+  clearInstalledShipUpgrades,
+  clearShipBuild,
   clearStationAssignment,
+  clearStationAssignments,
   getArcflightShipData,
   getDefaultArcflightShipFlags,
   installArkengine,
@@ -182,7 +188,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     await installShipUpgrade(actor, componentItems.shipUpgrade);
     await addCrewAsset(actor, componentItems.crewAsset);
 
-    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1 };
+    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
     await actor.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
     });
@@ -207,6 +213,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Derived hull integrity", 180, shipData.derived.hullIntegrity, "Brigantine 160 + Reinforced Structural Ribbing 20.");
     checkEqual(result, "Derived strain capacity", 13, shipData.derived.strainCapacity, "Brigantine 10 + Tidewake 2 + Pressure Lattice Tuning 1.");
     checkEqual(result, "Derived voyage speed travel hex days", 5, shipData.derived.voyageSpeedTravelHexDays);
+    checkEqual(result, "Base arkengine fueling required spell rank", 2, shipData.base.arkengine.fueling?.requiredSpellRank);
+    checkEqual(result, "Base arkengine fueling fuel slots", 10, shipData.base.arkengine.fueling?.fuelSlots);
+    checkEqual(result, "Base arkengine max stored spell ranks", 20, shipData.base.arkengine.fueling?.maxStoredSpellRanks);
+    checkEqual(result, "Derived normal hex fuel cost", 2, shipData.derived.normalHexCost);
+    checkEqual(result, "Derived hard burn hex fuel cost", 3, shipData.derived.hardBurnHexCost);
+    checkEqual(result, "Derived lean burn hex fuel cost", 1, shipData.derived.leanBurnHexCost);
+    checkEqual(result, "Derived stealth burn hex fuel cost", 3, shipData.derived.stealthBurnHexCost);
 
     checkEqual(result, "Room slots used", 1, shipData.installed.roomSlots.used);
     checkEqual(result, "Arkengine mod slots capacity", 4, shipData.installed.arkengineModSlots.capacity);
@@ -220,12 +233,46 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
     checkEqual(result, "Current strain preserved", preservedCurrent.strain, shipData.current.strain);
     checkEqual(result, "Current morale preserved", preservedCurrent.morale, shipData.current.morale);
+    checkEqual(result, "Current stored spell ranks preserved", preservedCurrent.storedSpellRanks, shipData.current.storedSpellRanks);
 
     const engineerAssignment = shipData.stations.assignments.engineer;
     check(result, "Engineer station assignment exists", Boolean(engineerAssignment), "assignment", engineerAssignment?.name ?? null);
     await clearStationAssignment(actor, "engineer");
     shipData = getArcflightShipData(actor);
     checkEqual(result, "Engineer station assignment clears", null, shipData.stations.assignments.engineer);
+
+    await assignStation(actor, "engineer", crewEntry, { assigneeType: "crewAsset" });
+    await clearStationAssignments(actor);
+    shipData = getArcflightShipData(actor);
+    check(result, "All station assignments clear", Object.values(shipData.stations.assignments).every((assignment) => assignment === null), true, shipData.stations.assignments);
+
+    await clearInstalledShipUpgrades(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes ship upgrades", 0, shipData.installed.shipUpgrades.length);
+    checkEqual(result, "Clear helper resets ship upgrade slots", 3, shipData.installed.shipUpgradeSlots.available);
+
+    await clearInstalledArkengineMods(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes arkengine mods", 0, shipData.installed.arkengineMods.length);
+    checkEqual(result, "Clear helper preserves arkengine mod capacity", 4, shipData.installed.arkengineModSlots.capacity);
+
+    await clearInstalledRooms(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes rooms", 0, shipData.installed.rooms.length);
+
+    await clearCrewRoster(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Clear helper removes named crew", 0, shipData.crew.namedCrew.length);
+    checkEqual(result, "Clear helper resets generic crew", 0, shipData.crew.currentGenericCrew);
+
+    await clearShipBuild(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Full clear removes installed rooms", 0, shipData.installed.rooms.length);
+    checkEqual(result, "Full clear removes installed ship upgrades", 0, shipData.installed.shipUpgrades.length);
+    checkEqual(result, "Full clear removes installed arkengine mods", 0, shipData.installed.arkengineMods.length);
+    checkEqual(result, "Full clear removes named crew", 0, shipData.crew.namedCrew.length);
+    checkEqual(result, "Full clear resets hull reference", "", shipData.installed.hullItemId);
+    checkEqual(result, "Full clear resets arkengine reference", "", shipData.installed.arkengineItemId);
   } catch (error) {
     check(result, "Smoke test threw unexpected error", false, "no unexpected error", error.message, error.stack ?? error.message);
     console.error("Arcflight | Framework smoke test failed with an unexpected error.", error);
