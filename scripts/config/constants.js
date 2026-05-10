@@ -53,6 +53,27 @@ export const ARCFLIGHT_ROOM_CATEGORIES = Object.freeze({
   CONTAINMENT: "containment"
 });
 
+export const ARCFLIGHT_SHIP_UPGRADE_CATEGORIES = Object.freeze({
+  STRUCTURAL: "structural",
+  MILITARY: "military",
+  COMMAND: "command",
+  DETECTION: "detection",
+  LOGISTICS: "logistics",
+  DEFENSIVE: "defensive",
+  NAVIGATION: "navigation",
+  CARGO: "cargo",
+  VOIDFARING: "voidfaring",
+  INDUSTRIAL: "industrial",
+  COORDINATION: "coordination",
+  CATASTROPHE: "catastrophe",
+  ADAPTATION: "adaptation",
+  POWER_DISTRIBUTION: "powerDistribution",
+  PROPULSION_SUPPORT: "propulsionSupport",
+  LOOKOUT: "lookout",
+  HELM_SYSTEM: "helmSystem",
+  SAIL_SYSTEM: "sailSystem"
+});
+
 export const ARCFLIGHT_ARKENGINE_CLASSES = Object.freeze({
   STANDARD: "standard",
   REFINED: "refined",
@@ -141,6 +162,7 @@ export const ARCFLIGHT = Object.freeze({
   WEAPON_ARCS: ARCFLIGHT_WEAPON_ARCS,
   WEAPON_SIZES: ARCFLIGHT_WEAPON_SIZES,
   ROOM_CATEGORIES: ARCFLIGHT_ROOM_CATEGORIES,
+  SHIP_UPGRADE_CATEGORIES: ARCFLIGHT_SHIP_UPGRADE_CATEGORIES,
   ARKENGINE_CLASSES: ARCFLIGHT_ARKENGINE_CLASSES,
   RELOAD_STATES: ARCFLIGHT_RELOAD_STATES,
   WEAPON_SIZE_DEFAULTS: ARCFLIGHT_WEAPON_SIZE_DEFAULTS,
