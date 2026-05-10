@@ -13,6 +13,7 @@ import {
   getComponentType,
   getDefaultArcflightComponentData,
   isArcflightItem,
+  arcflightComponentTypeLabels,
   normalizeArcflightComponentType
 } from "../documents/components.js";
 import { arcflightTemplatePath } from "./sheet-helpers.js";
@@ -38,13 +39,35 @@ const lockedPhaseOneSchemaTypes = Object.freeze(new Set([
   ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE
 ]));
 
+const componentTypeDisplayLabels = Object.freeze({
+  [ARCFLIGHT_ITEM_TYPES.HULL]: "Hull",
+  [ARCFLIGHT_ITEM_TYPES.ARKENGINE]: "Arkengine",
+  [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: "Arkengine Mod",
+  [ARCFLIGHT_ITEM_TYPES.WEAPON]: "Weapon",
+  [ARCFLIGHT_ITEM_TYPES.ROOM]: "Room",
+  [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: "Ship Upgrade",
+  [ARCFLIGHT_ITEM_TYPES.CARGO]: "Cargo",
+  [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: "Crew Asset"
+});
+
 const componentTypeOptions = Object.freeze(
   Object.values(ARCFLIGHT_ITEM_TYPES).map((componentType) => ({
     value: componentType,
-    label: componentType,
+    label: componentTypeDisplayLabels[componentType] ?? arcflightComponentTypeLabels[componentType] ?? componentType,
     selected: componentType === ARCFLIGHT_ITEM_TYPES.HULL
   }))
 );
+
+function getComponentDisplayName(item, componentData = {}) {
+  return componentData.identity?.displayName
+    || componentData.displayName
+    || item?.name
+    || "Unnamed Arcflight Component";
+}
+
+function getComponentTypeLabel(componentType) {
+  return componentTypeDisplayLabels[componentType] ?? arcflightComponentTypeLabels[componentType] ?? componentType ?? "Unknown";
+}
 
 /** Optional ApplicationV2 sheet for Arcflight PF2E equipment components. */
 export class ArcflightItemSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
@@ -85,6 +108,8 @@ export class ArcflightItemSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
       arcflightFlags,
       arcflightEnabled,
       componentType,
+      componentTypeLabel: getComponentTypeLabel(componentType),
+      componentDisplayName: getComponentDisplayName(item, componentData),
       componentData,
       componentTypeOptions,
       arkengineClassOptions,

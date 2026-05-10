@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Alignment Pass Chunk 3 - Sheet / Docs / Release Readiness
+
+- Polished the Arcflight ship sheet terminology around Installed, Base, Derived, and Current ship-owned state.
+- Clarified sheet labels for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, Crew Asset, Station, and slot summaries.
+- Added safer sheet view preparation for empty installed lists, missing crew roster data, and installed entries with missing effect arrays.
+- Updated component sheet display to prefer display-friendly labels and identity/display names instead of user-facing kebab-case component keys.
+- Refreshed README architecture, data ownership, source item immutability, ship runtime ownership, helper summary, smoke test usage, manual testing, release-readiness, and Framework Foundation milestone notes.
+- Kept the pass limited to UI, docs, and release-readiness cleanup; no travel, combat, AP/RAP, station action, overcharge, hard burn, event, drag/drop, or automation gameplay was added.
+
 ### Phase 6 - Station Framework
 
 - Added locked Station Framework data for Captain, Pilot / Helm, Navigator, Engineer, Veilwarden, Watchmaster, Gunnery, and Quartermaster.

@@ -13,6 +13,67 @@ function prepareArcflightShipFlags(actor) {
   };
 }
 
+function arrayOrEmpty(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function displayNameForEntry(entry = {}) {
+  return entry.displayName
+    || entry.identity?.displayName
+    || entry.name
+    || entry.key
+    || entry.id
+    || "Unnamed";
+}
+
+function prepareInstalledEntry(entry = {}) {
+  return {
+    ...entry,
+    displayName: displayNameForEntry(entry),
+    effects: {
+      ...(entry.effects ?? {}),
+      derivedStatModifiers: arrayOrEmpty(entry.effects?.derivedStatModifiers)
+    }
+  };
+}
+
+function prepareCrewEntry(entry = {}) {
+  return {
+    ...entry,
+    displayName: displayNameForEntry(entry),
+    identity: entry.identity ?? {},
+    crew: entry.crew ?? {},
+    stationAssignment: entry.stationAssignment ?? {}
+  };
+}
+
+function prepareSlotState(slotState = {}, fallbackCapacity = 0) {
+  const capacity = Number.isFinite(Number(slotState?.capacity)) ? Number(slotState.capacity) : fallbackCapacity;
+  const used = Number.isFinite(Number(slotState?.used)) ? Number(slotState.used) : 0;
+  const available = Number.isFinite(Number(slotState?.available)) ? Number(slotState.available) : Math.max(capacity - used, 0);
+
+  return { capacity, used, available };
+}
+
+function prepareArcflightShipViewData(arcflight) {
+  const system = foundry.utils.deepClone(arcflight.system ?? {});
+  system.installed = system.installed ?? {};
+  system.installed.arkengineMods = arrayOrEmpty(system.installed.arkengineMods).map(prepareInstalledEntry);
+  system.installed.coreRooms = arrayOrEmpty(system.installed.coreRooms).map(prepareInstalledEntry);
+  system.installed.rooms = arrayOrEmpty(system.installed.rooms).map(prepareInstalledEntry);
+  system.installed.shipUpgrades = arrayOrEmpty(system.installed.shipUpgrades).map(prepareInstalledEntry);
+  system.installed.arkengineModSlots = prepareSlotState(system.installed.arkengineModSlots);
+  system.installed.roomSlots = prepareSlotState(system.installed.roomSlots);
+  system.installed.shipUpgradeSlots = prepareSlotState(system.installed.shipUpgradeSlots, 3);
+  system.crew = system.crew ?? {};
+  system.crew.namedCrew = arrayOrEmpty(system.crew.namedCrew).map(prepareCrewEntry);
+
+  return {
+    ...arcflight,
+    system
+  };
+}
+
 function prepareStationRows(stations = {}) {
   return Object.values(stations.definitions ?? {}).map((station) => {
     const assignment = stations.assignments?.[station.key] ?? null;
@@ -77,7 +138,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const arcflight = prepareArcflightShipFlags(this.document);
+    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(this.document));
 
     const stations = prepareStationRows(arcflight.system.stations);
 
