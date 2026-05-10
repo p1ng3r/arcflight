@@ -92,7 +92,20 @@ export const arcflightComponentDefaults = Object.freeze({
     modSlotProfile: "",
     role: "",
     designNotes: "",
+    ritualCircleRequired: false,
     coreSystems: [],
+    fueling: {
+      requiredSpellRank: 0,
+      fuelSlots: 0,
+      maxStoredSpellRanks: 0,
+      currentStoredSpellRanks: 0,
+      normalHexCostFormula: "requiredSpellRank",
+      hardBurnHexCostFormula: "ceil(requiredSpellRank * 1.5)",
+      leanBurnHexCostFormula: "ceil(requiredSpellRank / 2)",
+      stealthBurnHexCostFormula: "ceil(requiredSpellRank * 1.5)",
+      overchargeCostFormula: "definedByOverchargeAction",
+      emergencySpellSlotFuelingAllowed: true
+    },
     hardBurnProfile: "",
     overchargeProfile: ""
   }),

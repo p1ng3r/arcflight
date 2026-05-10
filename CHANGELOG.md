@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Arkengine Fueling Core Patch
+
+- Added data-only arkengine fueling defaults for required spell rank, fuel slots, maximum stored spell ranks, burn cost formulas, overcharge cost placeholder, and emergency spell-slot fueling permission.
+- Added fueling data to all 11 core arkengines, including numeric Leviathan Heart Core fueling calculations with the ritual-circle requirement preserved separately.
+- Derived ship-side fueling summaries for required spell rank, fuel slots, max stored spell ranks, normal burn cost, hard burn cost, lean burn cost, and stealth burn cost from copied arkengine Base data.
+- Initialized ship-owned current stored spell ranks only when installing an arkengine can do so safely without overwriting existing current fuel values.
+- Updated the framework smoke test helper to verify arkengine fueling Base data, derived fuel costs, and preserved current stored spell ranks.
+- Kept fueling architecture/data-only; no travel gameplay, fuel spending automation, spell-slot sacrifice UI, overcharge action resolution, hard burn action resolution, resource gameplay, or event systems were added.
+
 ### Alignment Pass Chunk 3 - Sheet / Docs / Release Readiness
 
 - Polished the Arcflight ship sheet terminology around Installed, Base, Derived, and Current ship-owned state.
