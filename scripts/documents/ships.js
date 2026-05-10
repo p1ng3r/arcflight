@@ -204,6 +204,21 @@ function cloneData(data) {
   return foundry.utils.deepClone(data);
 }
 
+function buildEmptyInstalledState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(emptyInstalledState), cloneData(overrides), { inplace: false });
+}
+
+function buildEmptyBaseShipState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(emptyBaseShipState), cloneData(overrides), { inplace: false });
+}
+
+function buildEmptyInstalledSystemsState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(arcflightShipDefaults.installedSystems), cloneData(overrides), { inplace: false });
+}
+
+function buildEmptyResourcesState(overrides = {}) {
+  return foundry.utils.mergeObject(cloneData(arcflightShipDefaults.resources), cloneData(overrides), { inplace: false });
+}
 
 function getDefaultStationAssignments() {
   return Object.fromEntries(STATION_KEYS.map((stationKey) => [stationKey, null]));
@@ -929,6 +944,186 @@ export async function recalculateShipStats(shipActor) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
+}
+
+
+function assertArcflightShipActor(shipActor, helperName) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error(`Arcflight | ${helperName} requires an Arcflight-enabled PF2E vehicle actor.`);
+  }
+}
+
+function buildCleanCurrentShipState(systemData = {}, preserveCurrentResources = false) {
+  if (preserveCurrentResources) return buildCurrentShipState(systemData, emptyDerivedShipState);
+
+  return cloneData(emptyCurrentShipState);
+}
+
+function buildCleanLegacyResources(systemData = {}, current = {}, preserveCurrentResources = false) {
+  if (preserveCurrentResources) return buildLegacyResources(systemData, current, emptyDerivedShipState);
+
+  return buildEmptyResourcesState();
+}
+
+/**
+ * Clear all installed Arcflight ship build references from a vehicle without
+ * deleting actor items, source items, compendium entries, PF2E data, or the
+ * Arcflight enabled state.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @param {object} options Reset options.
+ * @param {boolean} options.preserveCurrentResources Keep current resource values when true.
+ * @param {boolean} options.preserveCrew Keep named crew and generic crew counts when true.
+ * @param {boolean} options.preserveStations Keep station assignments when true.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearShipBuild(shipActor, options = {}) {
+  assertArcflightShipActor(shipActor, "clearShipBuild");
+
+  const resetOptions = {
+    preserveCurrentResources: false,
+    preserveCrew: false,
+    preserveStations: false,
+    ...options
+  };
+  const systemData = getArcflightShipData(shipActor);
+  const crew = resetOptions.preserveCrew
+    ? getDefaultCrewState(systemData.crew)
+    : getDefaultCrewState({});
+  const stations = resetOptions.preserveStations
+    ? getDefaultStationState(systemData.stations)
+    : getDefaultStationState({});
+  const current = buildCleanCurrentShipState(systemData, resetOptions.preserveCurrentResources);
+  const resources = buildCleanLegacyResources(systemData, current, resetOptions.preserveCurrentResources);
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: buildEmptyInstalledState(),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base`]: buildEmptyBaseShipState(),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: cloneData(emptyDerivedShipState),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: resources,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: cloneData(arcflightShipDefaults.derivedStats),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems`]: buildEmptyInstalledSystemsState(),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew`]: crew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: 0
+  });
+}
+
+/**
+ * Clear expansion rooms installed on a ship. Hull-provided core rooms are kept.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearInstalledRooms(shipActor) {
+  assertArcflightShipActor(shipActor, "clearInstalledRooms");
+
+  const systemData = getArcflightShipData(shipActor);
+  const baseHull = cloneData(systemData.base?.hull ?? {});
+  const roomSlots = getRoomSlotState(baseHull, { rooms: [] });
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.rooms`]: [],
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.roomSlots`]: roomSlots,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: ""
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+/**
+ * Clear installed ship upgrades and reset the Phase 0 upgrade slot track.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearInstalledShipUpgrades(shipActor) {
+  assertArcflightShipActor(shipActor, "clearInstalledShipUpgrades");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgrades`]: [],
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgradeSlots`]: buildSlotState(3, 0),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: ""
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+/**
+ * Clear arkengine mods without uninstalling the arkengine.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearInstalledArkengineMods(shipActor) {
+  assertArcflightShipActor(shipActor, "clearInstalledArkengineMods");
+
+  const systemData = getArcflightShipData(shipActor);
+  const arkengineModSlots = getArkengineModSlotState(systemData.base?.arkengine, { arkengineMods: [] });
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkengineMods`]: [],
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkengineModSlots`]: arkengineModSlots,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: ""
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+/**
+ * Clear the named crew roster.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @param {object} options Clear options.
+ * @param {boolean} options.preserveCurrentGenericCrew Keep generic crew count when true.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearCrewRoster(shipActor, options = {}) {
+  assertArcflightShipActor(shipActor, "clearCrewRoster");
+
+  const systemData = getArcflightShipData(shipActor);
+  const crew = getDefaultCrewState(systemData.crew);
+  crew.namedCrew = [];
+  if (!options.preserveCurrentGenericCrew) crew.currentGenericCrew = 0;
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.crew`]: crew,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: ""
+  });
+}
+
+/**
+ * Clear all station assignments while preserving station definitions.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearStationAssignments(shipActor) {
+  assertArcflightShipActor(shipActor, "clearStationAssignments");
+
+  const systemData = getArcflightShipData(shipActor);
+  const stations = getDefaultStationState(systemData.stations);
+  stations.assignments = getDefaultStationAssignments();
+
+  return shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations
+  });
+}
+
+/**
+ * Clear installed hull and arkengine patterns, then recalculate derived stats.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function clearComponentPatterns(shipActor) {
+  assertArcflightShipActor(shipActor, "clearComponentPatterns");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.hullPattern`]: {},
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.arkenginePattern`]: {}
+  });
+
+  return recalculateShipStats(shipActor);
 }
 
 function getPatternSnapshot(pattern) {

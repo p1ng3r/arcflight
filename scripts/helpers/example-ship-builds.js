@@ -15,6 +15,7 @@ import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   addCrewAsset,
   assignStation,
+  clearShipBuild,
   getArcflightShipData,
   installArkengine,
   installArkengineMod,
@@ -106,4 +107,18 @@ export async function applyExampleShipBuild(shipActor, buildKey) {
   await recalculateShipStats(shipActor);
 
   return shipActor;
+}
+
+/**
+ * Clear an Arcflight ship build before applying an example build.
+ *
+ * @param {Actor} shipActor Arcflight-enabled PF2E vehicle actor.
+ * @param {string} buildKey Example build key.
+ * @returns {Promise<Actor>} The updated ship actor.
+ */
+export async function applyCleanExampleShipBuild(shipActor, buildKey) {
+  assertArcflightVehicle(shipActor);
+
+  await clearShipBuild(shipActor);
+  return applyExampleShipBuild(shipActor, buildKey);
 }
