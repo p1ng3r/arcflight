@@ -58,7 +58,7 @@ export const ARKENGINE_PATTERNS = Object.freeze({
       overchargeRiskStep: 2,
       strainModifier: 1
     },
-    notes: ["Pattern data only; experimental risks are not resolved during Phase 7.5B-1."]
+    notes: ["Derived stat modifiers are applied during recalculation; experimental risks are not resolved."]
   }),
   smuggler: arkenginePattern({
     key: "smuggler",

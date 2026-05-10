@@ -32,11 +32,12 @@ export const HULL_PATTERNS = Object.freeze({
     traits: ["reinforced", "martial", "battle-line"],
     derivedStatModifiers: {
       armorClass: 1,
-      hullIntegrity: 10,
+      hullIntegrity: 20,
+      maneuverability: -1,
       cargoCapacity: -5,
       detection: 1
     },
-    notes: ["Records intended battle emphasis only; modifiers are not applied during Phase 7.5B-1."]
+    notes: ["Records intended battle emphasis only; modifiers are applied during ship stat recalculation."]
   }),
   explorer: hullPattern({
     key: "explorer",
