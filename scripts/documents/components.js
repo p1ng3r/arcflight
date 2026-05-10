@@ -1,5 +1,6 @@
 import {
   ARCFLIGHT_ITEM_TYPES,
+  ARCFLIGHT_CREW_QUALITIES,
   ARCFLIGHT_MODULE_ID,
   ARCFLIGHT_RELOAD_STATES,
   ARCFLIGHT_SUGGESTED_WEAPON_TYPES,
@@ -353,41 +354,62 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: Object.freeze({
+    componentType: ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
     identity: {
+      id: "",
+      displayName: "",
       role: "",
-      stationAffinity: "",
+      title: "",
       factionIdentity: "",
-      title: ""
+      origin: "",
+      description: ""
     },
     crew: {
-      count: 0,
+      count: 1,
       minimum: 0,
-      quality: "",
-      assignment: "",
+      quality: ARCFLIGHT_CREW_QUALITIES.TRAINED,
+      countsTowardCrewTotal: true,
+      genericCrewEquivalent: 1,
+      notes: ""
+    },
+    stationAssignment: {
+      preferredStation: "",
+      assignedStation: "",
+      canAssignTo: [],
       notes: ""
     },
     capabilities: {
-      primary: "",
-      specialistAction: "",
-      proficiencies: "",
-      bonuses: "",
+      primary: [],
+      proficiencies: [],
+      specialistTags: [],
+      narrativePermissions: [],
       notes: ""
     },
-    limits: {
-      upkeep: 0,
-      availability: "",
-      restrictions: "",
+    effects: {
+      passiveModifiers: [],
+      stationInteractions: [],
+      operationalEffects: [],
       notes: ""
     },
     state: {
-      active: false,
+      active: true,
       injured: false,
       unavailable: false,
       condition: "",
       notes: ""
     },
-    traits: "",
-    notes: ""
+    restrictions: {
+      unique: false,
+      maxInstances: 1,
+      requiredShipTraits: [],
+      blockedShipTraits: [],
+      notes: ""
+    },
+    traits: [],
+    notes: {
+      designIntent: "",
+      gmNotes: ""
+    }
   })
 });
 

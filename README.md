@@ -6,14 +6,15 @@ Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaig
 
 Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
-## Current Phase 6 Architecture
+## Current Phase 7 Architecture
 
-Phase 6 keeps the PF2E-compatible module architecture, hull, installed hull, arkengine, variant slot, room, ship upgrade, and arkengine mod foundations, and adds the Station Framework for ship-owned operating role assignments. Stations and Rooms are deliberately separate systems: Rooms are physical ship spaces, while Stations are crew duty roles / operating positions.
+Phase 7 keeps the PF2E-compatible module architecture, hull, installed hull, arkengine, variant slot, room, ship upgrade, arkengine mod, and station foundations, and adds a lightweight Crew Assets / Crew Assignment Framework. Generic crew remains a simple ship-owned number; named crew assets are meaningful specialists stored as PF2E equipment source items and copied into a ship-owned runtime roster.
 
 - **PF2E vehicle actors are Arcflight ships.** A vehicle becomes an Arcflight ship only when Arcflight flags are enabled on that existing PF2E actor.
 - **PF2E equipment items are Arcflight components.** Hulls, arkengines, arkengine mods, weapons, rooms, ship upgrades, cargo, and crew assets are all equipment items with Arcflight flags.
 - **Arcflight data is stored in flags.** Ship and component data live under `flags.arcflight.system`; PF2E-owned `system` data remains untouched.
 - **Stations are ship actor role data, not equipment items.** Station definitions and assignments live under `flags.arcflight.system.stations` on Arcflight-enabled PF2E vehicle actors.
+- **Crew runtime state lives on ships.** Crew asset source items remain immutable; `addCrewAsset` copies crew data into `flags.arcflight.system.crew.namedCrew` and updates `crew.currentGenericCrew` when applicable.
 - **No custom Actor or Item document subtypes are registered.** The manifest does not declare `arcflight.*` document types, and the module does not patch `Item.create` or `Item.createDocuments`.
 
 This keeps normal PF2E vehicles and equipment unaffected unless a user opts into the Arcflight sheets or helper APIs.
@@ -27,17 +28,20 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createHull(platformKey, operation?)`
 - `game.arcflight.createCoreArkengine(engineKey, operation?)`
 - `game.arcflight.createCoreArkengineMod(modKey, operation?)`
+- `game.arcflight.createCoreCrewAsset(crewAssetKey, operation?)`
 - `game.arcflight.createArkengine(engineKey, operation?)`
 - `game.arcflight.createCoreRoom(roomKey, operation?)`
 - `game.arcflight.createCoreShipUpgrade(upgradeKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
 - `game.arcflight.getCoreArkengine(engineKey)`
 - `game.arcflight.getCoreArkengineMod(modKey)`
+- `game.arcflight.getCoreCrewAsset(crewAssetKey)`
 - `game.arcflight.getCoreRoom(roomKey)`
 - `game.arcflight.getCoreShipUpgrade(upgradeKey)`
 - `game.arcflight.CORE_HULL_PLATFORM_KEYS`
 - `game.arcflight.CORE_ARKENGINE_KEYS`
 - `game.arcflight.CORE_ARKENGINE_MOD_KEYS`
+- `game.arcflight.CORE_CREW_ASSET_KEYS`
 - `game.arcflight.CORE_ROOM_KEYS`
 - `game.arcflight.CORE_SHIP_UPGRADE_KEYS`
 - `game.arcflight.ARKENGINE_VARIANT_KEYS`
@@ -45,6 +49,7 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.getCoreHullPlatformKeys()`
 - `game.arcflight.getCoreArkengineKeys()`
 - `game.arcflight.getCoreArkengineModKeys()`
+- `game.arcflight.getCoreCrewAssetKeys()`
 - `game.arcflight.getCoreRoomKeys()`
 - `game.arcflight.getCoreShipUpgradeKeys()`
 - `game.arcflight.getArkengineVariantKeys()`
@@ -60,6 +65,8 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.getComponentData(item)`
 - `game.arcflight.isArcflightVehicle(actor)`
 - `game.arcflight.setArcflightVehicleEnabled(actor, enabled?)`
+- `game.arcflight.addCrewAsset(shipActor, crewItem)`
+- `game.arcflight.removeCrewAsset(shipActor, crewIdOrUuid)`
 - `game.arcflight.installHull(shipActor, hullItem)`
 - `game.arcflight.installHullOnShip(shipActor, hullItem)`
 - `game.arcflight.installArkengine(shipActor, arkengineItem)`
@@ -89,6 +96,35 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `cargo`
 - `crewAsset`
 
+
+## Phase 7 Crew Assets / Crew Assignment Framework
+
+Crew assets are Arcflight components backed by normal PF2E equipment items with `flags.arcflight.componentType = "crewAsset"`. Core crew assets are exposed through `game.arcflight.CORE_CREW_ASSET_KEYS`, `game.arcflight.getCoreCrewAssetKeys()`, `game.arcflight.getCoreCrewAsset(key)`, and `game.arcflight.createCoreCrewAsset(key)`.
+
+The locked core crew asset keys are:
+
+- `veteran-chief-engineer`
+- `seasoned-navigator`
+- `sharp-eyed-watchmaster`
+- `veteran-gunner`
+- `steady-quartermaster`
+
+Crew asset data includes `componentType`, `identity`, `crew`, `stationAssignment`, `capabilities`, `effects`, `state`, `restrictions`, `traits`, and `notes`. Supported crew qualities are `green`, `trained`, `veteran`, `elite`, and `legendary`.
+
+Use the console helpers to create and roster a crew asset:
+
+```js
+const crew = await game.arcflight.createCoreCrewAsset("veteran-chief-engineer");
+const ship = game.actors.find((actor) => actor.type === "vehicle");
+
+await game.arcflight.setArcflightVehicleEnabled(ship, true);
+await game.arcflight.addCrewAsset(ship, crew);
+await game.arcflight.assignStation(ship, "engineer", ship.flags.arcflight.system.crew.namedCrew[0]);
+```
+
+`addCrewAsset` validates that the actor is an Arcflight-enabled PF2E vehicle and that the item is a crew asset, then copies source crew data into `flags.arcflight.system.crew.namedCrew`. If `crew.countsTowardCrewTotal` is true, it increments `flags.arcflight.system.crew.currentGenericCrew` by the crew asset's generic crew equivalent. The helper does not mutate the source crew item and does not overwrite unrelated runtime state.
+
+Phase 7 does not add station actions, AP/RAP spending, crew wages/upkeep, morale resolution, injury automation, combat automation, travel automation, or drag/drop crew management.
 
 ## Phase 6 Station Framework
 
@@ -352,7 +388,7 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 
 ## Testing Notes
 
-Phase 6 has no travel, combat, Hard Burn, Overcharge, station action, event, damage, condition, or GM automation to exercise. Development checks should validate that the locked hull, arkengine, arkengine variant, arkengine mod, room, ship upgrade, and station data load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
+Phase 7 has no travel, combat, Hard Burn, Overcharge, station action, AP/RAP, crew wages, morale resolution, event, damage, condition, or GM automation to exercise. Development checks should validate that the locked hull, arkengine, arkengine variant, arkengine mod, room, ship upgrade, station, and crew asset data load as ESM data, expose the helper API, and keep the Arcflight sheet registration optional/non-default for PF2E equipment and vehicles. In Foundry, smoke-test `await game.arcflight.createCoreHull("sloop")` and confirm it creates a PF2E equipment item with `flags.arcflight.componentType` set to `hull`. Then enable a PF2E vehicle with `await game.arcflight.setArcflightVehicleEnabled(ship, true)`, install a hull with `await game.arcflight.installHull(ship, hull)`, install an arkengine with `await game.arcflight.installArkengine(ship, engine)`, and confirm the actor has separate `installed`, `base`, `derived`, and `current` sections under `flags.arcflight.system`.
 ## Phase 4 Room Framework
 
 Arcflight rooms are PF2E `equipment` items with Arcflight flags only:
