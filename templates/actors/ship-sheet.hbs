@@ -27,6 +27,29 @@
     </label>
   </section>
 
+
+  <section class="arcflight-sheet__section">
+    <h2>Example Builds</h2>
+    <p class="arcflight-sheet__hint">Apply a complete example build through the existing clean build helper. This clears the current ship build first, then installs the selected example hull, arkengine, rooms, upgrades, crew, and patterns.</p>
+    <div class="arcflight-example-builds">
+      <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+        <span>Example Build</span>
+        <select data-arcflight-example-build {{#unless editable}}disabled{{/unless}}>
+          <option value="" {{#unless selectedExampleBuild}}selected{{/unless}}>Select an example build</option>
+          {{#each exampleBuildOptions}}
+            <option value="{{value}}" data-name="{{name}}" data-role="{{role}}" data-description="{{description}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <button type="button" data-arcflight-apply-clean-build {{#unless editable}}disabled{{/unless}}>Apply Clean Build</button>
+    </div>
+    <article class="arcflight-example-builds__details" data-arcflight-example-build-details {{#unless selectedExampleBuild}}hidden{{/unless}}>
+      <h3 data-arcflight-example-build-name>{{selectedExampleBuild.name}}</h3>
+      <p><strong>Role:</strong> <span data-arcflight-example-build-role>{{selectedExampleBuild.role}}</span></p>
+      <p data-arcflight-example-build-description>{{selectedExampleBuild.description}}</p>
+    </article>
+  </section>
+
   <section class="arcflight-sheet__section">
     <h2>Hull</h2>
     {{#if arcflight.system.installed.hasHull}}

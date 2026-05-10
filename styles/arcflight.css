@@ -189,3 +189,25 @@
   font-size: var(--font-size-12);
   font-style: italic;
 }
+
+.arcflight-example-builds {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.arcflight-example-builds__details {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-example-builds__details h3,
+.arcflight-example-builds__details p {
+  margin: 0 0 0.25rem;
+}
+
+.arcflight-example-builds__details p:last-child {
+  margin-bottom: 0;
+}
