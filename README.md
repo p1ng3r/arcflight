@@ -27,11 +27,15 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - `game.arcflight.createCoreHull(platformKey, operation?)`
 - `game.arcflight.createHull(platformKey, operation?)`
 - `game.arcflight.createCoreArkengine(engineKey, operation?)`
-- `game.arcflight.createCoreArkengineMod(modKey, operation?)`
-- `game.arcflight.createCoreCrewAsset(crewAssetKey, operation?)`
 - `game.arcflight.createArkengine(engineKey, operation?)`
+- `game.arcflight.createCoreArkengineMod(modKey, operation?)`
+- `game.arcflight.createArkengineMod(modKey, operation?)`
 - `game.arcflight.createCoreRoom(roomKey, operation?)`
+- `game.arcflight.createRoom(roomKey, operation?)`
 - `game.arcflight.createCoreShipUpgrade(upgradeKey, operation?)`
+- `game.arcflight.createShipUpgrade(upgradeKey, operation?)`
+- `game.arcflight.createCoreCrewAsset(crewAssetKey, operation?)`
+- `game.arcflight.createCrewAsset(crewAssetKey, operation?)`
 - `game.arcflight.getCoreHull(platformKey)`
 - `game.arcflight.getCoreArkengine(engineKey)`
 - `game.arcflight.getCoreArkengineMod(modKey)`
