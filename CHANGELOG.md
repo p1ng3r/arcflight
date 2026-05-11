@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Component Tier / Refit Metadata Retrofit
+
+- Added safe component defaults and normalized helper APIs for `minimumTier`, `recommendedTier`, `tierImpact`, `refitPressure`, `refitTags`, `refitCategory`, `specialistRequirements`, and `rareMaterialRequirements`.
+- Retrofitted core Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets with data-only tier/refit metadata so installed components now contribute meaningful pressure totals.
+- Exposed `game.arcflight.getComponentTierMetadata(component)` and `game.arcflight.getComponentRefitPressure(component)` for source items, installed snapshots, and legacy data shapes.
+- Extended smoke validation for retrofitted categories, pressure total changes, readable tier metadata, and legacy items without metadata.
+- Kept this pass advisory and content/schema focused; no install blocking, drag/drop UI, combat automation, travel automation, weapon firing, validation dialogs, custom PF2E document types, or `Item.create` monkey-patching was added.
+
 ### Core Item Library Sync
 
 - Added dry-run reporting and dry-run-by-default sync helpers for materializing missing core Arcflight component source entries as PF2E equipment world Items.

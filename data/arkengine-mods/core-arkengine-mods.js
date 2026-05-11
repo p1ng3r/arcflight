@@ -1,3 +1,28 @@
+function buildRefitPressure(overrides = {}) {
+  return Object.freeze({
+    weaponPressure: 0,
+    enginePressure: 0,
+    infrastructurePressure: 0,
+    lifeveilPressure: 0,
+    crewCommandPressure: 0,
+    occultPressure: 0,
+    ...overrides
+  });
+}
+
+function defaultTierForMod(modType, traits = []) {
+  if (["ritual", "deepVoid"].includes(modType) || traits.includes("deep-void")) return 3;
+  if (["speed", "overcharge", "hardBurn"].includes(modType)) return 2;
+  return 1;
+}
+
+function defaultPressureForMod(modType, minimumTier, traits = []) {
+  if (modType === "lifeveil" || traits.includes("lifeveil")) return { lifeveilPressure: Math.max(1, minimumTier) };
+  if (modType === "ritual") return { occultPressure: 2, lifeveilPressure: 1 };
+  if (modType === "deepVoid") return { enginePressure: 1, occultPressure: 1 };
+  return { enginePressure: Math.max(1, minimumTier) };
+}
+
 const STANDARD_INSTALLATION = Object.freeze({
   modSlotsRequired: 1,
   requiresPortOrDock: true,
@@ -32,6 +57,14 @@ function arkengineMod({
   restrictions = {},
   systemState = "Functional",
   traits = [],
+  minimumTier = defaultTierForMod(modType, traits),
+  recommendedTier = minimumTier,
+  tierImpact = `Tier ${recommendedTier} arkengine mod metadata for future hull and engine compatibility review.`,
+  refitPressure = defaultPressureForMod(modType, minimumTier, traits),
+  refitTags = ["arkengine-mod", modType, ...traits],
+  refitCategory = Object.keys(refitPressure).find((key) => refitPressure[key] > 0) ?? "enginePressure",
+  specialistRequirements = minimumTier >= 3 ? ["arkengine refit specialist"] : [],
+  rareMaterialRequirements = minimumTier >= 4 ? ["attuned aetherite fittings"] : [],
   designIntent = role,
   gmNotes = ""
 }) {
@@ -72,6 +105,14 @@ function arkengineMod({
       ...restrictions
     }),
     state: Object.freeze({ systemState }),
+    minimumTier,
+    recommendedTier,
+    tierImpact,
+    refitPressure: buildRefitPressure(refitPressure),
+    refitTags: Object.freeze([...new Set(refitTags)]),
+    refitCategory,
+    specialistRequirements: Object.freeze([...specialistRequirements]),
+    rareMaterialRequirements: Object.freeze([...rareMaterialRequirements]),
     traits: Object.freeze([...traits]),
     notes: Object.freeze({
       designIntent,
@@ -151,6 +192,10 @@ export const CORE_ARKENGINE_MODS = Object.freeze({
     role: "increases dangerous emergency output",
     hardBurnInteractions: ["Placeholder: stronger hard burn potential."],
     strainInteractions: ["Placeholder: increased surge danger."],
+    refitPressure: { enginePressure: 4 },
+    refitTags: ["arkengine-mod", "overcharge", "experimental-overburn", "hard-burn"],
+    specialistRequirements: ["arkengine refit specialist"],
+    rareMaterialRequirements: ["volatile overburn catalysts"],
     traits: ["standard", "overcharge", "hard-burn"]
   }),
   "deepwake-stabilizers": arkengineMod({
@@ -245,6 +290,9 @@ export const CORE_ARKENGINE_MODS = Object.freeze({
       modifier("hardBurnStrainCost", "add", 1, "+1 hard burn strain cost")
     ],
     hardBurnInteractions: ["Placeholder: higher hard burn pressure from burst output."],
+    refitPressure: { enginePressure: 3 },
+    refitTags: ["arkengine-mod", "speed", "burst-output", "hard-burn"],
+    specialistRequirements: ["arkengine refit specialist"],
     traits: ["standard", "speed", "quickspark"]
   }),
   "ritual-channeling-rings": arkengineMod({
