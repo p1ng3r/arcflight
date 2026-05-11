@@ -1,3 +1,5 @@
+import { createArcflightItemFolders, organizeArcflightItems } from "../helpers/item-organization.js";
+
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
 
@@ -10,13 +12,24 @@ function isTemporaryArcflightTestItem(item) {
 }
 
 /**
- * Build temporary development-only helpers for cleaning legacy pre-stabilization test data.
+ * Build development-only helpers for Arcflight world maintenance.
  *
  * These helpers deliberately operate only on world Items from game.items and do
- * not touch compendium content or embedded actor items.
+ * not touch compendium content or embedded actor items unless a future helper
+ * explicitly documents that behavior.
  */
 export function createArcflightDevTools() {
   return Object.freeze({
+    /**
+     * Create the suggested Arcflight folder tree in the world Items panel.
+     */
+    createItemFolders: createArcflightItemFolders,
+
+    /**
+     * Move only Arcflight equipment components into matching Arcflight folders.
+     */
+    organizeArcflightItems,
+
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
      *
