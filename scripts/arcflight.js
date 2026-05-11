@@ -37,6 +37,8 @@ import {
   arcflightComponentDefaults,
   getDefaultArcflightComponentData,
   getComponentData,
+  getComponentRefitPressure,
+  getComponentTierMetadata,
   getComponentType,
   isArcflightItem
 } from "./documents/components.js";
@@ -204,6 +206,8 @@ Hooks.once("init", () => {
     isArcflightItem,
     getComponentType,
     getComponentData,
+    getComponentRefitPressure,
+    getComponentTierMetadata,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
     setHullPattern,
@@ -375,6 +379,8 @@ export {
   isArcflightItem,
   getComponentType,
   getComponentData,
+  getComponentRefitPressure,
+  getComponentTierMetadata,
   getDefaultArcflightComponentData,
   arcflightComponentDefaults,
   ARCFLIGHT_SHIP_ACTOR_TYPE,

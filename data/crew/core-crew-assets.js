@@ -1,5 +1,32 @@
 import { ARCFLIGHT_CREW_QUALITIES, ARCFLIGHT_ITEM_TYPES } from "../../scripts/config/constants.js";
 
+function buildRefitPressure(overrides = {}) {
+  return Object.freeze({
+    weaponPressure: 0,
+    enginePressure: 0,
+    infrastructurePressure: 0,
+    lifeveilPressure: 0,
+    crewCommandPressure: 0,
+    occultPressure: 0,
+    ...overrides
+  });
+}
+
+function defaultTierForCrew(quality) {
+  if (quality === ARCFLIGHT_CREW_QUALITIES.LEGENDARY) return 4;
+  if (quality === ARCFLIGHT_CREW_QUALITIES.VETERAN) return 2;
+  return 1;
+}
+
+function defaultPressureForCrew(preferredStation, specialistTags = [], quality) {
+  if (quality === ARCFLIGHT_CREW_QUALITIES.GREEN) return {};
+  if (preferredStation === "gunnery" || specialistTags.includes("gunner")) return { weaponPressure: 1, crewCommandPressure: 1 };
+  if (preferredStation === "engineer" || specialistTags.includes("engineer")) return { enginePressure: 1, crewCommandPressure: 1 };
+  if (preferredStation === "veilwarden" || specialistTags.includes("occult")) return { occultPressure: 1, lifeveilPressure: 1 };
+  if (["captain", "quartermaster"].includes(preferredStation) || specialistTags.includes("command")) return { crewCommandPressure: 1 };
+  return {};
+}
+
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -26,6 +53,14 @@ function crewAsset({
   operationalEffects = [],
   unique = false,
   traits = [],
+  minimumTier = defaultTierForCrew(quality),
+  recommendedTier = minimumTier,
+  tierImpact = "Crew asset metadata is advisory only and does not block rostering or assignments.",
+  refitPressure = defaultPressureForCrew(preferredStation, specialistTags, quality),
+  refitTags = ["crew-asset", preferredStation, quality, ...specialistTags].filter(Boolean),
+  refitCategory = Object.keys(refitPressure).find((key) => refitPressure[key] > 0) ?? "crewCommandPressure",
+  specialistRequirements = [],
+  rareMaterialRequirements = [],
   designIntent,
   gmNotes = ""
 }) {
@@ -67,6 +102,14 @@ function crewAsset({
       operationalEffects,
       notes: "Framework hooks only; effects are not automatically resolved in Phase 7."
     },
+    minimumTier,
+    recommendedTier,
+    tierImpact,
+    refitPressure: buildRefitPressure(refitPressure),
+    refitTags: [...new Set(refitTags)],
+    refitCategory,
+    specialistRequirements,
+    rareMaterialRequirements,
     state: {
       active: true,
       injured: false,

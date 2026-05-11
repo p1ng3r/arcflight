@@ -11,11 +11,34 @@ import {
 
 export const ARCFLIGHT_COMPONENT_ITEM_TYPE = "equipment";
 
+const REFIT_PRESSURE_KEYS = Object.freeze([
+  "weaponPressure",
+  "enginePressure",
+  "infrastructurePressure",
+  "lifeveilPressure",
+  "crewCommandPressure",
+  "occultPressure"
+]);
+
+const emptyRefitPressure = Object.freeze(Object.fromEntries(REFIT_PRESSURE_KEYS.map((key) => [key, 0])));
+
+const commonTierRefitData = Object.freeze({
+  minimumTier: 0,
+  recommendedTier: 0,
+  tierImpact: "",
+  refitPressure: emptyRefitPressure,
+  refitTags: [],
+  refitCategory: "",
+  specialistRequirements: [],
+  rareMaterialRequirements: []
+});
+
 const commonComponentData = Object.freeze({
   tags: "",
   traits: "",
   source: "",
-  notes: ""
+  notes: "",
+  ...commonTierRefitData
 });
 
 export const arcflightComponentTypeLabels = Object.freeze({
@@ -110,6 +133,7 @@ export const arcflightComponentDefaults = Object.freeze({
     overchargeProfile: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
     identity: {
       id: "",
@@ -225,6 +249,7 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ROOM]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
     identity: {
       id: "",
@@ -281,6 +306,7 @@ export const arcflightComponentDefaults = Object.freeze({
     }
   }),
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
     identity: {
       id: "",
@@ -324,6 +350,7 @@ export const arcflightComponentDefaults = Object.freeze({
     }
   }),
   [ARCFLIGHT_ITEM_TYPES.CARGO]: Object.freeze({
+    ...commonTierRefitData,
     identity: {
       cargoType: "",
       origin: "",
@@ -370,6 +397,7 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
     identity: {
       id: "",
@@ -483,4 +511,49 @@ export function getComponentData(item) {
 
   const flagData = getArcflightFlag(item, "system") ?? {};
   return foundry.utils.mergeObject(getDefaultArcflightComponentData(componentType), flagData, { inplace: false });
+}
+
+function numericValue(value, fallback = 0) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function normalizeRefitPressure(refitPressure = {}) {
+  const pressure = {};
+  let total = 0;
+
+  for (const key of REFIT_PRESSURE_KEYS) {
+    pressure[key] = Math.max(0, numericValue(refitPressure?.[key]));
+    total += pressure[key];
+  }
+
+  pressure.total = total;
+  return pressure;
+}
+
+function getComponentSystemLikeData(component = {}) {
+  if (isArcflightItem(component)) return getComponentData(component) ?? {};
+
+  return component?.system
+    ?? component?.flags?.[ARCFLIGHT_MODULE_ID]?.system
+    ?? component
+    ?? {};
+}
+
+export function getComponentRefitPressure(component = {}) {
+  return normalizeRefitPressure(getComponentSystemLikeData(component)?.refitPressure ?? {});
+}
+
+export function getComponentTierMetadata(component = {}) {
+  const data = getComponentSystemLikeData(component);
+
+  return {
+    minimumTier: Math.max(0, numericValue(data?.minimumTier)),
+    recommendedTier: Math.max(0, numericValue(data?.recommendedTier)),
+    tierImpact: data?.tierImpact ?? "",
+    refitPressure: getComponentRefitPressure(component),
+    refitTags: Array.isArray(data?.refitTags) ? foundry.utils.deepClone(data.refitTags) : [],
+    refitCategory: data?.refitCategory ?? "",
+    specialistRequirements: Array.isArray(data?.specialistRequirements) ? foundry.utils.deepClone(data.specialistRequirements) : [],
+    rareMaterialRequirements: Array.isArray(data?.rareMaterialRequirements) ? foundry.utils.deepClone(data.rareMaterialRequirements) : []
+  };
 }
