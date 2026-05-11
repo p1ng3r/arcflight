@@ -39,6 +39,7 @@ import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgra
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
+import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -298,9 +299,26 @@ export async function runFrameworkSmokeTest(options = {}) {
     const thresholdTier = getShipTierState(thresholdPressureSystem);
     const storedTierFlags = shipData.refitFlags;
 
+    const componentPressureCategories = {
+      arkengine: getComponentRefitPressure(componentItems.arkengine).enginePressure,
+      arkengineMod: getComponentRefitPressure(componentItems.arkengineMod).enginePressure,
+      room: getComponentRefitPressure(componentItems.room).infrastructurePressure,
+      shipUpgrade: getComponentRefitPressure(componentItems.shipUpgrade).infrastructurePressure,
+      crewAsset: getComponentRefitPressure(componentItems.crewAsset).total
+    };
+    const pressureBeforeUpgrade = shipData.refitPressure.total - shipData.installed.shipUpgrades[0].refitPressure.total;
+    const legacyMetadata = getComponentTierMetadata({ componentType: "legacy-test-item" });
+
+    check(result, "Retrofitted component pressure exists for each smoke category", Object.values(componentPressureCategories).every((value) => value > 0), "positive pressure per category", componentPressureCategories);
+    checkEqual(result, "Installed pressure totals include retrofitted components", calculateRefitPressure(shipData).total, shipData.refitPressure.total);
+    checkEqual(result, "Pressure total decreases when upgrade pressure is removed", pressureBeforeUpgrade, calculateRefitPressure({ ...shipData, installed: { ...shipData.installed, shipUpgrades: [{ ...shipData.installed.shipUpgrades[0], refitPressure: {} }] } }).total);
+    check(result, "Tier metadata is readable", getComponentTierMetadata(componentItems.arkengine).recommendedTier >= 1 && getComponentTierMetadata(componentItems.room).refitTags.length > 0, "readable tier metadata", { arkengine: getComponentTierMetadata(componentItems.arkengine), room: getComponentTierMetadata(componentItems.room) });
+    checkEqual(result, "Legacy component metadata defaults safely", 0, legacyMetadata.refitPressure.total);
+    checkEqual(result, "Legacy component minimum tier defaults safely", 0, legacyMetadata.minimumTier);
+
     checkEqual(result, "Ship hull base tier copied into tier state", baseTier, shipData.tier.baseTier);
-    checkEqual(result, "Ship with no refit pressure is native", "native", shipData.tier.refitStatus);
-    checkEqual(result, "Ship with no refit pressure total is zero", 0, shipData.refitPressure.total);
+    checkEqual(result, "Ship with retrofitted component pressure is pressured", "pressured", shipData.tier.refitStatus);
+    check(result, "Ship retrofitted refit pressure total is positive", shipData.refitPressure.total > 0, "positive pressure", shipData.refitPressure.total);
     checkEqual(result, "Component refitPressure below threshold is pressured", "pressured", belowThresholdTier.refitStatus);
     checkEqual(result, "Component refitPressure below threshold total", 2, getShipRefitPressure(belowThresholdPressureSystem).total);
     checkEqual(result, "Component flag refitPressure is counted", 2, calculateRefitPressure(flagPressureSystem).total);

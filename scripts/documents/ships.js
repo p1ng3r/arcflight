@@ -1,5 +1,5 @@
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
-import { getComponentData, getComponentType } from "./components.js";
+import { getComponentData, getComponentRefitPressure, getComponentTierMetadata, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
 import { getHullPattern } from "../../data/hulls/hull-patterns.js";
 import { getArkenginePattern } from "../../data/arkengines/arkengine-patterns.js";
@@ -479,7 +479,8 @@ function buildInstalledArkengineModEntry(modItem) {
     modSlotsRequired: numericValue(modData.installation?.modSlotsRequired, 1),
     systemState: modData.state?.systemState ?? "Functional",
     effects: cloneData(modData.effects ?? {}),
-    refitPressure: normalizeRefitPressure(modData.refitPressure ?? modItem?.system?.refitPressure ?? modItem?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure ?? {}),
+    refitPressure: getComponentRefitPressure(modItem),
+    tierMetadata: getComponentTierMetadata(modItem),
     restrictions: cloneData(modData.restrictions ?? {}),
     traits: cloneData(modData.traits ?? []),
     notes: cloneData(modData.notes ?? {})
@@ -546,7 +547,8 @@ function buildInstalledShipUpgradeEntry(upgradeItem) {
     systemState: upgradeData.state?.systemState ?? "Functional",
     slotCost: numericValue(upgradeData.installation?.slotCost, 1),
     effects: cloneData(upgradeData.effects ?? {}),
-    refitPressure: normalizeRefitPressure(upgradeData.refitPressure ?? upgradeItem?.system?.refitPressure ?? upgradeItem?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure ?? {}),
+    refitPressure: getComponentRefitPressure(upgradeItem),
+    tierMetadata: getComponentTierMetadata(upgradeItem),
     restrictions: cloneData(upgradeData.restrictions ?? {}),
     traits: cloneData(upgradeData.traits ?? [])
   };
@@ -777,8 +779,9 @@ function buildInstalledRoomEntry(roomItem) {
     expansionSlotsRequired: numericValue(roomData.installation?.expansionSlotsRequired, 1),
     systemState: roomData.state?.systemState ?? "Functional",
     utility: cloneData(roomData.utility ?? {}),
+    refitPressure: getComponentRefitPressure(roomItem),
+    tierMetadata: getComponentTierMetadata(roomItem),
     mechanicalEffects: cloneData(roomData.mechanicalEffects ?? {}),
-    refitPressure: normalizeRefitPressure(roomData.refitPressure ?? roomItem?.system?.refitPressure ?? roomItem?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure ?? {}),
     traits: cloneData(roomData.traits ?? [])
   };
 }
@@ -865,15 +868,6 @@ function normalizeRefitPressure(refitPressure = {}) {
   return pressure;
 }
 
-function getComponentRefitPressure(component = {}) {
-  return normalizeRefitPressure(
-    component?.system?.refitPressure
-      ?? component?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure
-      ?? component?.refitPressure
-      ?? {}
-  );
-}
-
 function hasRefitPressure(component = {}) {
   return getComponentRefitPressure(component).total > 0;
 }
@@ -885,7 +879,8 @@ function getInstalledRefitPressureComponents(systemData = {}) {
     ...(Array.isArray(systemData.installed?.rooms) ? systemData.installed.rooms : []),
     ...(Array.isArray(systemData.installed?.shipUpgrades) ? systemData.installed.shipUpgrades : []),
     ...(Array.isArray(systemData.installed?.weapons) ? systemData.installed.weapons : []),
-    ...(Array.isArray(systemData.installed?.weaponMounts) ? systemData.installed.weaponMounts : [])
+    ...(Array.isArray(systemData.installed?.weaponMounts) ? systemData.installed.weaponMounts : []),
+    ...(Array.isArray(systemData.crew?.namedCrew) ? systemData.crew.namedCrew : [])
   ].filter(hasRefitPressure);
 }
 
@@ -1286,7 +1281,10 @@ export async function clearCrewRoster(shipActor, options = {}) {
   crew.namedCrew = [];
   if (!options.preserveCurrentGenericCrew) crew.currentGenericCrew = 0;
 
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew }, { inplace: false });
+
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew`]: crew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: ""
   });
@@ -1700,6 +1698,8 @@ function buildCrewAssetRosterEntry(crewItem) {
     crew: cloneData(crewData.crew ?? {}),
     stationAssignment: cloneData(crewData.stationAssignment ?? {}),
     capabilities: cloneData(crewData.capabilities ?? {}),
+    refitPressure: getComponentRefitPressure(crewItem),
+    tierMetadata: getComponentTierMetadata(crewItem),
     effects: cloneData(crewData.effects ?? {}),
     state: cloneData(crewData.state ?? {}),
     restrictions: cloneData(crewData.restrictions ?? {}),
@@ -1740,7 +1740,10 @@ export async function addCrewAsset(shipActor, crewItem) {
   const currentGenericCrew = crewEntry.crew?.countsTowardCrewTotal === false
     ? crewState.currentGenericCrew
     : crewState.currentGenericCrew + getCrewAssetCountValue(crewEntry);
+  const nextCrew = { ...crewState, namedCrew, currentGenericCrew };
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew }, { inplace: false });
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
@@ -1762,7 +1765,10 @@ export async function removeCrewAsset(shipActor, crewIdOrUuid) {
   const currentGenericCrew = removed.crew?.countsTowardCrewTotal === false
     ? crewState.currentGenericCrew
     : Math.max(0, crewState.currentGenericCrew - getCrewAssetCountValue(removed));
+  const nextCrew = { ...crewState, namedCrew, currentGenericCrew };
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew }, { inplace: false });
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")

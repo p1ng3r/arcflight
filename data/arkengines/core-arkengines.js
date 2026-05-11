@@ -18,6 +18,27 @@ const FUEL_COST_FORMULAS = Object.freeze({
   overchargeCostFormula: "definedByOverchargeAction"
 });
 
+function buildRefitPressure(overrides = {}) {
+  return Object.freeze({
+    weaponPressure: 0,
+    enginePressure: 0,
+    infrastructurePressure: 0,
+    lifeveilPressure: 0,
+    crewCommandPressure: 0,
+    occultPressure: 0,
+    ...overrides
+  });
+}
+
+function defaultArkengineTier(spellRankRequired) {
+  const rank = Number.parseInt(spellRankRequired, 10);
+  if (rank >= 7) return 5;
+  if (rank >= 6) return 4;
+  if (rank >= 3) return 3;
+  if (rank >= 2) return 2;
+  return 1;
+}
+
 function buildArkengineFueling(requiredSpellRank, fuelSlots) {
   const numericRequiredSpellRank = Number.isFinite(Number(requiredSpellRank)) ? Number(requiredSpellRank) : 0;
   const numericFuelSlots = Number.isFinite(Number(fuelSlots)) ? Number(fuelSlots) : 0;
@@ -51,7 +72,15 @@ function arkengine({
   traits = [],
   fuelSlots = 0,
   fuelingRequiredSpellRank = spellRankRequired,
-  ritualCircleRequired = false
+  ritualCircleRequired = false,
+  minimumTier = defaultArkengineTier(spellRankRequired),
+  recommendedTier = minimumTier,
+  tierImpact = `Tier ${recommendedTier} arkengine pressure profile; future install validation can compare this engine class against the hull tier.`,
+  refitPressure = { enginePressure: Math.max(1, minimumTier) },
+  refitTags = ["arkengine", variantFamily, modSlotProfile].filter(Boolean),
+  refitCategory = "enginePressure",
+  specialistRequirements = minimumTier >= 3 ? ["arkenginewright"] : [],
+  rareMaterialRequirements = minimumTier >= 4 ? ["stabilized aetherite core"] : []
 }) {
   return Object.freeze({
     componentType: "arkengine",
@@ -72,6 +101,14 @@ function arkengine({
     role,
     designNotes: identity,
     ritualCircleRequired,
+    minimumTier,
+    recommendedTier,
+    tierImpact,
+    refitPressure: buildRefitPressure(refitPressure),
+    refitTags: Object.freeze([...refitTags]),
+    refitCategory,
+    specialistRequirements: Object.freeze([...specialistRequirements]),
+    rareMaterialRequirements: Object.freeze([...rareMaterialRequirements]),
     coreSystems: CORE_SYSTEMS,
     fueling: buildArkengineFueling(fuelingRequiredSpellRank, fuelSlots),
     hardBurnProfile: `Hard burn costs ${hardBurnStrainCost} strain. Phase 3 records this profile only and does not resolve hard burn gameplay.`,

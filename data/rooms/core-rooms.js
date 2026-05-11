@@ -1,3 +1,33 @@
+function buildRefitPressure(overrides = {}) {
+  return Object.freeze({
+    weaponPressure: 0,
+    enginePressure: 0,
+    infrastructurePressure: 0,
+    lifeveilPressure: 0,
+    crewCommandPressure: 0,
+    occultPressure: 0,
+    ...overrides
+  });
+}
+
+function roomTypeIncludes(roomType, type) {
+  return String(roomType).split("/").includes(type);
+}
+
+function defaultTierForRoom(roomType, traits = [], expansionSlotsRequired = 1) {
+  if (["occult", "research", "containment"].some((type) => roomTypeIncludes(roomType, type)) || traits.includes("ritual")) return 3;
+  if (["military", "industrial"].some((type) => roomTypeIncludes(roomType, type)) || expansionSlotsRequired > 1) return 2;
+  return 1;
+}
+
+function defaultPressureForRoom(roomType, minimumTier, traits = []) {
+  if (roomTypeIncludes(roomType, "occult") || traits.includes("ritual")) return { occultPressure: Math.max(1, minimumTier), lifeveilPressure: 1 };
+  if (roomTypeIncludes(roomType, "military")) return { weaponPressure: Math.max(1, minimumTier), infrastructurePressure: 1 };
+  if (["social", "luxury"].some((type) => roomTypeIncludes(roomType, type))) return { crewCommandPressure: 1, infrastructurePressure: 1 };
+  if (["recovery", "survival"].some((type) => roomTypeIncludes(roomType, type))) return { lifeveilPressure: 1, infrastructurePressure: 1 };
+  return { infrastructurePressure: Math.max(1, minimumTier) };
+}
+
 const ROOM_TYPES = Object.freeze({
   CRAFTING: "crafting",
   RECOVERY: "recovery",
@@ -66,6 +96,14 @@ function room({
   noDirectTravelStatBonuses = true,
   oneRoomPerExpansionSlot = true,
   traits = [],
+  minimumTier = defaultTierForRoom(roomType, traits, expansionSlotsRequired),
+  recommendedTier = minimumTier,
+  tierImpact = expansionSlotsRequired === 0 ? "Core hull room; no refit pressure from optional installation." : `Tier ${recommendedTier} room infrastructure for future install validation.`,
+  refitPressure = expansionSlotsRequired === 0 ? {} : defaultPressureForRoom(roomType, minimumTier, traits),
+  refitTags = ["room", roomType, ...traits],
+  refitCategory = Object.keys(refitPressure).find((key) => refitPressure[key] > 0) ?? "infrastructurePressure",
+  specialistRequirements = minimumTier >= 3 ? ["specialized roomwright"] : [],
+  rareMaterialRequirements = minimumTier >= 4 ? ["bespoke warded fittings"] : [],
   designIntent = "Ship infrastructure for downtime, narrative identity, logistics, recovery, and support scenes.",
   gmNotes = ""
 }) {
@@ -114,6 +152,14 @@ function room({
     state: {
       systemState
     },
+    minimumTier,
+    recommendedTier,
+    tierImpact,
+    refitPressure: buildRefitPressure(refitPressure),
+    refitTags: [...new Set(refitTags)],
+    refitCategory,
+    specialistRequirements,
+    rareMaterialRequirements,
     restrictions: {
       noDirectCombatBonuses,
       noDirectTravelStatBonuses,

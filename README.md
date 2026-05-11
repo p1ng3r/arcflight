@@ -31,11 +31,11 @@ This architecture keeps normal PF2E equipment and vehicles functional unless a u
 The current Framework Foundation includes these data-first systems:
 
 - **Hull** — an 11-entry core vessel platform library with copied ship Base values, arkengine compatibility, weapon mount arcs, core room keys, and tier/refit-ready metadata for the future Refit Pressure framework.
-- **Arkengine** — installed propulsion framework data, variant family fields, spell-rank fueling schema, and derived engine values.
-- **Arkengine Mod** — engine-only tuning components with tracked mod slot usage, a 22-entry core content library, and placeholder interactions.
-- **Room** — physical ship spaces, with core rooms, expansion room slot tracking, and a 26-entry core content library.
-- **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking and a 28-entry core content library.
-- **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library.
+- **Arkengine** — installed propulsion framework data, variant family fields, spell-rank fueling schema, derived engine values, and tier/refit pressure metadata.
+- **Arkengine Mod** — engine-only tuning components with tracked mod slot usage, a 22-entry core content library, placeholder interactions, and engine/Lifeveil/occult refit pressure metadata.
+- **Room** — physical ship spaces, with core rooms, expansion room slot tracking, a 26-entry core content library, and infrastructure/occult/Lifeveil refit metadata.
+- **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking, a 28-entry core content library, and meaningful refit pressure across structural, command, Lifeveil, occult, engine, and military categories.
+- **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
 - **Station framework** — ship-owned operating role definitions and assignments.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
 - **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`.
@@ -70,6 +70,13 @@ Each hull includes base durability, armor, physical resistances, strain, Lifevei
 
 Arcflight now derives non-blocking ship-side tier and refit pressure state under `flags.arcflight.system.tier`, `flags.arcflight.system.refitPressure`, and `flags.arcflight.system.refitFlags`. The first-pass framework sums installed component `refitPressure` values by category, compares total pressure against the installed hull's `refitTolerance.totalBeforeMajorRefitRequired`, and reports `native`, `pressured`, or `major-refit-required` status. Major refit completion is intentionally not automated yet, and the framework remains warning/status-only: it does not block installs, fire weapons, run combat automation, or resolve travel systems.
 
+
+## Component Tier / Refit Metadata
+
+Arcflight component defaults now include safe, data-only tier/refit fields for future install validation: `minimumTier`, `recommendedTier`, `tierImpact`, `refitPressure`, `refitTags`, `refitCategory`, `specialistRequirements`, and `rareMaterialRequirements`. Missing fields default safely, so older Arcflight items and ships continue to load without migration or install blocking.
+
+Core Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets now carry tier-aware metadata. Refit pressure is still non-blocking and advisory: it increases ship pressure totals and warning flags, but it does not prevent installs, open validation dialogs, fire weapons, run travel/combat automation, or mutate PF2E source documents. Use `game.arcflight.getComponentTierMetadata(component)` and `game.arcflight.getComponentRefitPressure(component)` to read normalized metadata from source items, installed entries, or legacy data shapes.
+
 ## Arkengine Fueling Framework
 
 Arkengines are treated as propulsion, Lifeveil, and magical power systems that store spell-rank energy rather than ordinary fuel. Core arkengine source data now includes `fueling.requiredSpellRank`, `fueling.fuelSlots`, and `fueling.maxStoredSpellRanks`, with max storage normalized as required spell rank multiplied by fuel slots.
@@ -83,7 +90,7 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Creation: `createItem`, `createCoreHull`, `createHull`, `createCoreArkengine`, `createArkengine`, `createCoreArkengineMod`, `createArkengineMod`, `createCoreRoom`, `createRoom`, `createCoreShipUpgrade`, `createShipUpgrade`, `createCoreCrewAsset`, `createCrewAsset`.
 - Data lookup: `getCoreHull`, `getCoreArkengine`, `getCoreArkengineMod`, `getCoreCrewAsset`, `getCoreRoom`, `getCoreShipUpgrade`, `getArkengineVariant`, `getArkengineVariants`, `getStation`, `getStations`.
 - Key lookup: `CORE_HULL_PLATFORM_KEYS`, `CORE_ARKENGINE_KEYS`, `CORE_ARKENGINE_MOD_KEYS`, `CORE_CREW_ASSET_KEYS`, `CORE_ROOM_KEYS`, `CORE_SHIP_UPGRADE_KEYS`, `ARKENGINE_VARIANT_KEYS`, `STATION_KEYS`, plus matching `get*Keys()` helpers.
-- Defaults and type checks: `getDefaultComponentData`, `getDefaultShipData`, `isArcflightItem`, `getComponentType`, `getComponentData`, `isArcflightVehicle`, `setArcflightVehicleEnabled`.
+- Defaults and type checks: `getDefaultComponentData`, `getDefaultShipData`, `isArcflightItem`, `getComponentType`, `getComponentData`, `getComponentTierMetadata`, `getComponentRefitPressure`, `isArcflightVehicle`, `setArcflightVehicleEnabled`.
 - Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.

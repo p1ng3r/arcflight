@@ -1,3 +1,31 @@
+function buildRefitPressure(overrides = {}) {
+  return Object.freeze({
+    weaponPressure: 0,
+    enginePressure: 0,
+    infrastructurePressure: 0,
+    lifeveilPressure: 0,
+    crewCommandPressure: 0,
+    occultPressure: 0,
+    ...overrides
+  });
+}
+
+function defaultTierForUpgrade(upgradeType, traits = []) {
+  if (["military", "deepVoid", "occult", "command"].includes(upgradeType) || traits.includes("deepVoid")) return 3;
+  if (["lifeveil", "powerDistribution", "propulsionSupport", "catastrophe"].includes(upgradeType)) return 2;
+  return 1;
+}
+
+function defaultPressureForUpgrade(upgradeType, minimumTier, traits = []) {
+  if (upgradeType === "military") return { weaponPressure: Math.max(2, minimumTier), infrastructurePressure: 1 };
+  if (["propulsionSupport", "sailSystem", "helmSystem", "mobility"].includes(upgradeType)) return { enginePressure: Math.max(1, minimumTier) };
+  if (upgradeType === "lifeveil") return { lifeveilPressure: Math.max(1, minimumTier) };
+  if (upgradeType === "command" || upgradeType === "coordination") return { crewCommandPressure: Math.max(1, minimumTier) };
+  if (upgradeType === "occult") return { occultPressure: Math.max(1, minimumTier) };
+  if (upgradeType === "deepVoid" || traits.includes("deepVoid")) return { infrastructurePressure: 1, occultPressure: 1 };
+  return { infrastructurePressure: Math.max(1, minimumTier) };
+}
+
 const UPGRADE_TYPES = Object.freeze({
   STRUCTURAL: "structural",
   MILITARY: "military",
@@ -71,7 +99,15 @@ function shipUpgrade({
   playerAssistCostReductionMaxPercent = 0,
   requiresPortOrDock = true,
   canInstallDuringTravel = false,
-  systemState = SYSTEM_STATES.FUNCTIONAL
+  systemState = SYSTEM_STATES.FUNCTIONAL,
+  minimumTier = defaultTierForUpgrade(upgradeType, traits),
+  recommendedTier = minimumTier,
+  tierImpact = `Tier ${recommendedTier} ship upgrade profile for future install validation.`,
+  refitPressure = defaultPressureForUpgrade(upgradeType, minimumTier, traits),
+  refitTags = ["ship-upgrade", upgradeType, ...traits],
+  refitCategory = Object.keys(refitPressure).find((key) => refitPressure[key] > 0) ?? "infrastructurePressure",
+  specialistRequirements = minimumTier >= 3 ? ["shipwright specialist"] : [],
+  rareMaterialRequirements = minimumTier >= 4 ? ["capital-grade refit materials"] : []
 }) {
   return deepFreeze({
     componentType: "shipUpgrade",
@@ -110,6 +146,14 @@ function shipUpgrade({
     state: {
       systemState
     },
+    minimumTier,
+    recommendedTier,
+    tierImpact,
+    refitPressure: buildRefitPressure(refitPressure),
+    refitTags: [...new Set(refitTags)],
+    refitCategory,
+    specialistRequirements,
+    rareMaterialRequirements,
     traits,
     notes: {
       designIntent,
@@ -130,6 +174,8 @@ export const CORE_SHIP_UPGRADES = Object.freeze({
       modifier("maneuverability", "subtract", 1, "-1 maneuverability")
     ],
     conditionInteractions: ["Placeholder: reduced catastrophic failure severity."],
+    refitPressure: { infrastructurePressure: 2 },
+    refitTags: ["ship-upgrade", "structural", "reinforcement", "hull"],
     traits: ["standard", "structural", "hull", "catastrophe"],
     designIntent: "Strengthens the vessel’s frame but makes handling heavier."
   }),
@@ -385,6 +431,9 @@ export const CORE_SHIP_UPGRADES = Object.freeze({
     role: "Command distribution and coordination infrastructure",
     description: "Expanded command infrastructure that improves shipwide order routing and coordination capacity.",
     derivedStatModifiers: [modifier("baseAP", "add", 1, "+1 base AP")],
+    refitPressure: { crewCommandPressure: 3, infrastructurePressure: 1 },
+    refitTags: ["ship-upgrade", "command-nexus", "crew-command", "infrastructure"],
+    specialistRequirements: ["command systems architect"],
     traits: ["standard", "command", "coordination", "infrastructure"],
     designIntent: "Provides a modest persistent command capacity increase without adding AP spending systems."
   }),
