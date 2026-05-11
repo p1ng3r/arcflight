@@ -16,7 +16,13 @@ const UPGRADE_TYPES = Object.freeze({
   PROPULSION_SUPPORT: "propulsionSupport",
   LOOKOUT: "lookout",
   HELM_SYSTEM: "helmSystem",
-  SAIL_SYSTEM: "sailSystem"
+  SAIL_SYSTEM: "sailSystem",
+  LIFEVEIL: "lifeveil",
+  SUPPORT: "support",
+  MOBILITY: "mobility",
+  DEEP_VOID: "deepVoid",
+  OCCULT: "occult",
+  STRAIN: "strain"
 });
 
 const SYSTEM_STATES = Object.freeze({
@@ -297,6 +303,130 @@ export const CORE_SHIP_UPGRADES = Object.freeze({
     systemInteractions: ["Placeholder: improved Hard Burn handling."],
     traits: ["standard", "propulsionSupport", "hard-burn", "maneuvering"],
     designIntent: "Improves future high-speed handling with fragile exposed structures."
+  }),
+  "reinforced-bulkhead-network": shipUpgrade({
+    id: "reinforced-bulkhead-network",
+    displayName: "Reinforced Bulkhead Network",
+    upgradeType: UPGRADE_TYPES.STRUCTURAL,
+    role: "Internal compartment durability",
+    description: "Reinforced internal bulkheads that improve compartment durability and vessel-wide defensive structure.",
+    derivedStatModifiers: [
+      modifier("hullIntegrity", "add", 20, "+20 hull integrity"),
+      modifier("armorClass", "add", 1, "+1 armor class")
+    ],
+    traits: ["standard", "structural", "bulkhead", "durability"],
+    designIntent: "Adds modest persistent hull and armor resilience through internal platform reinforcement."
+  }),
+  "expanded-lifeveil-array": shipUpgrade({
+    id: "expanded-lifeveil-array",
+    displayName: "Expanded Lifeveil Array",
+    upgradeType: UPGRADE_TYPES.LIFEVEIL,
+    role: "Vessel-wide Lifeveil projection hardware",
+    description: "Expanded projection hardware that increases the vessel’s stable Lifeveil envelope.",
+    derivedStatModifiers: [modifier("lifeveilCapacity", "add", 15, "+15 lifeveil capacity")],
+    traits: ["standard", "lifeveil", "projection", "stability"],
+    designIntent: "Expands persistent Lifeveil capacity without adding activation or fuel-spending automation."
+  }),
+  "void-scout-observation-spire": shipUpgrade({
+    id: "void-scout-observation-spire",
+    displayName: "Void Scout Observation Spire",
+    upgradeType: UPGRADE_TYPES.DETECTION,
+    role: "Long-range watch and void scanning",
+    description: "A dedicated observation spire that improves long-range watch, void scanning, and anomaly spotting.",
+    derivedStatModifiers: [modifier("detection", "add", 2, "+2 detection")],
+    traits: ["standard", "detection", "watch", "scanning"],
+    designIntent: "Adds a standard persistent detection platform for scouting-focused vessels."
+  }),
+  "emergency-repair-lockers": shipUpgrade({
+    id: "emergency-repair-lockers",
+    displayName: "Emergency Repair Lockers",
+    upgradeType: UPGRADE_TYPES.SUPPORT,
+    role: "Distributed repair kits and emergency patch stations",
+    description: "Distributed repair lockers and emergency patch stations positioned throughout the vessel.",
+    derivedStatModifiers: [modifier("resistanceTendencies", "append", "repairSupport", "Adds repair support tendency")],
+    traits: ["standard", "support", "repair", "emergency"],
+    designIntent: "Stores a future repair-support hook as data without implementing repair automation.",
+    gmNotes: "Future support hook only; this upgrade does not automate repairs."
+  }),
+  "reinforced-maneuvering-fins": shipUpgrade({
+    id: "reinforced-maneuvering-fins",
+    displayName: "Reinforced Maneuvering Fins",
+    upgradeType: UPGRADE_TYPES.MOBILITY,
+    role: "Control surfaces and handling",
+    description: "Reinforced control surfaces that improve ship handling and helm responsiveness.",
+    derivedStatModifiers: [modifier("maneuverability", "add", 1, "+1 maneuverability")],
+    traits: ["standard", "mobility", "maneuvering", "control"],
+    designIntent: "Provides a modest persistent maneuverability improvement through platform hardware."
+  }),
+  "deep-void-insulation-web": shipUpgrade({
+    id: "deep-void-insulation-web",
+    displayName: "Deep Void Insulation Web",
+    upgradeType: UPGRADE_TYPES.DEEP_VOID,
+    role: "Deep-void degradation resistance",
+    description: "An insulation web that reinforces the vessel against deep-void degradation and environmental wear.",
+    derivedStatModifiers: [modifier("resistanceTendencies", "append", "deepVoid", "Adds deep-void resistance tendency")],
+    traits: ["standard", "deepVoid", "insulation", "survival"],
+    designIntent: "Adds a persistent deep-void resistance tendency for later hazard systems."
+  }),
+  "occult-signal-refractors": shipUpgrade({
+    id: "occult-signal-refractors",
+    displayName: "Occult Signal Refractors",
+    upgradeType: UPGRADE_TYPES.OCCULT,
+    role: "Occult interference and strange void signal refraction",
+    description: "Refractor hardware that diffuses occult interference and strange void signals before they saturate ship systems.",
+    derivedStatModifiers: [modifier("resistanceTendencies", "append", "occult", "Adds occult resistance tendency")],
+    traits: ["standard", "occult", "signal", "interference"],
+    designIntent: "Adds an occult resistance tendency as data without resolving occult event mechanics."
+  }),
+  "expanded-command-network": shipUpgrade({
+    id: "expanded-command-network",
+    displayName: "Expanded Command Network",
+    upgradeType: UPGRADE_TYPES.COMMAND,
+    role: "Command distribution and coordination infrastructure",
+    description: "Expanded command infrastructure that improves shipwide order routing and coordination capacity.",
+    derivedStatModifiers: [modifier("baseAP", "add", 1, "+1 base AP")],
+    traits: ["standard", "command", "coordination", "infrastructure"],
+    designIntent: "Provides a modest persistent command capacity increase without adding AP spending systems."
+  }),
+  "auxiliary-veil-capacitors": shipUpgrade({
+    id: "auxiliary-veil-capacitors",
+    displayName: "Auxiliary Veil Capacitors",
+    upgradeType: UPGRADE_TYPES.LIFEVEIL,
+    role: "Extra veil charge for atmospheric stability",
+    description: "Auxiliary capacitors that store extra veil charge for vessel-wide atmospheric stability.",
+    derivedStatModifiers: [modifier("lifeveilCapacity", "add", 10, "+10 lifeveil capacity")],
+    traits: ["standard", "lifeveil", "capacitor", "stability"],
+    designIntent: "Adds a smaller Lifeveil capacity option without implementing charge-spending automation."
+  }),
+  "reinforced-docking-framework": shipUpgrade({
+    id: "reinforced-docking-framework",
+    displayName: "Reinforced Docking Framework",
+    upgradeType: UPGRADE_TYPES.LOGISTICS,
+    role: "Docking stability, loading, and salvage handling",
+    description: "Reinforced docking framework that improves docking stability, loading, and salvage handling capacity.",
+    derivedStatModifiers: [modifier("cargoCapacity", "add", 10, "+10 cargo capacity")],
+    traits: ["standard", "logistics", "docking", "salvage"],
+    designIntent: "Adds modest logistics capacity through persistent docking and loading hardware."
+  }),
+  "longwatch-lookout-platform": shipUpgrade({
+    id: "longwatch-lookout-platform",
+    displayName: "Longwatch Lookout Platform",
+    upgradeType: UPGRADE_TYPES.DETECTION,
+    role: "Elevated Watchmaster support platform",
+    description: "A dedicated elevated lookout platform that supports Watchmaster observation and longwatch duties.",
+    derivedStatModifiers: [modifier("detection", "add", 1, "+1 detection")],
+    traits: ["standard", "detection", "lookout", "watchmaster"],
+    designIntent: "Provides a modest detection platform distinct from larger spire upgrades."
+  }),
+  "distributed-strain-dampeners": shipUpgrade({
+    id: "distributed-strain-dampeners",
+    displayName: "Distributed Strain Dampeners",
+    upgradeType: UPGRADE_TYPES.STRAIN,
+    role: "Engine and hull stress dampening channels",
+    description: "Distributed dampeners that spread engine and hull stress through reinforced dampening channels.",
+    derivedStatModifiers: [modifier("strainCapacity", "add", 2, "+2 strain capacity")],
+    traits: ["standard", "strain", "dampening", "reinforcement"],
+    designIntent: "Adds modest persistent strain tolerance without implementing strain spending or recovery automation."
   })
 });
 
