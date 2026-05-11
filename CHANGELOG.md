@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phase 7.5D-4 - Crew Asset Content Library Expansion
+
+- Added 10 lightweight named core crew specialists: Grizzled Bosun, Voidscarred Helmsman, Junior Engine Apprentice, Occult Veil Adept, Old Star Cartographer, Powdermaster Gunner, Quiet Smuggler Contact, Shipboard Surgeon, Morale Cook, and Hull Patcher.
+- Updated the core crew asset registry so `CORE_CREW_ASSET_KEYS` now exposes 15 entries and `getCoreCrewAsset()` / `createCoreCrewAsset()` can resolve the new keys.
+- Kept this patch content/data-only with immutable source definitions, placeholder capability hooks only, and no morale, wages, injury automation, station actions, combat, travel, UI, or broad refactor work.
+
 ### Phase 7.5D-3 - Room Content Library Expansion
 
 - Added 10 core expansion room entries: Salvage Bay, Ritual Chamber, Armory, Chart Room, Smuggler Hold, Crew Lounge, Quarantine Ward, Specimen Vault, Forge Bay, and Diplomatic Suite.
