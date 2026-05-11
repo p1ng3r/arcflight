@@ -83,7 +83,9 @@ import {
   ARCFLIGHT_ITEM_FOLDER_ROOT,
   arcflightComponentFolderNames,
   arcflightItemFolderNames,
+  cleanupDuplicateArcflightItems,
   createArcflightItemFolders,
+  findDuplicateArcflightItems,
   organizeArcflightItems
 } from "./helpers/item-organization.js";
 
@@ -158,6 +160,8 @@ Hooks.once("init", () => {
     arcflightComponentFolderNames,
     arcflightItemFolderNames,
     createArcflightItemFolders,
+    findDuplicateArcflightItems,
+    cleanupDuplicateArcflightItems,
     organizeArcflightItems,
     CORE_CREW_ASSET_KEYS,
     CORE_ROOM_KEYS,
@@ -234,6 +238,10 @@ Hooks.once("init", () => {
     componentFolderNames: arcflightComponentFolderNames,
     createItemFolders: createArcflightItemFolders,
     organizeArcflightItems,
+    findDuplicateItems: findDuplicateArcflightItems,
+    cleanupDuplicateItems: cleanupDuplicateArcflightItems,
+    findDuplicateArcflightItems,
+    cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools()
   });
 
@@ -299,6 +307,8 @@ export {
   arcflightComponentFolderNames,
   arcflightItemFolderNames,
   createArcflightItemFolders,
+  findDuplicateArcflightItems,
+  cleanupDuplicateArcflightItems,
   organizeArcflightItems,
   CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,
