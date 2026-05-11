@@ -5,6 +5,8 @@
 ### Phase 2A - Item Panel and Compendium Cleanup
 
 - Added Arcflight item organization helpers for the world Items panel, including `game.arcflight.devTools.createItemFolders()` and `game.arcflight.devTools.organizeArcflightItems()`.
+- Added safe, dry-run-by-default duplicate cleanup helpers exposed as `game.arcflight.findDuplicateArcflightItems()`, `game.arcflight.cleanupDuplicateArcflightItems()`, and matching `game.arcflight.devTools` aliases.
+- Limited duplicate cleanup to Arcflight-enabled PF2E equipment world Items inside the Arcflight folder tree, with skipped-item reporting for non-Arcflight, embedded actor, compendium, or out-of-tree documents.
 - Added the suggested `Arcflight` folder tree for Hulls, Arkengines, Arkengine Mods, Weapons, Rooms, Ship Upgrades, Cargo, Crew Assets, and Ammo.
 - Kept organization limited to Arcflight PF2E equipment components with supported `flags.arcflight.componentType` values; normal PF2E equipment, embedded actor items, and compendium contents are not moved or deleted.
 - Documented the item organization workflow and deferred compendium pack expansion until content pack structure is ready to stabilize.

@@ -1,4 +1,9 @@
-import { createArcflightItemFolders, organizeArcflightItems } from "../helpers/item-organization.js";
+import {
+  cleanupDuplicateArcflightItems,
+  createArcflightItemFolders,
+  findDuplicateArcflightItems,
+  organizeArcflightItems
+} from "../helpers/item-organization.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
@@ -29,6 +34,16 @@ export function createArcflightDevTools() {
      * Move only Arcflight equipment components into matching Arcflight folders.
      */
     organizeArcflightItems,
+
+    /**
+     * Dry-run duplicate detection for Arcflight component world Items inside Arcflight folders.
+     */
+    findDuplicateArcflightItems,
+
+    /**
+     * Dry-run by default. Pass { dryRun: false } to delete safe duplicate Arcflight world Items.
+     */
+    cleanupDuplicateArcflightItems,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
