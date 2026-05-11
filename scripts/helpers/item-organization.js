@@ -1,5 +1,5 @@
-import { ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
-import { getComponentType, isArcflightItem } from "../documents/components.js";
+import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_ITEM_TYPES } from "../config/constants.js";
+import { getArcflightComponentFlags, getComponentType, isArcflightItem } from "../documents/components.js";
 
 export const ARCFLIGHT_ITEM_FOLDER_ROOT = "Arcflight";
 export const ARCFLIGHT_ITEM_FOLDER_TYPE = "Item";
@@ -27,6 +27,8 @@ export const arcflightComponentFolderNames = Object.freeze({
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: arcflightItemFolderNames[ARCFLIGHT_ITEM_TYPES.CREW_ASSET]
 });
 
+const MISSING_SOURCE_KEY = "";
+
 function assertFoundryWorldReady() {
   if (globalThis.game?.ready !== true) {
     throw new Error("Arcflight | Item organization helpers require game.ready === true.");
@@ -35,6 +37,15 @@ function assertFoundryWorldReady() {
   if (typeof globalThis.Folder?.create !== "function") {
     throw new Error("Arcflight | Foundry Folder document API is not available.");
   }
+}
+
+function warnFoundryWorldNotReady(helperName) {
+  if (globalThis.game?.ready !== true) {
+    console.warn(`Arcflight | ${helperName} requires game.ready === true; returning a safe empty report.`);
+    return true;
+  }
+
+  return false;
 }
 
 function getWorldItemFolders() {
@@ -60,6 +71,198 @@ async function getOrCreateItemFolder(name, parentFolder = null) {
     type: ARCFLIGHT_ITEM_FOLDER_TYPE,
     folder: parentFolder?.id ?? null
   });
+}
+
+function getFolderId(folderOrId) {
+  return folderOrId?.id ?? folderOrId ?? null;
+}
+
+function getArcflightRootFolderIds() {
+  return new Set(
+    getWorldItemFolders()
+      .filter((folder) => folder?.name === ARCFLIGHT_ITEM_FOLDER_ROOT && getParentFolderId(folder) === null)
+      .map((folder) => folder.id)
+      .filter(Boolean)
+  );
+}
+
+function getFolderById(folderId) {
+  if (!folderId) return null;
+  const folders = globalThis.game?.folders;
+  return folders?.get?.(folderId) ?? Array.from(folders ?? []).find((folder) => folder?.id === folderId) ?? null;
+}
+
+function isInArcflightItemFolderTree(item, rootFolderIds = getArcflightRootFolderIds()) {
+  let folder = getFolderById(getFolderId(item?.folder)) ?? item?.folder;
+
+  while (folder) {
+    if (rootFolderIds.has(folder.id)) return true;
+    folder = folder.folder ?? getFolderById(getParentFolderId(folder));
+  }
+
+  return false;
+}
+
+function getArcflightFlags(item) {
+  return item?.flags?.[ARCFLIGHT_MODULE_ID] ?? {};
+}
+
+function firstStringValue(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+
+  return MISSING_SOURCE_KEY;
+}
+
+function getArcflightSourceKey(item) {
+  const flags = getArcflightFlags(item);
+  const componentFlags = getArcflightComponentFlags(item);
+  const system = componentFlags.system ?? flags.system ?? {};
+
+  return firstStringValue(
+    system.key,
+    flags.key,
+    flags.sourceKey,
+    flags.coreKey,
+    system.sourceKey,
+    system.coreKey,
+    system.identity?.id,
+    system.id,
+    system.platform,
+    system.engineClass
+  );
+}
+
+function getItemCreatedTime(item) {
+  const candidates = [
+    item?._stats?.createdTime,
+    item?.createdTime,
+    item?.creationTime,
+    item?.sort,
+    item?._stats?.modifiedTime
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
+  }
+
+  return 0;
+}
+
+function summarizeItem(item) {
+  return {
+    id: item?.id ?? null,
+    name: item?.name ?? "",
+    type: item?.type ?? "",
+    componentType: getComponentType(item),
+    sourceKey: getArcflightSourceKey(item),
+    folderId: getFolderId(item?.folder),
+    folderName: item?.folder?.name ?? null,
+    createdTime: getItemCreatedTime(item)
+  };
+}
+
+function getDuplicateGroupKey(item) {
+  return JSON.stringify({
+    name: item?.name ?? "",
+    type: item?.type ?? "",
+    enabled: true,
+    componentType: getComponentType(item),
+    sourceKey: getArcflightSourceKey(item)
+  });
+}
+
+function sortDuplicateCandidates(items) {
+  return [...items].sort((a, b) => {
+    const createdDelta = getItemCreatedTime(a) - getItemCreatedTime(b);
+    if (createdDelta !== 0) return createdDelta;
+
+    return String(a?.id ?? "").localeCompare(String(b?.id ?? ""));
+  });
+}
+
+function createDuplicateCleanupReport(dryRun = true) {
+  return {
+    dryRun,
+    duplicateGroups: [],
+    skippedItems: [],
+    deletedItems: [],
+    warnings: []
+  };
+}
+
+function addSkippedItem(report, item, reason) {
+  report.skippedItems.push({ ...summarizeItem(item), reason });
+}
+
+function isWorldItemDocument(item) {
+  return Boolean(item?.id) && !item?.pack && item?.parent == null && item?.actor == null;
+}
+
+function addDuplicateCandidate(report, item, rootFolderIds) {
+  if (!isWorldItemDocument(item)) {
+    addSkippedItem(report, item, "not a world Item document");
+    return null;
+  }
+
+  if (!isArcflightItem(item)) {
+    addSkippedItem(report, item, "not an Arcflight-enabled PF2E equipment item");
+    return null;
+  }
+
+  const componentType = getComponentType(item);
+  if (!componentType) {
+    addSkippedItem(report, item, "missing or unsupported flags.arcflight.componentType");
+    return null;
+  }
+
+  if (!isInArcflightItemFolderTree(item, rootFolderIds)) {
+    addSkippedItem(report, item, "not inside the Arcflight item folder tree");
+    return null;
+  }
+
+  return item;
+}
+
+function buildDuplicateCleanupReport(items, { dryRun = true } = {}) {
+  const report = createDuplicateCleanupReport(dryRun);
+  const rootFolderIds = getArcflightRootFolderIds();
+  const groupedItems = new Map();
+
+  if (rootFolderIds.size === 0) {
+    report.warnings.push(`Arcflight item folder root "${ARCFLIGHT_ITEM_FOLDER_ROOT}" was not found; no Items are eligible for duplicate cleanup.`);
+  }
+
+  for (const item of items) {
+    const candidate = addDuplicateCandidate(report, item, rootFolderIds);
+    if (!candidate) continue;
+
+    const key = getDuplicateGroupKey(candidate);
+    const group = groupedItems.get(key) ?? [];
+    group.push(candidate);
+    groupedItems.set(key, group);
+  }
+
+  for (const [key, groupItems] of groupedItems.entries()) {
+    if (groupItems.length < 2) continue;
+
+    const sortedItems = sortDuplicateCandidates(groupItems);
+    const keptItem = sortedItems[0];
+    const duplicateItems = sortedItems.slice(1);
+
+    report.duplicateGroups.push({
+      key,
+      name: keptItem.name,
+      type: keptItem.type,
+      componentType: getComponentType(keptItem),
+      sourceKey: getArcflightSourceKey(keptItem),
+      keptItem: summarizeItem(keptItem),
+      duplicateItems: duplicateItems.map(summarizeItem)
+    });
+  }
+
+  return report;
 }
 
 /**
@@ -130,4 +333,81 @@ export async function organizeArcflightItems() {
   );
 
   return { rootFolder, folders, movedItems, unchangedItems, skippedItems };
+}
+
+/**
+ * Find duplicate Arcflight component world Items inside the Arcflight item folder tree.
+ *
+ * This helper scans only game.items world documents and reports duplicates by
+ * name, Foundry item type, Arcflight enabled flag, component type, and Arcflight
+ * source key when one exists. It never deletes Items.
+ *
+ * @returns {Promise<{dryRun: true, duplicateGroups: object[], skippedItems: object[], deletedItems: object[], warnings: string[]}>}
+ */
+export async function findDuplicateArcflightItems() {
+  if (warnFoundryWorldNotReady("findDuplicateArcflightItems")) return createDuplicateCleanupReport(true);
+
+  const report = buildDuplicateCleanupReport(Array.from(globalThis.game?.items ?? []), { dryRun: true });
+  console.log(
+    `Arcflight | Found ${report.duplicateGroups.length} duplicate Arcflight item group(s); ${report.skippedItems.length} item(s) skipped.`,
+    report
+  );
+
+  return report;
+}
+
+/**
+ * Safely clean up duplicate Arcflight component world Items inside the Arcflight item folder tree.
+ *
+ * The default is a dry run. Passing { dryRun: false } deletes only later Items in
+ * duplicate groups after re-checking that each document is a world Item,
+ * Arcflight-enabled PF2E equipment, not embedded on an Actor, not from a
+ * compendium, and still inside the Arcflight item folder tree.
+ *
+ * @param {{dryRun?: boolean}} [options]
+ * @returns {Promise<{dryRun: boolean, duplicateGroups: object[], skippedItems: object[], deletedItems: object[], warnings: string[]}>}
+ */
+export async function cleanupDuplicateArcflightItems(options = {}) {
+  const dryRun = options?.dryRun !== false;
+  if (warnFoundryWorldNotReady("cleanupDuplicateArcflightItems")) return createDuplicateCleanupReport(dryRun);
+
+  const report = buildDuplicateCleanupReport(Array.from(globalThis.game?.items ?? []), { dryRun });
+
+  if (dryRun) {
+    console.log(
+      `Arcflight | Duplicate cleanup dry run found ${report.duplicateGroups.length} duplicate group(s). No Items were deleted.`,
+      report
+    );
+    return report;
+  }
+
+  const rootFolderIds = getArcflightRootFolderIds();
+  for (const group of report.duplicateGroups) {
+    for (const duplicateItem of group.duplicateItems) {
+      const item = globalThis.game?.items?.get?.(duplicateItem.id) ?? null;
+      if (!item) {
+        report.warnings.push(`Item ${duplicateItem.id} was not found at delete time; skipping.`);
+        continue;
+      }
+
+      const candidate = addDuplicateCandidate(report, item, rootFolderIds);
+      if (!candidate) continue;
+
+      try {
+        await candidate.delete();
+        report.deletedItems.push(summarizeItem(candidate));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        report.warnings.push(`Could not delete duplicate item ${candidate.name} (${candidate.id}): ${message}`);
+        console.warn("Arcflight | Duplicate item cleanup skipped a document after delete failed.", { item: candidate, error });
+      }
+    }
+  }
+
+  console.log(
+    `Arcflight | Duplicate cleanup deleted ${report.deletedItems.length} duplicate Arcflight world item(s); ${report.warnings.length} warning(s).`,
+    report
+  );
+
+  return report;
 }

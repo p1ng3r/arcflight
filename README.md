@@ -79,15 +79,17 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.
-- Item organization: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, and matching top-level aliases `createItemFolders()` / `organizeArcflightItems()`.
+- Item organization and safe duplicate cleanup: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, and matching top-level helpers on `game.arcflight`.
 
 ## Item Organization Workflow
 
 Arcflight components remain normal PF2E `equipment` items with Arcflight data under `flags.arcflight`; the module does not register custom Item subtypes and does not patch PF2E item creation. For world cleanup before adding larger content libraries, use the development helpers from the Foundry console after `game.ready === true`:
 
 ```js
-await game.arcflight.devTools.createItemFolders();
-await game.arcflight.devTools.organizeArcflightItems();
+await game.arcflight.createArcflightItemFolders();
+await game.arcflight.organizeArcflightItems();
+await game.arcflight.findDuplicateArcflightItems();
+await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: true });
 ```
 
 `createItemFolders()` creates the suggested world Items panel tree without creating, moving, or deleting items:
@@ -105,6 +107,24 @@ await game.arcflight.devTools.organizeArcflightItems();
 `organizeArcflightItems()` first ensures that tree exists, then moves only world Items where `type === "equipment"`, `flags.arcflight.enabled === true`, and `flags.arcflight.componentType` matches a supported Arcflight component type. Normal PF2E equipment, actor-embedded items, and compendium contents are left untouched, and no items are deleted. The `Ammo` folder is created for future content organization but is not currently tied to an Arcflight component type.
 
 Compendium packs remain intentionally minimal for now. Source data continues to live in the data modules until Arcflight's content pack shape is ready to stabilize.
+
+### Duplicate Cleanup Workflow
+
+Repeated helper/test/content creation can leave duplicate Arcflight world Items in the Items tab. Duplicate cleanup is conservative and dry-run-only by default. It scans only world Items from `game.items`, requires `type === "equipment"`, `flags.arcflight.enabled === true`, a supported `flags.arcflight.componentType`, and membership in the `Arcflight` item folder tree. It does not scan or delete compendium source packs, non-Arcflight equipment, or actor-embedded installed ship items.
+
+Duplicate groups are matched by item name, Foundry item type, Arcflight enabled state, component type, and an Arcflight source/core key when present under fields such as `flags.arcflight.system.key`, `flags.arcflight.key`, `flags.arcflight.system.identity.id`, `flags.arcflight.system.platform`, or `flags.arcflight.system.engineClass`. The oldest/lowest-sort matching world Item is kept and later duplicates are reported or deleted.
+
+Recommended Foundry console workflow after `game.ready === true`:
+
+```js
+await game.arcflight.findDuplicateArcflightItems();
+await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: true });
+await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: false });
+await game.arcflight.organizeArcflightItems();
+await game.arcflight.runFrameworkSmokeTest({ cleanup: true });
+```
+
+Use `dryRun: false` only after reviewing the returned `duplicateGroups`, `keptItem`, `duplicateItems`, `skippedItems`, and `warnings` report. The same helpers are also available under `game.arcflight.devTools`.
 
 ## Smoke Test Helper Usage
 
