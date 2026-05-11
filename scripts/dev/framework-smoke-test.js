@@ -26,7 +26,7 @@ import {
   installShipUpgrade,
   recalculateShipStats
 } from "../documents/ships.js";
-import { CORE_HULL_PLATFORM_KEYS } from "../../data/hulls/core-hulls.js";
+import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS } from "../../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
 import { CORE_ARKENGINE_MOD_KEYS } from "../../data/arkengine-mods/core-arkengine-mods.js";
 import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
@@ -36,6 +36,45 @@ import { STATION_KEYS } from "../../data/stations/core-stations.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
+
+const EXPECTED_CORE_HULL_PLATFORM_KEYS = Object.freeze([
+  "void-skiff",
+  "sloop",
+  "cutter",
+  "brigantine",
+  "frigate",
+  "galleon",
+  "hammerhead",
+  "arkcruiser",
+  "dread-caravel",
+  "cathedral-ship",
+  "leviathan-class-platform"
+]);
+
+function hasClassification(hull = {}) {
+  return Number.isInteger(hull.classification?.baseTier)
+    && typeof hull.classification?.tierLabel === "string"
+    && typeof hull.classification?.canBeRefitAboveBaseTier === "boolean"
+    && Number.isInteger(hull.classification?.maximumRefitTier);
+}
+
+function hasRefitTolerance(hull = {}) {
+  return [
+    "weaponPressure",
+    "enginePressure",
+    "infrastructurePressure",
+    "lifeveilPressure",
+    "crewCommandPressure",
+    "occultPressure",
+    "totalBeforeMajorRefitRequired"
+  ].every((key) => Number.isFinite(hull.refitTolerance?.[key]));
+}
+
+function hasArkengineCompatibility(hull = {}) {
+  return typeof hull.arkengineCompatibility?.preferred === "string"
+    && Array.isArray(hull.arkengineCompatibility?.allowed)
+    && hull.arkengineCompatibility.allowed.includes(hull.arkengineCompatibility.preferred);
+}
 
 function check(result, name, passed, expected, actual, message = "") {
   const entry = { name, passed: Boolean(passed), expected, actual, message };
@@ -161,6 +200,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core ship upgrade key array exists", isCoreKeyArray(CORE_SHIP_UPGRADE_KEYS), "non-empty array", CORE_SHIP_UPGRADE_KEYS?.length ?? 0);
     check(result, "Core crew asset key array exists", isCoreKeyArray(CORE_CREW_ASSET_KEYS), "non-empty array", CORE_CREW_ASSET_KEYS?.length ?? 0);
     check(result, "Core station key array exists", isCoreKeyArray(STATION_KEYS), "non-empty array", STATION_KEYS?.length ?? 0);
+    check(result, "Core hull library has 11 locked keys", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => CORE_HULL_PLATFORM_KEYS.includes(key)) && CORE_HULL_PLATFORM_KEYS.length === EXPECTED_CORE_HULL_PLATFORM_KEYS.length, EXPECTED_CORE_HULL_PLATFORM_KEYS, CORE_HULL_PLATFORM_KEYS);
+    check(result, "Every core hull has classification", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasClassification(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasClassification(CORE_HULLS[key])));
+    check(result, "Every core hull has refit tolerance", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasRefitTolerance(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasRefitTolerance(CORE_HULLS[key])));
+    check(result, "Every core hull has arkengine compatibility", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasArkengineCompatibility(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasArkengineCompatibility(CORE_HULLS[key])));
+    check(result, "Every standard core hull has expansion slots", EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform").every((key) => Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform" && !Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)));
+    check(result, "Leviathan platform is district-scale", CORE_HULLS["leviathan-class-platform"]?.rooms?.districtScale === true, true, CORE_HULLS["leviathan-class-platform"]?.rooms ?? null);
 
     const componentItems = await createSmokeTestComponents(createdItems);
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);

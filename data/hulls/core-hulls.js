@@ -1,11 +1,112 @@
 const CORE_ROOMS = Object.freeze([
-  "Arkengine Chamber",
-  "Helm",
-  "Crew Quarters",
-  "Galley & Mess",
-  "Cargo Hold",
-  "Officer Wardroom"
+  "arkengine-chamber",
+  "helm",
+  "crew-quarters",
+  "galley-mess",
+  "cargo-hold",
+  "officer-wardroom"
 ]);
+
+const TIER_LABELS = Object.freeze({
+  1: "Frontier / Local",
+  2: "Established Voidfaring",
+  3: "Military / Expeditionary",
+  4: "Capital / Legendary",
+  5: "Mythic / Impossible"
+});
+
+const REFIT_TOLERANCE_BY_TIER = Object.freeze({
+  1: Object.freeze({
+    weaponPressure: 2,
+    enginePressure: 2,
+    infrastructurePressure: 2,
+    lifeveilPressure: 1,
+    crewCommandPressure: 1,
+    occultPressure: 1,
+    totalBeforeMajorRefitRequired: 5
+  }),
+  2: Object.freeze({
+    weaponPressure: 3,
+    enginePressure: 3,
+    infrastructurePressure: 3,
+    lifeveilPressure: 2,
+    crewCommandPressure: 2,
+    occultPressure: 1,
+    totalBeforeMajorRefitRequired: 8
+  }),
+  3: Object.freeze({
+    weaponPressure: 4,
+    enginePressure: 4,
+    infrastructurePressure: 4,
+    lifeveilPressure: 3,
+    crewCommandPressure: 3,
+    occultPressure: 2,
+    totalBeforeMajorRefitRequired: 11
+  }),
+  4: Object.freeze({
+    weaponPressure: 5,
+    enginePressure: 5,
+    infrastructurePressure: 5,
+    lifeveilPressure: 4,
+    crewCommandPressure: 4,
+    occultPressure: 3,
+    totalBeforeMajorRefitRequired: 14
+  }),
+  5: Object.freeze({
+    weaponPressure: 6,
+    enginePressure: 6,
+    infrastructurePressure: 6,
+    lifeveilPressure: 5,
+    crewCommandPressure: 5,
+    occultPressure: 5,
+    totalBeforeMajorRefitRequired: 18
+  })
+});
+
+const DEFAULT_ALLOWED_REFIT_THEMES = Object.freeze([
+  "weapons",
+  "arkengine",
+  "infrastructure",
+  "lifeveil",
+  "crew-command"
+]);
+
+function deepFreeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+
+  return value;
+}
+
+function classification(baseTier, maximumRefitTier = Math.min(5, baseTier + 2), canBeRefitAboveBaseTier = maximumRefitTier > baseTier) {
+  return {
+    baseTier,
+    tierLabel: TIER_LABELS[baseTier],
+    canBeRefitAboveBaseTier,
+    maximumRefitTier
+  };
+}
+
+function refitTolerance(baseTier, overrides = {}) {
+  return {
+    ...REFIT_TOLERANCE_BY_TIER[baseTier],
+    ...overrides
+  };
+}
+
+function refitNotes({
+  allowedRefitThemes = DEFAULT_ALLOWED_REFIT_THEMES,
+  restrictedRefitThemes = [],
+  designIntent
+}) {
+  return {
+    allowedRefitThemes: [...allowedRefitThemes],
+    restrictedRefitThemes: [...restrictedRefitThemes],
+    designIntent
+  };
+}
 
 const WEAPON_ARCS = Object.freeze(["fore", "port", "starboard", "aft"]);
 const ALLOWED_SIZES_BY_MAX_SIZE = Object.freeze({
@@ -64,9 +165,17 @@ function hull({
   preferredArkengine,
   allowedArkengines,
   role,
-  traits = []
+  traits = [],
+  baseTier,
+  maximumRefitTier,
+  canBeRefitAboveBaseTier,
+  refitTolerance: refitToleranceOverrides = {},
+  allowedRefitThemes,
+  restrictedRefitThemes = [],
+  refitDesignIntent,
+  districtScale = false
 }) {
-  return Object.freeze({
+  return deepFreeze({
     componentType: "hull",
     platform,
     displayName,
@@ -92,22 +201,35 @@ function hull({
     },
     rooms: {
       coreRooms: [...CORE_ROOMS],
-      expansionSlots
+      expansionSlots,
+      districtScale
     },
     weaponMounts: weaponMounts(weapons),
     arkengineCompatibility: {
       preferred: preferredArkengine,
       allowed: [...allowedArkengines]
     },
+    classification: classification(baseTier, maximumRefitTier, canBeRefitAboveBaseTier),
+    refitTolerance: refitTolerance(baseTier, refitToleranceOverrides),
+    refitNotes: refitNotes({
+      allowedRefitThemes,
+      restrictedRefitThemes,
+      designIntent: refitDesignIntent ?? role
+    }),
     traits: ["core-hull", ...traits],
     role,
-    designNotes: "Phase 2 locked core hull platform. Placeholder balance from Hull Statout V1."
+    designNotes: "Phase 2 locked core hull platform. Tier/refit-ready schema fields are data-only placeholders for the upcoming Refit Pressure framework."
   });
 }
 
 export const CORE_HULLS = Object.freeze({
   "void-skiff": hull({
     platform: "void-skiff",
+    baseTier: 1,
+    refitTolerance: { weaponPressure: 1, infrastructurePressure: 1, totalBeforeMajorRefitRequired: 4 },
+    allowedRefitThemes: ["arkengine", "infrastructure", "scouting"],
+    restrictedRefitThemes: ["large-weapons", "capital-command", "district-infrastructure"],
+    refitDesignIntent: "A light frontier craft can accept practical scouting and utility refits but should not become a line warship.",
     hullIntegrity: 60,
     armorClass: 18,
     physicalResistances: [0, 0, 0],
@@ -129,6 +251,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   sloop: hull({
     platform: "sloop",
+    baseTier: 1,
+    refitTolerance: { totalBeforeMajorRefitRequired: 5 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "scouting", "courier"],
+    restrictedRefitThemes: ["large-weapons", "capital-command", "district-infrastructure"],
+    refitDesignIntent: "An adaptable local vessel for party-scale upgrades, couriers, and light raiding without capital refits.",
     hullIntegrity: 90,
     armorClass: 18,
     physicalResistances: [1, 1, 0],
@@ -154,6 +281,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   cutter: hull({
     platform: "cutter",
+    baseTier: 1,
+    refitTolerance: { weaponPressure: 3, totalBeforeMajorRefitRequired: 6 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "patrol", "scouting"],
+    restrictedRefitThemes: ["capital-command", "district-infrastructure"],
+    refitDesignIntent: "A sturdy starter patrol hull can tolerate focused weapon or utility refits while staying below true military scale.",
     hullIntegrity: 120,
     armorClass: 17,
     physicalResistances: [2, 1, 1],
@@ -180,6 +312,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   brigantine: hull({
     platform: "brigantine",
+    baseTier: 2,
+    refitTolerance: { infrastructurePressure: 4, totalBeforeMajorRefitRequired: 9 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "lifeveil", "crew-command", "expedition"],
+    restrictedRefitThemes: ["mythic-core", "district-infrastructure"],
+    refitDesignIntent: "The baseline adventuring workhorse is intentionally broad and forgiving for future campaign identity refits.",
     hullIntegrity: 160,
     armorClass: 17,
     physicalResistances: [2, 2, 1],
@@ -206,6 +343,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   frigate: hull({
     platform: "frigate",
+    baseTier: 2,
+    refitTolerance: { weaponPressure: 4, crewCommandPressure: 3, totalBeforeMajorRefitRequired: 9 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "crew-command", "military"],
+    restrictedRefitThemes: ["heavy-cargo", "district-infrastructure"],
+    refitDesignIntent: "A disciplined escort hull favors military and command refits over merchant or sanctuary conversions.",
     hullIntegrity: 190,
     armorClass: 18,
     physicalResistances: [3, 2, 2],
@@ -232,6 +374,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   galleon: hull({
     platform: "galleon",
+    baseTier: 3,
+    refitTolerance: { infrastructurePressure: 5, crewCommandPressure: 4, totalBeforeMajorRefitRequired: 12 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "lifeveil", "crew-command", "cargo", "colony-support"],
+    restrictedRefitThemes: ["stealth", "small-craft-only"],
+    refitDesignIntent: "A large logistical platform can become a merchant, colony, or support flagship but resists nimble stealth identities.",
     hullIntegrity: 260,
     armorClass: 15,
     physicalResistances: [4, 3, 3],
@@ -258,6 +405,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   hammerhead: hull({
     platform: "hammerhead",
+    baseTier: 3,
+    refitTolerance: { weaponPressure: 5, lifeveilPressure: 2, totalBeforeMajorRefitRequired: 11 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "siege", "military"],
+    restrictedRefitThemes: ["sanctuary", "luxury", "stealth"],
+    refitDesignIntent: "A purpose-built assault frame takes heavy weapon and engine stress but has limited tolerance for soft-support conversions.",
     hullIntegrity: 240,
     armorClass: 16,
     physicalResistances: [5, 4, 3],
@@ -284,6 +436,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   arkcruiser: hull({
     platform: "arkcruiser",
+    baseTier: 4,
+    refitTolerance: { enginePressure: 6, crewCommandPressure: 5, totalBeforeMajorRefitRequired: 15 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "lifeveil", "crew-command", "capital-command", "expedition"],
+    restrictedRefitThemes: ["frontier-only", "small-craft-only"],
+    refitDesignIntent: "A campaign flagship can support major capital, command, and expedition refits before crossing into mythic rebuilds.",
     hullIntegrity: 310,
     armorClass: 15,
     physicalResistances: [4, 4, 3],
@@ -310,6 +467,11 @@ export const CORE_HULLS = Object.freeze({
   }),
   "dread-caravel": hull({
     platform: "dread-caravel",
+    baseTier: 4,
+    refitTolerance: { weaponPressure: 6, occultPressure: 4, totalBeforeMajorRefitRequired: 15 },
+    allowedRefitThemes: ["weapons", "arkengine", "infrastructure", "crew-command", "occult", "capital-command", "hunter-killer"],
+    restrictedRefitThemes: ["merchant-flagship", "sanctuary"],
+    refitDesignIntent: "An elite hunter-killer accepts severe weapon, engine, and occult refits while remaining a warship first.",
     hullIntegrity: 300,
     armorClass: 17,
     physicalResistances: [5, 4, 4],
@@ -336,6 +498,13 @@ export const CORE_HULLS = Object.freeze({
   }),
   "cathedral-ship": hull({
     platform: "cathedral-ship",
+    baseTier: 5,
+    maximumRefitTier: 5,
+    canBeRefitAboveBaseTier: false,
+    refitTolerance: { lifeveilPressure: 7, occultPressure: 6, weaponPressure: 4, totalBeforeMajorRefitRequired: 18 },
+    allowedRefitThemes: ["arkengine", "infrastructure", "lifeveil", "crew-command", "occult", "sanctuary"],
+    restrictedRefitThemes: ["heavy-siege", "stealth", "small-craft-only"],
+    refitDesignIntent: "A mythic sanctuary platform emphasizes Lifeveil and occult infrastructure rather than escalating beyond its base tier.",
     hullIntegrity: 280,
     armorClass: 14,
     physicalResistances: [3, 3, 3],
@@ -362,6 +531,14 @@ export const CORE_HULLS = Object.freeze({
   }),
   "leviathan-class-platform": hull({
     platform: "leviathan-class-platform",
+    baseTier: 5,
+    maximumRefitTier: 5,
+    canBeRefitAboveBaseTier: false,
+    refitTolerance: { infrastructurePressure: 8, lifeveilPressure: 7, crewCommandPressure: 7, occultPressure: 7, totalBeforeMajorRefitRequired: 20 },
+    allowedRefitThemes: ["district-infrastructure", "leviathan-core", "civilization", "mythic-infrastructure"],
+    restrictedRefitThemes: ["standard-expansion-slots", "small-craft-only", "ordinary-refit-yard"],
+    refitDesignIntent: "A Leviathan platform is district-scale infrastructure, not a normal ship refit chassis; future refits should be bespoke and narrative-scale.",
+    districtScale: true,
     hullIntegrity: 500,
     armorClass: 12,
     physicalResistances: [6, 6, 5],
