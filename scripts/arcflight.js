@@ -79,6 +79,13 @@ import {
   getExampleShipBuild,
   getExampleShipBuildKeys
 } from "./helpers/example-ship-builds.js";
+import {
+  ARCFLIGHT_ITEM_FOLDER_ROOT,
+  arcflightComponentFolderNames,
+  arcflightItemFolderNames,
+  createArcflightItemFolders,
+  organizeArcflightItems
+} from "./helpers/item-organization.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -147,6 +154,11 @@ Hooks.once("init", () => {
     HULL_PATTERN_KEYS,
     ARKENGINE_PATTERN_KEYS,
     CORE_ARKENGINE_MOD_KEYS,
+    ARCFLIGHT_ITEM_FOLDER_ROOT,
+    arcflightComponentFolderNames,
+    arcflightItemFolderNames,
+    createArcflightItemFolders,
+    organizeArcflightItems,
     CORE_CREW_ASSET_KEYS,
     CORE_ROOM_KEYS,
     CORE_SHIP_UPGRADE_KEYS,
@@ -217,6 +229,11 @@ Hooks.once("init", () => {
     getShipData: getArcflightShipData,
     componentDefaults: arcflightComponentDefaults,
     shipDefaults: arcflightShipDefaults,
+    itemFolderRoot: ARCFLIGHT_ITEM_FOLDER_ROOT,
+    itemFolderNames: arcflightItemFolderNames,
+    componentFolderNames: arcflightComponentFolderNames,
+    createItemFolders: createArcflightItemFolders,
+    organizeArcflightItems,
     devTools: createArcflightDevTools()
   });
 
@@ -278,6 +295,11 @@ export {
   HULL_PATTERN_KEYS,
   ARKENGINE_PATTERN_KEYS,
   CORE_ARKENGINE_MOD_KEYS,
+  ARCFLIGHT_ITEM_FOLDER_ROOT,
+  arcflightComponentFolderNames,
+  arcflightItemFolderNames,
+  createArcflightItemFolders,
+  organizeArcflightItems,
   CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,
   CORE_SHIP_UPGRADE_KEYS,

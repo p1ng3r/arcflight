@@ -79,6 +79,32 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.
+- Item organization: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, and matching top-level aliases `createItemFolders()` / `organizeArcflightItems()`.
+
+## Item Organization Workflow
+
+Arcflight components remain normal PF2E `equipment` items with Arcflight data under `flags.arcflight`; the module does not register custom Item subtypes and does not patch PF2E item creation. For world cleanup before adding larger content libraries, use the development helpers from the Foundry console after `game.ready === true`:
+
+```js
+await game.arcflight.devTools.createItemFolders();
+await game.arcflight.devTools.organizeArcflightItems();
+```
+
+`createItemFolders()` creates the suggested world Items panel tree without creating, moving, or deleting items:
+
+- `Arcflight/Hulls`
+- `Arcflight/Arkengines`
+- `Arcflight/Arkengine Mods`
+- `Arcflight/Weapons`
+- `Arcflight/Rooms`
+- `Arcflight/Ship Upgrades`
+- `Arcflight/Cargo`
+- `Arcflight/Crew Assets`
+- `Arcflight/Ammo`
+
+`organizeArcflightItems()` first ensures that tree exists, then moves only world Items where `type === "equipment"`, `flags.arcflight.enabled === true`, and `flags.arcflight.componentType` matches a supported Arcflight component type. Normal PF2E equipment, actor-embedded items, and compendium contents are left untouched, and no items are deleted. The `Ammo` folder is created for future content organization but is not currently tied to an Arcflight component type.
+
+Compendium packs remain intentionally minimal for now. Source data continues to live in the data modules until Arcflight's content pack shape is ready to stabilize.
 
 ## Smoke Test Helper Usage
 

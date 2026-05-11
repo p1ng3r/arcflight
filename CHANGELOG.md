@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Phase 2A - Item Panel and Compendium Cleanup
+
+- Added Arcflight item organization helpers for the world Items panel, including `game.arcflight.devTools.createItemFolders()` and `game.arcflight.devTools.organizeArcflightItems()`.
+- Added the suggested `Arcflight` folder tree for Hulls, Arkengines, Arkengine Mods, Weapons, Rooms, Ship Upgrades, Cargo, Crew Assets, and Ammo.
+- Kept organization limited to Arcflight PF2E equipment components with supported `flags.arcflight.componentType` values; normal PF2E equipment, embedded actor items, and compendium contents are not moved or deleted.
+- Documented the item organization workflow and deferred compendium pack expansion until content pack structure is ready to stabilize.
+
 ### Phase 7.5D-4 - Crew Asset Content Library Expansion
 
 - Added 10 lightweight named core crew specialists: Grizzled Bosun, Voidscarred Helmsman, Junior Engine Apprentice, Occult Veil Adept, Old Star Cartographer, Powdermaster Gunner, Quiet Smuggler Contact, Shipboard Surgeon, Morale Cook, and Hull Patcher.
