@@ -35,7 +35,7 @@ The current Framework Foundation includes these data-first systems:
 - **Arkengine Mod** — engine-only tuning components with tracked mod slot usage, a 22-entry core content library, and placeholder interactions.
 - **Room** — physical ship spaces, with core rooms, expansion room slot tracking, and a 26-entry core content library.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking and a 28-entry core content library.
-- **Crew Asset** — named/support crew source items copied into ship-owned crew rosters.
+- **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library.
 - **Station framework** — ship-owned operating role definitions and assignments.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
 - **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`.
