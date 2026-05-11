@@ -36,6 +36,6 @@ Tier/refit-ready fields are:
 - `refitTolerance.weaponPressure`, `enginePressure`, `infrastructurePressure`, `lifeveilPressure`, `crewCommandPressure`, `occultPressure`, and `totalBeforeMajorRefitRequired`
 - `refitNotes.allowedRefitThemes`, `restrictedRefitThemes`, and `designIntent`
 
-These fields are placeholders for future validation and pressure calculation. This pass does not add a refit pressure calculator, install blocking, weapon firing, travel systems, or combat automation.
+These fields now feed the ship-side Tier / Refit Pressure framework. Recalculation copies the installed hull base tier into ship tier state, sums installed component pressure snapshots, and marks ships as `native`, `pressured`, or `major-refit-required` without blocking installs. This pass does not add refit completion, weapon firing, travel systems, or combat automation.
 
 Arcflight hulls remain PF2E equipment items. The hull helper copies one of these entries into `flags.arcflight.system` and sets `flags.arcflight.componentType` to `hull`. Use `game.arcflight.createCoreHull(platformKey)` to create a PF2E equipment item from a locked hull definition.
