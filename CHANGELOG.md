@@ -2,12 +2,20 @@
 
 ## Unreleased
 
+### Ship Tier / Refit Pressure Framework
+
+- Added ship-owned tier state, refit pressure totals, and major-refit warning flags under `flags.arcflight.system` with schema fallbacks for older ships.
+- Added non-blocking helpers for calculating refit pressure, updating ship tier state, and reading tier/refit status from ship actors or ship system data.
+- Integrated tier/refit recalculation into ship stat recalculation and install helpers while preserving current runtime resources.
+- Extended the framework smoke test to validate base-tier copying, native/no-pressure state, pressured state below hull tolerance, major-refit-required state at tolerance, and stored major-refit flags.
+- Kept this pass data/helper/validation focused; no refit completion UI, install prevention, travel automation, combat automation, weapon firing, custom PF2E subtypes, or item monkey-patching was added.
+
 ### Core Hull Tier / Refit Readiness
 
 - Verified the locked 11-entry core hull platform library and added tier/refit-ready `classification`, `refitTolerance`, and `refitNotes` schema fields to every hull.
 - Normalized core hull room references to locked core room keys, kept numeric expansion slots on standard hulls, and marked Leviathan-Class Platform as district-scale infrastructure.
 - Extended the framework smoke test helper with lightweight core hull validation for key count, classification, refit tolerance, arkengine compatibility, standard expansion slots, and Leviathan district scale.
-- Kept this pass content/data-only; no Refit Pressure calculator, install blocking, weapon firing, combat automation, travel automation, UI changes, or compendium deletion changes were added.
+- Kept the hull-readiness pass content/data-only; it did not add install blocking, weapon firing, combat automation, travel automation, UI changes, or compendium deletion changes.
 
 ### Phase 2A - Item Panel and Compendium Cleanup
 

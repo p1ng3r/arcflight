@@ -24,7 +24,12 @@ import {
   installHull,
   installRoom,
   installShipUpgrade,
-  recalculateShipStats
+  recalculateShipStats,
+  updateShipTierState,
+  calculateRefitPressure,
+  getShipRefitPressure,
+  getShipRefitStatus,
+  getShipTierState
 } from "../documents/ships.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS } from "../../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
@@ -247,6 +252,64 @@ export async function runFrameworkSmokeTest(options = {}) {
     await attemptDuplicateInstall(result, "Duplicate ship upgrade install attempt", () => installShipUpgrade(actor, componentItems.shipUpgrade));
     await attemptDuplicateInstall(result, "Duplicate crew asset install attempt", () => addCrewAsset(actor, componentItems.crewAsset));
 
+    await recalculateShipStats(actor);
+    shipData = getArcflightShipData(actor);
+
+    const baseTier = CORE_HULLS.brigantine.classification.baseTier;
+    const majorRefitThreshold = CORE_HULLS.brigantine.refitTolerance.totalBeforeMajorRefitRequired;
+    const belowThresholdPressureSystem = {
+      base: { hull: CORE_HULLS.brigantine },
+      installed: {
+        shipUpgrades: [
+          { refitPressure: { weaponPressure: 1, enginePressure: 1 } }
+        ]
+      }
+    };
+    const thresholdPressureSystem = {
+      base: { hull: CORE_HULLS.brigantine },
+      installed: {
+        shipUpgrades: [
+          { refitPressure: { infrastructurePressure: majorRefitThreshold } }
+        ]
+      }
+    };
+    const flagPressureSystem = {
+      base: { hull: CORE_HULLS.brigantine },
+      installed: {
+        shipUpgrades: [
+          { flags: { [ARCFLIGHT_MODULE_ID]: { system: { refitPressure: { occultPressure: 2 } } } } }
+        ]
+      }
+    };
+    const belowThresholdTier = getShipTierState(belowThresholdPressureSystem);
+    const thresholdTier = getShipTierState(thresholdPressureSystem);
+    const storedTierFlags = shipData.refitFlags;
+
+    checkEqual(result, "Ship hull base tier copied into tier state", baseTier, shipData.tier.baseTier);
+    checkEqual(result, "Ship with no refit pressure is native", "native", shipData.tier.refitStatus);
+    checkEqual(result, "Ship with no refit pressure total is zero", 0, shipData.refitPressure.total);
+    checkEqual(result, "Component refitPressure below threshold is pressured", "pressured", belowThresholdTier.refitStatus);
+    checkEqual(result, "Component refitPressure below threshold total", 2, getShipRefitPressure(belowThresholdPressureSystem).total);
+    checkEqual(result, "Component flag refitPressure is counted", 2, calculateRefitPressure(flagPressureSystem).total);
+    checkEqual(result, "Component refitPressure at threshold requires major refit", "major-refit-required", thresholdTier.refitStatus);
+    check(result, "Stored no-pressure major refit flags are false", Object.values(storedTierFlags).every((value) => value === false), true, storedTierFlags);
+
+    const pressureUpgradeEntries = shipData.installed.shipUpgrades.map((upgrade, index) => index === 0
+      ? { ...upgrade, refitPressure: { infrastructurePressure: majorRefitThreshold } }
+      : upgrade);
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgrades`]: pressureUpgradeEntries });
+    await updateShipTierState(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Stored threshold refit status requires major refit", "major-refit-required", shipData.tier.refitStatus);
+    check(result, "Major refit flags are stored correctly", [
+      shipData.refitFlags.qualifiesForMajorRefit,
+      shipData.refitFlags.requiresDrydock,
+      shipData.refitFlags.requiresSpecialistLabor,
+      shipData.refitFlags.requiresRareMaterials
+    ].every(Boolean), true, shipData.refitFlags);
+
+    const restoredUpgradeEntries = shipData.installed.shipUpgrades.map((upgrade) => ({ ...upgrade, refitPressure: {} }));
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgrades`]: restoredUpgradeEntries });
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
 
