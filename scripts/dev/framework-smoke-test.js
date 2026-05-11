@@ -24,7 +24,12 @@ import {
   installHull,
   installRoom,
   installShipUpgrade,
-  recalculateShipStats
+  recalculateShipStats,
+  updateShipTierState,
+  calculateRefitPressure,
+  getShipRefitPressure,
+  getShipRefitStatus,
+  getShipTierState
 } from "../documents/ships.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS } from "../../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
@@ -33,6 +38,7 @@ import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
+import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -207,6 +213,18 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Every standard core hull has expansion slots", EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform").every((key) => Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform" && !Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)));
     check(result, "Leviathan platform is district-scale", CORE_HULLS["leviathan-class-platform"]?.rooms?.districtScale === true, true, CORE_HULLS["leviathan-class-platform"]?.rooms ?? null);
 
+    const expectedSyncCategories = ["hull", "arkengine", "arkengineMod", "room", "shipUpgrade", "crewAsset"];
+    const missingCoreReport = await findMissingCoreArcflightItems();
+    check(result, "Core item missing report includes sync categories", expectedSyncCategories.every((category) => missingCoreReport.categories?.[category]), expectedSyncCategories, Object.keys(missingCoreReport.categories ?? {}));
+    check(result, "Core item missing report skips stations", missingCoreReport.skippedCategories?.some((entry) => entry.category === "stations"), true, missingCoreReport.skippedCategories ?? []);
+    const itemCountBeforeDryRun = globalThis.game?.items?.size ?? Array.from(globalThis.game?.items ?? []).length;
+    const syncDryRunReport = await syncCoreArcflightItems({ dryRun: true });
+    const itemCountAfterDryRun = globalThis.game?.items?.size ?? Array.from(globalThis.game?.items ?? []).length;
+    check(result, "Core item sync defaults to report categories", expectedSyncCategories.every((category) => syncDryRunReport.categories?.[category]), expectedSyncCategories, Object.keys(syncDryRunReport.categories ?? {}));
+    checkEqual(result, "Core item sync dry run creates nothing", itemCountBeforeDryRun, itemCountAfterDryRun);
+    check(result, "Core item sync helpers exposed", typeof globalThis.game?.arcflight?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.syncCoreArcflightItems });
+    check(result, "Core item sync devTools exposed", typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems });
+
     const componentItems = await createSmokeTestComponents(createdItems);
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);
     check(result, "Created smoke test components", result.createdItemIds.length === 6, 6, result.createdItemIds.length);
@@ -247,6 +265,64 @@ export async function runFrameworkSmokeTest(options = {}) {
     await attemptDuplicateInstall(result, "Duplicate ship upgrade install attempt", () => installShipUpgrade(actor, componentItems.shipUpgrade));
     await attemptDuplicateInstall(result, "Duplicate crew asset install attempt", () => addCrewAsset(actor, componentItems.crewAsset));
 
+    await recalculateShipStats(actor);
+    shipData = getArcflightShipData(actor);
+
+    const baseTier = CORE_HULLS.brigantine.classification.baseTier;
+    const majorRefitThreshold = CORE_HULLS.brigantine.refitTolerance.totalBeforeMajorRefitRequired;
+    const belowThresholdPressureSystem = {
+      base: { hull: CORE_HULLS.brigantine },
+      installed: {
+        shipUpgrades: [
+          { refitPressure: { weaponPressure: 1, enginePressure: 1 } }
+        ]
+      }
+    };
+    const thresholdPressureSystem = {
+      base: { hull: CORE_HULLS.brigantine },
+      installed: {
+        shipUpgrades: [
+          { refitPressure: { infrastructurePressure: majorRefitThreshold } }
+        ]
+      }
+    };
+    const flagPressureSystem = {
+      base: { hull: CORE_HULLS.brigantine },
+      installed: {
+        shipUpgrades: [
+          { flags: { [ARCFLIGHT_MODULE_ID]: { system: { refitPressure: { occultPressure: 2 } } } } }
+        ]
+      }
+    };
+    const belowThresholdTier = getShipTierState(belowThresholdPressureSystem);
+    const thresholdTier = getShipTierState(thresholdPressureSystem);
+    const storedTierFlags = shipData.refitFlags;
+
+    checkEqual(result, "Ship hull base tier copied into tier state", baseTier, shipData.tier.baseTier);
+    checkEqual(result, "Ship with no refit pressure is native", "native", shipData.tier.refitStatus);
+    checkEqual(result, "Ship with no refit pressure total is zero", 0, shipData.refitPressure.total);
+    checkEqual(result, "Component refitPressure below threshold is pressured", "pressured", belowThresholdTier.refitStatus);
+    checkEqual(result, "Component refitPressure below threshold total", 2, getShipRefitPressure(belowThresholdPressureSystem).total);
+    checkEqual(result, "Component flag refitPressure is counted", 2, calculateRefitPressure(flagPressureSystem).total);
+    checkEqual(result, "Component refitPressure at threshold requires major refit", "major-refit-required", thresholdTier.refitStatus);
+    check(result, "Stored no-pressure major refit flags are false", Object.values(storedTierFlags).every((value) => value === false), true, storedTierFlags);
+
+    const pressureUpgradeEntries = shipData.installed.shipUpgrades.map((upgrade, index) => index === 0
+      ? { ...upgrade, refitPressure: { infrastructurePressure: majorRefitThreshold } }
+      : upgrade);
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgrades`]: pressureUpgradeEntries });
+    await updateShipTierState(actor);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Stored threshold refit status requires major refit", "major-refit-required", shipData.tier.refitStatus);
+    check(result, "Major refit flags are stored correctly", [
+      shipData.refitFlags.qualifiesForMajorRefit,
+      shipData.refitFlags.requiresDrydock,
+      shipData.refitFlags.requiresSpecialistLabor,
+      shipData.refitFlags.requiresRareMaterials
+    ].every(Boolean), true, shipData.refitFlags);
+
+    const restoredUpgradeEntries = shipData.installed.shipUpgrades.map((upgrade) => ({ ...upgrade, refitPressure: {} }));
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.shipUpgrades`]: restoredUpgradeEntries });
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
 

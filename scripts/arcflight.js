@@ -44,7 +44,11 @@ import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   arcflightShipDefaults,
   calculateDerivedShipStats,
+  calculateRefitPressure,
   getArcflightShipData,
+  getShipRefitPressure,
+  getShipRefitStatus,
+  getShipTierState,
   addCrewAsset,
   assignStation,
   clearComponentPatterns,
@@ -68,6 +72,7 @@ import {
   installShipUpgradeOnShip,
   recalculateShipStats,
   removeCrewAsset,
+  updateShipTierState,
   setArkenginePattern,
   setHullPattern
 } from "./documents/ships.js";
@@ -88,6 +93,7 @@ import {
   findDuplicateArcflightItems,
   organizeArcflightItems
 } from "./helpers/item-organization.js";
+import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -160,6 +166,8 @@ Hooks.once("init", () => {
     arcflightComponentFolderNames,
     arcflightItemFolderNames,
     createArcflightItemFolders,
+    findMissingCoreArcflightItems,
+    syncCoreArcflightItems,
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     organizeArcflightItems,
@@ -214,6 +222,11 @@ Hooks.once("init", () => {
     installShipUpgradeOnShip,
     recalculateShipStats,
     calculateDerivedShipStats,
+    calculateRefitPressure,
+    updateShipTierState,
+    getShipTierState,
+    getShipRefitPressure,
+    getShipRefitStatus,
     assignStation,
     clearStationAssignment,
     clearStationAssignments,
@@ -238,6 +251,8 @@ Hooks.once("init", () => {
     componentFolderNames: arcflightComponentFolderNames,
     createItemFolders: createArcflightItemFolders,
     organizeArcflightItems,
+    findMissingCoreArcflightItems,
+    syncCoreArcflightItems,
     findDuplicateItems: findDuplicateArcflightItems,
     cleanupDuplicateItems: cleanupDuplicateArcflightItems,
     findDuplicateArcflightItems,
@@ -307,6 +322,8 @@ export {
   arcflightComponentFolderNames,
   arcflightItemFolderNames,
   createArcflightItemFolders,
+  findMissingCoreArcflightItems,
+  syncCoreArcflightItems,
   findDuplicateArcflightItems,
   cleanupDuplicateArcflightItems,
   organizeArcflightItems,
@@ -339,6 +356,11 @@ export {
   installShipUpgradeOnShip,
   recalculateShipStats,
   calculateDerivedShipStats,
+  calculateRefitPressure,
+  updateShipTierState,
+  getShipTierState,
+  getShipRefitPressure,
+  getShipRefitStatus,
   assignStation,
   clearStationAssignment,
   clearStationAssignments,

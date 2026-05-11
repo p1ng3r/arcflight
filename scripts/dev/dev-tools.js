@@ -4,6 +4,7 @@ import {
   findDuplicateArcflightItems,
   organizeArcflightItems
 } from "../helpers/item-organization.js";
+import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
@@ -34,6 +35,16 @@ export function createArcflightDevTools() {
      * Move only Arcflight equipment components into matching Arcflight folders.
      */
     organizeArcflightItems,
+
+    /**
+     * Dry-run core source registry coverage report for Arcflight component world Items.
+     */
+    findMissingCoreArcflightItems,
+
+    /**
+     * Dry-run by default. Pass { dryRun: false } to create missing core Arcflight component world Items.
+     */
+    syncCoreArcflightItems,
 
     /**
      * Dry-run duplicate detection for Arcflight component world Items inside Arcflight folders.

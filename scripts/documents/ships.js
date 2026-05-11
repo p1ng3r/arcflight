@@ -47,6 +47,46 @@ const emptyCurrentShipState = Object.freeze({
   storedSpellRanks: 0
 });
 
+const REFIT_PRESSURE_KEYS = Object.freeze([
+  "weaponPressure",
+  "enginePressure",
+  "infrastructurePressure",
+  "lifeveilPressure",
+  "crewCommandPressure",
+  "occultPressure"
+]);
+
+const REFIT_STATUSES = Object.freeze({
+  NATIVE: "native",
+  PRESSURED: "pressured",
+  MAJOR_REFIT_REQUIRED: "major-refit-required",
+  REFIT_COMPLETE: "refit-complete"
+});
+
+const emptyTierState = Object.freeze({
+  baseTier: 0,
+  currentTier: 0,
+  refitStatus: REFIT_STATUSES.NATIVE,
+  majorRefitsCompleted: 0
+});
+
+const emptyRefitPressureState = Object.freeze({
+  weaponPressure: 0,
+  enginePressure: 0,
+  infrastructurePressure: 0,
+  lifeveilPressure: 0,
+  crewCommandPressure: 0,
+  occultPressure: 0,
+  total: 0
+});
+
+const emptyRefitFlagsState = Object.freeze({
+  qualifiesForMajorRefit: false,
+  requiresDrydock: false,
+  requiresSpecialistLabor: false,
+  requiresRareMaterials: false
+});
+
 const emptyCrewState = Object.freeze({
   minimum: 0,
   recommended: 0,
@@ -130,6 +170,9 @@ export const arcflightShipDefaults = Object.freeze({
   base: emptyBaseShipState,
   derived: emptyDerivedShipState,
   current: emptyCurrentShipState,
+  tier: emptyTierState,
+  refitPressure: emptyRefitPressureState,
+  refitFlags: emptyRefitFlagsState,
   installedSystems: Object.freeze({
     hull: "",
     arkengine: "",
@@ -436,6 +479,7 @@ function buildInstalledArkengineModEntry(modItem) {
     modSlotsRequired: numericValue(modData.installation?.modSlotsRequired, 1),
     systemState: modData.state?.systemState ?? "Functional",
     effects: cloneData(modData.effects ?? {}),
+    refitPressure: normalizeRefitPressure(modData.refitPressure ?? modItem?.system?.refitPressure ?? modItem?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure ?? {}),
     restrictions: cloneData(modData.restrictions ?? {}),
     traits: cloneData(modData.traits ?? []),
     notes: cloneData(modData.notes ?? {})
@@ -502,6 +546,7 @@ function buildInstalledShipUpgradeEntry(upgradeItem) {
     systemState: upgradeData.state?.systemState ?? "Functional",
     slotCost: numericValue(upgradeData.installation?.slotCost, 1),
     effects: cloneData(upgradeData.effects ?? {}),
+    refitPressure: normalizeRefitPressure(upgradeData.refitPressure ?? upgradeItem?.system?.refitPressure ?? upgradeItem?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure ?? {}),
     restrictions: cloneData(upgradeData.restrictions ?? {}),
     traits: cloneData(upgradeData.traits ?? [])
   };
@@ -733,6 +778,7 @@ function buildInstalledRoomEntry(roomItem) {
     systemState: roomData.state?.systemState ?? "Functional",
     utility: cloneData(roomData.utility ?? {}),
     mechanicalEffects: cloneData(roomData.mechanicalEffects ?? {}),
+    refitPressure: normalizeRefitPressure(roomData.refitPressure ?? roomItem?.system?.refitPressure ?? roomItem?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure ?? {}),
     traits: cloneData(roomData.traits ?? [])
   };
 }
@@ -804,6 +850,149 @@ function hasInstalledHull(systemData = {}) {
 
 function hasInstalledArkengine(systemData = {}) {
   return Boolean(systemData.installed?.arkengineItemId || systemData.installed?.arkengineUuid || systemData.installed?.arkengineKey);
+}
+
+function normalizeRefitPressure(refitPressure = {}) {
+  const pressure = {};
+  let total = 0;
+
+  for (const key of REFIT_PRESSURE_KEYS) {
+    pressure[key] = Math.max(0, numericValue(refitPressure?.[key]));
+    total += pressure[key];
+  }
+
+  pressure.total = total;
+  return pressure;
+}
+
+function getComponentRefitPressure(component = {}) {
+  return normalizeRefitPressure(
+    component?.system?.refitPressure
+      ?? component?.flags?.[ARCFLIGHT_MODULE_ID]?.system?.refitPressure
+      ?? component?.refitPressure
+      ?? {}
+  );
+}
+
+function hasRefitPressure(component = {}) {
+  return getComponentRefitPressure(component).total > 0;
+}
+
+function getInstalledRefitPressureComponents(systemData = {}) {
+  return [
+    systemData.base?.arkengine,
+    ...(Array.isArray(systemData.installed?.arkengineMods) ? systemData.installed.arkengineMods : []),
+    ...(Array.isArray(systemData.installed?.rooms) ? systemData.installed.rooms : []),
+    ...(Array.isArray(systemData.installed?.shipUpgrades) ? systemData.installed.shipUpgrades : []),
+    ...(Array.isArray(systemData.installed?.weapons) ? systemData.installed.weapons : []),
+    ...(Array.isArray(systemData.installed?.weaponMounts) ? systemData.installed.weaponMounts : [])
+  ].filter(hasRefitPressure);
+}
+
+function getShipSystemData(shipOrSystem = {}) {
+  if (shipOrSystem?.getFlag) return getArcflightShipData(shipOrSystem);
+  if (shipOrSystem?.flags?.[ARCFLIGHT_MODULE_ID]?.system) {
+    return foundry.utils.mergeObject(
+      getDefaultArcflightShipData(),
+      cloneData(shipOrSystem.flags[ARCFLIGHT_MODULE_ID].system),
+      { inplace: false }
+    );
+  }
+
+  return foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(shipOrSystem ?? {}), { inplace: false });
+}
+
+function getHullClassification(systemData = {}) {
+  return systemData.base?.hull?.classification ?? {};
+}
+
+function getHullRefitTolerance(systemData = {}) {
+  return systemData.base?.hull?.refitTolerance ?? {};
+}
+
+function clampTier(value, minimum = 0, maximum = value) {
+  return Math.min(Math.max(numericValue(value), numericValue(minimum)), numericValue(maximum, value));
+}
+
+export function calculateRefitPressure(shipOrSystem = {}) {
+  const systemData = getShipSystemData(shipOrSystem);
+  const pressure = normalizeRefitPressure();
+
+  for (const component of getInstalledRefitPressureComponents(systemData)) {
+    const componentPressure = getComponentRefitPressure(component);
+    for (const key of REFIT_PRESSURE_KEYS) {
+      pressure[key] += componentPressure[key];
+    }
+  }
+
+  pressure.total = REFIT_PRESSURE_KEYS.reduce((total, key) => total + pressure[key], 0);
+  return pressure;
+}
+
+function calculateShipTierFrameworkState(shipOrSystem = {}) {
+  const systemData = getShipSystemData(shipOrSystem);
+  const classification = getHullClassification(systemData);
+  const tolerance = getHullRefitTolerance(systemData);
+  const pressure = calculateRefitPressure(systemData);
+  const existingTier = systemData.tier ?? {};
+  const baseTier = numericValue(classification.baseTier, numericValue(existingTier.baseTier));
+  const maximumRefitTier = numericValue(classification.maximumRefitTier, baseTier);
+  const majorRefitsCompleted = Math.max(0, numericValue(existingTier.majorRefitsCompleted));
+  const currentTier = clampTier(baseTier + majorRefitsCompleted, baseTier, maximumRefitTier);
+  const majorRefitThreshold = numericValue(tolerance.totalBeforeMajorRefitRequired);
+  const qualifiesForMajorRefit = majorRefitThreshold > 0 && pressure.total >= majorRefitThreshold;
+  const refitStatus = qualifiesForMajorRefit
+    ? REFIT_STATUSES.MAJOR_REFIT_REQUIRED
+    : pressure.total > 0
+      ? REFIT_STATUSES.PRESSURED
+      : REFIT_STATUSES.NATIVE;
+  const refitFlags = {
+    qualifiesForMajorRefit,
+    requiresDrydock: qualifiesForMajorRefit,
+    requiresSpecialistLabor: qualifiesForMajorRefit,
+    requiresRareMaterials: qualifiesForMajorRefit
+  };
+
+  return {
+    tier: {
+      baseTier,
+      currentTier,
+      refitStatus,
+      majorRefitsCompleted
+    },
+    refitPressure: pressure,
+    refitFlags
+  };
+}
+
+function getTierFrameworkUpdatePaths(systemData = {}) {
+  const frameworkState = calculateShipTierFrameworkState(systemData);
+
+  return {
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]: frameworkState.tier,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitPressure`]: frameworkState.refitPressure,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitFlags`]: frameworkState.refitFlags
+  };
+}
+
+export function getShipTierState(shipOrSystem = {}) {
+  return calculateShipTierFrameworkState(shipOrSystem).tier;
+}
+
+export function getShipRefitPressure(shipOrSystem = {}) {
+  return calculateShipTierFrameworkState(shipOrSystem).refitPressure;
+}
+
+export function getShipRefitStatus(shipOrSystem = {}) {
+  return getShipTierState(shipOrSystem).refitStatus;
+}
+
+export async function updateShipTierState(shipActor) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | updateShipTierState requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  return shipActor.update(getTierFrameworkUpdatePaths(getArcflightShipData(shipActor)));
 }
 
 function buildLegacyResources(systemData, current, derived) {
@@ -894,6 +1083,13 @@ export function getArcflightShipData(actor) {
 
   systemData.stations = getDefaultStationState(systemData.stations);
   systemData.crew = getDefaultCrewState(systemData.crew);
+  systemData.tier = foundry.utils.mergeObject(cloneData(emptyTierState), cloneData(systemData.tier ?? {}), { inplace: false });
+  systemData.tier.baseTier = numericValue(systemData.tier.baseTier);
+  systemData.tier.currentTier = numericValue(systemData.tier.currentTier);
+  systemData.tier.majorRefitsCompleted = Math.max(0, numericValue(systemData.tier.majorRefitsCompleted));
+  if (!Object.values(REFIT_STATUSES).includes(systemData.tier.refitStatus)) systemData.tier.refitStatus = REFIT_STATUSES.NATIVE;
+  systemData.refitPressure = normalizeRefitPressure(systemData.refitPressure);
+  systemData.refitFlags = foundry.utils.mergeObject(cloneData(emptyRefitFlagsState), cloneData(systemData.refitFlags ?? {}), { inplace: false });
 
   return systemData;
 }
@@ -935,8 +1131,10 @@ export async function recalculateShipStats(shipActor) {
   const legacyResources = buildLegacyResources(systemData, current, derived);
 
   const stations = getDefaultStationState(systemData.stations);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base, installed: nextInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
@@ -946,7 +1144,6 @@ export async function recalculateShipStats(shipActor) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
 }
-
 
 function assertArcflightShipActor(shipActor, helperName) {
   if (!isArcflightShipActor(shipActor)) {
@@ -1002,6 +1199,9 @@ export async function clearShipBuild(shipActor, options = {}) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base`]: buildEmptyBaseShipState(),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: cloneData(emptyDerivedShipState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]: cloneData(emptyTierState),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitPressure`]: cloneData(emptyRefitPressureState),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitFlags`]: cloneData(emptyRefitFlagsState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: resources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: cloneData(arcflightShipDefaults.derivedStats),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems`]: buildEmptyInstalledSystemsState(),
@@ -1219,8 +1419,10 @@ export async function installHull(shipActor, hullItem) {
     { inplace: false }
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: baseHull,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
@@ -1279,8 +1481,10 @@ export async function installArkengine(shipActor, arkengineItem) {
     { inplace: false }
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.arkengine`]: baseArkengine,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
@@ -1340,8 +1544,10 @@ export async function installArkengineMod(shipActor, modItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
@@ -1398,8 +1604,10 @@ export async function installRoom(shipActor, roomItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
@@ -1451,8 +1659,10 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,

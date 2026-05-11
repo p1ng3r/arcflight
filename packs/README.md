@@ -6,10 +6,15 @@ Use the world Items panel organization helpers for current cleanup work instead 
 
 ```js
 await game.arcflight.createArcflightItemFolders();
+await game.arcflight.findMissingCoreArcflightItems();
+await game.arcflight.syncCoreArcflightItems({ dryRun: true });
+await game.arcflight.syncCoreArcflightItems({ dryRun: false });
 await game.arcflight.organizeArcflightItems();
 await game.arcflight.findDuplicateArcflightItems();
 await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: true });
 ```
+
+Core library sync materializes missing source registry entries as world Items only; it does not edit compendium data, actor embedded items, stations, or existing duplicates.
 
 Duplicate cleanup remains a world-only maintenance helper. It must not be used to edit or delete compendium source data, and `cleanupDuplicateArcflightItems()` defaults to `dryRun: true` so returned duplicate groups can be reviewed before any world Item deletion.
 
