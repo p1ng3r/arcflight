@@ -87,7 +87,7 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.
-- Item organization and safe duplicate cleanup: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, and matching top-level helpers on `game.arcflight`.
+- Item organization, core library sync, and safe duplicate cleanup: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findMissingCoreArcflightItems()`, `game.arcflight.devTools.syncCoreArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, and matching top-level helpers on `game.arcflight`.
 
 ## Item Organization Workflow
 
@@ -95,6 +95,9 @@ Arcflight components remain normal PF2E `equipment` items with Arcflight data un
 
 ```js
 await game.arcflight.createArcflightItemFolders();
+await game.arcflight.findMissingCoreArcflightItems();
+await game.arcflight.syncCoreArcflightItems({ dryRun: true });
+await game.arcflight.syncCoreArcflightItems({ dryRun: false });
 await game.arcflight.organizeArcflightItems();
 await game.arcflight.findDuplicateArcflightItems();
 await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: true });
@@ -111,6 +114,12 @@ await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: true });
 - `Arcflight/Cargo`
 - `Arcflight/Crew Assets`
 - `Arcflight/Ammo`
+
+### Core Item Library Sync
+
+`findMissingCoreArcflightItems()` is a dry-run reporting helper for the Arcflight source registries. It compares the core Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset keys against existing Arcflight-enabled world Items and reports `existing`, `missing`, `skipped`, and warning details by category. It does not create, move, update, or delete anything. Core Stations are reported as skipped because they remain data-only in the current architecture.
+
+`syncCoreArcflightItems()` is also dry-run by default. `syncCoreArcflightItems({ dryRun: true })` reports the Items that would be created, while `syncCoreArcflightItems({ dryRun: false })` creates only missing PF2E `equipment` world Items through the existing `createCore*` helpers, leaves existing matches and duplicates alone, and then runs `organizeArcflightItems()` to place Arcflight components in the correct folders. Matching is intentionally conservative: Arcflight-enabled equipment must have the expected `flags.arcflight.componentType`, source/core keys are preferred when present, and name-plus-component matching is used only when an existing item lacks a key.
 
 `organizeArcflightItems()` first ensures that tree exists, then moves only world Items where `type === "equipment"`, `flags.arcflight.enabled === true`, and `flags.arcflight.componentType` matches a supported Arcflight component type. Normal PF2E equipment, actor-embedded items, and compendium contents are left untouched, and no items are deleted. The `Ammo` folder is created for future content organization but is not currently tied to an Arcflight component type.
 

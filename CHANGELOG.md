@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Core Item Library Sync
+
+- Added dry-run reporting and dry-run-by-default sync helpers for materializing missing core Arcflight component source entries as PF2E equipment world Items.
+- Exposed `game.arcflight.findMissingCoreArcflightItems()`, `game.arcflight.syncCoreArcflightItems()`, and matching `game.arcflight.devTools` aliases.
+- Kept sync conservative: existing matches are not recreated, duplicates are not deleted, actor embedded Items and compendium data are untouched, stations remain data-only, and created Items are organized through the existing Arcflight folder helper.
+
 ### Ship Tier / Refit Pressure Framework
 
 - Added ship-owned tier state, refit pressure totals, and major-refit warning flags under `flags.arcflight.system` with schema fallbacks for older ships.

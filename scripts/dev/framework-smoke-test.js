@@ -38,6 +38,7 @@ import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
+import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -211,6 +212,18 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Every core hull has arkengine compatibility", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasArkengineCompatibility(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasArkengineCompatibility(CORE_HULLS[key])));
     check(result, "Every standard core hull has expansion slots", EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform").every((key) => Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform" && !Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)));
     check(result, "Leviathan platform is district-scale", CORE_HULLS["leviathan-class-platform"]?.rooms?.districtScale === true, true, CORE_HULLS["leviathan-class-platform"]?.rooms ?? null);
+
+    const expectedSyncCategories = ["hull", "arkengine", "arkengineMod", "room", "shipUpgrade", "crewAsset"];
+    const missingCoreReport = await findMissingCoreArcflightItems();
+    check(result, "Core item missing report includes sync categories", expectedSyncCategories.every((category) => missingCoreReport.categories?.[category]), expectedSyncCategories, Object.keys(missingCoreReport.categories ?? {}));
+    check(result, "Core item missing report skips stations", missingCoreReport.skippedCategories?.some((entry) => entry.category === "stations"), true, missingCoreReport.skippedCategories ?? []);
+    const itemCountBeforeDryRun = globalThis.game?.items?.size ?? Array.from(globalThis.game?.items ?? []).length;
+    const syncDryRunReport = await syncCoreArcflightItems({ dryRun: true });
+    const itemCountAfterDryRun = globalThis.game?.items?.size ?? Array.from(globalThis.game?.items ?? []).length;
+    check(result, "Core item sync defaults to report categories", expectedSyncCategories.every((category) => syncDryRunReport.categories?.[category]), expectedSyncCategories, Object.keys(syncDryRunReport.categories ?? {}));
+    checkEqual(result, "Core item sync dry run creates nothing", itemCountBeforeDryRun, itemCountAfterDryRun);
+    check(result, "Core item sync helpers exposed", typeof globalThis.game?.arcflight?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.syncCoreArcflightItems });
+    check(result, "Core item sync devTools exposed", typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems });
 
     const componentItems = await createSmokeTestComponents(createdItems);
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);

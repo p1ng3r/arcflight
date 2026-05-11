@@ -93,6 +93,7 @@ import {
   findDuplicateArcflightItems,
   organizeArcflightItems
 } from "./helpers/item-organization.js";
+import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -165,6 +166,8 @@ Hooks.once("init", () => {
     arcflightComponentFolderNames,
     arcflightItemFolderNames,
     createArcflightItemFolders,
+    findMissingCoreArcflightItems,
+    syncCoreArcflightItems,
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     organizeArcflightItems,
@@ -248,6 +251,8 @@ Hooks.once("init", () => {
     componentFolderNames: arcflightComponentFolderNames,
     createItemFolders: createArcflightItemFolders,
     organizeArcflightItems,
+    findMissingCoreArcflightItems,
+    syncCoreArcflightItems,
     findDuplicateItems: findDuplicateArcflightItems,
     cleanupDuplicateItems: cleanupDuplicateArcflightItems,
     findDuplicateArcflightItems,
@@ -317,6 +322,8 @@ export {
   arcflightComponentFolderNames,
   arcflightItemFolderNames,
   createArcflightItemFolders,
+  findMissingCoreArcflightItems,
+  syncCoreArcflightItems,
   findDuplicateArcflightItems,
   cleanupDuplicateArcflightItems,
   organizeArcflightItems,
