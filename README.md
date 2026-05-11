@@ -30,7 +30,7 @@ This architecture keeps normal PF2E equipment and vehicles functional unless a u
 
 The current Framework Foundation includes these data-first systems:
 
-- **Hull** — base vessel platform data and copied ship Base values.
+- **Hull** — an 11-entry core vessel platform library with copied ship Base values, arkengine compatibility, weapon mount arcs, core room keys, and tier/refit-ready metadata for the future Refit Pressure framework.
 - **Arkengine** — installed propulsion framework data, variant family fields, spell-rank fueling schema, and derived engine values.
 - **Arkengine Mod** — engine-only tuning components with tracked mod slot usage, a 22-entry core content library, and placeholder interactions.
 - **Room** — physical ship spaces, with core rooms, expansion room slot tracking, and a 26-entry core content library.
@@ -61,6 +61,14 @@ Arcflight keeps data ownership explicit:
 3. **Source items remain immutable.** A component item can be installed or copied into a ship roster without changing that item.
 4. **Runtime values stay on ships.** Current Hull, Lifeveil, Strain, Morale, stored spell ranks, crew roster state, station assignments, and installed slot summaries are ship-owned runtime data.
 5. **Future systems should remain data-driven.** Gameplay pillars should consume Core data instead of hardcoding content into UI or automation logic.
+
+## Core Hull Library and Tier / Refit Readiness
+
+The locked core hull platforms are Void Skiff, Sloop, Cutter, Brigantine, Frigate, Galleon, Hammerhead, Arkcruiser, Dread Caravel, Cathedral Ship, and Leviathan-Class Platform. They remain data-only PF2E equipment components copied into `flags.arcflight.system` by `game.arcflight.createCoreHull(platformKey)`.
+
+Each hull includes base durability, armor, physical resistances, strain, Lifeveil, cargo, speed, maneuverability, AP/RAP, detection, crew bands, core room keys, expansion room slot data, weapon mounts by arc, allowed weapon sizes, arkengine compatibility, traits, and tier/refit-ready schema fields. Tier labels follow the planned scale from Tier 1 Frontier / Local through Tier 5 Mythic / Impossible. Leviathan-Class Platform is marked as district-scale infrastructure instead of a normal expansion-slot hull.
+
+The tier/refit-ready fields are preparatory content only. Arcflight does not yet calculate refit pressure, block installs by pressure, fire weapons, run combat automation, or resolve travel systems.
 
 ## Arkengine Fueling Framework
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Core Hull Tier / Refit Readiness
+
+- Verified the locked 11-entry core hull platform library and added tier/refit-ready `classification`, `refitTolerance`, and `refitNotes` schema fields to every hull.
+- Normalized core hull room references to locked core room keys, kept numeric expansion slots on standard hulls, and marked Leviathan-Class Platform as district-scale infrastructure.
+- Extended the framework smoke test helper with lightweight core hull validation for key count, classification, refit tolerance, arkengine compatibility, standard expansion slots, and Leviathan district scale.
+- Kept this pass content/data-only; no Refit Pressure calculator, install blocking, weapon firing, combat automation, travel automation, UI changes, or compendium deletion changes were added.
+
 ### Phase 2A - Item Panel and Compendium Cleanup
 
 - Added Arcflight item organization helpers for the world Items panel, including `game.arcflight.devTools.createItemFolders()` and `game.arcflight.devTools.organizeArcflightItems()`.
