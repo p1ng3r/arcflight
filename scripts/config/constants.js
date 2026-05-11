@@ -71,7 +71,13 @@ export const ARCFLIGHT_SHIP_UPGRADE_CATEGORIES = Object.freeze({
   PROPULSION_SUPPORT: "propulsionSupport",
   LOOKOUT: "lookout",
   HELM_SYSTEM: "helmSystem",
-  SAIL_SYSTEM: "sailSystem"
+  SAIL_SYSTEM: "sailSystem",
+  LIFEVEIL: "lifeveil",
+  SUPPORT: "support",
+  MOBILITY: "mobility",
+  DEEP_VOID: "deepVoid",
+  OCCULT: "occult",
+  STRAIN: "strain"
 });
 
 export const ARCFLIGHT_ARKENGINE_CLASSES = Object.freeze({

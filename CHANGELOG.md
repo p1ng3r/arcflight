@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phase 7.5D-2 - Ship Upgrade Content Library Expansion
+
+- Added 12 Standard core ship upgrade entries for structural, Lifeveil, detection, support, mobility, deep-void, occult, command, logistics, and strain platform improvements.
+- Updated the ship upgrade category constants and core key registry so the immutable core ship upgrade library now exposes 28 entries.
+- Kept this patch content/data-only; no gameplay automation, combat systems, travel systems, fuel spending, station actions, UI changes, or broad refactors were added.
+
 ### Phase 7.5D-1 - Arkengine Mod Content Library Expansion
 
 - Added 12 Standard core arkengine mod entries for fueling, stealth, hard burn, overcharge, Lifeveil, emergency pressure, deep void, speed, ritual, filtration, and cooling use cases.
