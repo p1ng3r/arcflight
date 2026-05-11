@@ -6,6 +6,10 @@ const ROOM_TYPES = Object.freeze({
   SOCIAL: "social",
   LOGISTICS: "logistics",
   OCCULT: "occult",
+  MILITARY: "military",
+  NAVIGATION: "navigation",
+  RESEARCH: "research",
+  INDUSTRIAL: "industrial",
   LUXURY: "luxury",
   CONTAINMENT: "containment"
 });
@@ -319,9 +323,147 @@ export const STARTER_EXPANSION_ROOMS = Object.freeze({
   })
 });
 
+export const ADDITIONAL_EXPANSION_ROOMS = Object.freeze({
+  "salvage-bay": room({
+    id: "salvage-bay",
+    displayName: "Salvage Bay",
+    roomType: ROOM_TYPES.LOGISTICS,
+    role: "Wreck recovery and salvage processing",
+    description: "A reinforced shipboard work bay for sorting wreckage, processing salvage, and staging recovery crews after an expedition or dockside haul.",
+    downtimeFunctions: ["wreckRecovery", "salvageProcessing", "materialsSorting"],
+    enabledActivities: ["processSalvage", "catalogRecoveredParts", "stageRecoveryGear"],
+    supportedSkills: ["crafting", "society"],
+    craftingTags: ["salvage", "shipParts", "reclaimedMaterials"],
+    repairTags: ["salvage", "hull", "room", "shipUpgrade"],
+    survivalTags: ["supplies"],
+    mechanicalNotes: "Provides salvage, repair-prep, and logistics hooks only; it does not resolve salvage value or automate recovery actions.",
+    traits: ["expansion-room", "logistics", "salvage"]
+  }),
+  "ritual-chamber": room({
+    id: "ritual-chamber",
+    displayName: "Ritual Chamber",
+    roomType: ROOM_TYPES.OCCULT,
+    role: "Ritual casting, occult operations, and strange engine rites",
+    description: "A warded chamber with circle markings, anchor points, and controlled space for shipboard rites and unsettling occult work.",
+    downtimeFunctions: ["ritualSupport", "occultOperations", "engineRites"],
+    enabledActivities: ["prepareRitual", "performEngineRite", "containOccultWorking"],
+    supportedSkills: ["occultism", "arcana", "religion"],
+    socialTags: ["rites"],
+    traits: ["expansion-room", "occult", "ritual"]
+  }),
+  armory: room({
+    id: "armory",
+    displayName: "Armory",
+    roomType: ROOM_TYPES.MILITARY,
+    role: "Weapons storage and boarding preparation",
+    description: "A secure weapons locker and muster space for maintaining arms, staging boarding gear, and preparing defensive watches.",
+    downtimeFunctions: ["weaponsStorage", "boardingPreparation", "equipmentMaintenance"],
+    enabledActivities: ["inventoryWeapons", "prepareBoardingGear", "maintainArms"],
+    supportedSkills: ["crafting", "warfareLore"],
+    craftingTags: ["weapons", "armor", "boardingGear"],
+    repairTags: ["weapon", "armor", "equipment"],
+    mechanicalNotes: "Provides storage and preparation hooks only; it does not grant weapon damage, attack, initiative, or boarding automation bonuses.",
+    traits: ["expansion-room", "military", "storage"]
+  }),
+  "chart-room": room({
+    id: "chart-room",
+    displayName: "Chart Room",
+    roomType: ROOM_TYPES.NAVIGATION,
+    role: "Route planning, maps, and void charts",
+    description: "A dedicated planning room for maps, route ledgers, void charts, and navigational briefings before departure or during downtime.",
+    downtimeFunctions: ["routePlanning", "mapStudy", "navigationBriefing"],
+    enabledActivities: ["plotRoute", "compareCharts", "prepareNavigationBriefing"],
+    supportedSkills: ["survival", "society", "pilotingLore"],
+    survivalTags: ["navigation", "maps", "routePlanning"],
+    mechanicalNotes: "Provides planning and reference hooks only; it does not alter voyage speed, fuel costs, encounter checks, or travel resolution.",
+    traits: ["expansion-room", "navigation", "maps"]
+  }),
+  "smuggler-hold": room({
+    id: "smuggler-hold",
+    displayName: "Smuggler Hold",
+    roomType: ROOM_TYPES.LOGISTICS,
+    role: "Concealed cargo and contraband storage",
+    description: "A compartmentalized cargo space with hidden lockers, false panels, and quiet access routes for sensitive or illicit goods.",
+    downtimeFunctions: ["concealedStorage", "contrabandHandling", "cargoConcealment"],
+    enabledActivities: ["hideCargo", "inspectConcealment", "catalogContraband"],
+    supportedSkills: ["thievery", "society"],
+    survivalTags: ["cargo"],
+    socialTags: ["underworld"],
+    mechanicalNotes: "Provides concealment and contraband hooks only; search DCs, legal consequences, and smuggling outcomes remain GM-adjudicated.",
+    traits: ["expansion-room", "logistics", "concealed", "contraband"]
+  }),
+  "crew-lounge": room({
+    id: "crew-lounge",
+    displayName: "Crew Lounge",
+    roomType: ROOM_TYPES.SOCIAL,
+    role: "Morale, downtime, and crew gathering",
+    description: "A common room for games, meals between watches, crew meetings, and informal downtime aboard ship.",
+    downtimeFunctions: ["morale", "crewDowntime", "socialGathering"],
+    enabledActivities: ["holdCrewGathering", "hostDowntimeScene", "shareShipNews"],
+    supportedSkills: ["diplomacy", "performance", "society"],
+    socialTags: ["morale", "community", "downtime"],
+    traits: ["expansion-room", "social", "morale"]
+  }),
+  "quarantine-ward": room({
+    id: "quarantine-ward",
+    displayName: "Quarantine Ward",
+    roomType: ROOM_TYPES.RECOVERY,
+    role: "Disease, curse, and contamination isolation",
+    description: "An isolated treatment ward with seals, screened bunks, and clean handling procedures for dangerous maladies or contamination.",
+    downtimeFunctions: ["isolation", "contaminationControl", "curseObservation"],
+    enabledActivities: ["isolatePatient", "monitorContamination", "prepareCleanRoom"],
+    supportedSkills: ["medicine", "occultism", "religion"],
+    recoveryTags: ["disease", "curse", "contamination", "isolation"],
+    mechanicalNotes: "Provides isolation and treatment-context hooks only; disease, curse, and contamination mechanics remain manually adjudicated.",
+    traits: ["expansion-room", "recovery", "quarantine"]
+  }),
+  "specimen-vault": room({
+    id: "specimen-vault",
+    displayName: "Specimen Vault",
+    roomType: ROOM_TYPES.RESEARCH,
+    role: "Strange samples, dangerous relics, and captured anomalies",
+    description: "A secured vault with cataloging stations, restraints, and warded lockers for volatile samples and inexplicable finds.",
+    downtimeFunctions: ["specimenStorage", "anomalyCataloging", "relicContainment"],
+    enabledActivities: ["catalogSpecimen", "secureAnomaly", "studyRelic"],
+    supportedSkills: ["arcana", "nature", "occultism", "society"],
+    craftingTags: ["samples", "relics"],
+    socialTags: ["research"],
+    mechanicalNotes: "Provides research and containment hooks only; anomaly behavior, relic hazards, and escape events remain GM-controlled.",
+    traits: ["expansion-room", "research", "containment", "specimen"]
+  }),
+  "forge-bay": room({
+    id: "forge-bay",
+    displayName: "Forge Bay",
+    roomType: ROOM_TYPES.INDUSTRIAL,
+    role: "Heavy repair, metalwork, and ship-part fabrication",
+    description: "A heat-shielded industrial bay for metalwork, heavy repair staging, and fabrication of rugged ship components during downtime or dock work.",
+    downtimeFunctions: ["heavyRepair", "metalwork", "shipPartFabrication"],
+    enabledActivities: ["forgeParts", "stageHeavyRepair", "workMetal"],
+    supportedSkills: ["crafting"],
+    craftingTags: ["metalwork", "shipParts", "industrial"],
+    repairTags: ["hull", "weapon", "room", "shipUpgrade"],
+    mechanicalNotes: "Provides fabrication and heavy-repair hooks only; it does not automate repairs or grant combat durability bonuses.",
+    traits: ["expansion-room", "industrial", "forge", "repair"]
+  }),
+  "diplomatic-suite": room({
+    id: "diplomatic-suite",
+    displayName: "Diplomatic Suite",
+    roomType: ROOM_TYPES.LUXURY,
+    role: "Envoys, noble passengers, and faction diplomacy",
+    description: "A formal guest suite and meeting space suitable for envoys, dignitaries, patrons, and sensitive faction negotiations aboard ship.",
+    downtimeFunctions: ["diplomacy", "envoyHosting", "factionNegotiation"],
+    enabledActivities: ["hostEnvoy", "holdNegotiation", "receiveNoblePassenger"],
+    supportedSkills: ["diplomacy", "society", "deception"],
+    socialTags: ["diplomacy", "factions", "vip"],
+    mechanicalNotes: "Provides hosting and negotiation hooks only; reputation changes, faction outcomes, and rewards remain GM-adjudicated.",
+    traits: ["expansion-room", "luxury", "diplomacy"]
+  })
+});
+
 export const CORE_ROOMS = Object.freeze({
   ...LOCKED_CORE_ROOMS,
-  ...STARTER_EXPANSION_ROOMS
+  ...STARTER_EXPANSION_ROOMS,
+  ...ADDITIONAL_EXPANSION_ROOMS
 });
 
 export const CORE_ROOM_KEYS = Object.freeze(Object.keys(CORE_ROOMS));

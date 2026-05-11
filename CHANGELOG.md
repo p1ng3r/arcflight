@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Phase 7.5D-3 - Room Content Library Expansion
+
+- Added 10 core expansion room entries: Salvage Bay, Ritual Chamber, Armory, Chart Room, Smuggler Hold, Crew Lounge, Quarantine Ward, Specimen Vault, Forge Bay, and Diplomatic Suite.
+- Updated room type constants and the core room registry so `CORE_ROOM_KEYS` now exposes 26 room entries across locked core rooms and installable expansion rooms.
+- Kept this patch content/data-only; no gameplay automation, combat systems, travel systems, station actions, UI changes, or broad refactors were added.
+
 ### Phase 7.5D-2 - Ship Upgrade Content Library Expansion
 
 - Added 12 Standard core ship upgrade entries for structural, Lifeveil, detection, support, mobility, deep-void, occult, command, logistics, and strain platform improvements.
