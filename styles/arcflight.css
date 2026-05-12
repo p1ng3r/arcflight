@@ -211,3 +211,39 @@
 .arcflight-example-builds__details p:last-child {
   margin-bottom: 0;
 }
+
+.arcflight-validation {
+  border-left: 0.25rem solid var(--color-border-light-tertiary);
+}
+
+.arcflight-validation__summary {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-validation__summary h3,
+.arcflight-validation__summary p {
+  margin: 0 0 0.25rem;
+}
+
+.arcflight-validation__summary p:last-child {
+  margin-bottom: 0;
+}
+
+.arcflight-validation-ok {
+  border-left-color: var(--color-level-success, #2e7d32);
+}
+
+.arcflight-validation-info {
+  border-left-color: var(--color-level-info, #1976d2);
+}
+
+.arcflight-validation-warning {
+  border-left-color: var(--color-level-warning, #b26a00);
+}
+
+.arcflight-validation-danger {
+  border-left-color: var(--color-level-error, #b71c1c);
+}

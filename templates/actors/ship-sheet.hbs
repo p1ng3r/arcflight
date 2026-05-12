@@ -130,6 +130,42 @@
     <p class="arcflight-sheet__hint">Read-only arkengine fueling values from the ship's derived stats and current stored spell-rank energy. Values show as 0 until an arkengine provides fueling data.</p>
   </section>
 
+  <section class="arcflight-sheet__section arcflight-validation {{arcflight.system.installValidationReadout.summary.cssClass}}">
+    <h2>Tier / Refit / Validation</h2>
+    <article class="arcflight-validation__summary">
+      <h3>{{arcflight.system.installValidationReadout.summary.label}}</h3>
+      <p>{{arcflight.system.installValidationReadout.summary.message}}</p>
+    </article>
+
+    <h3>Tier State</h3>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Base Tier</span><input type="number" value="{{arcflight.system.installValidationReadout.tier.baseTier}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Current Tier</span><input type="number" value="{{arcflight.system.installValidationReadout.tier.currentTier}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Refit Status</span><input type="text" value="{{arcflight.system.installValidationReadout.tier.refitStatusLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Major Refits Completed</span><input type="number" value="{{arcflight.system.installValidationReadout.tier.majorRefitsCompleted}}" disabled></label>
+    </div>
+
+    <h3>Refit Pressure</h3>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Total Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.total}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Weapon Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.weaponPressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Engine Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.enginePressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Infrastructure Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.infrastructurePressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Lifeveil Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.lifeveilPressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Crew Command Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.crewCommandPressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Occult Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.occultPressure}}" disabled></label>
+    </div>
+
+    <h3>Major Refit Flags</h3>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Qualifies For Major Refit</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.qualifiesForMajorRefitLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Requires Drydock</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.requiresDrydockLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Requires Specialist Labor</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.requiresSpecialistLaborLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Requires Rare Materials</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.requiresRareMaterialsLabel}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Read-only status from <code>flags.arcflight.system.tier</code>, <code>refitPressure</code>, and <code>refitFlags</code>. This section does not block installs or change install behavior.</p>
+  </section>
+
   <section class="arcflight-sheet__section">
     <h2>Arkengine Mods</h2>
     <div class="arcflight-grid arcflight-grid--resources">
