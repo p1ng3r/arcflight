@@ -1,4 +1,4 @@
-import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../documents/ships.js";
 
 export const ARCFLIGHT_INSTALL_STATE_VERSION = 1;
@@ -118,6 +118,8 @@ export function normalizeInstallRecord(record = {}, options = {}) {
   const optionalFields = [
     "itemUuid",
     "componentKey",
+    "key",
+    "name",
     "installedBy",
     "hullSlot",
     "roomSlot",
@@ -285,6 +287,262 @@ export async function deactivateInstallRecordsByComponent(shipActor, componentMa
 
 export async function removeInstallState(shipActor, installId, options = {}) {
   return deactivateInstallRecord(shipActor, installId, options);
+}
+
+
+const BACKFILL_NOTES = "Backfilled from existing installed ship data.";
+
+const BACKFILL_ARRAY_COMPONENTS = Object.freeze([
+  ["installed.rooms", ARCFLIGHT_ITEM_TYPES.ROOM],
+  ["installed.arkengineMods", ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD],
+  ["installed.shipUpgrades", ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE],
+  ["crew.namedCrew", ARCFLIGHT_ITEM_TYPES.CREW_ASSET]
+]);
+
+function getActorSystemFlag(shipActor) {
+  return shipActor?.getFlag?.(ARCFLIGHT_MODULE_ID, "system")
+    ?? shipActor?.flags?.[ARCFLIGHT_MODULE_ID]?.system
+    ?? {};
+}
+
+function getPathValue(source, path) {
+  return path.split(".").reduce((value, key) => value?.[key], source);
+}
+
+function backfillInstalledAt(source = {}, fallback = Date.now()) {
+  return Math.max(0, numericValue(
+    source.installedAt
+      ?? source.installTime
+      ?? source.createdAt
+      ?? source.timestamp
+      ?? source.addedAt,
+    fallback
+  ));
+}
+
+function createBackfillInstallId(componentType, identity = {}, usedInstallIds) {
+  const key = identity.componentKey || identity.key || identity.itemId || identity.name || componentType || "component";
+  const baseInstallId = `${componentType || "component"}-${key}-${Date.now().toString(36)}`.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  if (!(usedInstallIds instanceof Set)) return baseInstallId;
+
+  let installId = baseInstallId;
+  while (usedInstallIds.has(installId)) installId = createInstallId(componentType || "component");
+  return installId;
+}
+
+function normalizeBackfillIdentity(source = {}, componentType = "") {
+  const identity = isPlainObject(source) ? source : {};
+  const itemUuid = optionalString(identity.itemUuid ?? identity.uuid);
+  const componentKey = optionalString(
+    identity.componentKey
+      ?? identity.key
+      ?? identity.identity?.id
+      ?? identity.platform
+      ?? identity.engineClass
+      ?? identity.slug
+  );
+  const name = optionalString(identity.name ?? identity.identity?.displayName);
+
+  return {
+    itemId: stringValue(identity.itemId ?? identity.id),
+    itemUuid: itemUuid ?? "",
+    componentKey: componentKey ?? "",
+    key: componentKey ?? "",
+    name: name ?? "",
+    componentType: stringValue(identity.componentType) || componentType
+  };
+}
+
+function createBackfillRecord(source, componentType, usedInstallIds, fallbackInstalledAt) {
+  const identity = normalizeBackfillIdentity(source, componentType);
+  const hasIdentity = Boolean(identity.itemId || identity.itemUuid || identity.componentKey || identity.name);
+  if (!hasIdentity || !identity.componentType) return null;
+
+  const pressureSource = isPlainObject(source) ? source.refitPressure ?? source.pressureContribution : {};
+  return normalizeInstallRecord({
+    ...identity,
+    installId: createBackfillInstallId(identity.componentType, identity, usedInstallIds),
+    installedAt: backfillInstalledAt(source, fallbackInstalledAt),
+    installCategory: "backfilled",
+    nativeInstall: false,
+    refitInstall: false,
+    temporaryInstall: false,
+    notes: BACKFILL_NOTES,
+    pressureContribution: pressureSource,
+    active: true
+  }, { usedInstallIds });
+}
+
+function buildScalarBackfillSources(systemData = {}) {
+  const installed = isPlainObject(systemData.installed) ? systemData.installed : {};
+  const sources = [];
+
+  if (installed.hullItemId || installed.hullUuid || installed.hullPlatform || installed.hullName) {
+    sources.push({
+      sourcePath: "installed.hull",
+      componentType: ARCFLIGHT_ITEM_TYPES.HULL,
+      data: {
+        itemId: installed.hullItemId,
+        itemUuid: installed.hullUuid,
+        componentKey: installed.hullPlatform,
+        key: installed.hullPlatform,
+        name: installed.hullName,
+        refitPressure: installed.hullRefitPressure ?? systemData.base?.hull?.refitPressure
+      }
+    });
+  }
+
+  if (installed.arkengineItemId || installed.arkengineUuid || installed.arkengineKey || installed.arkengineName) {
+    sources.push({
+      sourcePath: "installed.arkengine",
+      componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE,
+      data: {
+        itemId: installed.arkengineItemId,
+        itemUuid: installed.arkengineUuid,
+        componentKey: installed.arkengineKey,
+        key: installed.arkengineKey,
+        name: installed.arkengineName,
+        refitPressure: installed.arkengineRefitPressure ?? systemData.base?.arkengine?.refitPressure
+      }
+    });
+  }
+
+  return sources;
+}
+
+function buildArrayBackfillSources(systemData = {}) {
+  const sources = [];
+
+  for (const [path, componentType] of BACKFILL_ARRAY_COMPONENTS) {
+    const entries = getPathValue(systemData, path);
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      if (!isPlainObject(entry)) return;
+      sources.push({ sourcePath: `${path}.${index}`, componentType, data: entry });
+    });
+  }
+
+  return sources;
+}
+
+function recordBackfillKey(record = {}) {
+  const identifiers = [
+    record.itemUuid ? `uuid:${record.itemUuid}` : "",
+    record.itemId ? `item:${record.itemId}` : "",
+    record.componentKey ? `key:${record.componentKey}` : "",
+    record.key ? `key:${record.key}` : "",
+    record.name ? `name:${record.name}` : ""
+  ].filter(Boolean);
+
+  return identifiers.map((identifier) => `${record.componentType}|${identifier}`);
+}
+
+function hasInstallStateRecordForComponent(existingRecords = [], candidate = {}) {
+  const candidateKeys = new Set(recordBackfillKey(candidate));
+  if (candidateKeys.size === 0) return false;
+
+  return existingRecords.some((record) => (
+    record.componentType === candidate.componentType
+    && recordBackfillKey(record).some((key) => candidateKeys.has(key))
+  ));
+}
+
+function addBackfillSkipped(report, sourcePath, componentType, reason, source = {}) {
+  report.skipped.push({
+    sourcePath,
+    componentType,
+    name: optionalString(source.name ?? source.identity?.displayName) ?? "",
+    itemId: stringValue(source.itemId ?? source.id),
+    itemUuid: stringValue(source.itemUuid ?? source.uuid),
+    key: stringValue(source.componentKey ?? source.key ?? source.identity?.id),
+    reason
+  });
+}
+
+export function findShipsMissingInstallState() {
+  const ships = Array.from(globalThis.game?.actors ?? []).filter(isArcflightShipActor);
+  return ships
+    .map((shipActor) => backfillInstallStateForShipReport(shipActor, { dryRun: true }).report)
+    .filter((report) => report.wouldCreate.length > 0)
+    .map((report) => ({
+      shipId: report.shipId,
+      shipUuid: report.shipUuid,
+      shipName: report.shipName,
+      wouldCreate: report.wouldCreate,
+      skipped: report.skipped
+    }));
+}
+
+function backfillInstallStateForShipReport(shipActor, options = {}) {
+  assertArcflightShipActor(shipActor, "backfillInstallStateForShip");
+
+  const dryRun = options.dryRun !== false;
+  const systemData = getActorSystemFlag(shipActor);
+  const installState = getInstallState(shipActor);
+  const usedInstallIds = new Set(installState.installs.map((record) => record.installId));
+  const existingAndQueuedRecords = [...installState.installs];
+  const fallbackInstalledAt = Date.now();
+  const report = {
+    shipId: shipActor?.id ?? "",
+    shipUuid: shipActor?.uuid ?? "",
+    shipName: shipActor?.name ?? "",
+    dryRun,
+    existing: installState.installs.length,
+    wouldCreate: [],
+    created: [],
+    skipped: []
+  };
+
+  const sources = [
+    ...buildScalarBackfillSources(systemData),
+    ...buildArrayBackfillSources(systemData)
+  ];
+
+  for (const source of sources) {
+    const record = createBackfillRecord(source.data, source.componentType, usedInstallIds, fallbackInstalledAt);
+    if (!record) {
+      addBackfillSkipped(report, source.sourcePath, source.componentType, "missing-component-identity", source.data);
+      continue;
+    }
+
+    if (hasInstallStateRecordForComponent(existingAndQueuedRecords, record)) {
+      addBackfillSkipped(report, source.sourcePath, record.componentType, "already-represented-in-install-state", source.data);
+      continue;
+    }
+
+    existingAndQueuedRecords.push(record);
+    report.wouldCreate.push(record);
+  }
+
+  return { report, nextInstallState: normalizeInstallState({ version: ARCFLIGHT_INSTALL_STATE_VERSION, installs: existingAndQueuedRecords }) };
+}
+
+export async function backfillInstallStateForShip(shipActor, options = {}) {
+  const { report, nextInstallState } = backfillInstallStateForShipReport(shipActor, options);
+
+  if (report.dryRun || report.wouldCreate.length === 0) return report;
+
+  await shipActor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState });
+  report.created = cloneData(report.wouldCreate);
+  report.wouldCreate = [];
+  return report;
+}
+
+export async function backfillInstallStateForAllShips(options = {}) {
+  const dryRun = options?.dryRun !== false;
+  const shipReports = [];
+  for (const shipActor of Array.from(globalThis.game?.actors ?? []).filter(isArcflightShipActor)) {
+    shipReports.push(await backfillInstallStateForShip(shipActor, { ...options, dryRun }));
+  }
+
+  return {
+    dryRun,
+    shipCount: shipReports.length,
+    wouldCreate: shipReports.reduce((total, report) => total + report.wouldCreate.length, 0),
+    created: shipReports.reduce((total, report) => total + report.created.length, 0),
+    skipped: shipReports.reduce((total, report) => total + report.skipped.length, 0),
+    ships: shipReports
+  };
 }
 
 export function prepareInstallStateSummary(shipActor) {

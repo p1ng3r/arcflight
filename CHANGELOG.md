@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Install-State Backfill Helpers
+
+- Added dry-run-first `findShipsMissingInstallState()`, `backfillInstallStateForShip()`, and `backfillInstallStateForAllShips()` helpers with matching `game.arcflight.devTools` aliases.
+- Backfill reports infer missing records from ship-owned `flags.arcflight.system.installed` data and `crew.namedCrew`, skip components already represented by install-state records, and return clear `wouldCreate`, `created`, and `skipped` results.
+- Backfilled records are marked as `installCategory: "backfilled"`, inactive for native/refit/temporary flags, active for lifecycle state, and preserve available identity and refit pressure without mutating source or compendium items.
+- Extended framework smoke coverage for dry-run backfill behavior on the smoke test ship while avoiding startup migrations, UI buttons, deletion, drag/drop, enforcement, or compendium mutation.
+
 ### Install Lifecycle Removal Tracking
 
 - Added removal lifecycle fields (`removedAt`, `removedBy`, `removalReason`, and optional `replacedByInstallId`) to normalized install-state records while preserving older records safely.
