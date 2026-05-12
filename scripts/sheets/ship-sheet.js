@@ -13,6 +13,10 @@ import {
   installHull,
   installRoom,
   installShipUpgrade,
+  removeCrewAsset,
+  removeInstalledArkengineMod,
+  removeInstalledRoom,
+  removeInstalledShipUpgrade,
   setArkenginePattern,
   setHullPattern
 } from "../documents/ships.js";
@@ -101,9 +105,14 @@ function prepareExampleBuildOptions(selectedKey = "") {
   });
 }
 
+function getInstalledEntryRemoveId(entry = {}) {
+  return entry.itemUuid || entry.uuid || entry.itemId || entry.id || entry.key || entry.identity?.id || "";
+}
+
 function prepareInstalledEntry(entry = {}) {
   return {
     ...entry,
+    removeId: getInstalledEntryRemoveId(entry),
     displayName: displayNameForEntry(entry),
     effects: {
       ...(entry.effects ?? {}),
@@ -115,6 +124,7 @@ function prepareInstalledEntry(entry = {}) {
 function prepareCrewEntry(entry = {}) {
   return {
     ...entry,
+    removeId: getInstalledEntryRemoveId(entry),
     displayName: displayNameForEntry(entry),
     identity: entry.identity ?? {},
     crew: entry.crew ?? {},
@@ -667,6 +677,13 @@ const dropInstallers = Object.freeze({
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: addCrewAsset
 });
 
+const componentRemovers = Object.freeze({
+  [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: removeInstalledArkengineMod,
+  [ARCFLIGHT_ITEM_TYPES.ROOM]: removeInstalledRoom,
+  [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: removeInstalledShipUpgrade,
+  [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: removeCrewAsset
+});
+
 function prepareStationRows(stations = {}) {
   return Object.values(stations.definitions ?? {}).map((station) => {
     const assignment = stations.assignments?.[station.key] ?? null;
@@ -677,6 +694,18 @@ function prepareStationRows(stations = {}) {
       assigneeName: assignment?.name || "Unassigned"
     };
   });
+}
+
+
+function installRecordMatchesRemoveRequest(record = {}, componentType = "", componentId = "") {
+  if (record.active !== true || record.componentType !== componentType) return false;
+  const identifiers = [record.itemUuid, record.itemId, record.componentKey].filter(Boolean);
+  return identifiers.includes(componentId);
+}
+
+function hasActiveInstallRecordForRemoval(actor, componentType = "", componentId = "") {
+  if (!componentId) return false;
+  return getInstallState(actor).installs.some((record) => installRecordMatchesRemoveRequest(record, componentType, componentId));
 }
 
 /** Lightweight ApplicationV2 sheet foundation for Arcflight PF2E vehicle actors. */
@@ -750,6 +779,44 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.element
       .querySelector?.("[data-arcflight-install-component]")
       ?.addEventListener("click", this.#onInstallSelectedComponent.bind(this));
+
+    this.element
+      .querySelectorAll?.("[data-arcflight-remove-component]")
+      ?.forEach((button) => button.addEventListener("click", this.#onRemoveInstalledComponent.bind(this)));
+  }
+
+
+  async #onRemoveInstalledComponent(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    const button = event.currentTarget;
+    const componentType = button?.dataset?.componentType ?? "";
+    const componentId = button?.dataset?.componentId ?? "";
+    const componentName = button?.dataset?.componentName || "Arcflight component";
+    const remove = componentRemovers[componentType];
+
+    if (typeof remove !== "function" || !componentId) {
+      ui.notifications?.warn?.("Arcflight remove helper is not available for that installed component.");
+      return;
+    }
+
+    const hadLifecycleRecord = hasActiveInstallRecordForRemoval(actor, componentType, componentId);
+
+    try {
+      await remove(actor, componentId);
+      if (hadLifecycleRecord) {
+        ui.notifications?.info?.(`Removed ${componentName}.`);
+      } else {
+        ui.notifications?.warn?.(`Removed ${componentName}, but no matching active install lifecycle record was found.`);
+      }
+      this.render(true);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not remove that component from this ship.");
+      console.warn("Arcflight | Controlled component removal failed.", error);
+    }
   }
 
   #onChangeInstallComponentType(event) {

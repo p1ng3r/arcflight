@@ -451,6 +451,59 @@ function getInstalledShipUpgrades(installed = {}) {
   return Array.isArray(installed.shipUpgrades) ? cloneData(installed.shipUpgrades) : [];
 }
 
+
+function installedEntryMatchesIdentifier(entry = {}, identifier = "") {
+  const normalizedIdentifier = String(identifier ?? "").trim();
+  if (!normalizedIdentifier) return false;
+
+  return [
+    entry.id,
+    entry.itemId,
+    entry.itemUuid,
+    entry.uuid,
+    entry.key,
+    entry.identity?.id
+  ].filter(Boolean).includes(normalizedIdentifier);
+}
+
+function installRecordMatchesInstalledEntry(record = {}, entry = {}, componentType = "") {
+  if (record.active !== true || record.componentType !== componentType) return false;
+
+  return Boolean(
+    (entry.itemUuid && record.itemUuid === entry.itemUuid)
+    || (entry.uuid && record.itemUuid === entry.uuid)
+    || (entry.itemId && record.itemId === entry.itemId)
+    || (entry.id && record.itemId === entry.id)
+    || (entry.key && record.componentKey === entry.key)
+    || (entry.identity?.id && record.componentKey === entry.identity.id)
+  );
+}
+
+function buildInstallStateWithDeactivatedEntry(systemData = {}, entry = {}, componentType = "", reason = "removed") {
+  const installState = normalizeBasicInstallState(systemData.installState);
+  const removalMetadata = {
+    removedAt: Date.now(),
+    removedBy: globalThis.game?.user?.id ?? "",
+    removalReason: reason
+  };
+  let deactivatedCount = 0;
+
+  const installs = installState.installs.map((record) => {
+    if (!installRecordMatchesInstalledEntry(record, entry, componentType)) return record;
+    deactivatedCount += 1;
+    return {
+      ...record,
+      active: false,
+      ...removalMetadata
+    };
+  });
+
+  return {
+    installState: normalizeBasicInstallState({ version: installState.version, installs }),
+    deactivatedCount
+  };
+}
+
 function hasInstalledEntry(entries = [], entry = {}) {
   const identifiers = [entry.key, entry.itemId, entry.uuid].filter(Boolean);
   if (identifiers.length === 0) return false;
@@ -1544,6 +1597,62 @@ export async function setArkenginePattern(shipActor, patternKey) {
   return recalculateShipStats(shipActor);
 }
 
+
+async function removeInstalledArrayEntry(shipActor, componentId, options = {}) {
+  assertArcflightShipActor(shipActor, options.helperName ?? "removeInstalledArrayEntry");
+
+  const componentType = options.componentType;
+  const installedPath = options.installedPath;
+  const installedSystemsPath = options.installedSystemsPath;
+  const entries = options.getEntries?.(getArcflightShipData(shipActor).installed) ?? [];
+  const removedEntry = entries.find((entry) => installedEntryMatchesIdentifier(entry, componentId));
+
+  if (!removedEntry) return shipActor;
+
+  const systemData = getArcflightShipData(shipActor);
+  const currentEntries = options.getEntries?.(systemData.installed) ?? entries;
+  const nextEntries = currentEntries.filter((entry) => !installedEntryMatchesIdentifier(entry, componentId));
+  const { installState } = buildInstallStateWithDeactivatedEntry(systemData, removedEntry, componentType, "removed");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.${installedPath}`]: nextEntries,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.${installedSystemsPath}`]: nextEntries.map((entry) => entry.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: installState
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+export async function removeInstalledArkengineMod(shipActor, componentId) {
+  return removeInstalledArrayEntry(shipActor, componentId, {
+    helperName: "removeInstalledArkengineMod",
+    componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+    installedPath: "arkengineMods",
+    installedSystemsPath: "arkengineMods",
+    getEntries: getInstalledArkengineMods
+  });
+}
+
+export async function removeInstalledRoom(shipActor, componentId) {
+  return removeInstalledArrayEntry(shipActor, componentId, {
+    helperName: "removeInstalledRoom",
+    componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
+    installedPath: "rooms",
+    installedSystemsPath: "rooms",
+    getEntries: getInstalledRooms
+  });
+}
+
+export async function removeInstalledShipUpgrade(shipActor, componentId) {
+  return removeInstalledArrayEntry(shipActor, componentId, {
+    helperName: "removeInstalledShipUpgrade",
+    componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+    installedPath: "shipUpgrades",
+    installedSystemsPath: "shipUpgrades",
+    getEntries: getInstalledShipUpgrades
+  });
+}
+
 export async function installHull(shipActor, hullItem) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | installHull requires an Arcflight-enabled PF2E vehicle actor.");
@@ -1940,7 +2049,7 @@ export async function addCrewAsset(shipActor, crewItem) {
   });
 }
 
-export async function removeCrewAsset(shipActor, crewIdOrUuid) {
+export async function removeInstalledCrewAsset(shipActor, crewIdOrUuid) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | removeCrewAsset requires an Arcflight-enabled PF2E vehicle actor.");
   }
@@ -1956,14 +2065,20 @@ export async function removeCrewAsset(shipActor, crewIdOrUuid) {
     ? crewState.currentGenericCrew
     : Math.max(0, crewState.currentGenericCrew - getCrewAssetCountValue(removed));
   const nextCrew = { ...crewState, namedCrew, currentGenericCrew };
-  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew }, { inplace: false });
-  return shipActor.update({
+  const { installState } = buildInstallStateWithDeactivatedEntry(systemData, removed, ARCFLIGHT_ITEM_TYPES.CREW_ASSET, "removed");
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew, installState }, { inplace: false });
+  await shipActor.update({
     ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: installState
   });
+
+  return recalculateShipStats(shipActor);
 }
+
+export const removeCrewAsset = removeInstalledCrewAsset;
 
 export async function assignStation(shipActor, stationKey, assignee = null, options = {}) {
   if (!isArcflightShipActor(shipActor)) {
