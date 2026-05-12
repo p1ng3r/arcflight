@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Helper-Driven Install-State Recording
+
+- Wired existing install helpers (`installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, and `addCrewAsset`) to persist one ship-owned install-state record after successful helper installs.
+- Install-state records now capture item identity, component type, active lifecycle state, install time/user, tier at install, stable native/refit install category, and pressure contribution copied from component `refitPressure`.
+- Duplicate helper install attempts for the same component no longer append duplicate lifecycle records; existing installed component lists remain the source of truth for Phase 0.
+- Extended the framework smoke test to verify helper-created install-state records and duplicate-attempt protection while keeping this pass free of drag/drop UI, remove buttons, slot blocking, custom PF2E document types, and source/compendium item mutation.
+
 ### Install State Ship Sheet Readout
 
 - Added a compact read-only Install State section to the Arcflight ship sheet showing persistent install summary counts, active pressure totals, component type counts, install categories, and active install record details.
