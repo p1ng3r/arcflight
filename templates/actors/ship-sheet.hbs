@@ -27,6 +27,77 @@
     </label>
   </section>
 
+  <section class="arcflight-sheet__section arcflight-install-ui {{installUi.preview.cssClass}}">
+    <h2>Install Component</h2>
+    <p class="arcflight-sheet__hint">Controlled install MVP: select an Arcflight world Item, preview validation, then install through the existing helper. This does not drag/drop, mutate source items, or add remove controls.</p>
+    <div class="arcflight-install-ui__controls">
+      <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+        <span>Component Type</span>
+        <select data-arcflight-install-component-type {{#unless editable}}disabled{{/unless}}>
+          {{#each installUi.componentTypeOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+        <span>World Item</span>
+        <select data-arcflight-install-item {{#unless editable}}disabled{{/unless}}>
+          <option value="" {{#unless installUi.selectedItemId}}selected{{/unless}}>Select a world item</option>
+          {{#each installUi.itemOptions}}
+            <option value="{{id}}" data-uuid="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <button type="button" data-arcflight-install-component {{#unless installUi.canInstall}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>Install</button>
+    </div>
+
+    {{#unless installUi.hasItemOptions}}
+      <p class="arcflight-sheet__hint">No matching Arcflight world Items found for this component type. Items must be PF2E equipment with <code>flags.arcflight.enabled</code> and matching <code>flags.arcflight.componentType</code>.</p>
+    {{/unless}}
+
+    {{#if installUi.hasPreview}}
+      <article class="arcflight-install-ui__preview">
+        <header>
+          <strong>Validation Preview: {{installUi.preview.severityLabel}}</strong>
+          <span>Projected Refit: {{installUi.preview.projectedRefitStatusLabel}} · Pressure {{installUi.preview.projectedRefitPressureTotal}}</span>
+        </header>
+
+        {{#if installUi.preview.hasMessages}}
+          <h3>Messages</h3>
+          <ul>
+            {{#each installUi.preview.messages}}
+              <li>{{this}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+
+        {{#if installUi.preview.hasWarnings}}
+          <h3>Warnings</h3>
+          <ul>
+            {{#each installUi.preview.warnings}}
+              <li>{{this}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+
+        {{#if installUi.preview.hasSlotRows}}
+          <h3>Slot Preview</h3>
+          <div class="arcflight-install-ui__slots">
+            {{#each installUi.preview.slotRows}}
+              <span><strong>{{label}}</strong>: {{currentUsed}}/{{currentCapacity}} → {{projectedUsed}}/{{projectedCapacity}} ({{projectedAvailable}} available)</span>
+            {{/each}}
+          </div>
+        {{/if}}
+      </article>
+    {{else}}
+      <p class="arcflight-sheet__hint">Select a world item to preview severity, messages, warnings, refit pressure, and slot status before installing.</p>
+    {{/if}}
+
+    {{#if installUi.hasDisabledReason}}
+      <p class="arcflight-sheet__hint arcflight-install-ui__disabled-reason">{{installUi.disabledReason}}</p>
+    {{/if}}
+  </section>
+
 
   <section class="arcflight-sheet__section">
     <h2>Example Builds</h2>

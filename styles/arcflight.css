@@ -294,3 +294,46 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.arcflight-install-ui {
+  border-left: 0.25rem solid var(--color-border-light-tertiary);
+}
+
+.arcflight-install-ui__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.arcflight-install-ui__preview {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-install-ui__preview header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-install-ui__preview header span,
+.arcflight-install-ui__disabled-reason {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12);
+}
+
+.arcflight-install-ui__preview h3 {
+  margin-top: 0.5rem;
+}
+
+.arcflight-install-ui__preview ul {
+  margin: 0.25rem 0 0;
+}
+
+.arcflight-install-ui__slots {
+  display: grid;
+  gap: 0.25rem;
+}
