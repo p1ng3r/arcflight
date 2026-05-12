@@ -96,6 +96,7 @@ import {
   organizeArcflightItems
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
+import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "./helpers/install-validation-preview.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -208,6 +209,9 @@ Hooks.once("init", () => {
     getComponentData,
     getComponentRefitPressure,
     getComponentTierMetadata,
+    previewInstallValidation,
+    previewComponentInstall,
+    getInstallValidationWarnings,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
     setHullPattern,
@@ -381,6 +385,9 @@ export {
   getComponentData,
   getComponentRefitPressure,
   getComponentTierMetadata,
+  previewInstallValidation,
+  previewComponentInstall,
+  getInstallValidationWarnings,
   getDefaultArcflightComponentData,
   arcflightComponentDefaults,
   ARCFLIGHT_SHIP_ACTOR_TYPE,
