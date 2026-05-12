@@ -4,6 +4,7 @@ import { CORE_CREW_ASSET_KEYS, getCoreCrewAsset } from "../../data/crew/core-cre
 import { CORE_HULL_PLATFORM_KEYS, getCoreHull } from "../../data/hulls/core-hulls.js";
 import { CORE_ROOM_KEYS, getCoreRoom } from "../../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS, getCoreShipUpgrade } from "../../data/ship-upgrades/core-ship-upgrades.js";
+import { CORE_WEAPON_KEYS, getCoreWeapon } from "../../data/weapons/core-weapons.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import {
   createCoreArkengine,
@@ -11,6 +12,7 @@ import {
   createCoreCrewAsset,
   createCoreHull,
   createCoreRoom,
+  createCoreWeapon,
   createCoreShipUpgrade
 } from "../documents/creation.js";
 import { getArcflightComponentFlags, getComponentType, isArcflightItem } from "../documents/components.js";
@@ -40,6 +42,14 @@ const CATEGORY_DEFINITIONS = Object.freeze([
     getSource: getCoreArkengineMod,
     create: createCoreArkengineMod,
     getName: (source, key) => source?.identity?.displayName ?? source?.displayName ?? key
+  }),
+  Object.freeze({
+    category: "weapon",
+    componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
+    keys: CORE_WEAPON_KEYS,
+    getSource: getCoreWeapon,
+    create: createCoreWeapon,
+    getName: (source, key) => source?.name ?? source?.displayName ?? key
   }),
   Object.freeze({
     category: "room",
