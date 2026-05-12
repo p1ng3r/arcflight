@@ -69,7 +69,7 @@ The locked core hull platforms are Void Skiff, Sloop, Cutter, Brigantine, Frigat
 
 Each hull includes base durability, armor, physical resistances, strain, Lifeveil, cargo, speed, maneuverability, AP/RAP, detection, crew bands, core room keys, expansion room slot data, weapon mounts by arc, allowed weapon sizes, arkengine compatibility, traits, and tier/refit-ready schema fields. Tier labels follow the planned scale from Tier 1 Frontier / Local through Tier 5 Mythic / Impossible. Leviathan-Class Platform is marked as district-scale infrastructure instead of a normal expansion-slot hull.
 
-Arcflight now derives ship-side tier and refit pressure state under `flags.arcflight.system.tier`, `flags.arcflight.system.refitPressure`, and `flags.arcflight.system.refitFlags`. The first-pass framework sums installed component `refitPressure` values by category, compares total pressure against the installed hull's `refitTolerance.totalBeforeMajorRefitRequired`, and reports `native`, `pressured`, or `major-refit-required` status. The optional Arcflight ship sheet surfaces those stored tier, pressure, major-refit flag, and validation-summary values as a read-only Tier / Refit / Validation section near the builder/fueling summaries. Major refit completion is intentionally not automated yet, and the framework remains deliberately narrow: it blocks only controlled sheet installs whose validation preview severity is `danger`; it does not fire weapons, run combat automation, or resolve travel systems.
+Arcflight now derives ship-side tier and refit pressure state under `flags.arcflight.system.tier`, `flags.arcflight.system.refitPressure`, and `flags.arcflight.system.refitFlags`. The first-pass framework sums installed component `refitPressure` values by category, compares total pressure against the installed hull's `refitTolerance.totalBeforeMajorRefitRequired`, and reports `native`, `pressured`, or `major-refit-required` status. The optional Arcflight ship sheet surfaces those stored tier, pressure, major-refit flag, and validation-summary values as a read-only Tier / Refit / Validation section near the builder/fueling summaries. Major refit completion is intentionally not automated yet, and the framework remains deliberately narrow: it blocks controlled helper installs only for supported install-rule enforcement such as danger validation, slot overflow, duplicate protected installs, and unique crew conflicts; it does not fire weapons, run combat automation, or resolve travel systems.
 
 
 ## Component Tier / Refit Metadata
@@ -78,15 +78,15 @@ Arcflight component defaults now include safe, data-only tier/refit fields for f
 
 Core Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets now carry tier-aware metadata. Refit pressure increases ship pressure totals and warning flags, but it does not fire weapons, run travel/combat automation, or mutate PF2E source documents. Use `game.arcflight.getComponentTierMetadata(component)` and `game.arcflight.getComponentRefitPressure(component)` to read normalized metadata from source items, installed entries, or legacy data shapes.
 
-Arcflight also exposes install validation previews through `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, and `game.arcflight.getInstallValidationWarnings(shipActor, component)`. These helpers return stable report objects with `ok`, `severity`, `messages`, `warnings`, `current`, `projected`, and `unsupported` fields. They evaluate component type support, tier fit, projected refit pressure, arkengine compatibility, arkengine mod slots, room slots, ship upgrade slots, crew uniqueness/tier pressure, and duplicate install signals without mutating ship, item, or compendium data. The controlled Arcflight ship sheet Install Component section uses the same preview and allows installs for `ok`, `info`, and `warning` severity while disabling installs for `danger` severity.
+Arcflight also exposes install validation previews through `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, `game.arcflight.getInstallValidationWarnings(shipActor, component)`, and `game.arcflight.shouldBlockInstall(preview)`. These helpers return stable report objects with `ok`, `severity`, `messages`, `warnings`, `current`, `projected`, and `unsupported` fields. They evaluate component type support, tier fit, projected refit pressure, arkengine compatibility, arkengine mod slots, room slots, ship upgrade slots, crew uniqueness/tier pressure, and duplicate install signals without mutating ship, item, or compendium data. Danger validation always blocks through `shouldBlockInstall`, slot overflow escalates to danger, duplicate unique crew conflicts escalate to danger, and ship upgrade slots are enforced only when the ship has an upgrade slot track.
 
 ## Controlled Ship Sheet Install UI
 
 The optional Arcflight ship sheet includes a compact **Install Component** section for controlled helper-driven installs. The selector is limited to Arcflight-enabled PF2E equipment world Items whose `flags.arcflight.componentType` matches the selected category: Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset. Item selector labels include the component key when available, such as `Workshop [workshop]`, to make similarly named world Items easier to identify.
 
-Selecting an item shows read-only item identity (selected item name, component type, UUID, and component key when available), a severity badge (`ok`, `info`, `warning`, or `danger`), an `Install allowed` / `Install blocked` status line, messages, warnings, projected refit status, projected refit pressure total, and any available slot projection rows. If no matching world Items exist, the sheet hints to run core item sync, confirm the item is PF2E equipment, and confirm `flags.arcflight.enabled` plus `flags.arcflight.componentType`.
+Selecting an item shows read-only item identity (selected item name, component type, UUID, and component key when available), a severity badge (`ok`, `info`, `warning`, or `danger`), an `Install allowed` / `Install blocked` status line with the blocking reason, messages, warnings, projected refit status, projected refit pressure total, and any available slot projection rows. If no matching world Items exist, the sheet hints to run core item sync, confirm the item is PF2E equipment, and confirm `flags.arcflight.enabled` plus `flags.arcflight.componentType`.
 
-The Install button calls only the existing helper for the selected component type (`installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, or `addCrewAsset`). Successful installs refresh the sheet, clear the selected item, and preserve the selected component type. Duplicate attempts that an existing helper skips now produce a clearer warning. The controlled UI does not mutate source/compendium items, add drag/drop behavior, open a modal wizard, add remove buttons, or implement combat/travel automation.
+The Install button calls only the existing helper for the selected component type (`installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, or `addCrewAsset`). Successful installs refresh the sheet, clear the selected item, and preserve the selected component type. Helpers now reject duplicate protected installs with clearer errors, preserve hull and arkengine replacement lifecycle history, enforce arkengine mod and room slot overflow, enforce ship upgrade slots when a slot track exists, and block duplicate unique crew assets. The controlled UI does not mutate source/compendium items, add drag/drop behavior, open a modal wizard, add remove buttons, or implement combat/travel automation.
 
 ## Persistent Install-State Foundation
 
@@ -261,11 +261,17 @@ After sheet or release-readiness changes, verify the following in Foundry:
 4. In Install Component, select each component type and confirm the world Item list is filtered and clearly labeled with component keys when available.
 5. Select an item and confirm the preview includes the severity badge, allowed/blocked status, selected item name, component type, UUID, messages/warnings, refit pressure, and slot rows when available.
 6. Install an allowed item and confirm the sheet refreshes, the selected item clears, and the selected component type remains selected.
-7. Try a duplicate install and confirm the feedback is clear; confirm `danger` validation still blocks installation.
-8. Open Arcflight component sheets for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset items.
-9. Open a normal PF2E equipment sheet.
-10. Open a normal PF2E vehicle sheet.
-11. Confirm empty or missing installed sections do not crash Arcflight sheet rendering.
+7. Fill room slots and confirm the next room shows a blocked preview and cannot install.
+8. Fill arkengine mod slots and confirm the next mod shows a blocked preview and cannot install.
+9. Try a duplicate unique Crew Asset and confirm the preview and helper feedback block the install clearly.
+10. Replace the active Hull and confirm the prior hull install-state record becomes inactive with replacement metadata while the new hull is active.
+11. Replace the active Arkengine and confirm the prior arkengine install-state record becomes inactive with replacement metadata while the new arkengine is active.
+12. Confirm install-state lifecycle history remains intact after blocked installs, replacements, and duplicate attempts.
+13. Confirm preview messages match the enforcement behavior shown by the enabled/disabled Install button.
+14. Open Arcflight component sheets for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset items.
+15. Open a normal PF2E equipment sheet.
+16. Open a normal PF2E vehicle sheet.
+17. Confirm empty or missing installed sections do not crash Arcflight sheet rendering.
 12. Confirm there are no Arcflight-specific console errors.
 
 ## Current Module Behavior

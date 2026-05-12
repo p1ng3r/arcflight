@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Controlled Install Rule Enforcement
+
+- Added `shouldBlockInstall(preview)` as the shared install-preview blocking helper and exposed it on `game.arcflight` plus `game.arcflight.devTools`.
+- Escalated supported blocking conditions so danger validation, arkengine mod slot overflow, room slot overflow, active ship upgrade slot overflow, and duplicate unique crew conflicts prevent controlled installs.
+- Updated existing install helpers to reject duplicate protected installs with clearer errors while preserving hull and arkengine replacement lifecycle history.
+- Updated the ship sheet Install Component section to disable the Install button for blocked previews and show the specific blocked reason without adding drag/drop, remove buttons, modal flows, source item mutation, combat, or travel systems.
+- Extended smoke coverage for room slot overflow blocks, mod slot overflow blocks, duplicate unique crew blocks, replacement hull behavior, replacement arkengine behavior, and `shouldBlockInstall` exposure.
+
 ### Controlled Install Component UI Polish
 
 - Polished the Arcflight ship sheet Install Component preview with selected item identity, UUID, component type, severity badges, and a concise install allowed/blocked status line.
