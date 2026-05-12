@@ -46,6 +46,14 @@ import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgra
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { CORE_WEAPON_KEYS, CORE_WEAPONS } from "../../data/weapons/core-weapons.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
+import {
+  CORE_STATION_ACTION_KEYS,
+  CORE_STATION_ACTIONS,
+  getCoreStationAction,
+  getCoreStationActionKeys,
+  getCoreStationActions,
+  getCoreStationActionsForStation
+} from "../../data/station-actions/core-station-actions.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
@@ -138,6 +146,16 @@ function summarize(result) {
 
 function isCoreKeyArray(value) {
   return Array.isArray(value) && value.length > 0;
+}
+
+function hasCoreStationActionFoundationData(action = {}) {
+  return typeof action.stationKey === "string"
+    && action.stationKey.length > 0
+    && typeof action.name === "string"
+    && action.name.length > 0
+    && ["combat", "travel", "both"].includes(action.phase)
+    && action.actionType === "stationAction"
+    && Number.isFinite(action.apCost);
 }
 
 function hasCoreWeaponFoundationData(weapon = {}) {
@@ -263,6 +281,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core weapon key array exists", isCoreKeyArray(CORE_WEAPON_KEYS), "non-empty array", CORE_WEAPON_KEYS?.length ?? 0);
     check(result, "Every core weapon has size/family/reload/damageProfile", CORE_WEAPON_KEYS.every((key) => hasCoreWeaponFoundationData(CORE_WEAPONS[key])), true, CORE_WEAPON_KEYS.filter((key) => !hasCoreWeaponFoundationData(CORE_WEAPONS[key])));
     check(result, "Core station key array exists", isCoreKeyArray(STATION_KEYS), "non-empty array", STATION_KEYS?.length ?? 0);
+    check(result, "Core station action key array exists", isCoreKeyArray(CORE_STATION_ACTION_KEYS), "non-empty array", CORE_STATION_ACTION_KEYS?.length ?? 0);
+    check(result, "Every station action has required foundation fields", CORE_STATION_ACTION_KEYS.every((key) => hasCoreStationActionFoundationData(CORE_STATION_ACTIONS[key])), true, CORE_STATION_ACTION_KEYS.filter((key) => !hasCoreStationActionFoundationData(CORE_STATION_ACTIONS[key])));
+    check(result, "Every station action points to a known station key", CORE_STATION_ACTION_KEYS.every((key) => STATION_KEYS.includes(CORE_STATION_ACTIONS[key]?.stationKey)), true, CORE_STATION_ACTION_KEYS.filter((key) => !STATION_KEYS.includes(CORE_STATION_ACTIONS[key]?.stationKey)));
+    check(result, "Core station action helper lookups work", getCoreStationActionKeys() === CORE_STATION_ACTION_KEYS && getCoreStationActions() === CORE_STATION_ACTIONS && getCoreStationAction("rally-crew")?.stationKey === "captain" && getCoreStationActionsForStation("gunnery").length === 2, true, { keys: getCoreStationActionKeys()?.length ?? 0, rallyCrew: getCoreStationAction("rally-crew"), gunneryActions: getCoreStationActionsForStation("gunnery").map((action) => action.key) });
+    check(result, "Core station action helpers exposed", typeof globalThis.game?.arcflight?.getCoreStationAction === "function" && typeof globalThis.game?.arcflight?.getCoreStationActionKeys === "function" && typeof globalThis.game?.arcflight?.getCoreStationActions === "function" && typeof globalThis.game?.arcflight?.getCoreStationActionsForStation === "function", true, { getCoreStationAction: typeof globalThis.game?.arcflight?.getCoreStationAction, getCoreStationActionKeys: typeof globalThis.game?.arcflight?.getCoreStationActionKeys, getCoreStationActions: typeof globalThis.game?.arcflight?.getCoreStationActions, getCoreStationActionsForStation: typeof globalThis.game?.arcflight?.getCoreStationActionsForStation });
+    check(result, "Core station action devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getCoreStationAction === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreStationActions === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionsForStation === "function", true, { getCoreStationAction: typeof globalThis.game?.arcflight?.devTools?.getCoreStationAction, getCoreStationActionKeys: typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionKeys, getCoreStationActions: typeof globalThis.game?.arcflight?.devTools?.getCoreStationActions, getCoreStationActionsForStation: typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionsForStation });
     check(result, "Core hull library has 11 locked keys", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => CORE_HULL_PLATFORM_KEYS.includes(key)) && CORE_HULL_PLATFORM_KEYS.length === EXPECTED_CORE_HULL_PLATFORM_KEYS.length, EXPECTED_CORE_HULL_PLATFORM_KEYS, CORE_HULL_PLATFORM_KEYS);
     check(result, "Every core hull has classification", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasClassification(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasClassification(CORE_HULLS[key])));
     check(result, "Every core hull has refit tolerance", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasRefitTolerance(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasRefitTolerance(CORE_HULLS[key])));

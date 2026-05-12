@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Station Action Data Foundation
+
+- Added a data-only core station action registry for Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster starter actions.
+- Added station action lookup helpers (`getCoreStationAction`, `getCoreStationActionKeys`, `getCoreStationActions`, and `getCoreStationActionsForStation`) on `game.arcflight` and `game.arcflight.devTools`.
+- Extended framework smoke coverage for station action key arrays, required schema fields, known station references, helper lookups, and devTools exposure.
+- Kept this pass schema/helper-only: no action execution, actor mutation, AP/RAP system, combat rounds, travel automation, weapon firing, or changes to station assignment behavior were added.
+
 ### Weapon Install UI MVP
 
 - Added Weapon to the ship-sheet Install Component selector, with world item filtering for Arcflight weapon equipment.
