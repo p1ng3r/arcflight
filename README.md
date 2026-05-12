@@ -123,7 +123,7 @@ Each install record is plain serializable data:
 }
 ```
 
-The foundation layer initializes missing state for older ships, normalizes malformed legacy shapes, generates lightweight install IDs, rejects duplicate `installId` values when recording new installs, and marks records inactive during removal so lifecycle history can remain available to future systems. It does not mutate source or compendium items, create custom document subclasses, or require an install UI.
+The foundation layer initializes missing state for older ships, normalizes malformed legacy shapes, generates lightweight install IDs, rejects duplicate `installId` values when recording new installs, and marks records inactive during removal so lifecycle history can remain available to future systems. Existing helper-driven installs now append one persistent install-state record after each successful `installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, or `addCrewAsset` call, while repeated duplicate attempts for the same component do not add extra lifecycle records. These records capture item identity, component type, install time/user, active lifecycle state, ship tier at install, and the component's `refitPressure` contribution using stable install categories (`native` for hulls, arkengines, and crew assets; `refit` for arkengine mods and ship upgrades; room installs use `refit` only when the source room carries refit pressure). It does not mutate source or compendium items, create custom document subclasses, enforce slot blocking through install state, or require an install UI.
 
 Helper API:
 
