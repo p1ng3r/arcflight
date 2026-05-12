@@ -423,7 +423,6 @@ export async function runFrameworkSmokeTest(options = {}) {
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
 
-    const { prepareArcflightShipViewData } = await import("../sheets/ship-sheet.js");
     const preparedShipViewData = prepareArcflightShipViewData({
       enabled: true,
       actorType: "ship",
