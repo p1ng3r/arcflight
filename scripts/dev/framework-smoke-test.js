@@ -345,6 +345,22 @@ export async function runFrameworkSmokeTest(options = {}) {
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
 
+    const { prepareArcflightShipViewData } = await import("../sheets/ship-sheet.js");
+    const preparedShipViewData = prepareArcflightShipViewData({
+      enabled: true,
+      actorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
+      system: shipData
+    });
+    const legacyShipViewData = prepareArcflightShipViewData({
+      enabled: true,
+      actorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
+      system: {}
+    });
+    checkEqual(result, "Ship sheet readout exposes refit status", shipData.tier.refitStatus, preparedShipViewData.system.installValidationReadout.tier.refitStatus);
+    checkEqual(result, "Ship sheet readout exposes pressure total", shipData.refitPressure.total, preparedShipViewData.system.installValidationReadout.pressure.total);
+    checkEqual(result, "Ship sheet readout handles missing tier state", "native", legacyShipViewData.system.installValidationReadout.tier.refitStatus);
+    checkEqual(result, "Ship sheet readout handles missing refit pressure", 0, legacyShipViewData.system.installValidationReadout.pressure.total);
+
     checkEqual(result, "Installed arkengine mod count", 1, shipData.installed.arkengineMods.length);
     checkEqual(result, "Installed room count", 1, shipData.installed.rooms.length);
     checkEqual(result, "Installed ship upgrade count", 1, shipData.installed.shipUpgrades.length);
