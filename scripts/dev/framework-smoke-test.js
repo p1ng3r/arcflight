@@ -413,8 +413,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
 
-    const baseTier = CORE_HULLS.brigantine.classification.baseTier;
-    const majorRefitThreshold = CORE_HULLS.brigantine.refitTolerance.totalBeforeMajorRefitRequired;
+    const baseTier = CORE_HULLS.frigate.classification.baseTier;
+    const majorRefitThreshold = CORE_HULLS.frigate.refitTolerance.totalBeforeMajorRefitRequired;
     const belowThresholdPressureSystem = {
       base: { hull: CORE_HULLS.brigantine },
       installed: {
@@ -461,13 +461,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Legacy component minimum tier defaults safely", 0, legacyMetadata.minimumTier);
 
     checkEqual(result, "Ship hull base tier copied into tier state", baseTier, shipData.tier.baseTier);
-    checkEqual(result, "Ship with retrofitted component pressure is pressured", "pressured", shipData.tier.refitStatus);
+    checkEqual(result, "Frigate + Iron Choir replacement state requires major refit", "major-refit-required", shipData.tier.refitStatus);
     check(result, "Ship retrofitted refit pressure total is positive", shipData.refitPressure.total > 0, "positive pressure", shipData.refitPressure.total);
     checkEqual(result, "Component refitPressure below threshold is pressured", "pressured", belowThresholdTier.refitStatus);
     checkEqual(result, "Component refitPressure below threshold total", 2, getShipRefitPressure(belowThresholdPressureSystem).total);
     checkEqual(result, "Component flag refitPressure is counted", 2, calculateRefitPressure(flagPressureSystem).total);
     checkEqual(result, "Component refitPressure at threshold requires major refit", "major-refit-required", thresholdTier.refitStatus);
-    check(result, "Stored no-pressure major refit flags are false", Object.values(storedTierFlags).every((value) => value === false), true, storedTierFlags);
+    check(result, "Stored replacement major refit flags are true", Object.values(storedTierFlags).every((value) => value === true), true, storedTierFlags);
 
     const pressureUpgradeEntries = shipData.installed.shipUpgrades.map((upgrade, index) => index === 0
       ? { ...upgrade, refitPressure: { infrastructurePressure: majorRefitThreshold } }
@@ -508,16 +508,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Installed ship upgrade count", 1, shipData.installed.shipUpgrades.length);
     checkEqual(result, "Named crew count", 1, shipData.crew.namedCrew.length);
 
-    checkEqual(result, "Derived hull integrity", 180, shipData.derived.hullIntegrity, "Brigantine 160 + Reinforced Structural Ribbing 20.");
-    checkEqual(result, "Derived strain capacity", 13, shipData.derived.strainCapacity, "Brigantine 10 + Tidewake 2 + Pressure Lattice Tuning 1.");
-    checkEqual(result, "Derived voyage speed travel hex days", 5, shipData.derived.voyageSpeedTravelHexDays);
-    checkEqual(result, "Base arkengine fueling required spell rank", 2, shipData.base.arkengine.fueling?.requiredSpellRank);
-    checkEqual(result, "Base arkengine fueling fuel slots", 10, shipData.base.arkengine.fueling?.fuelSlots);
-    checkEqual(result, "Base arkengine max stored spell ranks", 20, shipData.base.arkengine.fueling?.maxStoredSpellRanks);
-    checkEqual(result, "Derived normal hex fuel cost", 2, shipData.derived.normalHexCost);
-    checkEqual(result, "Derived hard burn hex fuel cost", 3, shipData.derived.hardBurnHexCost);
-    checkEqual(result, "Derived lean burn hex fuel cost", 1, shipData.derived.leanBurnHexCost);
-    checkEqual(result, "Derived stealth burn hex fuel cost", 3, shipData.derived.stealthBurnHexCost);
+    checkEqual(result, "Derived hull integrity", 210, shipData.derived.hullIntegrity, "Frigate 190 + Reinforced Structural Ribbing 20.");
+    checkEqual(result, "Derived strain capacity", 15, shipData.derived.strainCapacity, "Frigate 11 + Iron Choir Engine 3 + Pressure Lattice Tuning 1.");
+    checkEqual(result, "Derived voyage speed travel hex days", 4, shipData.derived.voyageSpeedTravelHexDays);
+    checkEqual(result, "Base Iron Choir fueling required spell rank", 3, shipData.base.arkengine.fueling?.requiredSpellRank);
+    checkEqual(result, "Base Iron Choir fueling fuel slots", 10, shipData.base.arkengine.fueling?.fuelSlots);
+    checkEqual(result, "Base Iron Choir max stored spell ranks", 30, shipData.base.arkengine.fueling?.maxStoredSpellRanks);
+    checkEqual(result, "Derived normal hex fuel cost", 3, shipData.derived.normalHexCost);
+    checkEqual(result, "Derived hard burn hex fuel cost", 5, shipData.derived.hardBurnHexCost);
+    checkEqual(result, "Derived lean burn hex fuel cost", 2, shipData.derived.leanBurnHexCost);
+    checkEqual(result, "Derived stealth burn hex fuel cost", 5, shipData.derived.stealthBurnHexCost);
 
     checkEqual(result, "Room slots used", 1, shipData.installed.roomSlots.used);
     checkEqual(result, "Arkengine mod slots capacity", 4, shipData.installed.arkengineModSlots.capacity);
