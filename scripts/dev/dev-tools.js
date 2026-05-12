@@ -7,10 +7,13 @@ import {
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
 import {
+  backfillInstallStateForAllShips,
+  backfillInstallStateForShip,
   createInstallId,
   deactivateInstallRecord,
   deactivateInstallRecordsByComponent,
   findInstallRecord,
+  findShipsMissingInstallState,
   getActiveInstallRecords,
   getInactiveInstallRecords,
   getInstalledComponents,
@@ -139,6 +142,21 @@ export function createArcflightDevTools() {
      * Prepare active/inactive counts, component counts, pressure totals, and categories.
      */
     prepareInstallStateSummary,
+
+    /**
+     * Dry-run report of Arcflight ships with installed data missing install-state records.
+     */
+    findShipsMissingInstallState,
+
+    /**
+     * Dry-run by default. Backfill one ship's install-state records from existing installed data.
+     */
+    backfillInstallStateForShip,
+
+    /**
+     * Dry-run by default. Backfill all Arcflight ships' install-state records from existing installed data.
+     */
+    backfillInstallStateForAllShips,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.

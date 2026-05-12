@@ -141,6 +141,11 @@ Helper API:
 - `game.arcflight.removeInstallState(shipActor, installId, options)` remains a legacy alias for `deactivateInstallRecord`.
 - `game.arcflight.findInstallRecord(shipActor, installId)` returns a matching record or `null`.
 - `game.arcflight.prepareInstallStateSummary(shipActor)` derives counts by component type, active/inactive totals, active pressure totals, and present active install categories.
+- `game.arcflight.findShipsMissingInstallState()` dry-runs all Arcflight-enabled PF2E vehicle actors and reports ships that have installed hull, arkengine, arkengine mod, room, ship upgrade, or named crew data not represented by active install-state records.
+- `game.arcflight.backfillInstallStateForShip(shipActor, { dryRun: true })` prepares safe backfilled records for one ship without writing by default; pass `{ dryRun: false }` to append only missing records.
+- `game.arcflight.backfillInstallStateForAllShips({ dryRun: true })` runs the same dry-run-first backfill across all Arcflight ships and returns aggregate `wouldCreate`, `created`, and `skipped` counts.
+
+Backfilled records are marked `installCategory: "backfilled"`, `nativeInstall: false`, `refitInstall: false`, `temporaryInstall: false`, `active: true`, and `notes: "Backfilled from existing installed ship data."`; they preserve available component type, item id/UUID, key/name, `refitPressure` pressure contribution, and use `Date.now()` for `installedAt` unless the installed entry already provides a timestamp. The backfill helpers only read existing ship-owned installed data and append missing ship-owned install-state records when explicitly run with `{ dryRun: false }`; they do not mutate source items, compendium items, delete records, add UI buttons, or run automatically on startup.
 
 Matching aliases are available under `game.arcflight.devTools`. The Arcflight ship sheet now includes a compact, read-only Install State section that surfaces the normalized summary, pressure contribution totals, component type counts, install categories, and active record details from these helpers. The section is display-only: no drag/drop UI, enforced slot locking, install buttons, UI editing, combat systems, travel systems, or persistence migrations beyond basic normalization were added.
 
