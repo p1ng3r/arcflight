@@ -389,12 +389,14 @@ function evaluateDuplicateInstall(report, systemData = {}, candidate = {}, compo
 function buildReport(systemData, componentItemOrData, componentType, componentData) {
   const tierState = getShipTierState(systemData);
   const currentRefitPressure = normalizeRefitPressure(getShipRefitPressure(systemData));
+  const component = getComponentIdentity(componentItemOrData, componentType, componentData);
 
   return {
     ok: true,
     severity: "ok",
     componentType,
-    componentName: getComponentName(componentItemOrData, componentData),
+    componentName: component.name,
+    component,
     messages: [],
     warnings: [],
     projected: {
@@ -423,7 +425,6 @@ export function previewInstallValidation(shipActor, componentItemOrData) {
   const componentType = inferComponentType(componentItemOrData);
   const componentData = getComponentSystemData(componentItemOrData, componentType);
   const report = buildReport(systemData, componentItemOrData, componentType, componentData);
-  const candidate = getComponentIdentity(componentItemOrData, componentType, componentData);
 
   if (!componentType || FUTURE_UNSUPPORTED_COMPONENT_TYPES.has(componentType) || !SUPPORTED_COMPONENT_TYPES.has(componentType)) {
     report.unsupported = true;
@@ -431,7 +432,7 @@ export function previewInstallValidation(shipActor, componentItemOrData) {
     return report;
   }
 
-  evaluateDuplicateInstall(report, systemData, candidate, componentData);
+  evaluateDuplicateInstall(report, systemData, report.component, componentData);
   evaluateTierFit(report, systemData, componentData, componentType);
   evaluateRefitPressure(report, systemData, componentItemOrData, componentData);
 

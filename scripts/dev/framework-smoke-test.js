@@ -418,6 +418,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     });
 
     check(result, "Install preview low-pressure install is ok/info", ["ok", "info"].includes(lowPressurePreview.severity) && lowPressurePreview.unsupported === false, "ok or info", lowPressurePreview);
+    check(result, "Install preview report includes component identity", lowPressurePreview.component?.key === "smoke-low-pressure-preview" && lowPressurePreview.component?.name === "Smoke Low Pressure Preview", "component identity", lowPressurePreview.component);
     check(result, "Install preview over-tier component warns", ["warning", "danger"].includes(overTierPreview.severity) && overTierPreview.warnings.length > 0, "warning or danger", overTierPreview);
     checkEqual(result, "Install preview major refit is danger", "danger", majorRefitPreview.severity);
     checkEqual(result, "Install preview incompatible arkengine is danger", "danger", incompatibleArkenginePreview.severity);
