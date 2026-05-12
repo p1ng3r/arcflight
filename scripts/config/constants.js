@@ -35,10 +35,9 @@ export const ARCFLIGHT_WEAPON_ARCS = Object.freeze({
 });
 
 export const ARCFLIGHT_WEAPON_SIZES = Object.freeze({
-  LIGHT: "light",
+  SMALL: "small",
   MEDIUM: "medium",
-  HEAVY: "heavy",
-  CAPITAL: "capital"
+  LARGE: "large"
 });
 
 export const ARCFLIGHT_ROOM_CATEGORIES = Object.freeze({
@@ -107,7 +106,7 @@ export const ARCFLIGHT_CREW_QUALITIES = Object.freeze({
 });
 
 export const ARCFLIGHT_WEAPON_SIZE_DEFAULTS = Object.freeze({
-  [ARCFLIGHT_WEAPON_SIZES.LIGHT]: Object.freeze({
+  [ARCFLIGHT_WEAPON_SIZES.SMALL]: Object.freeze({
     mountSlots: 1,
     crewRequired: 1,
     strainCost: 0
@@ -117,15 +116,10 @@ export const ARCFLIGHT_WEAPON_SIZE_DEFAULTS = Object.freeze({
     crewRequired: 2,
     strainCost: 1
   }),
-  [ARCFLIGHT_WEAPON_SIZES.HEAVY]: Object.freeze({
+  [ARCFLIGHT_WEAPON_SIZES.LARGE]: Object.freeze({
     mountSlots: 2,
     crewRequired: 3,
     strainCost: 2
-  }),
-  [ARCFLIGHT_WEAPON_SIZES.CAPITAL]: Object.freeze({
-    mountSlots: 3,
-    crewRequired: 5,
-    strainCost: 4
   })
 });
 

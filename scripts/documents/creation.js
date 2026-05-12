@@ -5,6 +5,7 @@ import { getCoreRoom } from "../../data/rooms/core-rooms.js";
 import { getCoreShipUpgrade } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { getCoreArkengineMod } from "../../data/arkengine-mods/core-arkengine-mods.js";
 import { getCoreCrewAsset } from "../../data/crew/core-crew-assets.js";
+import { getCoreWeapon } from "../../data/weapons/core-weapons.js";
 import {
   ARCFLIGHT_COMPONENT_ITEM_TYPE,
   arcflightComponentTypeLabels,
@@ -160,6 +161,25 @@ export async function createCoreArkengineMod(modKey, operation = {}) {
 }
 
 /**
+ * Create one of Arcflight's core weapon entries as a PF2E equipment item.
+ *
+ * @param {string} weaponKey Lower-case kebab-case weapon key.
+ * @param {object} [operation]
+ * @returns {Promise<Item|null>}
+ */
+export async function createCoreWeapon(weaponKey, operation = {}) {
+  const weaponData = getCoreWeapon(weaponKey);
+  if (!weaponData) {
+    throw new Error(`Arcflight | ${weaponKey} is not a supported core weapon.`);
+  }
+
+  return createArcflightItem(ARCFLIGHT_ITEM_TYPES.WEAPON, {
+    name: weaponData.name ?? weaponData.key ?? weaponKey,
+    system: deepCloneData(weaponData)
+  }, operation);
+}
+
+/**
  * Create one of Arcflight's Phase 7 core crew assets as a PF2E equipment item.
  *
  * @param {string} crewAssetKey Lower-case kebab-case crew asset key.
@@ -182,6 +202,7 @@ export const createArkengine = createCoreArkengine;
 export const createArkengineMod = createCoreArkengineMod;
 export const createCrewAsset = createCoreCrewAsset;
 export const createHull = createCoreHull;
+export const createWeapon = createCoreWeapon;
 export const createRoom = createCoreRoom;
 export const createShipUpgrade = createCoreShipUpgrade;
 

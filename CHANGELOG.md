@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Weapon Data Foundation
+
+- Added data-only core weapon source entries with `small` / `medium` / `large` sizes, family/category fields, crew requirements, reload profiles, compatible arcs, traits, data-only damage profiles, and refit pressure metadata.
+- Added weapon creation and lookup helpers (`getCoreWeapon`, `getCoreWeaponKeys`, `createCoreWeapon`, and `createWeapon`) for PF2E equipment Items flagged as Arcflight weapon components.
+- Included weapons in core item sync reports and extended the framework smoke test for weapon keys, required starter fields, creation behavior, and item flags.
+- Kept this pass schema/helper-only: no weapon install/removal helpers, weapon UI, combat firing, attack rolls, damage rolls, ammo tracking, AP/RAP, or station actions were added.
+
 ### Component Removal UI MVP
 
 - Added controlled ship-sheet Remove buttons for installed Arkengine Mods, expansion Rooms, Ship Upgrades, and Crew Assets.

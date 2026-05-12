@@ -5,6 +5,8 @@ import {
   organizeArcflightItems
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
+import { CORE_WEAPON_KEYS, getCoreWeapon, getCoreWeaponKeys } from "../../data/weapons/core-weapons.js";
+import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import {
   backfillInstallStateForAllShips,
@@ -52,6 +54,31 @@ export function createArcflightDevTools() {
      * Move only Arcflight equipment components into matching Arcflight folders.
      */
     organizeArcflightItems,
+
+    /**
+     * Return immutable core weapon source keys.
+     */
+    getCoreWeaponKeys,
+
+    /**
+     * Return immutable core weapon source data by key.
+     */
+    getCoreWeapon,
+
+    /**
+     * Core weapon key constants for console inspection.
+     */
+    CORE_WEAPON_KEYS,
+
+    /**
+     * Create a core weapon as a PF2E equipment world Item.
+     */
+    createCoreWeapon,
+
+    /**
+     * Alias for createCoreWeapon.
+     */
+    createWeapon,
 
     /**
      * Dry-run core source registry coverage report for Arcflight component world Items.
