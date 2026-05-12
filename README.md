@@ -12,6 +12,12 @@ Arcflight is currently in its **Framework Foundation** milestone. The module pro
 
 For release management, promote framework-foundation work through the active development branch first, then merge to `main` only after Foundry smoke tests and normal PF2E sheet compatibility checks pass.
 
+## Current Foundation Status
+
+The current foundation checkpoint is stable for data-driven ship/component setup and controlled helper installs. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, and actor resolution safeguards.
+
+The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, component removal UI, source/compendium mutation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
+
 ## Current Architecture Overview
 
 Arcflight deliberately builds on normal PF2E documents instead of registering custom document subtypes:
@@ -38,7 +44,7 @@ The current Framework Foundation includes these data-first systems:
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
 - **Station framework** — ship-owned operating role definitions and assignments.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
-- **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`.
+- **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, lifecycle history, backfill dry runs, and actor resolution safeguards.
 
 Terminology used in sheets and docs:
 
@@ -139,6 +145,7 @@ The foundation layer initializes missing state for older ships, normalizes malfo
 
 Helper API:
 
+- `game.arcflight.createInstallId(componentType)` generates a lightweight install record id.
 - `game.arcflight.getInstallState(shipActor)` returns normalized `{ version, installs }` state.
 - `game.arcflight.getActiveInstallRecords(shipActor)` returns active install records.
 - `game.arcflight.getInactiveInstallRecords(shipActor)` returns inactive historical install records.
@@ -170,11 +177,11 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Creation: `createItem`, `createCoreHull`, `createHull`, `createCoreArkengine`, `createArkengine`, `createCoreArkengineMod`, `createArkengineMod`, `createCoreRoom`, `createRoom`, `createCoreShipUpgrade`, `createShipUpgrade`, `createCoreCrewAsset`, `createCrewAsset`.
 - Data lookup: `getCoreHull`, `getCoreArkengine`, `getCoreArkengineMod`, `getCoreCrewAsset`, `getCoreRoom`, `getCoreShipUpgrade`, `getArkengineVariant`, `getArkengineVariants`, `getStation`, `getStations`.
 - Key lookup: `CORE_HULL_PLATFORM_KEYS`, `CORE_ARKENGINE_KEYS`, `CORE_ARKENGINE_MOD_KEYS`, `CORE_CREW_ASSET_KEYS`, `CORE_ROOM_KEYS`, `CORE_SHIP_UPGRADE_KEYS`, `ARKENGINE_VARIANT_KEYS`, `STATION_KEYS`, plus matching `get*Keys()` helpers.
-- Defaults and type checks: `getDefaultComponentData`, `getDefaultShipData`, `isArcflightItem`, `getComponentType`, `getComponentData`, `getComponentTierMetadata`, `getComponentRefitPressure`, `previewInstallValidation`, `previewComponentInstall`, `getInstallValidationWarnings`, `isArcflightVehicle`, `setArcflightVehicleEnabled`.
-- Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`, `getActiveInstallRecords`, `getInactiveInstallRecords`, `getInstalledComponents`, `getInstallState`, `recordInstallState`, `deactivateInstallRecord`, `deactivateInstallRecordsByComponent`, `removeInstallState`, `findInstallRecord`, and `prepareInstallStateSummary`.
+- Defaults, type checks, and install previews: `getDefaultComponentData`, `getDefaultShipData`, `isArcflightItem`, `getComponentType`, `getComponentData`, `getComponentTierMetadata`, `getComponentRefitPressure`, `previewInstallValidation`, `previewComponentInstall`, `getInstallValidationWarnings`, `shouldBlockInstall`, `isArcflightVehicle`, `setArcflightVehicleEnabled`.
+- Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`, `getActiveInstallRecords`, `getInactiveInstallRecords`, `getInstalledComponents`, `getInstallState`, `createInstallId`, `recordInstallState`, `deactivateInstallRecord`, `deactivateInstallRecordsByComponent`, `removeInstallState`, `findInstallRecord`, `prepareInstallStateSummary`, `findShipsMissingInstallState`, `backfillInstallStateForShip`, and `backfillInstallStateForAllShips`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.
-- Item organization, core library sync, safe duplicate cleanup, and install preview helpers: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findMissingCoreArcflightItems()`, `game.arcflight.devTools.syncCoreArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, `game.arcflight.devTools.previewInstallValidation()`, `game.arcflight.devTools.previewComponentInstall()`, `game.arcflight.devTools.getInstallValidationWarnings()`, `game.arcflight.devTools.getActiveInstallRecords()`, `game.arcflight.devTools.getInactiveInstallRecords()`, `game.arcflight.devTools.getInstalledComponents()`, `game.arcflight.devTools.getInstallState()`, `game.arcflight.devTools.recordInstallState()`, `game.arcflight.devTools.deactivateInstallRecord()`, `game.arcflight.devTools.deactivateInstallRecordsByComponent()`, `game.arcflight.devTools.removeInstallState()`, `game.arcflight.devTools.findInstallRecord()`, `game.arcflight.devTools.prepareInstallStateSummary()`, and matching top-level helpers on `game.arcflight`.
+- Item organization, core library sync, safe duplicate cleanup, install preview, install-state, and backfill helpers: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findMissingCoreArcflightItems()`, `game.arcflight.devTools.syncCoreArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, `game.arcflight.devTools.previewInstallValidation()`, `game.arcflight.devTools.previewComponentInstall()`, `game.arcflight.devTools.getInstallValidationWarnings()`, `game.arcflight.devTools.shouldBlockInstall()`, `game.arcflight.devTools.getActiveInstallRecords()`, `game.arcflight.devTools.getInactiveInstallRecords()`, `game.arcflight.devTools.getInstalledComponents()`, `game.arcflight.devTools.getInstallState()`, `game.arcflight.devTools.createInstallId()`, `game.arcflight.devTools.recordInstallState()`, `game.arcflight.devTools.deactivateInstallRecord()`, `game.arcflight.devTools.deactivateInstallRecordsByComponent()`, `game.arcflight.devTools.removeInstallState()`, `game.arcflight.devTools.findInstallRecord()`, `game.arcflight.devTools.prepareInstallStateSummary()`, `game.arcflight.devTools.findShipsMissingInstallState()`, `game.arcflight.devTools.backfillInstallStateForShip()`, `game.arcflight.devTools.backfillInstallStateForAllShips()`, and matching top-level helpers on `game.arcflight`.
 
 ## Item Organization Workflow
 
@@ -242,7 +249,7 @@ Expected result:
 
 - The returned object has `passed: true`.
 - No Arcflight-specific console errors appear.
-- The helper can create temporary Arcflight framework data, install components, validate slot summaries, assign and clear a Station, and clean up temporary documents when `cleanup: true` is provided.
+- The helper can create temporary Arcflight framework data, install components, verify controlled install-rule enforcement labels, validate slot summaries, preserve replacement lifecycle history, run dry-run backfill coverage, assign and clear a Station, resolve the smoke-test actor reliably, and clean up temporary documents when `cleanup: true` is provided.
 - Normal PF2E equipment sheets still open.
 - Normal PF2E vehicle sheets still open.
 
@@ -272,7 +279,7 @@ After sheet or release-readiness changes, verify the following in Foundry:
 15. Open a normal PF2E equipment sheet.
 16. Open a normal PF2E vehicle sheet.
 17. Confirm empty or missing installed sections do not crash Arcflight sheet rendering.
-12. Confirm there are no Arcflight-specific console errors.
+18. Confirm there are no Arcflight-specific console errors.
 
 ## Current Module Behavior
 
@@ -283,6 +290,17 @@ Arcflight | Initializing module
 ```
 
 The module then registers optional ApplicationV2 sheets for PF2E equipment and PF2E vehicle actors without making them defaults. Normal PF2E sheets remain available and unaffected.
+
+## Recommended Next Systems
+
+Recommended follow-up systems after this foundation checkpoint are:
+
+1. Component removal UI.
+2. Weapon framework.
+3. Combat stations.
+4. Travel/voyage system.
+
+These should remain data-driven and should continue to avoid source/compendium mutation unless a future content-pack architecture explicitly requires it.
 
 ## Future Direction
 

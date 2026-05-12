@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Foundation Checkpoint Cleanup
+
+- Added a Current Foundation Status section that summarizes the stable Framework Foundation after controlled install UI, enforcement, install-state persistence, lifecycle history, backfill tooling, and actor resolution safeguards.
+- Refreshed README helper listings so documented `game.arcflight` and `game.arcflight.devTools` names include current install enforcement and backfill exports.
+- Clarified smoke test expectations around install-rule enforcement, lifecycle history, dry-run backfill coverage, and actor resolution without changing runtime behavior.
+- Added a Recommended Next Systems section for component removal UI, weapon framework, combat stations, and travel/voyage work while keeping this checkpoint documentation-only.
+
 ### Controlled Install Rule Enforcement
 
 - Added `shouldBlockInstall(preview)` as the shared install-preview blocking helper and exposed it on `game.arcflight` plus `game.arcflight.devTools`.
@@ -69,11 +76,11 @@
 
 ### Install Validation Preview Helpers
 
-- Added non-blocking install validation preview helpers exposed as `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, `game.arcflight.getInstallValidationWarnings(shipActor, component)`, and matching `game.arcflight.devTools` aliases.
+- Added read-only install validation preview helpers exposed as `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, `game.arcflight.getInstallValidationWarnings(shipActor, component)`, and matching `game.arcflight.devTools` aliases; controlled install enforcement was added later via `shouldBlockInstall(preview)`.
 - Preview reports now evaluate supported component type, duplicate install signals, tier fit, projected refit pressure/status, hull category tolerances, arkengine compatibility, arkengine mod slots, room slots, ship upgrade slots, and crew asset uniqueness/tier pressure without mutating ships or source items.
 - Unsupported future component types such as Weapon and Cargo now return stable `unsupported` warning reports instead of throwing during preview.
 - Extended the framework smoke test helper with install preview coverage for low-pressure installs, over-tier installs, major refit projections, incompatible arkengines, room slot overflow, legacy metadata, and unsupported future component types.
-- Kept this patch helper-only and warning-only; it does not block installs, add drag/drop UI, open modal dialogs, monkey-patch item creation, mutate compendium data, or add travel/combat automation.
+- Kept the initial preview patch helper-only and preview-only at introduction; later controlled install enforcement consumes danger previews to block supported invalid installs. It did not add drag/drop UI, open modal dialogs, monkey-patch item creation, mutate compendium data, or add travel/combat automation.
 
 ### Component Tier / Refit Metadata Retrofit
 
@@ -81,7 +88,7 @@
 - Retrofitted core Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets with data-only tier/refit metadata so installed components now contribute meaningful pressure totals.
 - Exposed `game.arcflight.getComponentTierMetadata(component)` and `game.arcflight.getComponentRefitPressure(component)` for source items, installed snapshots, and legacy data shapes.
 - Extended smoke validation for retrofitted categories, pressure total changes, readable tier metadata, and legacy items without metadata.
-- Kept this pass advisory and content/schema focused; no install blocking, drag/drop UI, combat automation, travel automation, weapon firing, validation dialogs, custom PF2E document types, or `Item.create` monkey-patching was added.
+- Kept this metadata pass advisory and content/schema focused at introduction; controlled install blocking was added later. No drag/drop UI, combat automation, travel automation, weapon firing, validation dialogs, custom PF2E document types, or `Item.create` monkey-patching was added.
 
 ### Core Item Library Sync
 
