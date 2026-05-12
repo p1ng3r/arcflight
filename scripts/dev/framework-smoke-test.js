@@ -736,7 +736,9 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Install preview room slot overflow is danger", "danger", roomOverflowPreview.severity);
     checkEqual(result, "Install preview mod slot overflow is danger", "danger", modOverflowPreview.severity);
     checkEqual(result, "Install preview duplicate unique crew is danger", "danger", uniqueCrewDuplicatePreview.severity);
-    check(result, "Install preview valid weapon mount is ok/info", ["ok", "info"].includes(validWeaponPreview.severity) && validWeaponPreview.unsupported === false, "ok or info supported weapon preview", validWeaponPreview);
+    const weaponMountValidationErrors = ["invalid weapon arc", "does not exist", "no hull weapon mount id", "is not allowed", "already occupied", "not compatible with"];
+    const validWeaponPreviewText = [...validWeaponPreview.messages, ...validWeaponPreview.warnings].join(" ").toLowerCase();
+    check(result, "Install preview valid weapon mount validates mount", validWeaponPreview.unsupported === false && validWeaponPreview.messages.some((message) => message.includes("can be installed")) && !weaponMountValidationErrors.some((error) => validWeaponPreviewText.includes(error)), "supported weapon preview with valid mount messaging and no weapon mount errors", validWeaponPreview);
     checkEqual(result, "Install preview invalid weapon arc is danger", "danger", invalidWeaponArcPreview.severity);
     checkEqual(result, "Install preview missing weapon mount is danger", "danger", missingWeaponMountPreview.severity);
     checkEqual(result, "Install preview incompatible weapon size is danger", "danger", incompatibleWeaponSizePreview.severity);
