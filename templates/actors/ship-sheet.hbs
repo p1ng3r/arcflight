@@ -340,6 +340,7 @@
         {{#each arcflight.system.installed.arkengineMods}}
           <li>
             <strong>{{this.displayName}}</strong> — {{this.modType}}; {{this.rarity}}; {{this.modSlotsRequired}} slot(s); <em>{{this.systemState}}</em>
+            <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
             {{#if this.effects.derivedStatModifiers.length}}
               <ul>
                 {{#each this.effects.derivedStatModifiers}}
@@ -383,7 +384,10 @@
         {{#if arcflight.system.installed.rooms.length}}
           <ul>
             {{#each arcflight.system.installed.rooms}}
-              <li><strong>{{this.displayName}}</strong> — {{this.roomType}}; {{this.expansionSlotsRequired}} slot(s); <em>{{this.systemState}}</em></li>
+              <li>
+                <strong>{{this.displayName}}</strong> — {{this.roomType}}; {{this.expansionSlotsRequired}} slot(s); <em>{{this.systemState}}</em>
+                <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
+              </li>
             {{/each}}
           </ul>
         {{else}}
@@ -429,6 +433,7 @@
         {{#each arcflight.system.installed.shipUpgrades}}
           <li>
             <strong>{{this.displayName}}</strong> — {{this.upgradeType}}; {{this.rarity}}; <em>{{this.systemState}}</em>
+            <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
             {{#if this.effects.derivedStatModifiers.length}}
               <ul>
                 {{#each this.effects.derivedStatModifiers}}
@@ -523,7 +528,10 @@
     {{#if arcflight.system.crew.namedCrew.length}}
       <ul>
         {{#each arcflight.system.crew.namedCrew}}
-          <li><strong>{{this.displayName}}</strong> — {{this.identity.role}}; {{this.crew.quality}}; preferred Station: {{this.stationAssignment.preferredStation}}</li>
+          <li>
+            <strong>{{this.displayName}}</strong> — {{this.identity.role}}; {{this.crew.quality}}; preferred Station: {{this.stationAssignment.preferredStation}}
+            <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
+          </li>
         {{/each}}
       </ul>
     {{else}}

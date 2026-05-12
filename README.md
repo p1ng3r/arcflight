@@ -14,9 +14,9 @@ For release management, promote framework-foundation work through the active dev
 
 ## Current Foundation Status
 
-The current foundation checkpoint is stable for data-driven ship/component setup and controlled helper installs. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, and actor resolution safeguards.
+The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs, and minimal controlled non-core component removal. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, and actor resolution safeguards.
 
-The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, component removal UI, source/compendium mutation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
+The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
 
 ## Current Architecture Overview
 
@@ -44,7 +44,7 @@ The current Framework Foundation includes these data-first systems:
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
 - **Station framework** — ship-owned operating role definitions and assignments.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
-- **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, lifecycle history, backfill dry runs, and actor resolution safeguards.
+- **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, non-core component removal, lifecycle history, backfill dry runs, and actor resolution safeguards.
 
 Terminology used in sheets and docs:
 
@@ -58,6 +58,12 @@ Terminology used in sheets and docs:
 - **Arkengine Mods** are engine-only tuning.
 - **Stations** are operating roles.
 - **Crew Assets** are named/support crew.
+
+## Controlled Non-Core Component Removal
+
+The Arcflight ship sheet now includes small **Remove** buttons only for installed Arkengine Mods, expansion Rooms, Ship Upgrades, and Crew Assets. Removal operates on ship-owned installed lists or the ship-owned crew roster, deactivates matching active install-state records with `removalReason: "removed"`, preserves inactive lifecycle history, recalculates ship stats and slot summaries, and refreshes the sheet. If an older ship has installed data but no matching active lifecycle record, the entry is still removed and the sheet warns that lifecycle history was missing.
+
+Hull and Arkengine removal buttons are intentionally not present; core replacement continues to handle Hull and Arkengine lifecycle history. This MVP does not add drag/drop removal, modal wizards, combat/travel automation, or source/compendium item mutation.
 
 ## Data Ownership Philosophy
 

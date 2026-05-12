@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Component Removal UI MVP
+
+- Added controlled ship-sheet Remove buttons for installed Arkengine Mods, expansion Rooms, Ship Upgrades, and Crew Assets.
+- Added actor-owned removal helpers that remove installed entries or crew roster entries, deactivate matching active install-state records with `removalReason: "removed"`, preserve inactive lifecycle history, and recalculate ship stats/slots after removal.
+- Kept Hull and Arkengine removal buttons out of scope because core replacement already preserves their lifecycle history.
+- Extended framework smoke coverage for non-core component removal, inactive install-state increments, and derived stat/slot recalculation without adding drag/drop, modal wizards, travel/combat systems, or source/compendium mutation.
+
 ### Foundation Checkpoint Cleanup
 
 - Added a Current Foundation Status section that summarizes the stable Framework Foundation after controlled install UI, enforcement, install-state persistence, lifecycle history, backfill tooling, and actor resolution safeguards.
