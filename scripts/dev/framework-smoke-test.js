@@ -40,7 +40,7 @@ import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
-import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
+import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -169,7 +169,9 @@ async function createSmokeTestComponents(createdItems) {
     await createSmokeTestComponent(createdItems, "arkengine", () => createCoreArkengine("tidewake-arkengine")),
     await createSmokeTestComponent(createdItems, "replacementArkengine", () => createCoreArkengine("iron-choir-engine")),
     await createSmokeTestComponent(createdItems, "arkengineMod", () => createCoreArkengineMod("pressure-lattice-tuning")),
+    await createSmokeTestComponent(createdItems, "overflowArkengineMod", () => createCoreArkengineMod("pressure-lattice-tuning")),
     await createSmokeTestComponent(createdItems, "room", () => createCoreRoom("workshop")),
+    await createSmokeTestComponent(createdItems, "overflowRoom", () => createCoreRoom("workshop")),
     await createSmokeTestComponent(createdItems, "shipUpgrade", () => createCoreShipUpgrade("reinforced-structural-ribbing")),
     await createSmokeTestComponent(createdItems, "crewAsset", () => createCoreCrewAsset("veteran-chief-engineer"))
   ];
@@ -193,6 +195,16 @@ async function attemptDuplicateInstall(result, name, operation) {
     check(result, name, true, "no double-apply", "completed", "Duplicate install completed without increasing installed counts.");
   } catch (error) {
     check(result, name, true, "duplicate rejected", "rejected", error.message);
+  }
+}
+
+async function expectInstallBlocked(result, name, operation, expectedMessagePart = "") {
+  try {
+    await operation();
+    check(result, name, false, "blocked install", "completed", "Install unexpectedly completed.");
+  } catch (error) {
+    const message = error.message ?? "";
+    check(result, name, !expectedMessagePart || message.includes(expectedMessagePart), expectedMessagePart || "blocked", message);
   }
 }
 
@@ -246,8 +258,21 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core item sync devTools exposed", typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems });
 
     const componentItems = await createSmokeTestComponents(createdItems);
+    await componentItems.overflowArkengineMod.update({
+      name: "Smoke Overflow Arkengine Mod",
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.identity.id`]: "smoke-overflow-arkengine-mod",
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.installation.modSlotsRequired`]: 99
+    });
+    await componentItems.overflowRoom.update({
+      name: "Smoke Overflow Room",
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.identity.id`]: "smoke-overflow-room",
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.installation.expansionSlotsRequired`]: 99
+    });
+    await componentItems.crewAsset.update({
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.restrictions.unique`]: true
+    });
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);
-    check(result, "Created smoke test components", result.createdItemIds.length === 8, 8, result.createdItemIds.length);
+    check(result, "Created smoke test components", result.createdItemIds.length === 10, 10, result.createdItemIds.length);
 
     const actorResult = await ensureSmokeTestActor();
     actor = actorResult.actor;
@@ -408,6 +433,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Replacing arkengine deactivates previous arkengine install", replacedArkengineRecord?.active === false && replacedArkengineRecord?.removalReason === "replaced" && replacedArkengineRecord?.removedAt > 0 && replacedArkengineRecord?.removedBy && replacedArkengineRecord?.replacedByInstallId, "replaced arkengine metadata", replacedArkengineRecord);
     checkEqual(result, "Inactive replacement records are preserved", 2, inactiveReplacementRecords.filter((record) => [ARCFLIGHT_ITEM_TYPES.HULL, ARCFLIGHT_ITEM_TYPES.ARKENGINE].includes(record.componentType)).length);
     checkEqual(result, "Active install counts remain correct after replacement", 6, activeReplacementRecords.length);
+    checkEqual(result, "Replacement hull remains active", componentItems.replacementHull.id, getArcflightShipData(actor).installed.hullItemId);
+    checkEqual(result, "Replacement arkengine remains active", componentItems.replacementArkengine.id, getArcflightShipData(actor).installed.arkengineItemId);
+
+    await expectInstallBlocked(result, "Room slot overflow install blocks", () => installRoom(actor, componentItems.overflowRoom), "expansion room slot capacity");
+    await expectInstallBlocked(result, "Arkengine mod slot overflow install blocks", () => installArkengineMod(actor, componentItems.overflowArkengineMod), "mod slot capacity");
+    await expectInstallBlocked(result, "Duplicate unique crew asset blocks", () => addCrewAsset(actor, componentItems.crewAsset), "unique crew roster entry");
+    checkEqual(result, "Blocked install attempts preserve install state records", 8, getInstallState(actor).installs.length);
 
     const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
     await actor.update({
@@ -576,6 +608,16 @@ export async function runFrameworkSmokeTest(options = {}) {
       installation: { expansionSlotsRequired: 99 },
       refitPressure: {}
     });
+    const modOverflowPreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+      identity: { id: "smoke-mod-overflow-preview", displayName: "Smoke Mod Overflow Preview" },
+      installation: { modSlotsRequired: 99 },
+      refitPressure: {}
+    });
+    const uniqueCrewDuplicatePreview = previewInstallValidation(previewBaseSystem, componentItems.crewAsset);
+    const roomBlockState = shouldBlockInstall(roomOverflowPreview);
+    const modBlockState = shouldBlockInstall(modOverflowPreview);
+    const uniqueCrewBlockState = shouldBlockInstall(uniqueCrewDuplicatePreview);
     const legacyPreview = previewInstallValidation(previewBaseSystem, {
       componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
       identity: { id: "smoke-legacy-preview", displayName: "Smoke Legacy Preview" },
@@ -596,11 +638,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Install preview major refit is danger", "danger", majorRefitPreview.severity);
     checkEqual(result, "Install preview incompatible arkengine is danger", "danger", incompatibleArkenginePreview.severity);
     checkEqual(result, "Install preview room slot overflow is danger", "danger", roomOverflowPreview.severity);
+    checkEqual(result, "Install preview mod slot overflow is danger", "danger", modOverflowPreview.severity);
+    checkEqual(result, "Install preview duplicate unique crew is danger", "danger", uniqueCrewDuplicatePreview.severity);
+    check(result, "shouldBlockInstall blocks room slot overflow", roomBlockState.blocked === true && roomBlockState.reason.length > 0, "blocked with reason", roomBlockState);
+    check(result, "shouldBlockInstall blocks mod slot overflow", modBlockState.blocked === true && modBlockState.reason.length > 0, "blocked with reason", modBlockState);
+    check(result, "shouldBlockInstall blocks duplicate unique crew", uniqueCrewBlockState.blocked === true && uniqueCrewBlockState.reason.length > 0, "blocked with reason", uniqueCrewBlockState);
     check(result, "Install preview legacy metadata does not crash", legacyPreview && legacyPreview.unsupported === false && Array.isArray(legacyPreview.warnings), "stable report", legacyPreview);
     check(result, "Install preview unsupported future component warns", unsupportedPreview.unsupported === true && unsupportedPreview.warnings.length > 0, "unsupported warning", unsupportedPreview);
     check(result, "Install preview warning helper returns strings", Array.isArray(warningStrings) && warningStrings.length > 0, "warning strings", warningStrings);
-    check(result, "Install preview helpers exposed", typeof globalThis.game?.arcflight?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.getInstallValidationWarnings === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.getInstallValidationWarnings });
-    check(result, "Install preview devTools exposed", typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings });
+    check(result, "Install preview helpers exposed", typeof globalThis.game?.arcflight?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.getInstallValidationWarnings === "function" && typeof globalThis.game?.arcflight?.shouldBlockInstall === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.getInstallValidationWarnings, shouldBlockInstall: typeof globalThis.game?.arcflight?.shouldBlockInstall });
+    check(result, "Install preview devTools exposed", typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings === "function" && typeof globalThis.game?.arcflight?.devTools?.shouldBlockInstall === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings, shouldBlockInstall: typeof globalThis.game?.arcflight?.devTools?.shouldBlockInstall });
 
     checkEqual(result, "Current hull preserved", preservedCurrent.hull, shipData.current.hull);
     checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
