@@ -28,6 +28,14 @@ import { CORE_WEAPON_KEYS, CORE_WEAPONS, getCoreWeapon, getCoreWeaponKeys } from
 import { CORE_SHIP_UPGRADE_KEYS, CORE_SHIP_UPGRADES, getCoreShipUpgrade, getCoreShipUpgradeKeys } from "../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_ARKENGINE_MOD_KEYS, CORE_ARKENGINE_MODS, getCoreArkengineMod, getCoreArkengineModKeys } from "../data/arkengine-mods/core-arkengine-mods.js";
 import { CORE_STATIONS, STATION_KEYS, getStation, getStationKeys, getStations } from "../data/stations/core-stations.js";
+import {
+  CORE_STATION_ACTION_KEYS,
+  CORE_STATION_ACTIONS,
+  getCoreStationAction,
+  getCoreStationActionKeys,
+  getCoreStationActions,
+  getCoreStationActionsForStation
+} from "../data/station-actions/core-station-actions.js";
 import { CORE_CREW_ASSET_KEYS, CORE_CREW_ASSETS, getCoreCrewAsset, getCoreCrewAssetKeys } from "../data/crew/core-crew-assets.js";
 import {
   ARKENGINE_VARIANT_KEYS,
@@ -190,6 +198,10 @@ Hooks.once("init", () => {
     getStationKeys,
     getStation,
     getStations,
+    getCoreStationAction,
+    getCoreStationActionKeys,
+    getCoreStationActions,
+    getCoreStationActionsForStation,
     CORE_HULL_PLATFORM_KEYS,
     CORE_ARKENGINE_KEYS,
     HULL_PATTERN_KEYS,
@@ -210,6 +222,7 @@ Hooks.once("init", () => {
     CORE_SHIP_UPGRADE_KEYS,
     ARKENGINE_VARIANT_KEYS,
     STATION_KEYS,
+    CORE_STATION_ACTION_KEYS,
     EXAMPLE_SHIP_BUILD_KEYS,
     exampleShipBuildKeys: EXAMPLE_SHIP_BUILD_KEYS,
     coreHulls: CORE_HULLS,
@@ -223,6 +236,7 @@ Hooks.once("init", () => {
     coreWeapons: CORE_WEAPONS,
     arkengineVariants: ARKENGINE_VARIANTS,
     coreStations: CORE_STATIONS,
+    coreStationActions: CORE_STATION_ACTIONS,
     coreHullPlatformKeys: CORE_HULL_PLATFORM_KEYS,
     coreArkengineKeys: CORE_ARKENGINE_KEYS,
     hullPatternKeys: HULL_PATTERN_KEYS,
@@ -234,6 +248,7 @@ Hooks.once("init", () => {
     coreWeaponKeys: CORE_WEAPON_KEYS,
     arkengineVariantKeys: ARKENGINE_VARIANT_KEYS,
     stationKeys: STATION_KEYS,
+    coreStationActionKeys: CORE_STATION_ACTION_KEYS,
     getItemDocumentType: getArcflightItemDocumentType,
     getDefaultComponentData: getDefaultArcflightComponentData,
     getDefaultShipData: getDefaultArcflightShipData,
@@ -371,6 +386,10 @@ export {
   getStationKeys,
   getStation,
   getStations,
+  getCoreStationAction,
+  getCoreStationActionKeys,
+  getCoreStationActions,
+  getCoreStationActionsForStation,
   CORE_HULLS,
   CORE_ARKENGINES,
   HULL_PATTERNS,
@@ -402,6 +421,8 @@ export {
   ARKENGINE_VARIANT_KEYS,
   CORE_STATIONS,
   STATION_KEYS,
+  CORE_STATION_ACTIONS,
+  CORE_STATION_ACTION_KEYS,
   EXAMPLE_SHIP_BUILD_KEYS,
   getExampleShipBuildKeys,
   getExampleShipBuild,

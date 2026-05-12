@@ -6,6 +6,14 @@ import {
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { CORE_WEAPON_KEYS, getCoreWeapon, getCoreWeaponKeys } from "../../data/weapons/core-weapons.js";
+import {
+  CORE_STATION_ACTION_KEYS,
+  CORE_STATION_ACTIONS,
+  getCoreStationAction,
+  getCoreStationActionKeys,
+  getCoreStationActions,
+  getCoreStationActionsForStation
+} from "../../data/station-actions/core-station-actions.js";
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { installWeapon, removeInstalledWeapon } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
@@ -70,6 +78,36 @@ export function createArcflightDevTools() {
      * Core weapon key constants for console inspection.
      */
     CORE_WEAPON_KEYS,
+
+    /**
+     * Data-only station action registry for future station-action systems.
+     */
+    CORE_STATION_ACTIONS,
+
+    /**
+     * Immutable station action source keys.
+     */
+    CORE_STATION_ACTION_KEYS,
+
+    /**
+     * Return immutable station action source keys.
+     */
+    getCoreStationActionKeys,
+
+    /**
+     * Return all immutable station action source data.
+     */
+    getCoreStationActions,
+
+    /**
+     * Return immutable station action source data by key.
+     */
+    getCoreStationAction,
+
+    /**
+     * Return station action source data for a station key.
+     */
+    getCoreStationActionsForStation,
 
     /**
      * Create a core weapon as a PF2E equipment world Item.
