@@ -5,7 +5,8 @@
 ### Invalid Legacy Document Cleanup Helpers
 
 - Added dry-run-by-default helpers `game.arcflight.findInvalidLegacyArcflightDocuments()` and `game.arcflight.cleanupInvalidLegacyArcflightDocuments({ dryRun: true })`, plus matching `game.arcflight.devTools` aliases, for identifying stale world Actor/Item records whose document type starts with `arcflight.`.
-- Cleanup reports actor/item IDs, names, invalid types, discovery methods, deletion status, skipped entries, and warnings, with optional known-ID support via `{ actorIds: [], itemIds: [] }` when PF2E startup logs expose IDs that automatic discovery cannot inspect.
+- Updated the v2 cleanup path to bypass initialized PF2E `Actor`/`Item` deletion and call available raw Foundry world database delete backends with an array of document ID strings, including deletion-attempt reporting and manual-cleanup warnings if no raw delete path succeeds.
+- Cleanup reports actor/item IDs, names, invalid types, discovery methods, deletion status, skipped entries, warnings, and raw deletion attempts, with optional known-ID support via `{ actorIds: [], itemIds: [] }` when PF2E startup logs expose IDs that automatic discovery cannot inspect.
 - Kept the helper narrowly scoped to invalid legacy world Actor/Item records; it does not create custom Actor/Item subtypes, mutate valid PF2E `vehicle`/`equipment` Arcflight documents, delete compendium content, or delete actor embedded items.
 
 ### Install Validation UI Readout

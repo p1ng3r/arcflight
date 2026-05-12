@@ -1,4 +1,5 @@
 const ARCFLIGHT_LEGACY_TYPE_PREFIX = "arcflight.";
+const ARCFLIGHT_VALID_PF2E_TYPES = Object.freeze(new Set(["vehicle", "equipment"]));
 const ARCFLIGHT_LEGACY_DOCUMENTS = Object.freeze({
   Actor: Object.freeze({
     collectionName: "actors",
@@ -47,8 +48,13 @@ function pushWarning(report, message, detail = null) {
   report.warnings.push(detail ? `${message} ${detail}` : message);
 }
 
+function getWorldCollection(documentName) {
+  const collectionName = ARCFLIGHT_LEGACY_DOCUMENTS[documentName].collectionName;
+  return globalThis.game?.[collectionName] ?? globalThis.game?.collections?.get?.(documentName) ?? null;
+}
+
 function addCandidate(candidatesById, documentName, rawSource, discoveryMethod, options = {}) {
-  const source = getRawSource(rawSource) ?? {};
+  const source = getRawSource(rawSource);
   const id = options.id ?? getDocumentId(source);
   if (!id) return;
 
@@ -56,9 +62,10 @@ function addCandidate(candidatesById, documentName, rawSource, discoveryMethod, 
   const name = getDocumentName(source) || options.name || "";
   const typeVerified = isInvalidLegacyArcflightType(documentName, type);
   const userProvided = options.userProvided === true;
+  const sourceReadable = source !== null && (Boolean(type) || Boolean(name) || getDocumentId(source) === id);
 
   if (!typeVerified && !userProvided) return;
-  if (type === "vehicle" || type === "equipment") return;
+  if (ARCFLIGHT_VALID_PF2E_TYPES.has(type)) return;
 
   const existing = candidatesById.get(id);
   const candidate = {
@@ -69,6 +76,8 @@ function addCandidate(candidatesById, documentName, rawSource, discoveryMethod, 
     type: type || existing?.type || "unknown",
     invalidLegacyType: typeVerified || existing?.invalidLegacyType === true,
     userProvided: userProvided || existing?.userProvided === true,
+    sourceReadable: sourceReadable || existing?.sourceReadable === true,
+    unverified: (!sourceReadable && userProvided) || existing?.unverified === true,
     discoveryMethods: existing?.discoveryMethods ? [...existing.discoveryMethods] : []
   };
 
@@ -144,6 +153,7 @@ function getSourceFromContainer(container, id) {
 
 function getRawCollectionSourceById(collection, id) {
   return getSourceFromContainer(collection?._source, id)
+    ?? getSourceFromContainer(collection?.invalidDocuments, id)
     ?? getSourceFromContainer(collection?.index, id)
     ?? getSourceFromContainer(collection?._index, id)
     ?? null;
@@ -159,7 +169,7 @@ function addUserProvidedIds(ids, documentName, candidatesById, report) {
     const bestSource = rawSource ?? initialized;
     const detectedType = getDocumentType(bestSource);
 
-    if (detectedType === "vehicle" || detectedType === "equipment") {
+    if (ARCFLIGHT_VALID_PF2E_TYPES.has(detectedType)) {
       pushWarning(report, `Skipped user-provided ${documentName} ${trimmedId} because it is a valid PF2E ${detectedType} document.`);
       continue;
     }
@@ -169,6 +179,10 @@ function addUserProvidedIds(ids, documentName, candidatesById, report) {
       continue;
     }
 
+    if (!bestSource) {
+      pushWarning(report, `User-provided ${documentName} ${trimmedId} could not be verified from raw world collection sources; cleanup may attempt deletion only because the ID was explicitly provided.`);
+    }
+
     addCandidate(candidatesById, documentName, bestSource, "user-provided id", {
       id: trimmedId,
       userProvided: true,
@@ -176,11 +190,6 @@ function addUserProvidedIds(ids, documentName, candidatesById, report) {
       name: getDocumentName(bestSource)
     });
   }
-}
-
-function getWorldCollection(documentName) {
-  const collectionName = ARCFLIGHT_LEGACY_DOCUMENTS[documentName].collectionName;
-  return globalThis.game?.[collectionName] ?? globalThis.game?.collections?.get?.(documentName) ?? null;
 }
 
 function normalizeCandidates(candidatesById) {
@@ -243,31 +252,107 @@ function getDocumentClass(documentName) {
   return globalThis.CONFIG?.[documentName]?.documentClass ?? globalThis[documentName] ?? null;
 }
 
-async function deleteThroughDatabaseBackend(documentName, ids) {
+function getDatabaseCandidates(documentName) {
+  const collection = getWorldCollection(documentName);
   const documentClass = getDocumentClass(documentName);
-  const database = documentClass?.database ?? globalThis.foundry?.abstract?.Document?.implementation?.database;
-  if (!documentClass || !database || typeof database.delete !== "function") return null;
-
-  const query = { _id: { $in: ids } };
-  const options = { pack: null, parent: null };
-  const user = globalThis.game?.user?.id;
-  return database.delete(documentClass, { query, options, user });
-}
-
-async function deleteThroughCollectionDatabase(collectionName, ids) {
-  const database = globalThis.game?.data?.db ?? globalThis.game?.database ?? globalThis.foundry?.utils?.getProperty?.(globalThis, "game.data.db");
-  if (!database || typeof database.delete !== "function") return null;
-
-  return database.delete(collectionName, ids);
-}
-
-async function rawDeleteDocuments(documentName, ids) {
-  const backendResult = await deleteThroughDatabaseBackend(documentName, ids);
-  if (backendResult !== null) return { method: "document database backend", result: backendResult };
-
+  const fallbackDatabase = globalThis.foundry?.abstract?.Document?.implementation?.database;
+  const gameDatabase = globalThis.game?.data?.db ?? globalThis.game?.database ?? null;
   const collectionName = ARCFLIGHT_LEGACY_DOCUMENTS[documentName].collectionName;
-  const collectionResult = await deleteThroughCollectionDatabase(collectionName, ids);
-  if (collectionResult !== null) return { method: "world database collection backend", result: collectionResult };
+  const candidates = [
+    {
+      method: "collection.database.delete(documentClass, ids)",
+      database: collection?.database,
+      target: documentClass,
+      requiresDocumentClass: true
+    },
+    {
+      method: "documentClass.database.delete(documentClass, ids)",
+      database: documentClass?.database,
+      target: documentClass,
+      requiresDocumentClass: true
+    },
+    {
+      method: "foundry.abstract.Document.implementation.database.delete(documentClass, ids)",
+      database: fallbackDatabase,
+      target: documentClass,
+      requiresDocumentClass: true
+    },
+    {
+      method: "game.database.delete(documentClass, ids)",
+      database: gameDatabase,
+      target: documentClass,
+      requiresDocumentClass: true
+    },
+    {
+      method: "game.database.delete(collectionName, ids)",
+      database: gameDatabase,
+      target: collectionName,
+      requiresDocumentClass: false
+    }
+  ];
+
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    if (!candidate.database || typeof candidate.database.delete !== "function") return false;
+    if (candidate.requiresDocumentClass && !candidate.target) return false;
+    const key = `${candidate.method}:${candidate.target?.documentName ?? candidate.target?.name ?? candidate.target}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function tryDatabaseDelete(candidate, ids, documentName, deletionAttempts) {
+  const userId = globalThis.game?.user?.id;
+  const options = { pack: null, parent: null };
+  const callShapes = [
+    { suffix: " with user", args: () => [candidate.target, [...ids], userId] },
+    { suffix: " with options and user", args: () => [candidate.target, [...ids], options, userId] },
+    { suffix: " ids only", args: () => [candidate.target, [...ids]] }
+  ];
+
+  for (const callShape of callShapes) {
+    const operation = [...ids];
+    const attempt = {
+      documentName,
+      method: `${candidate.method}${callShape.suffix}`,
+      ids: operation,
+      operationShape: "array<string>",
+      status: "pending"
+    };
+    deletionAttempts.push(attempt);
+
+    try {
+      const result = await candidate.database.delete(...callShape.args());
+      attempt.status = "success";
+      attempt.result = result;
+      return { method: attempt.method, result };
+    } catch (error) {
+      attempt.status = "failed";
+      attempt.error = error?.message ?? String(error);
+    }
+  }
+
+  return null;
+}
+
+async function rawDeleteDocuments(documentName, ids, deletionAttempts) {
+  const candidates = getDatabaseCandidates(documentName);
+  if (candidates.length === 0) {
+    deletionAttempts.push({
+      documentName,
+      ids: [...ids],
+      operationShape: "array<string>",
+      status: "unavailable",
+      method: "no raw world database delete backend found"
+    });
+    return null;
+  }
+
+  for (const candidate of candidates) {
+    const deletion = await tryDatabaseDelete(candidate, ids, documentName, deletionAttempts);
+    if (deletion) return deletion;
+  }
 
   return null;
 }
@@ -280,12 +365,41 @@ function groupByDocumentName(documents) {
   }, {});
 }
 
+function safetyCheckDocument(document, report) {
+  const collection = getWorldCollection(document.documentName);
+  const rawSource = getRawCollectionSourceById(collection, document.id);
+  const rawType = getDocumentType(rawSource);
+
+  if (ARCFLIGHT_VALID_PF2E_TYPES.has(rawType)) {
+    return { ...document, status: "skipped-valid-pf2e-type", type: rawType };
+  }
+
+  if (rawType && !isInvalidLegacyArcflightType(document.documentName, rawType)) {
+    return { ...document, status: "skipped-non-arcflight-type", type: rawType };
+  }
+
+  if (!rawSource && document.userProvided && !document.invalidLegacyType) {
+    pushWarning(report, `Allowing unverified user-provided ${document.documentName} ${document.id} because no raw source was readable; confirm this is a top-level world ${document.documentName} with type starting "arcflight." before running outside dry-run.`);
+    return { ...document, unverified: true };
+  }
+
+  if (!rawSource && !document.invalidLegacyType) {
+    return { ...document, status: "skipped-unverified" };
+  }
+
+  if (rawType && rawType !== document.type) {
+    return { ...document, type: rawType, invalidLegacyType: true, sourceReadable: true, unverified: false };
+  }
+
+  return { ...document, sourceReadable: document.sourceReadable || Boolean(rawSource) };
+}
+
 /**
  * Dry-run by default. Pass { dryRun: false } to raw-delete only invalid legacy
  * Arcflight world Actor/Item documents with arcflight.* types.
  *
  * @param {{ dryRun?: boolean, actorIds?: string[], itemIds?: string[] }} [options]
- * @returns {Promise<{dryRun: boolean, actors: Array, items: Array, documents: Array, deleted: Array, skipped: Array, warnings: string[]}>}
+ * @returns {Promise<{dryRun: boolean, actors: Array, items: Array, documents: Array, deleted: Array, skipped: Array, warnings: string[], deletionAttempts: Array}>}
  */
 export async function cleanupInvalidLegacyArcflightDocuments(options = {}) {
   const dryRun = options.dryRun !== false;
@@ -297,12 +411,31 @@ export async function cleanupInvalidLegacyArcflightDocuments(options = {}) {
     documents: found.documents,
     deleted: [],
     skipped: [],
-    warnings: [...found.warnings]
+    warnings: [...found.warnings],
+    deletionAttempts: []
   };
 
-  const deletable = found.documents.filter((document) => document.invalidLegacyType || document.userProvided);
+  const deletable = [];
+  for (const document of found.documents) {
+    const checked = safetyCheckDocument(document, report);
+    if (checked.status?.startsWith?.("skipped-")) {
+      report.skipped.push(checked);
+    } else {
+      deletable.push(checked);
+    }
+  }
+
+  report.actors = deletable.filter((document) => document.documentName === "Actor");
+  report.items = deletable.filter((document) => document.documentName === "Item");
+  report.documents = [...report.actors, ...report.items];
+
   if (dryRun) {
     console.warn("Arcflight | DRY RUN ONLY: invalid legacy arcflight.* cleanup found these world documents. Pass { dryRun: false } to delete them.", deletable);
+    return report;
+  }
+
+  if (deletable.length === 0) {
+    pushWarning(report, "No invalid legacy arcflight.* world Actor or Item documents passed safety checks for deletion.");
     return report;
   }
 
@@ -311,24 +444,17 @@ export async function cleanupInvalidLegacyArcflightDocuments(options = {}) {
   const groups = groupByDocumentName(deletable);
   for (const [documentName, documents] of Object.entries(groups)) {
     const ids = documents.map((document) => document.id);
-    try {
-      const deletion = await rawDeleteDocuments(documentName, ids);
-      if (!deletion) {
-        for (const document of documents) {
-          report.skipped.push({ ...document, status: "delete-api-unavailable" });
-        }
-        pushWarning(report, `Raw deletion API was unavailable for ${documentName}. Manual world database cleanup is required for IDs: ${ids.join(", ")}. Delete only top-level world ${documentName} records whose type starts with "arcflight."; do not delete valid PF2E vehicle/equipment documents, compendium content, or actor embedded items.`);
-        continue;
+    const deletion = await rawDeleteDocuments(documentName, ids, report.deletionAttempts);
+    if (!deletion) {
+      for (const document of documents) {
+        report.skipped.push({ ...document, status: "delete-api-unavailable" });
       }
+      pushWarning(report, `Raw deletion API was unavailable or failed for ${documentName}. Manual world database cleanup is required for IDs: ${ids.join(", ")}. Delete only top-level world ${documentName} records whose type starts with "arcflight."; do not delete valid PF2E vehicle/equipment documents, compendium content, or actor embedded items.`);
+      continue;
+    }
 
-      for (const document of documents) {
-        report.deleted.push({ ...document, status: "deleted", deletionMethod: deletion.method });
-      }
-    } catch (error) {
-      for (const document of documents) {
-        report.skipped.push({ ...document, status: "delete-failed", error: error?.message ?? String(error) });
-      }
-      pushWarning(report, `Raw deletion failed for ${documentName} IDs: ${ids.join(", ")}. Manual world database cleanup may be required.`, error?.message ?? String(error));
+    for (const document of documents) {
+      report.deleted.push({ ...document, status: "deleted", deletionMethod: deletion.method });
     }
   }
 
