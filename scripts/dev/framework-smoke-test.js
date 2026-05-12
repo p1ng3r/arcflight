@@ -348,12 +348,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     const { prepareArcflightShipViewData } = await import("../sheets/ship-sheet.js");
     const preparedShipViewData = prepareArcflightShipViewData({
       enabled: true,
-      actorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
+      actorType: "ship",
       system: shipData
     });
     const legacyShipViewData = prepareArcflightShipViewData({
       enabled: true,
-      actorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
+      actorType: "ship",
       system: {}
     });
     checkEqual(result, "Ship sheet readout exposes refit status", shipData.tier.refitStatus, preparedShipViewData.system.installValidationReadout.tier.refitStatus);
