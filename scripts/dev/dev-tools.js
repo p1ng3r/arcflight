@@ -6,6 +6,15 @@ import {
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
+import {
+  createInstallId,
+  findInstallRecord,
+  getInstalledComponents,
+  getInstallState,
+  prepareInstallStateSummary,
+  recordInstallState,
+  removeInstallState
+} from "../helpers/install-state.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
@@ -71,6 +80,41 @@ export function createArcflightDevTools() {
      * Return preview warning strings for a proposed install.
      */
     getInstallValidationWarnings,
+
+    /**
+     * Generate a lightweight install record id.
+     */
+    createInstallId,
+
+    /**
+     * Return normalized install records currently active on an Arcflight ship.
+     */
+    getInstalledComponents,
+
+    /**
+     * Return the normalized persistent install-state object for an Arcflight ship.
+     */
+    getInstallState,
+
+    /**
+     * Append one normalized persistent install record to an Arcflight ship.
+     */
+    recordInstallState,
+
+    /**
+     * Mark one persistent install record inactive while preserving record history.
+     */
+    removeInstallState,
+
+    /**
+     * Find one persistent install record by installId.
+     */
+    findInstallRecord,
+
+    /**
+     * Prepare active/inactive counts, component counts, pressure totals, and categories.
+     */
+    prepareInstallStateSummary,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.

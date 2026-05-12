@@ -20,7 +20,7 @@ Arcflight deliberately builds on normal PF2E documents instead of registering cu
 - **PF2E equipment items are Arcflight components.** Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, Cargo, Weapon, and Crew Asset data all live on equipment items with Arcflight flags.
 - **Arcflight data lives in flags.** Ship and component data are stored under `flags.arcflight.system`; PF2E-owned `system` data remains untouched.
 - **Source items are immutable during installation.** Installing a Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset copies the needed framework data onto the ship actor and keeps the source item unchanged.
-- **Runtime ownership belongs to the ship actor.** Installed references, copied Base data, recalculated Derived values, Current runtime values, station assignments, and crew roster state are owned by the Arcflight-enabled PF2E vehicle actor.
+- **Runtime ownership belongs to the ship actor.** Installed references, normalized install-state records, copied Base data, recalculated Derived values, Current runtime values, station assignments, and crew roster state are owned by the Arcflight-enabled PF2E vehicle actor.
 - **Stations are role data, not equipment items.** Station definitions and assignments live under `flags.arcflight.system.stations` on the ship.
 - **Sheets are optional and non-default.** Arcflight registers optional ApplicationV2 sheets for PF2E equipment and vehicle actors without replacing normal PF2E item or vehicle sheets.
 
@@ -43,6 +43,7 @@ The current Framework Foundation includes these data-first systems:
 Terminology used in sheets and docs:
 
 - **Installed** means source references and copied installed entries stored on the ship actor.
+- **Install State** means normalized ship-owned lifecycle records under `flags.arcflight.system.installState` that future install/removal UI, repair state, combat targeting, voyage wear, cargo manifests, and export tooling can consume.
 - **Base** means copied component data used as recalculation input.
 - **Derived** means recalculated framework values from Base data plus supported installed modifiers.
 - **Current** means editable runtime state on the ship actor.
@@ -59,7 +60,7 @@ Arcflight keeps data ownership explicit:
 1. **Compendium/source item data is content.** Core data modules and created equipment items describe available Hulls, Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets.
 2. **Install helpers copy data onto ships.** Helpers store source item references and framework snapshots under the ship actor's `flags.arcflight.system` tree.
 3. **Source items remain immutable.** A component item can be installed or copied into a ship roster without changing that item.
-4. **Runtime values stay on ships.** Current Hull, Lifeveil, Strain, Morale, stored spell ranks, crew roster state, station assignments, and installed slot summaries are ship-owned runtime data.
+4. **Runtime values stay on ships.** Current Hull, Lifeveil, Strain, Morale, stored spell ranks, crew roster state, station assignments, installed slot summaries, and persistent install lifecycle records are ship-owned runtime data.
 5. **Future systems should remain data-driven.** Gameplay pillars should consume Core data instead of hardcoding content into UI or automation logic.
 
 ## Core Hull Library and Tier / Refit Readiness
@@ -79,6 +80,62 @@ Core Arkengines, Arkengine Mods, Rooms, Ship Upgrades, and Crew Assets now carry
 
 Arcflight also exposes warning-only install validation previews through `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, and `game.arcflight.getInstallValidationWarnings(shipActor, component)`. These helpers return stable report objects with `ok`, `severity`, `messages`, `warnings`, `current`, `projected`, and `unsupported` fields. They evaluate component type support, tier fit, projected refit pressure, arkengine compatibility, arkengine mod slots, room slots, ship upgrade slots, crew uniqueness/tier pressure, and duplicate install signals without blocking installs or mutating ship, item, or compendium data.
 
+## Persistent Install-State Foundation
+
+Arcflight ships now have a normalized, ship-owned install-state container at `flags.arcflight.system.installState`:
+
+```js
+{
+  version: 1,
+  installs: []
+}
+```
+
+Each install record is plain serializable data:
+
+```js
+{
+  installId: "install-id",
+  itemId: "source-item-id",
+  itemUuid: "Item.sourceUuid",
+  componentType: "room",
+  installedAt: Date.now(),
+  installedBy: "user-id",
+  hullSlot: "optional-hull-slot",
+  roomSlot: "optional-room-slot",
+  weaponArc: "optional-weapon-arc",
+  installCategory: "native",
+  nativeInstall: true,
+  refitInstall: false,
+  temporaryInstall: false,
+  pressureContribution: {
+    total: 0,
+    weapon: 0,
+    engine: 0,
+    infrastructure: 0,
+    lifeveil: 0,
+    crewCommand: 0,
+    occult: 0
+  },
+  tierAtInstall: 2,
+  notes: "optional notes",
+  active: true
+}
+```
+
+The foundation layer initializes missing state for older ships, normalizes malformed legacy shapes, generates lightweight install IDs, rejects duplicate `installId` values when recording new installs, and marks records inactive during removal so lifecycle history can remain available to future systems. It does not mutate source or compendium items, create custom document subclasses, or require an install UI.
+
+Helper API:
+
+- `game.arcflight.getInstallState(shipActor)` returns normalized `{ version, installs }` state.
+- `game.arcflight.getInstalledComponents(shipActor)` returns active install records.
+- `game.arcflight.recordInstallState(shipActor, installRecord)` appends one sanitized record and persists it to the ship.
+- `game.arcflight.removeInstallState(shipActor, installId)` marks one record inactive and persists the normalized state.
+- `game.arcflight.findInstallRecord(shipActor, installId)` returns a matching record or `null`.
+- `game.arcflight.prepareInstallStateSummary(shipActor)` derives counts by component type, active/inactive totals, active pressure totals, and present active install categories.
+
+Matching aliases are available under `game.arcflight.devTools`. This pass is intentionally foundation-only: no drag/drop UI, enforced slot locking, install buttons, UI editing, combat systems, travel systems, or persistence migrations beyond basic normalization were added.
+
 ## Arkengine Fueling Framework
 
 Arkengines are treated as propulsion, Lifeveil, and magical power systems that store spell-rank energy rather than ordinary fuel. Core arkengine source data now includes `fueling.requiredSpellRank`, `fueling.fuelSlots`, and `fueling.maxStoredSpellRanks`, with max storage normalized as required spell rank multiplied by fuel slots.
@@ -93,10 +150,10 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Data lookup: `getCoreHull`, `getCoreArkengine`, `getCoreArkengineMod`, `getCoreCrewAsset`, `getCoreRoom`, `getCoreShipUpgrade`, `getArkengineVariant`, `getArkengineVariants`, `getStation`, `getStations`.
 - Key lookup: `CORE_HULL_PLATFORM_KEYS`, `CORE_ARKENGINE_KEYS`, `CORE_ARKENGINE_MOD_KEYS`, `CORE_CREW_ASSET_KEYS`, `CORE_ROOM_KEYS`, `CORE_SHIP_UPGRADE_KEYS`, `ARKENGINE_VARIANT_KEYS`, `STATION_KEYS`, plus matching `get*Keys()` helpers.
 - Defaults and type checks: `getDefaultComponentData`, `getDefaultShipData`, `isArcflightItem`, `getComponentType`, `getComponentData`, `getComponentTierMetadata`, `getComponentRefitPressure`, `previewInstallValidation`, `previewComponentInstall`, `getInstallValidationWarnings`, `isArcflightVehicle`, `setArcflightVehicleEnabled`.
-- Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`.
+- Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`, `getInstalledComponents`, `getInstallState`, `recordInstallState`, `removeInstallState`, `findInstallRecord`, and `prepareInstallStateSummary`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.
-- Item organization, core library sync, safe duplicate cleanup, and install preview helpers: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findMissingCoreArcflightItems()`, `game.arcflight.devTools.syncCoreArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, `game.arcflight.devTools.previewInstallValidation()`, `game.arcflight.devTools.previewComponentInstall()`, `game.arcflight.devTools.getInstallValidationWarnings()`, and matching top-level helpers on `game.arcflight`.
+- Item organization, core library sync, safe duplicate cleanup, and install preview helpers: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findMissingCoreArcflightItems()`, `game.arcflight.devTools.syncCoreArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, `game.arcflight.devTools.previewInstallValidation()`, `game.arcflight.devTools.previewComponentInstall()`, `game.arcflight.devTools.getInstallValidationWarnings()`, `game.arcflight.devTools.getInstalledComponents()`, `game.arcflight.devTools.getInstallState()`, `game.arcflight.devTools.recordInstallState()`, `game.arcflight.devTools.removeInstallState()`, `game.arcflight.devTools.findInstallRecord()`, `game.arcflight.devTools.prepareInstallStateSummary()`, and matching top-level helpers on `game.arcflight`.
 
 ## Item Organization Workflow
 
