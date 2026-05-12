@@ -1,6 +1,6 @@
 import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengines/arkengine-patterns.js";
 import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
 import { previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
@@ -13,10 +13,12 @@ import {
   installHull,
   installRoom,
   installShipUpgrade,
+  installWeapon,
   removeCrewAsset,
   removeInstalledArkengineMod,
   removeInstalledRoom,
   removeInstalledShipUpgrade,
+  removeInstalledWeapon,
   setArkenginePattern,
   setHullPattern
 } from "../documents/ships.js";
@@ -29,6 +31,7 @@ const INSTALL_COMPONENT_TYPES = Object.freeze([
   { value: ARCFLIGHT_ITEM_TYPES.HULL, label: "Hull" },
   { value: ARCFLIGHT_ITEM_TYPES.ARKENGINE, label: "Arkengine" },
   { value: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, label: "Arkengine Mod" },
+  { value: ARCFLIGHT_ITEM_TYPES.WEAPON, label: "Weapon" },
   { value: ARCFLIGHT_ITEM_TYPES.ROOM, label: "Room" },
   { value: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, label: "Ship Upgrade" },
   { value: ARCFLIGHT_ITEM_TYPES.CREW_ASSET, label: "Crew Asset" }
@@ -342,6 +345,98 @@ function prepareInstallItemOptions(selectedComponentType, selectedItemId = "") {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function getWeaponArcLabel(arc = "") {
+  const normalizedArc = String(arc ?? "").trim().toLowerCase();
+  const arcEntry = Object.entries(ARCFLIGHT_WEAPON_ARCS).find(([, value]) => value === normalizedArc);
+  return arcEntry ? humanizeIdentifier(arcEntry[1]) : humanizeIdentifier(normalizedArc || "Unknown Arc");
+}
+
+function getWeaponMountAllowedSizesLabel(mount = {}) {
+  const allowedSizes = arrayOrEmpty(mount.allowedSizes).map(humanizeIdentifier);
+  if (allowedSizes.length > 0) return allowedSizes.join(", ");
+  if (mount.maxSize) return `Up to ${humanizeIdentifier(mount.maxSize)}`;
+  return "Any size";
+}
+
+function isWeaponMountOptionOccupied(mount = {}, installedWeapons = []) {
+  return mount.occupied === true
+    || Boolean(mount.mountedWeaponId)
+    || installedWeapons.some((weapon) => weapon.arc === mount.arc && weapon.mountId === mount.id);
+}
+
+function prepareWeaponMountOptions(system = {}, selectedMountValue = "") {
+  const weaponMounts = system.base?.hull?.weaponMounts ?? {};
+  const installedWeapons = arrayOrEmpty(system.installed?.weapons);
+
+  return Object.values(ARCFLIGHT_WEAPON_ARCS).flatMap((arc) => {
+    const mounts = arrayOrEmpty(weaponMounts[arc]);
+
+    return mounts.map((mount) => {
+      const mountId = String(mount.id ?? "").trim();
+      const value = `${arc}:${mountId}`;
+      const occupied = isWeaponMountOptionOccupied({ ...mount, arc }, installedWeapons);
+      const allowedSizesLabel = getWeaponMountAllowedSizesLabel(mount);
+      const occupancyLabel = occupied ? "occupied" : "available";
+
+      return {
+        arc,
+        arcLabel: getWeaponArcLabel(arc),
+        mountId,
+        value,
+        allowedSizesLabel,
+        occupied,
+        disabled: occupied,
+        selected: value === selectedMountValue,
+        label: `${getWeaponArcLabel(arc)} / ${mountId} / allowed sizes: ${allowedSizesLabel} (${occupancyLabel})`
+      };
+    });
+  });
+}
+
+function getSelectedWeaponMountOption(weaponMountOptions = [], selectedMountValue = "") {
+  const selectedOption = weaponMountOptions.find((option) => option.selected && option.disabled !== true);
+  if (selectedOption) return selectedOption;
+  return weaponMountOptions.find((option) => option.disabled !== true) ?? null;
+}
+
+function getWeaponInstallOptions(selectedWeaponMountOption = null) {
+  if (!selectedWeaponMountOption) return {};
+  return {
+    arc: selectedWeaponMountOption.arc,
+    mountId: selectedWeaponMountOption.mountId
+  };
+}
+
+function prepareInstalledWeaponEntry(entry = {}) {
+  const displayName = displayNameForEntry(entry);
+  return {
+    ...entry,
+    removeId: entry.mountedWeaponId ?? "",
+    displayName,
+    arcLabel: getWeaponArcLabel(entry.arc),
+    sizeLabel: humanizeIdentifier(entry.size || "Unknown Size"),
+    familyLabel: humanizeIdentifier(entry.family || entry.category || "Weapon"),
+    traitsLabel: prepareTextArray(entry.traits).join(", "),
+    hasTraits: prepareTextArray(entry.traits).length > 0
+  };
+}
+
+function prepareInstalledWeaponGroups(installedWeapons = []) {
+  const weapons = arrayOrEmpty(installedWeapons).map(prepareInstalledWeaponEntry);
+
+  return Object.values(ARCFLIGHT_WEAPON_ARCS)
+    .map((arc) => {
+      const arcWeapons = weapons.filter((weapon) => weapon.arc === arc);
+      return {
+        arc,
+        arcLabel: getWeaponArcLabel(arc),
+        weapons: arcWeapons,
+        hasWeapons: arcWeapons.length > 0
+      };
+    })
+    .filter((group) => group.hasWeapons);
+}
+
 function preparePreviewSlotRows(preview = {}) {
   const projectedSlots = preview.projected?.slots ?? {};
   const currentSlots = preview.current?.slots ?? {};
@@ -361,7 +456,7 @@ function preparePreviewSlotRows(preview = {}) {
   });
 }
 
-function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType = "") {
+function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType = "", installOptions = {}) {
   if (!selectedItem) return null;
 
   const componentType = getComponentType(selectedItem) || selectedComponentType;
@@ -375,7 +470,7 @@ function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType
   };
 
   try {
-    const preview = previewInstallValidation(actor, selectedItem);
+    const preview = previewInstallValidation(actor, selectedItem, installOptions);
     const messages = prepareTextArray(preview.messages);
     const warnings = prepareTextArray(preview.warnings);
     const slotRows = preparePreviewSlotRows(preview);
@@ -429,17 +524,29 @@ function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType
   }
 }
 
-function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYPES.HULL, selectedItemId = "") {
+function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYPES.HULL, selectedItemId = "", selectedWeaponMountValue = "") {
   const componentType = normalizeInstallComponentType(selectedComponentType);
   const itemOptions = prepareInstallItemOptions(componentType, selectedItemId);
   const selectedItemOption = itemOptions.find((option) => option.selected) ?? null;
   const selectedItem = selectedItemOption ? game?.items?.get?.(selectedItemOption.id) : null;
-  const preview = prepareInstallPreviewReadout(actor, selectedItem, componentType);
+  const isWeaponInstall = componentType === ARCFLIGHT_ITEM_TYPES.WEAPON;
+  const weaponMountOptions = isWeaponInstall
+    ? prepareWeaponMountOptions(getArcflightShipData(actor), selectedWeaponMountValue)
+    : [];
+  const selectedWeaponMountOption = isWeaponInstall
+    ? getSelectedWeaponMountOption(weaponMountOptions, selectedWeaponMountValue)
+    : null;
+  const weaponInstallOptions = getWeaponInstallOptions(selectedWeaponMountOption);
+  const preview = prepareInstallPreviewReadout(actor, selectedItem, componentType, weaponInstallOptions);
+  const missingWeaponMountReason = isWeaponInstall && !selectedWeaponMountOption
+    ? "Select an available hull weapon mount before installing a weapon."
+    : "";
   const disabledReason = !selectedItem
     ? "Select a world item to preview and install."
-    : preview?.blocked === true
-      ? preview.blockedReason || "Install validation blocks this install. Resolve the listed warnings before installing."
-      : "";
+    : missingWeaponMountReason
+      || (preview?.blocked === true
+        ? preview.blockedReason || "Install validation blocks this install. Resolve the listed warnings before installing."
+        : "");
 
   return {
     selectedComponentType: componentType,
@@ -449,9 +556,18 @@ function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYP
     hasItemOptions: itemOptions.length > 0,
     selectedComponentTypeLabel: humanizeIdentifier(componentType),
     noItemsHint: "No matching Arcflight world Items found for this component type. Run core item sync, confirm the item is PF2E equipment, and confirm flags.arcflight.enabled plus flags.arcflight.componentType are set.",
+    isWeaponInstall,
+    weaponMountOptions: weaponMountOptions.map((option) => ({
+      ...option,
+      selected: selectedWeaponMountOption?.value === option.value
+    })),
+    hasWeaponMountOptions: weaponMountOptions.length > 0,
+    selectedWeaponMountValue: selectedWeaponMountOption?.value ?? "",
+    selectedWeaponMountArc: selectedWeaponMountOption?.arc ?? "",
+    selectedWeaponMountId: selectedWeaponMountOption?.mountId ?? "",
     preview,
     hasPreview: Boolean(preview),
-    canInstall: Boolean(selectedItem) && preview?.blocked !== true,
+    canInstall: Boolean(selectedItem) && (!isWeaponInstall || Boolean(selectedWeaponMountOption)) && preview?.blocked !== true,
     disabledReason,
     hasDisabledReason: Boolean(disabledReason)
   };
@@ -524,6 +640,9 @@ function prepareArcflightShipViewData(arcflight, shipActor = null) {
   system.installed.coreRooms = arrayOrEmpty(system.installed.coreRooms).map(prepareInstalledEntry);
   system.installed.rooms = arrayOrEmpty(system.installed.rooms).map(prepareInstalledEntry);
   system.installed.shipUpgrades = arrayOrEmpty(system.installed.shipUpgrades).map(prepareInstalledEntry);
+  system.installed.weapons = arrayOrEmpty(system.installed.weapons).map(prepareInstalledWeaponEntry);
+  system.installed.weaponGroups = prepareInstalledWeaponGroups(system.installed.weapons);
+  system.installed.hasWeapons = system.installed.weapons.length > 0;
   system.installed.arkengineModSlots = prepareSlotState(system.installed.arkengineModSlots);
   system.installed.roomSlots = prepareSlotState(system.installed.roomSlots);
   system.installed.shipUpgradeSlots = prepareSlotState(system.installed.shipUpgradeSlots, 3);
@@ -678,6 +797,7 @@ const dropInstallers = Object.freeze({
 });
 
 const componentRemovers = Object.freeze({
+  [ARCFLIGHT_ITEM_TYPES.WEAPON]: removeInstalledWeapon,
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: removeInstalledArkengineMod,
   [ARCFLIGHT_ITEM_TYPES.ROOM]: removeInstalledRoom,
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: removeInstalledShipUpgrade,
@@ -699,7 +819,7 @@ function prepareStationRows(stations = {}) {
 
 function installRecordMatchesRemoveRequest(record = {}, componentType = "", componentId = "") {
   if (record.active !== true || record.componentType !== componentType) return false;
-  const identifiers = [record.itemUuid, record.itemId, record.componentKey].filter(Boolean);
+  const identifiers = [record.itemUuid, record.itemId, record.componentKey, record.hullSlot, record.roomSlot].filter(Boolean);
   return identifiers.includes(componentId);
 }
 
@@ -713,6 +833,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   #selectedExampleBuildKey = "";
   #selectedInstallComponentType = ARCFLIGHT_ITEM_TYPES.HULL;
   #selectedInstallItemId = "";
+  #selectedWeaponMountValue = "";
 
   static DEFAULT_OPTIONS = {
     classes: ["arcflight", "sheet", "actor", "ship", "vehicle"],
@@ -777,6 +898,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       ?.addEventListener("change", this.#onChangeInstallItem.bind(this));
 
     this.element
+      .querySelector?.("[data-arcflight-install-weapon-mount]")
+      ?.addEventListener("change", this.#onChangeInstallWeaponMount.bind(this));
+
+    this.element
       .querySelector?.("[data-arcflight-install-component]")
       ?.addEventListener("click", this.#onInstallSelectedComponent.bind(this));
 
@@ -822,11 +947,17 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   #onChangeInstallComponentType(event) {
     this.#selectedInstallComponentType = normalizeInstallComponentType(event.currentTarget?.value);
     this.#selectedInstallItemId = "";
+    this.#selectedWeaponMountValue = "";
     this.render(true);
   }
 
   #onChangeInstallItem(event) {
     this.#selectedInstallItemId = event.currentTarget?.value ?? "";
+    this.render(true);
+  }
+
+  #onChangeInstallWeaponMount(event) {
+    this.#selectedWeaponMountValue = event.currentTarget?.value ?? "";
     this.render(true);
   }
 
@@ -838,14 +969,28 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     const componentType = normalizeInstallComponentType(this.#selectedInstallComponentType);
     const item = game?.items?.get?.(this.#selectedInstallItemId);
-    const install = dropInstallers[componentType];
+    const isWeaponInstall = componentType === ARCFLIGHT_ITEM_TYPES.WEAPON;
+    const weaponMountOptions = isWeaponInstall
+      ? prepareWeaponMountOptions(getArcflightShipData(actor), this.#selectedWeaponMountValue)
+      : [];
+    const selectedWeaponMountOption = isWeaponInstall
+      ? getSelectedWeaponMountOption(weaponMountOptions, this.#selectedWeaponMountValue)
+      : null;
+    const installOptions = getWeaponInstallOptions(selectedWeaponMountOption);
+    const install = isWeaponInstall ? installWeapon : dropInstallers[componentType];
 
     if (!item || getComponentType(item) !== componentType) {
       ui.notifications?.warn?.("Select a matching Arcflight world item before installing.");
       return;
     }
 
-    const preview = prepareInstallPreviewReadout(actor, item, componentType);
+    if (isWeaponInstall && !selectedWeaponMountOption) {
+      ui.notifications?.warn?.("Select an available hull weapon mount before installing a weapon.");
+      this.render(true);
+      return;
+    }
+
+    const preview = prepareInstallPreviewReadout(actor, item, componentType, installOptions);
     if (preview?.blocked === true) {
       ui.notifications?.warn?.(`Arcflight blocked this install: ${preview.blockedReason || "validation rules did not allow it."}`);
       this.render(true);
@@ -859,7 +1004,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     try {
       const installStateBefore = JSON.stringify(getInstallState(actor));
-      const installResult = await install(actor, item);
+      const installResult = await install(actor, item, installOptions);
       const installStateAfter = JSON.stringify(getInstallState(actor));
 
       if (installResult === actor && installStateAfter === installStateBefore) {
@@ -869,6 +1014,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       }
 
       this.#selectedInstallItemId = "";
+      if (isWeaponInstall) this.#selectedWeaponMountValue = "";
       ui.notifications?.info?.(`Installed ${item.name ?? "Arcflight component"}.`);
       this.render(true);
     } catch (error) {
@@ -1001,7 +1147,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const install = dropInstallers[componentType];
 
     if (!install) {
-      ui.notifications?.warn?.("Drop an Arcflight Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset component onto this ship builder.");
+      ui.notifications?.warn?.("Drop an Arcflight Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset component onto this ship builder. Use the controlled Install Component UI for weapon mount installs.");
       return;
     }
 
@@ -1027,9 +1173,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const context = await super._prepareContext(options);
     const actor = getSheetActor(this);
     const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(actor), actor);
-    const installUi = prepareInstallUiState(actor, this.#selectedInstallComponentType, this.#selectedInstallItemId);
+    const installUi = prepareInstallUiState(actor, this.#selectedInstallComponentType, this.#selectedInstallItemId, this.#selectedWeaponMountValue);
     this.#selectedInstallComponentType = installUi.selectedComponentType;
     this.#selectedInstallItemId = installUi.selectedItemId;
+    this.#selectedWeaponMountValue = installUi.selectedWeaponMountValue;
 
     const stations = prepareStationRows(arcflight.system.stations);
     const exampleBuildOptions = prepareExampleBuildOptions(this.#selectedExampleBuildKey);

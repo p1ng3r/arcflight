@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Weapon Install UI MVP
+
+- Added Weapon to the ship-sheet Install Component selector, with world item filtering for Arcflight weapon equipment.
+- Added a hull weapon mount selector that lists mounts by arc with clear arc / mount id / allowed-size labels and disables occupied mounts when possible.
+- Routed weapon previews and installs through `previewInstallValidation(shipActor, weaponItem, { mountId, arc })` and `installWeapon(shipActor, weaponItem, { mountId, arc })` without mutating source or compendium items.
+- Added an Installed Weapons sheet section grouped by arc with Remove buttons wired to `removeInstalledWeapon(shipActor, mountedWeaponId)`, refreshing the sheet after install/remove and preserving install-state lifecycle behavior.
+- Extended smoke coverage for ship-sheet weapon mount option state and selected-mount weapon preview stability.
+- Kept combat out of scope: no attack rolls, damage rolls, ammo tracking, reload controls, AP/RAP, targeting, combat station actions, or weapon firing controls were added.
+
 ### Weapon Install/Remove Backend
 
 - Added ship-owned installed weapon storage under `flags.arcflight.system.installed.weapons` with mounted weapon identity, source item reference, key/name, size/family/category, arc, mount id, crew/reload/traits/damage profile, system state, and refit/tier snapshot metadata.

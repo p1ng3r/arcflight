@@ -29,7 +29,7 @@
 
   <section class="arcflight-sheet__section arcflight-install-ui {{installUi.preview.cssClass}}">
     <h2>Install Component</h2>
-    <p class="arcflight-sheet__hint">Controlled install MVP: select an Arcflight world Item, preview validation, then install through the existing helper. This does not drag/drop, mutate source items, or add remove controls.</p>
+    <p class="arcflight-sheet__hint">Controlled install MVP: select an Arcflight world Item, preview validation, then install through the existing helper. Weapon installs require an available hull weapon mount. This does not drag/drop or mutate source items.</p>
     <div class="arcflight-install-ui__controls">
       <label class="arcflight-sheet__field arcflight-sheet__field--grow">
         <span>Component Type</span>
@@ -48,12 +48,29 @@
           {{/each}}
         </select>
       </label>
+      {{#if installUi.isWeaponInstall}}
+        <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+          <span>Weapon Mount</span>
+          <select data-arcflight-install-weapon-mount {{#unless installUi.hasWeaponMountOptions}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>
+            <option value="" {{#unless installUi.selectedWeaponMountValue}}selected{{/unless}}>Select an available hull weapon mount</option>
+            {{#each installUi.weaponMountOptions}}
+              <option value="{{value}}" data-arc="{{arc}}" data-mount-id="{{mountId}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+      {{/if}}
       <button type="button" data-arcflight-install-component {{#unless installUi.canInstall}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>Install</button>
     </div>
 
     {{#unless installUi.hasItemOptions}}
       <p class="arcflight-sheet__hint arcflight-install-ui__empty-hint">{{installUi.noItemsHint}}</p>
     {{/unless}}
+
+    {{#if installUi.isWeaponInstall}}
+      {{#unless installUi.hasWeaponMountOptions}}
+        <p class="arcflight-sheet__hint arcflight-install-ui__empty-hint">No hull weapon mounts are available on the installed hull. Install a hull with weapon mounts before installing weapons.</p>
+      {{/unless}}
+    {{/if}}
 
     {{#if installUi.hasPreview}}
       <article class="arcflight-install-ui__preview">
@@ -74,6 +91,10 @@
           {{#if installUi.preview.componentKey}}
             <dt>Component Key</dt>
             <dd>{{installUi.preview.componentKey}}</dd>
+          {{/if}}
+          {{#if installUi.isWeaponInstall}}
+            <dt>Selected Mount</dt>
+            <dd>{{installUi.selectedWeaponMountArc}} / {{installUi.selectedWeaponMountId}}</dd>
           {{/if}}
           <dt>Projected Refit</dt>
           <dd>{{installUi.preview.projectedRefitStatusLabel}} · Pressure {{installUi.preview.projectedRefitPressureTotal}}</dd>
@@ -395,6 +416,34 @@
         {{/if}}
       </article>
     </div>
+  </section>
+
+
+  <section class="arcflight-sheet__section arcflight-installed-weapons">
+    <h2>Installed Weapons</h2>
+    <p class="arcflight-sheet__hint">Ship-owned weapon snapshots grouped by arc. Remove frees the occupied hull mount and does not mutate source weapon items or add firing/combat controls.</p>
+    {{#if arcflight.system.installed.hasWeapons}}
+      <div class="arcflight-installed-weapons__groups">
+        {{#each arcflight.system.installed.weaponGroups}}
+          <article class="arcflight-installed-weapons__group">
+            <h3>{{this.arcLabel}}</h3>
+            <ul>
+              {{#each this.weapons}}
+                <li>
+                  <strong>{{this.displayName}}</strong> — {{this.mountId}}; {{this.sizeLabel}} {{this.familyLabel}}; <em>{{this.systemState}}</em>
+                  <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
+                  {{#if this.hasTraits}}
+                    <span class="arcflight-sheet__hint">Traits: {{this.traitsLabel}}</span>
+                  {{/if}}
+                </li>
+              {{/each}}
+            </ul>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No weapons installed. Use Install Component → Weapon and choose an available hull weapon mount.</p>
+    {{/if}}
   </section>
 
 
