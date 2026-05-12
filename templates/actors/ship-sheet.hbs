@@ -44,7 +44,7 @@
         <select data-arcflight-install-item {{#unless editable}}disabled{{/unless}}>
           <option value="" {{#unless installUi.selectedItemId}}selected{{/unless}}>Select a world item</option>
           {{#each installUi.itemOptions}}
-            <option value="{{id}}" data-uuid="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+            <option value="{{id}}" data-uuid="{{uuid}}" data-component-key="{{componentKey}}" {{#if selected}}selected{{/if}}>{{label}}</option>
           {{/each}}
         </select>
       </label>
@@ -52,15 +52,32 @@
     </div>
 
     {{#unless installUi.hasItemOptions}}
-      <p class="arcflight-sheet__hint">No matching Arcflight world Items found for this component type. Items must be PF2E equipment with <code>flags.arcflight.enabled</code> and matching <code>flags.arcflight.componentType</code>.</p>
+      <p class="arcflight-sheet__hint arcflight-install-ui__empty-hint">{{installUi.noItemsHint}}</p>
     {{/unless}}
 
     {{#if installUi.hasPreview}}
       <article class="arcflight-install-ui__preview">
         <header>
-          <strong>Validation Preview: {{installUi.preview.severityLabel}}</strong>
-          <span>Projected Refit: {{installUi.preview.projectedRefitStatusLabel}} · Pressure {{installUi.preview.projectedRefitPressureTotal}}</span>
+          <strong>Validation Preview</strong>
+          <span class="arcflight-install-ui__badge {{installUi.preview.badgeClass}}">{{installUi.preview.severityLabel}}</span>
         </header>
+
+        <p class="arcflight-install-ui__status {{installUi.preview.statusClass}}">{{installUi.preview.statusLabel}}</p>
+
+        <dl class="arcflight-install-ui__identity">
+          <dt>Selected Item</dt>
+          <dd>{{installUi.preview.name}}</dd>
+          <dt>Component Type</dt>
+          <dd>{{installUi.preview.componentTypeLabel}}</dd>
+          <dt>UUID</dt>
+          <dd>{{installUi.preview.uuid}}</dd>
+          {{#if installUi.preview.componentKey}}
+            <dt>Component Key</dt>
+            <dd>{{installUi.preview.componentKey}}</dd>
+          {{/if}}
+          <dt>Projected Refit</dt>
+          <dd>{{installUi.preview.projectedRefitStatusLabel}} · Pressure {{installUi.preview.projectedRefitPressureTotal}}</dd>
+        </dl>
 
         {{#if installUi.preview.hasMessages}}
           <h3>Messages</h3>

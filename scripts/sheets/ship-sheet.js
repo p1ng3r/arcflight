@@ -1,7 +1,7 @@
 import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengines/arkengine-patterns.js";
 import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
-import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentType } from "../documents/components.js";
+import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
 import { previewInstallValidation } from "../helpers/install-validation-preview.js";
 import {
@@ -301,18 +301,35 @@ function getArcflightFlagValue(documentLike, key) {
   return documentLike?.flags?.[ARCFLIGHT_MODULE_ID]?.[key] ?? documentLike?.getFlag?.(ARCFLIGHT_MODULE_ID, key);
 }
 
+function getInstallComponentKey(item) {
+  const componentData = getComponentData(item) ?? {};
+
+  return componentData.identity?.id
+    ?? componentData.platform
+    ?? componentData.engineClass
+    ?? item?.slug
+    ?? "";
+}
+
 function prepareInstallItemOptions(selectedComponentType, selectedItemId = "") {
   return getGameWorldItems()
     .filter((item) => item?.type === ARCFLIGHT_COMPONENT_ITEM_TYPE)
     .filter((item) => getArcflightFlagValue(item, "enabled") === true)
     .filter((item) => getComponentType(item) === selectedComponentType)
-    .map((item) => ({
-      id: item.id,
-      uuid: item.uuid ?? "",
-      name: item.name ?? "Unnamed Component",
-      selected: item.id === selectedItemId
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map((item) => {
+      const componentKey = getInstallComponentKey(item);
+      const name = item.name ?? "Unnamed Component";
+
+      return {
+        id: item.id,
+        uuid: item.uuid ?? "",
+        name,
+        componentKey,
+        label: componentKey ? `${name} [${componentKey}]` : name,
+        selected: item.id === selectedItemId
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function preparePreviewSlotRows(preview = {}) {
@@ -334,21 +351,36 @@ function preparePreviewSlotRows(preview = {}) {
   });
 }
 
-function prepareInstallPreviewReadout(actor, selectedItem) {
+function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType = "") {
   if (!selectedItem) return null;
+
+  const componentType = getComponentType(selectedItem) || selectedComponentType;
+  const severityRanks = new Set(["ok", "info", "warning", "danger"]);
+  const itemIdentity = {
+    name: selectedItem.name ?? "Unnamed Component",
+    componentType,
+    componentTypeLabel: humanizeIdentifier(componentType || "Unknown Component"),
+    uuid: selectedItem.uuid ?? "",
+    componentKey: getInstallComponentKey(selectedItem)
+  };
 
   try {
     const preview = previewInstallValidation(actor, selectedItem);
     const messages = prepareTextArray(preview.messages);
     const warnings = prepareTextArray(preview.warnings);
     const slotRows = preparePreviewSlotRows(preview);
-    const severity = preview.severity || "ok";
+    const severity = severityRanks.has(preview.severity) ? preview.severity : "ok";
+    const installBlocked = severity === "danger";
 
     return {
       ...preview,
+      ...itemIdentity,
       severity,
-      severityLabel: humanizeIdentifier(severity),
+      severityLabel: severity,
       cssClass: `arcflight-validation-${severity}`,
+      badgeClass: `arcflight-install-ui__badge--${severity}`,
+      statusLabel: installBlocked ? "Install blocked" : "Install allowed",
+      statusClass: installBlocked ? "arcflight-install-ui__status--blocked" : "arcflight-install-ui__status--allowed",
       messages,
       warnings,
       hasMessages: messages.length > 0,
@@ -363,9 +395,13 @@ function prepareInstallPreviewReadout(actor, selectedItem) {
     const message = error.message ?? "Arcflight could not preview this component install.";
 
     return {
+      ...itemIdentity,
       severity: "danger",
-      severityLabel: "Danger",
+      severityLabel: "danger",
       cssClass: "arcflight-validation-danger",
+      badgeClass: "arcflight-install-ui__badge--danger",
+      statusLabel: "Install blocked",
+      statusClass: "arcflight-install-ui__status--blocked",
       messages: [],
       warnings: [message],
       hasMessages: false,
@@ -383,7 +419,7 @@ function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYP
   const itemOptions = prepareInstallItemOptions(componentType, selectedItemId);
   const selectedItemOption = itemOptions.find((option) => option.selected) ?? null;
   const selectedItem = selectedItemOption ? game?.items?.get?.(selectedItemOption.id) : null;
-  const preview = prepareInstallPreviewReadout(actor, selectedItem);
+  const preview = prepareInstallPreviewReadout(actor, selectedItem, componentType);
   const disabledReason = !selectedItem
     ? "Select a world item to preview and install."
     : preview?.severity === "danger"
@@ -396,6 +432,8 @@ function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYP
     componentTypeOptions: prepareInstallComponentTypeOptions(componentType),
     itemOptions,
     hasItemOptions: itemOptions.length > 0,
+    selectedComponentTypeLabel: humanizeIdentifier(componentType),
+    noItemsHint: "No matching Arcflight world Items found for this component type. Run core item sync, confirm the item is PF2E equipment, and confirm flags.arcflight.enabled plus flags.arcflight.componentType are set.",
     preview,
     hasPreview: Boolean(preview),
     canInstall: Boolean(selectedItem) && preview?.severity !== "danger",
@@ -680,7 +718,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       return;
     }
 
-    const preview = prepareInstallPreviewReadout(actor, item);
+    const preview = prepareInstallPreviewReadout(actor, item, componentType);
     if (preview?.severity === "danger") {
       ui.notifications?.warn?.("Arcflight blocked this install because validation severity is danger.");
       this.render(true);
@@ -693,7 +731,17 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     try {
-      await install(actor, item);
+      const installStateBefore = JSON.stringify(getInstallState(actor));
+      const installResult = await install(actor, item);
+      const installStateAfter = JSON.stringify(getInstallState(actor));
+
+      if (installResult === actor && installStateAfter === installStateBefore) {
+        ui.notifications?.warn?.(`Install skipped: ${item.name ?? "Arcflight component"} appears to already be installed on this ship.`);
+        this.render(true);
+        return;
+      }
+
+      this.#selectedInstallItemId = "";
       ui.notifications?.info?.(`Installed ${item.name ?? "Arcflight component"}.`);
       this.render(true);
     } catch (error) {
