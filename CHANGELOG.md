@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Install Validation Preview Helpers
+
+- Added non-blocking install validation preview helpers exposed as `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, `game.arcflight.getInstallValidationWarnings(shipActor, component)`, and matching `game.arcflight.devTools` aliases.
+- Preview reports now evaluate supported component type, duplicate install signals, tier fit, projected refit pressure/status, hull category tolerances, arkengine compatibility, arkengine mod slots, room slots, ship upgrade slots, and crew asset uniqueness/tier pressure without mutating ships or source items.
+- Unsupported future component types such as Weapon and Cargo now return stable `unsupported` warning reports instead of throwing during preview.
+- Extended the framework smoke test helper with install preview coverage for low-pressure installs, over-tier installs, major refit projections, incompatible arkengines, room slot overflow, legacy metadata, and unsupported future component types.
+- Kept this patch helper-only and warning-only; it does not block installs, add drag/drop UI, open modal dialogs, monkey-patch item creation, mutate compendium data, or add travel/combat automation.
+
 ### Component Tier / Refit Metadata Retrofit
 
 - Added safe component defaults and normalized helper APIs for `minimumTier`, `recommendedTier`, `tierImpact`, `refitPressure`, `refitTags`, `refitCategory`, `specialistRequirements`, and `rareMaterialRequirements`.
