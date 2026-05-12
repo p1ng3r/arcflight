@@ -331,6 +331,39 @@ export async function runFrameworkSmokeTest(options = {}) {
     await installShipUpgrade(actor, componentItems.shipUpgrade);
     await addCrewAsset(actor, componentItems.crewAsset);
 
+    const helperInstallState = getInstallState(actor);
+    const helperInstallTypes = helperInstallState.installs.map((record) => record.componentType);
+    const helperInstallCategories = Object.fromEntries(helperInstallState.installs.map((record) => [record.componentType, record.installCategory]));
+    const helperInstallRecordsHaveCoreFields = helperInstallState.installs.every((record) => (
+      record.active === true
+      && record.itemId
+      && record.itemUuid
+      && record.componentType
+      && record.installedAt > 0
+      && record.installedBy
+      && Number.isFinite(record.tierAtInstall)
+      && Number.isFinite(record.pressureContribution?.total)
+    ));
+    const helperInstallRecordsByType = new Map(helperInstallState.installs.map((record) => [record.componentType, record]));
+    const expectedRoomInstallCategory = getComponentRefitPressure(componentItems.room).total > 0 ? "refit" : "native";
+    checkEqual(result, "Install helpers create one install state record each", 6, helperInstallState.installs.length);
+    check(result, "Install helpers record all component types", [
+      ARCFLIGHT_ITEM_TYPES.HULL,
+      ARCFLIGHT_ITEM_TYPES.ARKENGINE,
+      ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+      ARCFLIGHT_ITEM_TYPES.ROOM,
+      ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+      ARCFLIGHT_ITEM_TYPES.CREW_ASSET
+    ].every((componentType) => helperInstallTypes.includes(componentType)), "all helper component types", helperInstallTypes);
+    check(result, "Install helper records include lifecycle fields", helperInstallRecordsHaveCoreFields, "core lifecycle fields", helperInstallState.installs);
+    check(result, "Install helper records use stable categories", helperInstallCategories[ARCFLIGHT_ITEM_TYPES.HULL] === "native"
+      && helperInstallCategories[ARCFLIGHT_ITEM_TYPES.ARKENGINE] === "native"
+      && helperInstallCategories[ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD] === "refit"
+      && helperInstallCategories[ARCFLIGHT_ITEM_TYPES.ROOM] === expectedRoomInstallCategory
+      && helperInstallCategories[ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE] === "refit"
+      && helperInstallCategories[ARCFLIGHT_ITEM_TYPES.CREW_ASSET] === "native", "stable install categories", helperInstallCategories);
+    checkEqual(result, "Install helper room pressure is recorded", getComponentRefitPressure(componentItems.room).total, helperInstallRecordsByType.get(ARCFLIGHT_ITEM_TYPES.ROOM)?.pressureContribution?.total);
+
     const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
     await actor.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
@@ -340,10 +373,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     const crewEntry = shipData.crew.namedCrew[0];
     await assignStation(actor, "engineer", crewEntry, { assigneeType: "crewAsset" });
 
+    await attemptDuplicateInstall(result, "Duplicate hull install attempt", () => installHull(actor, componentItems.hull));
+    await attemptDuplicateInstall(result, "Duplicate arkengine install attempt", () => installArkengine(actor, componentItems.arkengine));
     await attemptDuplicateInstall(result, "Duplicate arkengine mod install attempt", () => installArkengineMod(actor, componentItems.arkengineMod));
     await attemptDuplicateInstall(result, "Duplicate room install attempt", () => installRoom(actor, componentItems.room));
     await attemptDuplicateInstall(result, "Duplicate ship upgrade install attempt", () => installShipUpgrade(actor, componentItems.shipUpgrade));
     await attemptDuplicateInstall(result, "Duplicate crew asset install attempt", () => addCrewAsset(actor, componentItems.crewAsset));
+    checkEqual(result, "Duplicate install attempts do not create duplicate install state records", 6, getInstallState(actor).installs.length);
 
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);

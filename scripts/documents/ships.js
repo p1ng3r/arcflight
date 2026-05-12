@@ -870,6 +870,95 @@ function normalizeBasicInstallState(installState = {}) {
   };
 }
 
+const INSTALL_STATE_PRESSURE_KEY_MAP = Object.freeze({
+  weaponPressure: "weapon",
+  enginePressure: "engine",
+  infrastructurePressure: "infrastructure",
+  lifeveilPressure: "lifeveil",
+  crewCommandPressure: "crewCommand",
+  occultPressure: "occult"
+});
+
+function normalizeInstallStatePressureContribution(refitPressure = {}) {
+  const pressure = {};
+  let total = 0;
+
+  for (const [sourceKey, targetKey] of Object.entries(INSTALL_STATE_PRESSURE_KEY_MAP)) {
+    pressure[targetKey] = Math.max(0, numericValue(refitPressure?.[sourceKey]));
+    total += pressure[targetKey];
+  }
+
+  pressure.total = total;
+  return pressure;
+}
+
+function getInstallStateComponentIdentity(item, componentType) {
+  const componentData = getComponentData(item) ?? {};
+  return {
+    itemId: item?.id ?? "",
+    itemUuid: item?.uuid ?? "",
+    componentType,
+    key: componentData.identity?.id
+      ?? componentData.platform
+      ?? componentData.engineClass
+      ?? item?.slug
+      ?? item?.id
+      ?? ""
+  };
+}
+
+function installStateRecordMatchesComponent(record = {}, identity = {}) {
+  if (record.componentType !== identity.componentType) return false;
+
+  return Boolean(
+    (identity.itemUuid && record.itemUuid === identity.itemUuid)
+    || (identity.itemId && record.itemId === identity.itemId)
+    || (identity.key && record.componentKey === identity.key)
+  );
+}
+
+function createInstallStateRecord(shipActor, item, componentType, installCategory, tierState = {}) {
+  const identity = getInstallStateComponentIdentity(item, componentType);
+  const pressureContribution = normalizeInstallStatePressureContribution(getComponentRefitPressure(item));
+  const installIdKey = identity.key || identity.itemId || componentType || "component";
+  const randomId = globalThis.foundry?.utils?.randomID?.(10)
+    ?? Math.random().toString(36).slice(2, 12).padEnd(10, "0");
+
+  return {
+    installId: `${componentType || "component"}-${installIdKey}-${Date.now().toString(36)}-${randomId}`.replace(/[^a-zA-Z0-9_-]+/g, "-"),
+    itemId: identity.itemId,
+    itemUuid: identity.itemUuid,
+    componentKey: identity.key,
+    componentType,
+    installedAt: Date.now(),
+    installedBy: globalThis.game?.user?.id ?? "",
+    installCategory,
+    nativeInstall: installCategory === "native",
+    refitInstall: installCategory === "refit",
+    temporaryInstall: false,
+    pressureContribution,
+    tierAtInstall: numericValue(tierState.currentTier),
+    active: true
+  };
+}
+
+function buildInstallStateWithComponent(systemData, shipActor, item, componentType, installCategory, tierState = {}) {
+  const installState = normalizeBasicInstallState(systemData.installState);
+  const identity = getInstallStateComponentIdentity(item, componentType);
+
+  if (installState.installs.some((record) => installStateRecordMatchesComponent(record, identity))) {
+    return installState;
+  }
+
+  return normalizeBasicInstallState({
+    version: installState.version,
+    installs: [
+      ...installState.installs,
+      createInstallStateRecord(shipActor, item, componentType, installCategory, tierState)
+    ]
+  });
+}
+
 function normalizeRefitPressure(refitPressure = {}) {
   const pressure = {};
   let total = 0;
@@ -1435,9 +1524,11 @@ export async function installHull(shipActor, hullItem) {
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, hullItem, ARCFLIGHT_ITEM_TYPES.HULL, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
-    ...getTierFrameworkUpdatePaths(tierSystemData),
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: baseHull,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
@@ -1449,7 +1540,8 @@ export async function installHull(shipActor, hullItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.minimum`]: derived.crew?.minimum ?? 0,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.recommended`]: derived.crew?.recommended ?? 0,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.maximum`]: derived.crew?.maximum ?? 0,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1497,9 +1589,11 @@ export async function installArkengine(shipActor, arkengineItem) {
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, arkengineItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
-    ...getTierFrameworkUpdatePaths(tierSystemData),
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.arkengine`]: baseArkengine,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
@@ -1507,7 +1601,8 @@ export async function installArkengine(shipActor, arkengineItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengine`]: arkengineItem.name ?? baseArkengine.displayName ?? baseArkengine.engineClass ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1560,16 +1655,19 @@ export async function installArkengineMod(shipActor, modItem) {
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, modItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, "refit", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
-    ...getTierFrameworkUpdatePaths(tierSystemData),
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: alignedInstalled.arkengineMods.map((mod) => mod.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: alignedInstalled.arkengineMods.map((mod) => mod.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1620,16 +1718,20 @@ export async function installRoom(shipActor, roomItem) {
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const roomInstallCategory = getComponentRefitPressure(roomItem).total > 0 ? "refit" : "native";
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, roomItem, ARCFLIGHT_ITEM_TYPES.ROOM, roomInstallCategory, tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
-    ...getTierFrameworkUpdatePaths(tierSystemData),
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: alignedInstalled.rooms.map((room) => room.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: alignedInstalled.rooms.map((room) => room.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1675,9 +1777,11 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, upgradeItem, ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, "refit", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
-    ...getTierFrameworkUpdatePaths(tierSystemData),
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
@@ -1685,7 +1789,8 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: alignedInstalled.shipUpgrades.map((upgrade) => upgrade.name).join(", "),
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1759,11 +1864,14 @@ export async function addCrewAsset(shipActor, crewItem) {
     : crewState.currentGenericCrew + getCrewAssetCountValue(crewEntry);
   const nextCrew = { ...crewState, namedCrew, currentGenericCrew };
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, crewItem, ARCFLIGHT_ITEM_TYPES.CREW_ASSET, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
   return shipActor.update({
-    ...getTierFrameworkUpdatePaths(tierSystemData),
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
