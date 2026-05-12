@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Controlled Install Component UI Polish
+
+- Polished the Arcflight ship sheet Install Component preview with selected item identity, UUID, component type, severity badges, and a concise install allowed/blocked status line.
+- Improved matching world Item selector labels to include component keys when available and added clearer empty-list hints for core item sync, PF2E equipment type, and Arcflight flags.
+- Successful controlled installs now clear only the selected item, keep the selected component type, refresh the sheet, and provide clearer feedback when an existing helper skips a duplicate attempt.
+- Improved spacing and responsive layout for the controlled install section while keeping all preview fields read-only and avoiding drag/drop, remove buttons, modal flows, combat/travel automation, source mutation, or duplicated install logic.
+
 ### Controlled Install Component UI MVP
 
 - Added a compact Install Component section to the Arcflight ship sheet with component type and matching world Item selectors for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset installs.

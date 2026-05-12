@@ -82,9 +82,11 @@ Arcflight also exposes install validation previews through `game.arcflight.previ
 
 ## Controlled Ship Sheet Install UI
 
-The optional Arcflight ship sheet includes a compact **Install Component** section for controlled helper-driven installs. The selector is limited to Arcflight-enabled PF2E equipment world Items whose `flags.arcflight.componentType` matches the selected category: Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset. Selecting an item shows preview severity, messages, warnings, projected refit status, projected refit pressure total, and any available slot projection rows.
+The optional Arcflight ship sheet includes a compact **Install Component** section for controlled helper-driven installs. The selector is limited to Arcflight-enabled PF2E equipment world Items whose `flags.arcflight.componentType` matches the selected category: Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset. Item selector labels include the component key when available, such as `Workshop [workshop]`, to make similarly named world Items easier to identify.
 
-The Install button calls only the existing helper for the selected component type (`installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, or `addCrewAsset`). It does not mutate source/compendium items, add drag/drop behavior, open a modal wizard, add remove buttons, or implement combat/travel automation.
+Selecting an item shows read-only item identity (selected item name, component type, UUID, and component key when available), a severity badge (`ok`, `info`, `warning`, or `danger`), an `Install allowed` / `Install blocked` status line, messages, warnings, projected refit status, projected refit pressure total, and any available slot projection rows. If no matching world Items exist, the sheet hints to run core item sync, confirm the item is PF2E equipment, and confirm `flags.arcflight.enabled` plus `flags.arcflight.componentType`.
+
+The Install button calls only the existing helper for the selected component type (`installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, or `addCrewAsset`). Successful installs refresh the sheet, clear the selected item, and preserve the selected component type. Duplicate attempts that an existing helper skips now produce a clearer warning. The controlled UI does not mutate source/compendium items, add drag/drop behavior, open a modal wizard, add remove buttons, or implement combat/travel automation.
 
 ## Persistent Install-State Foundation
 
@@ -255,12 +257,16 @@ After sheet or release-readiness changes, verify the following in Foundry:
    ```
 
 2. Confirm the returned result has `passed === true`.
-3. Open an Arcflight ship sheet and confirm it displays Installed Hull, Installed Arkengine, Fueling, the read-only Tier / Refit / Validation summary, the read-only Install State summary/empty state, Installed Arkengine Mods, Installed Rooms, Ship Upgrades, Crew Roster, Station Assignments, Derived values, Current values, and room / arkengine mod / ship upgrade slot summaries.
-4. Open Arcflight component sheets for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset items.
-5. Open a normal PF2E equipment sheet.
-6. Open a normal PF2E vehicle sheet.
-7. Confirm empty or missing installed sections do not crash Arcflight sheet rendering.
-8. Confirm there are no Arcflight-specific console errors.
+3. Open an Arcflight ship sheet and confirm it displays Installed Hull, Installed Arkengine, Fueling, the read-only Tier / Refit / Validation summary, the controlled Install Component section, the read-only Install State summary/empty state, Installed Arkengine Mods, Installed Rooms, Ship Upgrades, Crew Roster, Station Assignments, Derived values, Current values, and room / arkengine mod / ship upgrade slot summaries.
+4. In Install Component, select each component type and confirm the world Item list is filtered and clearly labeled with component keys when available.
+5. Select an item and confirm the preview includes the severity badge, allowed/blocked status, selected item name, component type, UUID, messages/warnings, refit pressure, and slot rows when available.
+6. Install an allowed item and confirm the sheet refreshes, the selected item clears, and the selected component type remains selected.
+7. Try a duplicate install and confirm the feedback is clear; confirm `danger` validation still blocks installation.
+8. Open Arcflight component sheets for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset items.
+9. Open a normal PF2E equipment sheet.
+10. Open a normal PF2E vehicle sheet.
+11. Confirm empty or missing installed sections do not crash Arcflight sheet rendering.
+12. Confirm there are no Arcflight-specific console errors.
 
 ## Current Module Behavior
 
