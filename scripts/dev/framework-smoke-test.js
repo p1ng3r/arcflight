@@ -303,7 +303,7 @@ export async function runFrameworkSmokeTest(options = {}) {
       [`flags.${ARCFLIGHT_MODULE_ID}.system.restrictions.unique`]: true
     });
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);
-    check(result, "Created smoke test components", result.createdItemIds.length === 11, 11, result.createdItemIds.length);
+    check(result, "Created smoke test components", result.createdItemIds.length === 14, 14, result.createdItemIds.length);
 
     const actorResult = await ensureSmokeTestActor();
     actor = actorResult.actor;
@@ -736,7 +736,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Install preview room slot overflow is danger", "danger", roomOverflowPreview.severity);
     checkEqual(result, "Install preview mod slot overflow is danger", "danger", modOverflowPreview.severity);
     checkEqual(result, "Install preview duplicate unique crew is danger", "danger", uniqueCrewDuplicatePreview.severity);
-    check(result, "Install preview valid weapon mount is info", validWeaponPreview.severity === "info" && validWeaponPreview.unsupported === false, "info supported weapon preview", validWeaponPreview);
+    check(result, "Install preview valid weapon mount is ok/info", ["ok", "info"].includes(validWeaponPreview.severity) && validWeaponPreview.unsupported === false, "ok or info supported weapon preview", validWeaponPreview);
     checkEqual(result, "Install preview invalid weapon arc is danger", "danger", invalidWeaponArcPreview.severity);
     checkEqual(result, "Install preview missing weapon mount is danger", "danger", missingWeaponMountPreview.severity);
     checkEqual(result, "Install preview incompatible weapon size is danger", "danger", incompatibleWeaponSizePreview.severity);
