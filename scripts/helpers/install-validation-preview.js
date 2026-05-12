@@ -241,7 +241,7 @@ function evaluateTierFit(report, systemData = {}, componentData = {}, componentT
   }
 
   if (tierMetadata.recommendedTier > currentTier) {
-    addReportMessage(report, "warning", `${report.componentName} is recommended for ship tier ${tierMetadata.recommendedTier}; current tier is ${currentTier}.`);
+    addReportMessage(report, "info", `${report.componentName} is recommended for ship tier ${tierMetadata.recommendedTier}; current tier is ${currentTier}.`);
   }
 
   const componentTier = Math.max(tierMetadata.minimumTier, tierMetadata.recommendedTier);
@@ -265,15 +265,15 @@ function evaluateRefitPressure(report, systemData = {}, componentItemOrData, com
   };
   report.projected.refitStatus = projectedStatus;
 
-  if (projectedStatus === REFIT_STATUSES.MAJOR_REFIT_REQUIRED) {
+  if (projectedStatus === REFIT_STATUSES.MAJOR_REFIT_REQUIRED && addedPressure.total > 0) {
     addReportMessage(report, "danger", `Projected refit pressure ${projectedPressure.total} meets or exceeds the major refit threshold ${majorRefitThreshold}.`);
-  } else if (majorRefitThreshold > 0 && projectedPressure.total >= majorRefitThreshold * NEAR_THRESHOLD_RATIO) {
+  } else if (majorRefitThreshold > 0 && addedPressure.total > 0 && projectedPressure.total >= majorRefitThreshold * NEAR_THRESHOLD_RATIO) {
     addReportMessage(report, "warning", `Projected refit pressure ${projectedPressure.total} is close to the major refit threshold ${majorRefitThreshold}.`);
   }
 
   for (const key of REFIT_PRESSURE_KEYS) {
     const categoryTolerance = numericValue(tolerance[key]);
-    if (categoryTolerance > 0 && projectedPressure[key] > categoryTolerance) {
+    if (categoryTolerance > 0 && addedPressure[key] > 0 && projectedPressure[key] > categoryTolerance) {
       addReportMessage(report, "danger", `Projected ${key} ${projectedPressure[key]} exceeds hull category tolerance ${categoryTolerance}.`);
     }
   }
