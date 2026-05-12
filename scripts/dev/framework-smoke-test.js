@@ -267,11 +267,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     const initialInstallState = getInstallState(actor);
     checkEqual(result, "Install state initializes at version 1", 1, initialInstallState.version);
     checkEqual(result, "Install state initializes with no records", 0, initialInstallState.installs.length);
-    const { prepareArcflightShipViewData, prepareInstallStateReadout } = await import("../sheets/ship-sheet.js");
+    const { prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState } = await import("../sheets/ship-sheet.js");
     const emptyInstallStateReadout = prepareInstallStateReadout(actor);
     check(result, "Install state sheet readout handles empty state", emptyInstallStateReadout.hasRecords === false && emptyInstallStateReadout.summary.totalInstalls === 0, "empty readout", emptyInstallStateReadout);
     const emptyShipViewData = prepareArcflightShipViewData({ system: actor.getFlag(ARCFLIGHT_MODULE_ID, "system") }, actor);
     check(result, "Ship view data includes installStateReadout", Boolean(emptyShipViewData.system.installStateReadout) && emptyShipViewData.system.installStateReadout.hasRecords === false, "installStateReadout", emptyShipViewData.system.installStateReadout);
+    const emptyInstallUiState = prepareInstallUiState(actor, ARCFLIGHT_ITEM_TYPES.HULL, "missing-item-id");
+    check(result, "Ship install UI state builds without selection", emptyInstallUiState.selectedComponentType === ARCFLIGHT_ITEM_TYPES.HULL && Array.isArray(emptyInstallUiState.itemOptions) && emptyInstallUiState.canInstall === false, "safe empty install UI", emptyInstallUiState);
 
     const smokeInstallRecord = {
       installId: "smoke-install-state-record",
