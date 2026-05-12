@@ -112,7 +112,7 @@ function weapon({
     mounting: {
       mountSlots,
       compatibleArcs,
-      notes: "Mount compatibility is source data only; weapon install helpers are intentionally not implemented yet."
+      notes: "Mount compatibility is source data consumed by backend install helpers; no weapon UI or combat firing is implemented."
     },
     traits,
     damageProfile: {

@@ -1,4 +1,4 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { getComponentData, getComponentRefitPressure, getComponentTierMetadata, getComponentType } from "../documents/components.js";
 import { calculateRefitPressure, getArcflightShipData, getShipRefitPressure, getShipTierState } from "../documents/ships.js";
 
@@ -8,11 +8,11 @@ const SUPPORTED_COMPONENT_TYPES = new Set([
   ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
   ARCFLIGHT_ITEM_TYPES.ROOM,
   ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
-  ARCFLIGHT_ITEM_TYPES.CREW_ASSET
+  ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
+  ARCFLIGHT_ITEM_TYPES.WEAPON
 ]);
 
 const FUTURE_UNSUPPORTED_COMPONENT_TYPES = new Set([
-  ARCFLIGHT_ITEM_TYPES.WEAPON,
   ARCFLIGHT_ITEM_TYPES.CARGO
 ]);
 
@@ -203,6 +203,7 @@ function getInstalledEntriesForType(systemData = {}, componentType) {
   if (componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD) return Array.isArray(installed.arkengineMods) ? installed.arkengineMods : [];
   if (componentType === ARCFLIGHT_ITEM_TYPES.ROOM) return Array.isArray(installed.rooms) ? installed.rooms : [];
   if (componentType === ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE) return Array.isArray(installed.shipUpgrades) ? installed.shipUpgrades : [];
+  if (componentType === ARCFLIGHT_ITEM_TYPES.WEAPON) return Array.isArray(installed.weapons) ? installed.weapons : [];
   if (componentType === ARCFLIGHT_ITEM_TYPES.CREW_ASSET) return Array.isArray(systemData.crew?.namedCrew) ? systemData.crew.namedCrew : [];
 
   return [];
@@ -212,7 +213,7 @@ function entryIdentifiers(entry = {}) {
   return {
     ids: [entry.id, entry.itemId].filter(Boolean),
     uuids: [entry.uuid, entry.itemUuid].filter(Boolean),
-    keys: [entry.key, entry.sourceKey, entry.coreKey, entry.identity?.id].filter(Boolean),
+    keys: [entry.key, entry.sourceKey, entry.coreKey, entry.identity?.id, entry.mountedWeaponId].filter(Boolean),
     nameType: `${entry.name ?? ""}::${entry.componentType ?? ""}`
   };
 }
@@ -399,6 +400,90 @@ function evaluateShipUpgradeSlots(report, systemData = {}, componentData = {}) {
   }
 }
 
+function normalizeWeaponArc(arc) {
+  const normalizedArc = String(arc ?? "").trim().toLowerCase();
+  return Object.values(ARCFLIGHT_WEAPON_ARCS).includes(normalizedArc) ? normalizedArc : "";
+}
+
+function getWeaponMountsForArc(hull = {}, arc = "") {
+  const mounts = hull.weaponMounts?.[arc];
+  return Array.isArray(mounts) ? mounts : null;
+}
+
+function weaponSizeAllowedByMount(weaponSize = "", mount = {}) {
+  const allowedSizes = Array.isArray(mount.allowedSizes) ? mount.allowedSizes : [];
+  if (allowedSizes.length > 0) return allowedSizes.includes(weaponSize);
+  if (!mount.maxSize) return true;
+  const sizeRank = { small: 1, medium: 2, large: 3 };
+  return numericValue(sizeRank[weaponSize]) <= numericValue(sizeRank[mount.maxSize]);
+}
+
+function weaponCompatibleWithArc(componentData = {}, arc = "") {
+  const compatibleArcs = Array.isArray(componentData.compatibleArcs)
+    ? componentData.compatibleArcs
+    : Array.isArray(componentData.mounting?.compatibleArcs)
+      ? componentData.mounting.compatibleArcs
+      : [];
+  return compatibleArcs.length === 0 || compatibleArcs.includes(arc);
+}
+
+function evaluateWeaponMount(report, systemData = {}, componentData = {}, options = {}) {
+  const arc = normalizeWeaponArc(options.arc);
+  const mountId = String(options.mountId ?? "").trim();
+  const hull = systemData.base?.hull ?? {};
+  const installedWeapons = Array.isArray(systemData.installed?.weapons) ? systemData.installed.weapons : [];
+
+  report.current.weaponMount = { arc: options.arc ?? "", mountId };
+  report.projected.weaponMount = { arc, mountId, status: "unchecked" };
+
+  if (!arc) {
+    addReportMessage(report, "danger", `Invalid weapon arc ${options.arc ?? ""}; choose one of ${Object.values(ARCFLIGHT_WEAPON_ARCS).join(", ")}.`);
+    return;
+  }
+
+  const mounts = getWeaponMountsForArc(hull, arc);
+  if (!mounts) {
+    addReportMessage(report, "danger", `Weapon arc ${arc} does not exist on this hull.`);
+    return;
+  }
+
+  if (!mountId) {
+    addReportMessage(report, "danger", "No hull weapon mount id was provided for this weapon install preview.");
+    return;
+  }
+
+  const mount = mounts.find((entry) => entry?.id === mountId);
+  if (!mount) {
+    addReportMessage(report, "danger", `Hull weapon mount ${mountId} does not exist on the ${arc} arc.`);
+    return;
+  }
+
+  report.current.weaponMount = cloneData(mount);
+  report.projected.weaponMount = { ...cloneData(mount), arc, mountId, installing: report.componentName };
+
+  const weaponSize = componentData.size ?? componentData.identity?.size ?? "";
+  if (!weaponSizeAllowedByMount(weaponSize, mount)) {
+    addReportMessage(report, "danger", `${report.componentName} size ${weaponSize} is not allowed by mount ${mountId}.`);
+    return;
+  }
+
+  const occupied = mount.occupied === true
+    || Boolean(mount.mountedWeaponId)
+    || installedWeapons.some((weapon) => weapon.arc === arc && weapon.mountId === mountId);
+  if (occupied) {
+    addReportMessage(report, "danger", `Hull weapon mount ${mountId} on the ${arc} arc is already occupied.`);
+    return;
+  }
+
+  if (!weaponCompatibleWithArc(componentData, arc)) {
+    addReportMessage(report, "danger", `${report.componentName} is not compatible with the ${arc} arc.`);
+    return;
+  }
+
+  addReportMessage(report, "info", `${report.componentName} can be installed in ${arc} mount ${mountId}.`);
+  report.projected.weaponMount.status = "available";
+}
+
 function evaluateDuplicateInstall(report, systemData = {}, candidate = {}, componentData = {}) {
   const installedEntries = getInstalledEntriesForType(systemData, candidate.componentType);
   const duplicate = installedEntries.find((entry) => isDuplicateEntry(entry, candidate));
@@ -436,14 +521,15 @@ function buildReport(systemData, componentItemOrData, componentType, componentDa
       slots: cloneData({
         arkengineMods: systemData.installed?.arkengineModSlots ?? emptySlotState(),
         rooms: systemData.installed?.roomSlots ?? emptySlotState(),
-        shipUpgrades: systemData.installed?.shipUpgradeSlots ?? emptySlotState()
+        shipUpgrades: systemData.installed?.shipUpgradeSlots ?? emptySlotState(),
+        weaponMounts: {}
       })
     },
     unsupported: false
   };
 }
 
-export function previewInstallValidation(shipActor, componentItemOrData) {
+export function previewInstallValidation(shipActor, componentItemOrData, options = {}) {
   if (!componentItemOrData) throw new Error("Arcflight | previewInstallValidation requires a component item or component data.");
 
   const systemData = getShipSystemData(shipActor);
@@ -466,16 +552,17 @@ export function previewInstallValidation(shipActor, componentItemOrData) {
   if (componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD) evaluateArkengineModSlots(report, systemData, componentData);
   if (componentType === ARCFLIGHT_ITEM_TYPES.ROOM) evaluateRoomSlots(report, systemData, componentData);
   if (componentType === ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE) evaluateShipUpgradeSlots(report, systemData, componentData);
+  if (componentType === ARCFLIGHT_ITEM_TYPES.WEAPON) evaluateWeaponMount(report, systemData, componentData, options);
 
   return report;
 }
 
-export function previewComponentInstall(shipActor, componentItemOrData) {
-  return previewInstallValidation(shipActor, componentItemOrData);
+export function previewComponentInstall(shipActor, componentItemOrData, options = {}) {
+  return previewInstallValidation(shipActor, componentItemOrData, options);
 }
 
-export function getInstallValidationWarnings(shipActor, componentItemOrData) {
-  return previewInstallValidation(shipActor, componentItemOrData).warnings;
+export function getInstallValidationWarnings(shipActor, componentItemOrData, options = {}) {
+  return previewInstallValidation(shipActor, componentItemOrData, options).warnings;
 }
 
 export function shouldBlockInstall(preview = {}) {
