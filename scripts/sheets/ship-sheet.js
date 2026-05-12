@@ -3,7 +3,7 @@ import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patter
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
-import { previewInstallValidation } from "../helpers/install-validation-preview.js";
+import { previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   addCrewAsset,
@@ -370,7 +370,8 @@ function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType
     const warnings = prepareTextArray(preview.warnings);
     const slotRows = preparePreviewSlotRows(preview);
     const severity = severityRanks.has(preview.severity) ? preview.severity : "ok";
-    const installBlocked = severity === "danger";
+    const blockState = shouldBlockInstall(preview);
+    const installBlocked = blockState.blocked === true;
 
     return {
       ...preview,
@@ -379,7 +380,9 @@ function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType
       severityLabel: severity,
       cssClass: `arcflight-validation-${severity}`,
       badgeClass: `arcflight-install-ui__badge--${severity}`,
-      statusLabel: installBlocked ? "Install blocked" : "Install allowed",
+      blocked: installBlocked,
+      blockedReason: blockState.reason,
+      statusLabel: installBlocked ? `Install blocked: ${blockState.reason}` : "Install allowed",
       statusClass: installBlocked ? "arcflight-install-ui__status--blocked" : "arcflight-install-ui__status--allowed",
       messages,
       warnings,
@@ -408,6 +411,8 @@ function prepareInstallPreviewReadout(actor, selectedItem, selectedComponentType
       hasWarnings: true,
       slotRows: [],
       hasSlotRows: false,
+      blocked: true,
+      blockedReason: message,
       projectedRefitStatusLabel: "Unknown",
       projectedRefitPressureTotal: 0
     };
@@ -422,8 +427,8 @@ function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYP
   const preview = prepareInstallPreviewReadout(actor, selectedItem, componentType);
   const disabledReason = !selectedItem
     ? "Select a world item to preview and install."
-    : preview?.severity === "danger"
-      ? "Danger validation blocks this install. Resolve the listed warnings before installing."
+    : preview?.blocked === true
+      ? preview.blockedReason || "Install validation blocks this install. Resolve the listed warnings before installing."
       : "";
 
   return {
@@ -436,7 +441,7 @@ function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYP
     noItemsHint: "No matching Arcflight world Items found for this component type. Run core item sync, confirm the item is PF2E equipment, and confirm flags.arcflight.enabled plus flags.arcflight.componentType are set.",
     preview,
     hasPreview: Boolean(preview),
-    canInstall: Boolean(selectedItem) && preview?.severity !== "danger",
+    canInstall: Boolean(selectedItem) && preview?.blocked !== true,
     disabledReason,
     hasDisabledReason: Boolean(disabledReason)
   };
@@ -719,8 +724,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     const preview = prepareInstallPreviewReadout(actor, item, componentType);
-    if (preview?.severity === "danger") {
-      ui.notifications?.warn?.("Arcflight blocked this install because validation severity is danger.");
+    if (preview?.blocked === true) {
+      ui.notifications?.warn?.(`Arcflight blocked this install: ${preview.blockedReason || "validation rules did not allow it."}`);
       this.render(true);
       return;
     }

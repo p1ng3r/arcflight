@@ -78,14 +78,33 @@ function addRefitPressure(left = {}, right = {}) {
   return pressure;
 }
 
+function hasOwnProperty(source, key) {
+  return Object.prototype.hasOwnProperty.call(source ?? {}, key);
+}
+
+function markShipUpgradeSlotSystem(systemData, rawSystemData = {}) {
+  Object.defineProperty(systemData, "__arcflightHasShipUpgradeSlotSystem", {
+    value: hasOwnProperty(rawSystemData.installed, "shipUpgradeSlots"),
+    enumerable: false,
+    configurable: true
+  });
+
+  return systemData;
+}
+
 function getShipSystemData(shipActor) {
   if (!shipActor) throw new Error("Arcflight | previewInstallValidation requires an Arcflight ship actor or ship system data.");
-  if (shipActor?.getFlag) return getArcflightShipData(shipActor);
-  if (shipActor?.flags?.[ARCFLIGHT_MODULE_ID]?.system) {
-    return getArcflightShipData({ flags: shipActor.flags });
+  if (shipActor?.getFlag) {
+    const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
+    return markShipUpgradeSlotSystem(getArcflightShipData(shipActor), rawSystemData);
   }
 
-  return getArcflightShipData({ flags: { [ARCFLIGHT_MODULE_ID]: { system: shipActor } } });
+  if (shipActor?.flags?.[ARCFLIGHT_MODULE_ID]?.system) {
+    const rawSystemData = shipActor.flags[ARCFLIGHT_MODULE_ID].system ?? {};
+    return markShipUpgradeSlotSystem(getArcflightShipData({ flags: shipActor.flags }), rawSystemData);
+  }
+
+  return markShipUpgradeSlotSystem(getArcflightShipData({ flags: { [ARCFLIGHT_MODULE_ID]: { system: shipActor } } }), shipActor);
 }
 
 function getFlagValue(documentLike, key) {
@@ -358,7 +377,14 @@ function evaluateRoomSlots(report, systemData = {}, componentData = {}) {
 function evaluateShipUpgradeSlots(report, systemData = {}, componentData = {}) {
   const installed = systemData.installed ?? {};
   const required = numericValue(componentData.installation?.slotCost ?? componentData.slotCost, 1);
-  const capacity = numericValue(installed.shipUpgradeSlots?.capacity, 3);
+  const hasSlotSystem = systemData.__arcflightHasShipUpgradeSlotSystem === true && Number.isFinite(Number(installed.shipUpgradeSlots?.capacity));
+
+  if (!hasSlotSystem) {
+    addReportMessage(report, "warning", "Ship upgrade slot capacity is not defined on this ship; upgrade slot enforcement remains advisory.");
+    return;
+  }
+
+  const capacity = numericValue(installed.shipUpgradeSlots?.capacity);
   const used = numericValue(installed.shipUpgradeSlots?.used, (Array.isArray(installed.shipUpgrades) ? installed.shipUpgrades : []).reduce((total, upgrade) => total + numericValue(upgrade.slotCost, 1), 0));
   const current = emptySlotState(capacity, used);
   const projected = withAddedSlotCost(current, required);
@@ -377,12 +403,13 @@ function evaluateDuplicateInstall(report, systemData = {}, candidate = {}, compo
   const installedEntries = getInstalledEntriesForType(systemData, candidate.componentType);
   const duplicate = installedEntries.find((entry) => isDuplicateEntry(entry, candidate));
 
-  if (duplicate) {
-    addReportMessage(report, "warning", `${candidate.name} appears to already be installed or rostered as ${duplicate.name ?? duplicate.key ?? duplicate.itemId ?? "an existing component"}.`);
+  if (candidate.componentType === ARCFLIGHT_ITEM_TYPES.CREW_ASSET && componentData.restrictions?.unique === true && duplicate) {
+    addReportMessage(report, "danger", `${candidate.name} is marked unique and appears to already be rostered.`);
+    return;
   }
 
-  if (candidate.componentType === ARCFLIGHT_ITEM_TYPES.CREW_ASSET && componentData.restrictions?.unique === true && duplicate) {
-    addReportMessage(report, "warning", `${candidate.name} is marked unique and appears to already be rostered.`);
+  if (duplicate) {
+    addReportMessage(report, "warning", `${candidate.name} appears to already be installed or rostered as ${duplicate.name ?? duplicate.key ?? duplicate.itemId ?? "an existing component"}.`);
   }
 }
 
@@ -409,7 +436,7 @@ function buildReport(systemData, componentItemOrData, componentType, componentDa
       slots: cloneData({
         arkengineMods: systemData.installed?.arkengineModSlots ?? emptySlotState(),
         rooms: systemData.installed?.roomSlots ?? emptySlotState(),
-        shipUpgrades: systemData.installed?.shipUpgradeSlots ?? emptySlotState(3, 0)
+        shipUpgrades: systemData.installed?.shipUpgradeSlots ?? emptySlotState()
       })
     },
     unsupported: false
@@ -449,4 +476,34 @@ export function previewComponentInstall(shipActor, componentItemOrData) {
 
 export function getInstallValidationWarnings(shipActor, componentItemOrData) {
   return previewInstallValidation(shipActor, componentItemOrData).warnings;
+}
+
+export function shouldBlockInstall(preview = {}) {
+  if (!preview || typeof preview !== "object") return { blocked: true, reason: "Install validation preview is unavailable." };
+
+  if (preview.severity === "danger") {
+    const reason = preview.warnings?.[0] ?? preview.messages?.[0] ?? "Danger validation blocks this install.";
+    return { blocked: true, reason };
+  }
+
+  const projectedSlots = preview.projected?.slots ?? {};
+  for (const [slotKey, slotState] of Object.entries(projectedSlots)) {
+    if (numericValue(slotState?.available) < 0) {
+      return {
+        blocked: true,
+        reason: `Projected ${humanizeSlotKey(slotKey)} slots ${numericValue(slotState.used)}/${numericValue(slotState.capacity)} exceed capacity.`
+      };
+    }
+  }
+
+  return { blocked: false, reason: "" };
+}
+
+function humanizeSlotKey(value) {
+  return String(value ?? "slots")
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase();
 }

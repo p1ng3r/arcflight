@@ -5,7 +5,7 @@ import {
   organizeArcflightItems
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
-import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
+import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -87,6 +87,11 @@ export function createArcflightDevTools() {
      * Return preview warning strings for a proposed install.
      */
     getInstallValidationWarnings,
+
+    /**
+     * Return whether a validation preview blocks helper-driven installation.
+     */
+    shouldBlockInstall,
 
     /**
      * Generate a lightweight install record id.

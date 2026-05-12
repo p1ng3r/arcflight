@@ -460,6 +460,37 @@ function hasInstalledEntry(entries = [], entry = {}) {
   ));
 }
 
+function activeSingleInstallMatches(systemData = {}, item, componentType) {
+  const componentData = getComponentData(item) ?? {};
+  const itemId = item?.id ?? "";
+  const uuid = item?.uuid ?? "";
+  const key = componentData.identity?.id ?? componentData.platform ?? componentData.engineClass ?? item?.slug ?? "";
+
+  if (componentType === ARCFLIGHT_ITEM_TYPES.HULL) {
+    const installed = systemData.installed ?? {};
+    return Boolean(
+      (itemId && installed.hullItemId === itemId)
+      || (uuid && installed.hullUuid === uuid)
+      || (key && installed.hullPlatform === key)
+    );
+  }
+
+  if (componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE) {
+    const installed = systemData.installed ?? {};
+    return Boolean(
+      (itemId && installed.arkengineItemId === itemId)
+      || (uuid && installed.arkengineUuid === uuid)
+      || (key && installed.arkengineKey === key)
+    );
+  }
+
+  return false;
+}
+
+function duplicateInstallError(componentName, placementName) {
+  return new Error(`Arcflight | ${componentName || "This component"} is already installed or rostered on this ship as ${placementName}; duplicate installs are blocked.`);
+}
+
 function getShipUpgradeSlotState(installed = {}) {
   const existingCapacity = Number(installed.shipUpgradeSlots?.capacity);
   const capacity = Number.isFinite(existingCapacity) ? existingCapacity : 3;
@@ -1524,6 +1555,10 @@ export async function installHull(shipActor, hullItem) {
 
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
+  if (activeSingleInstallMatches(systemData, hullItem, ARCFLIGHT_ITEM_TYPES.HULL)) {
+    throw duplicateInstallError(hullItem.name, "the active hull slot");
+  }
+
   const baseHull = cloneData(getComponentData(hullItem));
   const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
   const coreRooms = getCoreRoomsFromHull(baseHull);
@@ -1584,6 +1619,10 @@ export async function installArkengine(shipActor, arkengineItem) {
 
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
+  if (activeSingleInstallMatches(systemData, arkengineItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE)) {
+    throw duplicateInstallError(arkengineItem.name, "the active arkengine slot");
+  }
+
   const baseHull = cloneData(systemData.base?.hull ?? {});
   const baseArkengine = normalizeArkengineData(getComponentData(arkengineItem));
   const installedArkengineMods = [];
@@ -1654,8 +1693,7 @@ export async function installArkengineMod(shipActor, modItem) {
   const installedArkengineMods = getInstalledArkengineMods(systemData.installed);
   const modEntry = buildInstalledArkengineModEntry(modItem);
   if (hasInstalledEntry(installedArkengineMods, modEntry)) {
-    console.warn(`Arcflight | ${modEntry.name} is already installed as an arkengine mod on this ship; skipping duplicate install.`);
-    return shipActor;
+    throw duplicateInstallError(modEntry.name, "an arkengine mod slot");
   }
 
   validateArkengineModEntryForEngine(modEntry, baseArkengine, systemData.installed);
@@ -1719,8 +1757,7 @@ export async function installRoom(shipActor, roomItem) {
 
   const installedRooms = getInstalledRooms(systemData.installed);
   if (hasInstalledEntry(installedRooms, roomEntry)) {
-    console.warn(`Arcflight | ${roomEntry.name} is already installed as a room on this ship; skipping duplicate install.`);
-    return shipActor;
+    throw duplicateInstallError(roomEntry.name, "a room slot");
   }
 
   const coreRooms = getCoreRoomsFromHull(baseHull);
@@ -1772,15 +1809,16 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
     throw new Error("Arcflight | installShipUpgrade requires an Arcflight ship upgrade component item.");
   }
 
+  const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
+  const hasShipUpgradeSlotSystem = Object.prototype.hasOwnProperty.call(rawSystemData.installed ?? {}, "shipUpgradeSlots");
   const baseHull = cloneData(systemData.base?.hull ?? {});
   const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
   const coreRooms = getCoreRoomsFromHull(baseHull);
   const installedShipUpgrades = getInstalledShipUpgrades(systemData.installed);
   const upgradeEntry = buildInstalledShipUpgradeEntry(upgradeItem);
   if (hasInstalledEntry(installedShipUpgrades, upgradeEntry)) {
-    console.warn(`Arcflight | ${upgradeEntry.name} is already installed as a ship upgrade on this ship; skipping duplicate install.`);
-    return shipActor;
+    throw duplicateInstallError(upgradeEntry.name, "a ship upgrade slot");
   }
 
   const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
@@ -1791,7 +1829,7 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
   nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
 
-  if (nextInstalled.shipUpgradeSlots.available < 0) {
+  if (hasShipUpgradeSlotSystem && nextInstalled.shipUpgradeSlots.available < 0) {
     throw new Error("Arcflight | installShipUpgrade would exceed this ship's upgrade slot capacity.");
   }
 
@@ -1882,8 +1920,7 @@ export async function addCrewAsset(shipActor, crewItem) {
   const crewState = getDefaultCrewState(systemData.crew);
   const crewEntry = buildCrewAssetRosterEntry(crewItem);
   if (hasInstalledEntry(crewState.namedCrew, crewEntry)) {
-    console.warn(`Arcflight | ${crewEntry.name} is already rostered on this ship; skipping duplicate crew asset.`);
-    return shipActor;
+    throw duplicateInstallError(crewEntry.name, crewEntry.restrictions?.unique === true ? "a unique crew roster entry" : "the crew roster");
   }
 
   const namedCrew = [...crewState.namedCrew, crewEntry];

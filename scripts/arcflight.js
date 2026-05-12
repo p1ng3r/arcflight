@@ -96,7 +96,7 @@ import {
   organizeArcflightItems
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
-import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "./helpers/install-validation-preview.js";
+import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -228,6 +228,7 @@ Hooks.once("init", () => {
     previewInstallValidation,
     previewComponentInstall,
     getInstallValidationWarnings,
+    shouldBlockInstall,
     createInstallId,
     deactivateInstallRecord,
     deactivateInstallRecordsByComponent,
@@ -418,6 +419,7 @@ export {
   previewInstallValidation,
   previewComponentInstall,
   getInstallValidationWarnings,
+  shouldBlockInstall,
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
   createInstallId,
