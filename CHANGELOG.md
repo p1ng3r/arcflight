@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Controlled Install Component UI MVP
+
+- Added a compact Install Component section to the Arcflight ship sheet with component type and matching world Item selectors for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset installs.
+- Wired the section to `previewInstallValidation()` for severity, message, warning, projected refit status, projected refit pressure, and slot-preview readouts.
+- Install actions now route only through the existing install helpers and block only `danger` validation previews, leaving `ok`, `info`, and `warning` previews installable.
+- Extended framework smoke coverage so ship sheet install UI data preparation can build safely without a selected item.
+- Kept the MVP controlled and narrow: no new drag/drop behavior, modal wizard, remove buttons, combat/travel automation, compendium mutation, or duplicated install logic was added.
+
 ### Install-State Backfill Helpers
 
 - Added dry-run-first `findShipsMissingInstallState()`, `backfillInstallStateForShip()`, and `backfillInstallStateForAllShips()` helpers with matching `game.arcflight.devTools` aliases.
