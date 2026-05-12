@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Invalid Legacy Document Cleanup Helpers
+
+- Added dry-run-by-default helpers `game.arcflight.findInvalidLegacyArcflightDocuments()` and `game.arcflight.cleanupInvalidLegacyArcflightDocuments({ dryRun: true })`, plus matching `game.arcflight.devTools` aliases, for identifying stale world Actor/Item records whose document type starts with `arcflight.`.
+- Cleanup reports actor/item IDs, names, invalid types, discovery methods, deletion status, skipped entries, and warnings, with optional known-ID support via `{ actorIds: [], itemIds: [] }` when PF2E startup logs expose IDs that automatic discovery cannot inspect.
+- Kept the helper narrowly scoped to invalid legacy world Actor/Item records; it does not create custom Actor/Item subtypes, mutate valid PF2E `vehicle`/`equipment` Arcflight documents, delete compendium content, or delete actor embedded items.
+
 ### Install Validation UI Readout
 
 - Added a read-only Tier / Refit / Validation section to the Arcflight ship sheet that displays stored tier state, refit pressure categories, major-refit flags, and a compact native/pressured/major-refit-required summary.
