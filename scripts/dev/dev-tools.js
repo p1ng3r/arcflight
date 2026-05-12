@@ -7,6 +7,7 @@ import {
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { CORE_WEAPON_KEYS, getCoreWeapon, getCoreWeaponKeys } from "../../data/weapons/core-weapons.js";
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
+import { installWeapon, removeInstalledWeapon } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import {
   backfillInstallStateForAllShips,
@@ -99,6 +100,16 @@ export function createArcflightDevTools() {
      * Dry-run by default. Pass { dryRun: false } to delete safe duplicate Arcflight world Items.
      */
     cleanupDuplicateArcflightItems,
+
+    /**
+     * Install a weapon component into a hull weapon mount.
+     */
+    installWeapon,
+
+    /**
+     * Remove an installed weapon by mountedWeaponId.
+     */
+    removeInstalledWeapon,
 
     /**
      * Preview-only install validation report. Never blocks or mutates installs.
