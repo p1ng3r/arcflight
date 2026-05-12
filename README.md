@@ -134,7 +134,7 @@ Helper API:
 - `game.arcflight.findInstallRecord(shipActor, installId)` returns a matching record or `null`.
 - `game.arcflight.prepareInstallStateSummary(shipActor)` derives counts by component type, active/inactive totals, active pressure totals, and present active install categories.
 
-Matching aliases are available under `game.arcflight.devTools`. This pass is intentionally foundation-only: no drag/drop UI, enforced slot locking, install buttons, UI editing, combat systems, travel systems, or persistence migrations beyond basic normalization were added.
+Matching aliases are available under `game.arcflight.devTools`. The Arcflight ship sheet now includes a compact, read-only Install State section that surfaces the normalized summary, pressure contribution totals, component type counts, install categories, and active record details from these helpers. The section is display-only: no drag/drop UI, enforced slot locking, install buttons, UI editing, combat systems, travel systems, or persistence migrations beyond basic normalization were added.
 
 ## Arkengine Fueling Framework
 
@@ -236,7 +236,7 @@ After sheet or release-readiness changes, verify the following in Foundry:
    ```
 
 2. Confirm the returned result has `passed === true`.
-3. Open an Arcflight ship sheet and confirm it displays Installed Hull, Installed Arkengine, Fueling, the read-only Tier / Refit / Validation summary, Installed Arkengine Mods, Installed Rooms, Ship Upgrades, Crew Roster, Station Assignments, Derived values, Current values, and room / arkengine mod / ship upgrade slot summaries.
+3. Open an Arcflight ship sheet and confirm it displays Installed Hull, Installed Arkengine, Fueling, the read-only Tier / Refit / Validation summary, the read-only Install State summary/empty state, Installed Arkengine Mods, Installed Rooms, Ship Upgrades, Crew Roster, Station Assignments, Derived values, Current values, and room / arkengine mod / ship upgrade slot summaries.
 4. Open Arcflight component sheets for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset items.
 5. Open a normal PF2E equipment sheet.
 6. Open a normal PF2E vehicle sheet.
