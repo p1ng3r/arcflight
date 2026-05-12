@@ -561,10 +561,10 @@ async function normalizeArcflightShipActorType(actor) {
   if (typeof actor?.update !== "function") return false;
 
   try {
-    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE });
-    return true;
+    const updatedActor = await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE });
+    return isArcflightShipActorType(updatedActor) || isArcflightShipActorType(actor);
   } catch (error) {
-    ui.notifications?.warn?.("Arcflight could not normalize this ship's actor type flag before install. Install helpers may still reject it.");
+    ui.notifications?.warn?.("Arcflight could not normalize this ship's actor type flag. Ship action helpers may reject it.");
     console.warn("Arcflight | Failed to normalize Arcflight ship actor type flag.", { actor, error });
     return false;
   }
@@ -581,8 +581,17 @@ async function ensureArcflightShipActor(actor) {
     return null;
   }
 
-  await normalizeArcflightShipActorType(actor);
+  const normalized = await normalizeArcflightShipActorType(actor);
+  if (!normalized) {
+    ui.notifications?.warn?.("Arcflight ship actions require a normalized Arcflight ship actor type flag.");
+    return null;
+  }
+
   return actor;
+}
+
+async function getMutatingSheetShipActor(sheet) {
+  return ensureArcflightShipActor(getSheetActor(sheet));
 }
 
 async function confirmClearShipBuild(actor) {
@@ -757,7 +766,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onInstallSelectedComponent(event) {
     event.preventDefault();
 
-    const actor = await ensureArcflightShipActor(getSheetActor(this));
+    const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
     const componentType = normalizeInstallComponentType(this.#selectedInstallComponentType);
@@ -833,7 +842,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     try {
-      const actor = await ensureArcflightShipEnabled(getSheetActor(this));
+      const actor = await getMutatingSheetShipActor(this);
       if (!actor) return;
 
       await game.arcflight.applyCleanExampleShipBuild(actor, selectedBuildKey);
@@ -848,11 +857,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onClearBuild(event) {
     event.preventDefault();
 
-    const actor = getSheetActor(this);
-    if (!isArcflightShipEnabled(actor)) {
-      ui.notifications?.warn?.("Clear Build requires an Arcflight-enabled PF2E vehicle actor.");
-      return;
-    }
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
 
     const clearShipBuild = game?.arcflight?.clearShipBuild;
     if (typeof clearShipBuild !== "function") {
@@ -880,7 +886,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const patternKey = event.currentTarget?.value ?? "";
     if (!patternKey) return;
 
-    const actor = getSheetActor(this);
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
 
     try {
       await setHullPattern(actor, patternKey);
@@ -897,7 +904,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const patternKey = event.currentTarget?.value ?? "";
     if (!patternKey) return;
 
-    const actor = getSheetActor(this);
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
 
     try {
       await setArkenginePattern(actor, patternKey);
@@ -916,7 +924,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 
   async #onDropShipBuilder(event) {
-    const actor = await ensureArcflightShipActor(getSheetActor(this));
+    const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
     event.preventDefault();
