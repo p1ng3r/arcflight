@@ -25,6 +25,10 @@ import {
   installRoom,
   installShipUpgrade,
   recalculateShipStats,
+  removeCrewAsset,
+  removeInstalledArkengineMod,
+  removeInstalledRoom,
+  removeInstalledShipUpgrade,
   updateShipTierState,
   calculateRefitPressure,
   getShipRefitPressure,
@@ -574,6 +578,47 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Room slots shape has available", 3, shipData.installed.roomSlots.available);
     checkEqual(result, "Arkengine mod slots shape has available", 3, shipData.installed.arkengineModSlots.available);
     checkEqual(result, "Ship upgrade slots shape has available", 2, shipData.installed.shipUpgradeSlots.available);
+
+    const removalInactiveBefore = getInactiveInstallRecords(actor).length;
+    const removableArkengineModId = shipData.installed.arkengineMods[0]?.uuid || shipData.installed.arkengineMods[0]?.itemId || shipData.installed.arkengineMods[0]?.key;
+    const removableRoomId = shipData.installed.rooms[0]?.uuid || shipData.installed.rooms[0]?.itemId || shipData.installed.rooms[0]?.key;
+    const removableUpgradeId = shipData.installed.shipUpgrades[0]?.uuid || shipData.installed.shipUpgrades[0]?.itemId || shipData.installed.shipUpgrades[0]?.key;
+    const removableCrewId = shipData.crew.namedCrew[0]?.uuid || shipData.crew.namedCrew[0]?.itemId || shipData.crew.namedCrew[0]?.key;
+    const roomSlotsUsedBeforeRemoval = shipData.installed.roomSlots.used;
+    const arkengineModSlotsUsedBeforeRemoval = shipData.installed.arkengineModSlots.used;
+    const shipUpgradeSlotsUsedBeforeRemoval = shipData.installed.shipUpgradeSlots.used;
+    const strainBeforeModRemoval = shipData.derived.strainCapacity;
+    const hullBeforeUpgradeRemoval = shipData.derived.hullIntegrity;
+
+    await removeInstalledArkengineMod(actor, removableArkengineModId);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Remove arkengine mod removes installed entry", 0, shipData.installed.arkengineMods.length);
+    checkEqual(result, "Remove arkengine mod recalculates mod slots", arkengineModSlotsUsedBeforeRemoval - 1, shipData.installed.arkengineModSlots.used);
+    checkEqual(result, "Remove arkengine mod recalculates derived strain", strainBeforeModRemoval - 1, shipData.derived.strainCapacity);
+
+    await removeInstalledRoom(actor, removableRoomId);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Remove room removes installed entry", 0, shipData.installed.rooms.length);
+    checkEqual(result, "Remove room recalculates room slots", roomSlotsUsedBeforeRemoval - 1, shipData.installed.roomSlots.used);
+
+    await removeInstalledShipUpgrade(actor, removableUpgradeId);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Remove ship upgrade removes installed entry", 0, shipData.installed.shipUpgrades.length);
+    checkEqual(result, "Remove ship upgrade recalculates upgrade slots", shipUpgradeSlotsUsedBeforeRemoval - 1, shipData.installed.shipUpgradeSlots.used);
+    checkEqual(result, "Remove ship upgrade recalculates derived hull", hullBeforeUpgradeRemoval - 20, shipData.derived.hullIntegrity);
+
+    await removeCrewAsset(actor, removableCrewId);
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Remove crew asset removes roster entry", 0, shipData.crew.namedCrew.length);
+    checkEqual(result, "Remove crew asset recalculates generic crew", 0, shipData.crew.currentGenericCrew);
+    checkEqual(result, "Component removal increments inactive install count", removalInactiveBefore + 4, getInactiveInstallRecords(actor).length);
+    check(result, "Component removal preserves inactive lifecycle history", getInactiveInstallRecords(actor).filter((record) => [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, ARCFLIGHT_ITEM_TYPES.ROOM, ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, ARCFLIGHT_ITEM_TYPES.CREW_ASSET].includes(record.componentType) && record.removalReason === "removed").length === 4, "four removed records", getInactiveInstallRecords(actor));
+
+    await installArkengineMod(actor, componentItems.arkengineMod);
+    await installRoom(actor, componentItems.room);
+    await installShipUpgrade(actor, componentItems.shipUpgrade);
+    await addCrewAsset(actor, componentItems.crewAsset);
+    shipData = getArcflightShipData(actor);
 
     const previewBaseSystem = foundry.utils.deepClone(shipData);
     const lowPressurePreview = previewInstallValidation(previewBaseSystem, {
