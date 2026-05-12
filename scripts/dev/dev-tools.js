@@ -5,6 +5,7 @@ import {
   organizeArcflightItems
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
+import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
@@ -55,6 +56,21 @@ export function createArcflightDevTools() {
      * Dry-run by default. Pass { dryRun: false } to delete safe duplicate Arcflight world Items.
      */
     cleanupDuplicateArcflightItems,
+
+    /**
+     * Preview-only install validation report. Never blocks or mutates installs.
+     */
+    previewInstallValidation,
+
+    /**
+     * Alias for previewInstallValidation.
+     */
+    previewComponentInstall,
+
+    /**
+     * Return preview warning strings for a proposed install.
+     */
+    getInstallValidationWarnings,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.

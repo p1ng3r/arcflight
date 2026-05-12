@@ -1,4 +1,4 @@
-import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import {
   createCoreArkengine,
   createCoreArkengineMod,
@@ -40,6 +40,7 @@ import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
+import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -367,6 +368,65 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Room slots shape has available", 3, shipData.installed.roomSlots.available);
     checkEqual(result, "Arkengine mod slots shape has available", 3, shipData.installed.arkengineModSlots.available);
     checkEqual(result, "Ship upgrade slots shape has available", 2, shipData.installed.shipUpgradeSlots.available);
+
+    const previewBaseSystem = foundry.utils.deepClone(shipData);
+    const lowPressurePreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+      identity: { id: "smoke-low-pressure-preview", displayName: "Smoke Low Pressure Preview" },
+      installation: { slotCost: 0 },
+      refitPressure: {}
+    });
+    const overTierPreview = previewComponentInstall(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+      identity: { id: "smoke-over-tier-preview", displayName: "Smoke Over Tier Preview" },
+      minimumTier: 99,
+      recommendedTier: 99,
+      installation: { slotCost: 0 },
+      refitPressure: {}
+    });
+    const majorRefitPreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+      identity: { id: "smoke-major-refit-preview", displayName: "Smoke Major Refit Preview" },
+      installation: { slotCost: 0 },
+      refitPressure: { infrastructurePressure: majorRefitThreshold }
+    });
+    const incompatibleArkenginePreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE,
+      engineClass: "smoke-incompatible-engine",
+      displayName: "Smoke Incompatible Engine",
+      refitPressure: {}
+    });
+    const roomOverflowPreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
+      identity: { id: "smoke-room-overflow-preview", displayName: "Smoke Room Overflow Preview" },
+      installation: { expansionSlotsRequired: 99 },
+      refitPressure: {}
+    });
+    const legacyPreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
+      identity: { id: "smoke-legacy-preview", displayName: "Smoke Legacy Preview" },
+      installation: { expansionSlotsRequired: 0 }
+    });
+    const unsupportedPreview = previewInstallValidation(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
+      identity: { id: "smoke-future-weapon-preview", displayName: "Smoke Future Weapon Preview" }
+    });
+    const warningStrings = getInstallValidationWarnings(previewBaseSystem, {
+      componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
+      identity: { id: "smoke-warning-list-preview", displayName: "Smoke Warning List Preview" },
+      installation: { expansionSlotsRequired: 99 }
+    });
+
+    check(result, "Install preview low-pressure install is ok/info", ["ok", "info"].includes(lowPressurePreview.severity) && lowPressurePreview.unsupported === false, "ok or info", lowPressurePreview);
+    check(result, "Install preview over-tier component warns", ["warning", "danger"].includes(overTierPreview.severity) && overTierPreview.warnings.length > 0, "warning or danger", overTierPreview);
+    checkEqual(result, "Install preview major refit is danger", "danger", majorRefitPreview.severity);
+    checkEqual(result, "Install preview incompatible arkengine is danger", "danger", incompatibleArkenginePreview.severity);
+    checkEqual(result, "Install preview room slot overflow is danger", "danger", roomOverflowPreview.severity);
+    check(result, "Install preview legacy metadata does not crash", legacyPreview && legacyPreview.unsupported === false && Array.isArray(legacyPreview.warnings), "stable report", legacyPreview);
+    check(result, "Install preview unsupported future component warns", unsupportedPreview.unsupported === true && unsupportedPreview.warnings.length > 0, "unsupported warning", unsupportedPreview);
+    check(result, "Install preview warning helper returns strings", Array.isArray(warningStrings) && warningStrings.length > 0, "warning strings", warningStrings);
+    check(result, "Install preview helpers exposed", typeof globalThis.game?.arcflight?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.getInstallValidationWarnings === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.getInstallValidationWarnings });
+    check(result, "Install preview devTools exposed", typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings });
 
     checkEqual(result, "Current hull preserved", preservedCurrent.hull, shipData.current.hull);
     checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
