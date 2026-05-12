@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Install Lifecycle Removal Tracking
+
+- Added removal lifecycle fields (`removedAt`, `removedBy`, `removalReason`, and optional `replacedByInstallId`) to normalized install-state records while preserving older records safely.
+- Added `getActiveInstallRecords()`, `getInactiveInstallRecords()`, `deactivateInstallRecord()`, and `deactivateInstallRecordsByComponent()` with matching `game.arcflight.devTools` aliases; `getInstalledComponents()` and `removeInstallState()` remain compatibility aliases.
+- Updated `installHull` and `installArkengine` replacement flows so prior active hull/arkengine install records are marked inactive with `removalReason: "replaced"` before the new install record becomes active.
+- Extended the framework smoke test to verify hull and arkengine replacement metadata, inactive history preservation, active install counts, and helper exposure without adding remove buttons, drag/drop, slot locking, cargo, combat, repair, or migration automation.
+
 ### Helper-Driven Install-State Recording
 
 - Wired existing install helpers (`installHull`, `installArkengine`, `installArkengineMod`, `installRoom`, `installShipUpgrade`, and `addCrewAsset`) to persist one ship-owned install-state record after successful helper installs.

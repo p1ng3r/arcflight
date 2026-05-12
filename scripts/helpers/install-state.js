@@ -117,12 +117,16 @@ export function normalizeInstallRecord(record = {}, options = {}) {
 
   const optionalFields = [
     "itemUuid",
+    "componentKey",
     "installedBy",
     "hullSlot",
     "roomSlot",
     "weaponArc",
     "installCategory",
-    "notes"
+    "notes",
+    "removedBy",
+    "removalReason",
+    "replacedByInstallId"
   ];
 
   for (const field of optionalFields) {
@@ -132,6 +136,10 @@ export function normalizeInstallRecord(record = {}, options = {}) {
 
   if (source.tierAtInstall !== undefined && source.tierAtInstall !== null && source.tierAtInstall !== "") {
     normalized.tierAtInstall = numericValue(source.tierAtInstall);
+  }
+
+  if (source.removedAt !== undefined && source.removedAt !== null && source.removedAt !== "") {
+    normalized.removedAt = Math.max(0, numericValue(source.removedAt));
   }
 
   return normalized;
@@ -156,8 +164,16 @@ export function getInstallState(shipActor) {
   return normalizeInstallState(getActorInstallStateFlag(shipActor));
 }
 
-export function getInstalledComponents(shipActor) {
+export function getActiveInstallRecords(shipActor) {
   return getInstallState(shipActor).installs.filter((record) => record.active === true);
+}
+
+export function getInactiveInstallRecords(shipActor) {
+  return getInstallState(shipActor).installs.filter((record) => record.active !== true);
+}
+
+export function getInstalledComponents(shipActor) {
+  return getActiveInstallRecords(shipActor);
 }
 
 export function findInstallRecord(shipActor, installId) {
@@ -186,26 +202,89 @@ export async function recordInstallState(shipActor, installRecord = {}) {
   return normalizedRecord;
 }
 
-export async function removeInstallState(shipActor, installId) {
-  assertArcflightShipActor(shipActor, "removeInstallState");
+function createRemovalMetadata(options = {}) {
+  const source = isPlainObject(options) ? options : {};
+  const metadata = {
+    removedAt: Math.max(0, numericValue(source.removedAt, Date.now())),
+    removedBy: optionalString(source.removedBy) ?? globalThis.game?.user?.id ?? "",
+    removalReason: optionalString(source.removalReason ?? source.reason) ?? "removed"
+  };
+  const replacedByInstallId = optionalString(source.replacedByInstallId);
+  if (replacedByInstallId !== undefined) metadata.replacedByInstallId = replacedByInstallId;
+  return metadata;
+}
+
+function componentMatcherMatches(record, componentMatcher) {
+  if (typeof componentMatcher === "function") return componentMatcher(record) === true;
+  if (typeof componentMatcher === "string") return record.componentType === stringValue(componentMatcher);
+  if (!isPlainObject(componentMatcher)) return false;
+
+  return Object.entries(componentMatcher).every(([key, value]) => {
+    if (value === undefined) return true;
+    return record[key] === value;
+  });
+}
+
+export async function deactivateInstallRecord(shipActor, installId, options = {}) {
+  assertArcflightShipActor(shipActor, "deactivateInstallRecord");
 
   const normalizedInstallId = stringValue(installId);
+  if (!normalizedInstallId) return null;
+
   const installState = getInstallState(shipActor);
-  let removedRecord = null;
+  let targetRecord = null;
+  let changed = false;
+  const removalMetadata = createRemovalMetadata(options);
   const nextInstalls = installState.installs.map((record) => {
     if (record.installId !== normalizedInstallId) return record;
-    removedRecord = { ...record, active: false };
-    return removedRecord;
+    if (record.active !== true) {
+      targetRecord = record;
+      return record;
+    }
+    targetRecord = { ...record, active: false, ...removalMetadata };
+    changed = true;
+    return targetRecord;
   });
 
-  if (!removedRecord) return null;
+  if (!targetRecord) return null;
+  if (!changed) return targetRecord;
 
   const nextInstallState = normalizeInstallState({
     version: ARCFLIGHT_INSTALL_STATE_VERSION,
     installs: nextInstalls
   });
   await shipActor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState });
-  return removedRecord;
+  return targetRecord;
+}
+
+export async function deactivateInstallRecordsByComponent(shipActor, componentMatcher, options = {}) {
+  assertArcflightShipActor(shipActor, "deactivateInstallRecordsByComponent");
+
+  const installState = getInstallState(shipActor);
+  const removalMetadata = createRemovalMetadata(options);
+  const deactivatedRecords = [];
+  let changed = false;
+  const nextInstalls = installState.installs.map((record) => {
+    if (!componentMatcherMatches(record, componentMatcher)) return record;
+    if (record.active !== true) return record;
+    const deactivatedRecord = { ...record, active: false, ...removalMetadata };
+    deactivatedRecords.push(deactivatedRecord);
+    changed = true;
+    return deactivatedRecord;
+  });
+
+  if (!changed) return deactivatedRecords;
+
+  const nextInstallState = normalizeInstallState({
+    version: ARCFLIGHT_INSTALL_STATE_VERSION,
+    installs: nextInstalls
+  });
+  await shipActor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState });
+  return deactivatedRecords;
+}
+
+export async function removeInstallState(shipActor, installId, options = {}) {
+  return deactivateInstallRecord(shipActor, installId, options);
 }
 
 export function prepareInstallStateSummary(shipActor) {

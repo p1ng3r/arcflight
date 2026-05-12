@@ -8,7 +8,11 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helper
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
 import {
   createInstallId,
+  deactivateInstallRecord,
+  deactivateInstallRecordsByComponent,
   findInstallRecord,
+  getActiveInstallRecords,
+  getInactiveInstallRecords,
   getInstalledComponents,
   getInstallState,
   prepareInstallStateSummary,
@@ -89,6 +93,16 @@ export function createArcflightDevTools() {
     /**
      * Return normalized install records currently active on an Arcflight ship.
      */
+    getActiveInstallRecords,
+
+    /**
+     * Return normalized install records currently inactive on an Arcflight ship.
+     */
+    getInactiveInstallRecords,
+
+    /**
+     * Legacy alias for getActiveInstallRecords.
+     */
     getInstalledComponents,
 
     /**
@@ -103,6 +117,16 @@ export function createArcflightDevTools() {
 
     /**
      * Mark one persistent install record inactive while preserving record history.
+     */
+    deactivateInstallRecord,
+
+    /**
+     * Mark active persistent install records matching a component as inactive.
+     */
+    deactivateInstallRecordsByComponent,
+
+    /**
+     * Legacy alias for deactivateInstallRecord.
      */
     removeInstallState,
 

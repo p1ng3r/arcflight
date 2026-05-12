@@ -942,19 +942,47 @@ function createInstallStateRecord(shipActor, item, componentType, installCategor
   };
 }
 
+function shouldDeactivateReplacedInstallRecord(record = {}, componentType) {
+  return record.active === true
+    && (componentType === ARCFLIGHT_ITEM_TYPES.HULL || componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE)
+    && record.componentType === componentType;
+}
+
+function buildReplacementRemovalMetadata(replacedByInstallId) {
+  const metadata = {
+    removedAt: Date.now(),
+    removedBy: globalThis.game?.user?.id ?? "",
+    removalReason: "replaced"
+  };
+
+  if (replacedByInstallId) metadata.replacedByInstallId = replacedByInstallId;
+  return metadata;
+}
+
 function buildInstallStateWithComponent(systemData, shipActor, item, componentType, installCategory, tierState = {}) {
   const installState = normalizeBasicInstallState(systemData.installState);
   const identity = getInstallStateComponentIdentity(item, componentType);
 
-  if (installState.installs.some((record) => installStateRecordMatchesComponent(record, identity))) {
+  if (installState.installs.some((record) => record.active === true && installStateRecordMatchesComponent(record, identity))) {
     return installState;
   }
+
+  const installRecord = createInstallStateRecord(shipActor, item, componentType, installCategory, tierState);
+  const replacementRemovalMetadata = buildReplacementRemovalMetadata(installRecord.installId);
+  const installs = installState.installs.map((record) => {
+    if (!shouldDeactivateReplacedInstallRecord(record, componentType)) return record;
+    return {
+      ...record,
+      active: false,
+      ...replacementRemovalMetadata
+    };
+  });
 
   return normalizeBasicInstallState({
     version: installState.version,
     installs: [
-      ...installState.installs,
-      createInstallStateRecord(shipActor, item, componentType, installCategory, tierState)
+      ...installs,
+      installRecord
     ]
   });
 }
