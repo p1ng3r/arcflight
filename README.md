@@ -166,7 +166,7 @@ await game.arcflight.cleanupInvalidLegacyArcflightDocuments({
 });
 ```
 
-Review the returned actor/item IDs, names, invalid types, deletion status, skipped entries, and warnings before rerunning with `dryRun: false`. If Foundry does not expose a raw world database deletion API in the current environment, the helper will not crash; it returns warnings with manual world database cleanup instructions. Matching helper aliases are available under `game.arcflight.devTools.findInvalidLegacyArcflightDocuments()` and `game.arcflight.devTools.cleanupInvalidLegacyArcflightDocuments({ dryRun: true })`.
+Review the returned actor/item IDs, names, invalid types, deletion status, skipped entries, warnings, and `deletionAttempts` before rerunning with `dryRun: false`. The v2 cleanup path bypasses normal initialized `Actor`/`Item` deletion and tries Foundry's raw world database backends with the delete operation passed as an array of document ID strings, which avoids PF2E initializing invalid legacy records first. If Foundry does not expose a raw world database deletion API in the current environment, or if all raw delete attempts fail, the helper will not crash; it returns warnings with manual world database cleanup instructions and the exact IDs. Matching helper aliases are available under `game.arcflight.devTools.findInvalidLegacyArcflightDocuments()` and `game.arcflight.devTools.cleanupInvalidLegacyArcflightDocuments({ dryRun: true })`.
 
 ### Duplicate Cleanup Workflow
 
