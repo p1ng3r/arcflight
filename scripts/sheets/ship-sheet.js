@@ -529,14 +529,60 @@ function prepareArcflightShipViewData(arcflight, shipActor = null) {
   };
 }
 
+function isActorDocument(documentLike) {
+  return documentLike?.documentName === "Actor"
+    || documentLike?.constructor?.documentName === "Actor"
+    || (typeof documentLike?.type === "string" && typeof documentLike?.getFlag === "function" && typeof documentLike?.update === "function");
+}
+
 function isArcflightShipEnabled(actor) {
   return actor?.type === "vehicle"
-    && actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true
-    && actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE;
+    && actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true;
 }
 
 function getSheetActor(sheet) {
-  return sheet?.actor ?? sheet?.document ?? null;
+  const candidates = [
+    sheet?.document,
+    sheet?.document?.actor,
+    sheet?.actor,
+    sheet?.object,
+    sheet?.object?.actor
+  ];
+
+  return candidates.find(isActorDocument) ?? null;
+}
+
+function isArcflightShipActorType(actor) {
+  return actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE;
+}
+
+async function normalizeArcflightShipActorType(actor) {
+  if (isArcflightShipActorType(actor)) return true;
+  if (typeof actor?.update !== "function") return false;
+
+  try {
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.actorType`]: ARCFLIGHT_SHIP_ACTOR_TYPE });
+    return true;
+  } catch (error) {
+    ui.notifications?.warn?.("Arcflight could not normalize this ship's actor type flag before install. Install helpers may still reject it.");
+    console.warn("Arcflight | Failed to normalize Arcflight ship actor type flag.", { actor, error });
+    return false;
+  }
+}
+
+async function ensureArcflightShipActor(actor) {
+  if (actor?.type !== "vehicle") {
+    ui.notifications?.warn?.("Arcflight ship actions require a PF2E vehicle actor.");
+    return null;
+  }
+
+  if (actor?.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") !== true) {
+    ui.notifications?.warn?.("Arcflight ship actions require an Arcflight-enabled PF2E vehicle actor.");
+    return null;
+  }
+
+  await normalizeArcflightShipActorType(actor);
+  return actor;
 }
 
 async function confirmClearShipBuild(actor) {
@@ -579,7 +625,10 @@ async function ensureArcflightShipEnabled(actor) {
     return null;
   }
 
-  if (isArcflightShipEnabled(actor)) return actor;
+  if (isArcflightShipEnabled(actor)) {
+    await normalizeArcflightShipActorType(actor);
+    return actor;
+  }
 
   return await enableArcflightShip(actor) ?? actor;
 }
@@ -708,11 +757,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onInstallSelectedComponent(event) {
     event.preventDefault();
 
-    const actor = getSheetActor(this);
-    if (!isArcflightShipEnabled(actor)) {
-      ui.notifications?.warn?.("Install Component requires an Arcflight-enabled PF2E vehicle actor.");
-      return;
-    }
+    const actor = await ensureArcflightShipActor(getSheetActor(this));
+    if (!actor) return;
 
     const componentType = normalizeInstallComponentType(this.#selectedInstallComponentType);
     const item = game?.items?.get?.(this.#selectedInstallItemId);
@@ -870,8 +916,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 
   async #onDropShipBuilder(event) {
-    const actor = getSheetActor(this);
-    if (!isArcflightShipEnabled(actor)) return;
+    const actor = await ensureArcflightShipActor(getSheetActor(this));
+    if (!actor) return;
 
     event.preventDefault();
     event.stopPropagation();
