@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Install State Ship Sheet Readout
+
+- Added a compact read-only Install State section to the Arcflight ship sheet showing persistent install summary counts, active pressure totals, component type counts, install categories, and active install record details.
+- Added safe sheet display preparation for empty and malformed install state so older ships show “No persistent install records yet.” instead of crashing.
+- Kept this pass UI-readout-only; no install buttons, remove buttons, drag/drop behavior, slot enforcement, helper behavior changes, combat automation, travel automation, custom PF2E document types, or source item mutation were added.
+
 ### Persistent Install-State Foundation
 
 - Added ship-owned persistent install state under `flags.arcflight.system.installState` with `{ version: 1, installs: [] }` defaults and safe normalization for older or malformed ship data.
