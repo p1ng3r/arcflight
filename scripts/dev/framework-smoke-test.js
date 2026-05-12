@@ -258,6 +258,11 @@ export async function runFrameworkSmokeTest(options = {}) {
     const initialInstallState = getInstallState(actor);
     checkEqual(result, "Install state initializes at version 1", 1, initialInstallState.version);
     checkEqual(result, "Install state initializes with no records", 0, initialInstallState.installs.length);
+    const { prepareArcflightShipViewData, prepareInstallStateReadout } = await import("../sheets/ship-sheet.js");
+    const emptyInstallStateReadout = prepareInstallStateReadout(actor);
+    check(result, "Install state sheet readout handles empty state", emptyInstallStateReadout.hasRecords === false && emptyInstallStateReadout.summary.totalInstalls === 0, "empty readout", emptyInstallStateReadout);
+    const emptyShipViewData = prepareArcflightShipViewData({ system: actor.getFlag(ARCFLIGHT_MODULE_ID, "system") }, actor);
+    check(result, "Ship view data includes installStateReadout", Boolean(emptyShipViewData.system.installStateReadout) && emptyShipViewData.system.installStateReadout.hasRecords === false, "installStateReadout", emptyShipViewData.system.installStateReadout);
 
     const smokeInstallRecord = {
       installId: "smoke-install-state-record",
@@ -308,6 +313,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Malformed install state aliases pressure categories", 2, normalizedMalformedState.installs[1].pressureContribution.engine);
 
     const normalizedMalformedSummary = prepareInstallStateSummary(actor);
+    const malformedInstallStateReadout = prepareInstallStateReadout(actor);
+    check(result, "Install state sheet readout handles malformed state", malformedInstallStateReadout.hasRecords === true && malformedInstallStateReadout.activeRecords.length === 2, "normalized malformed readout", malformedInstallStateReadout);
     checkEqual(result, "Install state summary counts active installs", 2, normalizedMalformedSummary.activeInstalls);
     checkEqual(result, "Install state summary counts component types", 1, normalizedMalformedSummary.countsByComponentType[ARCFLIGHT_ITEM_TYPES.ROOM]);
     checkEqual(result, "Install state summary totals pressure", 2, normalizedMalformedSummary.pressureContribution.total);

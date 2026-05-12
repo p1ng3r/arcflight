@@ -2,6 +2,7 @@ import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengi
 import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { getComponentType } from "../documents/components.js";
+import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   addCrewAsset,
@@ -181,6 +182,90 @@ function prepareValidationSummary(refitStatus = "native") {
   }
 }
 
+
+function prepareLabelValueRows(values = {}, labels = {}) {
+  return Object.entries(labels).map(([key, label]) => ({
+    key,
+    label,
+    value: numericDisplayValue(values[key])
+  }));
+}
+
+function prepareTextArray(values = []) {
+  return arrayOrEmpty(values).map((value) => String(value ?? "").trim()).filter(Boolean);
+}
+
+function prepareComponentTypeCounts(countsByComponentType = {}) {
+  return Object.entries(countsByComponentType)
+    .map(([componentType, count]) => ({
+      componentType,
+      label: humanizeIdentifier(componentType || "Unknown"),
+      count: numericDisplayValue(count)
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function prepareInstallRecordReadout(record = {}) {
+  const flags = [];
+  if (record.nativeInstall === true) flags.push("native");
+  if (record.refitInstall === true) flags.push("refit");
+  if (record.temporaryInstall === true) flags.push("temporary");
+
+  const placements = [
+    { label: "Hull Slot", value: record.hullSlot },
+    { label: "Room Slot", value: record.roomSlot },
+    { label: "Weapon Arc", value: record.weaponArc }
+  ].filter((entry) => String(entry.value ?? "").trim());
+
+  return {
+    ...record,
+    componentTypeLabel: humanizeIdentifier(record.componentType || "Unknown Component"),
+    installCategoryLabel: humanizeIdentifier(record.installCategory || "Uncategorized"),
+    itemReference: record.itemId || record.itemUuid || "No item reference",
+    flags,
+    flagsLabel: flags.length ? flags.join(", ") : "none",
+    placements,
+    hasPlacements: placements.length > 0,
+    hasTierAtInstall: record.tierAtInstall !== undefined && record.tierAtInstall !== null && record.tierAtInstall !== "",
+    hasNotes: String(record.notes ?? "").trim().length > 0
+  };
+}
+
+function prepareInstallStateReadout(shipActor) {
+  const installState = getInstallState(shipActor);
+  const summary = prepareInstallStateSummary(shipActor);
+  const activeRecords = installState.installs.filter((record) => record.active === true).map(prepareInstallRecordReadout);
+  const pressureLabels = {
+    total: "Total",
+    weapon: "Weapon",
+    engine: "Engine",
+    infrastructure: "Infrastructure",
+    lifeveil: "Lifeveil",
+    crewCommand: "Crew Command",
+    occult: "Occult"
+  };
+
+  return {
+    version: summary.version,
+    hasRecords: summary.totalInstalls > 0,
+    summary: {
+      activeInstalls: summary.activeInstalls,
+      inactiveInstalls: summary.inactiveInstalls,
+      totalInstalls: summary.totalInstalls,
+      installCategories: prepareTextArray(summary.installCategories),
+      installCategoriesLabel: summary.installCategories.length ? summary.installCategories.map(humanizeIdentifier).join(", ") : "None",
+      componentTypeCounts: prepareComponentTypeCounts(summary.countsByComponentType),
+      hasComponentTypeCounts: Object.keys(summary.countsByComponentType ?? {}).length > 0
+    },
+    pressure: {
+      ...summary.pressureContribution,
+      rows: prepareLabelValueRows(summary.pressureContribution, pressureLabels)
+    },
+    activeRecords,
+    hasActiveRecords: activeRecords.length > 0
+  };
+}
+
 function prepareInstallValidationReadout(system = {}) {
   const tier = system.tier ?? {};
   const refitPressure = system.refitPressure ?? {};
@@ -219,7 +304,7 @@ function prepareInstallValidationReadout(system = {}) {
   };
 }
 
-function prepareArcflightShipViewData(arcflight) {
+function prepareArcflightShipViewData(arcflight, shipActor = null) {
   const system = foundry.utils.deepClone(arcflight.system ?? {});
   system.installed = system.installed ?? {};
   system.installed.hullDisplayName = displayNameForInstalledSingle(
@@ -253,6 +338,7 @@ function prepareArcflightShipViewData(arcflight) {
   system.installed.shipUpgradeSlots = prepareSlotState(system.installed.shipUpgradeSlots, 3);
   system.fuelingDisplay = prepareFuelingDisplay(system);
   system.installValidationReadout = prepareInstallValidationReadout(system);
+  system.installStateReadout = prepareInstallStateReadout(shipActor);
   system.crew = system.crew ?? {};
   system.crew.namedCrew = arrayOrEmpty(system.crew.namedCrew).map(prepareCrewEntry);
 
@@ -563,7 +649,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const actor = getSheetActor(this);
-    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(actor));
+    const arcflight = prepareArcflightShipViewData(prepareArcflightShipFlags(actor), actor);
 
     const stations = prepareStationRows(arcflight.system.stations);
     const exampleBuildOptions = prepareExampleBuildOptions(this.#selectedExampleBuildKey);
@@ -582,4 +668,4 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 }
 
-export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallValidationReadout };
+export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallValidationReadout };

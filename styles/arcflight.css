@@ -247,3 +247,50 @@
 .arcflight-validation-danger {
   border-left-color: var(--color-level-error, #b71c1c);
 }
+
+.arcflight-install-state__chips,
+.arcflight-install-state__records {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-install-state__chips {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-install-state__chip,
+.arcflight-install-state__record {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-install-state__record header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-install-state__record header span {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12);
+}
+
+.arcflight-install-state__record dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.arcflight-install-state__record dt {
+  font-weight: bold;
+}
+
+.arcflight-install-state__record dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

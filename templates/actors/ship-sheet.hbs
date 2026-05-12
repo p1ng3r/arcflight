@@ -166,6 +166,79 @@
     <p class="arcflight-sheet__hint">Read-only status from <code>flags.arcflight.system.tier</code>, <code>refitPressure</code>, and <code>refitFlags</code>. This section does not block installs or change install behavior.</p>
   </section>
 
+  <section class="arcflight-sheet__section arcflight-install-state">
+    <h2>Install State</h2>
+    <p class="arcflight-sheet__hint">Read-only persistent install lifecycle records from <code>flags.arcflight.system.installState</code>. This section does not add, remove, drag, drop, enforce slots, or mutate install records.</p>
+
+    {{#if arcflight.system.installStateReadout.hasRecords}}
+      <h3>Summary</h3>
+      <div class="arcflight-grid arcflight-grid--resources">
+        <label class="arcflight-sheet__field"><span>Active Installs</span><input type="number" value="{{arcflight.system.installStateReadout.summary.activeInstalls}}" disabled></label>
+        <label class="arcflight-sheet__field"><span>Inactive Installs</span><input type="number" value="{{arcflight.system.installStateReadout.summary.inactiveInstalls}}" disabled></label>
+        <label class="arcflight-sheet__field"><span>Total Installs</span><input type="number" value="{{arcflight.system.installStateReadout.summary.totalInstalls}}" disabled></label>
+        <label class="arcflight-sheet__field"><span>Install Categories Present</span><input type="text" value="{{arcflight.system.installStateReadout.summary.installCategoriesLabel}}" disabled></label>
+      </div>
+
+      <h3>Component Counts by Type</h3>
+      {{#if arcflight.system.installStateReadout.summary.hasComponentTypeCounts}}
+        <div class="arcflight-install-state__chips">
+          {{#each arcflight.system.installStateReadout.summary.componentTypeCounts}}
+            <span class="arcflight-install-state__chip"><strong>{{this.label}}</strong>: {{this.count}}</span>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">No active component type counts.</p>
+      {{/if}}
+
+      <h3>Pressure from Install Records</h3>
+      <div class="arcflight-grid arcflight-grid--resources">
+        {{#each arcflight.system.installStateReadout.pressure.rows}}
+          <label class="arcflight-sheet__field"><span>{{this.label}}</span><input type="number" value="{{this.value}}" disabled></label>
+        {{/each}}
+      </div>
+
+      <h3>Active Install Records</h3>
+      {{#if arcflight.system.installStateReadout.hasActiveRecords}}
+        <div class="arcflight-install-state__records">
+          {{#each arcflight.system.installStateReadout.activeRecords}}
+            <article class="arcflight-install-state__record">
+              <header>
+                <strong>{{this.componentTypeLabel}}</strong>
+                <span>{{this.installCategoryLabel}}</span>
+              </header>
+              <dl>
+                <dt>Item</dt>
+                <dd>{{this.itemReference}}</dd>
+                <dt>Flags</dt>
+                <dd>{{this.flagsLabel}}</dd>
+                {{#if this.hasPlacements}}
+                  <dt>Placement</dt>
+                  <dd>
+                    {{#each this.placements}}
+                      <span>{{this.label}}: {{this.value}}</span>{{#unless @last}}; {{/unless}}
+                    {{/each}}
+                  </dd>
+                {{/if}}
+                {{#if this.hasTierAtInstall}}
+                  <dt>Tier at Install</dt>
+                  <dd>{{this.tierAtInstall}}</dd>
+                {{/if}}
+                {{#if this.hasNotes}}
+                  <dt>Notes</dt>
+                  <dd>{{this.notes}}</dd>
+                {{/if}}
+              </dl>
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">No active install records.</p>
+      {{/if}}
+    {{else}}
+      <p class="arcflight-sheet__hint">No persistent install records yet.</p>
+    {{/if}}
+  </section>
+
   <section class="arcflight-sheet__section">
     <h2>Arkengine Mods</h2>
     <div class="arcflight-grid arcflight-grid--resources">
