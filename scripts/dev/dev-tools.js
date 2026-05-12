@@ -6,6 +6,7 @@ import {
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
+import { cleanupInvalidLegacyArcflightDocuments, findInvalidLegacyArcflightDocuments } from "../helpers/legacy-document-cleanup.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
@@ -71,6 +72,16 @@ export function createArcflightDevTools() {
      * Return preview warning strings for a proposed install.
      */
     getInstallValidationWarnings,
+
+    /**
+     * Find invalid legacy Arcflight arcflight.* world Actor/Item documents without initializing them.
+     */
+    findInvalidLegacyArcflightDocuments,
+
+    /**
+     * Dry-run by default. Pass { dryRun: false } to raw-delete invalid legacy Arcflight arcflight.* world Actor/Item documents.
+     */
+    cleanupInvalidLegacyArcflightDocuments,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.

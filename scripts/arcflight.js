@@ -97,6 +97,7 @@ import {
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "./helpers/install-validation-preview.js";
+import { cleanupInvalidLegacyArcflightDocuments, findInvalidLegacyArcflightDocuments } from "./helpers/legacy-document-cleanup.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -212,6 +213,8 @@ Hooks.once("init", () => {
     previewInstallValidation,
     previewComponentInstall,
     getInstallValidationWarnings,
+    findInvalidLegacyArcflightDocuments,
+    cleanupInvalidLegacyArcflightDocuments,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
     setHullPattern,
@@ -265,6 +268,8 @@ Hooks.once("init", () => {
     cleanupDuplicateItems: cleanupDuplicateArcflightItems,
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
+    findInvalidLegacyArcflightDocuments,
+    cleanupInvalidLegacyArcflightDocuments,
     devTools: createArcflightDevTools()
   });
 
@@ -388,6 +393,8 @@ export {
   previewInstallValidation,
   previewComponentInstall,
   getInstallValidationWarnings,
+  findInvalidLegacyArcflightDocuments,
+  cleanupInvalidLegacyArcflightDocuments,
   getDefaultArcflightComponentData,
   arcflightComponentDefaults,
   ARCFLIGHT_SHIP_ACTOR_TYPE,

@@ -96,6 +96,7 @@ When the module initializes, it exposes the stable helper surface at `game.arcfl
 - Installation and ship state: `installHull`, `installHullOnShip`, `installArkengine`, `installArkengineOnShip`, `installArkengineMod`, `installArkengineModOnShip`, `installRoom`, `installRoomOnShip`, `installShipUpgrade`, `installShipUpgradeOnShip`, `addCrewAsset`, `removeCrewAsset`, `recalculateShipStats`, `calculateDerivedShipStats`, `calculateRefitPressure`, `updateShipTierState`, `getShipTierState`, `getShipRefitPressure`, `getShipRefitStatus`.
 - Stations: `assignStation`, `clearStationAssignment`, `assignShipStation`, `clearShipStation`.
 - Development validation: `runFrameworkSmokeTest`.
+- Invalid legacy cleanup: `findInvalidLegacyArcflightDocuments()` and `cleanupInvalidLegacyArcflightDocuments({ dryRun: true })`.
 - Item organization, core library sync, safe duplicate cleanup, and install preview helpers: `game.arcflight.devTools.createItemFolders()`, `game.arcflight.devTools.organizeArcflightItems()`, `game.arcflight.devTools.findMissingCoreArcflightItems()`, `game.arcflight.devTools.syncCoreArcflightItems()`, `game.arcflight.devTools.findDuplicateArcflightItems()`, `game.arcflight.devTools.cleanupDuplicateArcflightItems()`, `game.arcflight.devTools.previewInstallValidation()`, `game.arcflight.devTools.previewComponentInstall()`, `game.arcflight.devTools.getInstallValidationWarnings()`, and matching top-level helpers on `game.arcflight`.
 
 ## Item Organization Workflow
@@ -133,6 +134,39 @@ await game.arcflight.cleanupDuplicateArcflightItems({ dryRun: true });
 `organizeArcflightItems()` first ensures that tree exists, then moves only world Items where `type === "equipment"`, `flags.arcflight.enabled === true`, and `flags.arcflight.componentType` matches a supported Arcflight component type. Normal PF2E equipment, actor-embedded items, and compendium contents are left untouched, and no items are deleted. The `Ammo` folder is created for future content organization but is not currently tied to an Arcflight component type.
 
 Compendium packs remain intentionally minimal for now. Source data continues to live in the data modules until Arcflight's content pack shape is ready to stabilize.
+
+### Invalid Legacy Document Cleanup Workflow
+
+Older Arcflight development worlds may contain invalid legacy PF2E document types such as `arcflight.ship`, `arcflight.hull`, `arcflight.arkengine`, or `arcflight.weapon`. PF2E can reject those records during startup because Arcflight no longer creates custom Actor or Item subtypes. Current valid Arcflight ships are PF2E `vehicle` actors with `flags.arcflight.enabled === true`, and current valid Arcflight components are PF2E `equipment` items with `flags.arcflight.enabled === true` plus their component kind in `flags.arcflight.componentType`.
+
+Use the safe cleanup helpers only for stale invalid legacy world documents whose `type` starts with `arcflight.`. They do not target valid `vehicle` or `equipment` Arcflight documents, compendium content, or actor embedded items. The cleanup helper defaults to dry-run mode and requires explicit `dryRun: false` before attempting deletion.
+
+Recommended Foundry console workflow after `game.ready === true`:
+
+```js
+await game.arcflight.findInvalidLegacyArcflightDocuments();
+await game.arcflight.cleanupInvalidLegacyArcflightDocuments({ dryRun: true });
+await game.arcflight.cleanupInvalidLegacyArcflightDocuments({ dryRun: false });
+```
+
+If PF2E startup logs identify invalid IDs that automatic discovery cannot read, pass known IDs explicitly while still dry-running first:
+
+```js
+await game.arcflight.cleanupInvalidLegacyArcflightDocuments({
+  dryRun: true,
+  actorIds: ["vBvgaxP4eaFSUayt"],
+  itemIds: [
+    "4AE0IlUqj3akLcxu",
+    "i160KU8HdYzsNlNs",
+    "tEJlno168hnChNtd",
+    "IMzZq85zHSDHo7xc",
+    "rKR6aCHX5vC7D9Vk",
+    "3cEkQ7r8nAkyX7ry"
+  ]
+});
+```
+
+Review the returned actor/item IDs, names, invalid types, deletion status, skipped entries, and warnings before rerunning with `dryRun: false`. If Foundry does not expose a raw world database deletion API in the current environment, the helper will not crash; it returns warnings with manual world database cleanup instructions. Matching helper aliases are available under `game.arcflight.devTools.findInvalidLegacyArcflightDocuments()` and `game.arcflight.devTools.cleanupInvalidLegacyArcflightDocuments({ dryRun: true })`.
 
 ### Duplicate Cleanup Workflow
 
