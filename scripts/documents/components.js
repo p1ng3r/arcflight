@@ -183,16 +183,29 @@ export const arcflightComponentDefaults = Object.freeze({
   }),
   [ARCFLIGHT_ITEM_TYPES.WEAPON]: Object.freeze({
     ...commonComponentData,
+    componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
+    key: "",
+    name: "",
+    size: ARCFLIGHT_WEAPON_SIZES.SMALL,
+    family: "",
+    category: "",
+    crewRequired: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].crewRequired,
+    compatibleArcs: [],
+    damageProfile: {
+      dice: "",
+      type: "",
+      notes: ""
+    },
     identity: {
       weaponType: ARCFLIGHT_SUGGESTED_WEAPON_TYPES.BALLISTA,
-      size: ARCFLIGHT_WEAPON_SIZES.LIGHT,
+      size: ARCFLIGHT_WEAPON_SIZES.SMALL,
       model: "",
       manufacturer: "",
       grade: ""
     },
     mounting: {
       arc: ARCFLIGHT_WEAPON_ARCS.FORE,
-      mountSlots: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].mountSlots,
+      mountSlots: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].mountSlots,
       mountType: "",
       notes: ""
     },
@@ -212,17 +225,19 @@ export const arcflightComponentDefaults = Object.freeze({
     },
     reload: {
       state: ARCFLIGHT_RELOAD_STATES.READY,
+      type: "",
       actions: 0,
+      crewRequired: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].crewRequired,
       value: "",
       notes: ""
     },
     crew: {
-      required: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].crewRequired,
+      required: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].crewRequired,
       station: "",
       notes: ""
     },
     strain: {
-      cost: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].strainCost,
+      cost: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].strainCost,
       generated: 0,
       notes: ""
     },

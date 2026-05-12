@@ -5,7 +5,8 @@ import {
   createCoreCrewAsset,
   createCoreHull,
   createCoreRoom,
-  createCoreShipUpgrade
+  createCoreShipUpgrade,
+  createCoreWeapon
 } from "../documents/creation.js";
 import {
   addCrewAsset,
@@ -41,6 +42,7 @@ import { CORE_ARKENGINE_MOD_KEYS } from "../../data/arkengine-mods/core-arkengin
 import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
+import { CORE_WEAPON_KEYS, CORE_WEAPONS } from "../../data/weapons/core-weapons.js";
 import { STATION_KEYS } from "../../data/stations/core-stations.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
@@ -133,6 +135,17 @@ function summarize(result) {
 
 function isCoreKeyArray(value) {
   return Array.isArray(value) && value.length > 0;
+}
+
+function hasCoreWeaponFoundationData(weapon = {}) {
+  return typeof weapon.size === "string"
+    && weapon.size.length > 0
+    && typeof weapon.family === "string"
+    && weapon.family.length > 0
+    && weapon.reload
+    && typeof weapon.reload === "object"
+    && weapon.damageProfile
+    && typeof weapon.damageProfile === "object";
 }
 
 function findSmokeTestActor() {
@@ -241,6 +254,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core room key array exists", isCoreKeyArray(CORE_ROOM_KEYS), "non-empty array", CORE_ROOM_KEYS?.length ?? 0);
     check(result, "Core ship upgrade key array exists", isCoreKeyArray(CORE_SHIP_UPGRADE_KEYS), "non-empty array", CORE_SHIP_UPGRADE_KEYS?.length ?? 0);
     check(result, "Core crew asset key array exists", isCoreKeyArray(CORE_CREW_ASSET_KEYS), "non-empty array", CORE_CREW_ASSET_KEYS?.length ?? 0);
+    check(result, "Core weapon key array exists", isCoreKeyArray(CORE_WEAPON_KEYS), "non-empty array", CORE_WEAPON_KEYS?.length ?? 0);
+    check(result, "Every core weapon has size/family/reload/damageProfile", CORE_WEAPON_KEYS.every((key) => hasCoreWeaponFoundationData(CORE_WEAPONS[key])), true, CORE_WEAPON_KEYS.filter((key) => !hasCoreWeaponFoundationData(CORE_WEAPONS[key])));
     check(result, "Core station key array exists", isCoreKeyArray(STATION_KEYS), "non-empty array", STATION_KEYS?.length ?? 0);
     check(result, "Core hull library has 11 locked keys", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => CORE_HULL_PLATFORM_KEYS.includes(key)) && CORE_HULL_PLATFORM_KEYS.length === EXPECTED_CORE_HULL_PLATFORM_KEYS.length, EXPECTED_CORE_HULL_PLATFORM_KEYS, CORE_HULL_PLATFORM_KEYS);
     check(result, "Every core hull has classification", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasClassification(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasClassification(CORE_HULLS[key])));
@@ -249,7 +264,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Every standard core hull has expansion slots", EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform").every((key) => Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => key !== "leviathan-class-platform" && !Number.isInteger(CORE_HULLS[key]?.rooms?.expansionSlots)));
     check(result, "Leviathan platform is district-scale", CORE_HULLS["leviathan-class-platform"]?.rooms?.districtScale === true, true, CORE_HULLS["leviathan-class-platform"]?.rooms ?? null);
 
-    const expectedSyncCategories = ["hull", "arkengine", "arkengineMod", "room", "shipUpgrade", "crewAsset"];
+    const expectedSyncCategories = ["hull", "arkengine", "arkengineMod", "weapon", "room", "shipUpgrade", "crewAsset"];
     const missingCoreReport = await findMissingCoreArcflightItems();
     check(result, "Core item missing report includes sync categories", expectedSyncCategories.every((category) => missingCoreReport.categories?.[category]), expectedSyncCategories, Object.keys(missingCoreReport.categories ?? {}));
     check(result, "Core item missing report skips stations", missingCoreReport.skippedCategories?.some((entry) => entry.category === "stations"), true, missingCoreReport.skippedCategories ?? []);
@@ -260,6 +275,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Core item sync dry run creates nothing", itemCountBeforeDryRun, itemCountAfterDryRun);
     check(result, "Core item sync helpers exposed", typeof globalThis.game?.arcflight?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.syncCoreArcflightItems });
     check(result, "Core item sync devTools exposed", typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems });
+    check(result, "Core weapon helpers exposed", typeof globalThis.game?.arcflight?.getCoreWeapon === "function" && typeof globalThis.game?.arcflight?.getCoreWeaponKeys === "function" && typeof globalThis.game?.arcflight?.createCoreWeapon === "function" && typeof globalThis.game?.arcflight?.createWeapon === "function", true, { getCoreWeapon: typeof globalThis.game?.arcflight?.getCoreWeapon, getCoreWeaponKeys: typeof globalThis.game?.arcflight?.getCoreWeaponKeys, createCoreWeapon: typeof globalThis.game?.arcflight?.createCoreWeapon, createWeapon: typeof globalThis.game?.arcflight?.createWeapon });
+    check(result, "Core weapon devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getCoreWeapon === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreWeaponKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.createCoreWeapon === "function" && typeof globalThis.game?.arcflight?.devTools?.createWeapon === "function", true, { getCoreWeapon: typeof globalThis.game?.arcflight?.devTools?.getCoreWeapon, getCoreWeaponKeys: typeof globalThis.game?.arcflight?.devTools?.getCoreWeaponKeys, createCoreWeapon: typeof globalThis.game?.arcflight?.devTools?.createCoreWeapon, createWeapon: typeof globalThis.game?.arcflight?.devTools?.createWeapon });
+
+    const weaponItem = await createCoreWeapon("deck-ballista");
+    createdItems.push(weaponItem);
+    check(result, "createCoreWeapon creates PF2E equipment", weaponItem?.type === "equipment", "equipment", weaponItem?.type ?? null);
+    check(result, "Core weapon item flags are correct", weaponItem?.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true && weaponItem?.getFlag?.(ARCFLIGHT_MODULE_ID, "componentType") === ARCFLIGHT_ITEM_TYPES.WEAPON, "enabled weapon flags", { enabled: weaponItem?.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled"), componentType: weaponItem?.getFlag?.(ARCFLIGHT_MODULE_ID, "componentType") });
 
     const componentItems = await createSmokeTestComponents(createdItems);
     await componentItems.overflowArkengineMod.update({
@@ -276,7 +298,7 @@ export async function runFrameworkSmokeTest(options = {}) {
       [`flags.${ARCFLIGHT_MODULE_ID}.system.restrictions.unique`]: true
     });
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);
-    check(result, "Created smoke test components", result.createdItemIds.length === 10, 10, result.createdItemIds.length);
+    check(result, "Created smoke test components", result.createdItemIds.length === 11, 11, result.createdItemIds.length);
 
     const actorResult = await ensureSmokeTestActor();
     actor = actorResult.actor;
