@@ -25,11 +25,13 @@ import {
   installHull,
   installRoom,
   installShipUpgrade,
+  installWeapon,
   recalculateShipStats,
   removeCrewAsset,
   removeInstalledArkengineMod,
   removeInstalledRoom,
   removeInstalledShipUpgrade,
+  removeInstalledWeapon,
   updateShipTierState,
   calculateRefitPressure,
   getShipRefitPressure,
@@ -190,6 +192,9 @@ async function createSmokeTestComponents(createdItems) {
     await createSmokeTestComponent(createdItems, "room", () => createCoreRoom("workshop")),
     await createSmokeTestComponent(createdItems, "overflowRoom", () => createCoreRoom("workshop")),
     await createSmokeTestComponent(createdItems, "shipUpgrade", () => createCoreShipUpgrade("reinforced-structural-ribbing")),
+    await createSmokeTestComponent(createdItems, "weapon", () => createCoreWeapon("deck-ballista")),
+    await createSmokeTestComponent(createdItems, "incompatibleArcWeapon", () => createCoreWeapon("grapnel-harpoon")),
+    await createSmokeTestComponent(createdItems, "oversizedWeapon", () => createCoreWeapon("stormglass-lance")),
     await createSmokeTestComponent(createdItems, "crewAsset", () => createCoreCrewAsset("veteran-chief-engineer"))
   ];
 
@@ -467,6 +472,22 @@ export async function runFrameworkSmokeTest(options = {}) {
     await expectInstallBlocked(result, "Duplicate unique crew asset blocks", () => addCrewAsset(actor, componentItems.crewAsset), "unique crew roster entry");
     checkEqual(result, "Blocked install attempts preserve install state records", 8, getInstallState(actor).installs.length);
 
+    await expectInstallBlocked(result, "Weapon invalid arc blocks", () => installWeapon(actor, componentItems.weapon, { mountId: "fore-1", arc: "dorsal" }), "valid weapon arc");
+    await expectInstallBlocked(result, "Weapon missing mount blocks", () => installWeapon(actor, componentItems.weapon, { mountId: "fore-99", arc: "fore" }), "does not exist");
+    await expectInstallBlocked(result, "Weapon incompatible size blocks", () => installWeapon(actor, componentItems.oversizedWeapon, { mountId: "fore-1", arc: "fore" }), "is not allowed");
+    await expectInstallBlocked(result, "Weapon incompatible arc blocks", () => installWeapon(actor, componentItems.incompatibleArcWeapon, { mountId: "aft-1", arc: "aft" }), "not compatible");
+    await installWeapon(actor, componentItems.weapon, { mountId: "fore-1", arc: "fore" });
+    let weaponShipData = getArcflightShipData(actor);
+    const installedWeapon = weaponShipData.installed.weapons[0];
+    const weaponInstallRecord = getActiveInstallRecords(actor).find((record) => record.componentType === ARCFLIGHT_ITEM_TYPES.WEAPON && record.hullSlot === installedWeapon?.mountedWeaponId);
+    check(result, "Install weapon into valid mount works", weaponShipData.installed.weapons.length === 1 && weaponShipData.base.hull.weaponMounts.fore[0].occupied === true && Boolean(weaponInstallRecord), "installed weapon and active installState", { weapon: installedWeapon, weaponInstallRecord });
+    await expectInstallBlocked(result, "Weapon occupied mount blocks", () => installWeapon(actor, componentItems.incompatibleArcWeapon, { mountId: "fore-1", arc: "fore" }), "already occupied");
+    await removeInstalledWeapon(actor, installedWeapon.mountedWeaponId);
+    weaponShipData = getArcflightShipData(actor);
+    const removedWeaponRecord = getInactiveInstallRecords(actor).find((record) => record.componentType === ARCFLIGHT_ITEM_TYPES.WEAPON && record.hullSlot === installedWeapon.mountedWeaponId);
+    check(result, "Remove weapon frees mount", weaponShipData.installed.weapons.length === 0 && weaponShipData.base.hull.weaponMounts.fore[0].occupied === false, "weapon removed and mount free", weaponShipData.base.hull.weaponMounts.fore[0]);
+    check(result, "Remove weapon deactivates installState", removedWeaponRecord?.active === false && removedWeaponRecord?.removalReason === "removed" && removedWeaponRecord?.removedAt > 0, "inactive weapon installState", removedWeaponRecord);
+
     const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
     await actor.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
@@ -482,7 +503,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     await attemptDuplicateInstall(result, "Duplicate room install attempt", () => installRoom(actor, componentItems.room));
     await attemptDuplicateInstall(result, "Duplicate ship upgrade install attempt", () => installShipUpgrade(actor, componentItems.shipUpgrade));
     await attemptDuplicateInstall(result, "Duplicate crew asset install attempt", () => addCrewAsset(actor, componentItems.crewAsset));
-    checkEqual(result, "Duplicate install attempts do not create duplicate install state records", 8, getInstallState(actor).installs.length);
+    checkEqual(result, "Duplicate install attempts do not create duplicate install state records", 9, getInstallState(actor).installs.length);
 
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
@@ -682,6 +703,14 @@ export async function runFrameworkSmokeTest(options = {}) {
       refitPressure: {}
     });
     const uniqueCrewDuplicatePreview = previewInstallValidation(previewBaseSystem, componentItems.crewAsset);
+    const validWeaponPreview = previewInstallValidation(previewBaseSystem, componentItems.weapon, { mountId: "fore-1", arc: "fore" });
+    const invalidWeaponArcPreview = previewInstallValidation(previewBaseSystem, componentItems.weapon, { mountId: "fore-1", arc: "dorsal" });
+    const missingWeaponMountPreview = previewInstallValidation(previewBaseSystem, componentItems.weapon, { mountId: "fore-99", arc: "fore" });
+    const incompatibleWeaponSizePreview = previewInstallValidation(previewBaseSystem, componentItems.oversizedWeapon, { mountId: "fore-1", arc: "fore" });
+    const incompatibleWeaponArcPreview = previewInstallValidation(previewBaseSystem, componentItems.incompatibleArcWeapon, { mountId: "aft-1", arc: "aft" });
+    const occupiedWeaponPreviewSystem = foundry.utils.deepClone(previewBaseSystem);
+    occupiedWeaponPreviewSystem.base.hull.weaponMounts.fore[0].occupied = true;
+    const occupiedWeaponMountPreview = previewInstallValidation(occupiedWeaponPreviewSystem, componentItems.weapon, { mountId: "fore-1", arc: "fore" });
     const roomBlockState = shouldBlockInstall(roomOverflowPreview);
     const modBlockState = shouldBlockInstall(modOverflowPreview);
     const uniqueCrewBlockState = shouldBlockInstall(uniqueCrewDuplicatePreview);
@@ -691,8 +720,8 @@ export async function runFrameworkSmokeTest(options = {}) {
       installation: { expansionSlotsRequired: 0 }
     });
     const unsupportedPreview = previewInstallValidation(previewBaseSystem, {
-      componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
-      identity: { id: "smoke-future-weapon-preview", displayName: "Smoke Future Weapon Preview" }
+      componentType: ARCFLIGHT_ITEM_TYPES.CARGO,
+      identity: { id: "smoke-future-cargo-preview", displayName: "Smoke Future Cargo Preview" }
     });
     const warningStrings = getInstallValidationWarnings(previewBaseSystem, {
       componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
@@ -707,14 +736,20 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Install preview room slot overflow is danger", "danger", roomOverflowPreview.severity);
     checkEqual(result, "Install preview mod slot overflow is danger", "danger", modOverflowPreview.severity);
     checkEqual(result, "Install preview duplicate unique crew is danger", "danger", uniqueCrewDuplicatePreview.severity);
+    check(result, "Install preview valid weapon mount is info", validWeaponPreview.severity === "info" && validWeaponPreview.unsupported === false, "info supported weapon preview", validWeaponPreview);
+    checkEqual(result, "Install preview invalid weapon arc is danger", "danger", invalidWeaponArcPreview.severity);
+    checkEqual(result, "Install preview missing weapon mount is danger", "danger", missingWeaponMountPreview.severity);
+    checkEqual(result, "Install preview incompatible weapon size is danger", "danger", incompatibleWeaponSizePreview.severity);
+    checkEqual(result, "Install preview occupied weapon mount is danger", "danger", occupiedWeaponMountPreview.severity);
+    checkEqual(result, "Install preview incompatible weapon compatibleArcs is danger", "danger", incompatibleWeaponArcPreview.severity);
     check(result, "shouldBlockInstall blocks room slot overflow", roomBlockState.blocked === true && roomBlockState.reason.length > 0, "blocked with reason", roomBlockState);
     check(result, "shouldBlockInstall blocks mod slot overflow", modBlockState.blocked === true && modBlockState.reason.length > 0, "blocked with reason", modBlockState);
     check(result, "shouldBlockInstall blocks duplicate unique crew", uniqueCrewBlockState.blocked === true && uniqueCrewBlockState.reason.length > 0, "blocked with reason", uniqueCrewBlockState);
     check(result, "Install preview legacy metadata does not crash", legacyPreview && legacyPreview.unsupported === false && Array.isArray(legacyPreview.warnings), "stable report", legacyPreview);
     check(result, "Install preview unsupported future component warns", unsupportedPreview.unsupported === true && unsupportedPreview.warnings.length > 0, "unsupported warning", unsupportedPreview);
     check(result, "Install preview warning helper returns strings", Array.isArray(warningStrings) && warningStrings.length > 0, "warning strings", warningStrings);
-    check(result, "Install preview helpers exposed", typeof globalThis.game?.arcflight?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.getInstallValidationWarnings === "function" && typeof globalThis.game?.arcflight?.shouldBlockInstall === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.getInstallValidationWarnings, shouldBlockInstall: typeof globalThis.game?.arcflight?.shouldBlockInstall });
-    check(result, "Install preview devTools exposed", typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings === "function" && typeof globalThis.game?.arcflight?.devTools?.shouldBlockInstall === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings, shouldBlockInstall: typeof globalThis.game?.arcflight?.devTools?.shouldBlockInstall });
+    check(result, "Install preview helpers exposed", typeof globalThis.game?.arcflight?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.getInstallValidationWarnings === "function" && typeof globalThis.game?.arcflight?.shouldBlockInstall === "function" && typeof globalThis.game?.arcflight?.installWeapon === "function" && typeof globalThis.game?.arcflight?.removeInstalledWeapon === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.getInstallValidationWarnings, shouldBlockInstall: typeof globalThis.game?.arcflight?.shouldBlockInstall, installWeapon: typeof globalThis.game?.arcflight?.installWeapon, removeInstalledWeapon: typeof globalThis.game?.arcflight?.removeInstalledWeapon });
+    check(result, "Install preview devTools exposed", typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation === "function" && typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings === "function" && typeof globalThis.game?.arcflight?.devTools?.shouldBlockInstall === "function" && typeof globalThis.game?.arcflight?.devTools?.installWeapon === "function" && typeof globalThis.game?.arcflight?.devTools?.removeInstalledWeapon === "function", true, { previewInstallValidation: typeof globalThis.game?.arcflight?.devTools?.previewInstallValidation, previewComponentInstall: typeof globalThis.game?.arcflight?.devTools?.previewComponentInstall, getInstallValidationWarnings: typeof globalThis.game?.arcflight?.devTools?.getInstallValidationWarnings, shouldBlockInstall: typeof globalThis.game?.arcflight?.devTools?.shouldBlockInstall, installWeapon: typeof globalThis.game?.arcflight?.devTools?.installWeapon, removeInstalledWeapon: typeof globalThis.game?.arcflight?.devTools?.removeInstalledWeapon });
 
     checkEqual(result, "Current hull preserved", preservedCurrent.hull, shipData.current.hull);
     checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
@@ -757,6 +792,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Full clear removes installed rooms", 0, shipData.installed.rooms.length);
     checkEqual(result, "Full clear removes installed ship upgrades", 0, shipData.installed.shipUpgrades.length);
     checkEqual(result, "Full clear removes installed arkengine mods", 0, shipData.installed.arkengineMods.length);
+    checkEqual(result, "Full clear removes installed weapons", 0, shipData.installed.weapons.length);
     checkEqual(result, "Full clear removes named crew", 0, shipData.crew.namedCrew.length);
     checkEqual(result, "Full clear resets hull reference", "", shipData.installed.hullItemId);
     checkEqual(result, "Full clear resets arkengine reference", "", shipData.installed.arkengineItemId);

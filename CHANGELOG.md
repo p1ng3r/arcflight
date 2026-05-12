@@ -2,12 +2,22 @@
 
 ## Unreleased
 
+### Weapon Install/Remove Backend
+
+- Added ship-owned installed weapon storage under `flags.arcflight.system.installed.weapons` with mounted weapon identity, source item reference, key/name, size/family/category, arc, mount id, crew/reload/traits/damage profile, system state, and refit/tier snapshot metadata.
+- Added `installWeapon(shipActor, weaponItem, { mountId, arc })` and `removeInstalledWeapon(shipActor, mountedWeaponId)` helpers exposed on `game.arcflight` and `game.arcflight.devTools`.
+- Weapon installs now validate Arcflight-enabled PF2E vehicle actors, Arcflight weapon components, valid arcs, existing hull weapon mounts, mount size compatibility, mount occupancy, and weapon `compatibleArcs` before copying data to the ship.
+- Successful installs mark the ship-owned hull weapon mount occupied, create a persistent install-state record with weapon arc/mount metadata, and recalculate ship stats; removals free the mount, deactivate the active install-state record with `removalReason: "removed"`, and recalculate ship stats.
+- Install validation preview now supports weapon components and reports valid mounts as informational while treating invalid arcs, missing mounts, incompatible size, occupied mounts, and incompatible `compatibleArcs` as danger states.
+- Extended framework smoke coverage for core weapon creation, valid installs, invalid arc/missing mount/incompatible size/occupied mount blocking, removal mount cleanup, install-state deactivation, and existing install/remove flows.
+- Kept this backend-only: no weapon UI, attack rolls, damage rolls, ammo tracking, AP/RAP, reload state, targeting, station actions, combat automation, or source/compendium item mutation were added.
+
 ### Weapon Data Foundation
 
 - Added data-only core weapon source entries with `small` / `medium` / `large` sizes, family/category fields, crew requirements, reload profiles, compatible arcs, traits, data-only damage profiles, and refit pressure metadata.
 - Added weapon creation and lookup helpers (`getCoreWeapon`, `getCoreWeaponKeys`, `createCoreWeapon`, and `createWeapon`) for PF2E equipment Items flagged as Arcflight weapon components.
 - Included weapons in core item sync reports and extended the framework smoke test for weapon keys, required starter fields, creation behavior, and item flags.
-- Kept this pass schema/helper-only: no weapon install/removal helpers, weapon UI, combat firing, attack rolls, damage rolls, ammo tracking, AP/RAP, or station actions were added.
+- Kept this pass schema/helper-only at introduction; weapon install/remove helpers were added later as backend-only lifecycle helpers without weapon UI, combat firing, attack rolls, damage rolls, ammo tracking, AP/RAP, or station actions.
 
 ### Component Removal UI MVP
 

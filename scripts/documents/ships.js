@@ -1,4 +1,4 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { getComponentData, getComponentRefitPressure, getComponentTierMetadata, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
 import { getHullPattern } from "../../data/hulls/hull-patterns.js";
@@ -32,6 +32,7 @@ const emptyInstalledState = Object.freeze({
     available: 0
   }),
   shipUpgrades: Object.freeze([]),
+  weapons: Object.freeze([]),
   shipUpgradeSlots: Object.freeze({
     capacity: 3,
     used: 0,
@@ -451,6 +452,10 @@ function getInstalledShipUpgrades(installed = {}) {
   return Array.isArray(installed.shipUpgrades) ? cloneData(installed.shipUpgrades) : [];
 }
 
+function getInstalledWeapons(installed = {}) {
+  return Array.isArray(installed.weapons) ? cloneData(installed.weapons) : [];
+}
+
 
 function installedEntryMatchesIdentifier(entry = {}, identifier = "") {
   const normalizedIdentifier = String(identifier ?? "").trim();
@@ -462,12 +467,21 @@ function installedEntryMatchesIdentifier(entry = {}, identifier = "") {
     entry.itemUuid,
     entry.uuid,
     entry.key,
-    entry.identity?.id
+    entry.identity?.id,
+    entry.mountedWeaponId,
+    entry.mountId
   ].filter(Boolean).includes(normalizedIdentifier);
 }
 
 function installRecordMatchesInstalledEntry(record = {}, entry = {}, componentType = "") {
   if (record.active !== true || record.componentType !== componentType) return false;
+
+  if (componentType === ARCFLIGHT_ITEM_TYPES.WEAPON && (entry.mountedWeaponId || entry.mountId)) {
+    return Boolean(
+      (entry.mountedWeaponId && record.hullSlot === entry.mountedWeaponId)
+      || (entry.mountId && record.roomSlot === entry.mountId && entry.arc && record.weaponArc === entry.arc)
+    );
+  }
 
   return Boolean(
     (entry.itemUuid && record.itemUuid === entry.itemUuid)
@@ -1091,11 +1105,10 @@ function hasRefitPressure(component = {}) {
 function getInstalledRefitPressureComponents(systemData = {}) {
   return [
     systemData.base?.arkengine,
+    ...(Array.isArray(systemData.installed?.weapons) ? systemData.installed.weapons : []),
     ...(Array.isArray(systemData.installed?.arkengineMods) ? systemData.installed.arkengineMods : []),
     ...(Array.isArray(systemData.installed?.rooms) ? systemData.installed.rooms : []),
     ...(Array.isArray(systemData.installed?.shipUpgrades) ? systemData.installed.shipUpgrades : []),
-    ...(Array.isArray(systemData.installed?.weapons) ? systemData.installed.weapons : []),
-    ...(Array.isArray(systemData.installed?.weaponMounts) ? systemData.installed.weaponMounts : []),
     ...(Array.isArray(systemData.crew?.namedCrew) ? systemData.crew.namedCrew : [])
   ].filter(hasRefitPressure);
 }
@@ -1274,6 +1287,7 @@ function alignInstalledSlotStates(installed = {}, base = {}, derived = {}) {
   nextInstalled.arkengineModSlots = getArkengineModSlotState(base.arkengine, nextInstalled, derived);
   nextInstalled.roomSlots = getRoomSlotState(base.hull, nextInstalled);
   nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
+  nextInstalled.weapons = getInstalledWeapons(nextInstalled);
 
   return nextInstalled;
 }
@@ -1909,6 +1923,235 @@ export async function installRoom(shipActor, roomItem) {
   });
 }
 
+function normalizeWeaponArc(arc) {
+  const normalizedArc = String(arc ?? "").trim().toLowerCase();
+  return Object.values(ARCFLIGHT_WEAPON_ARCS).includes(normalizedArc) ? normalizedArc : "";
+}
+
+function normalizeWeaponTraits(traits) {
+  if (Array.isArray(traits)) return cloneData(traits).filter(Boolean);
+  if (typeof traits === "string") return traits.split(",").map((trait) => trait.trim()).filter(Boolean);
+  return [];
+}
+
+function getHullWeaponMountsForArc(hull = {}, arc = "") {
+  const mounts = hull.weaponMounts?.[arc];
+  return Array.isArray(mounts) ? mounts : null;
+}
+
+function getHullWeaponMount(hull = {}, arc = "", mountId = "") {
+  const mounts = getHullWeaponMountsForArc(hull, arc);
+  if (!mounts) return null;
+  return mounts.find((mount) => mount?.id === mountId) ?? null;
+}
+
+function isWeaponMountOccupied(mount = {}, installedWeapons = []) {
+  return mount.occupied === true
+    || Boolean(mount.mountedWeaponId)
+    || installedWeapons.some((weapon) => weapon.arc === mount.arc && weapon.mountId === mount.id);
+}
+
+function weaponSizeAllowedByMount(weaponSize = "", mount = {}) {
+  const allowedSizes = Array.isArray(mount.allowedSizes) ? mount.allowedSizes : [];
+  if (allowedSizes.length > 0) return allowedSizes.includes(weaponSize);
+  if (!mount.maxSize) return true;
+  const sizeRank = { small: 1, medium: 2, large: 3 };
+  return numericValue(sizeRank[weaponSize]) <= numericValue(sizeRank[mount.maxSize]);
+}
+
+function weaponCompatibleWithArc(weaponData = {}, arc = "") {
+  const compatibleArcs = Array.isArray(weaponData.compatibleArcs)
+    ? weaponData.compatibleArcs
+    : Array.isArray(weaponData.mounting?.compatibleArcs)
+      ? weaponData.mounting.compatibleArcs
+      : [];
+  return compatibleArcs.length === 0 || compatibleArcs.includes(arc);
+}
+
+function validateWeaponInstall(shipActor, weaponItem, options = {}) {
+  assertArcflightShipActor(shipActor, "installWeapon");
+
+  if (getComponentType(weaponItem) !== ARCFLIGHT_ITEM_TYPES.WEAPON) {
+    throw new Error("Arcflight | installWeapon requires an Arcflight weapon component item.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const arc = normalizeWeaponArc(options.arc);
+  if (!arc) throw new Error(`Arcflight | installWeapon requires a valid weapon arc (${Object.values(ARCFLIGHT_WEAPON_ARCS).join(", ")}).`);
+
+  const mountId = String(options.mountId ?? "").trim();
+  if (!mountId) throw new Error("Arcflight | installWeapon requires a hull weapon mount id.");
+
+  const baseHull = cloneData(systemData.base?.hull ?? {});
+  const mounts = getHullWeaponMountsForArc(baseHull, arc);
+  if (!mounts) throw new Error(`Arcflight | Weapon arc ${arc} does not exist on this hull.`);
+
+  const mount = getHullWeaponMount(baseHull, arc, mountId);
+  if (!mount) throw new Error(`Arcflight | Hull weapon mount ${mountId} does not exist on the ${arc} arc.`);
+
+  const weaponData = cloneData(getComponentData(weaponItem));
+  const weaponSize = weaponData.size ?? weaponData.identity?.size ?? "";
+  if (!weaponSizeAllowedByMount(weaponSize, mount)) {
+    throw new Error(`Arcflight | ${weaponItem?.name ?? weaponData.name ?? "Weapon"} size ${weaponSize} is not allowed by mount ${mountId}.`);
+  }
+
+  const installedWeapons = getInstalledWeapons(systemData.installed);
+  if (isWeaponMountOccupied(mount, installedWeapons)) {
+    throw new Error(`Arcflight | Hull weapon mount ${mountId} on the ${arc} arc is already occupied.`);
+  }
+
+  if (!weaponCompatibleWithArc(weaponData, arc)) {
+    throw new Error(`Arcflight | ${weaponItem?.name ?? weaponData.name ?? "Weapon"} is not compatible with the ${arc} arc.`);
+  }
+
+  return { systemData, baseHull, arc, mountId, mount, weaponData, installedWeapons };
+}
+
+function createMountedWeaponId(arc, mountId, weaponItem, weaponData = {}) {
+  const key = weaponData.key ?? weaponData.identity?.id ?? weaponItem?.slug ?? weaponItem?.id ?? "weapon";
+  const randomId = globalThis.foundry?.utils?.randomID?.(8)
+    ?? Math.random().toString(36).slice(2, 10).padEnd(8, "0");
+  return `weapon-${arc}-${mountId}-${key}-${Date.now().toString(36)}-${randomId}`.replace(/[^a-zA-Z0-9_-]+/g, "-");
+}
+
+function buildInstalledWeaponEntry(weaponItem, weaponData, options = {}) {
+  const key = weaponData.key ?? weaponData.identity?.id ?? weaponItem?.slug ?? weaponItem?.id ?? "";
+  const systemState = weaponData.state?.systemState
+    ?? (weaponData.state?.disabled === true ? "Disabled" : "Functional");
+
+  return {
+    mountedWeaponId: options.mountedWeaponId,
+    itemId: weaponItem?.id ?? "",
+    itemUuid: weaponItem?.uuid ?? "",
+    uuid: weaponItem?.uuid ?? "",
+    key,
+    name: weaponItem?.name ?? weaponData.name ?? weaponData.identity?.displayName ?? key,
+    componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
+    size: weaponData.size ?? weaponData.identity?.size ?? "",
+    family: weaponData.family ?? "",
+    category: weaponData.category ?? weaponData.family ?? "",
+    arc: options.arc,
+    mountId: options.mountId,
+    crewRequired: numericValue(weaponData.crewRequired ?? weaponData.crew?.required),
+    reload: cloneData(weaponData.reload ?? {}),
+    traits: normalizeWeaponTraits(weaponData.traits),
+    damageProfile: cloneData(weaponData.damageProfile ?? {}),
+    systemState,
+    refitPressure: getComponentRefitPressure(weaponItem),
+    tierMetadata: getComponentTierMetadata(weaponItem)
+  };
+}
+
+function setHullWeaponMountOccupied(hull = {}, arc = "", mountId = "", weaponEntry = {}, occupied = true) {
+  const nextHull = cloneData(hull ?? {});
+  const mounts = getHullWeaponMountsForArc(nextHull, arc);
+  if (!mounts) return nextHull;
+
+  nextHull.weaponMounts[arc] = mounts.map((mount) => {
+    if (mount.id !== mountId) return mount;
+    if (!occupied) {
+      const freedMount = { ...mount, occupied: false };
+      delete freedMount.mountedWeaponId;
+      delete freedMount.itemId;
+      delete freedMount.itemUuid;
+      delete freedMount.weaponName;
+      return freedMount;
+    }
+
+    return {
+      ...mount,
+      occupied: true,
+      mountedWeaponId: weaponEntry.mountedWeaponId,
+      itemId: weaponEntry.itemId,
+      itemUuid: weaponEntry.itemUuid,
+      weaponName: weaponEntry.name
+    };
+  });
+
+  return nextHull;
+}
+
+function createWeaponInstallStateRecord(shipActor, weaponEntry, weaponItem, installCategory, tierState = {}) {
+  const installRecord = createInstallStateRecord(shipActor, weaponItem, ARCFLIGHT_ITEM_TYPES.WEAPON, installCategory, tierState);
+  return {
+    ...installRecord,
+    hullSlot: weaponEntry.mountedWeaponId,
+    roomSlot: weaponEntry.mountId,
+    weaponArc: weaponEntry.arc,
+    name: weaponEntry.name
+  };
+}
+
+function buildInstallStateWithWeapon(systemData, shipActor, weaponItem, weaponEntry, installCategory, tierState = {}) {
+  const installState = normalizeBasicInstallState(systemData.installState);
+  const installRecord = createWeaponInstallStateRecord(shipActor, weaponEntry, weaponItem, installCategory, tierState);
+  return normalizeBasicInstallState({
+    version: installState.version,
+    installs: [...installState.installs, installRecord]
+  });
+}
+
+export async function installWeapon(shipActor, weaponItem, options = {}) {
+  const { systemData, baseHull, arc, mountId, weaponData, installedWeapons } = validateWeaponInstall(shipActor, weaponItem, options);
+  const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
+  const coreRooms = getCoreRoomsFromHull(baseHull);
+  const mountedWeaponId = createMountedWeaponId(arc, mountId, weaponItem, weaponData);
+  const weaponEntry = buildInstalledWeaponEntry(weaponItem, weaponData, { mountedWeaponId, arc, mountId });
+  const nextBaseHull = setHullWeaponMountOccupied(baseHull, arc, mountId, weaponEntry, true);
+  const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
+    coreRooms,
+    weapons: [...installedWeapons, weaponEntry]
+  }, { inplace: false });
+  const derived = calculateDerivedShipStats({ hull: nextBaseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: nextBaseHull, arkengine: baseArkengine }, derived);
+  const current = buildCurrentShipState(systemData, derived);
+  const legacyResources = buildLegacyResources(systemData, current, derived);
+  const legacyDerivedStats = foundry.utils.mergeObject(
+    systemData.derivedStats ?? {},
+    getLegacyDerivedStatsFromDerived(derived),
+    { inplace: false }
+  );
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: nextBaseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const installCategory = getComponentRefitPressure(weaponItem).total > 0 ? "refit" : "native";
+  const nextInstallState = buildInstallStateWithWeapon(systemData, shipActor, weaponItem, weaponEntry, installCategory, tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
+
+  return shipActor.update({
+    ...tierUpdatePaths,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: nextBaseHull,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.weapons`]: alignedInstalled.weapons.map((weapon) => weapon.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
+  });
+}
+
+export async function removeInstalledWeapon(shipActor, mountedWeaponId) {
+  assertArcflightShipActor(shipActor, "removeInstalledWeapon");
+
+  const systemData = getArcflightShipData(shipActor);
+  const installedWeapons = getInstalledWeapons(systemData.installed);
+  const removedWeapon = installedWeapons.find((entry) => entry.mountedWeaponId === mountedWeaponId);
+  if (!removedWeapon) return shipActor;
+
+  const nextWeapons = installedWeapons.filter((entry) => entry.mountedWeaponId !== mountedWeaponId);
+  const nextBaseHull = setHullWeaponMountOccupied(systemData.base?.hull ?? {}, removedWeapon.arc, removedWeapon.mountId, removedWeapon, false);
+  const { installState } = buildInstallStateWithDeactivatedEntry(systemData, removedWeapon, ARCFLIGHT_ITEM_TYPES.WEAPON, "removed");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: nextBaseHull,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.weapons`]: nextWeapons,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.weapons`]: nextWeapons.map((weapon) => weapon.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: installState
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
 export async function installShipUpgrade(shipActor, upgradeItem) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | installShipUpgrade requires an Arcflight-enabled PF2E vehicle actor.");
@@ -2123,3 +2366,4 @@ export const installArkengineOnShip = installArkengine;
 export const installArkengineModOnShip = installArkengineMod;
 export const installRoomOnShip = installRoom;
 export const installShipUpgradeOnShip = installShipUpgrade;
+export const installWeaponOnShip = installWeapon;

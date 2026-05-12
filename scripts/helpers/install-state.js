@@ -293,6 +293,7 @@ export async function removeInstallState(shipActor, installId, options = {}) {
 const BACKFILL_NOTES = "Backfilled from existing installed ship data.";
 
 const BACKFILL_ARRAY_COMPONENTS = Object.freeze([
+  ["installed.weapons", ARCFLIGHT_ITEM_TYPES.WEAPON],
   ["installed.rooms", ARCFLIGHT_ITEM_TYPES.ROOM],
   ["installed.arkengineMods", ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD],
   ["installed.shipUpgrades", ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE],
@@ -340,6 +341,7 @@ function normalizeBackfillIdentity(source = {}, componentType = "") {
       ?? identity.platform
       ?? identity.engineClass
       ?? identity.slug
+      ?? identity.mountedWeaponId
   );
   const name = optionalString(identity.name ?? identity.identity?.displayName);
 
@@ -368,6 +370,9 @@ function createBackfillRecord(source, componentType, usedInstallIds, fallbackIns
     refitInstall: false,
     temporaryInstall: false,
     notes: BACKFILL_NOTES,
+    hullSlot: source?.mountedWeaponId ?? source?.hullSlot,
+    roomSlot: source?.mountId ?? source?.roomSlot,
+    weaponArc: source?.arc ?? source?.weaponArc,
     pressureContribution: pressureSource,
     active: true
   }, { usedInstallIds });
@@ -431,6 +436,7 @@ function recordBackfillKey(record = {}) {
     record.itemId ? `item:${record.itemId}` : "",
     record.componentKey ? `key:${record.componentKey}` : "",
     record.key ? `key:${record.key}` : "",
+    record.hullSlot ? `slot:${record.hullSlot}` : "",
     record.name ? `name:${record.name}` : ""
   ].filter(Boolean);
 
