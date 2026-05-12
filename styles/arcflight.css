@@ -431,3 +431,29 @@
     grid-template-columns: 1fr;
   }
 }
+
+.arcflight-installed-weapons__groups {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-installed-weapons__group {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-installed-weapons__group ul,
+.arcflight-installed-weapons__group p {
+  margin-bottom: 0;
+}
+
+.arcflight-installed-weapons__group li {
+  margin-bottom: 0.35rem;
+}
+
+.arcflight-installed-weapons__group li:last-child {
+  margin-bottom: 0;
+}
