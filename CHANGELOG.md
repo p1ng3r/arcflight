@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Install Validation UI Readout
+
+- Added a read-only Tier / Refit / Validation section to the Arcflight ship sheet that displays stored tier state, refit pressure categories, major-refit flags, and a compact native/pressured/major-refit-required summary.
+- Prepared sheet display data with safe fallbacks for older ships so missing tier/refit state renders as zero/No/native instead of crashing.
+- Added minimal severity classes for validation readouts while keeping the pass UI-only and non-blocking; no install controls, drag/drop changes, dialogs, compendium mutation, or gameplay automation were added.
+
 ### Install Validation Preview Helpers
 
 - Added non-blocking install validation preview helpers exposed as `game.arcflight.previewInstallValidation(shipActor, component)`, `game.arcflight.previewComponentInstall(shipActor, component)`, `game.arcflight.getInstallValidationWarnings(shipActor, component)`, and matching `game.arcflight.devTools` aliases.

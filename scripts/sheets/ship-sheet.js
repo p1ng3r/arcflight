@@ -144,6 +144,81 @@ function prepareSlotState(slotState = {}, fallbackCapacity = 0) {
   return { capacity, used, available };
 }
 
+function prepareBooleanDisplay(value) {
+  return value === true ? "Yes" : "No";
+}
+
+function prepareValidationSummary(refitStatus = "native") {
+  switch (refitStatus) {
+    case "major-refit-required":
+      return {
+        label: "Major refit required",
+        message: "Major refit required / drydock needed.",
+        severity: "danger",
+        cssClass: "arcflight-validation-danger"
+      };
+    case "pressured":
+      return {
+        label: "Pressured",
+        message: "Ship has refit pressure but is below the major refit threshold.",
+        severity: "info",
+        cssClass: "arcflight-validation-info"
+      };
+    case "native":
+      return {
+        label: "Native",
+        message: "Stable / no refit pressure.",
+        severity: "ok",
+        cssClass: "arcflight-validation-ok"
+      };
+    default:
+      return {
+        label: humanizeIdentifier(refitStatus || "Unknown"),
+        message: "Stored refit status is not recognized by this sheet version.",
+        severity: "warning",
+        cssClass: "arcflight-validation-warning"
+      };
+  }
+}
+
+function prepareInstallValidationReadout(system = {}) {
+  const tier = system.tier ?? {};
+  const refitPressure = system.refitPressure ?? {};
+  const refitFlags = system.refitFlags ?? {};
+  const refitStatus = tier.refitStatus || "native";
+  const summary = prepareValidationSummary(refitStatus);
+
+  return {
+    tier: {
+      baseTier: numericDisplayValue(tier.baseTier),
+      currentTier: numericDisplayValue(tier.currentTier),
+      refitStatus,
+      refitStatusLabel: summary.label,
+      majorRefitsCompleted: numericDisplayValue(tier.majorRefitsCompleted)
+    },
+    pressure: {
+      total: numericDisplayValue(refitPressure.total),
+      weaponPressure: numericDisplayValue(refitPressure.weaponPressure),
+      enginePressure: numericDisplayValue(refitPressure.enginePressure),
+      infrastructurePressure: numericDisplayValue(refitPressure.infrastructurePressure),
+      lifeveilPressure: numericDisplayValue(refitPressure.lifeveilPressure),
+      crewCommandPressure: numericDisplayValue(refitPressure.crewCommandPressure),
+      occultPressure: numericDisplayValue(refitPressure.occultPressure)
+    },
+    flags: {
+      qualifiesForMajorRefit: refitFlags.qualifiesForMajorRefit === true,
+      qualifiesForMajorRefitLabel: prepareBooleanDisplay(refitFlags.qualifiesForMajorRefit),
+      requiresDrydock: refitFlags.requiresDrydock === true,
+      requiresDrydockLabel: prepareBooleanDisplay(refitFlags.requiresDrydock),
+      requiresSpecialistLabor: refitFlags.requiresSpecialistLabor === true,
+      requiresSpecialistLaborLabel: prepareBooleanDisplay(refitFlags.requiresSpecialistLabor),
+      requiresRareMaterials: refitFlags.requiresRareMaterials === true,
+      requiresRareMaterialsLabel: prepareBooleanDisplay(refitFlags.requiresRareMaterials)
+    },
+    summary
+  };
+}
+
 function prepareArcflightShipViewData(arcflight) {
   const system = foundry.utils.deepClone(arcflight.system ?? {});
   system.installed = system.installed ?? {};
@@ -177,6 +252,7 @@ function prepareArcflightShipViewData(arcflight) {
   system.installed.roomSlots = prepareSlotState(system.installed.roomSlots);
   system.installed.shipUpgradeSlots = prepareSlotState(system.installed.shipUpgradeSlots, 3);
   system.fuelingDisplay = prepareFuelingDisplay(system);
+  system.installValidationReadout = prepareInstallValidationReadout(system);
   system.crew = system.crew ?? {};
   system.crew.namedCrew = arrayOrEmpty(system.crew.namedCrew).map(prepareCrewEntry);
 
@@ -506,4 +582,4 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 }
 
-export { ArcflightShipSheet as ShipSheet };
+export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallValidationReadout };

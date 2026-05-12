@@ -68,7 +68,7 @@ The locked core hull platforms are Void Skiff, Sloop, Cutter, Brigantine, Frigat
 
 Each hull includes base durability, armor, physical resistances, strain, Lifeveil, cargo, speed, maneuverability, AP/RAP, detection, crew bands, core room keys, expansion room slot data, weapon mounts by arc, allowed weapon sizes, arkengine compatibility, traits, and tier/refit-ready schema fields. Tier labels follow the planned scale from Tier 1 Frontier / Local through Tier 5 Mythic / Impossible. Leviathan-Class Platform is marked as district-scale infrastructure instead of a normal expansion-slot hull.
 
-Arcflight now derives non-blocking ship-side tier and refit pressure state under `flags.arcflight.system.tier`, `flags.arcflight.system.refitPressure`, and `flags.arcflight.system.refitFlags`. The first-pass framework sums installed component `refitPressure` values by category, compares total pressure against the installed hull's `refitTolerance.totalBeforeMajorRefitRequired`, and reports `native`, `pressured`, or `major-refit-required` status. Major refit completion is intentionally not automated yet, and the framework remains warning/status-only: it does not block installs, fire weapons, run combat automation, or resolve travel systems.
+Arcflight now derives non-blocking ship-side tier and refit pressure state under `flags.arcflight.system.tier`, `flags.arcflight.system.refitPressure`, and `flags.arcflight.system.refitFlags`. The first-pass framework sums installed component `refitPressure` values by category, compares total pressure against the installed hull's `refitTolerance.totalBeforeMajorRefitRequired`, and reports `native`, `pressured`, or `major-refit-required` status. The optional Arcflight ship sheet surfaces those stored tier, pressure, major-refit flag, and validation-summary values as a read-only Tier / Refit / Validation section near the builder/fueling summaries. Major refit completion is intentionally not automated yet, and the framework remains warning/status-only: it does not block installs, add install controls, fire weapons, run combat automation, or resolve travel systems.
 
 
 ## Component Tier / Refit Metadata
@@ -179,7 +179,7 @@ After sheet or release-readiness changes, verify the following in Foundry:
    ```
 
 2. Confirm the returned result has `passed === true`.
-3. Open an Arcflight ship sheet and confirm it displays Installed Hull, Installed Arkengine, Installed Arkengine Mods, Installed Rooms, Ship Upgrades, Crew Roster, Station Assignments, Derived values, Current values, and room / arkengine mod / ship upgrade slot summaries.
+3. Open an Arcflight ship sheet and confirm it displays Installed Hull, Installed Arkengine, Fueling, the read-only Tier / Refit / Validation summary, Installed Arkengine Mods, Installed Rooms, Ship Upgrades, Crew Roster, Station Assignments, Derived values, Current values, and room / arkengine mod / ship upgrade slot summaries.
 4. Open Arcflight component sheets for Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, and Crew Asset items.
 5. Open a normal PF2E equipment sheet.
 6. Open a normal PF2E vehicle sheet.
