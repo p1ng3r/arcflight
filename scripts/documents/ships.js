@@ -87,6 +87,11 @@ const emptyRefitFlagsState = Object.freeze({
   requiresRareMaterials: false
 });
 
+const emptyInstallState = Object.freeze({
+  version: 1,
+  installs: Object.freeze([])
+});
+
 const emptyCrewState = Object.freeze({
   minimum: 0,
   recommended: 0,
@@ -167,6 +172,7 @@ export const arcflightShipDefaults = Object.freeze({
     origin: ""
   }),
   installed: emptyInstalledState,
+  installState: emptyInstallState,
   base: emptyBaseShipState,
   derived: emptyDerivedShipState,
   current: emptyCurrentShipState,
@@ -855,6 +861,15 @@ function hasInstalledArkengine(systemData = {}) {
   return Boolean(systemData.installed?.arkengineItemId || systemData.installed?.arkengineUuid || systemData.installed?.arkengineKey);
 }
 
+
+function normalizeBasicInstallState(installState = {}) {
+  const source = installState && typeof installState === "object" && !Array.isArray(installState) ? installState : {};
+  return {
+    version: 1,
+    installs: Array.isArray(source.installs) ? cloneData(source.installs) : []
+  };
+}
+
 function normalizeRefitPressure(refitPressure = {}) {
   const pressure = {};
   let total = 0;
@@ -1085,6 +1100,7 @@ export function getArcflightShipData(actor) {
   if (!Object.values(REFIT_STATUSES).includes(systemData.tier.refitStatus)) systemData.tier.refitStatus = REFIT_STATUSES.NATIVE;
   systemData.refitPressure = normalizeRefitPressure(systemData.refitPressure);
   systemData.refitFlags = foundry.utils.mergeObject(cloneData(emptyRefitFlagsState), cloneData(systemData.refitFlags ?? {}), { inplace: false });
+  systemData.installState = normalizeBasicInstallState(systemData.installState);
 
   return systemData;
 }
@@ -1093,6 +1109,7 @@ export function getDefaultArcflightShipFlags(data = {}) {
   const system = foundry.utils.mergeObject(getDefaultArcflightShipData(), data, { inplace: false });
   system.stations = getDefaultStationState(system.stations);
   system.crew = getDefaultCrewState(system.crew);
+  system.installState = normalizeBasicInstallState(system.installState);
 
   return {
     enabled: true,

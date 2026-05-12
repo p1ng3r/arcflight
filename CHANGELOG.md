@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Persistent Install-State Foundation
+
+- Added ship-owned persistent install state under `flags.arcflight.system.installState` with `{ version: 1, installs: [] }` defaults and safe normalization for older or malformed ship data.
+- Added normalized plain-data install records for item identity, component type, install timing/location/category, native/refit/temporary flags, pressure contribution, tier at install, notes, and active lifecycle state.
+- Exposed `game.arcflight.getInstalledComponents()`, `getInstallState()`, `recordInstallState()`, `removeInstallState()`, `findInstallRecord()`, and `prepareInstallStateSummary()` with matching `game.arcflight.devTools` aliases.
+- Added lightweight install ID generation, duplicate installId rejection for new records, inactive removal semantics for lifecycle history, and derived summaries for component counts, active/inactive installs, pressure totals, and install categories.
+- Extended the framework smoke test helper with install-state initialization, record add/remove, duplicate protection, malformed state normalization, summary generation, and helper exposure coverage.
+- Kept this pass foundation-only; no drag/drop UI, enforced slot locking, install buttons, UI editing, combat systems, travel systems, source/compendium item mutation, custom document subclasses, or persistence migrations beyond basic normalization were added.
+
 ### Install Validation UI Readout
 
 - Added a read-only Tier / Refit / Validation section to the Arcflight ship sheet that displays stored tier state, refit pressure categories, major-refit flags, and a compact native/pressured/major-refit-required summary.

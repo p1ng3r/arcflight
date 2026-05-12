@@ -41,6 +41,15 @@ import { STATION_KEYS } from "../../data/stations/core-stations.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
+import {
+  findInstallRecord,
+  getInstalledComponents,
+  getInstallState,
+  normalizeInstallState,
+  prepareInstallStateSummary,
+  recordInstallState,
+  removeInstallState
+} from "../helpers/install-state.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -245,6 +254,68 @@ export async function runFrameworkSmokeTest(options = {}) {
       [`flags.${ARCFLIGHT_MODULE_ID}.${SMOKE_TEST_FLAG}`]: true
     });
     check(result, "Arcflight enabled on vehicle", actor.getFlag(ARCFLIGHT_MODULE_ID, "enabled") === true, true, actor.getFlag(ARCFLIGHT_MODULE_ID, "enabled"));
+
+    const initialInstallState = getInstallState(actor);
+    checkEqual(result, "Install state initializes at version 1", 1, initialInstallState.version);
+    checkEqual(result, "Install state initializes with no records", 0, initialInstallState.installs.length);
+
+    const smokeInstallRecord = {
+      installId: "smoke-install-state-record",
+      itemId: componentItems.room.id,
+      itemUuid: componentItems.room.uuid,
+      componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
+      installedAt: 12345,
+      installedBy: "framework-smoke-test",
+      roomSlot: "expansion-1",
+      installCategory: "native",
+      nativeInstall: true,
+      refitInstall: false,
+      temporaryInstall: false,
+      pressureContribution: {
+        total: 3,
+        weapon: 0,
+        engine: 0,
+        infrastructure: 3,
+        lifeveil: 0,
+        crewCommand: 0,
+        occult: 0
+      },
+      tierAtInstall: 2,
+      active: true
+    };
+    const addedInstallRecord = await recordInstallState(actor, smokeInstallRecord);
+    checkEqual(result, "Install state record add stores installId", smokeInstallRecord.installId, addedInstallRecord.installId);
+    checkEqual(result, "Install state find returns added record", smokeInstallRecord.installId, findInstallRecord(actor, smokeInstallRecord.installId)?.installId);
+    checkEqual(result, "Installed components returns active records", 1, getInstalledComponents(actor).length);
+
+    try {
+      await recordInstallState(actor, smokeInstallRecord);
+      check(result, "Install state duplicate installId is rejected", false, "duplicate rejection", "accepted");
+    } catch (error) {
+      check(result, "Install state duplicate installId is rejected", error.message.includes("already recorded"), "duplicate rejection", error.message);
+    }
+
+    const removedInstallRecord = await removeInstallState(actor, smokeInstallRecord.installId);
+    const removedInstallSummary = prepareInstallStateSummary(actor);
+    checkEqual(result, "Install state remove marks record inactive", false, removedInstallRecord?.active);
+    checkEqual(result, "Install state inactive summary increments", 1, removedInstallSummary.inactiveInstalls);
+
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: { version: "bad", installs: [{ installId: "dupe", itemId: 99, componentType: ARCFLIGHT_ITEM_TYPES.ROOM, active: true }, { installId: "dupe", componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, pressureContribution: { enginePressure: 2 }, active: "bad" }, null, "bad"] } });
+    const normalizedMalformedState = getInstallState(actor);
+    const malformedInstallIds = normalizedMalformedState.installs.map((record) => record.installId);
+    checkEqual(result, "Malformed install state normalizes record count", 2, normalizedMalformedState.installs.length);
+    check(result, "Malformed install state prevents duplicate ids", new Set(malformedInstallIds).size === malformedInstallIds.length, "unique installIds", malformedInstallIds);
+    checkEqual(result, "Malformed install state aliases pressure categories", 2, normalizedMalformedState.installs[1].pressureContribution.engine);
+
+    const normalizedMalformedSummary = prepareInstallStateSummary(actor);
+    checkEqual(result, "Install state summary counts active installs", 2, normalizedMalformedSummary.activeInstalls);
+    checkEqual(result, "Install state summary counts component types", 1, normalizedMalformedSummary.countsByComponentType[ARCFLIGHT_ITEM_TYPES.ROOM]);
+    checkEqual(result, "Install state summary totals pressure", 2, normalizedMalformedSummary.pressureContribution.total);
+    check(result, "Install state helpers exposed", typeof globalThis.game?.arcflight?.getInstalledComponents === "function" && typeof globalThis.game?.arcflight?.getInstallState === "function" && typeof globalThis.game?.arcflight?.recordInstallState === "function" && typeof globalThis.game?.arcflight?.removeInstallState === "function" && typeof globalThis.game?.arcflight?.findInstallRecord === "function" && typeof globalThis.game?.arcflight?.prepareInstallStateSummary === "function", true, { getInstalledComponents: typeof globalThis.game?.arcflight?.getInstalledComponents, getInstallState: typeof globalThis.game?.arcflight?.getInstallState, recordInstallState: typeof globalThis.game?.arcflight?.recordInstallState, removeInstallState: typeof globalThis.game?.arcflight?.removeInstallState, findInstallRecord: typeof globalThis.game?.arcflight?.findInstallRecord, prepareInstallStateSummary: typeof globalThis.game?.arcflight?.prepareInstallStateSummary });
+    check(result, "Install state devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getInstalledComponents === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.recordInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.removeInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.findInstallRecord === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareInstallStateSummary === "function", true, { getInstalledComponents: typeof globalThis.game?.arcflight?.devTools?.getInstalledComponents, getInstallState: typeof globalThis.game?.arcflight?.devTools?.getInstallState, recordInstallState: typeof globalThis.game?.arcflight?.devTools?.recordInstallState, removeInstallState: typeof globalThis.game?.arcflight?.devTools?.removeInstallState, findInstallRecord: typeof globalThis.game?.arcflight?.devTools?.findInstallRecord, prepareInstallStateSummary: typeof globalThis.game?.arcflight?.devTools?.prepareInstallStateSummary });
+    checkEqual(result, "Standalone malformed install normalization safe fallback", 0, normalizeInstallState("bad").installs.length);
+
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: initialInstallState });
 
     await installHull(actor, componentItems.hull);
     await installArkengine(actor, componentItems.arkengine);
