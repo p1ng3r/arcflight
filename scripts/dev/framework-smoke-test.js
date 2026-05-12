@@ -42,7 +42,11 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helper
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation } from "../helpers/install-validation-preview.js";
 import {
+  deactivateInstallRecord,
+  deactivateInstallRecordsByComponent,
   findInstallRecord,
+  getActiveInstallRecords,
+  getInactiveInstallRecords,
   getInstalledComponents,
   getInstallState,
   normalizeInstallState,
@@ -158,7 +162,9 @@ async function createSmokeTestComponent(createdItems, key, creator) {
 async function createSmokeTestComponents(createdItems) {
   const entries = [
     await createSmokeTestComponent(createdItems, "hull", () => createCoreHull("brigantine")),
+    await createSmokeTestComponent(createdItems, "replacementHull", () => createCoreHull("frigate")),
     await createSmokeTestComponent(createdItems, "arkengine", () => createCoreArkengine("tidewake-arkengine")),
+    await createSmokeTestComponent(createdItems, "replacementArkengine", () => createCoreArkengine("iron-choir-engine")),
     await createSmokeTestComponent(createdItems, "arkengineMod", () => createCoreArkengineMod("pressure-lattice-tuning")),
     await createSmokeTestComponent(createdItems, "room", () => createCoreRoom("workshop")),
     await createSmokeTestComponent(createdItems, "shipUpgrade", () => createCoreShipUpgrade("reinforced-structural-ribbing")),
@@ -238,7 +244,7 @@ export async function runFrameworkSmokeTest(options = {}) {
 
     const componentItems = await createSmokeTestComponents(createdItems);
     result.createdItemIds = createdItems.map((item) => item?.id).filter(Boolean);
-    check(result, "Created smoke test components", result.createdItemIds.length === 6, 6, result.createdItemIds.length);
+    check(result, "Created smoke test components", result.createdItemIds.length === 8, 8, result.createdItemIds.length);
 
     const actorResult = await ensureSmokeTestActor();
     actor = actorResult.actor;
@@ -301,9 +307,17 @@ export async function runFrameworkSmokeTest(options = {}) {
     }
 
     const removedInstallRecord = await removeInstallState(actor, smokeInstallRecord.installId);
+    const inactiveNoopRecord = await deactivateInstallRecord(actor, smokeInstallRecord.installId, { reason: "noop-after-remove" });
     const removedInstallSummary = prepareInstallStateSummary(actor);
     checkEqual(result, "Install state remove marks record inactive", false, removedInstallRecord?.active);
+    check(result, "Install state remove records metadata", removedInstallRecord?.removedAt > 0 && removedInstallRecord?.removedBy && removedInstallRecord?.removalReason === "removed", "removal metadata", removedInstallRecord);
+    checkEqual(result, "Install state deactivate no-ops inactive records", removedInstallRecord?.removedAt, inactiveNoopRecord?.removedAt);
     checkEqual(result, "Install state inactive summary increments", 1, removedInstallSummary.inactiveInstalls);
+    checkEqual(result, "Inactive install helper returns inactive records", 1, getInactiveInstallRecords(actor).length);
+
+    await recordInstallState(actor, { ...smokeInstallRecord, installId: "smoke-component-deactivate-record", active: true });
+    const componentDeactivatedRecords = await deactivateInstallRecordsByComponent(actor, ARCFLIGHT_ITEM_TYPES.ROOM, { reason: "component-helper-test" });
+    check(result, "Component deactivate helper marks active matching records inactive", componentDeactivatedRecords.length === 1 && componentDeactivatedRecords[0]?.removalReason === "component-helper-test", "one active room deactivated", componentDeactivatedRecords);
 
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: { version: "bad", installs: [{ installId: "dupe", itemId: 99, componentType: ARCFLIGHT_ITEM_TYPES.ROOM, active: true }, { installId: "dupe", componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, pressureContribution: { enginePressure: 2 }, active: "bad" }, null, "bad"] } });
     const normalizedMalformedState = getInstallState(actor);
@@ -318,8 +332,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Install state summary counts active installs", 2, normalizedMalformedSummary.activeInstalls);
     checkEqual(result, "Install state summary counts component types", 1, normalizedMalformedSummary.countsByComponentType[ARCFLIGHT_ITEM_TYPES.ROOM]);
     checkEqual(result, "Install state summary totals pressure", 2, normalizedMalformedSummary.pressureContribution.total);
-    check(result, "Install state helpers exposed", typeof globalThis.game?.arcflight?.getInstalledComponents === "function" && typeof globalThis.game?.arcflight?.getInstallState === "function" && typeof globalThis.game?.arcflight?.recordInstallState === "function" && typeof globalThis.game?.arcflight?.removeInstallState === "function" && typeof globalThis.game?.arcflight?.findInstallRecord === "function" && typeof globalThis.game?.arcflight?.prepareInstallStateSummary === "function", true, { getInstalledComponents: typeof globalThis.game?.arcflight?.getInstalledComponents, getInstallState: typeof globalThis.game?.arcflight?.getInstallState, recordInstallState: typeof globalThis.game?.arcflight?.recordInstallState, removeInstallState: typeof globalThis.game?.arcflight?.removeInstallState, findInstallRecord: typeof globalThis.game?.arcflight?.findInstallRecord, prepareInstallStateSummary: typeof globalThis.game?.arcflight?.prepareInstallStateSummary });
-    check(result, "Install state devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getInstalledComponents === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.recordInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.removeInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.findInstallRecord === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareInstallStateSummary === "function", true, { getInstalledComponents: typeof globalThis.game?.arcflight?.devTools?.getInstalledComponents, getInstallState: typeof globalThis.game?.arcflight?.devTools?.getInstallState, recordInstallState: typeof globalThis.game?.arcflight?.devTools?.recordInstallState, removeInstallState: typeof globalThis.game?.arcflight?.devTools?.removeInstallState, findInstallRecord: typeof globalThis.game?.arcflight?.devTools?.findInstallRecord, prepareInstallStateSummary: typeof globalThis.game?.arcflight?.devTools?.prepareInstallStateSummary });
+    check(result, "Install state helpers exposed", typeof globalThis.game?.arcflight?.getActiveInstallRecords === "function" && typeof globalThis.game?.arcflight?.getInactiveInstallRecords === "function" && typeof globalThis.game?.arcflight?.getInstalledComponents === "function" && typeof globalThis.game?.arcflight?.getInstallState === "function" && typeof globalThis.game?.arcflight?.recordInstallState === "function" && typeof globalThis.game?.arcflight?.deactivateInstallRecord === "function" && typeof globalThis.game?.arcflight?.deactivateInstallRecordsByComponent === "function" && typeof globalThis.game?.arcflight?.removeInstallState === "function" && typeof globalThis.game?.arcflight?.findInstallRecord === "function" && typeof globalThis.game?.arcflight?.prepareInstallStateSummary === "function", true, { getActiveInstallRecords: typeof globalThis.game?.arcflight?.getActiveInstallRecords, getInactiveInstallRecords: typeof globalThis.game?.arcflight?.getInactiveInstallRecords, getInstalledComponents: typeof globalThis.game?.arcflight?.getInstalledComponents, getInstallState: typeof globalThis.game?.arcflight?.getInstallState, recordInstallState: typeof globalThis.game?.arcflight?.recordInstallState, deactivateInstallRecord: typeof globalThis.game?.arcflight?.deactivateInstallRecord, deactivateInstallRecordsByComponent: typeof globalThis.game?.arcflight?.deactivateInstallRecordsByComponent, removeInstallState: typeof globalThis.game?.arcflight?.removeInstallState, findInstallRecord: typeof globalThis.game?.arcflight?.findInstallRecord, prepareInstallStateSummary: typeof globalThis.game?.arcflight?.prepareInstallStateSummary });
+    check(result, "Install state devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getActiveInstallRecords === "function" && typeof globalThis.game?.arcflight?.devTools?.getInactiveInstallRecords === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstalledComponents === "function" && typeof globalThis.game?.arcflight?.devTools?.getInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.recordInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.deactivateInstallRecord === "function" && typeof globalThis.game?.arcflight?.devTools?.deactivateInstallRecordsByComponent === "function" && typeof globalThis.game?.arcflight?.devTools?.removeInstallState === "function" && typeof globalThis.game?.arcflight?.devTools?.findInstallRecord === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareInstallStateSummary === "function", true, { getActiveInstallRecords: typeof globalThis.game?.arcflight?.devTools?.getActiveInstallRecords, getInactiveInstallRecords: typeof globalThis.game?.arcflight?.devTools?.getInactiveInstallRecords, getInstalledComponents: typeof globalThis.game?.arcflight?.devTools?.getInstalledComponents, getInstallState: typeof globalThis.game?.arcflight?.devTools?.getInstallState, recordInstallState: typeof globalThis.game?.arcflight?.devTools?.recordInstallState, deactivateInstallRecord: typeof globalThis.game?.arcflight?.devTools?.deactivateInstallRecord, deactivateInstallRecordsByComponent: typeof globalThis.game?.arcflight?.devTools?.deactivateInstallRecordsByComponent, removeInstallState: typeof globalThis.game?.arcflight?.devTools?.removeInstallState, findInstallRecord: typeof globalThis.game?.arcflight?.devTools?.findInstallRecord, prepareInstallStateSummary: typeof globalThis.game?.arcflight?.devTools?.prepareInstallStateSummary });
     checkEqual(result, "Standalone malformed install normalization safe fallback", 0, normalizeInstallState("bad").installs.length);
 
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: initialInstallState });
@@ -364,6 +378,21 @@ export async function runFrameworkSmokeTest(options = {}) {
       && helperInstallCategories[ARCFLIGHT_ITEM_TYPES.CREW_ASSET] === "native", "stable install categories", helperInstallCategories);
     checkEqual(result, "Install helper room pressure is recorded", getComponentRefitPressure(componentItems.room).total, helperInstallRecordsByType.get(ARCFLIGHT_ITEM_TYPES.ROOM)?.pressureContribution?.total);
 
+    const originalHullInstallId = helperInstallRecordsByType.get(ARCFLIGHT_ITEM_TYPES.HULL)?.installId;
+    const originalArkengineInstallId = helperInstallRecordsByType.get(ARCFLIGHT_ITEM_TYPES.ARKENGINE)?.installId;
+    await installHull(actor, componentItems.replacementHull);
+    await installArkengine(actor, componentItems.replacementArkengine);
+    const replacementInstallState = getInstallState(actor);
+    const inactiveReplacementRecords = getInactiveInstallRecords(actor);
+    const replacedHullRecord = replacementInstallState.installs.find((record) => record.installId === originalHullInstallId);
+    const replacedArkengineRecord = replacementInstallState.installs.find((record) => record.installId === originalArkengineInstallId);
+    const activeReplacementRecords = getActiveInstallRecords(actor);
+    checkEqual(result, "Replacing hull and arkengine preserves install history", 8, replacementInstallState.installs.length);
+    check(result, "Replacing hull deactivates previous hull install", replacedHullRecord?.active === false && replacedHullRecord?.removalReason === "replaced" && replacedHullRecord?.removedAt > 0 && replacedHullRecord?.removedBy && replacedHullRecord?.replacedByInstallId, "replaced hull metadata", replacedHullRecord);
+    check(result, "Replacing arkengine deactivates previous arkengine install", replacedArkengineRecord?.active === false && replacedArkengineRecord?.removalReason === "replaced" && replacedArkengineRecord?.removedAt > 0 && replacedArkengineRecord?.removedBy && replacedArkengineRecord?.replacedByInstallId, "replaced arkengine metadata", replacedArkengineRecord);
+    checkEqual(result, "Inactive replacement records are preserved", 2, inactiveReplacementRecords.filter((record) => [ARCFLIGHT_ITEM_TYPES.HULL, ARCFLIGHT_ITEM_TYPES.ARKENGINE].includes(record.componentType)).length);
+    checkEqual(result, "Active install counts remain correct after replacement", 6, activeReplacementRecords.length);
+
     const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
     await actor.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
@@ -373,13 +402,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     const crewEntry = shipData.crew.namedCrew[0];
     await assignStation(actor, "engineer", crewEntry, { assigneeType: "crewAsset" });
 
-    await attemptDuplicateInstall(result, "Duplicate hull install attempt", () => installHull(actor, componentItems.hull));
-    await attemptDuplicateInstall(result, "Duplicate arkengine install attempt", () => installArkengine(actor, componentItems.arkengine));
+    await attemptDuplicateInstall(result, "Duplicate hull install attempt", () => installHull(actor, componentItems.replacementHull));
+    await attemptDuplicateInstall(result, "Duplicate arkengine install attempt", () => installArkengine(actor, componentItems.replacementArkengine));
     await attemptDuplicateInstall(result, "Duplicate arkengine mod install attempt", () => installArkengineMod(actor, componentItems.arkengineMod));
     await attemptDuplicateInstall(result, "Duplicate room install attempt", () => installRoom(actor, componentItems.room));
     await attemptDuplicateInstall(result, "Duplicate ship upgrade install attempt", () => installShipUpgrade(actor, componentItems.shipUpgrade));
     await attemptDuplicateInstall(result, "Duplicate crew asset install attempt", () => addCrewAsset(actor, componentItems.crewAsset));
-    checkEqual(result, "Duplicate install attempts do not create duplicate install state records", 6, getInstallState(actor).installs.length);
+    checkEqual(result, "Duplicate install attempts do not create duplicate install state records", 8, getInstallState(actor).installs.length);
 
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
