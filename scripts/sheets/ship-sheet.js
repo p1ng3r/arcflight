@@ -1053,14 +1053,96 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
   };
 
-  #getScrollableBody() {
+  #getScrollCandidateDefinitions() {
     const sheetRoot = this.element ?? null;
+    const applicationRoot = sheetRoot?.closest?.(".application") ?? null;
+    const windowAppRoot = sheetRoot?.closest?.(".window-app") ?? null;
+    const scopedRoot = applicationRoot ?? windowAppRoot ?? sheetRoot ?? globalThis.document;
 
-    return sheetRoot?.querySelector?.("[data-arcflight-sheet-scroll]")
-      ?? this.window?.content
-      ?? sheetRoot?.querySelector?.(".arcflight-sheet__body")
-      ?? sheetRoot
-      ?? null;
+    return [
+      { name: "sheet-scroll", selector: "[data-arcflight-sheet-scroll]", root: sheetRoot },
+      { name: "window-content-property", element: this.window?.content ?? null },
+      { name: "application", element: applicationRoot },
+      { name: "window-app", element: windowAppRoot },
+      { name: "window-content", selector: ".window-content", root: scopedRoot },
+      { name: "sheet-body", selector: ".arcflight-sheet__body", root: sheetRoot },
+      { name: "sheet-root", element: sheetRoot },
+      { name: "document-scrolling-element", element: globalThis.document?.scrollingElement ?? null }
+    ];
+  }
+
+  getScrollCandidates() {
+    const candidates = [];
+
+    for (const definition of this.#getScrollCandidateDefinitions()) {
+      if (definition.selector) {
+        const root = definition.root ?? globalThis.document;
+        const elements = Array.from(root?.querySelectorAll?.(definition.selector) ?? []);
+        elements.forEach((element, index) => candidates.push({
+          name: definition.name,
+          selector: definition.selector,
+          index,
+          element
+        }));
+        continue;
+      }
+
+      if (definition.element) {
+        candidates.push({
+          name: definition.name,
+          selector: definition.selector ?? null,
+          index: 0,
+          element: definition.element
+        });
+      }
+    }
+
+    return candidates
+      .filter((candidate) => candidate.element)
+      .sort((a, b) => this.#getScrollCandidatePriority(b.element) - this.#getScrollCandidatePriority(a.element));
+  }
+
+  #getScrollCandidatePriority(element) {
+    if (!element) return 0;
+    if (Number(element.scrollTop) > 0 || Number(element.scrollLeft) > 0) return 2;
+    if (Number(element.scrollHeight) > Number(element.clientHeight) || Number(element.scrollWidth) > Number(element.clientWidth)) return 1;
+    return 0;
+  }
+
+  #getScrollCandidateIdentity(element) {
+    if (!element) return {};
+
+    return {
+      id: element.id || "",
+      className: typeof element.className === "string" ? element.className : "",
+      datasetKeys: Object.keys(element.dataset ?? {})
+    };
+  }
+
+  #getCapturedScrollCandidatePriority(candidate = {}) {
+    if (Number(candidate.top) > 0 || Number(candidate.left) > 0) return 2;
+    if (Number(candidate.scrollHeight) > Number(candidate.clientHeight) || Number(candidate.scrollWidth) > Number(candidate.clientWidth)) return 1;
+    return 0;
+  }
+
+  #findScrollCandidateElement(candidate = {}) {
+    if (candidate.name === "window-content-property") return this.window?.content ?? null;
+    if (candidate.name === "application") return this.element?.closest?.(".application") ?? null;
+    if (candidate.name === "window-app") return this.element?.closest?.(".window-app") ?? null;
+    if (candidate.name === "sheet-root") return this.element ?? null;
+    if (candidate.name === "document-scrolling-element") return globalThis.document?.scrollingElement ?? null;
+
+    if (!candidate.selector) return null;
+
+    const sheetRoot = this.element ?? null;
+    const applicationRoot = sheetRoot?.closest?.(".application") ?? null;
+    const windowAppRoot = sheetRoot?.closest?.(".window-app") ?? null;
+    const scopedRoot = candidate.name === "window-content"
+      ? applicationRoot ?? windowAppRoot ?? sheetRoot ?? globalThis.document
+      : sheetRoot ?? globalThis.document;
+    const elements = Array.from(scopedRoot?.querySelectorAll?.(candidate.selector) ?? []);
+
+    return elements[candidate.index] ?? elements[0] ?? null;
   }
 
   #getCurrentActiveTab() {
@@ -1073,11 +1155,22 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 
   #captureScrollRestoreState() {
-    const scrollableBody = this.#getScrollableBody();
+    const scrollCandidates = this.getScrollCandidates().map((candidate) => ({
+      name: candidate.name,
+      selector: candidate.selector,
+      index: candidate.index,
+      identity: this.#getScrollCandidateIdentity(candidate.element),
+      top: Number.isFinite(candidate.element?.scrollTop) ? candidate.element.scrollTop : 0,
+      left: Number.isFinite(candidate.element?.scrollLeft) ? candidate.element.scrollLeft : 0,
+      scrollHeight: Number(candidate.element?.scrollHeight) || 0,
+      clientHeight: Number(candidate.element?.clientHeight) || 0,
+      scrollWidth: Number(candidate.element?.scrollWidth) || 0,
+      clientWidth: Number(candidate.element?.clientWidth) || 0
+    }));
 
     return {
       activeTab: this.#getCurrentActiveTab(),
-      scrollTop: Number.isFinite(scrollableBody?.scrollTop) ? scrollableBody.scrollTop : null
+      scrollCandidates
     };
   }
 
@@ -1103,9 +1196,24 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     await this.#afterRenderFrame();
     this.#setActiveTab(state.activeTab);
 
-    const scrollableBody = this.#getScrollableBody();
-    if (!scrollableBody || state.scrollTop === null) return;
-    scrollableBody.scrollTop = state.scrollTop;
+    const scrollCandidates = [...arrayOrEmpty(state.scrollCandidates)].sort((a, b) => {
+      const priorityDifference = this.#getCapturedScrollCandidatePriority(b) - this.#getCapturedScrollCandidatePriority(a);
+      return priorityDifference || 0;
+    });
+
+    for (const candidate of scrollCandidates) {
+      const element = this.#findScrollCandidateElement(candidate);
+      if (!element) continue;
+
+      element.scrollTop = candidate.top;
+      element.scrollLeft = candidate.left;
+    }
+
+    const preferredCandidate = scrollCandidates.find((candidate) => this.#getCapturedScrollCandidatePriority(candidate) > 0);
+    if (preferredCandidate && this.window?.content) {
+      this.window.content.scrollTop = preferredCandidate.top;
+      this.window.content.scrollLeft = preferredCandidate.left;
+    }
   }
 
   async #restorePendingScrollState() {
@@ -1144,8 +1252,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       });
 
     if (resetScroll) {
-      const scrollableBody = this.#getScrollableBody();
-      if (scrollableBody) scrollableBody.scrollTop = 0;
+      for (const candidate of this.getScrollCandidates()) {
+        candidate.element.scrollTop = 0;
+        candidate.element.scrollLeft = 0;
+      }
     }
   }
 
