@@ -1,9 +1,11 @@
 import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengines/arkengine-patterns.js";
 import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
+import { getCoreStationActionsForStation } from "../../data/station-actions/core-station-actions.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
 import { previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
+import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   addCrewAsset,
@@ -38,6 +40,18 @@ const INSTALL_COMPONENT_TYPES = Object.freeze([
 ]);
 
 const INSTALL_COMPONENT_TYPE_VALUES = new Set(INSTALL_COMPONENT_TYPES.map((entry) => entry.value));
+
+const STATION_ACTION_STATION_ORDER = Object.freeze([
+  "captain",
+  "pilot",
+  "engineer",
+  "gunnery",
+  "veilwarden",
+  "watchmaster",
+  "quartermaster"
+]);
+
+const STATION_ACTION_HISTORY_LIMIT = 5;
 
 function prepareArcflightShipFlags(actor) {
   return {
@@ -573,6 +587,146 @@ function prepareInstallUiState(actor, selectedComponentType = ARCFLIGHT_ITEM_TYP
   };
 }
 
+
+function getAssignedCrewName(assignment = null) {
+  return assignment?.name
+    || assignment?.actorUuid
+    || assignment?.actorId
+    || assignment?.crewAssetUuid
+    || assignment?.crewAssetId
+    || "";
+}
+
+function formatStationActionTimestamp(timestamp) {
+  const numericTimestamp = Number(timestamp);
+  if (!Number.isFinite(numericTimestamp) || numericTimestamp <= 0) return "Unknown time";
+
+  try {
+    return new Date(numericTimestamp).toLocaleString();
+  } catch (_error) {
+    return String(timestamp);
+  }
+}
+
+function prepareStationActionPreviewReadout(actor, action = {}) {
+  try {
+    const phase = action.phase || "both";
+    const preview = previewStationAction(actor, action.key, { phase });
+    const messages = prepareTextArray(preview.messages);
+    const warnings = prepareTextArray(preview.warnings);
+    const severity = ["ok", "warning", "danger"].includes(preview.severity) ? preview.severity : "warning";
+    const blocked = preview.blocked === true || severity === "danger";
+
+    return {
+      ...preview,
+      phase,
+      severity,
+      blocked,
+      messages,
+      warnings,
+      hasMessages: messages.length > 0,
+      hasWarnings: warnings.length > 0,
+      cssClass: `arcflight-station-actions__action--${severity}`,
+      badgeClass: `arcflight-install-ui__badge--${severity}`,
+      statusLabel: blocked ? "Blocked" : (severity === "warning" ? "Warning" : "Ready"),
+      statusText: [...messages, ...warnings].join(" ") || (blocked ? "Action blocked by station-action preview." : "Ready to record."),
+      canExecute: blocked !== true
+    };
+  } catch (error) {
+    const message = error.message ?? "Arcflight could not preview this station action.";
+    console.warn("Arcflight | Station action preview failed.", error);
+
+    return {
+      actionKey: action.key ?? "",
+      actionName: action.name ?? "Station Action",
+      stationKey: action.stationKey ?? "",
+      phase: action.phase || "both",
+      apCost: numericDisplayValue(action.apCost),
+      rapCost: numericDisplayValue(action.rapCost),
+      severity: "danger",
+      blocked: true,
+      messages: [],
+      warnings: [message],
+      hasMessages: false,
+      hasWarnings: true,
+      cssClass: "arcflight-station-actions__action--danger",
+      badgeClass: "arcflight-install-ui__badge--danger",
+      statusLabel: "Blocked",
+      statusText: message,
+      canExecute: false
+    };
+  }
+}
+
+function prepareStationActionGroups(actor, stations = {}) {
+  const definitions = stations.definitions ?? {};
+  const assignments = stations.assignments ?? {};
+
+  return STATION_ACTION_STATION_ORDER.map((stationKey) => {
+    const station = definitions[stationKey] ?? { key: stationKey, displayName: humanizeIdentifier(stationKey) };
+    const assignment = assignments[stationKey] ?? null;
+    const assignedCrewName = getAssignedCrewName(assignment);
+    const actions = getCoreStationActionsForStation(stationKey).map((action) => {
+      const preview = prepareStationActionPreviewReadout(actor, action);
+      const assignedCrewStatus = assignedCrewName
+        ? `Assigned: ${assignedCrewName}`
+        : `Requires assigned ${action.requiredCrewRole || station.displayName || humanizeIdentifier(stationKey)}`;
+
+      return {
+        ...action,
+        stationDisplayName: station.displayName || humanizeIdentifier(stationKey),
+        phaseLabel: humanizeIdentifier(action.phase || "both"),
+        costLabel: `${numericDisplayValue(action.apCost)} AP / ${numericDisplayValue(action.rapCost)} RAP`,
+        assignedCrewName,
+        assignedCrewStatus,
+        hasAssignedCrew: Boolean(assignedCrewName),
+        preview
+      };
+    });
+
+    return {
+      key: stationKey,
+      displayName: station.displayName || humanizeIdentifier(stationKey),
+      role: station.role ?? "",
+      assignment,
+      assigneeName: assignedCrewName || "Unassigned",
+      actions,
+      hasActions: actions.length > 0
+    };
+  });
+}
+
+function prepareStationActionHistoryReadout(actor, limit = STATION_ACTION_HISTORY_LIMIT) {
+  const history = getStationActionState(actor).history.map((record = {}) => ({
+    ...record,
+    stationLabel: humanizeIdentifier(record.stationKey || "Unknown Station"),
+    phaseLabel: humanizeIdentifier(record.phase || "both"),
+    assignedCrewName: record.assignedCrewName || "Unassigned",
+    timestampLabel: formatStationActionTimestamp(record.executedAt),
+    hasNotes: String(record.notes ?? "").trim().length > 0
+  })).reverse();
+  const latestRecords = history.slice(0, limit);
+
+  return {
+    records: latestRecords,
+    hasRecords: latestRecords.length > 0,
+    totalRecords: history.length,
+    hiddenRecords: Math.max(history.length - latestRecords.length, 0)
+  };
+}
+
+function prepareStationActionUiState(actor, stations = {}) {
+  const groups = prepareStationActionGroups(actor, stations);
+  const history = prepareStationActionHistoryReadout(actor);
+
+  return {
+    groups,
+    hasGroups: groups.some((group) => group.hasActions),
+    history,
+    canClearHistory: history.totalRecords > 0
+  };
+}
+
 function prepareInstallValidationReadout(system = {}) {
   const tier = system.tier ?? {};
   const refitPressure = system.refitPressure ?? {};
@@ -908,6 +1062,60 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.element
       .querySelectorAll?.("[data-arcflight-remove-component]")
       ?.forEach((button) => button.addEventListener("click", this.#onRemoveInstalledComponent.bind(this)));
+
+    this.element
+      .querySelectorAll?.("[data-arcflight-execute-station-action]")
+      ?.forEach((button) => button.addEventListener("click", this.#onExecuteStationAction.bind(this)));
+
+    this.element
+      .querySelector?.("[data-arcflight-clear-station-action-history]")
+      ?.addEventListener("click", this.#onClearStationActionHistory.bind(this));
+  }
+
+
+  async #onExecuteStationAction(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    const button = event.currentTarget;
+    const actionKey = button?.dataset?.actionKey ?? "";
+    const phase = button?.dataset?.phase ?? "both";
+    const preview = previewStationAction(actor, actionKey, { phase });
+
+    if (preview.blocked === true || preview.severity === "danger") {
+      ui.notifications?.warn?.(`Arcflight blocked this station action: ${[...prepareTextArray(preview.messages), ...prepareTextArray(preview.warnings)].join(" ") || "preview did not allow it."}`);
+      this.render(true);
+      return;
+    }
+
+    try {
+      await executeStationAction(actor, actionKey, { phase });
+      ui.notifications?.info?.(`Recorded ${preview.actionName || "station action"}.`);
+      this.render(true);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not record that station action.");
+      console.warn("Arcflight | Station action execute failed.", error);
+      this.render(true);
+    }
+  }
+
+  async #onClearStationActionHistory(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    try {
+      await clearStationActionHistory(actor);
+      ui.notifications?.info?.("Arcflight station action history cleared.");
+      this.render(true);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not clear station action history.");
+      console.warn("Arcflight | Station action history clear failed.", error);
+      this.render(true);
+    }
   }
 
 
@@ -1179,6 +1387,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.#selectedWeaponMountValue = installUi.selectedWeaponMountValue;
 
     const stations = prepareStationRows(arcflight.system.stations);
+    const stationActionUi = prepareStationActionUiState(actor, arcflight.system.stations);
     const exampleBuildOptions = prepareExampleBuildOptions(this.#selectedExampleBuildKey);
     const selectedExampleBuild = exampleBuildOptions.find((build) => build.selected) ?? null;
 
@@ -1188,6 +1397,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       arcflight,
       installUi,
       stations,
+      stationActionUi,
       exampleBuildOptions,
       selectedExampleBuild,
       arcflightActorType: ARCFLIGHT_SHIP_ACTOR_TYPE,
@@ -1196,4 +1406,4 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 }
 
-export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState, prepareInstallValidationReadout };
+export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState, prepareInstallValidationReadout, prepareStationActionHistoryReadout, prepareStationActionUiState };
