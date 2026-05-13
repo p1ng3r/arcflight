@@ -115,6 +115,7 @@ import {
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
+import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "./helpers/station-action-execution.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -202,6 +203,10 @@ Hooks.once("init", () => {
     getCoreStationActionKeys,
     getCoreStationActions,
     getCoreStationActionsForStation,
+    getStationActionState,
+    previewStationAction,
+    executeStationAction,
+    clearStationActionHistory,
     CORE_HULL_PLATFORM_KEYS,
     CORE_ARKENGINE_KEYS,
     HULL_PATTERN_KEYS,
@@ -390,6 +395,10 @@ export {
   getCoreStationActionKeys,
   getCoreStationActions,
   getCoreStationActionsForStation,
+  getStationActionState,
+  previewStationAction,
+  executeStationAction,
+  clearStationActionHistory,
   CORE_HULLS,
   CORE_ARKENGINES,
   HULL_PATTERNS,

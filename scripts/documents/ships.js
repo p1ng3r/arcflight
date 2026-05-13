@@ -228,6 +228,9 @@ export const arcflightShipDefaults = Object.freeze({
     definitions: CORE_STATIONS,
     assignments: Object.freeze(Object.fromEntries(STATION_KEYS.map((stationKey) => [stationKey, null])))
   }),
+  stationActions: Object.freeze({
+    history: Object.freeze([])
+  }),
   conditions: Object.freeze({
     active: "",
     damage: "",
@@ -1307,6 +1310,9 @@ export function getArcflightShipData(actor) {
   const systemData = foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(flagData), { inplace: false });
 
   systemData.stations = getDefaultStationState(systemData.stations);
+  systemData.stationActions = {
+    history: Array.isArray(systemData.stationActions?.history) ? cloneData(systemData.stationActions.history) : []
+  };
   systemData.crew = getDefaultCrewState(systemData.crew);
   systemData.tier = foundry.utils.mergeObject(cloneData(emptyTierState), cloneData(systemData.tier ?? {}), { inplace: false });
   systemData.tier.baseTier = numericValue(systemData.tier.baseTier);
@@ -1323,6 +1329,9 @@ export function getArcflightShipData(actor) {
 export function getDefaultArcflightShipFlags(data = {}) {
   const system = foundry.utils.mergeObject(getDefaultArcflightShipData(), data, { inplace: false });
   system.stations = getDefaultStationState(system.stations);
+  system.stationActions = {
+    history: Array.isArray(system.stationActions?.history) ? cloneData(system.stationActions.history) : []
+  };
   system.crew = getDefaultCrewState(system.crew);
   system.installState = normalizeBasicInstallState(system.installState);
 
