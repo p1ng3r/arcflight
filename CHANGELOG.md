@@ -2,12 +2,21 @@
 
 ## Unreleased
 
+### Station Action Backend MVP
+
+- Added ship-owned station-action history under `flags.arcflight.system.stationActions.history` with safe empty-array defaults for Arcflight-enabled PF2E vehicle actors.
+- Added `getStationActionState`, `previewStationAction`, `executeStationAction`, and `clearStationActionHistory` helpers on `game.arcflight` and `game.arcflight.devTools`.
+- Station action previews now validate Arcflight vehicle ownership, action keys, station keys, required assigned station crew, and combat/travel/both phase compatibility while returning stable preview payloads.
+- Station action execution calls preview first, rejects blocked/danger previews, and appends history records with action, actor, user, station, assigned crew, cost, timing, and notes fields.
+- Extended framework smoke coverage for helper exposure, valid assigned previews, unassigned/invalid blocking, history recording, history clearing, and unchanged AP/RAP values.
+- Kept this backend deliberately non-automating: no station-action UI, AP/RAP spending, combat round tracker, weapon firing, travel automation, dice rolls, or action effect automation was added.
+
 ### Station Action Data Foundation
 
 - Added a data-only core station action registry for Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster starter actions.
 - Added station action lookup helpers (`getCoreStationAction`, `getCoreStationActionKeys`, `getCoreStationActions`, and `getCoreStationActionsForStation`) on `game.arcflight` and `game.arcflight.devTools`.
 - Extended framework smoke coverage for station action key arrays, required schema fields, known station references, helper lookups, and devTools exposure.
-- Kept this pass schema/helper-only: no action execution, actor mutation, AP/RAP system, combat rounds, travel automation, weapon firing, or changes to station assignment behavior were added.
+- Kept this pass schema/helper-only at introduction; backend-only execution history was added later without AP/RAP spend, combat rounds, travel automation, weapon firing, dice rolls, effects automation, or changes to station assignment behavior.
 
 ### Weapon Install UI MVP
 

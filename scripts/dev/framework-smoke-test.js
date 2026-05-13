@@ -57,6 +57,7 @@ import {
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
+import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
 import { prepareInstallUiState } from "../sheets/ship-sheet.js";
 import {
   backfillInstallStateForAllShips,
@@ -287,6 +288,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core station action helper lookups work", getCoreStationActionKeys() === CORE_STATION_ACTION_KEYS && getCoreStationActions() === CORE_STATION_ACTIONS && getCoreStationAction("rally-crew")?.stationKey === "captain" && getCoreStationActionsForStation("gunnery").length === 2, true, { keys: getCoreStationActionKeys()?.length ?? 0, rallyCrew: getCoreStationAction("rally-crew"), gunneryActions: getCoreStationActionsForStation("gunnery").map((action) => action.key) });
     check(result, "Core station action helpers exposed", typeof globalThis.game?.arcflight?.getCoreStationAction === "function" && typeof globalThis.game?.arcflight?.getCoreStationActionKeys === "function" && typeof globalThis.game?.arcflight?.getCoreStationActions === "function" && typeof globalThis.game?.arcflight?.getCoreStationActionsForStation === "function", true, { getCoreStationAction: typeof globalThis.game?.arcflight?.getCoreStationAction, getCoreStationActionKeys: typeof globalThis.game?.arcflight?.getCoreStationActionKeys, getCoreStationActions: typeof globalThis.game?.arcflight?.getCoreStationActions, getCoreStationActionsForStation: typeof globalThis.game?.arcflight?.getCoreStationActionsForStation });
     check(result, "Core station action devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getCoreStationAction === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreStationActions === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionsForStation === "function", true, { getCoreStationAction: typeof globalThis.game?.arcflight?.devTools?.getCoreStationAction, getCoreStationActionKeys: typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionKeys, getCoreStationActions: typeof globalThis.game?.arcflight?.devTools?.getCoreStationActions, getCoreStationActionsForStation: typeof globalThis.game?.arcflight?.devTools?.getCoreStationActionsForStation });
+    check(result, "Station action execution helpers exposed", typeof globalThis.game?.arcflight?.getStationActionState === "function" && typeof globalThis.game?.arcflight?.previewStationAction === "function" && typeof globalThis.game?.arcflight?.executeStationAction === "function" && typeof globalThis.game?.arcflight?.clearStationActionHistory === "function", true, { getStationActionState: typeof globalThis.game?.arcflight?.getStationActionState, previewStationAction: typeof globalThis.game?.arcflight?.previewStationAction, executeStationAction: typeof globalThis.game?.arcflight?.executeStationAction, clearStationActionHistory: typeof globalThis.game?.arcflight?.clearStationActionHistory });
+    check(result, "Station action execution devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getStationActionState === "function" && typeof globalThis.game?.arcflight?.devTools?.previewStationAction === "function" && typeof globalThis.game?.arcflight?.devTools?.executeStationAction === "function" && typeof globalThis.game?.arcflight?.devTools?.clearStationActionHistory === "function", true, { getStationActionState: typeof globalThis.game?.arcflight?.devTools?.getStationActionState, previewStationAction: typeof globalThis.game?.arcflight?.devTools?.previewStationAction, executeStationAction: typeof globalThis.game?.arcflight?.devTools?.executeStationAction, clearStationActionHistory: typeof globalThis.game?.arcflight?.devTools?.clearStationActionHistory });
     check(result, "Core hull library has 11 locked keys", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => CORE_HULL_PLATFORM_KEYS.includes(key)) && CORE_HULL_PLATFORM_KEYS.length === EXPECTED_CORE_HULL_PLATFORM_KEYS.length, EXPECTED_CORE_HULL_PLATFORM_KEYS, CORE_HULL_PLATFORM_KEYS);
     check(result, "Every core hull has classification", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasClassification(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasClassification(CORE_HULLS[key])));
     check(result, "Every core hull has refit tolerance", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasRefitTolerance(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasRefitTolerance(CORE_HULLS[key])));
@@ -344,6 +347,25 @@ export async function runFrameworkSmokeTest(options = {}) {
       [`flags.${ARCFLIGHT_MODULE_ID}.${SMOKE_TEST_FLAG}`]: true
     });
     check(result, "Arcflight enabled on vehicle", actor.getFlag(ARCFLIGHT_MODULE_ID, "enabled") === true, true, actor.getFlag(ARCFLIGHT_MODULE_ID, "enabled"));
+
+    const initialStationActionState = getStationActionState(actor);
+    check(result, "Station action history initializes empty", Array.isArray(initialStationActionState.history) && initialStationActionState.history.length === 0, "empty history", initialStationActionState);
+    const invalidStationActionPreview = previewStationAction(actor, "missing-station-action");
+    check(result, "Station action preview blocks invalid key safely", invalidStationActionPreview.blocked === true && invalidStationActionPreview.ok === false && invalidStationActionPreview.severity === "danger", "blocked danger preview", invalidStationActionPreview);
+    const unassignedStationActionPreview = previewStationAction(actor, "rally-crew", { phase: "combat" });
+    check(result, "Station action preview blocks unassigned required station", unassignedStationActionPreview.blocked === true && unassignedStationActionPreview.warnings.length > 0, "blocked with warning", unassignedStationActionPreview);
+    await assignStation(actor, "captain", { id: "smoke-captain", uuid: "Actor.smoke-captain", name: "Smoke Captain" }, { assigneeType: "actor" });
+    const assignedStationActionPreview = previewStationAction(actor, "rally-crew", { phase: "combat" });
+    check(result, "Station action preview allows assigned required station", assignedStationActionPreview.ok === true && assignedStationActionPreview.blocked === false && assignedStationActionPreview.actionName === "Rally Crew", "ready preview", assignedStationActionPreview);
+    const beforeStationActionData = getArcflightShipData(actor);
+    const stationActionRecord = await executeStationAction(actor, "rally-crew", { phase: "combat", notes: "Smoke test record only." });
+    const afterStationActionData = getArcflightShipData(actor);
+    const stationActionStateAfterExecute = getStationActionState(actor);
+    check(result, "Station action execute records history", stationActionStateAfterExecute.history.length === 1 && stationActionStateAfterExecute.history[0]?.id === stationActionRecord.id && stationActionRecord.actionKey === "rally-crew", "one history record", stationActionStateAfterExecute);
+    check(result, "Station action execute does not spend AP/RAP", beforeStationActionData.derived.baseAP === afterStationActionData.derived.baseAP && beforeStationActionData.derived.baseRAP === afterStationActionData.derived.baseRAP, "unchanged AP/RAP derived values", { before: { baseAP: beforeStationActionData.derived.baseAP, baseRAP: beforeStationActionData.derived.baseRAP }, after: { baseAP: afterStationActionData.derived.baseAP, baseRAP: afterStationActionData.derived.baseRAP } });
+    await clearStationActionHistory(actor);
+    checkEqual(result, "Station action history clears", 0, getStationActionState(actor).history.length);
+    await clearStationAssignment(actor, "captain");
 
     const initialInstallState = getInstallState(actor);
     checkEqual(result, "Install state initializes at version 1", 1, initialInstallState.version);

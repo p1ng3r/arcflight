@@ -17,6 +17,7 @@ import {
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { installWeapon, removeInstalledWeapon } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
+import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -103,6 +104,26 @@ export function createArcflightDevTools() {
      * Return immutable station action source data by key.
      */
     getCoreStationAction,
+
+    /**
+     * Return station action execution state for an Arcflight ship.
+     */
+    getStationActionState,
+
+    /**
+     * Preview whether a station action can be recorded.
+     */
+    previewStationAction,
+
+    /**
+     * Validate and append a station action history record without applying gameplay effects.
+     */
+    executeStationAction,
+
+    /**
+     * Clear ship-owned station action history.
+     */
+    clearStationActionHistory,
 
     /**
      * Return station action source data for a station key.

@@ -8,15 +8,15 @@ Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
 ## Framework Foundation Milestone
 
-Arcflight is currently in its **Framework Foundation** milestone. The module provides a PF2E-safe data and sheet foundation for ships and components, but it does **not** implement gameplay pillar systems yet. Travel gameplay, combat gameplay, AP/RAP spending, station-action execution, hard burn resolution, overcharge resolution, event systems, drag/drop systems, automation buttons, crew/faction gameplay, and GM tooling remain future work.
+Arcflight is currently in its **Framework Foundation** milestone. The module provides a PF2E-safe data and sheet foundation for ships and components, plus a minimal station-action backend that validates and records action history without automating gameplay effects. Travel gameplay, combat gameplay, AP/RAP spending, hard burn resolution, overcharge resolution, event systems, drag/drop systems, automation buttons, crew/faction gameplay, and GM tooling remain future work.
 
 For release management, promote framework-foundation work through the active development branch first, then merge to `main` only after Foundry smoke tests and normal PF2E sheet compatibility checks pass.
 
 ## Current Foundation Status
 
-The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, and minimal controlled non-core component removal. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, and actor resolution safeguards.
+The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and backend-only station-action history recording. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute helpers, and actor resolution safeguards.
 
-The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action execution, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
+The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action UI, station-action effects automation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
 
 ## Current Architecture Overview
 
@@ -26,7 +26,7 @@ Arcflight deliberately builds on normal PF2E documents instead of registering cu
 - **PF2E equipment items are Arcflight components.** Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, Cargo, Weapon, and Crew Asset data all live on equipment items with Arcflight flags.
 - **Arcflight data lives in flags.** Ship and component data are stored under `flags.arcflight.system`; PF2E-owned `system` data remains untouched.
 - **Source items are immutable during installation.** Installing a Hull, Arkengine, Arkengine Mod, Weapon, Room, Ship Upgrade, or Crew Asset copies the needed framework data onto the ship actor and keeps the source item unchanged.
-- **Runtime ownership belongs to the ship actor.** Installed references, normalized install-state records, copied Base data, recalculated Derived values, Current runtime values, station assignments, and crew roster state are owned by the Arcflight-enabled PF2E vehicle actor.
+- **Runtime ownership belongs to the ship actor.** Installed references, normalized install-state records, copied Base data, recalculated Derived values, Current runtime values, station assignments, station-action history, and crew roster state are owned by the Arcflight-enabled PF2E vehicle actor.
 - **Stations are role data, not equipment items.** Station definitions and assignments live under `flags.arcflight.system.stations` on the ship.
 - **Sheets are optional and non-default.** Arcflight registers optional ApplicationV2 sheets for PF2E equipment and vehicle actors without replacing normal PF2E item or vehicle sheets.
 
@@ -43,9 +43,9 @@ The current Framework Foundation includes these data-first systems:
 - **Room** — physical ship spaces, with core rooms, expansion room slot tracking, a 26-entry core content library, and infrastructure/occult/Lifeveil refit metadata.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking, a 28-entry core content library, and meaningful refit pressure across structural, command, Lifeveil, occult, engine, and military categories.
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
-- **Station framework** — ship-owned operating role definitions and assignments.
+- **Station framework** — ship-owned operating role definitions, assignments, and backend-only station-action preview/execution history helpers.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
-- **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, backend weapon install/remove validation, non-core component removal, lifecycle history, backfill dry runs, and actor resolution safeguards.
+- **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, backend weapon install/remove validation, station-action history recording, non-core component removal, lifecycle history, backfill dry runs, and actor resolution safeguards.
 
 Terminology used in sheets and docs:
 
@@ -58,6 +58,7 @@ Terminology used in sheets and docs:
 - **Ship Upgrades** are permanent vessel improvements.
 - **Arkengine Mods** are engine-only tuning.
 - **Stations** are operating roles.
+- **Station Actions** are backend-recorded action declarations under `flags.arcflight.system.stationActions.history`; the MVP validates assignment/phase/readiness and records history without AP/RAP spend, dice, weapon fire, combat, travel, or effect automation.
 - **Crew Assets** are named/support crew.
 
 ## Controlled Non-Core Component Removal
