@@ -1056,10 +1056,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   #getScrollableBody() {
     const sheetRoot = this.element ?? null;
 
-    return sheetRoot?.querySelector?.("[data-arcflight-sheet-scroll]")
-      ?? this.window?.content
-      ?? sheetRoot?.querySelector?.(".arcflight-sheet__body")
-      ?? sheetRoot
+    return sheetRoot?.querySelector?.(".arcflight-sheet__body")
+      ?? sheetRoot?.querySelector?.("[data-arcflight-sheet-scroll]")
       ?? null;
   }
 
@@ -1072,17 +1070,39 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     );
   }
 
-  #rememberActiveTab() {
-    this.#activeTab = this.#getCurrentActiveTab();
-  }
-
-  #captureScrollRestoreState() {
+  #captureCurrentSheetContext() {
     const scrollableBody = this.#getScrollableBody();
 
     return {
       activeTab: this.#getCurrentActiveTab(),
-      scrollTop: Number.isFinite(scrollableBody?.scrollTop) ? scrollableBody.scrollTop : null
+      bodyScrollTop: Number.isFinite(scrollableBody?.scrollTop) ? scrollableBody.scrollTop : null,
+      bodyScrollLeft: Number.isFinite(scrollableBody?.scrollLeft) ? scrollableBody.scrollLeft : null
     };
+  }
+
+  #queueSheetContextRestore(state) {
+    if (!state) return;
+
+    const pending = this.#pendingScrollRestore;
+    const bodyScrollTop = pending?.bodyScrollTop > 0 && (state.bodyScrollTop ?? 0) === 0
+      ? pending.bodyScrollTop
+      : state.bodyScrollTop;
+    const bodyScrollLeft = pending?.bodyScrollLeft > 0 && (state.bodyScrollLeft ?? 0) === 0
+      ? pending.bodyScrollLeft
+      : state.bodyScrollLeft;
+
+    this.#activeTab = normalizeShipSheetTab(state.activeTab);
+    this.#pendingScrollRestore = {
+      activeTab: this.#activeTab,
+      bodyScrollTop,
+      bodyScrollLeft
+    };
+  }
+
+  #queueCurrentSheetContextRestore() {
+    const state = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(state);
+    return state;
   }
 
   async #afterRenderFrame() {
@@ -1100,33 +1120,32 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     await waitForFrame();
   }
 
-  async #restoreScrollState(state) {
+  async #restoreSheetContext(state) {
     if (!state) return;
 
     this.#setActiveTab(state.activeTab);
     await this.#afterRenderFrame();
-    this.#setActiveTab(state.activeTab);
 
     const scrollableBody = this.#getScrollableBody();
-    if (!scrollableBody || state.scrollTop === null) return;
-    scrollableBody.scrollTop = state.scrollTop;
+    if (!scrollableBody) return;
+    if (state.bodyScrollTop !== null) scrollableBody.scrollTop = state.bodyScrollTop;
+    if (state.bodyScrollLeft !== null) scrollableBody.scrollLeft = state.bodyScrollLeft;
   }
 
-  async #restorePendingScrollState() {
+  async #restorePendingSheetContext() {
     const state = this.#pendingScrollRestore;
     if (!state) return;
 
-    this.#pendingScrollRestore = null;
-    await this.#restoreScrollState(state);
+    try {
+      await this.#restoreSheetContext(state);
+    } finally {
+      this.#pendingScrollRestore = null;
+    }
   }
 
   async #renderPreservingScroll(force = true) {
-    const state = this.#captureScrollRestoreState();
-    this.#activeTab = state.activeTab;
-    this.#pendingScrollRestore = state;
-
+    this.#queueCurrentSheetContextRestore();
     await this.render(force);
-    await this.#restorePendingScrollState();
   }
 
   #setActiveTab(tabId = "", { resetScroll = false } = {}) {
@@ -1229,7 +1248,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   /** @override */
   async _postRender(context, options) {
     if (typeof super._postRender === "function") await super._postRender(context, options);
-    await this.#restorePendingScrollState();
+    await this.#restorePendingSheetContext();
   }
 
   async #onExecuteStationAction(event) {
@@ -1243,12 +1262,12 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const phase = button?.dataset?.phase ?? "both";
     const preview = previewStationAction(actor, actionKey, { phase });
 
-    this.#rememberActiveTab();
-
     if (preview.blocked === true || preview.severity === "danger") {
       ui.notifications?.warn?.(`Arcflight blocked this station action: ${[...prepareTextArray(preview.messages), ...prepareTextArray(preview.warnings)].join(" ") || "preview did not allow it."}`);
       return;
     }
+
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await executeStationAction(actor, actionKey, { phase });
@@ -1265,7 +1284,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await clearStationActionHistory(actor);
@@ -1295,7 +1314,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     const hadLifecycleRecord = hasActiveInstallRecordForRemoval(actor, componentType, componentId);
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await remove(actor, componentId);
@@ -1366,7 +1385,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       return;
     }
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       const installStateBefore = JSON.stringify(getInstallState(actor));
@@ -1375,14 +1394,12 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
       if (installResult === actor && installStateAfter === installStateBefore) {
         ui.notifications?.warn?.(`Install skipped: ${item.name ?? "Arcflight component"} appears to already be installed on this ship.`);
-        await this.#renderPreservingScroll(false);
         return;
       }
 
       this.#selectedInstallItemId = "";
       if (isWeaponInstall) this.#selectedWeaponMountValue = "";
       ui.notifications?.info?.(`Installed ${item.name ?? "Arcflight component"}.`);
-      await this.#renderPreservingScroll(false);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
       console.warn("Arcflight | Controlled component install failed.", error);
@@ -1424,7 +1441,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       const actor = await getMutatingSheetShipActor(this);
       if (!actor) return;
 
-      this.#rememberActiveTab();
+      this.#queueCurrentSheetContextRestore();
 
       await game.arcflight.applyCleanExampleShipBuild(actor, selectedBuildKey);
       this.#selectedExampleBuildKey = selectedBuildKey;
@@ -1449,12 +1466,11 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const confirmed = await confirmClearShipBuild(actor);
     if (!confirmed) return;
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await clearShipBuild(actor);
       this.#selectedExampleBuildKey = "";
-      await this.#renderPreservingScroll(false);
       ui.notifications?.info?.("Arcflight ship build cleared.");
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not clear this ship build.");
@@ -1471,7 +1487,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await setHullPattern(actor, patternKey);
@@ -1490,7 +1506,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await setArkenginePattern(actor, patternKey);
@@ -1522,7 +1538,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       return;
     }
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     try {
       await install(actor, item);
@@ -1535,7 +1551,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onEnableArcflightShip(event) {
     event.preventDefault();
 
-    this.#rememberActiveTab();
+    this.#queueCurrentSheetContextRestore();
 
     const actor = await ensureArcflightShipEnabled(getSheetActor(this));
     if (!actor) return;
