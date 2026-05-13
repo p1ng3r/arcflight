@@ -1056,9 +1056,9 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   #getScrollableBody() {
     const sheetRoot = this.element ?? null;
 
-    return sheetRoot?.querySelector?.("[data-arcflight-sheet-scroll]")
+    return sheetRoot?.querySelector?.(".arcflight-sheet__body")
+      ?? sheetRoot?.querySelector?.("[data-arcflight-sheet-scroll]")
       ?? this.window?.content
-      ?? sheetRoot?.querySelector?.(".arcflight-sheet__body")
       ?? sheetRoot
       ?? null;
   }
@@ -1072,13 +1072,26 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     );
   }
 
-  #captureScrollRestoreState() {
+  #captureCurrentSheetContext() {
     const scrollableBody = this.#getScrollableBody();
 
     return {
       activeTab: this.#getCurrentActiveTab(),
-      scrollTop: Number.isFinite(scrollableBody?.scrollTop) ? scrollableBody.scrollTop : null
+      bodyScrollTop: Number.isFinite(scrollableBody?.scrollTop) ? scrollableBody.scrollTop : null,
+      bodyScrollLeft: Number.isFinite(scrollableBody?.scrollLeft) ? scrollableBody.scrollLeft : null
     };
+  }
+
+  #queueSheetContextRestore(state) {
+    if (!state) return null;
+
+    this.#activeTab = normalizeShipSheetTab(state.activeTab);
+    this.#pendingScrollRestore = state;
+    return state;
+  }
+
+  #clearQueuedSheetContextRestore(state) {
+    if (this.#pendingScrollRestore === state) this.#pendingScrollRestore = null;
   }
 
   async #afterRenderFrame() {
@@ -1096,7 +1109,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     await waitForFrame();
   }
 
-  async #restoreScrollState(state) {
+  async #restoreSheetContext(state) {
     if (!state) return;
 
     this.#setActiveTab(state.activeTab);
@@ -1104,8 +1117,9 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.#setActiveTab(state.activeTab);
 
     const scrollableBody = this.#getScrollableBody();
-    if (!scrollableBody || state.scrollTop === null) return;
-    scrollableBody.scrollTop = state.scrollTop;
+    if (!scrollableBody) return;
+    if (state.bodyScrollTop !== null) scrollableBody.scrollTop = state.bodyScrollTop;
+    if (state.bodyScrollLeft !== null) scrollableBody.scrollLeft = state.bodyScrollLeft;
   }
 
   async #restorePendingScrollState() {
@@ -1113,13 +1127,12 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     if (!state) return;
 
     this.#pendingScrollRestore = null;
-    await this.#restoreScrollState(state);
+    await this.#restoreSheetContext(state);
   }
 
-  async #renderPreservingScroll(force = true) {
-    const state = this.#captureScrollRestoreState();
-    this.#activeTab = state.activeTab;
-    this.#pendingScrollRestore = state;
+  async #renderPreservingScroll(force = true, capturedState = null) {
+    const state = capturedState ?? this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(state);
 
     await this.render(force);
     await this.#restorePendingScrollState();
@@ -1231,8 +1244,13 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onExecuteStationAction(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     const button = event.currentTarget;
     const actionKey = button?.dataset?.actionKey ?? "";
@@ -1241,35 +1259,42 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     if (preview.blocked === true || preview.severity === "danger") {
       ui.notifications?.warn?.(`Arcflight blocked this station action: ${[...prepareTextArray(preview.messages), ...prepareTextArray(preview.warnings)].join(" ") || "preview did not allow it."}`);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
       return;
     }
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await executeStationAction(actor, actionKey, { phase });
       ui.notifications?.info?.(`Recorded ${preview.actionName || "station action"}.`);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not record that station action.");
       console.warn("Arcflight | Station action execute failed.", error);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     }
   }
 
   async #onClearStationActionHistory(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await clearStationActionHistory(actor);
       ui.notifications?.info?.("Arcflight station action history cleared.");
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not clear station action history.");
       console.warn("Arcflight | Station action history clear failed.", error);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     }
   }
 
@@ -1277,8 +1302,13 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onRemoveInstalledComponent(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     const button = event.currentTarget;
     const componentType = button?.dataset?.componentType ?? "";
@@ -1288,19 +1318,21 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     if (typeof remove !== "function" || !componentId) {
       ui.notifications?.warn?.("Arcflight remove helper is not available for that installed component.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     const hadLifecycleRecord = hasActiveInstallRecordForRemoval(actor, componentType, componentId);
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await remove(actor, componentId);
       if (hadLifecycleRecord) {
         ui.notifications?.info?.(`Removed ${componentName}.`);
       } else {
         ui.notifications?.warn?.(`Removed ${componentName}, but no matching active install lifecycle record was found.`);
       }
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not remove that component from this ship.");
       console.warn("Arcflight | Controlled component removal failed.", error);
@@ -1327,8 +1359,13 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onInstallSelectedComponent(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     const componentType = normalizeInstallComponentType(this.#selectedInstallComponentType);
     const item = game?.items?.get?.(this.#selectedInstallItemId);
@@ -1344,42 +1381,45 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     if (!item || getComponentType(item) !== componentType) {
       ui.notifications?.warn?.("Select a matching Arcflight world item before installing.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     if (isWeaponInstall && !selectedWeaponMountOption) {
       ui.notifications?.warn?.("Select an available hull weapon mount before installing a weapon.");
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
       return;
     }
 
     const preview = prepareInstallPreviewReadout(actor, item, componentType, installOptions);
     if (preview?.blocked === true) {
       ui.notifications?.warn?.(`Arcflight blocked this install: ${preview.blockedReason || "validation rules did not allow it."}`);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
       return;
     }
 
     if (typeof install !== "function") {
       ui.notifications?.warn?.("Arcflight install helper is not available for this component type.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     try {
       const installStateBefore = JSON.stringify(getInstallState(actor));
+      this.#queueSheetContextRestore(scrollState);
       const installResult = await install(actor, item, installOptions);
       const installStateAfter = JSON.stringify(getInstallState(actor));
 
       if (installResult === actor && installStateAfter === installStateBefore) {
         ui.notifications?.warn?.(`Install skipped: ${item.name ?? "Arcflight component"} appears to already be installed on this ship.`);
-        await this.#renderPreservingScroll(true);
+        await this.#renderPreservingScroll(true, scrollState);
         return;
       }
 
       this.#selectedInstallItemId = "";
       if (isWeaponInstall) this.#selectedWeaponMountValue = "";
       ui.notifications?.info?.(`Installed ${item.name ?? "Arcflight component"}.`);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
       console.warn("Arcflight | Controlled component install failed.", error);
@@ -1404,26 +1444,34 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onApplyCleanExampleBuild(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const selectedBuildKey = this.element.querySelector?.("[data-arcflight-example-build]")?.value
       ?? this.#selectedExampleBuildKey;
     if (!selectedBuildKey) {
       ui.notifications?.warn?.("Select an Arcflight example build before applying a clean build.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     const applyCleanExampleShipBuild = game?.arcflight?.applyCleanExampleShipBuild;
     if (typeof applyCleanExampleShipBuild !== "function") {
       ui.notifications?.warn?.("Arcflight example ship build helpers are not available.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     try {
       const actor = await getMutatingSheetShipActor(this);
-      if (!actor) return;
+      if (!actor) {
+        this.#clearQueuedSheetContextRestore(scrollState);
+        return;
+      }
 
+      this.#queueSheetContextRestore(scrollState);
       await game.arcflight.applyCleanExampleShipBuild(actor, selectedBuildKey);
       this.#selectedExampleBuildKey = selectedBuildKey;
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not apply that example ship build.");
       console.warn("Arcflight | Example ship build apply failed.", error);
@@ -1433,22 +1481,32 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onClearBuild(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     const clearShipBuild = game?.arcflight?.clearShipBuild;
     if (typeof clearShipBuild !== "function") {
       ui.notifications?.warn?.("Arcflight clear build helper is not available.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     const confirmed = await confirmClearShipBuild(actor);
-    if (!confirmed) return;
+    if (!confirmed) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await clearShipBuild(actor);
       this.#selectedExampleBuildKey = "";
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
       ui.notifications?.info?.("Arcflight ship build cleared.");
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not clear this ship build.");
@@ -1459,15 +1517,24 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onChangeHullPattern(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const patternKey = event.currentTarget?.value ?? "";
-    if (!patternKey) return;
+    if (!patternKey) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await setHullPattern(actor, patternKey);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that hull pattern.");
       console.warn("Arcflight | Hull pattern selection failed.", error);
@@ -1477,15 +1544,24 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onChangeArkenginePattern(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const patternKey = event.currentTarget?.value ?? "";
-    if (!patternKey) return;
+    if (!patternKey) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await setArkenginePattern(actor, patternKey);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that arkengine pattern.");
       console.warn("Arcflight | Arkengine pattern selection failed.", error);
@@ -1500,8 +1576,13 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 
   async #onDropShipBuilder(event) {
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await getMutatingSheetShipActor(this);
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
@@ -1511,12 +1592,14 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     if (!install) {
       ui.notifications?.warn?.("Drop an Arcflight Hull, Arkengine, Arkengine Mod, Room, Ship Upgrade, or Crew Asset component onto this ship builder. Use the controlled Install Component UI for weapon mount installs.");
+      this.#clearQueuedSheetContextRestore(scrollState);
       return;
     }
 
     try {
+      this.#queueSheetContextRestore(scrollState);
       await install(actor, item);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(true, scrollState);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
       console.warn("Arcflight | Ship builder drop install failed.", error);
@@ -1526,10 +1609,15 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onEnableArcflightShip(event) {
     event.preventDefault();
 
+    const scrollState = this.#captureCurrentSheetContext();
+    this.#queueSheetContextRestore(scrollState);
     const actor = await ensureArcflightShipEnabled(getSheetActor(this));
-    if (!actor) return;
+    if (!actor) {
+      this.#clearQueuedSheetContextRestore(scrollState);
+      return;
+    }
 
-    await this.#renderPreservingScroll(true);
+    await this.#renderPreservingScroll(true, scrollState);
   }
 
   async _prepareContext(options) {
