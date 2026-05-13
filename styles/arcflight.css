@@ -570,3 +570,15 @@
 .arcflight-sheet__section[hidden] {
   display: none;
 }
+
+.arcflight-station-list__controls {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.arcflight-station-list__buttons {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
