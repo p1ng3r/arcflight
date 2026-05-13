@@ -1072,6 +1072,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     );
   }
 
+  #rememberActiveTab() {
+    this.#activeTab = this.#getCurrentActiveTab();
+  }
+
   #captureScrollRestoreState() {
     const scrollableBody = this.#getScrollableBody();
 
@@ -1239,20 +1243,19 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const phase = button?.dataset?.phase ?? "both";
     const preview = previewStationAction(actor, actionKey, { phase });
 
+    this.#rememberActiveTab();
+
     if (preview.blocked === true || preview.severity === "danger") {
       ui.notifications?.warn?.(`Arcflight blocked this station action: ${[...prepareTextArray(preview.messages), ...prepareTextArray(preview.warnings)].join(" ") || "preview did not allow it."}`);
-      await this.#renderPreservingScroll(true);
       return;
     }
 
     try {
       await executeStationAction(actor, actionKey, { phase });
       ui.notifications?.info?.(`Recorded ${preview.actionName || "station action"}.`);
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not record that station action.");
       console.warn("Arcflight | Station action execute failed.", error);
-      await this.#renderPreservingScroll(true);
     }
   }
 
@@ -1262,14 +1265,14 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
+    this.#rememberActiveTab();
+
     try {
       await clearStationActionHistory(actor);
       ui.notifications?.info?.("Arcflight station action history cleared.");
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not clear station action history.");
       console.warn("Arcflight | Station action history clear failed.", error);
-      await this.#renderPreservingScroll(true);
     }
   }
 
@@ -1292,6 +1295,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     }
 
     const hadLifecycleRecord = hasActiveInstallRecordForRemoval(actor, componentType, componentId);
+    this.#rememberActiveTab();
 
     try {
       await remove(actor, componentId);
@@ -1300,7 +1304,6 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       } else {
         ui.notifications?.warn?.(`Removed ${componentName}, but no matching active install lifecycle record was found.`);
       }
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not remove that component from this ship.");
       console.warn("Arcflight | Controlled component removal failed.", error);
@@ -1311,17 +1314,17 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.#selectedInstallComponentType = normalizeInstallComponentType(event.currentTarget?.value);
     this.#selectedInstallItemId = "";
     this.#selectedWeaponMountValue = "";
-    await this.#renderPreservingScroll(true);
+    await this.#renderPreservingScroll(false);
   }
 
   async #onChangeInstallItem(event) {
     this.#selectedInstallItemId = event.currentTarget?.value ?? "";
-    await this.#renderPreservingScroll(true);
+    await this.#renderPreservingScroll(false);
   }
 
   async #onChangeInstallWeaponMount(event) {
     this.#selectedWeaponMountValue = event.currentTarget?.value ?? "";
-    await this.#renderPreservingScroll(true);
+    await this.#renderPreservingScroll(false);
   }
 
   async #onInstallSelectedComponent(event) {
@@ -1349,14 +1352,12 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     if (isWeaponInstall && !selectedWeaponMountOption) {
       ui.notifications?.warn?.("Select an available hull weapon mount before installing a weapon.");
-      await this.#renderPreservingScroll(true);
       return;
     }
 
     const preview = prepareInstallPreviewReadout(actor, item, componentType, installOptions);
     if (preview?.blocked === true) {
       ui.notifications?.warn?.(`Arcflight blocked this install: ${preview.blockedReason || "validation rules did not allow it."}`);
-      await this.#renderPreservingScroll(true);
       return;
     }
 
@@ -1365,6 +1366,8 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       return;
     }
 
+    this.#rememberActiveTab();
+
     try {
       const installStateBefore = JSON.stringify(getInstallState(actor));
       const installResult = await install(actor, item, installOptions);
@@ -1372,14 +1375,14 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
       if (installResult === actor && installStateAfter === installStateBefore) {
         ui.notifications?.warn?.(`Install skipped: ${item.name ?? "Arcflight component"} appears to already be installed on this ship.`);
-        await this.#renderPreservingScroll(true);
+        await this.#renderPreservingScroll(false);
         return;
       }
 
       this.#selectedInstallItemId = "";
       if (isWeaponInstall) this.#selectedWeaponMountValue = "";
       ui.notifications?.info?.(`Installed ${item.name ?? "Arcflight component"}.`);
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(false);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
       console.warn("Arcflight | Controlled component install failed.", error);
@@ -1421,9 +1424,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       const actor = await getMutatingSheetShipActor(this);
       if (!actor) return;
 
+      this.#rememberActiveTab();
+
       await game.arcflight.applyCleanExampleShipBuild(actor, selectedBuildKey);
       this.#selectedExampleBuildKey = selectedBuildKey;
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not apply that example ship build.");
       console.warn("Arcflight | Example ship build apply failed.", error);
@@ -1445,10 +1449,12 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const confirmed = await confirmClearShipBuild(actor);
     if (!confirmed) return;
 
+    this.#rememberActiveTab();
+
     try {
       await clearShipBuild(actor);
       this.#selectedExampleBuildKey = "";
-      await this.#renderPreservingScroll(true);
+      await this.#renderPreservingScroll(false);
       ui.notifications?.info?.("Arcflight ship build cleared.");
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not clear this ship build.");
@@ -1465,9 +1471,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
+    this.#rememberActiveTab();
+
     try {
       await setHullPattern(actor, patternKey);
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that hull pattern.");
       console.warn("Arcflight | Hull pattern selection failed.", error);
@@ -1483,9 +1490,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     const actor = await getMutatingSheetShipActor(this);
     if (!actor) return;
 
+    this.#rememberActiveTab();
+
     try {
       await setArkenginePattern(actor, patternKey);
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not set that arkengine pattern.");
       console.warn("Arcflight | Arkengine pattern selection failed.", error);
@@ -1514,9 +1522,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       return;
     }
 
+    this.#rememberActiveTab();
+
     try {
       await install(actor, item);
-      await this.#renderPreservingScroll(true);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not install that component on this ship.");
       console.warn("Arcflight | Ship builder drop install failed.", error);
@@ -1526,10 +1535,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async #onEnableArcflightShip(event) {
     event.preventDefault();
 
+    this.#rememberActiveTab();
+
     const actor = await ensureArcflightShipEnabled(getSheetActor(this));
     if (!actor) return;
-
-    await this.#renderPreservingScroll(true);
   }
 
   async _prepareContext(options) {
