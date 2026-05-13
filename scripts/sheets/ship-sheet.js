@@ -9,6 +9,8 @@ import { clearStationActionHistory, executeStationAction, getStationActionState,
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   addCrewAsset,
+  assignStation,
+  clearStationAssignment,
   getArcflightShipData,
   installArkengine,
   installArkengineMod,
@@ -998,14 +1000,53 @@ const componentRemovers = Object.freeze({
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: removeCrewAsset
 });
 
-function prepareStationRows(stations = {}) {
+function getWorldActorCollectionEntries() {
+  const actors = game?.actors;
+  if (!actors) return [];
+  if (Array.isArray(actors)) return actors;
+  if (Array.isArray(actors.contents)) return actors.contents;
+  if (typeof actors.values === "function") return Array.from(actors.values());
+
+  const entries = [];
+  if (typeof actors.forEach === "function") actors.forEach((actor) => entries.push(actor));
+  return entries;
+}
+
+function isStationAssignableActor(actor) {
+  return isActorDocument(actor) && actor?.type === "character";
+}
+
+function prepareStationActorOptions(selectedActorId = "") {
+  return getWorldActorCollectionEntries()
+    .filter(isStationAssignableActor)
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+    .map((actor) => ({
+      id: actor.id ?? "",
+      uuid: actor.uuid ?? "",
+      name: actor.name ?? "Unnamed Actor",
+      selected: actor.id === selectedActorId
+    }));
+}
+
+function getAssignmentActorId(assignment = null) {
+  return assignment?.assigneeType === "actor" ? assignment.actorId ?? "" : "";
+}
+
+function prepareStationRows(stations = {}, selectedStationActorIds = {}) {
   return Object.values(stations.definitions ?? {}).map((station) => {
     const assignment = stations.assignments?.[station.key] ?? null;
+    const selectedActorId = selectedStationActorIds[station.key] ?? getAssignmentActorId(assignment);
+    const actorOptions = prepareStationActorOptions(selectedActorId);
+    const selectedActorOption = actorOptions.find((option) => option.selected) ?? null;
 
     return {
       ...station,
       assignment,
-      assigneeName: assignment?.name || "Unassigned"
+      assigneeName: assignment?.name || "Unassigned",
+      actorOptions,
+      selectedActorId: selectedActorOption?.id ?? "",
+      canAssign: Boolean(selectedActorOption),
+      hasAssignment: Boolean(assignment)
     };
   });
 }
@@ -1030,6 +1071,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   #selectedInstallComponentType = ARCFLIGHT_ITEM_TYPES.HULL;
   #selectedInstallItemId = "";
   #selectedWeaponMountValue = "";
+  #selectedStationActorIds = {};
 
   static DEFAULT_OPTIONS = {
     classes: ["arcflight", "sheet", "actor", "ship", "vehicle"],
@@ -1236,6 +1278,18 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       ?.forEach((button) => button.addEventListener("click", this.#onRemoveInstalledComponent.bind(this)));
 
     this.element
+      .querySelectorAll?.("[data-arcflight-station-actor-select]")
+      ?.forEach((select) => select.addEventListener("change", this.#onChangeStationActor.bind(this)));
+
+    this.element
+      .querySelectorAll?.("[data-arcflight-assign-station]")
+      ?.forEach((button) => button.addEventListener("click", this.#onAssignStation.bind(this)));
+
+    this.element
+      .querySelectorAll?.("[data-arcflight-clear-station]")
+      ?.forEach((button) => button.addEventListener("click", this.#onClearStation.bind(this)));
+
+    this.element
       .querySelectorAll?.("[data-arcflight-execute-station-action]")
       ?.forEach((button) => button.addEventListener("click", this.#onExecuteStationAction.bind(this)));
 
@@ -1249,6 +1303,70 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async _postRender(context, options) {
     if (typeof super._postRender === "function") await super._postRender(context, options);
     await this.#restorePendingSheetContext();
+  }
+
+  #onChangeStationActor(event) {
+    const stationKey = event.currentTarget?.dataset?.stationKey ?? "";
+    if (!stationKey) return;
+
+    this.#selectedStationActorIds[stationKey] = event.currentTarget?.value ?? "";
+
+    const stationElement = event.currentTarget?.closest?.("[data-arcflight-station-row]");
+    const assignButton = stationElement?.querySelector?.("[data-arcflight-assign-station]");
+    if (assignButton) assignButton.disabled = !this.#selectedStationActorIds[stationKey];
+  }
+
+  async #onAssignStation(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    const stationKey = event.currentTarget?.dataset?.stationKey ?? "";
+    const stationElement = event.currentTarget?.closest?.("[data-arcflight-station-row]");
+    const select = stationElement?.querySelector?.("[data-arcflight-station-actor-select]");
+    const actorId = select?.value ?? this.#selectedStationActorIds[stationKey] ?? "";
+    const assignee = game?.actors?.get?.(actorId);
+
+    if (!stationKey || !isStationAssignableActor(assignee)) {
+      ui.notifications?.warn?.("Select a PF2E character actor before assigning this station.");
+      return;
+    }
+
+    this.#selectedStationActorIds[stationKey] = actorId;
+    this.#queueCurrentSheetContextRestore();
+
+    try {
+      await assignStation(actor, stationKey, { id: assignee.id, uuid: assignee.uuid, name: assignee.name }, { assigneeType: "actor" });
+      ui.notifications?.info?.(`Assigned ${assignee.name ?? "actor"} to ${humanizeIdentifier(stationKey)}.`);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not assign that station.");
+      console.warn("Arcflight | Station assignment failed.", error);
+    }
+  }
+
+  async #onClearStation(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    const stationKey = event.currentTarget?.dataset?.stationKey ?? "";
+    if (!stationKey) {
+      ui.notifications?.warn?.("Arcflight station key was missing.");
+      return;
+    }
+
+    this.#selectedStationActorIds[stationKey] = "";
+    this.#queueCurrentSheetContextRestore();
+
+    try {
+      await clearStationAssignment(actor, stationKey);
+      ui.notifications?.info?.(`Cleared ${humanizeIdentifier(stationKey)} assignment.`);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not clear that station assignment.");
+      console.warn("Arcflight | Station assignment clear failed.", error);
+    }
   }
 
   async #onExecuteStationAction(event) {
@@ -1566,7 +1684,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.#selectedInstallItemId = installUi.selectedItemId;
     this.#selectedWeaponMountValue = installUi.selectedWeaponMountValue;
 
-    const stations = prepareStationRows(arcflight.system.stations);
+    const stations = prepareStationRows(arcflight.system.stations, this.#selectedStationActorIds);
     const stationActionUi = prepareStationActionUiState(actor, arcflight.system.stations);
     const exampleBuildOptions = prepareExampleBuildOptions(this.#selectedExampleBuildKey);
     const selectedExampleBuild = exampleBuildOptions.find((build) => build.selected) ?? null;
@@ -1589,4 +1707,4 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 }
 
-export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState, prepareInstallValidationReadout, prepareStationActionHistoryReadout, prepareStationActionUiState };
+export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState, prepareInstallValidationReadout, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows };

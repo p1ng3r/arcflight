@@ -58,7 +58,7 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helper
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
-import { prepareInstallUiState, prepareStationActionHistoryReadout, prepareStationActionUiState } from "../sheets/ship-sheet.js";
+import { prepareInstallUiState, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows } from "../sheets/ship-sheet.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -765,6 +765,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     occupiedWeaponPreviewSystem.base.hull.weaponMounts.fore[0].occupied = true;
     const occupiedWeaponMountPreview = previewInstallValidation(occupiedWeaponPreviewSystem, componentItems.weapon, { mountId: "fore-1", arc: "fore" });
     const weaponInstallUiState = prepareInstallUiState(actor, ARCFLIGHT_ITEM_TYPES.WEAPON, componentItems.weapon.id, "fore:fore-1");
+    const stationAssignmentRows = prepareStationRows(getArcflightShipData(actor).stations, { captain: "" });
     const roomBlockState = shouldBlockInstall(roomOverflowPreview);
     const modBlockState = shouldBlockInstall(modOverflowPreview);
     const uniqueCrewBlockState = shouldBlockInstall(uniqueCrewDuplicatePreview);
@@ -795,6 +796,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Install preview valid weapon mount validates mount", validWeaponPreview.unsupported === false && validWeaponPreview.messages.some((message) => message.includes("can be installed")) && !weaponMountValidationErrors.some((error) => validWeaponPreviewText.includes(error)), "supported weapon preview with valid mount messaging and no weapon mount errors", validWeaponPreview);
     check(result, "Ship sheet weapon install UI state builds mount options", weaponInstallUiState.isWeaponInstall === true && weaponInstallUiState.weaponMountOptions.some((option) => option.arc === "fore" && option.mountId === "fore-1") && weaponInstallUiState.selectedWeaponMountArc === "fore" && weaponInstallUiState.selectedWeaponMountId === "fore-1", "weapon UI mount options include selected fore mount", weaponInstallUiState.weaponMountOptions);
     check(result, "Ship sheet weapon install UI preview with selected mount does not crash", weaponInstallUiState.hasPreview === true && weaponInstallUiState.preview?.componentType === ARCFLIGHT_ITEM_TYPES.WEAPON && typeof weaponInstallUiState.preview.statusLabel === "string", "weapon UI preview ready", weaponInstallUiState.preview);
+    check(result, "Ship sheet station assignment UI state builds actor options", stationAssignmentRows.some((row) => row.key === "captain" && Array.isArray(row.actorOptions) && row.hasAssignment === false && row.canAssign === false), "safe station assignment row UI state", stationAssignmentRows.find((row) => row.key === "captain"));
     checkEqual(result, "Install preview invalid weapon arc is danger", "danger", invalidWeaponArcPreview.severity);
     checkEqual(result, "Install preview missing weapon mount is danger", "danger", missingWeaponMountPreview.severity);
     checkEqual(result, "Install preview incompatible weapon size is danger", "danger", incompatibleWeaponSizePreview.severity);
