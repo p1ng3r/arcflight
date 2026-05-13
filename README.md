@@ -14,7 +14,7 @@ For release management, promote framework-foundation work through the active dev
 
 ## Current Foundation Status
 
-The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and a minimal ship-sheet Station Actions UI for backend history recording. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute helpers, station-action sheet preview/history readouts, and actor resolution safeguards.
+The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and a tabbed ship-sheet UX foundation with best-effort scroll preservation for common action refreshes. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute helpers, station-action sheet preview/history readouts, and actor resolution safeguards.
 
 The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action effects automation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
 
@@ -28,7 +28,7 @@ Arcflight deliberately builds on normal PF2E documents instead of registering cu
 - **Source items are immutable during installation.** Installing a Hull, Arkengine, Arkengine Mod, Weapon, Room, Ship Upgrade, or Crew Asset copies the needed framework data onto the ship actor and keeps the source item unchanged.
 - **Runtime ownership belongs to the ship actor.** Installed references, normalized install-state records, copied Base data, recalculated Derived values, Current runtime values, station assignments, station-action history, and crew roster state are owned by the Arcflight-enabled PF2E vehicle actor.
 - **Stations are role data, not equipment items.** Station definitions and assignments live under `flags.arcflight.system.stations` on the ship.
-- **Sheets are optional and non-default.** Arcflight registers optional ApplicationV2 sheets for PF2E equipment and vehicle actors without replacing normal PF2E item or vehicle sheets.
+- **Sheets are optional and non-default.** Arcflight registers optional ApplicationV2 sheets for PF2E equipment and vehicle actors without replacing normal PF2E item or vehicle sheets. The Arcflight ship sheet uses lightweight tabs to organize readouts and keeps the selected tab through common sheet-triggered refreshes.
 
 This architecture keeps normal PF2E equipment and vehicles functional unless a user explicitly chooses Arcflight helpers or sheets.
 
