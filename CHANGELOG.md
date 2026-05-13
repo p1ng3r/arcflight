@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Station Assignment Sheet UI MVP
+
+- Added Crew & Stations tab controls for assigning PF2E character world Actors to each ship station and clearing existing station assignments.
+- Routed Assign and Clear buttons through the existing `assignStation(shipActor, stationKey, { id, uuid, name }, { assigneeType: "actor" })` and `clearStationAssignment(shipActor, stationKey)` helpers without mutating assigned actors or forcing renders after actor updates.
+- Preserved the active tab and scroll position around station assign/clear mutations so Station Actions previews update through normal Foundry auto-render.
+- Kept the assignment UI deliberately narrow: no skill rolling, AP/RAP spending, station-action execution, crew/faction systems, travel automation, or combat automation was added.
+
 ### Ship Sheet Tabs + Scroll UX MVP
 
 - Added top-level Arcflight ship sheet tabs for Overview, Components, Weapons, Crew & Stations, Station Actions, Validation & History, and Developer readouts.

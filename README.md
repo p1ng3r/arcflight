@@ -100,6 +100,12 @@ Arcflight now includes a data-only core station action registry under `data/stat
 
 The exposed source helpers are `game.arcflight.getCoreStationAction(key)`, `game.arcflight.getCoreStationActionKeys()`, `game.arcflight.getCoreStationActions()`, and `game.arcflight.getCoreStationActionsForStation(stationKey)`, with matching convenience aliases under `game.arcflight.devTools`. These helpers only read immutable source data. They do not execute actions, mutate actors, spend AP/RAP, create combat rounds, automate travel, fire weapons, or change existing station assignment behavior.
 
+## Station Assignment Sheet UI
+
+The optional Arcflight ship sheet **Crew & Stations** tab now includes a minimal assignment row for each station. Each row shows the current assignment (`Unassigned` or the assigned actor/crew name), a world Actor selector filtered to PF2E character actors, plus **Assign** and **Clear** buttons.
+
+**Assign** calls `assignStation(shipActor, stationKey, { id, uuid, name }, { assigneeType: "actor" })` with the selected character actor identity. **Clear** calls `clearStationAssignment(shipActor, stationKey)`. These controls mutate only the ship actor's station assignment data, preserve sheet tab/scroll context, and rely on normal Foundry actor-update rendering so Station Actions previews refresh after assignment changes. They do not mutate the assigned actor document, roll skills, spend AP/RAP, execute station actions, or add combat/travel automation.
+
 ## Station Action Sheet UI
 
 The optional Arcflight ship sheet now includes a compact **Station Actions** section. It groups registered core station actions by Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster. Each action displays its name, phase, AP/RAP placeholder cost, short description, preview status, and assigned-crew requirement/status.
