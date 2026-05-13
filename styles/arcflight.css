@@ -457,3 +457,86 @@
 .arcflight-installed-weapons__group li:last-child {
   margin-bottom: 0;
 }
+
+.arcflight-station-actions__groups,
+.arcflight-station-actions__actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-station-actions__groups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-station-actions__station,
+.arcflight-station-actions__action,
+.arcflight-station-actions__history {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-station-actions__station > header,
+.arcflight-station-actions__action > header,
+.arcflight-station-actions__history > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-station-actions__action {
+  border-left: 0.25rem solid var(--color-border-light-tertiary);
+}
+
+.arcflight-station-actions__action--ok {
+  border-left-color: var(--color-level-success, #2e7d32);
+}
+
+.arcflight-station-actions__action--warning {
+  border-left-color: var(--color-level-warning, #b26a00);
+}
+
+.arcflight-station-actions__action--danger {
+  border-left-color: var(--color-level-error, #b71c1c);
+}
+
+.arcflight-station-actions__action h4,
+.arcflight-station-actions__action p,
+.arcflight-station-actions__history h3,
+.arcflight-station-actions__history-list {
+  margin: 0;
+}
+
+.arcflight-station-actions__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.arcflight-station-actions__details dt {
+  font-weight: bold;
+}
+
+.arcflight-station-actions__details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-station-actions__history {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-station-actions__history-list {
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .arcflight-station-actions__groups {
+    grid-template-columns: 1fr;
+  }
+}
