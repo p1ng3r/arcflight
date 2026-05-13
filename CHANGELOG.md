@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Ship Sheet Tabs + Scroll UX MVP
+
+- Added top-level Arcflight ship sheet tabs for Overview, Components, Weapons, Crew & Stations, Station Actions, Validation & History, and Developer readouts.
+- Preserved the active tab in sheet instance state so install/remove/station-action refreshes return users to the same tab instead of resetting to Overview.
+- Added best-effort scroll capture and restore around sheet-triggered mutating refreshes while leaving underlying ship data, install/remove behavior, station-action behavior, and source/compendium items unchanged.
+
 ### Station Action UI MVP
 
 - Added a minimal Station Actions section to the Arcflight ship sheet, grouping registered actions by Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster.
