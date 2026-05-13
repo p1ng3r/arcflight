@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Station Action UI MVP
+
+- Added a minimal Station Actions section to the Arcflight ship sheet, grouping registered actions by Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster.
+- Each action now shows name, phase, AP/RAP placeholder cost, short description, preview status, and assigned-crew requirement/status.
+- Wired Execute/Record buttons through `executeStationAction(shipActor, actionKey, { phase })`, with blocked/danger previews disabled before execution and sheet refresh after recording.
+- Added a compact Station Action History readout with latest records plus Clear History using `clearStationActionHistory(shipActor)`.
+- Extended smoke coverage for sheet station-action UI state, grouped action lists, and empty/populated history readouts.
+- Kept the UI record-only: no AP/RAP spending, weapon firing, dice rolling, effect automation, combat rounds, or travel automation was added.
+
 ### Station Action Backend MVP
 
 - Added ship-owned station-action history under `flags.arcflight.system.stationActions.history` with safe empty-array defaults for Arcflight-enabled PF2E vehicle actors.

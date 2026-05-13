@@ -58,7 +58,7 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helper
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
-import { prepareInstallUiState } from "../sheets/ship-sheet.js";
+import { prepareInstallUiState, prepareStationActionHistoryReadout, prepareStationActionUiState } from "../sheets/ship-sheet.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -354,6 +354,10 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Station action preview blocks invalid key safely", invalidStationActionPreview.blocked === true && invalidStationActionPreview.ok === false && invalidStationActionPreview.severity === "danger", "blocked danger preview", invalidStationActionPreview);
     const unassignedStationActionPreview = previewStationAction(actor, "rally-crew", { phase: "combat" });
     check(result, "Station action preview blocks unassigned required station", unassignedStationActionPreview.blocked === true && unassignedStationActionPreview.warnings.length > 0, "blocked with warning", unassignedStationActionPreview);
+    const emptyStationActionUiState = prepareStationActionUiState(actor, getArcflightShipData(actor).stations);
+    check(result, "Ship sheet station action UI state builds", emptyStationActionUiState.hasGroups === true && emptyStationActionUiState.groups.length === 7, "seven station action groups", emptyStationActionUiState.groups.map((group) => group.key));
+    check(result, "Ship sheet station action grouped action list exists", emptyStationActionUiState.groups.some((group) => group.key === "captain" && group.actions.some((action) => action.key === "rally-crew")), "captain rally-crew action", emptyStationActionUiState.groups);
+    check(result, "Ship sheet station action empty history readout is safe", prepareStationActionHistoryReadout(actor).hasRecords === false, "empty history readout", prepareStationActionHistoryReadout(actor));
     await assignStation(actor, "captain", { id: "smoke-captain", uuid: "Actor.smoke-captain", name: "Smoke Captain" }, { assigneeType: "actor" });
     const assignedStationActionPreview = previewStationAction(actor, "rally-crew", { phase: "combat" });
     check(result, "Station action preview allows assigned required station", assignedStationActionPreview.ok === true && assignedStationActionPreview.blocked === false && assignedStationActionPreview.actionName === "Rally Crew", "ready preview", assignedStationActionPreview);
@@ -362,6 +366,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     const afterStationActionData = getArcflightShipData(actor);
     const stationActionStateAfterExecute = getStationActionState(actor);
     check(result, "Station action execute records history", stationActionStateAfterExecute.history.length === 1 && stationActionStateAfterExecute.history[0]?.id === stationActionRecord.id && stationActionRecord.actionKey === "rally-crew", "one history record", stationActionStateAfterExecute);
+    const populatedStationActionHistoryReadout = prepareStationActionHistoryReadout(actor);
+    check(result, "Ship sheet station action populated history readout is safe", populatedStationActionHistoryReadout.hasRecords === true && populatedStationActionHistoryReadout.records[0]?.actionName === "Rally Crew" && populatedStationActionHistoryReadout.records[0]?.assignedCrewName === "Smoke Captain", "populated history readout", populatedStationActionHistoryReadout);
     check(result, "Station action execute does not spend AP/RAP", beforeStationActionData.derived.baseAP === afterStationActionData.derived.baseAP && beforeStationActionData.derived.baseRAP === afterStationActionData.derived.baseRAP, "unchanged AP/RAP derived values", { before: { baseAP: beforeStationActionData.derived.baseAP, baseRAP: beforeStationActionData.derived.baseRAP }, after: { baseAP: afterStationActionData.derived.baseAP, baseRAP: afterStationActionData.derived.baseRAP } });
     await clearStationActionHistory(actor);
     checkEqual(result, "Station action history clears", 0, getStationActionState(actor).history.length);

@@ -8,15 +8,15 @@ Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
 ## Framework Foundation Milestone
 
-Arcflight is currently in its **Framework Foundation** milestone. The module provides a PF2E-safe data and sheet foundation for ships and components, plus a minimal station-action backend that validates and records action history without automating gameplay effects. Travel gameplay, combat gameplay, AP/RAP spending, hard burn resolution, overcharge resolution, event systems, drag/drop systems, automation buttons, crew/faction gameplay, and GM tooling remain future work.
+Arcflight is currently in its **Framework Foundation** milestone. The module provides a PF2E-safe data and sheet foundation for ships and components, plus a minimal station-action backend and ship-sheet UI that validate and record action history without automating gameplay effects. Travel gameplay, combat gameplay, AP/RAP spending, hard burn resolution, overcharge resolution, event systems, drag/drop systems, automation buttons, crew/faction gameplay, and GM tooling remain future work.
 
 For release management, promote framework-foundation work through the active development branch first, then merge to `main` only after Foundry smoke tests and normal PF2E sheet compatibility checks pass.
 
 ## Current Foundation Status
 
-The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and backend-only station-action history recording. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute helpers, and actor resolution safeguards.
+The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and a minimal ship-sheet Station Actions UI for backend history recording. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute helpers, station-action sheet preview/history readouts, and actor resolution safeguards.
 
-The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action UI, station-action effects automation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
+The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action effects automation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
 
 ## Current Architecture Overview
 
@@ -43,7 +43,7 @@ The current Framework Foundation includes these data-first systems:
 - **Room** — physical ship spaces, with core rooms, expansion room slot tracking, a 26-entry core content library, and infrastructure/occult/Lifeveil refit metadata.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking, a 28-entry core content library, and meaningful refit pressure across structural, command, Lifeveil, occult, engine, and military categories.
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
-- **Station framework** — ship-owned operating role definitions, assignments, and backend-only station-action preview/execution history helpers.
+- **Station framework** — ship-owned operating role definitions, assignments, backend station-action preview/execution history helpers, and a minimal ship-sheet Station Actions section that records history only.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
 - **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, backend weapon install/remove validation, station-action history recording, non-core component removal, lifecycle history, backfill dry runs, and actor resolution safeguards.
 
@@ -58,7 +58,7 @@ Terminology used in sheets and docs:
 - **Ship Upgrades** are permanent vessel improvements.
 - **Arkengine Mods** are engine-only tuning.
 - **Stations** are operating roles.
-- **Station Actions** are backend-recorded action declarations under `flags.arcflight.system.stationActions.history`; the MVP validates assignment/phase/readiness and records history without AP/RAP spend, dice, weapon fire, combat, travel, or effect automation.
+- **Station Actions** are action declarations previewed and recorded under `flags.arcflight.system.stationActions.history`; the ship-sheet MVP groups them by station, validates assignment/phase/readiness, and records history without AP/RAP spend, dice, weapon fire, combat, travel, or effect automation.
 - **Crew Assets** are named/support crew.
 
 ## Controlled Non-Core Component Removal
@@ -99,6 +99,14 @@ Arcflight also exposes install validation previews through `game.arcflight.previ
 Arcflight now includes a data-only core station action registry under `data/station-actions/core-station-actions.js` for future combat and travel pillars. Starter actions cover Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster stations with stable keys, station keys, phase labels (`combat`, `travel`, or `both`), `actionType: "stationAction"`, AP/RAP cost placeholders, required crew role text, descriptions, triggers, requirements, effects previews, tags, and future automation notes.
 
 The exposed source helpers are `game.arcflight.getCoreStationAction(key)`, `game.arcflight.getCoreStationActionKeys()`, `game.arcflight.getCoreStationActions()`, and `game.arcflight.getCoreStationActionsForStation(stationKey)`, with matching convenience aliases under `game.arcflight.devTools`. These helpers only read immutable source data. They do not execute actions, mutate actors, spend AP/RAP, create combat rounds, automate travel, fire weapons, or change existing station assignment behavior.
+
+## Station Action Sheet UI
+
+The optional Arcflight ship sheet now includes a compact **Station Actions** section. It groups registered core station actions by Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster. Each action displays its name, phase, AP/RAP placeholder cost, short description, preview status, and assigned-crew requirement/status.
+
+The **Execute/Record** button calls `executeStationAction(shipActor, actionKey, { phase })` after the same preview gate. Actions with blocked/danger previews are disabled and clearly marked. Recording an action only appends station-action history on the ship actor and refreshes the sheet; it does not spend AP/RAP, roll dice, fire weapons, create combat rounds, automate travel, or apply effects.
+
+A compact **Station Action History** readout shows the latest records with action name, station, phase, assigned crew, timestamp, and notes when present. **Clear History** calls `clearStationActionHistory(shipActor)` and refreshes the sheet.
 
 ## Weapon Data Foundation
 
@@ -315,10 +323,10 @@ The module then registers optional ApplicationV2 sheets for PF2E equipment and P
 
 Recommended follow-up systems after this foundation checkpoint are:
 
-1. Weapon UI for backend install/remove helpers.
-2. Station-action backend and UI.
-3. Travel/voyage system.
-4. Cargo and crew/faction expansion.
+1. Station-action filtering/notes ergonomics once the data architecture needs it.
+2. Travel/voyage system.
+3. Cargo and crew/faction expansion.
+4. Future combat pillar work after data contracts are stable.
 
 These should remain data-driven and should continue to avoid source/compendium mutation unless a future content-pack architecture explicitly requires it.
 

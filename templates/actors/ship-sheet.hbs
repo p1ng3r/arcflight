@@ -449,7 +449,7 @@
 
   <section class="arcflight-sheet__section">
     <h2>Stations</h2>
-    <p class="arcflight-sheet__hint">Stations are crew duty roles and operating positions stored on this ship actor. They are separate from Rooms, do not require Room installation, and do not add station actions or AP/RAP controls in this phase.</p>
+    <p class="arcflight-sheet__hint">Stations are crew duty roles and operating positions stored on this ship actor. They are separate from Rooms and do not require Room installation. Station actions below only preview and record history; they do not spend AP/RAP or automate gameplay effects.</p>
     <div class="arcflight-station-list">
       {{#each stations}}
         <article class="arcflight-station-list__station">
@@ -467,6 +467,74 @@
         </article>
       {{/each}}
     </div>
+  </section>
+
+
+  <section class="arcflight-sheet__section arcflight-station-actions">
+    <h2>Station Actions</h2>
+    <p class="arcflight-sheet__hint">Minimal record-only MVP. Actions are grouped by station, previewed through the station-action backend, and recorded to this ship actor. Execute/Record does not spend AP/RAP, roll dice, fire weapons, create combat rounds, automate travel, or apply effects.</p>
+    {{#if stationActionUi.hasGroups}}
+      <div class="arcflight-station-actions__groups">
+        {{#each stationActionUi.groups}}
+          <article class="arcflight-station-actions__station">
+            <header>
+              <h3>{{this.displayName}}</h3>
+              <span class="arcflight-station-list__assignment">{{this.assigneeName}}</span>
+            </header>
+            {{#if this.hasActions}}
+              <div class="arcflight-station-actions__actions">
+                {{#each this.actions}}
+                  <article class="arcflight-station-actions__action {{this.preview.cssClass}}">
+                    <header>
+                      <h4>{{this.name}}</h4>
+                      <span class="arcflight-install-ui__badge {{this.preview.badgeClass}}">{{this.preview.statusLabel}}</span>
+                    </header>
+                    <dl class="arcflight-station-actions__details">
+                      <dt>Phase</dt>
+                      <dd>{{this.phaseLabel}}</dd>
+                      <dt>Cost</dt>
+                      <dd>{{this.costLabel}}</dd>
+                      <dt>Crew</dt>
+                      <dd>{{this.assignedCrewStatus}}</dd>
+                      <dt>Preview</dt>
+                      <dd>{{this.preview.statusText}}</dd>
+                    </dl>
+                    <p>{{this.description}}</p>
+                    <button type="button" data-arcflight-execute-station-action data-action-key="{{this.key}}" data-phase="{{this.phase}}" {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Execute/Record</button>
+                  </article>
+                {{/each}}
+              </div>
+            {{else}}
+              <p class="arcflight-sheet__hint">No station actions are registered for this station in the current data set.</p>
+            {{/if}}
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No station actions are registered.</p>
+    {{/if}}
+
+    <section class="arcflight-station-actions__history">
+      <header>
+        <h3>Station Action History</h3>
+        <button type="button" data-arcflight-clear-station-action-history {{#unless stationActionUi.canClearHistory}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>Clear History</button>
+      </header>
+      {{#if stationActionUi.history.hasRecords}}
+        <ol class="arcflight-station-actions__history-list">
+          {{#each stationActionUi.history.records}}
+            <li>
+              <strong>{{this.actionName}}</strong> — {{this.stationLabel}} · {{this.phaseLabel}} · {{this.assignedCrewName}} · {{this.timestampLabel}}
+              {{#if this.hasNotes}}<br><span class="arcflight-sheet__hint">Notes: {{this.notes}}</span>{{/if}}
+            </li>
+          {{/each}}
+        </ol>
+        {{#if stationActionUi.history.hiddenRecords}}
+          <p class="arcflight-sheet__hint">{{stationActionUi.history.hiddenRecords}} older station action record(s) hidden.</p>
+        {{/if}}
+      {{else}}
+        <p class="arcflight-sheet__hint">No station actions recorded yet.</p>
+      {{/if}}
+    </section>
   </section>
 
   <section class="arcflight-sheet__section">
