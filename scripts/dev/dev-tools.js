@@ -17,7 +17,7 @@ import {
   previewStationActionOutcome
 } from "../../data/station-actions/core-station-actions.js";
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
-import { canSpendShipActionPoints, getShipActionEconomy, installWeapon, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints } from "../documents/ships.js";
+import { canSpendShipActionPoints, getShipActionEconomy, getShipTravelResources, getTravelStationKeys, installWeapon, isTravelStationKey, previewShipTravelResourceChange, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints, updateShipTravelResources } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "../helpers/station-action-execution.js";
 import {
@@ -196,6 +196,31 @@ export function createArcflightDevTools() {
      * Return normalized ship AP/RAP economy state.
      */
     getShipActionEconomy,
+
+    /**
+     * Return normalized live ship travel resources from current state.
+     */
+    getShipTravelResources,
+
+    /**
+     * Preview a ship travel resource delta without mutating the actor.
+     */
+    previewShipTravelResourceChange,
+
+    /**
+     * Apply ship travel resource deltas without spending AP/RAP.
+     */
+    updateShipTravelResources,
+
+    /**
+     * Return the core Travel Five station keys.
+     */
+    getTravelStationKeys,
+
+    /**
+     * Return whether a station key is one of the Travel Five.
+     */
+    isTravelStationKey,
 
     /**
      * Reset current AP/RAP to max AP/RAP.

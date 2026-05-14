@@ -1,4 +1,4 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { getComponentData, getComponentRefitPressure, getComponentTierMetadata, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
 import { getHullPattern } from "../../data/hulls/hull-patterns.js";
@@ -45,6 +45,7 @@ const emptyCurrentShipState = Object.freeze({
   lifeveil: 0,
   strain: 0,
   morale: 0,
+  supplies: 0,
   storedSpellRanks: 0
 });
 
@@ -1398,7 +1399,8 @@ function buildLegacyResources(systemData, current, derived) {
       value: current.strain,
       max: derived.strainCapacity ?? 0
     },
-    morale: current.morale
+    morale: current.morale,
+    supplies: current.supplies
   }, { inplace: false });
 }
 
@@ -1413,6 +1415,7 @@ function getCurrentFallback(systemData = {}, key) {
   if (key === "lifeveil") return systemData.resources?.lifeveil?.value;
   if (key === "strain") return systemData.resources?.strain?.value;
   if (key === "morale") return systemData.resources?.morale;
+  if (key === "supplies") return systemData.resources?.supplies;
 
   return undefined;
 }
@@ -1428,6 +1431,7 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
     lifeveil: getCurrentFallback(systemData, "lifeveil"),
     strain: getCurrentFallback(systemData, "strain"),
     morale: getCurrentFallback(systemData, "morale"),
+    supplies: getCurrentFallback(systemData, "supplies"),
     storedSpellRanks: getCurrentFallback(systemData, "storedSpellRanks")
   };
   const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), cloneData(fallbackCurrent), { inplace: false });
@@ -1436,12 +1440,14 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
   if (shouldInitializeRuntimeValue(current, "lifeveil", initialize.lifeveil)) current.lifeveil = derived.lifeveilCapacity ?? 0;
   if (shouldInitializeRuntimeValue(current, "strain", initialize.strain)) current.strain = 0;
   if (shouldInitializeRuntimeValue(current, "morale", initialize.morale)) current.morale = 0;
+  if (shouldInitializeRuntimeValue(current, "supplies", initialize.supplies)) current.supplies = 0;
   if (shouldInitializeRuntimeValue(current, "storedSpellRanks", initialize.storedSpellRanks)) current.storedSpellRanks = derived.maxStoredSpellRanks ?? 0;
 
   current.hull = numericValue(current.hull);
   current.lifeveil = numericValue(current.lifeveil);
   current.strain = numericValue(current.strain);
   current.morale = numericValue(current.morale);
+  current.supplies = numericValue(current.supplies);
   current.storedSpellRanks = numericValue(current.storedSpellRanks);
 
   return current;
@@ -1484,6 +1490,7 @@ export function getArcflightShipData(actor) {
   systemData.refitPressure = normalizeRefitPressure(systemData.refitPressure);
   systemData.refitFlags = foundry.utils.mergeObject(cloneData(emptyRefitFlagsState), cloneData(systemData.refitFlags ?? {}), { inplace: false });
   systemData.installState = normalizeBasicInstallState(systemData.installState);
+  systemData.current = buildCurrentShipState(systemData, systemData.derived ?? emptyDerivedShipState);
   systemData.actionEconomy = normalizeActionEconomyState(systemData);
 
   return systemData;
@@ -1497,6 +1504,7 @@ export function getDefaultArcflightShipFlags(data = {}) {
   };
   system.crew = getDefaultCrewState(system.crew);
   system.installState = normalizeBasicInstallState(system.installState);
+  system.current = buildCurrentShipState(system, system.derived ?? emptyDerivedShipState);
   system.actionEconomy = normalizeActionEconomyState(system);
 
   return {
@@ -1551,6 +1559,123 @@ function assertArcflightShipActor(shipActor, helperName) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error(`Arcflight | ${helperName} requires an Arcflight-enabled PF2E vehicle actor.`);
   }
+}
+
+const TRAVEL_RESOURCE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOURCES));
+const TRAVEL_STATION_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_STATIONS));
+const MIN_ZERO_TRAVEL_RESOURCES = Object.freeze([
+  ARCFLIGHT_TRAVEL_RESOURCES.HULL,
+  ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL,
+  ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES,
+  ARCFLIGHT_TRAVEL_RESOURCES.MORALE,
+  ARCFLIGHT_TRAVEL_RESOURCES.STORED_SPELL_RANKS
+]);
+
+function getTravelResourceMaxima(systemData = {}) {
+  return {
+    maxHull: nonNegativeNumericValue(systemData.derived?.hullIntegrity, nonNegativeNumericValue(systemData.resources?.hull?.max)),
+    maxLifeveil: nonNegativeNumericValue(systemData.derived?.lifeveilCapacity, nonNegativeNumericValue(systemData.resources?.lifeveil?.max)),
+    maxStrain: nonNegativeNumericValue(systemData.derived?.strainCapacity, nonNegativeNumericValue(systemData.resources?.strain?.max))
+  };
+}
+
+function getTravelResourceValue(systemData = {}, key) {
+  const fallback = getCurrentFallback(systemData, key);
+  return numericValue(fallback);
+}
+
+export function getShipTravelResources(shipActor) {
+  assertArcflightShipActor(shipActor, "getShipTravelResources");
+
+  const systemData = getArcflightShipData(shipActor);
+  const maxima = getTravelResourceMaxima(systemData);
+
+  return {
+    hull: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.HULL),
+    lifeveil: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL),
+    strain: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.STRAIN),
+    morale: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.MORALE),
+    supplies: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES),
+    storedSpellRanks: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.STORED_SPELL_RANKS),
+    ...maxima
+  };
+}
+
+function clampTravelResource(key, requestedValue, before = {}) {
+  let value = numericValue(requestedValue);
+  const warnings = [];
+  const unclamped = value;
+
+  if (MIN_ZERO_TRAVEL_RESOURCES.includes(key) || key === ARCFLIGHT_TRAVEL_RESOURCES.STRAIN) {
+    value = Math.max(0, value);
+  }
+
+  if (key === ARCFLIGHT_TRAVEL_RESOURCES.HULL && before.maxHull > 0) value = Math.min(value, before.maxHull);
+  if (key === ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL && before.maxLifeveil > 0) value = Math.min(value, before.maxLifeveil);
+  if (key === ARCFLIGHT_TRAVEL_RESOURCES.STRAIN && before.maxStrain > 0) value = Math.min(value, before.maxStrain);
+
+  if (value !== unclamped) warnings.push(`${key} was clamped from ${unclamped} to ${value}.`);
+  return { value, warnings };
+}
+
+export function previewShipTravelResourceChange(shipActor, changes = {}) {
+  assertArcflightShipActor(shipActor, "previewShipTravelResourceChange");
+
+  const before = getShipTravelResources(shipActor);
+  const after = cloneData(before);
+  const normalizedChanges = {};
+  const warnings = [];
+
+  for (const key of TRAVEL_RESOURCE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(changes ?? {}, key)) continue;
+
+    const delta = numericValue(changes[key]);
+    normalizedChanges[key] = delta;
+    const clamped = clampTravelResource(key, before[key] + delta, before);
+    after[key] = clamped.value;
+    warnings.push(...clamped.warnings);
+  }
+
+  return {
+    ok: warnings.length === 0,
+    before,
+    after,
+    changes: normalizedChanges,
+    warnings,
+    messages: warnings.length > 0 ? cloneData(warnings) : []
+  };
+}
+
+export async function updateShipTravelResources(shipActor, changes = {}, options = {}) {
+  assertArcflightShipActor(shipActor, "updateShipTravelResources");
+
+  const preview = previewShipTravelResourceChange(shipActor, changes);
+  const mirrorResources = options.mirrorResources !== false;
+  const updateData = {};
+
+  for (const key of TRAVEL_RESOURCE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(preview.changes, key)) continue;
+    updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.current.${key}`] = preview.after[key];
+  }
+
+  if (mirrorResources) {
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.HULL)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.hull.value`] = preview.after.hull;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.lifeveil.value`] = preview.after.lifeveil;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.STRAIN)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.strain.value`] = preview.after.strain;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.supplies`] = preview.after.supplies;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.MORALE)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.morale`] = preview.after.morale;
+  }
+
+  if (Object.keys(updateData).length > 0) await shipActor.update(updateData);
+  return getShipTravelResources(shipActor);
+}
+
+export function getTravelStationKeys() {
+  return [...TRAVEL_STATION_KEYS];
+}
+
+export function isTravelStationKey(stationKey) {
+  return TRAVEL_STATION_KEYS.includes(stationKey);
 }
 
 function buildCleanCurrentShipState(systemData = {}, preserveCurrentResources = false) {
