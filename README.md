@@ -8,13 +8,13 @@ Arcflight targets Foundry VTT v13 first, with future v14 compatibility in mind.
 
 ## Framework Foundation Milestone
 
-Arcflight is currently in its **Framework Foundation** milestone. The module provides a PF2E-safe data and sheet foundation for ships and components, plus a minimal station-action backend and ship-sheet UI that validate and record action history without automating gameplay effects. Travel gameplay, combat gameplay, AP/RAP spending, hard burn resolution, overcharge resolution, event systems, drag/drop systems, automation buttons, crew/faction gameplay, and GM tooling remain future work.
+Arcflight is currently in its **Framework Foundation** milestone. The module provides a PF2E-safe data and sheet foundation for ships and components, plus a minimal station-action backend and ship-sheet UI that validate actions, allow assigned PF2E character actors to make guarded station-action skill/statistic rolls, and record action history without automating gameplay effects. Travel gameplay, combat gameplay, AP/RAP spending, hard burn resolution, overcharge resolution, event systems, drag/drop systems, automation buttons, crew/faction gameplay, and GM tooling remain future work.
 
 For release management, promote framework-foundation work through the active development branch first, then merge to `main` only after Foundry smoke tests and normal PF2E sheet compatibility checks pass.
 
 ## Current Foundation Status
 
-The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and a tabbed ship-sheet UX foundation with best-effort scroll preservation for common action refreshes. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute helpers, station-action sheet preview/history readouts, and actor resolution safeguards.
+The current foundation checkpoint is stable for data-driven ship/component setup, controlled helper installs including weapon mount installs, minimal controlled non-core component removal, and a tabbed ship-sheet UX foundation with best-effort scroll preservation for common action refreshes. It includes core component data, tier/refit pressure summaries, validation previews, persistent install-state records, lifecycle history for hull and arkengine replacement plus non-core removal, dry-run-first backfill tooling, controlled Install Component sheet UI, install-rule enforcement for supported blocking cases, station-action preview/execute/roll helpers, station-action sheet preview/roll/history readouts, and actor resolution safeguards.
 
 The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action effects automation, weapon firing, combat rounds, travel/voyage resolution, AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
 
@@ -43,7 +43,7 @@ The current Framework Foundation includes these data-first systems:
 - **Room** — physical ship spaces, with core rooms, expansion room slot tracking, a 26-entry core content library, and infrastructure/occult/Lifeveil refit metadata.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking, a 28-entry core content library, and meaningful refit pressure across structural, command, Lifeveil, occult, engine, and military categories.
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
-- **Station framework** — ship-owned operating role definitions, assignments, backend station-action preview/execution history helpers, and a minimal ship-sheet Station Actions section that records history only.
+- **Station framework** — ship-owned operating role definitions, assignments, backend station-action preview/execution/roll history helpers, and a minimal ship-sheet Station Actions section that records action and skill-roll history only.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, and `current` state on Arcflight-enabled PF2E vehicle actors.
 - **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, backend weapon install/remove validation, station-action history recording, non-core component removal, lifecycle history, backfill dry runs, and actor resolution safeguards.
 
@@ -58,7 +58,7 @@ Terminology used in sheets and docs:
 - **Ship Upgrades** are permanent vessel improvements.
 - **Arkengine Mods** are engine-only tuning.
 - **Stations** are operating roles.
-- **Station Actions** are action declarations previewed and recorded under `flags.arcflight.system.stationActions.history`; the ship-sheet MVP groups them by station, validates assignment/phase/readiness, and records history without AP/RAP spend, dice, weapon fire, combat, travel, or effect automation.
+- **Station Actions** are action declarations previewed and recorded under `flags.arcflight.system.stationActions.history`; the ship-sheet MVP groups them by station, validates assignment/phase/readiness, offers data-defined PF2E skill/statistic roll options for assigned character actors, and records history without AP/RAP spend, weapon fire, combat, travel, or effect automation.
 - **Crew Assets** are named/support crew.
 
 ## Controlled Non-Core Component Removal
@@ -104,15 +104,17 @@ The exposed source helpers are `game.arcflight.getCoreStationAction(key)`, `game
 
 The optional Arcflight ship sheet **Crew & Stations** tab now includes a minimal assignment row for each station. Each row shows the current assignment (`Unassigned` or the assigned actor/crew name), a world Actor selector filtered to PF2E character actors, plus **Assign** and **Clear** buttons.
 
-**Assign** calls `assignStation(shipActor, stationKey, { id, uuid, name }, { assigneeType: "actor" })` with the selected character actor identity. **Clear** calls `clearStationAssignment(shipActor, stationKey)`. These controls mutate only the ship actor's station assignment data, preserve sheet tab/scroll context, and rely on normal Foundry actor-update rendering so Station Actions previews refresh after assignment changes. They do not mutate the assigned actor document, roll skills, spend AP/RAP, execute station actions, or add combat/travel automation.
+**Assign** calls `assignStation(shipActor, stationKey, { id, uuid, name }, { assigneeType: "actor" })` with the selected character actor identity. **Clear** calls `clearStationAssignment(shipActor, stationKey)`. These controls mutate only the ship actor's station assignment data, preserve sheet tab/scroll context, and rely on normal Foundry actor-update rendering so Station Actions previews refresh after assignment changes. They do not mutate the assigned actor document, spend AP/RAP, execute station actions automatically, or add combat/travel automation.
 
 ## Station Action Sheet UI
 
-The optional Arcflight ship sheet now includes a compact **Station Actions** section. It groups registered core station actions by Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster. Each action displays its name, phase, AP/RAP placeholder cost, short description, preview status, and assigned-crew requirement/status.
+The optional Arcflight ship sheet now includes a compact **Station Actions** section. It groups registered core station actions by Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster. Each action displays its name, phase, AP/RAP placeholder cost, short description, preview status, assigned-crew requirement/status, and a data-defined roll-option selector such as Diplomacy, Piloting Lore, Perception, or Crafting.
 
-The **Execute/Record** button calls `executeStationAction(shipActor, actionKey, { phase })` after the same preview gate. Actions with blocked/danger previews are disabled and clearly marked. Recording an action only appends station-action history on the ship actor and refreshes the sheet; it does not spend AP/RAP, roll dice, fire weapons, create combat rounds, automate travel, or apply effects.
+The **Roll** button calls `rollStationAction(shipActor, actionKey, { phase, rollOptionKey })`, which first previews the assigned station actor and requested roll option, then attempts a guarded PF2E statistic roll through the assigned actor when that statistic is available. The helper records `recordType: "roll"` history metadata including action key, station key, assigned actor, roll option, statistic key, roll status, and total/result when available. If the PF2E statistic or roll API cannot be found, Arcflight warns and records safe metadata instead of crashing or mutating the assigned actor.
 
-A compact **Station Action History** readout shows the latest records with action name, station, phase, assigned crew, timestamp, and notes when present. **Clear History** calls `clearStationActionHistory(shipActor)` and refreshes the sheet.
+The **Execute/Record** button calls `executeStationAction(shipActor, actionKey, { phase })` after the same preview gate. Actions with blocked/danger previews are disabled and clearly marked. Recording an action appends `recordType: "record"` station-action history on the ship actor and refreshes the sheet; it does not spend AP/RAP, roll dice, fire weapons, create combat rounds, automate travel, or apply effects.
+
+A compact **Station Action History** readout shows the latest records with action name, station, phase, assigned crew, timestamp, notes when present, and roll statistic/total/result details for `recordType: "roll"` entries. **Clear History** calls `clearStationActionHistory(shipActor)` and refreshes the sheet.
 
 ## Weapon Data Foundation
 

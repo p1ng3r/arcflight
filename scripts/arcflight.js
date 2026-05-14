@@ -115,7 +115,7 @@ import {
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
-import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "./helpers/station-action-execution.js";
+import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "./helpers/station-action-execution.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -205,6 +205,9 @@ Hooks.once("init", () => {
     getCoreStationActionsForStation,
     getStationActionState,
     previewStationAction,
+    getStationActionRollOptions,
+    previewStationActionRoll,
+    rollStationAction,
     executeStationAction,
     clearStationActionHistory,
     CORE_HULL_PLATFORM_KEYS,
@@ -397,6 +400,9 @@ export {
   getCoreStationActionsForStation,
   getStationActionState,
   previewStationAction,
+  getStationActionRollOptions,
+  previewStationActionRoll,
+  rollStationAction,
   executeStationAction,
   clearStationActionHistory,
   CORE_HULLS,
@@ -506,5 +512,8 @@ export {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   arcflightShipDefaults,
   getArcflightShipData,
-  getDefaultArcflightShipData
+  getDefaultArcflightShipData,
+  getStationActionRollOptions,
+  previewStationActionRoll,
+  rollStationAction
 };

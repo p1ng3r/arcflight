@@ -17,7 +17,7 @@ import {
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { installWeapon, removeInstalledWeapon } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
-import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
+import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "../helpers/station-action-execution.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -114,6 +114,21 @@ export function createArcflightDevTools() {
      * Preview whether a station action can be recorded.
      */
     previewStationAction,
+
+    /**
+     * Return roll options for a station action.
+     */
+    getStationActionRollOptions,
+
+    /**
+     * Preview the assigned PF2E actor/statistic for a station action roll.
+     */
+    previewStationActionRoll,
+
+    /**
+     * Best-effort PF2E statistic roll for an assigned station actor.
+     */
+    rollStationAction,
 
     /**
      * Validate and append a station action history record without applying gameplay effects.

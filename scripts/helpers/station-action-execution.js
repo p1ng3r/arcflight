@@ -1,10 +1,22 @@
-import { getCoreStationAction } from "../../data/station-actions/core-station-actions.js";
+import { getCoreStationAction, getStationActionRollOptions } from "../../data/station-actions/core-station-actions.js";
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
 
 const VALID_STATION_ACTION_PHASES = Object.freeze(["combat", "travel", "both"]);
 const BLOCKED_SEVERITIES = Object.freeze(["danger"]);
+const PF2E_SKILL_ABBREVIATIONS = Object.freeze({
+  acrobatics: "acr",
+  arcana: "arc",
+  athletics: "ath",
+  crafting: "cra",
+  diplomacy: "dip",
+  intimidation: "itm",
+  occultism: "occ",
+  religion: "rel",
+  society: "soc",
+  survival: "sur"
+});
 
 function cloneData(data) {
   return globalThis.foundry?.utils?.deepClone?.(data) ?? JSON.parse(JSON.stringify(data ?? null));
@@ -82,6 +94,91 @@ function buildPreview({ actionKey, options, action, messages, warnings, blocked 
   };
 }
 
+function normalizeRollOption(action, requestedOptionKey = "") {
+  const rollOptions = getStationActionRollOptions(action?.key);
+  if (rollOptions.length === 0) return null;
+
+  const optionKey = String(requestedOptionKey || rollOptions[0]?.key || "");
+  return rollOptions.find((option) => option.key === optionKey || option.statisticKey === optionKey) ?? null;
+}
+
+async function resolveAssignedActor(assignment = {}) {
+  if (assignment?.actorUuid && typeof globalThis.fromUuid === "function") {
+    try {
+      const actor = await globalThis.fromUuid(assignment.actorUuid);
+      if (actor) return actor;
+    } catch (error) {
+      console.warn("Arcflight | Could not resolve assigned station actor UUID.", error);
+    }
+  }
+
+  if (assignment?.actorId) return globalThis.game?.actors?.get?.(assignment.actorId) ?? null;
+  return null;
+}
+
+function candidateStatisticKeys(statisticKey = "") {
+  const key = String(statisticKey ?? "");
+  const skillAbbreviation = PF2E_SKILL_ABBREVIATIONS[key];
+  const loreBaseKey = key.endsWith("-lore") ? key.replace(/-lore$/, "") : "";
+
+  return Array.from(new Set([
+    key,
+    skillAbbreviation,
+    loreBaseKey,
+    key.replace(/-/g, ""),
+    key.replace(/-/g, "_")
+  ].filter(Boolean)));
+}
+
+function getMapLikeValue(collection, key) {
+  if (!collection) return null;
+  if (typeof collection.get === "function") return collection.get(key) ?? null;
+  return collection[key] ?? null;
+}
+
+function resolveActorStatistic(actor, statisticKey = "") {
+  for (const key of candidateStatisticKeys(statisticKey)) {
+    const statistic = getMapLikeValue(actor?.statistics, key)
+      ?? getMapLikeValue(actor?.skills, key)
+      ?? getMapLikeValue(actor?.system?.skills, key)
+      ?? getMapLikeValue(actor?.system?.statistics, key)
+      ?? (key === "perception" ? actor?.perception ?? actor?.system?.perception : null)
+      ?? (key === "reflex" ? getMapLikeValue(actor?.saves, "reflex") ?? getMapLikeValue(actor?.system?.saves, "reflex") : null);
+
+    if (statistic) return { statistic, resolvedKey: key };
+  }
+
+  return { statistic: null, resolvedKey: statisticKey };
+}
+
+async function rollStatistic(actor, statistic, preview, options = {}) {
+  const rollOptions = {
+    event: options.event,
+    skipDialog: options.skipDialog === true,
+    createMessage: options.createMessage !== false,
+    dc: options.dc,
+    extraRollOptions: Array.isArray(options.extraRollOptions) ? options.extraRollOptions : [],
+    callback: options.callback
+  };
+
+  if (typeof statistic?.roll === "function") return statistic.roll(rollOptions);
+  if (typeof statistic?.check?.roll === "function") return statistic.check.roll(rollOptions);
+  if (typeof actor?.rollStatistic === "function") return actor.rollStatistic(preview.statisticKey, rollOptions);
+  if (typeof actor?.rollSkill === "function") return actor.rollSkill(preview.statisticKey, rollOptions);
+
+  return null;
+}
+
+function getRollTotal(rollResult) {
+  return Number.isFinite(Number(rollResult?.total)) ? Number(rollResult.total)
+    : Number.isFinite(Number(rollResult?.roll?.total)) ? Number(rollResult.roll.total)
+      : null;
+}
+
+function getRollDegree(rollResult) {
+  return rollResult?.degreeOfSuccess ?? rollResult?.degree ?? rollResult?.outcome ?? rollResult?.result ?? null;
+}
+
 export function getStationActionState(shipActor) {
   const systemData = isArcflightVehicle(shipActor) ? getArcflightShipData(shipActor) : {};
   const stationActions = systemData.stationActions ?? {};
@@ -96,6 +193,8 @@ export function getStationActionState(shipActor) {
     count: history.length
   };
 }
+
+export { getStationActionRollOptions };
 
 export function previewStationAction(shipActor, actionKey, options = {}) {
   const messages = [];
@@ -134,7 +233,7 @@ export function previewStationAction(shipActor, actionKey, options = {}) {
   const assignment = action ? systemData.stations?.assignments?.[action.stationKey] ?? null : null;
   if (action?.requiredCrewRole && !hasAssignedCrew(assignment)) {
     blocked = true;
-    warnings.push(`${action.name} requires an assigned ${action.requiredCrewRole} at the ${station?.name ?? action.stationKey} station.`);
+    warnings.push(`${action.name} requires an assigned ${action.requiredCrewRole} at the ${station?.displayName ?? station?.name ?? action.stationKey} station.`);
   }
 
   if (!blocked) messages.push(`${action.name} is ready to record. No AP/RAP, dice, combat, travel, or effects automation will be applied.`);
@@ -147,6 +246,68 @@ export function previewStationAction(shipActor, actionKey, options = {}) {
     warnings,
     blocked
   });
+}
+
+export async function previewStationActionRoll(shipActor, actionKey, options = {}) {
+  const actionPreview = previewStationAction(shipActor, actionKey, options);
+  const messages = [...actionPreview.messages];
+  const warnings = [...actionPreview.warnings];
+  let blocked = actionPreview.blocked === true;
+  const action = getCoreStationAction(actionKey);
+  const station = action ? getStation(action.stationKey) : null;
+  const rollOptions = getStationActionRollOptions(actionKey);
+  const rollOption = normalizeRollOption(action, options.rollOptionKey ?? options.rollOption ?? options.statisticKey);
+  const assignment = action ? getArcflightShipData(shipActor).stations?.assignments?.[action.stationKey] ?? null : null;
+
+  if (action && rollOptions.length === 0) {
+    blocked = true;
+    warnings.push(`${action.name} does not define roll options.`);
+  }
+
+  if (action && rollOptions.length > 0 && !rollOption) {
+    blocked = true;
+    warnings.push(`Invalid roll option for ${action.name}: ${options.rollOptionKey ?? options.rollOption ?? options.statisticKey ?? ""}`.trim());
+  }
+
+  const assignedActor = !blocked || hasAssignedCrew(assignment) ? await resolveAssignedActor(assignment) : null;
+  if (action && hasAssignedCrew(assignment) && !assignedActor) {
+    blocked = true;
+    warnings.push(`Assigned ${station?.displayName ?? station?.name ?? action.stationKey} actor could not be resolved for ${action.name}.`);
+  }
+
+  const statisticKey = rollOption?.statisticKey ?? rollOption?.key ?? "";
+  const { statistic, resolvedKey } = assignedActor && statisticKey ? resolveActorStatistic(assignedActor, statisticKey) : { statistic: null, resolvedKey: statisticKey };
+  const canRollStatistic = Boolean(statistic);
+  if (!blocked && !canRollStatistic) warnings.push(`${assignedActor?.name ?? "Assigned actor"} does not expose a PF2E statistic for ${rollOption?.label ?? statisticKey}.`);
+  if (!blocked) messages.push(`${action?.name ?? "Station action"} roll is ready. No AP/RAP or gameplay effects will be automated.`);
+
+  return {
+    ...actionPreview,
+    ok: !blocked,
+    blocked,
+    severity: blocked ? "danger" : (warnings.length > 0 ? "warning" : "ok"),
+    messages,
+    warnings,
+    station: station?.displayName ?? station?.name ?? actionPreview.stationKey,
+    action: actionPreview.actionName,
+    actorId: assignedActor?.id ?? "",
+    actorUuid: assignedActor?.uuid ?? assignment?.actorUuid ?? "",
+    actorName: assignedActor?.name ?? getAssignedCrewName(assignment),
+    assignedActorName: assignedActor?.name ?? getAssignedCrewName(assignment),
+    assignment: assignment ? cloneData(assignment) : null,
+    rollOption: rollOption ? cloneData(rollOption) : null,
+    rollOptionKey: rollOption?.key ?? "",
+    rollOptionLabel: rollOption?.label ?? "",
+    statisticKey,
+    resolvedStatisticKey: resolvedKey,
+    readiness: {
+      canRoll: !blocked && canRollStatistic,
+      canRollStatistic,
+      actorResolved: Boolean(assignedActor),
+      rollOptionValid: Boolean(rollOption),
+      assigned: hasAssignedCrew(assignment)
+    }
+  };
 }
 
 export async function executeStationAction(shipActor, actionKey, options = {}) {
@@ -163,6 +324,7 @@ export async function executeStationAction(shipActor, actionKey, options = {}) {
   const history = getStationActionState(shipActor).history;
   const record = {
     id: createStationActionId(actionKey),
+    recordType: "record",
     actionKey: preview.actionKey,
     actionName: preview.actionName,
     stationKey: preview.stationKey,
@@ -174,6 +336,73 @@ export async function executeStationAction(shipActor, actionKey, options = {}) {
     assignedCrewName: getAssignedCrewName(getArcflightShipData(shipActor).stations?.assignments?.[preview.stationKey] ?? null),
     apCost: preview.apCost,
     rapCost: preview.rapCost,
+    notes: options.notes ?? ""
+  };
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.stationActions.history`]: [...history, record]
+  });
+
+  return record;
+}
+
+export async function rollStationAction(shipActor, actionKey, options = {}) {
+  const preview = await previewStationActionRoll(shipActor, actionKey, options);
+
+  if (preview.blocked || BLOCKED_SEVERITIES.includes(preview.severity)) {
+    throw new Error(`Arcflight | Station action roll blocked: ${[...preview.messages, ...preview.warnings].join(" ")}`.trim());
+  }
+
+  if (typeof shipActor?.update !== "function") {
+    throw new Error("Arcflight | rollStationAction requires an updatable Arcflight ship actor.");
+  }
+
+  const assignedActor = await resolveAssignedActor(preview.assignment);
+  const { statistic } = resolveActorStatistic(assignedActor, preview.statisticKey);
+  let rollResult = null;
+  let rollStatus = "rolled";
+
+  if (statistic) {
+    try {
+      rollResult = await rollStatistic(assignedActor, statistic, preview, options);
+      if (!rollResult) rollStatus = "roll-api-unavailable";
+    } catch (error) {
+      rollStatus = "roll-failed";
+      console.warn("Arcflight | Station action statistic roll failed.", error);
+    }
+  } else {
+    rollStatus = "statistic-missing";
+  }
+
+  if (rollStatus !== "rolled") {
+    globalThis.ui?.notifications?.warn?.(`Arcflight could not roll ${preview.rollOptionLabel || preview.statisticKey} for ${preview.actorName || "assigned actor"}.`);
+    console.warn("Arcflight | Station action roll could not be made.", { actionKey, preview, rollStatus });
+  }
+
+  const history = getStationActionState(shipActor).history;
+  const record = {
+    id: createStationActionId(actionKey),
+    recordType: "roll",
+    actionKey: preview.actionKey,
+    actionName: preview.actionName,
+    stationKey: preview.stationKey,
+    phase: preview.phase,
+    actorId: shipActor?.id ?? "",
+    actorName: shipActor?.name ?? "",
+    executedAt: Date.now(),
+    executedBy: globalThis.game?.user?.id ?? "",
+    assignedActorId: preview.actorId,
+    assignedActorUuid: preview.actorUuid,
+    assignedActorName: preview.actorName,
+    assignedCrewName: preview.actorName,
+    rollOptionKey: preview.rollOptionKey,
+    rollOptionLabel: preview.rollOptionLabel,
+    statisticKey: preview.statisticKey,
+    resolvedStatisticKey: preview.resolvedStatisticKey,
+    rollStatus,
+    total: getRollTotal(rollResult),
+    degree: getRollDegree(rollResult),
+    result: getRollDegree(rollResult),
     notes: options.notes ?? ""
   };
 
