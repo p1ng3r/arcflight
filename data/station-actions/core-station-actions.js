@@ -20,6 +20,7 @@ function stationAction({
   requirements = [],
   effectsPreview = [],
   tags = [],
+  rollOptions = [],
   futureAutomationNotes = "Data-only station action definition. No action execution, AP/RAP spend, actor mutation, combat round, travel automation, or weapon firing is implemented."
 }) {
   return deepFreeze({
@@ -35,6 +36,7 @@ function stationAction({
     trigger,
     requirements,
     effectsPreview,
+    rollOptions,
     tags,
     futureAutomationNotes
   });
@@ -43,6 +45,10 @@ function stationAction({
 export const CORE_STATION_ACTIONS = Object.freeze({
   "rally-crew": stationAction({
     key: "rally-crew",
+    rollOptions: [
+      { key: "diplomacy", label: "Diplomacy", statisticKey: "diplomacy" },
+      { key: "intimidation", label: "Intimidation", statisticKey: "intimidation" }
+    ],
     name: "Rally Crew",
     stationKey: "captain",
     phase: "both",
@@ -54,6 +60,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "coordinate-orders": stationAction({
     key: "coordinate-orders",
+    rollOptions: [
+      { key: "society", label: "Society", statisticKey: "society" },
+      { key: "diplomacy", label: "Diplomacy", statisticKey: "diplomacy" }
+    ],
     name: "Coordinate Orders",
     stationKey: "captain",
     phase: "both",
@@ -65,6 +75,11 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "adjust-facing": stationAction({
     key: "adjust-facing",
+    rollOptions: [
+      { key: "piloting-lore", label: "Piloting Lore", statisticKey: "piloting-lore" },
+      { key: "acrobatics", label: "Acrobatics", statisticKey: "acrobatics" },
+      { key: "reflex", label: "Reflex", statisticKey: "reflex" }
+    ],
     name: "Adjust Facing",
     stationKey: "pilot",
     phase: "combat",
@@ -76,6 +91,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "evasive-maneuver": stationAction({
     key: "evasive-maneuver",
+    rollOptions: [
+      { key: "acrobatics", label: "Acrobatics", statisticKey: "acrobatics" },
+      { key: "piloting-lore", label: "Piloting Lore", statisticKey: "piloting-lore" }
+    ],
     name: "Evasive Maneuver",
     stationKey: "pilot",
     phase: "combat",
@@ -87,6 +106,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "stabilize-strain": stationAction({
     key: "stabilize-strain",
+    rollOptions: [
+      { key: "crafting", label: "Crafting", statisticKey: "crafting" },
+      { key: "arcana", label: "Arcana", statisticKey: "arcana" }
+    ],
     name: "Stabilize Strain",
     stationKey: "engineer",
     phase: "both",
@@ -98,6 +121,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "hard-burn-prep": stationAction({
     key: "hard-burn-prep",
+    rollOptions: [
+      { key: "arcana", label: "Arcana", statisticKey: "arcana" },
+      { key: "crafting", label: "Crafting", statisticKey: "crafting" }
+    ],
     name: "Hard Burn Prep",
     stationKey: "engineer",
     phase: "travel",
@@ -109,6 +136,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "ready-broadside": stationAction({
     key: "ready-broadside",
+    rollOptions: [
+      { key: "warfare-lore", label: "Warfare Lore", statisticKey: "warfare-lore" },
+      { key: "perception", label: "Perception", statisticKey: "perception" }
+    ],
     name: "Ready Broadside",
     stationKey: "gunnery",
     phase: "combat",
@@ -120,6 +151,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "aim-weapon": stationAction({
     key: "aim-weapon",
+    rollOptions: [
+      { key: "perception", label: "Perception", statisticKey: "perception" },
+      { key: "warfare-lore", label: "Warfare Lore", statisticKey: "warfare-lore" }
+    ],
     name: "Aim Weapon",
     stationKey: "gunnery",
     phase: "combat",
@@ -131,6 +166,11 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "reinforce-lifeveil": stationAction({
     key: "reinforce-lifeveil",
+    rollOptions: [
+      { key: "occultism", label: "Occultism", statisticKey: "occultism" },
+      { key: "arcana", label: "Arcana", statisticKey: "arcana" },
+      { key: "religion", label: "Religion", statisticKey: "religion" }
+    ],
     name: "Reinforce Lifeveil",
     stationKey: "veilwarden",
     phase: "both",
@@ -142,6 +182,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "damp-occult-surge": stationAction({
     key: "damp-occult-surge",
+    rollOptions: [
+      { key: "occultism", label: "Occultism", statisticKey: "occultism" },
+      { key: "religion", label: "Religion", statisticKey: "religion" }
+    ],
     name: "Damp Occult Surge",
     stationKey: "veilwarden",
     phase: "both",
@@ -153,6 +197,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "scan-threats": stationAction({
     key: "scan-threats",
+    rollOptions: [
+      { key: "perception", label: "Perception", statisticKey: "perception" },
+      { key: "survival", label: "Survival", statisticKey: "survival" }
+    ],
     name: "Scan Threats",
     stationKey: "watchmaster",
     phase: "both",
@@ -164,6 +212,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "call-target": stationAction({
     key: "call-target",
+    rollOptions: [
+      { key: "perception", label: "Perception", statisticKey: "perception" },
+      { key: "warfare-lore", label: "Warfare Lore", statisticKey: "warfare-lore" }
+    ],
     name: "Call Target",
     stationKey: "watchmaster",
     phase: "combat",
@@ -175,6 +227,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "secure-cargo": stationAction({
     key: "secure-cargo",
+    rollOptions: [
+      { key: "crafting", label: "Crafting", statisticKey: "crafting" },
+      { key: "athletics", label: "Athletics", statisticKey: "athletics" }
+    ],
     name: "Secure Cargo",
     stationKey: "quartermaster",
     phase: "both",
@@ -186,6 +242,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
   }),
   "manage-supplies": stationAction({
     key: "manage-supplies",
+    rollOptions: [
+      { key: "society", label: "Society", statisticKey: "society" },
+      { key: "survival", label: "Survival", statisticKey: "survival" }
+    ],
     name: "Manage Supplies",
     stationKey: "quartermaster",
     phase: "travel",
@@ -215,4 +275,9 @@ export function getCoreStationActionsForStation(stationKey) {
   return CORE_STATION_ACTION_KEYS
     .map((key) => CORE_STATION_ACTIONS[key])
     .filter((action) => action.stationKey === stationKey);
+}
+
+export function getStationActionRollOptions(actionKey) {
+  const action = getCoreStationAction(actionKey);
+  return Array.isArray(action?.rollOptions) ? action.rollOptions : [];
 }

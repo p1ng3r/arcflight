@@ -1,11 +1,11 @@
 import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengines/arkengine-patterns.js";
 import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
-import { getCoreStationActionsForStation } from "../../data/station-actions/core-station-actions.js";
+import { getCoreStationActionsForStation, getStationActionRollOptions } from "../../data/station-actions/core-station-actions.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
 import { previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
-import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction } from "../helpers/station-action-execution.js";
+import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction, rollStationAction } from "../helpers/station-action-execution.js";
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   addCrewAsset,
@@ -714,6 +714,11 @@ function prepareStationActionGroups(actor, stations = {}) {
         ? `Assigned: ${assignedCrewName}`
         : `Requires assigned ${action.requiredCrewRole || station.displayName || humanizeIdentifier(stationKey)}`;
 
+      const rollOptions = getStationActionRollOptions(action.key).map((option, index) => ({
+        ...option,
+        selected: index === 0
+      }));
+
       return {
         ...action,
         stationDisplayName: station.displayName || humanizeIdentifier(stationKey),
@@ -722,6 +727,8 @@ function prepareStationActionGroups(actor, stations = {}) {
         assignedCrewName,
         assignedCrewStatus,
         hasAssignedCrew: Boolean(assignedCrewName),
+        rollOptions,
+        hasRollOptions: rollOptions.length > 0,
         preview
       };
     });
@@ -743,8 +750,14 @@ function prepareStationActionHistoryReadout(actor, limit = STATION_ACTION_HISTOR
     ...record,
     stationLabel: humanizeIdentifier(record.stationKey || "Unknown Station"),
     phaseLabel: humanizeIdentifier(record.phase || "both"),
-    assignedCrewName: record.assignedCrewName || "Unassigned",
+    assignedCrewName: record.assignedActorName || record.assignedCrewName || "Unassigned",
     timestampLabel: formatStationActionTimestamp(record.executedAt),
+    recordType: record.recordType || "record",
+    isRoll: record.recordType === "roll",
+    rollLabel: record.rollOptionLabel || record.statisticKey || "",
+    rollTotalLabel: Number.isFinite(Number(record.total)) ? `Total ${record.total}` : "No total",
+    rollResultLabel: record.degree || record.result || record.rollStatus || "",
+    hasRollResult: Boolean(record.degree || record.result || record.rollStatus || Number.isFinite(Number(record.total))),
     hasNotes: String(record.notes ?? "").trim().length > 0
   })).reverse();
   const latestRecords = history.slice(0, limit);
@@ -1294,6 +1307,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       ?.forEach((button) => button.addEventListener("click", this.#onExecuteStationAction.bind(this)));
 
     this.element
+      .querySelectorAll?.("[data-arcflight-roll-station-action]")
+      ?.forEach((button) => button.addEventListener("click", this.#onRollStationAction.bind(this)));
+
+    this.element
       .querySelector?.("[data-arcflight-clear-station-action-history]")
       ?.addEventListener("click", this.#onClearStationActionHistory.bind(this));
 
@@ -1393,6 +1410,30 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not record that station action.");
       console.warn("Arcflight | Station action execute failed.", error);
+    }
+  }
+
+
+  async #onRollStationAction(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    const button = event.currentTarget;
+    const actionElement = button?.closest?.("[data-station-action-key]");
+    const actionKey = button?.dataset?.actionKey ?? actionElement?.dataset?.stationActionKey ?? "";
+    const phase = button?.dataset?.phase ?? "both";
+    const rollOptionKey = actionElement?.querySelector?.("[data-arcflight-station-action-roll-option]")?.value ?? "";
+
+    this.#queueCurrentSheetContextRestore();
+
+    try {
+      const record = await rollStationAction(actor, actionKey, { phase, rollOptionKey, event });
+      ui.notifications?.info?.(`Recorded ${record.rollOptionLabel || "station action"} roll for ${record.actionName || actionKey}.`);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not roll that station action.");
+      console.warn("Arcflight | Station action roll failed.", error);
     }
   }
 

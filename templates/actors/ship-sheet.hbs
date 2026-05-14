@@ -493,7 +493,7 @@
 
   <section class="arcflight-sheet__section arcflight-station-actions" data-arcflight-ship-tab-panel="station-actions" {{#unless tabState.stationActions}}hidden{{/unless}}>
     <h2>Station Actions</h2>
-    <p class="arcflight-sheet__hint">Minimal record-only MVP. Actions are grouped by station, previewed through the station-action backend, and recorded to this ship actor. Execute/Record does not spend AP/RAP, roll dice, fire weapons, create combat rounds, automate travel, or apply effects.</p>
+    <p class="arcflight-sheet__hint">Minimal station-action MVP. Actions are grouped by station, previewed through the station-action backend, and recorded to this ship actor. Roll uses the assigned PF2E actor statistic when available. Execute/Record and Roll do not spend AP/RAP, fire weapons, create combat rounds, automate travel, or apply effects.</p>
     {{#if stationActionUi.hasGroups}}
       <div class="arcflight-station-actions__groups">
         {{#each stationActionUi.groups}}
@@ -505,7 +505,7 @@
             {{#if this.hasActions}}
               <div class="arcflight-station-actions__actions">
                 {{#each this.actions}}
-                  <article class="arcflight-station-actions__action {{this.preview.cssClass}}">
+                  <article class="arcflight-station-actions__action {{this.preview.cssClass}}" data-station-action-key="{{this.key}}">
                     <header>
                       <h4>{{this.name}}</h4>
                       <span class="arcflight-install-ui__badge {{this.preview.badgeClass}}">{{this.preview.statusLabel}}</span>
@@ -521,6 +521,19 @@
                       <dd>{{this.preview.statusText}}</dd>
                     </dl>
                     <p>{{this.description}}</p>
+                    {{#if this.hasRollOptions}}
+                      <div class="arcflight-station-actions__roll-controls">
+                        <label class="arcflight-sheet__field arcflight-station-actions__roll-select">
+                          <span>Roll Option</span>
+                          <select data-arcflight-station-action-roll-option {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>
+                            {{#each this.rollOptions}}
+                              <option value="{{this.key}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                            {{/each}}
+                          </select>
+                        </label>
+                        <button type="button" data-arcflight-roll-station-action data-action-key="{{this.key}}" data-phase="{{this.phase}}" {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Roll</button>
+                      </div>
+                    {{/if}}
                     <button type="button" data-arcflight-execute-station-action data-action-key="{{this.key}}" data-phase="{{this.phase}}" {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Execute/Record</button>
                   </article>
                 {{/each}}
@@ -545,6 +558,7 @@
           {{#each stationActionUi.history.records}}
             <li>
               <strong>{{this.actionName}}</strong> — {{this.stationLabel}} · {{this.phaseLabel}} · {{this.assignedCrewName}} · {{this.timestampLabel}}
+              {{#if this.isRoll}}<br><span class="arcflight-sheet__hint">Roll: {{this.rollLabel}}{{#if this.hasRollResult}} · {{this.rollTotalLabel}} · {{this.rollResultLabel}}{{/if}}</span>{{/if}}
               {{#if this.hasNotes}}<br><span class="arcflight-sheet__hint">Notes: {{this.notes}}</span>{{/if}}
             </li>
           {{/each}}
