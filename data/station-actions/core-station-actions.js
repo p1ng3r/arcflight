@@ -360,11 +360,9 @@ function getRollResultDegreeOfSuccess(rollResult) {
     rollResult?.degreeOfSuccess,
     rollResult?.degree,
     rollResult?.outcome,
-    rollResult?.result,
     rollResult?.roll?.degreeOfSuccess,
     rollResult?.roll?.degree,
-    rollResult?.roll?.outcome,
-    rollResult?.roll?.result
+    rollResult?.roll?.outcome
   ];
 
   for (const candidate of candidates) {
