@@ -402,6 +402,8 @@ export {
   getCoreStationActionKeys,
   getCoreStationActions,
   getCoreStationActionsForStation,
+  getStationActionOutcome,
+  previewStationActionOutcome,
   getStationActionState,
   previewStationAction,
   getStationActionRollOptions,
@@ -516,8 +518,5 @@ export {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
   arcflightShipDefaults,
   getArcflightShipData,
-  getDefaultArcflightShipData,
-  getStationActionRollOptions,
-  previewStationActionRoll,
-  rollStationAction
+  getDefaultArcflightShipData
 };
