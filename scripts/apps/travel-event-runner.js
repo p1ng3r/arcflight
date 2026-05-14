@@ -14,6 +14,13 @@ import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const BLACK_TIDE_CROSSING_KEY = "black-tide-crossing";
+const RUNNER_CLICK_SELECTOR = [
+  "[data-arcflight-start-black-tide]",
+  "[data-arcflight-record-station-result]",
+  "[data-arcflight-advance-travel-round]",
+  "[data-arcflight-complete-travel-event]",
+  "[data-arcflight-clear-travel-event]"
+].join(", ");
 
 const DEGREE_OPTIONS = Object.freeze([
   { value: ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_SUCCESS, label: "Critical Success" },
@@ -189,6 +196,8 @@ async function confirmClearActiveEvent(shipActor) {
 }
 
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
+  #boundRunnerClick = this.#onRunnerClick.bind(this);
+
   constructor(shipActor, options = {}) {
     assertArcflightTravelRunnerShipActor(shipActor);
     super(options);
@@ -238,25 +247,19 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   _onRender(context, options) {
     super._onRender(context, options);
 
-    this.element
-      .querySelector?.("[data-arcflight-start-black-tide]")
-      ?.addEventListener("click", this.#onStartBlackTideCrossing.bind(this));
+    this.element?.removeEventListener("click", this.#boundRunnerClick);
+    this.element?.addEventListener("click", this.#boundRunnerClick);
+  }
 
-    this.element
-      .querySelectorAll?.("[data-arcflight-record-station-result]")
-      ?.forEach((button) => button.addEventListener("click", this.#onRecordStationResult.bind(this)));
+  async #onRunnerClick(event) {
+    const target = event.target?.closest?.(RUNNER_CLICK_SELECTOR);
+    if (!target || !this.element?.contains(target) || target.disabled === true) return;
 
-    this.element
-      .querySelector?.("[data-arcflight-advance-travel-round]")
-      ?.addEventListener("click", this.#onAdvanceRound.bind(this));
-
-    this.element
-      .querySelector?.("[data-arcflight-complete-travel-event]")
-      ?.addEventListener("click", this.#onCompleteEvent.bind(this));
-
-    this.element
-      .querySelector?.("[data-arcflight-clear-travel-event]")
-      ?.addEventListener("click", this.#onClearEvent.bind(this));
+    if (target.hasAttribute("data-arcflight-start-black-tide")) return await this.#onStartBlackTideCrossing(event);
+    if (target.hasAttribute("data-arcflight-record-station-result")) return await this.#onRecordStationResult(event);
+    if (target.hasAttribute("data-arcflight-advance-travel-round")) return await this.#onAdvanceRound(event);
+    if (target.hasAttribute("data-arcflight-complete-travel-event")) return await this.#onCompleteEvent(event);
+    if (target.hasAttribute("data-arcflight-clear-travel-event")) return await this.#onClearEvent(event);
   }
 
   async #rerenderAfterAction() {
@@ -279,7 +282,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #onRecordStationResult(event) {
     event.preventDefault();
 
-    const stationElement = event.currentTarget?.closest?.("[data-arcflight-station-prompt]");
+    const stationElement = event.target?.closest?.("[data-arcflight-station-prompt]")
+      ?? event.currentTarget?.closest?.("[data-arcflight-station-prompt]");
     const stationKey = stationElement?.dataset?.stationKey ?? "";
     const degreeOfSuccess = stationElement?.querySelector?.("[data-arcflight-degree]")?.value ?? "";
     const actorName = stationElement?.querySelector?.("[data-arcflight-actor-name]")?.value ?? "";
