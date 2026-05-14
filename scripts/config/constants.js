@@ -27,6 +27,23 @@ export const ARCFLIGHT_SHIP_RESOURCES = Object.freeze({
   STRAIN: "strain"
 });
 
+export const ARCFLIGHT_TRAVEL_RESOURCES = Object.freeze({
+  HULL: "hull",
+  LIFEVEIL: "lifeveil",
+  STRAIN: "strain",
+  MORALE: "morale",
+  SUPPLIES: "supplies",
+  STORED_SPELL_RANKS: "storedSpellRanks"
+});
+
+export const ARCFLIGHT_TRAVEL_STATIONS = Object.freeze({
+  NAVIGATOR: "navigator",
+  ENGINEER: "engineer",
+  VEILWARDEN: "veilwarden",
+  WATCHMASTER: "watchmaster",
+  CAPTAIN: "captain"
+});
+
 export const ARCFLIGHT_WEAPON_ARCS = Object.freeze({
   FORE: "fore",
   PORT: "port",
@@ -167,6 +184,8 @@ export const ARCFLIGHT = Object.freeze({
   ACTOR_TYPES: ARCFLIGHT_ACTOR_TYPES,
   ITEM_TYPES: ARCFLIGHT_ITEM_TYPES,
   SHIP_RESOURCES: ARCFLIGHT_SHIP_RESOURCES,
+  TRAVEL_RESOURCES: ARCFLIGHT_TRAVEL_RESOURCES,
+  TRAVEL_STATIONS: ARCFLIGHT_TRAVEL_STATIONS,
   WEAPON_ARCS: ARCFLIGHT_WEAPON_ARCS,
   WEAPON_SIZES: ARCFLIGHT_WEAPON_SIZES,
   ROOM_CATEGORIES: ARCFLIGHT_ROOM_CATEGORIES,
