@@ -55,6 +55,7 @@ import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgra
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { CORE_WEAPON_KEYS, CORE_WEAPONS } from "../../data/weapons/core-weapons.js";
 import { CORE_STATIONS, STATION_KEYS } from "../../data/stations/core-stations.js";
+import { CORE_TRAVEL_EVENT_KEYS, getCoreTravelEvent } from "../../data/travel-events/core-travel-events.js";
 import {
   CORE_STATION_ACTION_KEYS,
   CORE_STATION_ACTIONS,
@@ -69,6 +70,13 @@ import {
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
+import {
+  getTravelFiveStationKeys,
+  getTravelDegreeContribution,
+  getTravelRoundOutcome,
+  getTravelEventOutcome,
+  validateTravelEventDefinition
+} from "../helpers/travel-events.js";
 import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "../helpers/station-action-execution.js";
 import { prepareInstallUiState, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows } from "../sheets/ship-sheet.js";
 import {
@@ -311,6 +319,25 @@ export async function runFrameworkSmokeTest(options = {}) {
     const stationsWithCamelCaseLoreSkills = Object.entries(CORE_STATIONS).filter(([, station]) => station.primarySkills?.some((skillKey) => camelCaseLoreSkillKeys.includes(skillKey))).map(([stationKey, station]) => ({ stationKey, primarySkills: station.primarySkills }));
     check(result, "Core station primary skills use slug-style Lore keys", stationsWithCamelCaseLoreSkills.length === 0, "no camelCase Lore keys", stationsWithCamelCaseLoreSkills);
     check(result, "Travel constants are exported", ARCFLIGHT.TRAVEL_RESOURCES?.SUPPLIES === "supplies" && ARCFLIGHT.TRAVEL_STATIONS?.NAVIGATOR === "navigator", "travel constants", { resources: ARCFLIGHT.TRAVEL_RESOURCES, stations: ARCFLIGHT.TRAVEL_STATIONS });
+    const expectedTravelCategories = ["environmental", "navigation", "threat", "social", "shipboard", "discovery", "occult"];
+    const travelCategoryValues = Object.values(ARCFLIGHT.TRAVEL_EVENT_CATEGORIES ?? {});
+    check(result, "Travel category constants include locked categories", expectedTravelCategories.every((category) => travelCategoryValues.includes(category)) && travelCategoryValues.length === expectedTravelCategories.length, expectedTravelCategories, travelCategoryValues);
+    check(result, "Travel Five foundation helper matches station helper", JSON.stringify(getTravelFiveStationKeys()) === JSON.stringify(expectedTravelStationKeys), expectedTravelStationKeys, getTravelFiveStationKeys());
+    check(result, "Core travel event key array exists", isCoreKeyArray(CORE_TRAVEL_EVENT_KEYS), "non-empty array", CORE_TRAVEL_EVENT_KEYS?.length ?? 0);
+    const blackTideCrossing = getCoreTravelEvent("black-tide-crossing");
+    const blackTideValidation = validateTravelEventDefinition(blackTideCrossing);
+    check(result, "Black Tide Crossing core travel event exists", blackTideCrossing?.key === "black-tide-crossing", "black-tide-crossing", blackTideCrossing?.key ?? null);
+    check(result, "Black Tide Crossing validates", blackTideValidation.ok === true, true, blackTideValidation);
+    checkEqual(result, "Black Tide Crossing has exactly 5 rounds", 5, blackTideCrossing?.rounds?.length ?? 0);
+    const blackTideActiveStations = blackTideCrossing?.rounds?.flatMap((round) => round.activeStations?.map((station) => station.stationKey) ?? []) ?? [];
+    check(result, "Black Tide Crossing active stations are Travel Five only", blackTideActiveStations.every((stationKey) => getTravelFiveStationKeys().includes(stationKey)), true, [...new Set(blackTideActiveStations.filter((stationKey) => !getTravelFiveStationKeys().includes(stationKey)))]);
+    const travelResourceValues = Object.values(ARCFLIGHT.TRAVEL_RESOURCES ?? {});
+    check(result, "Black Tide Crossing activeResources use known travel resources", (blackTideCrossing?.activeResources ?? []).every((resource) => travelResourceValues.includes(resource)), true, (blackTideCrossing?.activeResources ?? []).filter((resource) => !travelResourceValues.includes(resource)));
+    check(result, "Travel degree contribution mapping works", getTravelDegreeContribution("criticalSuccess").successes === 2 && getTravelDegreeContribution("success").successes === 1 && getTravelDegreeContribution("failure").failures === 1 && getTravelDegreeContribution("criticalFailure").failures === 2 && getTravelDegreeContribution("criticalFailure").criticalFailures === 1, "locked mapping", { criticalSuccess: getTravelDegreeContribution("criticalSuccess"), success: getTravelDegreeContribution("success"), failure: getTravelDegreeContribution("failure"), criticalFailure: getTravelDegreeContribution("criticalFailure") });
+    check(result, "Travel round outcome helper works", getTravelRoundOutcome({ successes: 3, failures: 1 }) === "dominantSuccess" && getTravelRoundOutcome({ successes: 1, failures: 1 }) === "mixed" && getTravelRoundOutcome({ successes: 1, failures: 3 }) === "dominantFailure" && getTravelRoundOutcome({ successes: 4, failures: 0, criticalFailures: 2 }) === "catastrophicFailure", "round outcomes", { dominant: getTravelRoundOutcome({ successes: 3, failures: 1 }), mixed: getTravelRoundOutcome({ successes: 1, failures: 1 }), failure: getTravelRoundOutcome({ successes: 1, failures: 3 }), catastrophic: getTravelRoundOutcome({ successes: 4, failures: 0, criticalFailures: 2 }) });
+    check(result, "Travel event outcome helper works", getTravelEventOutcome({ successes: 8, failures: 3 }) === "majorVictory" && getTravelEventOutcome({ successes: 4, failures: 3 }) === "victory" && getTravelEventOutcome({ successes: 3, failures: 3 }) === "costlySuccess" && getTravelEventOutcome({ successes: 2, failures: 3 }) === "failure" && getTravelEventOutcome({ successes: 8, failures: 3, catastrophicFailure: true }) === "catastrophicFailure", "event outcomes", { major: getTravelEventOutcome({ successes: 8, failures: 3 }), victory: getTravelEventOutcome({ successes: 4, failures: 3 }), costly: getTravelEventOutcome({ successes: 3, failures: 3 }), failure: getTravelEventOutcome({ successes: 2, failures: 3 }), catastrophic: getTravelEventOutcome({ successes: 8, failures: 3, catastrophicFailure: true }) });
+    check(result, "Travel event helpers exposed", typeof globalThis.game?.arcflight?.getCoreTravelEventKeys === "function" && typeof globalThis.game?.arcflight?.getCoreTravelEvent === "function" && typeof globalThis.game?.arcflight?.validateTravelEventDefinition === "function" && typeof globalThis.game?.arcflight?.prepareTravelRoundSummary === "function" && typeof globalThis.game?.arcflight?.getTravelDegreeContribution === "function", true, { getCoreTravelEventKeys: typeof globalThis.game?.arcflight?.getCoreTravelEventKeys, getCoreTravelEvent: typeof globalThis.game?.arcflight?.getCoreTravelEvent, validateTravelEventDefinition: typeof globalThis.game?.arcflight?.validateTravelEventDefinition, prepareTravelRoundSummary: typeof globalThis.game?.arcflight?.prepareTravelRoundSummary, getTravelDegreeContribution: typeof globalThis.game?.arcflight?.getTravelDegreeContribution });
+    check(result, "Travel event devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getCoreTravelEventKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreTravelEvent === "function" && typeof globalThis.game?.arcflight?.devTools?.validateTravelEventDefinition === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelRoundSummary === "function" && typeof globalThis.game?.arcflight?.devTools?.getTravelDegreeContribution === "function", true, { getCoreTravelEventKeys: typeof globalThis.game?.arcflight?.devTools?.getCoreTravelEventKeys, getCoreTravelEvent: typeof globalThis.game?.arcflight?.devTools?.getCoreTravelEvent, validateTravelEventDefinition: typeof globalThis.game?.arcflight?.devTools?.validateTravelEventDefinition, prepareTravelRoundSummary: typeof globalThis.game?.arcflight?.devTools?.prepareTravelRoundSummary, getTravelDegreeContribution: typeof globalThis.game?.arcflight?.devTools?.getTravelDegreeContribution });
     check(result, "Core station action key array exists", isCoreKeyArray(CORE_STATION_ACTION_KEYS), "non-empty array", CORE_STATION_ACTION_KEYS?.length ?? 0);
     check(result, "Every station action has required foundation fields", CORE_STATION_ACTION_KEYS.every((key) => hasCoreStationActionFoundationData(CORE_STATION_ACTIONS[key])), true, CORE_STATION_ACTION_KEYS.filter((key) => !hasCoreStationActionFoundationData(CORE_STATION_ACTIONS[key])));
     check(result, "Every station action points to a known station key", CORE_STATION_ACTION_KEYS.every((key) => STATION_KEYS.includes(CORE_STATION_ACTIONS[key]?.stationKey)), true, CORE_STATION_ACTION_KEYS.filter((key) => !STATION_KEYS.includes(CORE_STATION_ACTIONS[key]?.stationKey)));

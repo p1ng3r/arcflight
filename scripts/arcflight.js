@@ -28,6 +28,7 @@ import { CORE_WEAPON_KEYS, CORE_WEAPONS, getCoreWeapon, getCoreWeaponKeys } from
 import { CORE_SHIP_UPGRADE_KEYS, CORE_SHIP_UPGRADES, getCoreShipUpgrade, getCoreShipUpgradeKeys } from "../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_ARKENGINE_MOD_KEYS, CORE_ARKENGINE_MODS, getCoreArkengineMod, getCoreArkengineModKeys } from "../data/arkengine-mods/core-arkengine-mods.js";
 import { CORE_STATIONS, STATION_KEYS, getStation, getStationKeys, getStations } from "../data/stations/core-stations.js";
+import { CORE_TRAVEL_EVENTS, CORE_TRAVEL_EVENT_KEYS, getCoreTravelEvent, getCoreTravelEventKeys, getCoreTravelEvents, getCoreTravelEventsByCategory } from "../data/travel-events/core-travel-events.js";
 import {
   CORE_STATION_ACTION_KEYS,
   CORE_STATION_ACTIONS,
@@ -125,6 +126,17 @@ import {
   organizeArcflightItems
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
+import {
+  getTravelFiveStationKeys,
+  normalizeTravelDegree,
+  getTravelDegreeContribution,
+  getTravelRoundOutcome,
+  getTravelEventOutcome,
+  validateTravelEventDefinition,
+  prepareTravelEventSummary,
+  prepareTravelRoundSummary,
+  getTravelEventStationPrompt
+} from "./helpers/travel-events.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "./helpers/station-action-execution.js";
 import {
@@ -245,6 +257,12 @@ Hooks.once("init", () => {
     ARKENGINE_VARIANT_KEYS,
     STATION_KEYS,
     CORE_STATION_ACTION_KEYS,
+    CORE_TRAVEL_EVENTS,
+    CORE_TRAVEL_EVENT_KEYS,
+    getCoreTravelEvent,
+    getCoreTravelEventKeys,
+    getCoreTravelEvents,
+    getCoreTravelEventsByCategory,
     EXAMPLE_SHIP_BUILD_KEYS,
     exampleShipBuildKeys: EXAMPLE_SHIP_BUILD_KEYS,
     coreHulls: CORE_HULLS,
@@ -271,6 +289,8 @@ Hooks.once("init", () => {
     arkengineVariantKeys: ARKENGINE_VARIANT_KEYS,
     stationKeys: STATION_KEYS,
     coreStationActionKeys: CORE_STATION_ACTION_KEYS,
+    coreTravelEvents: CORE_TRAVEL_EVENTS,
+    coreTravelEventKeys: CORE_TRAVEL_EVENT_KEYS,
     getItemDocumentType: getArcflightItemDocumentType,
     getDefaultComponentData: getDefaultArcflightComponentData,
     getDefaultShipData: getDefaultArcflightShipData,
@@ -333,6 +353,15 @@ Hooks.once("init", () => {
     updateShipTravelResources,
     getTravelStationKeys,
     isTravelStationKey,
+    getTravelFiveStationKeys,
+    normalizeTravelDegree,
+    getTravelDegreeContribution,
+    getTravelRoundOutcome,
+    getTravelEventOutcome,
+    validateTravelEventDefinition,
+    prepareTravelEventSummary,
+    prepareTravelRoundSummary,
+    getTravelEventStationPrompt,
     resetShipActionEconomy,
     spendShipActionPoints,
     canSpendShipActionPoints,
@@ -464,6 +493,12 @@ export {
   STATION_KEYS,
   CORE_STATION_ACTIONS,
   CORE_STATION_ACTION_KEYS,
+  CORE_TRAVEL_EVENTS,
+  CORE_TRAVEL_EVENT_KEYS,
+  getCoreTravelEvent,
+  getCoreTravelEventKeys,
+  getCoreTravelEvents,
+  getCoreTravelEventsByCategory,
   EXAMPLE_SHIP_BUILD_KEYS,
   getExampleShipBuildKeys,
   getExampleShipBuild,
@@ -503,6 +538,15 @@ export {
   updateShipTravelResources,
   getTravelStationKeys,
   isTravelStationKey,
+  getTravelFiveStationKeys,
+  normalizeTravelDegree,
+  getTravelDegreeContribution,
+  getTravelRoundOutcome,
+  getTravelEventOutcome,
+  validateTravelEventDefinition,
+  prepareTravelEventSummary,
+  prepareTravelRoundSummary,
+  getTravelEventStationPrompt,
   resetShipActionEconomy,
   spendShipActionPoints,
   canSpendShipActionPoints,

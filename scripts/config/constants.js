@@ -44,6 +44,64 @@ export const ARCFLIGHT_TRAVEL_STATIONS = Object.freeze({
   CAPTAIN: "captain"
 });
 
+
+export const ARCFLIGHT_TRAVEL_EVENT_CATEGORIES = Object.freeze({
+  ENVIRONMENTAL: "environmental",
+  NAVIGATION: "navigation",
+  THREAT: "threat",
+  SOCIAL: "social",
+  SHIPBOARD: "shipboard",
+  DISCOVERY: "discovery",
+  OCCULT: "occult"
+});
+
+export const ARCFLIGHT_TRAVEL_RESULT_TIERS = Object.freeze({
+  CRITICAL_SUCCESS: "criticalSuccess",
+  SUCCESS: "success",
+  FAILURE: "failure",
+  CRITICAL_FAILURE: "criticalFailure"
+});
+
+export const ARCFLIGHT_TRAVEL_ROUND_OUTCOMES = Object.freeze({
+  DOMINANT_SUCCESS: "dominantSuccess",
+  MIXED: "mixed",
+  DOMINANT_FAILURE: "dominantFailure",
+  CATASTROPHIC_FAILURE: "catastrophicFailure"
+});
+
+export const ARCFLIGHT_TRAVEL_EVENT_OUTCOMES = Object.freeze({
+  MAJOR_VICTORY: "majorVictory",
+  VICTORY: "victory",
+  COSTLY_SUCCESS: "costlySuccess",
+  FAILURE: "failure",
+  CATASTROPHIC_FAILURE: "catastrophicFailure"
+});
+
+export const ARCFLIGHT_TRAVEL_TAGS = Object.freeze({
+  STORM: "storm",
+  NAVIGATION: "navigation",
+  STRAIN: "strain",
+  LIFEVEIL: "lifeveil",
+  MORALE: "morale",
+  HULL: "hull",
+  SUPPLIES: "supplies",
+  ARKENGINE: "arkengine",
+  OCCULT: "occult",
+  THREAT: "threat",
+  SOCIAL: "social",
+  DISCOVERY: "discovery",
+  SALVAGE: "salvage",
+  DERELICT: "derelict",
+  STEALTH: "stealth",
+  PURSUIT: "pursuit",
+  AMBUSH: "ambush",
+  COMBAT_HANDOFF: "combatHandoff",
+  ENVIRONMENTAL: "environmental",
+  SHIPBOARD: "shipboard",
+  RESOURCE_PRESSURE: "resourcePressure",
+  CREW_PRESSURE: "crewPressure"
+});
+
 export const ARCFLIGHT_WEAPON_ARCS = Object.freeze({
   FORE: "fore",
   PORT: "port",
@@ -186,6 +244,11 @@ export const ARCFLIGHT = Object.freeze({
   SHIP_RESOURCES: ARCFLIGHT_SHIP_RESOURCES,
   TRAVEL_RESOURCES: ARCFLIGHT_TRAVEL_RESOURCES,
   TRAVEL_STATIONS: ARCFLIGHT_TRAVEL_STATIONS,
+  TRAVEL_EVENT_CATEGORIES: ARCFLIGHT_TRAVEL_EVENT_CATEGORIES,
+  TRAVEL_RESULT_TIERS: ARCFLIGHT_TRAVEL_RESULT_TIERS,
+  TRAVEL_ROUND_OUTCOMES: ARCFLIGHT_TRAVEL_ROUND_OUTCOMES,
+  TRAVEL_EVENT_OUTCOMES: ARCFLIGHT_TRAVEL_EVENT_OUTCOMES,
+  TRAVEL_TAGS: ARCFLIGHT_TRAVEL_TAGS,
   WEAPON_ARCS: ARCFLIGHT_WEAPON_ARCS,
   WEAPON_SIZES: ARCFLIGHT_WEAPON_SIZES,
   ROOM_CATEGORIES: ARCFLIGHT_ROOM_CATEGORIES,
