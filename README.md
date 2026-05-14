@@ -48,9 +48,9 @@ game.arcflight.openTravelEventRunner(ship);
 
 The runner is ship-attached and currently supports the sample **Black Tide Crossing** event. When no event is active, it shows the selected ship, a no-active-event message, a **Start Black Tide Crossing** button, and the most recent completed-event summary when one exists.
 
-During an active event, the runner displays the current event header, round title and opening vignette, round/event totals, Travel Five station prompts, suggested skills, resource-option text, duplicate-result hints, staged round effects, final staged effects when available, and combat-handoff notes when backend state marks a handoff as available.
+During an active event, the runner displays the current event header, round title and opening vignette, round/event totals, Travel Five station prompts, assigned actor readouts, suggested statistic selectors, optional PF2E assigned-actor roll buttons, resource-option text, duplicate-result hints, staged round effects, final staged effects when available, and combat-handoff notes when backend state marks a handoff as available.
 
-This MVP is manual-control only. GMs select a station result degree (`criticalSuccess`, `success`, `failure`, or `criticalFailure`), optionally enter actor name/notes, and click **Record Result**. The UI does not create PF2E roll buttons yet and does not call PF2E statistic rolling from travel prompts.
+Station prompts can optionally roll a selected suggested PF2E statistic for the currently assigned actor and record the travel degree automatically when PF2E provides a degree of success. Manual result entry remains the fallback: GMs can still select a station result degree (`criticalSuccess`, `success`, `failure`, or `criticalFailure`), optionally enter actor name/notes, and click **Record Result** when no actor is assigned, a statistic cannot be resolved, a roll fails or lacks a degree, or the GM wants to override the narrative result.
 
 Staged effects are preview-only. The runner intentionally does not apply staged effects, mutate `current.hull`, `current.lifeveil`, `current.strain`, morale, supplies, or stored spell ranks, spend AP/RAP, start combat, create encounters, roll initiative, run weapons, or merge travel and combat automation.
 

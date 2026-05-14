@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Travel Event Runner PF2E Roll Buttons MVP
+
+- Added optional assigned-actor PF2E roll controls to Travel Event Runner station prompts, including assigned actor readouts, statistic selectors sourced from prompt suggested skills or station primary skills, effective DC display, and a delegated Roll Assigned Actor button.
+- PF2E travel rolls now use the shared statistic helpers, create normal PF2E chat cards when possible, and automatically record the travel station result only when a roll degree is available.
+- Preserved manual degree entry as the fallback for unassigned stations, unresolved statistics, failed rolls, missing roll degrees, and GM narrative overrides.
+- Extended travel station result records with optional PF2E roll metadata (`rollTotal`, `rollId`, `messageId`, and `source`) without changing manual result behavior.
+- Kept the boundary explicit: no AP/RAP spending, travel resource mutation, staged effect application, combat station action execution, automatic combat start, encounter creation, initiative rolling, weapon/movement automation, or GM event builder was added.
+
 ### Travel Event Runner UI MVP
 
 - Added a GM-facing, ship-attached Travel Event Runner ApplicationV2 UI for Arcflight-enabled PF2E vehicle actors.
