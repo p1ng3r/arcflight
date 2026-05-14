@@ -21,6 +21,10 @@ function stationAction({
   effectsPreview = [],
   tags = [],
   rollOptions = [],
+  criticalSuccess,
+  success,
+  failure,
+  criticalFailure,
   futureAutomationNotes = "Data-only station action definition. No action execution, AP/RAP spend, actor mutation, combat round, travel automation, or weapon firing is implemented."
 }) {
   return deepFreeze({
@@ -37,6 +41,10 @@ function stationAction({
     requirements,
     effectsPreview,
     rollOptions,
+    criticalSuccess,
+    success,
+    failure,
+    criticalFailure,
     tags,
     futureAutomationNotes
   });
@@ -49,6 +57,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "diplomacy", label: "Diplomacy", statisticKey: "diplomacy" },
       { key: "intimidation", label: "Intimidation", statisticKey: "intimidation" }
     ],
+    criticalSuccess: "Crew morale surges; the order spreads cleanly across the ship.",
+    success: "The crew steadies and responds to command.",
+    failure: "The order lands unevenly; hesitation remains.",
+    criticalFailure: "Confusion spreads and discipline falters.",
     name: "Rally Crew",
     stationKey: "captain",
     phase: "both",
@@ -64,6 +76,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "society", label: "Society", statisticKey: "society" },
       { key: "diplomacy", label: "Diplomacy", statisticKey: "diplomacy" }
     ],
+    criticalSuccess: "Stations align quickly and priorities are clearly understood.",
+    success: "The command plan is understood and ready for use.",
+    failure: "Orders compete for attention; coordination remains loose.",
+    criticalFailure: "Mixed signals disrupt the shipwide command rhythm.",
     name: "Coordinate Orders",
     stationKey: "captain",
     phase: "both",
@@ -80,6 +96,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "acrobatics", label: "Acrobatics", statisticKey: "acrobatics" },
       { key: "reflex", label: "Reflex", statisticKey: "reflex" }
     ],
+    criticalSuccess: "The ship comes about cleanly into the intended posture.",
+    success: "The ship adjusts toward the chosen facing.",
+    failure: "The adjustment is slow or awkward.",
+    criticalFailure: "The maneuver overcorrects and leaves the ship poorly aligned.",
     name: "Adjust Facing",
     stationKey: "pilot",
     phase: "combat",
@@ -95,6 +115,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "acrobatics", label: "Acrobatics", statisticKey: "acrobatics" },
       { key: "piloting-lore", label: "Piloting Lore", statisticKey: "piloting-lore" }
     ],
+    criticalSuccess: "The ship settles into a sharp defensive rhythm.",
+    success: "The pilot establishes a steadier defensive posture.",
+    failure: "The maneuver is uneven and hard to sustain.",
+    criticalFailure: "The evasive pattern breaks down at a critical moment.",
     name: "Evasive Maneuver",
     stationKey: "pilot",
     phase: "combat",
@@ -110,6 +134,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "crafting", label: "Crafting", statisticKey: "crafting" },
       { key: "arcana", label: "Arcana", statisticKey: "arcana" }
     ],
+    criticalSuccess: "Systems settle and unstable pressure is cleanly contained.",
+    success: "The engineer steadies the strained systems.",
+    failure: "Pressure remains difficult to control.",
+    criticalFailure: "A surge of instability runs through the affected systems.",
     name: "Stabilize Strain",
     stationKey: "engineer",
     phase: "both",
@@ -125,6 +153,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "arcana", label: "Arcana", statisticKey: "arcana" },
       { key: "crafting", label: "Crafting", statisticKey: "crafting" }
     ],
+    criticalSuccess: "The arkengine is primed for a clean high-output push.",
+    success: "The arkengine is prepared for harder running.",
+    failure: "Preparation is incomplete and the engine remains temperamental.",
+    criticalFailure: "The prep introduces new instability into the engine cadence.",
     name: "Hard Burn Prep",
     stationKey: "engineer",
     phase: "travel",
@@ -140,6 +172,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "warfare-lore", label: "Warfare Lore", statisticKey: "warfare-lore" },
       { key: "perception", label: "Perception", statisticKey: "perception" }
     ],
+    criticalSuccess: "The crew readies the volley with crisp timing and clear lanes.",
+    success: "The broadside is brought into a ready posture.",
+    failure: "Readiness is uneven across the weapon teams.",
+    criticalFailure: "The volley drill tangles and timing breaks down.",
     name: "Ready Broadside",
     stationKey: "gunnery",
     phase: "combat",
@@ -155,6 +191,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "perception", label: "Perception", statisticKey: "perception" },
       { key: "warfare-lore", label: "Warfare Lore", statisticKey: "warfare-lore" }
     ],
+    criticalSuccess: "The target picture snaps into focus.",
+    success: "The weapon crew establishes a workable aim.",
+    failure: "The aim is uncertain and needs correction.",
+    criticalFailure: "The weapon is misaligned at a crucial moment.",
     name: "Aim Weapon",
     stationKey: "gunnery",
     phase: "combat",
@@ -171,6 +211,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "arcana", label: "Arcana", statisticKey: "arcana" },
       { key: "religion", label: "Religion", statisticKey: "religion" }
     ],
+    criticalSuccess: "The Lifeveil firms with reassuring clarity.",
+    success: "The Lifeveil is reinforced against immediate pressure.",
+    failure: "The reinforcement is thin and uneven.",
+    criticalFailure: "The Lifeveil shudders and its stability falters.",
     name: "Reinforce Lifeveil",
     stationKey: "veilwarden",
     phase: "both",
@@ -186,6 +230,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "occultism", label: "Occultism", statisticKey: "occultism" },
       { key: "religion", label: "Religion", statisticKey: "religion" }
     ],
+    criticalSuccess: "The surge is cleanly smothered before it spreads.",
+    success: "The surge is damped to a manageable level.",
+    failure: "The surge resists containment.",
+    criticalFailure: "The occult pressure rebounds through the ship.",
     name: "Damp Occult Surge",
     stationKey: "veilwarden",
     phase: "both",
@@ -201,6 +249,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "perception", label: "Perception", statisticKey: "perception" },
       { key: "survival", label: "Survival", statisticKey: "survival" }
     ],
+    criticalSuccess: "Threat signs stand out clearly to the watch.",
+    success: "The watch identifies useful signs of danger.",
+    failure: "The scan returns uncertain or incomplete reads.",
+    criticalFailure: "The watch misreads the situation and misses key cues.",
     name: "Scan Threats",
     stationKey: "watchmaster",
     phase: "both",
@@ -216,6 +268,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "perception", label: "Perception", statisticKey: "perception" },
       { key: "warfare-lore", label: "Warfare Lore", statisticKey: "warfare-lore" }
     ],
+    criticalSuccess: "The priority target is called with decisive clarity.",
+    success: "The target call gives the crew a clear focus.",
+    failure: "The call is muddled or slow to take hold.",
+    criticalFailure: "The call points the crew toward the wrong opening.",
     name: "Call Target",
     stationKey: "watchmaster",
     phase: "combat",
@@ -231,6 +287,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "crafting", label: "Crafting", statisticKey: "crafting" },
       { key: "athletics", label: "Athletics", statisticKey: "athletics" }
     ],
+    criticalSuccess: "Cargo is braced with excellent coverage and access.",
+    success: "Cargo is secured well enough for current conditions.",
+    failure: "Some cargo remains poorly placed or vulnerable.",
+    criticalFailure: "The securing effort creates clutter and weak points.",
     name: "Secure Cargo",
     stationKey: "quartermaster",
     phase: "both",
@@ -246,6 +306,10 @@ export const CORE_STATION_ACTIONS = Object.freeze({
       { key: "society", label: "Society", statisticKey: "society" },
       { key: "survival", label: "Survival", statisticKey: "survival" }
     ],
+    criticalSuccess: "Stores are organized with a clear surplus path.",
+    success: "Supplies are accounted for and ready to manage.",
+    failure: "The audit leaves gaps and uncertain counts.",
+    criticalFailure: "The supply picture becomes confused and unreliable.",
     name: "Manage Supplies",
     stationKey: "quartermaster",
     phase: "travel",
@@ -258,6 +322,86 @@ export const CORE_STATION_ACTIONS = Object.freeze({
 });
 
 export const CORE_STATION_ACTION_KEYS = Object.freeze(Object.keys(CORE_STATION_ACTIONS));
+
+const STATION_ACTION_OUTCOME_DEGREES = Object.freeze({
+  3: { key: "criticalSuccess", label: "Critical Success" },
+  2: { key: "success", label: "Success" },
+  1: { key: "failure", label: "Failure" },
+  0: { key: "criticalFailure", label: "Critical Failure" }
+});
+
+const STATION_ACTION_OUTCOME_ALIASES = Object.freeze({
+  criticalsuccess: 3,
+  critical_success: 3,
+  "critical-success": 3,
+  critsuccess: 3,
+  "crit-success": 3,
+  success: 2,
+  failure: 1,
+  criticalfailure: 0,
+  critical_failure: 0,
+  "critical-failure": 0,
+  critfailure: 0,
+  "crit-failure": 0
+});
+
+function normalizeDegreeOfSuccess(degreeOfSuccess) {
+  if (Number.isInteger(degreeOfSuccess) && STATION_ACTION_OUTCOME_DEGREES[degreeOfSuccess]) return degreeOfSuccess;
+
+  const numericDegree = Number(degreeOfSuccess);
+  if (Number.isInteger(numericDegree) && STATION_ACTION_OUTCOME_DEGREES[numericDegree]) return numericDegree;
+
+  const alias = String(degreeOfSuccess ?? "").trim().replace(/\s+/g, "-").toLowerCase();
+  return STATION_ACTION_OUTCOME_ALIASES[alias] ?? null;
+}
+
+function getRollResultDegreeOfSuccess(rollResult) {
+  const candidates = [
+    rollResult?.degreeOfSuccess,
+    rollResult?.degree,
+    rollResult?.outcome,
+    rollResult?.result,
+    rollResult?.roll?.degreeOfSuccess,
+    rollResult?.roll?.degree,
+    rollResult?.roll?.outcome,
+    rollResult?.roll?.result
+  ];
+
+  for (const candidate of candidates) {
+    const normalizedDegree = normalizeDegreeOfSuccess(candidate);
+    if (normalizedDegree !== null) return normalizedDegree;
+  }
+
+  return null;
+}
+
+export function getStationActionOutcome(actionKey, degreeOfSuccess) {
+  const action = getCoreStationAction(actionKey);
+  const normalizedDegree = normalizeDegreeOfSuccess(degreeOfSuccess);
+  const outcomeDefinition = normalizedDegree === null ? null : STATION_ACTION_OUTCOME_DEGREES[normalizedDegree];
+
+  if (!action || !outcomeDefinition) {
+    return {
+      actionKey,
+      degreeOfSuccess: normalizedDegree,
+      outcomeKey: "unresolved",
+      label: "Unresolved",
+      text: "Unresolved"
+    };
+  }
+
+  return {
+    actionKey: action.key,
+    degreeOfSuccess: normalizedDegree,
+    outcomeKey: outcomeDefinition.key,
+    label: outcomeDefinition.label,
+    text: action[outcomeDefinition.key] || "Unresolved"
+  };
+}
+
+export function previewStationActionOutcome(actionKey, rollResult) {
+  return getStationActionOutcome(actionKey, getRollResultDegreeOfSuccess(rollResult));
+}
 
 export function getCoreStationAction(key) {
   return CORE_STATION_ACTIONS[key] ?? null;

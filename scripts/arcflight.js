@@ -34,7 +34,9 @@ import {
   getCoreStationAction,
   getCoreStationActionKeys,
   getCoreStationActions,
-  getCoreStationActionsForStation
+  getCoreStationActionsForStation,
+  getStationActionOutcome,
+  previewStationActionOutcome
 } from "../data/station-actions/core-station-actions.js";
 import { CORE_CREW_ASSET_KEYS, CORE_CREW_ASSETS, getCoreCrewAsset, getCoreCrewAssetKeys } from "../data/crew/core-crew-assets.js";
 import {
@@ -203,6 +205,8 @@ Hooks.once("init", () => {
     getCoreStationActionKeys,
     getCoreStationActions,
     getCoreStationActionsForStation,
+    getStationActionOutcome,
+    previewStationActionOutcome,
     getStationActionState,
     previewStationAction,
     getStationActionRollOptions,

@@ -1,4 +1,4 @@
-import { getCoreStationAction, getStationActionRollOptions } from "../../data/station-actions/core-station-actions.js";
+import { getCoreStationAction, getStationActionOutcome, getStationActionRollOptions, previewStationActionOutcome } from "../../data/station-actions/core-station-actions.js";
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
@@ -176,7 +176,7 @@ function getRollTotal(rollResult) {
 }
 
 function getRollDegree(rollResult) {
-  return rollResult?.degreeOfSuccess ?? rollResult?.degree ?? rollResult?.outcome ?? rollResult?.result ?? null;
+  return previewStationActionOutcome("", rollResult).degreeOfSuccess;
 }
 
 export function getStationActionState(shipActor) {
@@ -194,7 +194,7 @@ export function getStationActionState(shipActor) {
   };
 }
 
-export { getStationActionRollOptions };
+export { getStationActionOutcome, getStationActionRollOptions, previewStationActionOutcome };
 
 export function previewStationAction(shipActor, actionKey, options = {}) {
   const messages = [];
@@ -379,6 +379,8 @@ export async function rollStationAction(shipActor, actionKey, options = {}) {
     console.warn("Arcflight | Station action roll could not be made.", { actionKey, preview, rollStatus });
   }
 
+  const outcome = previewStationActionOutcome(actionKey, rollResult);
+  const degreeOfSuccess = getRollDegree(rollResult);
   const history = getStationActionState(shipActor).history;
   const record = {
     id: createStationActionId(actionKey),
@@ -401,8 +403,12 @@ export async function rollStationAction(shipActor, actionKey, options = {}) {
     resolvedStatisticKey: preview.resolvedStatisticKey,
     rollStatus,
     total: getRollTotal(rollResult),
-    degree: getRollDegree(rollResult),
-    result: getRollDegree(rollResult),
+    degreeOfSuccess,
+    degree: degreeOfSuccess,
+    result: outcome.label,
+    outcomeKey: outcome.outcomeKey,
+    outcomeLabel: outcome.label,
+    outcomeText: outcome.text,
     notes: options.notes ?? ""
   };
 

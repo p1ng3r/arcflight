@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Station Action Outcome Framework MVP
+
+- Added concise `criticalSuccess`, `success`, `failure`, and `criticalFailure` outcome text to core station action data.
+- Added `getStationActionOutcome(actionKey, degreeOfSuccess)` and `previewStationActionOutcome(actionKey, rollResult)` helpers on `game.arcflight` and `game.arcflight.devTools`.
+- Station-action roll history now records PF2E degree of success when available, interpreted outcome label/text, and `Unresolved` outcome data when no degree is available.
+- Updated Station Action History readouts to show outcome text for roll records while preserving roll totals and existing safe metadata.
+- Kept this MVP interpretive only: no AP/RAP spending, actor mutation beyond ship history, automated effects, combat automation, travel automation, or roll mechanic changes were added.
+
 ### Station Action Skill Rolls MVP
 
 - Added data-defined roll metadata to core station actions, covering station-appropriate PF2E skills/statistics such as Diplomacy, Piloting Lore, Perception, Crafting, Occultism, and Reflex fallback options.
