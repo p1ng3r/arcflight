@@ -46,7 +46,7 @@ export const CORE_STATIONS = Object.freeze({
     role: "Steering, movement, tactical handling",
     description: "The Pilot or Helm Officer operates the ship's handling posture and future maneuvering choices without requiring a room assignment.",
     gameplayDomains: ["piloting"],
-    primarySkills: ["pilotingLore", "sailingLore"],
+    primarySkills: ["piloting-lore", "sailing-lore"],
     traits: ["station", "helm", "handling"],
     notes: "Stations are operating roles, not physical rooms; this station is not unlocked by a Helm room."
   }),
@@ -56,7 +56,7 @@ export const CORE_STATIONS = Object.freeze({
     role: "Route planning, navigation, prediction",
     description: "The Navigator tracks routes, hazards, and predictive course planning for future travel systems.",
     gameplayDomains: ["navigation"],
-    primarySkills: ["survival", "society", "sailingLore"],
+    primarySkills: ["survival", "society", "sailing-lore"],
     traits: ["station", "navigation", "planning"],
     notes: "Travel gameplay and voyage events are not implemented in this phase."
   }),
@@ -96,7 +96,7 @@ export const CORE_STATIONS = Object.freeze({
     role: "Weapon coordination and firing support",
     description: "The Gunnery station identifies who coordinates weapon crews and firing support once future weapon systems exist.",
     gameplayDomains: ["weapons"],
-    primarySkills: ["warfareLore", "perception"],
+    primarySkills: ["warfare-lore", "perception"],
     traits: ["station", "weapons", "coordination"],
     notes: "No firing systems, combat rounds, or station attacks are implemented in this phase."
   }),
