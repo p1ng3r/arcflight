@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Shared PF2E Statistic Helper Extraction
+
+- Extracted generic PF2E statistic key normalization, Lore candidate discovery, actor statistic resolution, rollability checks, roll-total extraction, and guarded statistic rolling into `scripts/helpers/pf2e-statistics.js`.
+- Updated station-action roll execution to consume the shared PF2E statistic helper while preserving current station-action API names, roll history behavior, warning behavior, and default non-spending AP/RAP behavior.
+- Exposed the shared PF2E statistic helpers on `game.arcflight` and `game.arcflight.devTools` for station actions now and future travel event prompts later.
+- Extended framework smoke coverage for shared helper exports, Lore key normalization/candidates, null-safe resolution, and existing station-action missing-actor/missing-statistic safeguards.
+- Kept this pass refactor-only: no travel runner, travel UI, ship travel event state, combat automation, station-action outcome change, or AP/RAP behavior change was added.
+
 ### Travel Event Data Foundation MVP
 
 - Added locked travel event taxonomy constants for categories, result tiers, round outcomes, event outcomes, and broad reusable travel tags.

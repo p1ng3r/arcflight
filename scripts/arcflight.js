@@ -139,6 +139,7 @@ import {
 } from "./helpers/travel-events.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "./helpers/station-action-execution.js";
+import { getPf2eRollTotal, getPf2eStatisticCandidateKeys, isRollablePf2eStatistic, normalizePf2eStatisticKey, resolvePf2eActorStatistic, rollPf2eStatistic } from "./helpers/pf2e-statistics.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -232,6 +233,12 @@ Hooks.once("init", () => {
     previewStationAction,
     getStationActionRollOptions,
     previewStationActionRoll,
+    normalizePf2eStatisticKey,
+    getPf2eStatisticCandidateKeys,
+    resolvePf2eActorStatistic,
+    isRollablePf2eStatistic,
+    getPf2eRollTotal,
+    rollPf2eStatistic,
     resolveAssignedActorStatistic,
     rollStationAction,
     executeStationAction,
@@ -456,6 +463,12 @@ export {
   previewStationAction,
   getStationActionRollOptions,
   previewStationActionRoll,
+  normalizePf2eStatisticKey,
+  getPf2eStatisticCandidateKeys,
+  resolvePf2eActorStatistic,
+  isRollablePf2eStatistic,
+  getPf2eRollTotal,
+  rollPf2eStatistic,
   resolveAssignedActorStatistic,
   rollStationAction,
   executeStationAction,
