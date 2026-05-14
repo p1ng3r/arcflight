@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Travel Event Data Foundation MVP
+
+- Added locked travel event taxonomy constants for categories, result tiers, round outcomes, event outcomes, and broad reusable travel tags.
+- Added the read-only core travel event registry with the five-round **Black Tide Crossing** sample event, Travel Five station prompts, staged outcome branches, proposed non-executable effects, final outcomes, rewards/losses, and GM-only combat handoff metadata.
+- Added travel event helper utilities for Travel Five keys, degree normalization/contribution mapping, round/event outcome interpretation, event validation, and cloned event/round/station prompt summaries.
+- Exposed travel event data and helpers on `game.arcflight` and `game.arcflight.devTools` for console inspection and future UI preparation.
+- Extended framework smoke coverage for travel taxonomy, Travel Five membership, Black Tide Crossing validation, resource/station constraints, helper mappings, outcome helpers, and public/devTools exports.
+- Kept this pass deliberately data/helper-only: no UI, ship mutation, active event state, travel advancement, AP/RAP travel spending, automatic combat handoff, combat automation, or GM builder was added.
+
 ### Travel Resource / Station Alignment Cleanup MVP
 
 - Added canonical live travel resource helpers for ship `current` state, including `current.supplies`, normalized readout, non-mutating previews, clamped updates, and legacy `resources` mirroring for simple compatibility fields.

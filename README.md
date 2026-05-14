@@ -18,6 +18,17 @@ The current foundation checkpoint is stable for data-driven ship/component setup
 
 The milestone remains deliberately limited. Arcflight does not currently provide drag/drop installation, hull/arkengine removal buttons, source/compendium mutation, station-action effects automation, weapon firing, combat rounds, travel/voyage resolution, automated AP/RAP action spending, crew/faction gameplay, GM generators, or broad automation systems.
 
+
+## Travel Event Data Foundation
+
+Arcflight now includes a read-only Travel Event Data Foundation for future narrative voyage play. This foundation is data/helper only: it does not add UI, does not mutate ship actors, does not start or advance active travel events, does not spend AP/RAP, and does not automatically hand off to combat.
+
+The MVP travel event taxonomy is locked around reusable data constants for travel event categories, result tiers, round outcomes, event outcomes, and broad travel tags. Travel events use only the Travel Five stations for MVP prompts: Navigator, Engineer, Veilwarden, Watchmaster, and Captain. Pilot, Gunnery, and Quartermaster remain valid core stations, but they are not Travel Five MVP stations.
+
+The first sample event is **Black Tide Crossing**, a five-round environmental crossing with soft station prompts, staged outcome branches, proposed non-executable effects, and GM-facing `combatHandoff` metadata where appropriate. Threat branches never launch combat automatically; they only preserve handoff notes for later GM choice.
+
+Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
+
 ## Current Architecture Overview
 
 Arcflight deliberately builds on normal PF2E documents instead of registering custom document subtypes:

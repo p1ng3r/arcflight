@@ -5,7 +5,19 @@ import {
   organizeArcflightItems
 } from "../helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
+import {
+  getTravelFiveStationKeys,
+  normalizeTravelDegree,
+  getTravelDegreeContribution,
+  getTravelRoundOutcome,
+  getTravelEventOutcome,
+  validateTravelEventDefinition,
+  prepareTravelEventSummary,
+  prepareTravelRoundSummary,
+  getTravelEventStationPrompt
+} from "../helpers/travel-events.js";
 import { CORE_WEAPON_KEYS, getCoreWeapon, getCoreWeaponKeys } from "../../data/weapons/core-weapons.js";
+import { CORE_TRAVEL_EVENTS, CORE_TRAVEL_EVENT_KEYS, getCoreTravelEvent, getCoreTravelEventKeys, getCoreTravelEvents, getCoreTravelEventsByCategory } from "../../data/travel-events/core-travel-events.js";
 import {
   CORE_STATION_ACTION_KEYS,
   CORE_STATION_ACTIONS,
@@ -76,6 +88,81 @@ export function createArcflightDevTools() {
      * Return immutable core weapon source data by key.
      */
     getCoreWeapon,
+
+    /**
+     * Data-only core travel event registry for console inspection.
+     */
+    CORE_TRAVEL_EVENTS,
+
+    /**
+     * Immutable core travel event source keys.
+     */
+    CORE_TRAVEL_EVENT_KEYS,
+
+    /**
+     * Return immutable core travel event source keys.
+     */
+    getCoreTravelEventKeys,
+
+    /**
+     * Return immutable core travel event source data by key.
+     */
+    getCoreTravelEvent,
+
+    /**
+     * Return all immutable core travel event source data.
+     */
+    getCoreTravelEvents,
+
+    /**
+     * Return immutable core travel events filtered by category.
+     */
+    getCoreTravelEventsByCategory,
+
+    /**
+     * Return the Travel Five station keys for MVP travel events.
+     */
+    getTravelFiveStationKeys,
+
+    /**
+     * Normalize travel degree labels for contribution tracking.
+     */
+    normalizeTravelDegree,
+
+    /**
+     * Convert a travel roll degree into success/failure counters.
+     */
+    getTravelDegreeContribution,
+
+    /**
+     * Interpret per-round travel success/failure totals.
+     */
+    getTravelRoundOutcome,
+
+    /**
+     * Interpret whole-event travel success/failure totals.
+     */
+    getTravelEventOutcome,
+
+    /**
+     * Validate a travel event definition without mutating game data.
+     */
+    validateTravelEventDefinition,
+
+    /**
+     * Prepare cloned travel event summary data for future UI.
+     */
+    prepareTravelEventSummary,
+
+    /**
+     * Prepare cloned travel round summary data for future UI.
+     */
+    prepareTravelRoundSummary,
+
+    /**
+     * Prepare a cloned Travel Five station prompt for future UI.
+     */
+    getTravelEventStationPrompt,
 
     /**
      * Core weapon key constants for console inspection.
