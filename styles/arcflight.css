@@ -594,3 +594,96 @@
   flex: 1 1 12rem;
   margin: 0;
 }
+
+.arcflight-travel-sheet-panel__status,
+.arcflight-travel-runner__panel {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.arcflight-travel-runner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.arcflight-travel-runner__header,
+.arcflight-travel-runner__summary,
+.arcflight-travel-runner__totals,
+.arcflight-travel-runner__manual-entry,
+.arcflight-travel-runner__controls {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.arcflight-travel-runner__header {
+  justify-content: space-between;
+}
+
+.arcflight-travel-runner__boundary {
+  max-width: 26rem;
+}
+
+.arcflight-travel-runner__stat,
+.arcflight-travel-runner__totals article,
+.arcflight-travel-runner__station,
+.arcflight-travel-runner__effects-group {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arcflight-travel-runner__stat {
+  min-width: 8rem;
+}
+
+.arcflight-travel-runner__stat span,
+.arcflight-travel-runner__effects span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-runner__stat--warning,
+.arcflight-travel-runner__handoff {
+  border-color: var(--color-border-highlight, #a66a00);
+}
+
+.arcflight-travel-runner__vignette {
+  font-style: italic;
+}
+
+.arcflight-travel-runner__stations,
+.arcflight-travel-runner__effects {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner__station header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner__existing-result {
+  border-left: 3px solid var(--color-border-highlight, #a66a00);
+  padding-left: 0.5rem;
+}
+
+.arcflight-travel-runner__manual-entry .arcflight-sheet__field {
+  min-width: 10rem;
+}
+
+.arcflight-travel-runner__controls {
+  justify-content: flex-end;
+}
+
+.arcflight-button--danger {
+  border-color: var(--color-border-highlight-alt, #8a1f11);
+}

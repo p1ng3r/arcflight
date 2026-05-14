@@ -37,6 +37,23 @@ The state foundation tracks current round, round totals, event totals, normalize
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` include `getShipTravelEventState`, `getActiveShipTravelEvent`, `startShipTravelEvent`, `recordShipTravelStationResult`, `getCurrentShipTravelRound`, `advanceShipTravelEventRound`, `completeShipTravelEvent`, and `clearShipTravelEvent`.
 
+## Travel Event Runner UI MVP
+
+Arcflight now includes a GM-facing **Travel Event Runner** UI for Arcflight-enabled PF2E vehicle actors. Open it from an Arcflight ship sheet with **Open Travel Runner**, or from the console with:
+
+```js
+const ship = game.actors.getName("test ship");
+game.arcflight.openTravelEventRunner(ship);
+```
+
+The runner is ship-attached and currently supports the sample **Black Tide Crossing** event. When no event is active, it shows the selected ship, a no-active-event message, a **Start Black Tide Crossing** button, and the most recent completed-event summary when one exists.
+
+During an active event, the runner displays the current event header, round title and opening vignette, round/event totals, Travel Five station prompts, suggested skills, resource-option text, duplicate-result hints, staged round effects, final staged effects when available, and combat-handoff notes when backend state marks a handoff as available.
+
+This MVP is manual-control only. GMs select a station result degree (`criticalSuccess`, `success`, `failure`, or `criticalFailure`), optionally enter actor name/notes, and click **Record Result**. The UI does not create PF2E roll buttons yet and does not call PF2E statistic rolling from travel prompts.
+
+Staged effects are preview-only. The runner intentionally does not apply staged effects, mutate `current.hull`, `current.lifeveil`, `current.strain`, morale, supplies, or stored spell ranks, spend AP/RAP, start combat, create encounters, roll initiative, run weapons, or merge travel and combat automation.
+
 ## Shared PF2E Statistic Helpers
 
 Arcflight now exposes shared PF2E statistic helper functions on `game.arcflight` and `game.arcflight.devTools` for normalizing statistic keys, discovering candidate Lore fallbacks, resolving actor statistics, checking rollability, extracting PF2E roll totals, and making guarded PF2E statistic rolls. Station actions use these helpers now for their PF2E chat cards and roll-history metadata.

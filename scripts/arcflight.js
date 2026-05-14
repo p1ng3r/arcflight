@@ -1,5 +1,6 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
+import { ArcflightTravelEventRunner, openTravelEventRunner } from "./apps/travel-event-runner.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
   createArcflightItem,
@@ -387,6 +388,8 @@ Hooks.once("init", () => {
     advanceShipTravelEventRound,
     completeShipTravelEvent,
     clearShipTravelEvent,
+    ArcflightTravelEventRunner,
+    openTravelEventRunner,
     resetShipActionEconomy,
     spendShipActionPoints,
     canSpendShipActionPoints,
@@ -586,6 +589,8 @@ export {
   advanceShipTravelEventRound,
   completeShipTravelEvent,
   clearShipTravelEvent,
+  ArcflightTravelEventRunner,
+  openTravelEventRunner,
   resetShipActionEconomy,
   spendShipActionPoints,
   canSpendShipActionPoints,

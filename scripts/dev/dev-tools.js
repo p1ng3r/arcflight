@@ -4,6 +4,7 @@ import {
   findDuplicateArcflightItems,
   organizeArcflightItems
 } from "../helpers/item-organization.js";
+import { ArcflightTravelEventRunner, openTravelEventRunner } from "../apps/travel-event-runner.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import {
   getTravelFiveStationKeys,
@@ -174,6 +175,16 @@ export function createArcflightDevTools() {
      * Prepare a cloned Travel Five station prompt for future UI.
      */
     getTravelEventStationPrompt,
+
+    /**
+     * Travel Event Runner app class for manual GM UI checks.
+     */
+    ArcflightTravelEventRunner,
+
+    /**
+     * Open the GM-facing Travel Event Runner for an Arcflight ship.
+     */
+    openTravelEventRunner,
 
     /**
      * Return normalized ship-attached travel event state.
