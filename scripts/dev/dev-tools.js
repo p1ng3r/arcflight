@@ -12,7 +12,9 @@ import {
   getCoreStationAction,
   getCoreStationActionKeys,
   getCoreStationActions,
-  getCoreStationActionsForStation
+  getCoreStationActionsForStation,
+  getStationActionOutcome,
+  previewStationActionOutcome
 } from "../../data/station-actions/core-station-actions.js";
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { installWeapon, removeInstalledWeapon } from "../documents/ships.js";
@@ -104,6 +106,16 @@ export function createArcflightDevTools() {
      * Return immutable station action source data by key.
      */
     getCoreStationAction,
+
+    /**
+     * Interpret a station action degree of success into outcome copy.
+     */
+    getStationActionOutcome,
+
+    /**
+     * Interpret a PF2E roll result into station action outcome copy.
+     */
+    previewStationActionOutcome,
 
     /**
      * Return station action execution state for an Arcflight ship.

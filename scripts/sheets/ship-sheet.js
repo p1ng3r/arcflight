@@ -1,6 +1,6 @@
 import { getArkenginePattern, getArkenginePatternKeys } from "../../data/arkengines/arkengine-patterns.js";
 import { getHullPattern, getHullPatternKeys } from "../../data/hulls/hull-patterns.js";
-import { getCoreStationActionsForStation, getStationActionRollOptions } from "../../data/station-actions/core-station-actions.js";
+import { getCoreStationActionsForStation, getStationActionOutcome, getStationActionRollOptions } from "../../data/station-actions/core-station-actions.js";
 import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
 import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
@@ -746,20 +746,29 @@ function prepareStationActionGroups(actor, stations = {}) {
 }
 
 function prepareStationActionHistoryReadout(actor, limit = STATION_ACTION_HISTORY_LIMIT) {
-  const history = getStationActionState(actor).history.map((record = {}) => ({
-    ...record,
-    stationLabel: humanizeIdentifier(record.stationKey || "Unknown Station"),
-    phaseLabel: humanizeIdentifier(record.phase || "both"),
-    assignedCrewName: record.assignedActorName || record.assignedCrewName || "Unassigned",
-    timestampLabel: formatStationActionTimestamp(record.executedAt),
-    recordType: record.recordType || "record",
-    isRoll: record.recordType === "roll",
-    rollLabel: record.rollOptionLabel || record.statisticKey || "",
-    rollTotalLabel: Number.isFinite(Number(record.total)) ? `Total ${record.total}` : "No total",
-    rollResultLabel: record.degree || record.result || record.rollStatus || "",
-    hasRollResult: Boolean(record.degree || record.result || record.rollStatus || Number.isFinite(Number(record.total))),
-    hasNotes: String(record.notes ?? "").trim().length > 0
-  })).reverse();
+  const history = getStationActionState(actor).history.map((record = {}) => {
+    const derivedOutcome = getStationActionOutcome(record.actionKey, record.degreeOfSuccess ?? record.degree ?? record.result);
+    const outcomeLabel = record.outcomeLabel || derivedOutcome.label || "Unresolved";
+    const outcomeText = record.outcomeText || derivedOutcome.text || "Unresolved";
+
+    return {
+      ...record,
+      stationLabel: humanizeIdentifier(record.stationKey || "Unknown Station"),
+      phaseLabel: humanizeIdentifier(record.phase || "both"),
+      assignedCrewName: record.assignedActorName || record.assignedCrewName || "Unassigned",
+      timestampLabel: formatStationActionTimestamp(record.executedAt),
+      recordType: record.recordType || "record",
+      isRoll: record.recordType === "roll",
+      rollLabel: record.rollOptionLabel || record.statisticKey || "",
+      rollTotalLabel: Number.isFinite(Number(record.total)) ? `Total ${record.total}` : "No total",
+      rollResultLabel: outcomeLabel,
+      outcomeLabel,
+      outcomeText,
+      hasOutcomeText: record.recordType === "roll" && String(outcomeText ?? "").trim().length > 0,
+      hasRollResult: Boolean(record.rollStatus || Number.isFinite(Number(record.total)) || outcomeLabel),
+      hasNotes: String(record.notes ?? "").trim().length > 0
+    };
+  }).reverse();
   const latestRecords = history.slice(0, limit);
 
   return {
