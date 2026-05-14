@@ -5,6 +5,7 @@ import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_WEAPON_ARCS } from
 import { ARCFLIGHT_COMPONENT_ITEM_TYPE, getComponentData, getComponentType } from "../documents/components.js";
 import { getInstallState, prepareInstallStateSummary } from "../helpers/install-state.js";
 import { previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
+import { getShipTravelEventState } from "../helpers/ship-travel-event-state.js";
 import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction, rollStationAction } from "../helpers/station-action-execution.js";
 import {
   ARCFLIGHT_SHIP_ACTOR_TYPE,
@@ -856,6 +857,36 @@ function prepareInstallValidationReadout(system = {}) {
   };
 }
 
+function prepareTravelRunnerReadout(shipActor) {
+  if (!isArcflightShipEnabled(shipActor) || shipActor?.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") !== ARCFLIGHT_SHIP_ACTOR_TYPE) {
+    return {
+      canOpen: false,
+      hasActiveEvent: false,
+      activeEventName: "",
+      activeEventStatus: "",
+      activeEventRoundLabel: "",
+      message: "Enable Arcflight ship data before opening the Travel Event Runner."
+    };
+  }
+
+  const state = getShipTravelEventState(shipActor);
+  const activeEvent = state.activeEvent ?? null;
+  const completedEvents = Array.isArray(state.completedEvents) ? state.completedEvents : [];
+  const lastCompletedEvent = completedEvents.at?.(-1) ?? completedEvents[completedEvents.length - 1] ?? null;
+
+  return {
+    canOpen: true,
+    hasActiveEvent: Boolean(activeEvent),
+    activeEventName: activeEvent?.eventName ?? "",
+    activeEventStatus: activeEvent?.status ?? "",
+    activeEventRoundLabel: activeEvent ? `${activeEvent.currentRound} / ${activeEvent.roundCount}` : "",
+    message: activeEvent ? "Active travel event ready for GM manual control." : "No active travel event.",
+    hasLastCompletedEvent: Boolean(lastCompletedEvent),
+    lastCompletedEventName: lastCompletedEvent?.eventName ?? "",
+    lastCompletedOutcome: lastCompletedEvent?.finalOutcomeKey ?? ""
+  };
+}
+
 function prepareArcflightShipViewData(arcflight, shipActor = null) {
   const system = foundry.utils.deepClone(arcflight.system ?? {});
   system.installed = system.installed ?? {};
@@ -895,6 +926,7 @@ function prepareArcflightShipViewData(arcflight, shipActor = null) {
   system.actionEconomyReadout = prepareActionEconomyReadout(shipActor, system);
   system.installValidationReadout = prepareInstallValidationReadout(system);
   system.installStateReadout = prepareInstallStateReadout(shipActor);
+  system.travelRunnerReadout = prepareTravelRunnerReadout(shipActor);
   system.crew = system.crew ?? {};
   system.crew.namedCrew = arrayOrEmpty(system.crew.namedCrew).map(prepareCrewEntry);
 
@@ -1324,6 +1356,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       ?.addEventListener("click", this.#onInstallSelectedComponent.bind(this));
 
     this.element
+      .querySelector?.("[data-arcflight-open-travel-runner]")
+      ?.addEventListener("click", this.#onOpenTravelRunner.bind(this));
+
+    this.element
       .querySelector?.("[data-arcflight-reset-action-economy]")
       ?.addEventListener("click", this.#onResetActionEconomy.bind(this));
 
@@ -1441,6 +1477,27 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not reset AP/RAP.");
       console.warn("Arcflight | AP/RAP reset failed.", error);
+    }
+  }
+
+
+  async #onOpenTravelRunner(event) {
+    event.preventDefault();
+
+    const actor = await ensureArcflightShipActor(getSheetActor(this));
+    if (!actor) return;
+
+    const openTravelEventRunner = game?.arcflight?.openTravelEventRunner;
+    if (typeof openTravelEventRunner !== "function") {
+      ui.notifications?.warn?.("Arcflight Travel Event Runner is not available.");
+      return;
+    }
+
+    try {
+      openTravelEventRunner(actor);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not open the Travel Event Runner.");
+      console.warn("Arcflight | Travel runner open from ship sheet failed.", error);
     }
   }
 
@@ -1806,4 +1863,4 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   }
 }
 
-export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState, prepareInstallValidationReadout, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows };
+export { ArcflightShipSheet as ShipSheet, prepareArcflightShipViewData, prepareInstallStateReadout, prepareInstallUiState, prepareInstallValidationReadout, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows, prepareTravelRunnerReadout };

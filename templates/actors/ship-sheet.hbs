@@ -166,6 +166,23 @@
     </article>
   </section>
 
+  <section class="arcflight-sheet__section arcflight-travel-sheet-panel" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
+    <h2>Travel</h2>
+    <p class="arcflight-sheet__hint">GM-facing Travel Event Runner for ship-attached travel events. Manual result entry only; no PF2E rolls, AP/RAP spending, staged-effect application, or combat auto-start.</p>
+    <div class="arcflight-travel-sheet-panel__status">
+      <p><strong>Status:</strong> {{arcflight.system.travelRunnerReadout.message}}</p>
+      {{#if arcflight.system.travelRunnerReadout.hasActiveEvent}}
+        <p><strong>Active Event:</strong> {{arcflight.system.travelRunnerReadout.activeEventName}} (round {{arcflight.system.travelRunnerReadout.activeEventRoundLabel}}, {{arcflight.system.travelRunnerReadout.activeEventStatus}})</p>
+      {{else}}
+        <p>No active travel event.</p>
+      {{/if}}
+      {{#if arcflight.system.travelRunnerReadout.hasLastCompletedEvent}}
+        <p><strong>Last Completed:</strong> {{arcflight.system.travelRunnerReadout.lastCompletedEventName}} ({{arcflight.system.travelRunnerReadout.lastCompletedOutcome}})</p>
+      {{/if}}
+    </div>
+    <button type="button" data-arcflight-open-travel-runner {{#unless arcflight.system.travelRunnerReadout.canOpen}}disabled{{/unless}}>Open Travel Runner</button>
+  </section>
+
   <section class="arcflight-sheet__section arcflight-action-economy" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>AP/RAP Economy</h2>
     <p class="arcflight-sheet__hint">Ship-level AP/RAP resource accounting for future tactical scenes. Reset only restores current AP/RAP to the derived maximums; station action Record and Roll do not spend by default.</p>

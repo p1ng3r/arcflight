@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Travel Event Runner UI MVP
+
+- Added a GM-facing, ship-attached Travel Event Runner ApplicationV2 UI for Arcflight-enabled PF2E vehicle actors.
+- Exposed `ArcflightTravelEventRunner` and `openTravelEventRunner(shipActor, options = {})` on `game.arcflight` and `game.arcflight.devTools`.
+- Added an Arcflight ship sheet Overview button/readout for opening the runner while preserving existing tab and scroll behavior.
+- The runner can start Black Tide Crossing, display current round vignettes and Travel Five prompts, manually record station result degrees, block duplicate primary station results, advance rounds, complete or clear events, and show latest completed-event summaries.
+- Staged round/final effects and combat-handoff metadata are displayed only; the UI does not apply effects, mutate ship travel resources, spend AP/RAP, roll PF2E statistics, create encounters, roll initiative, or start combat.
+- Extended framework smoke checks for runner helper exposure, importability, ship sheet travel runner readout state, and continued backend no-mutation boundaries.
+
 ### Ship-Attached Travel Event State Foundation MVP
 
 - Added ship-owned travel event state under `flags.arcflight.system.travel`, with one active event, per-round result state, staged effects, combat-handoff metadata, history, and completed-event history.

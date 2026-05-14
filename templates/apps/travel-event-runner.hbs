@@ -1,0 +1,167 @@
+<div class="arcflight-travel-runner__body">
+  <header class="arcflight-travel-runner__header">
+    <div>
+      <p class="arcflight-sheet__eyebrow">Travel Event Runner</p>
+      <h1>{{#if activeEvent}}{{activeEvent.eventName}}{{else}}Travel Event Runner{{/if}}</h1>
+      <p><strong>Ship:</strong> {{shipName}}</p>
+    </div>
+    <p class="arcflight-sheet__hint arcflight-travel-runner__boundary">{{noAutomationHint}}</p>
+  </header>
+
+  {{#if hasActiveEvent}}
+    <section class="arcflight-travel-runner__panel arcflight-travel-runner__summary">
+      <div class="arcflight-travel-runner__stat"><span>Category</span><strong>{{activeEvent.categoryLabel}}</strong></div>
+      <div class="arcflight-travel-runner__stat"><span>Round</span><strong>{{activeEvent.currentRound}} / {{activeEvent.roundCount}}</strong></div>
+      <div class="arcflight-travel-runner__stat"><span>Base DC</span><strong>{{activeEvent.baseDC}}</strong></div>
+      <div class="arcflight-travel-runner__stat"><span>Status</span><strong>{{activeEvent.statusLabel}}</strong></div>
+      {{#if activeEvent.combatHandoff.available}}
+        <div class="arcflight-travel-runner__stat arcflight-travel-runner__stat--warning"><span>Combat Handoff</span><strong>Available</strong></div>
+      {{/if}}
+    </section>
+
+    {{#if activeEvent.combatHandoff.available}}
+      <section class="arcflight-travel-runner__panel arcflight-travel-runner__handoff">
+        <h2>Combat Handoff Available</h2>
+        <p class="arcflight-sheet__hint">This is an informational handoff only. Arcflight does not start combat, create an encounter, roll initiative, or move into tactical rounds from this runner.</p>
+        {{#if activeEvent.combatHandoff.handoffNotes}}<p>{{activeEvent.combatHandoff.handoffNotes}}</p>{{/if}}
+      </section>
+    {{/if}}
+
+    <section class="arcflight-travel-runner__panel">
+      <h2>{{activeEvent.currentRoundTitle}}</h2>
+      <p class="arcflight-travel-runner__vignette">{{activeEvent.currentRoundVignette}}</p>
+      <div class="arcflight-travel-runner__totals">
+        <article>
+          <h3>Round Totals</h3>
+          <p>Successes: <strong>{{activeEvent.currentRound.successes}}</strong></p>
+          <p>Failures: <strong>{{activeEvent.currentRound.failures}}</strong></p>
+          <p>Critical Failures: <strong>{{activeEvent.currentRound.criticalFailures}}</strong></p>
+        </article>
+        <article>
+          <h3>Event Totals</h3>
+          <p>Successes: <strong>{{activeEvent.totals.successes}}</strong></p>
+          <p>Failures: <strong>{{activeEvent.totals.failures}}</strong></p>
+          <p>Critical Failures: <strong>{{activeEvent.totals.criticalFailures}}</strong></p>
+          {{#if activeEvent.expectedFinalOutcomeLabel}}<p>Current expected final outcome: <strong>{{activeEvent.expectedFinalOutcomeLabel}}</strong></p>{{/if}}
+        </article>
+      </div>
+    </section>
+
+    <section class="arcflight-travel-runner__panel">
+      <h2>Travel Five Station Prompts</h2>
+      {{#if activeEvent.hasStationPrompts}}
+        <div class="arcflight-travel-runner__stations">
+          {{#each activeEvent.stationPrompts}}
+            <article class="arcflight-travel-runner__station" data-arcflight-station-prompt data-station-key="{{stationKey}}">
+              <header>
+                <h3>{{stationName}}</h3>
+                <span>{{stationKey}}</span>
+              </header>
+              <p class="arcflight-travel-runner__vignette">{{vignette}}</p>
+              <p><strong>Suggested Skills:</strong> {{#if suggestedSkillsLabel}}{{suggestedSkillsLabel}}{{else}}—{{/if}}</p>
+              {{#if hasResourceOptions}}
+                <p><strong>Resource Options:</strong></p>
+                <ul>
+                  {{#each resourceOptions}}<li>{{this}}</li>{{/each}}
+                </ul>
+              {{/if}}
+
+              {{#if hasExistingResult}}
+                <div class="arcflight-travel-runner__existing-result">
+                  <strong>Existing Result:</strong> {{existingResultLabel}}{{#if existingResult.actorName}} by {{existingResult.actorName}}{{/if}}{{#if existingResult.notes}} — {{existingResult.notes}}{{/if}}
+                </div>
+                <p class="arcflight-sheet__hint">One primary result per station per round is allowed. Duplicate recording is blocked in this MVP.</p>
+              {{else}}
+                <div class="arcflight-travel-runner__manual-entry">
+                  <label class="arcflight-sheet__field">
+                    <span>Degree</span>
+                    <select data-arcflight-degree>
+                      {{#each degreeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-sheet__field">
+                    <span>Actor Name (optional)</span>
+                    <input type="text" data-arcflight-actor-name placeholder="Crew or PC name">
+                  </label>
+                  <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+                    <span>Notes (optional)</span>
+                    <input type="text" data-arcflight-notes placeholder="Short GM note">
+                  </label>
+                  <button type="button" data-arcflight-record-station-result {{#unless canRecord}}disabled{{/unless}}>Record Result</button>
+                </div>
+              {{/if}}
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">No active station prompts are defined for this round.</p>
+      {{/if}}
+    </section>
+
+    <section class="arcflight-travel-runner__panel">
+      <h2>Staged Effects Preview</h2>
+      <p class="arcflight-sheet__hint">Effects listed here are preview-only and are not applied to hull, lifeveil, strain, morale, supplies, stored spell ranks, AP, or RAP.</p>
+      {{#if activeEvent.hasStagedRoundEffects}}
+        {{#each activeEvent.stagedRoundEffects}}
+          <article class="arcflight-travel-runner__effects-group">
+            <h3>{{title}} Staged Effects {{#if outcomeLabel}}({{outcomeLabel}}){{/if}}</h3>
+            <div class="arcflight-travel-runner__effects">
+              {{#each effects}}
+                <div><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span></div>
+              {{/each}}
+            </div>
+          </article>
+        {{/each}}
+      {{else}}
+        <p>No staged round effects yet.</p>
+      {{/if}}
+      {{#if activeEvent.hasStagedFinalEffects}}
+        <article class="arcflight-travel-runner__effects-group">
+          <h3>Final Staged Effects</h3>
+          <div class="arcflight-travel-runner__effects">
+            {{#each activeEvent.stagedFinalEffects}}
+              <div><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span></div>
+            {{/each}}
+          </div>
+        </article>
+      {{/if}}
+    </section>
+
+    <footer class="arcflight-travel-runner__controls">
+      <button type="button" data-arcflight-advance-travel-round {{#unless activeEvent.canAdvanceRound}}disabled{{/unless}}>{{activeEvent.advanceButtonLabel}}</button>
+      <button type="button" data-arcflight-complete-travel-event>Complete Event</button>
+      <button type="button" class="arcflight-button--danger" data-arcflight-clear-travel-event>Clear Active Event</button>
+    </footer>
+  {{else}}
+    <section class="arcflight-travel-runner__panel arcflight-travel-runner__empty">
+      <h2>No active travel event.</h2>
+      <p>Select the sample event below to start GM-guided manual travel event tracking for this ship.</p>
+      <button type="button" data-arcflight-start-black-tide>Start Black Tide Crossing</button>
+    </section>
+
+    {{#if hasLastCompletedEvent}}
+      <section class="arcflight-travel-runner__panel">
+        <h2>Last Completed Event</h2>
+        <div class="arcflight-travel-runner__summary">
+          <div class="arcflight-travel-runner__stat"><span>Event</span><strong>{{lastCompletedEvent.eventName}}</strong></div>
+          <div class="arcflight-travel-runner__stat"><span>Final Outcome</span><strong>{{lastCompletedEvent.finalOutcomeLabel}}</strong></div>
+          <div class="arcflight-travel-runner__stat"><span>Completed At</span><strong>{{lastCompletedEvent.completedAtLabel}}</strong></div>
+          <div class="arcflight-travel-runner__stat"><span>Final Effects</span><strong>{{lastCompletedEvent.stagedFinalEffectsCount}}</strong></div>
+          <div class="arcflight-travel-runner__stat"><span>Combat Handoff</span><strong>{{#if lastCompletedEvent.combatHandoff}}Yes{{else}}No{{/if}}</strong></div>
+        </div>
+        {{#if lastCompletedEvent.combatHandoff}}
+          <h3>Combat Handoff Available</h3>
+          {{#if lastCompletedEvent.handoffNotes}}<p>{{lastCompletedEvent.handoffNotes}}</p>{{else}}<p class="arcflight-sheet__hint">No handoff notes were staged.</p>{{/if}}
+        {{/if}}
+        {{#if lastCompletedEvent.stagedFinalEffectsCount}}
+          <h3>Staged Final Effects</h3>
+          <div class="arcflight-travel-runner__effects">
+            {{#each lastCompletedEvent.stagedFinalEffects}}
+              <div><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span></div>
+            {{/each}}
+          </div>
+        {{/if}}
+      </section>
+    {{/if}}
+  {{/if}}
+</div>
