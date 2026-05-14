@@ -43,7 +43,8 @@ The current Framework Foundation includes these data-first systems:
 - **Room** — physical ship spaces, with core rooms, expansion room slot tracking, a 26-entry core content library, and infrastructure/occult/Lifeveil refit metadata.
 - **Ship Upgrade** — permanent vessel improvements with ship upgrade slot tracking, a 28-entry core content library, and meaningful refit pressure across structural, command, Lifeveil, occult, engine, and military categories.
 - **Crew Asset** — named/support crew source items copied into ship-owned crew rosters, with a 15-entry core content library and light advisory tier/refit metadata.
-- **Station framework** — ship-owned operating role definitions, assignments, backend station-action preview/execution/roll history helpers, AP/RAP cost affordability previews, and a minimal ship-sheet Station Actions section that records action and skill-roll history only by default.
+- **Station framework** — ship-owned operating role definitions, assignments, backend station-action preview/execution/roll history helpers, AP/RAP cost affordability previews, Travel Five station constants, and a minimal ship-sheet Station Actions section that records action and skill-roll history only by default.
+- **Travel resource alignment** — normalized helper access to live ship travel resources (`hull`, `lifeveil`, `strain`, `morale`, `supplies`, and `storedSpellRanks`) from `flags.arcflight.system.current`, while preserving the legacy `resources` block for structured readout compatibility.
 - **Ship actor architecture** — separated `installed`, `base`, `derived`, `current`, and ship-owned AP/RAP `actionEconomy` state on Arcflight-enabled PF2E vehicle actors.
 - **Framework smoke test helper** — a Foundry-console validation helper exposed as `game.arcflight.runFrameworkSmokeTest`, with coverage for controlled install enforcement, backend weapon install/remove validation, station-action history recording, non-core component removal, lifecycle history, backfill dry runs, and actor resolution safeguards.
 
@@ -53,13 +54,29 @@ Terminology used in sheets and docs:
 - **Install State** means normalized ship-owned lifecycle records under `flags.arcflight.system.installState` that future install/removal UI, repair state, combat targeting, voyage wear, cargo manifests, and export tooling can consume.
 - **Base** means copied component data used as recalculation input.
 - **Derived** means recalculated framework values from Base data plus supported installed modifiers.
-- **Current** means editable runtime state on the ship actor.
+- **Current** means editable runtime state on the ship actor. For travel-resource preparation, `flags.arcflight.system.current` is the canonical live state for hull, Lifeveil, strain, morale, supplies, and stored spell ranks.
+- **Resources** remains a compatibility/readout block. It is preserved for existing sheets and smoke coverage, but travel gameplay helpers read and mutate `current` first and only use `resources` as a legacy fallback when a current value is missing.
 - **Rooms** are physical spaces.
 - **Ship Upgrades** are permanent vessel improvements.
 - **Arkengine Mods** are engine-only tuning.
-- **Stations** are operating roles.
+- **Stations** are operating roles. The Travel Five for MVP travel prep are Navigator, Engineer, Veilwarden, Watchmaster, and Captain. Pilot / Helm, Gunnery, and Quartermaster remain valid Arcflight stations in `STATION_KEYS`, but they are not core Travel Five stations.
 - **Station Actions** are action declarations previewed and recorded under `flags.arcflight.system.stationActions.history`; the ship-sheet MVP groups them by station, validates assignment/phase/readiness, offers data-defined PF2E skill/statistic roll options for assigned character actors, and records history without AP/RAP spend, weapon fire, combat, travel, or effect automation.
 - **Crew Assets** are named/support crew.
+
+## Travel Resource / Station Alignment
+
+Before the Travel Event system is added, Arcflight now aligns ship travel resource ownership without adding a travel runner or travel UI. Live travel state is canonical under `flags.arcflight.system.current`:
+
+- `current.hull`
+- `current.lifeveil`
+- `current.strain`
+- `current.morale`
+- `current.supplies`
+- `current.storedSpellRanks`
+
+The older `flags.arcflight.system.resources` block is intentionally retained for compatibility and structured readouts. Helpers may mirror simple readout values such as `resources.hull.value`, `resources.lifeveil.value`, `resources.strain.value`, `resources.supplies`, and `resources.morale`, but travel-facing mutation targets `current` first. AP/RAP remains combat/action-economy state only and is not used or spent by travel resource helpers.
+
+The MVP Travel Five station set is exactly `navigator`, `engineer`, `veilwarden`, `watchmaster`, and `captain`. `pilot`, `gunnery`, and `quartermaster` remain valid Arcflight core stations for broader ship systems, but they are outside the Travel Five for this cleanup pass.
 
 ## Controlled Non-Core Component Removal
 

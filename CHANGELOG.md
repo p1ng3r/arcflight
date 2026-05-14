@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Travel Resource / Station Alignment Cleanup MVP
+
+- Added canonical live travel resource helpers for ship `current` state, including `current.supplies`, normalized readout, non-mutating previews, clamped updates, and legacy `resources` mirroring for simple compatibility fields.
+- Added travel resource and Travel Five constants, plus `getTravelStationKeys()` / `isTravelStationKey()` helpers exposed on `game.arcflight` and `game.arcflight.devTools`.
+- Normalized older ships so missing `current.supplies` falls back to existing `resources.supplies` before defaulting to 0, without removing the legacy `resources` block.
+- Extended framework smoke coverage for travel resource normalization, preview immutability, update clamping, AP/RAP non-use, Travel Five membership, station skill-key normalization, non-travel station preservation, and helper exposure.
+- Normalized core station Lore `primarySkills` to PF2E/statistic slug-style keys (`piloting-lore`, `sailing-lore`, `warfare-lore`) without changing station keys, display names, or gameplay meaning.
+- Kept this cleanup deliberately narrow: no Travel Event runner, travel UI, GM builder, combat handoff, AP/RAP travel spending, or combat automation was added.
+
 ### PF2E Statistic Chat Roll Wiring MVP
 
 - Wired station action Roll controls to prefer real PF2E `Statistic` objects via `actor.getStatistic`, actor skills, perception, and saves before falling back to read-only system skill metadata.
