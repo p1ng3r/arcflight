@@ -1,4 +1,4 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
+import { ARCFLIGHT, ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import {
   createCoreArkengine,
   createCoreArkengineMod,
@@ -35,12 +35,17 @@ import {
   updateShipTierState,
   calculateRefitPressure,
   getShipActionEconomy,
+  getShipTravelResources,
+  getTravelStationKeys,
   getShipRefitPressure,
   getShipRefitStatus,
   getShipTierState,
+  isTravelStationKey,
+  previewShipTravelResourceChange,
   canSpendShipActionPoints,
   resetShipActionEconomy,
-  spendShipActionPoints
+  spendShipActionPoints,
+  updateShipTravelResources
 } from "../documents/ships.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS } from "../../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
@@ -49,7 +54,7 @@ import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { CORE_WEAPON_KEYS, CORE_WEAPONS } from "../../data/weapons/core-weapons.js";
-import { STATION_KEYS } from "../../data/stations/core-stations.js";
+import { CORE_STATIONS, STATION_KEYS } from "../../data/stations/core-stations.js";
 import {
   CORE_STATION_ACTION_KEYS,
   CORE_STATION_ACTIONS,
@@ -296,6 +301,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core weapon key array exists", isCoreKeyArray(CORE_WEAPON_KEYS), "non-empty array", CORE_WEAPON_KEYS?.length ?? 0);
     check(result, "Every core weapon has size/family/reload/damageProfile", CORE_WEAPON_KEYS.every((key) => hasCoreWeaponFoundationData(CORE_WEAPONS[key])), true, CORE_WEAPON_KEYS.filter((key) => !hasCoreWeaponFoundationData(CORE_WEAPONS[key])));
     check(result, "Core station key array exists", isCoreKeyArray(STATION_KEYS), "non-empty array", STATION_KEYS?.length ?? 0);
+    const travelStationKeys = getTravelStationKeys();
+    const expectedTravelStationKeys = ["navigator", "engineer", "veilwarden", "watchmaster", "captain"];
+    check(result, "Travel Five station helper returns exact keys", JSON.stringify(travelStationKeys) === JSON.stringify(expectedTravelStationKeys), expectedTravelStationKeys, travelStationKeys);
+    check(result, "Every Travel Five station exists in STATION_KEYS", travelStationKeys.every((stationKey) => STATION_KEYS.includes(stationKey)), true, travelStationKeys.filter((stationKey) => !STATION_KEYS.includes(stationKey)));
+    check(result, "Non-travel stations remain core but outside Travel Five", ["pilot", "gunnery", "quartermaster"].every((stationKey) => STATION_KEYS.includes(stationKey) && !isTravelStationKey(stationKey)), "pilot/gunnery/quartermaster core only", { stationKeys: STATION_KEYS, travelStationKeys });
+    check(result, "Travel Five station primary skills are string keys", travelStationKeys.every((stationKey) => CORE_STATIONS[stationKey]?.primarySkills?.every((skillKey) => typeof skillKey === "string" && skillKey.length > 0)), "non-empty string skill keys", Object.fromEntries(travelStationKeys.map((stationKey) => [stationKey, CORE_STATIONS[stationKey]?.primarySkills])));
+    const camelCaseLoreSkillKeys = ["pilotingLore", "sailingLore", "warfareLore"];
+    const stationsWithCamelCaseLoreSkills = Object.entries(CORE_STATIONS).filter(([, station]) => station.primarySkills?.some((skillKey) => camelCaseLoreSkillKeys.includes(skillKey))).map(([stationKey, station]) => ({ stationKey, primarySkills: station.primarySkills }));
+    check(result, "Core station primary skills use slug-style Lore keys", stationsWithCamelCaseLoreSkills.length === 0, "no camelCase Lore keys", stationsWithCamelCaseLoreSkills);
+    check(result, "Travel constants are exported", ARCFLIGHT.TRAVEL_RESOURCES?.SUPPLIES === "supplies" && ARCFLIGHT.TRAVEL_STATIONS?.NAVIGATOR === "navigator", "travel constants", { resources: ARCFLIGHT.TRAVEL_RESOURCES, stations: ARCFLIGHT.TRAVEL_STATIONS });
     check(result, "Core station action key array exists", isCoreKeyArray(CORE_STATION_ACTION_KEYS), "non-empty array", CORE_STATION_ACTION_KEYS?.length ?? 0);
     check(result, "Every station action has required foundation fields", CORE_STATION_ACTION_KEYS.every((key) => hasCoreStationActionFoundationData(CORE_STATION_ACTIONS[key])), true, CORE_STATION_ACTION_KEYS.filter((key) => !hasCoreStationActionFoundationData(CORE_STATION_ACTIONS[key])));
     check(result, "Every station action points to a known station key", CORE_STATION_ACTION_KEYS.every((key) => STATION_KEYS.includes(CORE_STATION_ACTIONS[key]?.stationKey)), true, CORE_STATION_ACTION_KEYS.filter((key) => !STATION_KEYS.includes(CORE_STATION_ACTIONS[key]?.stationKey)));
@@ -364,6 +379,7 @@ export async function runFrameworkSmokeTest(options = {}) {
       [`flags.${ARCFLIGHT_MODULE_ID}.${SMOKE_TEST_FLAG}`]: true
     });
     check(result, "Arcflight enabled on vehicle", actor.getFlag(ARCFLIGHT_MODULE_ID, "enabled") === true, true, actor.getFlag(ARCFLIGHT_MODULE_ID, "enabled"));
+    checkEqual(result, "Current supplies initializes safely", 0, getArcflightShipData(actor).current.supplies);
 
     const initialStationActionState = getStationActionState(actor);
     check(result, "Station action history initializes empty", Array.isArray(initialStationActionState.history) && initialStationActionState.history.length === 0, "empty history", initialStationActionState);
@@ -562,7 +578,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Remove weapon frees mount", weaponShipData.installed.weapons.length === 0 && weaponShipData.base.hull.weaponMounts.fore[0].occupied === false, "weapon removed and mount free", weaponShipData.base.hull.weaponMounts.fore[0]);
     check(result, "Remove weapon deactivates installState", removedWeaponRecord?.active === false && removedWeaponRecord?.removalReason === "removed" && removedWeaponRecord?.removedAt > 0, "inactive weapon installState", removedWeaponRecord);
 
-    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, storedSpellRanks: 7 };
+    const preservedCurrent = { hull: 120, lifeveil: 4, strain: 2, morale: 1, supplies: 3, storedSpellRanks: 7 };
     await actor.update({
       [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent
     });
@@ -584,6 +600,35 @@ export async function runFrameworkSmokeTest(options = {}) {
 
     let actionEconomy = getShipActionEconomy(actor);
     check(result, "Ship action economy initializes from derived hull AP/RAP", actionEconomy.maxAP === shipData.derived.baseAP && actionEconomy.maxRAP === shipData.derived.baseRAP && actionEconomy.ap === actionEconomy.maxAP && actionEconomy.rap === actionEconomy.maxRAP, "current/max from derived baseAP/baseRAP", { actionEconomy, derived: { baseAP: shipData.derived.baseAP, baseRAP: shipData.derived.baseRAP } });
+    await actor.update({
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.current.supplies`]: null,
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.resources.supplies`]: 4
+    });
+    shipData = getArcflightShipData(actor);
+    checkEqual(result, "Current supplies normalizes from legacy resources fallback", 4, shipData.current.supplies);
+    await actor.update({
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.current.supplies`]: 2,
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.current.lifeveil`]: 1,
+      [`flags.${ARCFLIGHT_MODULE_ID}.system.current.hull`]: 1
+    });
+    shipData = getArcflightShipData(actor);
+    actionEconomy = getShipActionEconomy(actor);
+    const beforeTravelResources = getShipTravelResources(actor);
+    const previewTravelResources = previewShipTravelResourceChange(actor, { strain: 1, lifeveil: -99, hull: -99, supplies: -99 });
+    const afterPreviewData = getArcflightShipData(actor);
+    check(result, "getShipTravelResources helper exists", typeof getShipTravelResources === "function" && beforeTravelResources.supplies === 2, "helper and normalized resources", beforeTravelResources);
+    check(result, "previewShipTravelResourceChange does not mutate", afterPreviewData.current.strain === shipData.current.strain && afterPreviewData.current.supplies === shipData.current.supplies, "unchanged current state", { before: shipData.current, after: afterPreviewData.current });
+    check(result, "Travel clamps prevent negative supplies/lifeveil/hull", previewTravelResources.after.supplies === 0 && previewTravelResources.after.lifeveil === 0 && previewTravelResources.after.hull === 0 && previewTravelResources.warnings.length >= 3, "clamped resources", previewTravelResources);
+    const beforeTravelEconomy = getShipActionEconomy(actor);
+    const updatedTravelResources = await updateShipTravelResources(actor, { strain: 1, supplies: -1 });
+    const afterTravelEconomy = getShipActionEconomy(actor);
+    shipData = getArcflightShipData(actor);
+    check(result, "updateShipTravelResources changes current strain/current supplies safely", shipData.current.strain === beforeTravelResources.strain + 1 && shipData.current.supplies === 1 && updatedTravelResources.strain === shipData.current.strain && updatedTravelResources.supplies === shipData.current.supplies, "updated current resources", { current: shipData.current, updatedTravelResources });
+    check(result, "Travel resource helpers do not change AP/RAP", beforeTravelEconomy.ap === afterTravelEconomy.ap && beforeTravelEconomy.rap === afterTravelEconomy.rap, "unchanged AP/RAP", { before: beforeTravelEconomy, after: afterTravelEconomy });
+    check(result, "Travel resource helpers exposed", typeof globalThis.game?.arcflight?.getShipTravelResources === "function" && typeof globalThis.game?.arcflight?.previewShipTravelResourceChange === "function" && typeof globalThis.game?.arcflight?.updateShipTravelResources === "function" && typeof globalThis.game?.arcflight?.getTravelStationKeys === "function" && typeof globalThis.game?.arcflight?.isTravelStationKey === "function", true, { getShipTravelResources: typeof globalThis.game?.arcflight?.getShipTravelResources, previewShipTravelResourceChange: typeof globalThis.game?.arcflight?.previewShipTravelResourceChange, updateShipTravelResources: typeof globalThis.game?.arcflight?.updateShipTravelResources, getTravelStationKeys: typeof globalThis.game?.arcflight?.getTravelStationKeys, isTravelStationKey: typeof globalThis.game?.arcflight?.isTravelStationKey });
+    check(result, "Travel resource devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getShipTravelResources === "function" && typeof globalThis.game?.arcflight?.devTools?.previewShipTravelResourceChange === "function" && typeof globalThis.game?.arcflight?.devTools?.updateShipTravelResources === "function" && typeof globalThis.game?.arcflight?.devTools?.getTravelStationKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.isTravelStationKey === "function", true, { getShipTravelResources: typeof globalThis.game?.arcflight?.devTools?.getShipTravelResources, previewShipTravelResourceChange: typeof globalThis.game?.arcflight?.devTools?.previewShipTravelResourceChange, updateShipTravelResources: typeof globalThis.game?.arcflight?.devTools?.updateShipTravelResources, getTravelStationKeys: typeof globalThis.game?.arcflight?.devTools?.getTravelStationKeys, isTravelStationKey: typeof globalThis.game?.arcflight?.devTools?.isTravelStationKey });
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
+    shipData = getArcflightShipData(actor);
     check(result, "Ship action economy helpers are exposed", typeof globalThis.game?.arcflight?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.canSpendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints === "function", true, { getShipActionEconomy: typeof globalThis.game?.arcflight?.getShipActionEconomy, resetShipActionEconomy: typeof globalThis.game?.arcflight?.resetShipActionEconomy, spendShipActionPoints: typeof globalThis.game?.arcflight?.spendShipActionPoints, canSpendShipActionPoints: typeof globalThis.game?.arcflight?.canSpendShipActionPoints, devToolsGetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy, devToolsResetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy, devToolsSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints, devToolsCanSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints });
     check(result, "canSpend AP/RAP passes with enough resources", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }).canSpend === true, "can spend 1 AP", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }));
     check(result, "canSpend AP/RAP blocks insufficient resources", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }).canSpend === false, "cannot overspend AP", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }));
@@ -869,6 +914,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     checkEqual(result, "Current lifeveil preserved", preservedCurrent.lifeveil, shipData.current.lifeveil);
     checkEqual(result, "Current strain preserved", preservedCurrent.strain, shipData.current.strain);
     checkEqual(result, "Current morale preserved", preservedCurrent.morale, shipData.current.morale);
+    checkEqual(result, "Current supplies preserved", preservedCurrent.supplies, shipData.current.supplies);
     checkEqual(result, "Current stored spell ranks preserved", preservedCurrent.storedSpellRanks, shipData.current.storedSpellRanks);
 
     const engineerAssignment = shipData.stations.assignments.engineer;
