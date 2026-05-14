@@ -166,6 +166,16 @@
     </article>
   </section>
 
+  <section class="arcflight-sheet__section arcflight-action-economy" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
+    <h2>AP/RAP Economy</h2>
+    <p class="arcflight-sheet__hint">Ship-level AP/RAP resource accounting for future tactical scenes. Reset only restores current AP/RAP to the derived maximums; station action Record and Roll do not spend by default.</p>
+    <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field"><span>Action Points</span><input type="text" value="{{arcflight.system.actionEconomyReadout.apLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Reaction Action Points</span><input type="text" value="{{arcflight.system.actionEconomyReadout.rapLabel}}" disabled></label>
+    </div>
+    <button type="button" data-arcflight-reset-action-economy {{#unless editable}}disabled{{/unless}}>Reset AP/RAP</button>
+  </section>
+
   <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>Hull</h2>
     {{#if arcflight.system.installed.hasHull}}
@@ -515,6 +525,8 @@
                       <dd>{{this.phaseLabel}}</dd>
                       <dt>Cost</dt>
                       <dd>{{this.costLabel}}</dd>
+                      <dt>Affordability</dt>
+                      <dd>{{this.preview.affordabilityLabel}} (ship: {{this.preview.actionEconomy.ap}}/{{this.preview.actionEconomy.maxAP}} AP, {{this.preview.actionEconomy.rap}}/{{this.preview.actionEconomy.maxRAP}} RAP)</dd>
                       <dt>Crew</dt>
                       <dd>{{this.assignedCrewStatus}}</dd>
                       <dt>Preview</dt>

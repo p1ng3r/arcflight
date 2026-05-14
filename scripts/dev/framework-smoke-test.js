@@ -34,9 +34,13 @@ import {
   removeInstalledWeapon,
   updateShipTierState,
   calculateRefitPressure,
+  getShipActionEconomy,
   getShipRefitPressure,
   getShipRefitStatus,
-  getShipTierState
+  getShipTierState,
+  canSpendShipActionPoints,
+  resetShipActionEconomy,
+  spendShipActionPoints
 } from "../documents/ships.js";
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS } from "../../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
@@ -60,7 +64,7 @@ import {
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import { getComponentRefitPressure, getComponentTierMetadata } from "../documents/components.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
-import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction, previewStationActionRoll } from "../helpers/station-action-execution.js";
+import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "../helpers/station-action-execution.js";
 import { prepareInstallUiState, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows } from "../sheets/ship-sheet.js";
 import {
   backfillInstallStateForAllShips,
@@ -577,6 +581,39 @@ export async function runFrameworkSmokeTest(options = {}) {
 
     await recalculateShipStats(actor);
     shipData = getArcflightShipData(actor);
+
+    let actionEconomy = getShipActionEconomy(actor);
+    check(result, "Ship action economy initializes from derived hull AP/RAP", actionEconomy.maxAP === shipData.derived.baseAP && actionEconomy.maxRAP === shipData.derived.baseRAP && actionEconomy.ap === actionEconomy.maxAP && actionEconomy.rap === actionEconomy.maxRAP, "current/max from derived baseAP/baseRAP", { actionEconomy, derived: { baseAP: shipData.derived.baseAP, baseRAP: shipData.derived.baseRAP } });
+    check(result, "Ship action economy helpers are exposed", typeof globalThis.game?.arcflight?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.canSpendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints === "function", true, { getShipActionEconomy: typeof globalThis.game?.arcflight?.getShipActionEconomy, resetShipActionEconomy: typeof globalThis.game?.arcflight?.resetShipActionEconomy, spendShipActionPoints: typeof globalThis.game?.arcflight?.spendShipActionPoints, canSpendShipActionPoints: typeof globalThis.game?.arcflight?.canSpendShipActionPoints, devToolsGetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy, devToolsResetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy, devToolsSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints, devToolsCanSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints });
+    check(result, "canSpend AP/RAP passes with enough resources", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }).canSpend === true, "can spend 1 AP", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }));
+    check(result, "canSpend AP/RAP blocks insufficient resources", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }).canSpend === false, "cannot overspend AP", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }));
+    const spentEconomy = await spendShipActionPoints(actor, { ap: 1, rap: 0, reason: "Smoke spend" });
+    check(result, "spend helper decrements AP/RAP", spentEconomy.ap === actionEconomy.ap - 1 && spentEconomy.rap === actionEconomy.rap, "AP decremented", { before: actionEconomy, after: spentEconomy });
+    try {
+      await spendShipActionPoints(actor, { ap: spentEconomy.maxAP + 1, rap: 0, reason: "Smoke overspend" });
+      check(result, "spend helper blocks overspend", false, "overspend rejection", "accepted");
+    } catch (error) {
+      check(result, "spend helper blocks overspend", error.message.includes("Cannot spend"), "overspend rejection", error.message);
+    }
+    actionEconomy = await resetShipActionEconomy(actor);
+    check(result, "reset helper restores AP/RAP to max", actionEconomy.ap === actionEconomy.maxAP && actionEconomy.rap === actionEconomy.maxRAP, "current equals max", actionEconomy);
+    await assignStation(actor, "captain", { id: actor.id, uuid: actor.uuid, name: actor.name }, { assigneeType: "actor" });
+    const affordablePreview = previewStationAction(actor, "rally-crew", { phase: "combat" });
+    check(result, "Station action preview includes AP/RAP affordability and cost", affordablePreview.resourceCost?.ap === affordablePreview.apCost && affordablePreview.resourceCost?.rap === affordablePreview.rapCost && affordablePreview.canAfford === true, "cost and affordability", affordablePreview.resourceCost);
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy.ap`]: 0, [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy.rap`]: 0 });
+    const unaffordablePreview = previewStationAction(actor, "rally-crew", { phase: "combat" });
+    check(result, "Station action preview warns when AP/RAP is insufficient", unaffordablePreview.canAfford === false && unaffordablePreview.severity === "warning" && unaffordablePreview.warnings.length > 0, "warning affordability preview", unaffordablePreview);
+    actionEconomy = await resetShipActionEconomy(actor);
+    const beforeDefaultExecuteEconomy = getShipActionEconomy(actor);
+    await executeStationAction(actor, "rally-crew", { phase: "combat", notes: "Smoke default no spend." });
+    const afterDefaultExecuteEconomy = getShipActionEconomy(actor);
+    check(result, "Default execute/record does not spend AP/RAP economy", beforeDefaultExecuteEconomy.ap === afterDefaultExecuteEconomy.ap && beforeDefaultExecuteEconomy.rap === afterDefaultExecuteEconomy.rap, "unchanged economy", { before: beforeDefaultExecuteEconomy, after: afterDefaultExecuteEconomy });
+    const beforeDefaultRollEconomy = getShipActionEconomy(actor);
+    await rollStationAction(actor, "rally-crew", { phase: "combat", rollOptionKey: "diplomacy", skipDialog: true, createMessage: false });
+    const afterDefaultRollEconomy = getShipActionEconomy(actor);
+    check(result, "Default station action roll does not spend AP/RAP economy", beforeDefaultRollEconomy.ap === afterDefaultRollEconomy.ap && beforeDefaultRollEconomy.rap === afterDefaultRollEconomy.rap, "unchanged economy", { before: beforeDefaultRollEconomy, after: afterDefaultRollEconomy });
+    await clearStationActionHistory(actor);
+    await clearStationAssignment(actor, "captain");
 
     const baseTier = CORE_HULLS.frigate.classification.baseTier;
     const majorRefitThreshold = CORE_HULLS.frigate.refitTolerance.totalBeforeMajorRefitRequired;

@@ -1,7 +1,7 @@
 import { getCoreStationAction, getStationActionOutcome, getStationActionRollOptions, previewStationActionOutcome } from "../../data/station-actions/core-station-actions.js";
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_MODULE_ID } from "../config/constants.js";
-import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE, canSpendShipActionPoints, getArcflightShipData, getShipActionEconomy, spendShipActionPoints } from "../documents/ships.js";
 
 const VALID_STATION_ACTION_PHASES = Object.freeze(["combat", "travel", "both"]);
 const BLOCKED_SEVERITIES = Object.freeze(["danger"]);
@@ -73,9 +73,13 @@ function createStationActionId(actionKey) {
   return `station-action-${actionKey || "unknown"}-${Date.now().toString(36)}-${randomId}`.replace(/[^a-zA-Z0-9_-]+/g, "-");
 }
 
-function buildPreview({ actionKey, options, action, messages, warnings, blocked }) {
+function buildPreview({ actionKey, options, action, messages, warnings, blocked, affordability = null }) {
   const phase = normalizePhase(options.phase, action?.phase ?? "both");
   const severity = blocked ? "danger" : (warnings.length > 0 ? "warning" : "ok");
+  const apCost = Number.isFinite(Number(action?.apCost)) ? Number(action.apCost) : 0;
+  const rapCost = Number.isFinite(Number(action?.rapCost)) ? Number(action.rapCost) : 0;
+  const canAfford = affordability?.canSpend ?? true;
+  const actionEconomy = affordability?.state ?? null;
 
   return {
     ok: !blocked,
@@ -88,8 +92,20 @@ function buildPreview({ actionKey, options, action, messages, warnings, blocked 
     warnings,
     requirements: Array.isArray(action?.requirements) ? cloneData(action.requirements) : [],
     effectsPreview: Array.isArray(action?.effectsPreview) ? cloneData(action.effectsPreview) : [],
-    apCost: Number.isFinite(Number(action?.apCost)) ? Number(action.apCost) : 0,
-    rapCost: Number.isFinite(Number(action?.rapCost)) ? Number(action.rapCost) : 0,
+    apCost,
+    rapCost,
+    canAfford,
+    affordable: canAfford,
+    affordabilityMessages: affordability?.messages ?? [],
+    affordabilityLabel: canAfford ? "Affordable" : "Insufficient AP/RAP",
+    actionEconomy: actionEconomy ? cloneData(actionEconomy) : null,
+    resourceCost: {
+      ap: apCost,
+      rap: rapCost,
+      label: `${apCost} AP / ${rapCost} RAP`,
+      canAfford,
+      messages: affordability?.messages ?? []
+    },
     blocked
   };
 }
@@ -236,7 +252,15 @@ export function previewStationAction(shipActor, actionKey, options = {}) {
     warnings.push(`${action.name} requires an assigned ${action.requiredCrewRole} at the ${station?.displayName ?? station?.name ?? action.stationKey} station.`);
   }
 
-  if (!blocked) messages.push(`${action.name} is ready to record. No AP/RAP, dice, combat, travel, or effects automation will be applied.`);
+  let affordability = null;
+  if (action && isArcflightVehicle(shipActor)) {
+    affordability = canSpendShipActionPoints(shipActor, { ap: action.apCost, rap: action.rapCost });
+    if (!affordability.canSpend) warnings.push(...affordability.messages);
+  } else if (isArcflightVehicle(shipActor)) {
+    affordability = { canSpend: true, messages: [], state: getShipActionEconomy(shipActor) };
+  }
+
+  if (!blocked) messages.push(`${action.name} is ready to record. No AP/RAP, dice, combat, travel, or effects automation will be applied by default.`);
 
   return buildPreview({
     actionKey,
@@ -244,7 +268,8 @@ export function previewStationAction(shipActor, actionKey, options = {}) {
     action,
     messages,
     warnings,
-    blocked
+    blocked,
+    affordability
   });
 }
 
@@ -321,6 +346,9 @@ export async function executeStationAction(shipActor, actionKey, options = {}) {
     throw new Error("Arcflight | executeStationAction requires an updatable Arcflight ship actor.");
   }
 
+  const spentResources = options.spendResources === true
+    ? await spendShipActionPoints(shipActor, { ap: preview.apCost, rap: preview.rapCost, reason: options.reason ?? `Station action: ${preview.actionName || actionKey}` })
+    : null;
   const history = getStationActionState(shipActor).history;
   const record = {
     id: createStationActionId(actionKey),
@@ -336,6 +364,8 @@ export async function executeStationAction(shipActor, actionKey, options = {}) {
     assignedCrewName: getAssignedCrewName(getArcflightShipData(shipActor).stations?.assignments?.[preview.stationKey] ?? null),
     apCost: preview.apCost,
     rapCost: preview.rapCost,
+    spentResources: options.spendResources === true,
+    actionEconomy: spentResources ? cloneData(spentResources) : null,
     notes: options.notes ?? ""
   };
 
@@ -356,6 +386,10 @@ export async function rollStationAction(shipActor, actionKey, options = {}) {
   if (typeof shipActor?.update !== "function") {
     throw new Error("Arcflight | rollStationAction requires an updatable Arcflight ship actor.");
   }
+
+  const spentResources = options.spendResources === true
+    ? await spendShipActionPoints(shipActor, { ap: preview.apCost, rap: preview.rapCost, reason: options.reason ?? `Station action roll: ${preview.actionName || actionKey}` })
+    : null;
 
   const assignedActor = await resolveAssignedActor(preview.assignment);
   const { statistic } = resolveActorStatistic(assignedActor, preview.statisticKey);
@@ -409,6 +443,10 @@ export async function rollStationAction(shipActor, actionKey, options = {}) {
     outcomeKey: outcome.outcomeKey,
     outcomeLabel: outcome.label,
     outcomeText: outcome.text,
+    apCost: preview.apCost,
+    rapCost: preview.rapCost,
+    spentResources: options.spendResources === true,
+    actionEconomy: spentResources ? cloneData(spentResources) : null,
     notes: options.notes ?? ""
   };
 

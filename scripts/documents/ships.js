@@ -48,6 +48,15 @@ const emptyCurrentShipState = Object.freeze({
   storedSpellRanks: 0
 });
 
+const emptyActionEconomyState = Object.freeze({
+  ap: 0,
+  maxAP: 0,
+  rap: 0,
+  maxRAP: 0,
+  lastUpdatedAt: 0,
+  lastReason: ""
+});
+
 const REFIT_PRESSURE_KEYS = Object.freeze([
   "weaponPressure",
   "enginePressure",
@@ -231,6 +240,7 @@ export const arcflightShipDefaults = Object.freeze({
   stationActions: Object.freeze({
     history: Object.freeze([])
   }),
+  actionEconomy: emptyActionEconomyState,
   conditions: Object.freeze({
     active: "",
     damage: "",
@@ -375,6 +385,69 @@ function countWeaponMountsByArc(weaponMounts = {}) {
 
 function numericValue(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function nonNegativeNumericValue(value, fallback = 0) {
+  return Math.max(0, numericValue(value, fallback));
+}
+
+function getActionEconomyMaxima(systemData = {}) {
+  const derived = systemData.derived ?? {};
+  const hull = systemData.base?.hull ?? {};
+  const existing = systemData.actionEconomy ?? {};
+  const maxAP = nonNegativeNumericValue(
+    derived.baseAP,
+    nonNegativeNumericValue(hull.baseAP, nonNegativeNumericValue(existing.maxAP))
+  );
+  const maxRAP = nonNegativeNumericValue(
+    derived.baseRAP,
+    nonNegativeNumericValue(hull.baseRAP, nonNegativeNumericValue(existing.maxRAP))
+  );
+
+  return { maxAP, maxRAP };
+}
+
+function normalizeActionEconomyState(systemData = {}, options = {}) {
+  const existing = systemData.actionEconomy ?? {};
+  const maxima = getActionEconomyMaxima(systemData);
+  const maxAP = options.maxAP !== undefined ? nonNegativeNumericValue(options.maxAP, maxima.maxAP) : maxima.maxAP;
+  const maxRAP = options.maxRAP !== undefined ? nonNegativeNumericValue(options.maxRAP, maxima.maxRAP) : maxima.maxRAP;
+  const existingAp = existing.ap ?? existing.currentAP;
+  const existingRap = existing.rap ?? existing.currentRAP;
+  const existingMaxAP = nonNegativeNumericValue(existing.maxAP);
+  const existingMaxRAP = nonNegativeNumericValue(existing.maxRAP);
+  const ap = existingAp === undefined || existingAp === null || existingAp === ""
+    ? maxAP
+    : (nonNegativeNumericValue(existingAp) === existingMaxAP && maxAP > existingMaxAP)
+      ? maxAP
+      : Math.min(nonNegativeNumericValue(existingAp), maxAP);
+  const rap = existingRap === undefined || existingRap === null || existingRap === ""
+    ? maxRAP
+    : (nonNegativeNumericValue(existingRap) === existingMaxRAP && maxRAP > existingMaxRAP)
+      ? maxRAP
+      : Math.min(nonNegativeNumericValue(existingRap), maxRAP);
+
+  return {
+    ...cloneData(emptyActionEconomyState),
+    ...cloneData(existing),
+    ap,
+    maxAP,
+    rap,
+    maxRAP,
+    lastUpdatedAt: nonNegativeNumericValue(existing.lastUpdatedAt),
+    lastReason: existing.lastReason ?? ""
+  };
+}
+
+function normalizeSpendRequest(costs = {}) {
+  const ap = numericValue(costs.ap);
+  const rap = numericValue(costs.rap);
+
+  if (ap < 0 || rap < 0) {
+    throw new Error("Arcflight | AP/RAP spends cannot be negative.");
+  }
+
+  return { ap, rap };
 }
 
 function normalizeArkengineFueling(arkengine = {}) {
@@ -1222,6 +1295,95 @@ export async function updateShipTierState(shipActor) {
   return shipActor.update(getTierFrameworkUpdatePaths(getArcflightShipData(shipActor)));
 }
 
+
+export function getShipActionEconomy(shipActor) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | getShipActionEconomy requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  return normalizeActionEconomyState(getArcflightShipData(shipActor));
+}
+
+export function canSpendShipActionPoints(shipActor, costs = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | canSpendShipActionPoints requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const { ap, rap } = normalizeSpendRequest(costs);
+  const state = getShipActionEconomy(shipActor);
+  const messages = [];
+  if (ap > state.ap) messages.push(`Insufficient AP: requires ${ap}, available ${state.ap}.`);
+  if (rap > state.rap) messages.push(`Insufficient RAP: requires ${rap}, available ${state.rap}.`);
+  const canSpend = messages.length === 0;
+
+  return {
+    ok: canSpend,
+    canSpend,
+    blocked: !canSpend,
+    ap,
+    rap,
+    state,
+    messages
+  };
+}
+
+export async function resetShipActionEconomy(shipActor, options = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | resetShipActionEconomy requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const maxima = getActionEconomyMaxima(systemData);
+  const maxAP = options.maxAP !== undefined ? nonNegativeNumericValue(options.maxAP, maxima.maxAP) : maxima.maxAP;
+  const maxRAP = options.maxRAP !== undefined ? nonNegativeNumericValue(options.maxRAP, maxima.maxRAP) : maxima.maxRAP;
+  const resetState = {
+    ...normalizeActionEconomyState(systemData, { maxAP, maxRAP }),
+    maxAP,
+    maxRAP,
+    ap: options.ap !== undefined || options.currentAP !== undefined
+      ? Math.min(nonNegativeNumericValue(options.ap ?? options.currentAP), maxAP)
+      : maxAP,
+    rap: options.rap !== undefined || options.currentRAP !== undefined
+      ? Math.min(nonNegativeNumericValue(options.rap ?? options.currentRAP), maxRAP)
+      : maxRAP,
+    lastUpdatedAt: Date.now(),
+    lastReason: options.reason ?? "reset"
+  };
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: resetState
+  });
+
+  return resetState;
+}
+
+export async function spendShipActionPoints(shipActor, { ap = 0, rap = 0, reason = "" } = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | spendShipActionPoints requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const spend = normalizeSpendRequest({ ap, rap });
+  const affordability = canSpendShipActionPoints(shipActor, spend);
+  if (!affordability.canSpend) {
+    throw new Error(`Arcflight | Cannot spend AP/RAP. ${affordability.messages.join(" ")}`.trim());
+  }
+
+  const state = affordability.state;
+  const nextState = {
+    ...state,
+    ap: state.ap - spend.ap,
+    rap: state.rap - spend.rap,
+    lastUpdatedAt: Date.now(),
+    lastReason: reason ?? ""
+  };
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: nextState
+  });
+
+  return nextState;
+}
+
 function buildLegacyResources(systemData, current, derived) {
   return foundry.utils.mergeObject(systemData.resources ?? {}, {
     hull: {
@@ -1322,6 +1484,7 @@ export function getArcflightShipData(actor) {
   systemData.refitPressure = normalizeRefitPressure(systemData.refitPressure);
   systemData.refitFlags = foundry.utils.mergeObject(cloneData(emptyRefitFlagsState), cloneData(systemData.refitFlags ?? {}), { inplace: false });
   systemData.installState = normalizeBasicInstallState(systemData.installState);
+  systemData.actionEconomy = normalizeActionEconomyState(systemData);
 
   return systemData;
 }
@@ -1334,6 +1497,7 @@ export function getDefaultArcflightShipFlags(data = {}) {
   };
   system.crew = getDefaultCrewState(system.crew);
   system.installState = normalizeBasicInstallState(system.installState);
+  system.actionEconomy = normalizeActionEconomyState(system);
 
   return {
     enabled: true,
@@ -1365,6 +1529,7 @@ export async function recalculateShipStats(shipActor) {
 
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
 
   const stations = getDefaultStationState(systemData.stations);
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base, installed: nextInstalled }, { inplace: false });
@@ -1376,6 +1541,7 @@ export async function recalculateShipStats(shipActor) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
@@ -1435,6 +1601,7 @@ export async function clearShipBuild(shipActor, options = {}) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base`]: buildEmptyBaseShipState(),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: cloneData(emptyDerivedShipState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: normalizeActionEconomyState({ ...systemData, derived: emptyDerivedShipState, actionEconomy: {} }),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]: cloneData(emptyTierState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.refitPressure`]: cloneData(emptyRefitPressureState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.refitFlags`]: cloneData(emptyRefitFlagsState),
@@ -1718,6 +1885,7 @@ export async function installHull(shipActor, hullItem) {
     { inplace: false }
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
   const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
   const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, hullItem, ARCFLIGHT_ITEM_TYPES.HULL, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
@@ -1729,6 +1897,7 @@ export async function installHull(shipActor, hullItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.hull`]: hullItem.name ?? baseHull.displayName ?? baseHull.platform ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
@@ -1787,6 +1956,7 @@ export async function installArkengine(shipActor, arkengineItem) {
     { inplace: false }
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
   const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
   const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, arkengineItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
@@ -1798,6 +1968,7 @@ export async function installArkengine(shipActor, arkengineItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengine`]: arkengineItem.name ?? baseArkengine.displayName ?? baseArkengine.engineClass ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
@@ -1852,6 +2023,7 @@ export async function installArkengineMod(shipActor, modItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
   const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
   const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, modItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, "refit", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
@@ -1862,6 +2034,7 @@ export async function installArkengineMod(shipActor, modItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: alignedInstalled.arkengineMods.map((mod) => mod.name).join(", "),
@@ -1914,6 +2087,7 @@ export async function installRoom(shipActor, roomItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
   const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
   const roomInstallCategory = getComponentRefitPressure(roomItem).total > 0 ? "refit" : "native";
@@ -1925,6 +2099,7 @@ export async function installRoom(shipActor, roomItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: alignedInstalled.rooms.map((room) => room.name).join(", "),
@@ -2115,6 +2290,7 @@ export async function installWeapon(shipActor, weaponItem, options = {}) {
   const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: nextBaseHull, arkengine: baseArkengine }, derived);
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
   const legacyDerivedStats = foundry.utils.mergeObject(
     systemData.derivedStats ?? {},
     getLegacyDerivedStatsFromDerived(derived),
@@ -2132,6 +2308,7 @@ export async function installWeapon(shipActor, weaponItem, options = {}) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.weapons`]: alignedInstalled.weapons.map((weapon) => weapon.name).join(", "),
@@ -2203,6 +2380,7 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
   const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
   const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
   const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, upgradeItem, ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, "refit", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
@@ -2213,6 +2391,7 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: alignedInstalled.shipUpgrades.map((upgrade) => upgrade.name).join(", "),
