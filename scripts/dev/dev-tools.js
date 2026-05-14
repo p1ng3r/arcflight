@@ -17,7 +17,7 @@ import {
   previewStationActionOutcome
 } from "../../data/station-actions/core-station-actions.js";
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
-import { installWeapon, removeInstalledWeapon } from "../documents/ships.js";
+import { canSpendShipActionPoints, getShipActionEconomy, installWeapon, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "../helpers/station-action-execution.js";
 import {
@@ -186,6 +186,26 @@ export function createArcflightDevTools() {
      * Dry-run by default. Pass { dryRun: false } to delete safe duplicate Arcflight world Items.
      */
     cleanupDuplicateArcflightItems,
+
+    /**
+     * Return normalized ship AP/RAP economy state.
+     */
+    getShipActionEconomy,
+
+    /**
+     * Reset current AP/RAP to max AP/RAP.
+     */
+    resetShipActionEconomy,
+
+    /**
+     * Spend AP/RAP from ship-owned economy state.
+     */
+    spendShipActionPoints,
+
+    /**
+     * Preview whether AP/RAP can be spent.
+     */
+    canSpendShipActionPoints,
 
     /**
      * Install a weapon component into a hull weapon mount.

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### AP/RAP Economy Foundation MVP
+
+- Added ship-owned AP/RAP economy state under `flags.arcflight.system.actionEconomy`, tracking current/max AP and current/max RAP with hull/derived `baseAP` and `baseRAP` normalization.
+- Added `getShipActionEconomy`, `resetShipActionEconomy`, `spendShipActionPoints`, and `canSpendShipActionPoints` helpers on `game.arcflight` and `game.arcflight.devTools`; spending rejects negative costs and overspending while mutating only ship actor flags.
+- Updated station action previews and sheet readouts to show AP/RAP cost and affordability using existing `action.apCost` and `action.rapCost`.
+- Added an Overview AP/RAP readout with a manual Reset AP/RAP button that preserves sheet tab/scroll context.
+- Added optional `{ spendResources: true }` support to station action record/roll helpers for future/testing use while keeping default Record and Roll behavior non-spending.
+- Extended smoke coverage for economy initialization, can-spend checks, spending, overspend blocking, reset, affordability preview, and default non-spending station action record/roll behavior.
+- Kept this resource-accounting only: no initiative, combat rounds, turn tracking, weapon firing automation, station-action effects automation, travel automation, assigned-actor mutation, or PF2E roll mechanic changes were added.
+
 ### Station Action Outcome Framework MVP
 
 - Added concise `criticalSuccess`, `success`, `failure`, and `criticalFailure` outcome text to core station action data.

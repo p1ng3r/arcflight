@@ -12,6 +12,7 @@ import {
   assignStation,
   clearStationAssignment,
   getArcflightShipData,
+  getShipActionEconomy,
   installArkengine,
   installArkengineMod,
   installHull,
@@ -23,6 +24,7 @@ import {
   removeInstalledRoom,
   removeInstalledShipUpgrade,
   removeInstalledWeapon,
+  resetShipActionEconomy,
   setArkenginePattern,
   setHullPattern
 } from "../documents/ships.js";
@@ -791,6 +793,31 @@ function prepareStationActionUiState(actor, stations = {}) {
   };
 }
 
+function prepareActionEconomyReadout(actor, system = {}) {
+  let economy = system.actionEconomy ?? {};
+  try {
+    if (actor) economy = getShipActionEconomy(actor);
+  } catch (_error) {
+    economy = system.actionEconomy ?? {};
+  }
+
+  const ap = numericDisplayValue(economy.ap);
+  const maxAP = numericDisplayValue(economy.maxAP);
+  const rap = numericDisplayValue(economy.rap);
+  const maxRAP = numericDisplayValue(economy.maxRAP);
+
+  return {
+    ap,
+    maxAP,
+    rap,
+    maxRAP,
+    apLabel: `${ap}/${maxAP} AP`,
+    rapLabel: `${rap}/${maxRAP} RAP`,
+    lastReason: economy.lastReason ?? "",
+    lastUpdatedAt: economy.lastUpdatedAt ?? 0
+  };
+}
+
 function prepareInstallValidationReadout(system = {}) {
   const tier = system.tier ?? {};
   const refitPressure = system.refitPressure ?? {};
@@ -865,6 +892,7 @@ function prepareArcflightShipViewData(arcflight, shipActor = null) {
   system.installed.roomSlots = prepareSlotState(system.installed.roomSlots);
   system.installed.shipUpgradeSlots = prepareSlotState(system.installed.shipUpgradeSlots, 3);
   system.fuelingDisplay = prepareFuelingDisplay(system);
+  system.actionEconomyReadout = prepareActionEconomyReadout(shipActor, system);
   system.installValidationReadout = prepareInstallValidationReadout(system);
   system.installStateReadout = prepareInstallStateReadout(shipActor);
   system.crew = system.crew ?? {};
@@ -1296,6 +1324,10 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       ?.addEventListener("click", this.#onInstallSelectedComponent.bind(this));
 
     this.element
+      .querySelector?.("[data-arcflight-reset-action-economy]")
+      ?.addEventListener("click", this.#onResetActionEconomy.bind(this));
+
+    this.element
       .querySelectorAll?.("[data-arcflight-remove-component]")
       ?.forEach((button) => button.addEventListener("click", this.#onRemoveInstalledComponent.bind(this)));
 
@@ -1392,6 +1424,23 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not clear that station assignment.");
       console.warn("Arcflight | Station assignment clear failed.", error);
+    }
+  }
+
+  async #onResetActionEconomy(event) {
+    event.preventDefault();
+
+    const actor = await getMutatingSheetShipActor(this);
+    if (!actor) return;
+
+    this.#queueCurrentSheetContextRestore();
+
+    try {
+      const economy = await resetShipActionEconomy(actor);
+      ui.notifications?.info?.(`Reset AP/RAP to ${economy.ap}/${economy.maxAP} AP and ${economy.rap}/${economy.maxRAP} RAP.`);
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not reset AP/RAP.");
+      console.warn("Arcflight | AP/RAP reset failed.", error);
     }
   }
 
