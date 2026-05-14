@@ -137,6 +137,16 @@ import {
   prepareTravelRoundSummary,
   getTravelEventStationPrompt
 } from "./helpers/travel-events.js";
+import {
+  advanceShipTravelEventRound,
+  clearShipTravelEvent,
+  completeShipTravelEvent,
+  getActiveShipTravelEvent,
+  getCurrentShipTravelRound,
+  getShipTravelEventState,
+  recordShipTravelStationResult,
+  startShipTravelEvent
+} from "./helpers/ship-travel-event-state.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "./helpers/station-action-execution.js";
 import { getPf2eRollTotal, getPf2eStatisticCandidateKeys, isRollablePf2eStatistic, normalizePf2eStatisticKey, resolvePf2eActorStatistic, rollPf2eStatistic } from "./helpers/pf2e-statistics.js";
@@ -369,6 +379,14 @@ Hooks.once("init", () => {
     prepareTravelEventSummary,
     prepareTravelRoundSummary,
     getTravelEventStationPrompt,
+    getShipTravelEventState,
+    getActiveShipTravelEvent,
+    startShipTravelEvent,
+    recordShipTravelStationResult,
+    getCurrentShipTravelRound,
+    advanceShipTravelEventRound,
+    completeShipTravelEvent,
+    clearShipTravelEvent,
     resetShipActionEconomy,
     spendShipActionPoints,
     canSpendShipActionPoints,
@@ -560,6 +578,14 @@ export {
   prepareTravelEventSummary,
   prepareTravelRoundSummary,
   getTravelEventStationPrompt,
+  getShipTravelEventState,
+  getActiveShipTravelEvent,
+  startShipTravelEvent,
+  recordShipTravelStationResult,
+  getCurrentShipTravelRound,
+  advanceShipTravelEventRound,
+  completeShipTravelEvent,
+  clearShipTravelEvent,
   resetShipActionEconomy,
   spendShipActionPoints,
   canSpendShipActionPoints,
