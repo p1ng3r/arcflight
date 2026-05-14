@@ -209,7 +209,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     tag: "section",
     position: {
       width: 760,
-      height: 720
+      height: 660
     },
     window: {
       title: "Travel Event Runner",
