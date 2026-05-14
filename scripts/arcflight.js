@@ -121,7 +121,7 @@ import {
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
-import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "./helpers/station-action-execution.js";
+import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "./helpers/station-action-execution.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -215,6 +215,7 @@ Hooks.once("init", () => {
     previewStationAction,
     getStationActionRollOptions,
     previewStationActionRoll,
+    resolveAssignedActorStatistic,
     rollStationAction,
     executeStationAction,
     clearStationActionHistory,
@@ -416,6 +417,7 @@ export {
   previewStationAction,
   getStationActionRollOptions,
   previewStationActionRoll,
+  resolveAssignedActorStatistic,
   rollStationAction,
   executeStationAction,
   clearStationActionHistory,

@@ -19,7 +19,7 @@ import {
 import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { canSpendShipActionPoints, getShipActionEconomy, installWeapon, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
-import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "../helpers/station-action-execution.js";
+import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "../helpers/station-action-execution.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -136,6 +136,11 @@ export function createArcflightDevTools() {
      * Preview the assigned PF2E actor/statistic for a station action roll.
      */
     previewStationActionRoll,
+
+    /**
+     * Resolve a PF2E statistic object for an assigned station actor.
+     */
+    resolveAssignedActorStatistic,
 
     /**
      * Best-effort PF2E statistic roll for an assigned station actor.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### PF2E Statistic Chat Roll Wiring MVP
+
+- Wired station action Roll controls to prefer real PF2E `Statistic` objects via `actor.getStatistic`, actor skills, perception, and saves before falling back to read-only system skill metadata.
+- Normalized Arcflight station roll statistic keys for standard PF2E skills, Perception, Reflex, Piloting Lore, Warfare Lore, and matching lore skill slugs.
+- Updated `rollStationAction` to call `statistic.roll(args)` or `statistic.check.roll(args)` with Arcflight title/label/action/roll-option metadata and chat message creation enabled by default for sheet rolls.
+- Extended roll history metadata with statistic label/source, safe `missing-statistic` and `failed` statuses, PF2E total/degree/outcome details, and roll/message IDs when PF2E provides them.
+- Preserved Phase 0 boundaries: Roll still does not spend AP/RAP by default, automate outcomes/effects, mutate assigned actors, start combat rounds, fire weapons, or automate travel.
+
 ### AP/RAP Economy Foundation MVP
 
 - Added ship-owned AP/RAP economy state under `flags.arcflight.system.actionEconomy`, tracking current/max AP and current/max RAP with hull/derived `baseAP` and `baseRAP` normalization.

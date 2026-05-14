@@ -1487,7 +1487,7 @@ export class ArcflightShipSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     this.#queueCurrentSheetContextRestore();
 
     try {
-      const record = await rollStationAction(actor, actionKey, { phase, rollOptionKey, event });
+      const record = await rollStationAction(actor, actionKey, { phase, rollOptionKey, event, skipDialog: false, createMessage: true });
       ui.notifications?.info?.(`Recorded ${record.rollOptionLabel || "station action"} roll for ${record.actionName || actionKey}.`);
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not roll that station action.");
