@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Station Action Skill Rolls MVP
+
+- Added data-defined roll metadata to core station actions, covering station-appropriate PF2E skills/statistics such as Diplomacy, Piloting Lore, Perception, Crafting, Occultism, and Reflex fallback options.
+- Added `getStationActionRollOptions`, `previewStationActionRoll`, and `rollStationAction` helpers on `game.arcflight` and `game.arcflight.devTools`.
+- Station-action roll preview resolves assigned actors from ship-owned station assignments, validates requested roll options, reports the selected statistic key, and blocks unassigned or missing assigned actors safely.
+- Station-action rolling uses guarded best-effort PF2E statistic access and records `recordType: "roll"` history metadata, including assigned actor, roll option, statistic key, roll status, and total/result details when available.
+- Added Roll controls and roll history readouts to the ship-sheet Station Actions tab while preserving the active tab/scroll context around the mutation.
+- Kept the MVP intentionally narrow: no AP/RAP spending, assigned actor mutation, automated effects, combat rounds, weapon firing, travel automation, or action-effect automation was added.
+
 ### Station Assignment Sheet UI MVP
 
 - Added Crew & Stations tab controls for assigning PF2E character world Actors to each ship station and clearing existing station assignments.
