@@ -32,6 +32,7 @@ import { createCoreWeapon, createWeapon } from "../documents/creation.js";
 import { canSpendShipActionPoints, getShipActionEconomy, getShipTravelResources, getTravelStationKeys, installWeapon, isTravelStationKey, previewShipTravelResourceChange, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints, updateShipTravelResources } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "../helpers/station-action-execution.js";
+import { getPf2eRollTotal, getPf2eStatisticCandidateKeys, isRollablePf2eStatistic, normalizePf2eStatisticKey, resolvePf2eActorStatistic, rollPf2eStatistic } from "../helpers/pf2e-statistics.js";
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -223,6 +224,36 @@ export function createArcflightDevTools() {
      * Preview the assigned PF2E actor/statistic for a station action roll.
      */
     previewStationActionRoll,
+
+    /**
+     * Normalize a PF2E statistic key for shared roll resolution.
+     */
+    normalizePf2eStatisticKey,
+
+    /**
+     * Return candidate PF2E statistic keys, including Lore fallbacks.
+     */
+    getPf2eStatisticCandidateKeys,
+
+    /**
+     * Resolve a rollable PF2E actor statistic without station-action coupling.
+     */
+    resolvePf2eActorStatistic,
+
+    /**
+     * Return whether a PF2E statistic exposes a roll method.
+     */
+    isRollablePf2eStatistic,
+
+    /**
+     * Extract a numeric total from a PF2E roll result.
+     */
+    getPf2eRollTotal,
+
+    /**
+     * Roll a PF2E statistic using shared Arcflight roll metadata.
+     */
+    rollPf2eStatistic,
 
     /**
      * Resolve a PF2E statistic object for an assigned station actor.

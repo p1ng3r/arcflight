@@ -29,6 +29,12 @@ The first sample event is **Black Tide Crossing**, a five-round environmental cr
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
 
+## Shared PF2E Statistic Helpers
+
+Arcflight now exposes shared PF2E statistic helper functions on `game.arcflight` and `game.arcflight.devTools` for normalizing statistic keys, discovering candidate Lore fallbacks, resolving actor statistics, checking rollability, extracting PF2E roll totals, and making guarded PF2E statistic rolls. Station actions use these helpers now for their PF2E chat cards and roll-history metadata.
+
+This is a refactor/extraction only: it keeps current station-action behavior intact while preparing a shared path that future travel event prompts can use without importing station-action execution logic. It does not add a travel runner, travel UI, ship travel event state, combat automation, or any AP/RAP behavior changes.
+
 ## Current Architecture Overview
 
 Arcflight deliberately builds on normal PF2E documents instead of registering custom document subtypes:
