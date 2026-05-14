@@ -346,12 +346,14 @@ const STATION_ACTION_OUTCOME_ALIASES = Object.freeze({
 });
 
 function normalizeDegreeOfSuccess(degreeOfSuccess) {
+  if (degreeOfSuccess === null || degreeOfSuccess === undefined) return null;
+  if (typeof degreeOfSuccess === "string" && degreeOfSuccess.trim() === "") return null;
   if (Number.isInteger(degreeOfSuccess) && STATION_ACTION_OUTCOME_DEGREES[degreeOfSuccess]) return degreeOfSuccess;
 
   const numericDegree = Number(degreeOfSuccess);
   if (Number.isInteger(numericDegree) && STATION_ACTION_OUTCOME_DEGREES[numericDegree]) return numericDegree;
 
-  const alias = String(degreeOfSuccess ?? "").trim().replace(/\s+/g, "-").toLowerCase();
+  const alias = String(degreeOfSuccess).trim().replace(/\s+/g, "-").toLowerCase();
   return STATION_ACTION_OUTCOME_ALIASES[alias] ?? null;
 }
 
