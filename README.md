@@ -29,6 +29,14 @@ The first sample event is **Black Tide Crossing**, a five-round environmental cr
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
 
+## Ship-Attached Travel Event State Foundation
+
+Arcflight ships can now store one active travel event under `flags.arcflight.system.travel`. The backend-only helpers initialize empty travel state, start a validated core travel event such as Black Tide Crossing, record one primary Travel Five station result per station per round, advance rounds by staging the matching proposed effects, complete events into `completedEvents`, and clear the active event when needed.
+
+The state foundation tracks current round, round totals, event totals, normalized station result records, staged round/final proposed effects, combat-handoff metadata, and event history. It deliberately does not apply staged effects, mutate ship travel resources, spend AP/RAP, create PF2E roll buttons, open a Travel Runner UI, build GM tooling, or start combat automatically.
+
+Public helper exports on `game.arcflight` and `game.arcflight.devTools` include `getShipTravelEventState`, `getActiveShipTravelEvent`, `startShipTravelEvent`, `recordShipTravelStationResult`, `getCurrentShipTravelRound`, `advanceShipTravelEventRound`, `completeShipTravelEvent`, and `clearShipTravelEvent`.
+
 ## Shared PF2E Statistic Helpers
 
 Arcflight now exposes shared PF2E statistic helper functions on `game.arcflight` and `game.arcflight.devTools` for normalizing statistic keys, discovering candidate Lore fallbacks, resolving actor statistics, checking rollability, extracting PF2E roll totals, and making guarded PF2E statistic rolls. Station actions use these helpers now for their PF2E chat cards and roll-history metadata.

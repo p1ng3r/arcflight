@@ -16,6 +16,16 @@ import {
   prepareTravelRoundSummary,
   getTravelEventStationPrompt
 } from "../helpers/travel-events.js";
+import {
+  advanceShipTravelEventRound,
+  clearShipTravelEvent,
+  completeShipTravelEvent,
+  getActiveShipTravelEvent,
+  getCurrentShipTravelRound,
+  getShipTravelEventState,
+  recordShipTravelStationResult,
+  startShipTravelEvent
+} from "../helpers/ship-travel-event-state.js";
 import { CORE_WEAPON_KEYS, getCoreWeapon, getCoreWeaponKeys } from "../../data/weapons/core-weapons.js";
 import { CORE_TRAVEL_EVENTS, CORE_TRAVEL_EVENT_KEYS, getCoreTravelEvent, getCoreTravelEventKeys, getCoreTravelEvents, getCoreTravelEventsByCategory } from "../../data/travel-events/core-travel-events.js";
 import {
@@ -164,6 +174,46 @@ export function createArcflightDevTools() {
      * Prepare a cloned Travel Five station prompt for future UI.
      */
     getTravelEventStationPrompt,
+
+    /**
+     * Return normalized ship-attached travel event state.
+     */
+    getShipTravelEventState,
+
+    /**
+     * Return the active ship travel event, if any.
+     */
+    getActiveShipTravelEvent,
+
+    /**
+     * Start one active ship-attached travel event.
+     */
+    startShipTravelEvent,
+
+    /**
+     * Record a Travel Five station result into the current travel round.
+     */
+    recordShipTravelStationResult,
+
+    /**
+     * Return the current active travel round state.
+     */
+    getCurrentShipTravelRound,
+
+    /**
+     * Resolve the current round outcome and stage proposed effects only.
+     */
+    advanceShipTravelEventRound,
+
+    /**
+     * Complete the active travel event and move it to completed history.
+     */
+    completeShipTravelEvent,
+
+    /**
+     * Clear the active travel event without applying effects.
+     */
+    clearShipTravelEvent,
 
     /**
      * Core weapon key constants for console inspection.

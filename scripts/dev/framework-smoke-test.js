@@ -77,6 +77,16 @@ import {
   getTravelEventOutcome,
   validateTravelEventDefinition
 } from "../helpers/travel-events.js";
+import {
+  advanceShipTravelEventRound,
+  clearShipTravelEvent,
+  completeShipTravelEvent,
+  getActiveShipTravelEvent,
+  getCurrentShipTravelRound,
+  getShipTravelEventState,
+  recordShipTravelStationResult,
+  startShipTravelEvent
+} from "../helpers/ship-travel-event-state.js";
 import { clearStationActionHistory, executeStationAction, getStationActionState, previewStationAction, previewStationActionRoll, rollStationAction } from "../helpers/station-action-execution.js";
 import { getPf2eStatisticCandidateKeys, normalizePf2eStatisticKey, resolvePf2eActorStatistic } from "../helpers/pf2e-statistics.js";
 import { prepareInstallUiState, prepareStationActionHistoryReadout, prepareStationActionUiState, prepareStationRows } from "../sheets/ship-sheet.js";
@@ -662,6 +672,45 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel resource helpers do not change AP/RAP", beforeTravelEconomy.ap === afterTravelEconomy.ap && beforeTravelEconomy.rap === afterTravelEconomy.rap, "unchanged AP/RAP", { before: beforeTravelEconomy, after: afterTravelEconomy });
     check(result, "Travel resource helpers exposed", typeof globalThis.game?.arcflight?.getShipTravelResources === "function" && typeof globalThis.game?.arcflight?.previewShipTravelResourceChange === "function" && typeof globalThis.game?.arcflight?.updateShipTravelResources === "function" && typeof globalThis.game?.arcflight?.getTravelStationKeys === "function" && typeof globalThis.game?.arcflight?.isTravelStationKey === "function", true, { getShipTravelResources: typeof globalThis.game?.arcflight?.getShipTravelResources, previewShipTravelResourceChange: typeof globalThis.game?.arcflight?.previewShipTravelResourceChange, updateShipTravelResources: typeof globalThis.game?.arcflight?.updateShipTravelResources, getTravelStationKeys: typeof globalThis.game?.arcflight?.getTravelStationKeys, isTravelStationKey: typeof globalThis.game?.arcflight?.isTravelStationKey });
     check(result, "Travel resource devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getShipTravelResources === "function" && typeof globalThis.game?.arcflight?.devTools?.previewShipTravelResourceChange === "function" && typeof globalThis.game?.arcflight?.devTools?.updateShipTravelResources === "function" && typeof globalThis.game?.arcflight?.devTools?.getTravelStationKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.isTravelStationKey === "function", true, { getShipTravelResources: typeof globalThis.game?.arcflight?.devTools?.getShipTravelResources, previewShipTravelResourceChange: typeof globalThis.game?.arcflight?.devTools?.previewShipTravelResourceChange, updateShipTravelResources: typeof globalThis.game?.arcflight?.devTools?.updateShipTravelResources, getTravelStationKeys: typeof globalThis.game?.arcflight?.devTools?.getTravelStationKeys, isTravelStationKey: typeof globalThis.game?.arcflight?.devTools?.isTravelStationKey });
+    const emptyTravelEventState = getShipTravelEventState(actor);
+    check(result, "Travel event state initializes empty", emptyTravelEventState.activeEvent === null && Array.isArray(emptyTravelEventState.completedEvents) && emptyTravelEventState.completedEvents.length === 0, "empty travel event state", emptyTravelEventState);
+    const travelEventEconomyBefore = getShipActionEconomy(actor);
+    const travelEventResourcesBefore = getShipTravelResources(actor);
+    const activeTravelEvent = await startShipTravelEvent(actor, "black-tide-crossing");
+    check(result, "Start Black Tide Crossing creates active event", activeTravelEvent?.eventKey === "black-tide-crossing" && activeTravelEvent.currentRound === 1 && activeTravelEvent.rounds.length === 5, "active Black Tide event", activeTravelEvent);
+    try {
+      await startShipTravelEvent(actor, "black-tide-crossing");
+      check(result, "Starting second travel event blocks", false, "active event rejection", "accepted");
+    } catch (error) {
+      check(result, "Starting second travel event blocks", error.message.includes("already has an active travel event"), "active event rejection", error.message);
+    }
+    checkEqual(result, "Current travel round is 1", 1, getCurrentShipTravelRound(actor)?.round);
+    await recordShipTravelStationResult(actor, { stationKey: "navigator", degreeOfSuccess: "success", actorName: "Smoke Navigator" });
+    let currentTravelRound = getCurrentShipTravelRound(actor);
+    check(result, "Navigator success adds +1 success", currentTravelRound.successes === 1 && getActiveShipTravelEvent(actor).totals.successes === 1, "+1 success", { round: currentTravelRound, totals: getActiveShipTravelEvent(actor).totals });
+    await recordShipTravelStationResult(actor, { stationKey: "engineer", degreeOfSuccess: "criticalFailure", actorName: "Smoke Engineer" });
+    currentTravelRound = getCurrentShipTravelRound(actor);
+    check(result, "Engineer criticalFailure adds +2 failures and +1 criticalFailure", currentTravelRound.failures === 2 && currentTravelRound.criticalFailures === 1 && getActiveShipTravelEvent(actor).totals.failures === 2 && getActiveShipTravelEvent(actor).totals.criticalFailures === 1, "+2 failures/+1 criticalFailure", { round: currentTravelRound, totals: getActiveShipTravelEvent(actor).totals });
+    try {
+      await recordShipTravelStationResult(actor, { stationKey: "navigator", degreeOfSuccess: "success", actorName: "Duplicate Navigator" });
+      check(result, "Duplicate same station travel result blocks by default", false, "duplicate rejection", "accepted");
+    } catch (error) {
+      check(result, "Duplicate same station travel result blocks by default", error.message.includes("already has a primary result"), "duplicate rejection", error.message);
+    }
+    const advancedTravelEvent = await advanceShipTravelEventRound(actor);
+    const advancedRound = advancedTravelEvent.rounds.find((round) => round.round === 1);
+    check(result, "Advance round stores outcome and stagedEffects", advancedRound.outcomeKey === "dominantFailure" && Array.isArray(advancedRound.stagedEffects) && advancedRound.stagedEffects.length > 0 && advancedTravelEvent.currentRound === 2, "round outcome with staged effects", advancedRound);
+    const travelEventEconomyAfterAdvance = getShipActionEconomy(actor);
+    const travelEventResourcesAfterAdvance = getShipTravelResources(actor);
+    check(result, "Travel event state helpers leave AP/RAP unchanged", travelEventEconomyBefore.ap === travelEventEconomyAfterAdvance.ap && travelEventEconomyBefore.rap === travelEventEconomyAfterAdvance.rap, "unchanged AP/RAP", { before: travelEventEconomyBefore, after: travelEventEconomyAfterAdvance });
+    check(result, "Travel event state helpers leave ship travel resources unchanged", JSON.stringify(travelEventResourcesBefore) === JSON.stringify(travelEventResourcesAfterAdvance), "unchanged travel resources", { before: travelEventResourcesBefore, after: travelEventResourcesAfterAdvance });
+    const completedTravelState = await completeShipTravelEvent(actor);
+    check(result, "Complete travel event moves to completedEvents and clears activeEvent", completedTravelState.activeEvent === null && completedTravelState.completedEvents.length === 1 && completedTravelState.completedEvents[0].eventKey === "black-tide-crossing" && completedTravelState.completedEvents[0].stagedFinalEffects.length > 0, "completed travel state", completedTravelState);
+    await startShipTravelEvent(actor, "black-tide-crossing");
+    const clearedTravelState = await clearShipTravelEvent(actor);
+    check(result, "Clear travel event helper works", clearedTravelState.activeEvent === null, "cleared active event", clearedTravelState);
+    check(result, "Ship travel event helpers exposed", typeof globalThis.game?.arcflight?.getShipTravelEventState === "function" && typeof globalThis.game?.arcflight?.getActiveShipTravelEvent === "function" && typeof globalThis.game?.arcflight?.startShipTravelEvent === "function" && typeof globalThis.game?.arcflight?.recordShipTravelStationResult === "function" && typeof globalThis.game?.arcflight?.getCurrentShipTravelRound === "function" && typeof globalThis.game?.arcflight?.advanceShipTravelEventRound === "function" && typeof globalThis.game?.arcflight?.completeShipTravelEvent === "function" && typeof globalThis.game?.arcflight?.clearShipTravelEvent === "function", true, { getShipTravelEventState: typeof globalThis.game?.arcflight?.getShipTravelEventState, startShipTravelEvent: typeof globalThis.game?.arcflight?.startShipTravelEvent });
+    check(result, "Ship travel event devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getShipTravelEventState === "function" && typeof globalThis.game?.arcflight?.devTools?.getActiveShipTravelEvent === "function" && typeof globalThis.game?.arcflight?.devTools?.startShipTravelEvent === "function" && typeof globalThis.game?.arcflight?.devTools?.recordShipTravelStationResult === "function" && typeof globalThis.game?.arcflight?.devTools?.getCurrentShipTravelRound === "function" && typeof globalThis.game?.arcflight?.devTools?.advanceShipTravelEventRound === "function" && typeof globalThis.game?.arcflight?.devTools?.completeShipTravelEvent === "function" && typeof globalThis.game?.arcflight?.devTools?.clearShipTravelEvent === "function", true, { getShipTravelEventState: typeof globalThis.game?.arcflight?.devTools?.getShipTravelEventState, startShipTravelEvent: typeof globalThis.game?.arcflight?.devTools?.startShipTravelEvent });
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
     shipData = getArcflightShipData(actor);
     check(result, "Ship action economy helpers are exposed", typeof globalThis.game?.arcflight?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.canSpendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints === "function", true, { getShipActionEconomy: typeof globalThis.game?.arcflight?.getShipActionEconomy, resetShipActionEconomy: typeof globalThis.game?.arcflight?.resetShipActionEconomy, spendShipActionPoints: typeof globalThis.game?.arcflight?.spendShipActionPoints, canSpendShipActionPoints: typeof globalThis.game?.arcflight?.canSpendShipActionPoints, devToolsGetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy, devToolsResetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy, devToolsSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints, devToolsCanSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints });

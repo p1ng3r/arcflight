@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Ship-Attached Travel Event State Foundation MVP
+
+- Added ship-owned travel event state under `flags.arcflight.system.travel`, with one active event, per-round result state, staged effects, combat-handoff metadata, history, and completed-event history.
+- Added backend helpers to get state, get the active event, start a validated core event, record Travel Five station results, read the current round, advance rounds, complete events, and clear active events.
+- Station result recording normalizes degree labels, uses Travel Five contribution mapping, updates round/event totals, rejects non-Travel Five stations, and blocks duplicate primary station results per round unless explicitly overridden.
+- Round advancement and event completion stage proposed effects from data branches without applying them, mutating resources, spending AP/RAP, creating PF2E roll buttons, starting combat, or handing off to automation.
+- Exposed all ship travel event state helpers on `game.arcflight` and `game.arcflight.devTools`, and extended framework smoke coverage for Black Tide Crossing state lifecycle, duplicate blocking, staged effects, unchanged AP/RAP/resources, clear behavior, and helper exposure.
+
 ### Shared PF2E Statistic Helper Extraction
 
 - Extracted generic PF2E statistic key normalization, Lore candidate discovery, actor statistic resolution, rollability checks, roll-total extraction, and guarded statistic rolling into `scripts/helpers/pf2e-statistics.js`.
