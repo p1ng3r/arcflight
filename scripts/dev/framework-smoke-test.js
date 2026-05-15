@@ -738,8 +738,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Double apply staged effect is blocked", doubleApplyResult.ok === false && doubleApplyResult.reason === "already-applied", "double apply blocked", doubleApplyResult);
     const unsupportedApplyResult = await applyTravelStagedEffect(actor, { type: "modifier", target: "nextRound.navigator.dc", mode: "add", value: 1, label: "Unsupported Smoke Modifier" }, { source: "activeRound", round: 1, effectIndex: 999 });
     check(result, "Unsupported staged effect does not crash", unsupportedApplyResult.unsupported === true && unsupportedApplyResult.skipped === true, "unsupported skipped", unsupportedApplyResult);
+    const stagedBulkUnsupportedEconomyBefore = getShipActionEconomy(actor);
+    const stagedBulkUnsupportedResourcesBefore = getShipTravelResources(actor);
     const stagedBulkUnsupportedResult = await applyTravelStagedEffects(actor, [{ type: "note", label: "Unsupported Smoke Note" }], { source: "activeRound", round: 1 });
-    check(result, "Bulk staged effects helper skips unsupported effects safely", stagedBulkUnsupportedResult.ok === true && stagedBulkUnsupportedResult.skippedCount === 1, "bulk unsupported skipped", stagedBulkUnsupportedResult);
+    const stagedBulkUnsupportedEconomyAfter = getShipActionEconomy(actor);
+    const stagedBulkUnsupportedResourcesAfter = getShipTravelResources(actor);
+    check(result, "Bulk staged effects helper skips unsupported effects safely", stagedBulkUnsupportedResult.ok === true && stagedBulkUnsupportedResult.skippedCount === 1 && JSON.stringify(stagedBulkUnsupportedResourcesBefore) === JSON.stringify(stagedBulkUnsupportedResourcesAfter) && stagedBulkUnsupportedEconomyBefore.ap === stagedBulkUnsupportedEconomyAfter.ap && stagedBulkUnsupportedEconomyBefore.rap === stagedBulkUnsupportedEconomyAfter.rap, "bulk unsupported skipped without mutation", { result: stagedBulkUnsupportedResult, resourcesBefore: stagedBulkUnsupportedResourcesBefore, resourcesAfter: stagedBulkUnsupportedResourcesAfter, economyBefore: stagedBulkUnsupportedEconomyBefore, economyAfter: stagedBulkUnsupportedEconomyAfter });
     const completedTravelState = await completeShipTravelEvent(actor);
     check(result, "Complete travel event moves to completedEvents and clears activeEvent", completedTravelState.activeEvent === null && completedTravelState.completedEvents.length === 1 && completedTravelState.completedEvents[0].eventKey === "black-tide-crossing" && completedTravelState.completedEvents[0].stagedFinalEffects.length > 0, "completed travel state", completedTravelState);
     await startShipTravelEvent(actor, "black-tide-crossing");

@@ -432,6 +432,7 @@ export async function applyTravelStagedEffect(shipActor, effect = {}, options = 
       blocked: true,
       unsupported: true,
       skipped: true,
+      reason: "unsupported",
       effect: cloneData(stateEffect),
       preview,
       message: preview.messages?.[0] ?? "Staged effect is manual / unsupported in this MVP."
@@ -493,15 +494,17 @@ export async function applyTravelStagedEffects(shipActor, effects = [], options 
   assertArcflightShipActor(shipActor, "applyTravelStagedEffects");
 
   const effectList = Array.isArray(effects) ? effects : [];
+  const hasExplicitEffectIndex = Object.prototype.hasOwnProperty.call(options, "effectIndex");
   const results = [];
-  for (let index = 0; index < effectList.length; index += 1) {
-    results.push(await applyTravelStagedEffect(shipActor, effectList[index], { ...options, effectIndex: options.effectIndex ?? index }));
+  for (const effect of effectList) {
+    const effectOptions = hasExplicitEffectIndex ? { ...options, effectIndex: options.effectIndex } : { ...options };
+    results.push(await applyTravelStagedEffect(shipActor, effect, effectOptions));
   }
 
   return {
-    ok: results.every((result) => result.ok === true || result.unsupported === true),
+    ok: results.every((result) => result.ok === true || (result.unsupported === true && result.skipped === true)),
     appliedCount: results.filter((result) => result.ok === true).length,
-    skippedCount: results.filter((result) => result.skipped === true || result.blocked === true).length,
+    skippedCount: results.filter((result) => result.unsupported === true && result.skipped === true).length,
     results
   };
 }
