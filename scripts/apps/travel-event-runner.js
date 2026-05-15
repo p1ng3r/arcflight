@@ -394,6 +394,17 @@ function getActiveRollContext(activeEvent) {
   };
 }
 
+function getStationRollFeedback(activeEvent, stationKey, degreeOfSuccess) {
+  const degree = normalizeTravelRollDegree(degreeOfSuccess);
+  if (!activeEvent || !stationKey || !degree) return "";
+
+  const eventDefinition = getCoreTravelEvent(activeEvent.eventKey);
+  const roundDefinition = getRoundDefinition(eventDefinition, activeEvent.currentRound);
+  const prompt = roundDefinition?.activeStations?.find((entry) => entry.stationKey === stationKey) ?? null;
+  const feedback = prompt?.rollFeedback?.[degree];
+  return typeof feedback === "string" ? feedback.trim() : "";
+}
+
 async function confirmClearActiveEvent(shipActor) {
   const actorName = shipActor?.name ?? "this ship";
   const escapedActorName = foundry.utils.escapeHTML(actorName);
@@ -630,7 +641,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     try {
       await recordShipTravelStationResult(this.shipActor, { stationKey, degreeOfSuccess, actorName, notes });
-      ui.notifications?.info?.(`Recorded ${humanizeIdentifier(degreeOfSuccess)} for ${humanizeIdentifier(stationKey)}.`);
+      const updatedActiveEvent = getShipTravelEventState(this.shipActor).activeEvent;
+      const feedback = getStationRollFeedback(updatedActiveEvent, stationKey, degreeOfSuccess);
+      ui.notifications?.info?.(feedback || `Recorded ${humanizeIdentifier(degreeOfSuccess)} for ${humanizeIdentifier(stationKey)}.`);
       await this.#rerenderAfterAction();
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not record that station result.");
@@ -705,7 +718,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
         source: "pf2e-roll"
       });
 
-      ui.notifications?.info?.(`Recorded ${humanizeIdentifier(degreeOfSuccess)} for ${stationName}.`);
+      const updatedActiveEvent = getShipTravelEventState(this.shipActor).activeEvent;
+      const feedback = getStationRollFeedback(updatedActiveEvent, stationKey, degreeOfSuccess);
+      ui.notifications?.info?.(feedback || `Recorded ${humanizeIdentifier(degreeOfSuccess)} for ${stationName}.`);
       await this.#rerenderAfterAction();
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not roll that travel station prompt.");

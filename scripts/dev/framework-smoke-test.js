@@ -136,13 +136,17 @@ const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
 const EXPECTED_CORE_TRAVEL_EVENT_KEYS = Object.freeze([
   "black-tide-crossing",
   "derelict-lantern-wreck",
-  "crew-fever-in-the-lifeveil"
+  "crew-fever-in-the-lifeveil",
+  "false-beacon-ambush",
+  "portside-diplomatic-snare"
 ]);
 
 const EXPECTED_CORE_TRAVEL_EVENT_ROUND_COUNTS = Object.freeze({
   "black-tide-crossing": 5,
   "derelict-lantern-wreck": 4,
-  "crew-fever-in-the-lifeveil": 4
+  "crew-fever-in-the-lifeveil": 4,
+  "false-beacon-ambush": 4,
+  "portside-diplomatic-snare": 4
 });
 
 const EXPECTED_CORE_HULL_PLATFORM_KEYS = Object.freeze([
@@ -230,6 +234,22 @@ function hasCoreStationActionFoundationData(action = {}) {
     && Array.isArray(action.rollOptions)
     && action.rollOptions.length > 0
     && action.rollOptions.every((option) => typeof option.key === "string" && option.key.length > 0 && typeof option.statisticKey === "string" && option.statisticKey.length > 0);
+}
+
+function hasTravelPromptAuthoringFields(prompt = {}) {
+  return typeof prompt.playerAction === "string"
+    && prompt.playerAction.trim().length > 0
+    && ["criticalSuccess", "success", "failure", "criticalFailure"].every((degree) => typeof prompt.rollFeedback?.[degree] === "string" && prompt.rollFeedback[degree].trim().length > 0);
+}
+
+function hasNoGenericTravelPromptDefaults(prompt = {}) {
+  const feedbackText = Object.values(prompt.rollFeedback ?? {}).join(" ");
+  return !prompt.playerAction?.startsWith?.("Describe how ")
+    && !feedbackText.includes("turns the moment")
+    && !feedbackText.includes("keeps the moment")
+    && !feedbackText.includes("confronts this travel pressure")
+    && !feedbackText.includes("into a clean advantage")
+    && !feedbackText.includes("under control");
 }
 
 function hasCoreWeaponFoundationData(weapon = {}) {
@@ -370,17 +390,22 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel category constants include locked categories", expectedTravelCategories.every((category) => travelCategoryValues.includes(category)) && travelCategoryValues.length === expectedTravelCategories.length, expectedTravelCategories, travelCategoryValues);
     check(result, "Travel Five foundation helper matches station helper", JSON.stringify(getTravelFiveStationKeys()) === JSON.stringify(expectedTravelStationKeys), expectedTravelStationKeys, getTravelFiveStationKeys());
     check(result, "Core travel event key array exists", isCoreKeyArray(CORE_TRAVEL_EVENT_KEYS), "non-empty array", CORE_TRAVEL_EVENT_KEYS?.length ?? 0);
-    check(result, "Core travel event keys include Pack 01A events", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => CORE_TRAVEL_EVENT_KEYS.includes(key)), EXPECTED_CORE_TRAVEL_EVENT_KEYS, CORE_TRAVEL_EVENT_KEYS);
+    check(result, "Core travel event keys include template-upgraded Pack 01A and Pack 01B events", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => CORE_TRAVEL_EVENT_KEYS.includes(key)), EXPECTED_CORE_TRAVEL_EVENT_KEYS, CORE_TRAVEL_EVENT_KEYS);
     const travelFiveStationKeys = getTravelFiveStationKeys();
     const travelResourceValues = Object.values(ARCFLIGHT.TRAVEL_RESOURCES ?? {});
     for (const eventKey of EXPECTED_CORE_TRAVEL_EVENT_KEYS) {
       const coreTravelEvent = getCoreTravelEvent(eventKey);
       const validation = validateTravelEventDefinition(coreTravelEvent);
-      const activeStations = coreTravelEvent?.rounds?.flatMap((round) => round.activeStations?.map((station) => station.stationKey) ?? []) ?? [];
+      const strictValidation = validateTravelEventDefinition(coreTravelEvent, { strictAuthoring: true });
+      const prompts = coreTravelEvent?.rounds?.flatMap((round) => round.activeStations ?? []) ?? [];
+      const activeStations = prompts.map((station) => station.stationKey);
       check(result, `${coreTravelEvent?.name ?? eventKey} core travel event exists`, coreTravelEvent?.key === eventKey, eventKey, coreTravelEvent?.key ?? null);
       check(result, `${coreTravelEvent?.name ?? eventKey} validates`, validation.ok === true, true, validation);
+      check(result, `${coreTravelEvent?.name ?? eventKey} strict authoring validates`, strictValidation.ok === true, true, strictValidation);
       checkEqual(result, `${coreTravelEvent?.name ?? eventKey} has expected round count`, EXPECTED_CORE_TRAVEL_EVENT_ROUND_COUNTS[eventKey], coreTravelEvent?.rounds?.length ?? 0);
       check(result, `${coreTravelEvent?.name ?? eventKey} roundCount matches rounds length`, coreTravelEvent?.roundCount === coreTravelEvent?.rounds?.length, coreTravelEvent?.roundCount, coreTravelEvent?.rounds?.length ?? 0);
+      check(result, `${coreTravelEvent?.name ?? eventKey} station prompts have playerAction and rollFeedback`, prompts.every((prompt) => hasTravelPromptAuthoringFields(prompt)), true, prompts.filter((prompt) => !hasTravelPromptAuthoringFields(prompt)).map((prompt) => ({ stationKey: prompt.stationKey, playerAction: prompt.playerAction, rollFeedback: prompt.rollFeedback })));
+      check(result, `${coreTravelEvent?.name ?? eventKey} station prompts avoid generic authoring defaults`, prompts.every((prompt) => hasNoGenericTravelPromptDefaults(prompt)), true, prompts.filter((prompt) => !hasNoGenericTravelPromptDefaults(prompt)).map((prompt) => ({ stationKey: prompt.stationKey, playerAction: prompt.playerAction, rollFeedback: prompt.rollFeedback })));
       check(result, `${coreTravelEvent?.name ?? eventKey} active stations are Travel Five only`, activeStations.every((stationKey) => travelFiveStationKeys.includes(stationKey)), true, [...new Set(activeStations.filter((stationKey) => !travelFiveStationKeys.includes(stationKey)))]);
       check(result, `${coreTravelEvent?.name ?? eventKey} activeResources use known travel resources`, (coreTravelEvent?.activeResources ?? []).every((resource) => travelResourceValues.includes(resource)), true, (coreTravelEvent?.activeResources ?? []).filter((resource) => !travelResourceValues.includes(resource)));
     }
@@ -792,8 +817,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel event library selected details exist", selectedTravelEventDetails?.key === "black-tide-crossing" && selectedTravelEventDetails.roundCount === 5 && selectedTravelEventDetails.baseDC === 20 && selectedTravelEventDetails.category === "environmental", "selected Black Tide details", selectedTravelEventDetails);
     const derelictSelectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("derelict-lantern-wreck");
     const feverSelectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("crew-fever-in-the-lifeveil");
+    const falseBeaconSelectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("false-beacon-ambush");
+    const portsideSelectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("portside-diplomatic-snare");
     check(result, "Travel event library selected details work for Derelict Lantern Wreck", derelictSelectedTravelEventDetails?.key === "derelict-lantern-wreck" && derelictSelectedTravelEventDetails.roundCount === 4 && derelictSelectedTravelEventDetails.baseDC === 19 && derelictSelectedTravelEventDetails.category === "discovery", "selected Derelict Lantern Wreck details", derelictSelectedTravelEventDetails);
     check(result, "Travel event library selected details work for Crew Fever in the Lifeveil", feverSelectedTravelEventDetails?.key === "crew-fever-in-the-lifeveil" && feverSelectedTravelEventDetails.roundCount === 4 && feverSelectedTravelEventDetails.baseDC === 18 && feverSelectedTravelEventDetails.category === "shipboard", "selected Crew Fever in the Lifeveil details", feverSelectedTravelEventDetails);
+    check(result, "Travel event library selected details work for False Beacon Ambush", falseBeaconSelectedTravelEventDetails?.key === "false-beacon-ambush" && falseBeaconSelectedTravelEventDetails.roundCount === 4 && falseBeaconSelectedTravelEventDetails.baseDC === 20 && falseBeaconSelectedTravelEventDetails.category === "threat", "selected False Beacon Ambush details", falseBeaconSelectedTravelEventDetails);
+    check(result, "Travel event library selected details work for Portside Diplomatic Snare", portsideSelectedTravelEventDetails?.key === "portside-diplomatic-snare" && portsideSelectedTravelEventDetails.roundCount === 4 && portsideSelectedTravelEventDetails.baseDC === 18 && portsideSelectedTravelEventDetails.category === "social", "selected Portside Diplomatic Snare details", portsideSelectedTravelEventDetails);
     check(result, "Travel runner app imports and helpers are exposed", typeof ArcflightTravelEventRunner === "function" && typeof openTravelEventRunner === "function" && typeof prepareTravelEventLibraryOptions === "function" && typeof prepareSelectedTravelEventLibraryDetails === "function" && typeof globalThis.game?.arcflight?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventLibraryOptions === "function", true, { importedClass: typeof ArcflightTravelEventRunner, importedHelper: typeof openTravelEventRunner, importedLibraryHelper: typeof prepareTravelEventLibraryOptions, apiHelper: typeof globalThis.game?.arcflight?.openTravelEventRunner, devToolsHelper: typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner, apiLibraryHelper: typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions });
     const blankTravelEventTemplate = createBlankTravelEventTemplate({ key: "smoke-template", name: "Smoke Template", category: "discovery", roundCount: 2, baseDC: 18 });
     const blankRoundTemplate = createBlankTravelRoundTemplate(1);
@@ -814,7 +843,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Blank final outcomes include all final outcome keys", ["majorVictory", "victory", "costlySuccess", "failure", "catastrophicFailure"].every((key) => blankFinalOutcomesTemplate[key]), "final outcomes", Object.keys(blankFinalOutcomesTemplate));
     check(result, "Strict authoring validator rejects missing playerAction", validateTravelEventAuthoringTemplate(strictMissingPlayerActionEvent).ok === false && validateTravelEventDefinition(strictMissingPlayerActionEvent, { strictAuthoring: true }).errors.some((error) => error.includes("playerAction")), "playerAction rejection", validateTravelEventAuthoringTemplate(strictMissingPlayerActionEvent));
     check(result, "Strict authoring validator rejects missing rollFeedback", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent).ok === false && validateTravelEventDefinition(strictMissingRollFeedbackEvent, { strictAuthoring: true }).errors.some((error) => error.includes("rollFeedback")), "rollFeedback rejection", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent));
-    check(result, "Normal existing core travel event validation still passes", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => validateTravelEventDefinition(getCoreTravelEvent(key)).ok === true), "all current core events valid", EXPECTED_CORE_TRAVEL_EVENT_KEYS.map((key) => ({ key, validation: validateTravelEventDefinition(getCoreTravelEvent(key)) })));
+    check(result, "Normal and strict core travel event validation passes", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => validateTravelEventDefinition(getCoreTravelEvent(key)).ok === true && validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }).ok === true), "all current core events valid", EXPECTED_CORE_TRAVEL_EVENT_KEYS.map((key) => ({ key, validation: validateTravelEventDefinition(getCoreTravelEvent(key)), strictValidation: validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }) })));
 
     check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
