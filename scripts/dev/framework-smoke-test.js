@@ -122,6 +122,18 @@ import {
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
 
+const EXPECTED_CORE_TRAVEL_EVENT_KEYS = Object.freeze([
+  "black-tide-crossing",
+  "derelict-lantern-wreck",
+  "crew-fever-in-the-lifeveil"
+]);
+
+const EXPECTED_CORE_TRAVEL_EVENT_ROUND_COUNTS = Object.freeze({
+  "black-tide-crossing": 5,
+  "derelict-lantern-wreck": 4,
+  "crew-fever-in-the-lifeveil": 4
+});
+
 const EXPECTED_CORE_HULL_PLATFORM_KEYS = Object.freeze([
   "void-skiff",
   "sloop",
@@ -347,15 +359,21 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel category constants include locked categories", expectedTravelCategories.every((category) => travelCategoryValues.includes(category)) && travelCategoryValues.length === expectedTravelCategories.length, expectedTravelCategories, travelCategoryValues);
     check(result, "Travel Five foundation helper matches station helper", JSON.stringify(getTravelFiveStationKeys()) === JSON.stringify(expectedTravelStationKeys), expectedTravelStationKeys, getTravelFiveStationKeys());
     check(result, "Core travel event key array exists", isCoreKeyArray(CORE_TRAVEL_EVENT_KEYS), "non-empty array", CORE_TRAVEL_EVENT_KEYS?.length ?? 0);
-    const blackTideCrossing = getCoreTravelEvent("black-tide-crossing");
-    const blackTideValidation = validateTravelEventDefinition(blackTideCrossing);
-    check(result, "Black Tide Crossing core travel event exists", blackTideCrossing?.key === "black-tide-crossing", "black-tide-crossing", blackTideCrossing?.key ?? null);
-    check(result, "Black Tide Crossing validates", blackTideValidation.ok === true, true, blackTideValidation);
-    checkEqual(result, "Black Tide Crossing has exactly 5 rounds", 5, blackTideCrossing?.rounds?.length ?? 0);
-    const blackTideActiveStations = blackTideCrossing?.rounds?.flatMap((round) => round.activeStations?.map((station) => station.stationKey) ?? []) ?? [];
-    check(result, "Black Tide Crossing active stations are Travel Five only", blackTideActiveStations.every((stationKey) => getTravelFiveStationKeys().includes(stationKey)), true, [...new Set(blackTideActiveStations.filter((stationKey) => !getTravelFiveStationKeys().includes(stationKey)))]);
+    check(result, "Core travel event keys include Pack 01A events", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => CORE_TRAVEL_EVENT_KEYS.includes(key)), EXPECTED_CORE_TRAVEL_EVENT_KEYS, CORE_TRAVEL_EVENT_KEYS);
+    const travelFiveStationKeys = getTravelFiveStationKeys();
     const travelResourceValues = Object.values(ARCFLIGHT.TRAVEL_RESOURCES ?? {});
-    check(result, "Black Tide Crossing activeResources use known travel resources", (blackTideCrossing?.activeResources ?? []).every((resource) => travelResourceValues.includes(resource)), true, (blackTideCrossing?.activeResources ?? []).filter((resource) => !travelResourceValues.includes(resource)));
+    for (const eventKey of EXPECTED_CORE_TRAVEL_EVENT_KEYS) {
+      const coreTravelEvent = getCoreTravelEvent(eventKey);
+      const validation = validateTravelEventDefinition(coreTravelEvent);
+      const activeStations = coreTravelEvent?.rounds?.flatMap((round) => round.activeStations?.map((station) => station.stationKey) ?? []) ?? [];
+      check(result, `${coreTravelEvent?.name ?? eventKey} core travel event exists`, coreTravelEvent?.key === eventKey, eventKey, coreTravelEvent?.key ?? null);
+      check(result, `${coreTravelEvent?.name ?? eventKey} validates`, validation.ok === true, true, validation);
+      checkEqual(result, `${coreTravelEvent?.name ?? eventKey} has expected round count`, EXPECTED_CORE_TRAVEL_EVENT_ROUND_COUNTS[eventKey], coreTravelEvent?.rounds?.length ?? 0);
+      check(result, `${coreTravelEvent?.name ?? eventKey} roundCount matches rounds length`, coreTravelEvent?.roundCount === coreTravelEvent?.rounds?.length, coreTravelEvent?.roundCount, coreTravelEvent?.rounds?.length ?? 0);
+      check(result, `${coreTravelEvent?.name ?? eventKey} active stations are Travel Five only`, activeStations.every((stationKey) => travelFiveStationKeys.includes(stationKey)), true, [...new Set(activeStations.filter((stationKey) => !travelFiveStationKeys.includes(stationKey)))]);
+      check(result, `${coreTravelEvent?.name ?? eventKey} activeResources use known travel resources`, (coreTravelEvent?.activeResources ?? []).every((resource) => travelResourceValues.includes(resource)), true, (coreTravelEvent?.activeResources ?? []).filter((resource) => !travelResourceValues.includes(resource)));
+    }
+    const blackTideCrossing = getCoreTravelEvent("black-tide-crossing");
     check(result, "Travel degree contribution mapping works", getTravelDegreeContribution("criticalSuccess").successes === 2 && getTravelDegreeContribution("success").successes === 1 && getTravelDegreeContribution("failure").failures === 1 && getTravelDegreeContribution("criticalFailure").failures === 2 && getTravelDegreeContribution("criticalFailure").criticalFailures === 1, "locked mapping", { criticalSuccess: getTravelDegreeContribution("criticalSuccess"), success: getTravelDegreeContribution("success"), failure: getTravelDegreeContribution("failure"), criticalFailure: getTravelDegreeContribution("criticalFailure") });
     check(result, "Travel round outcome helper works", getTravelRoundOutcome({ successes: 3, failures: 1 }) === "dominantSuccess" && getTravelRoundOutcome({ successes: 1, failures: 1 }) === "mixed" && getTravelRoundOutcome({ successes: 1, failures: 3 }) === "dominantFailure" && getTravelRoundOutcome({ successes: 4, failures: 0, criticalFailures: 2 }) === "catastrophicFailure", "round outcomes", { dominant: getTravelRoundOutcome({ successes: 3, failures: 1 }), mixed: getTravelRoundOutcome({ successes: 1, failures: 1 }), failure: getTravelRoundOutcome({ successes: 1, failures: 3 }), catastrophic: getTravelRoundOutcome({ successes: 4, failures: 0, criticalFailures: 2 }) });
     check(result, "Travel event outcome helper works", getTravelEventOutcome({ successes: 8, failures: 3 }) === "majorVictory" && getTravelEventOutcome({ successes: 4, failures: 3 }) === "victory" && getTravelEventOutcome({ successes: 3, failures: 3 }) === "costlySuccess" && getTravelEventOutcome({ successes: 2, failures: 3 }) === "failure" && getTravelEventOutcome({ successes: 8, failures: 3, catastrophicFailure: true }) === "catastrophicFailure", "event outcomes", { major: getTravelEventOutcome({ successes: 8, failures: 3 }), victory: getTravelEventOutcome({ successes: 4, failures: 3 }), costly: getTravelEventOutcome({ successes: 3, failures: 3 }), failure: getTravelEventOutcome({ successes: 2, failures: 3 }), catastrophic: getTravelEventOutcome({ successes: 8, failures: 3, catastrophicFailure: true }) });
@@ -758,8 +776,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     const selectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("black-tide-crossing");
     const blackTideLibraryOption = travelEventLibraryOptions.find((option) => option.key === "black-tide-crossing");
     check(result, "Travel event library options build from core registry", travelEventLibraryOptions.length === CORE_TRAVEL_EVENT_KEYS.length && travelEventLibraryOptions.every((option) => CORE_TRAVEL_EVENT_KEYS.includes(option.key)), "library options from core registry", travelEventLibraryOptions.map((option) => option.key));
+    check(result, "Travel event library includes all core travel events", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => travelEventLibraryOptions.some((option) => option.key === key)), EXPECTED_CORE_TRAVEL_EVENT_KEYS, travelEventLibraryOptions.map((option) => option.key));
     check(result, "Travel event library includes Black Tide Crossing", blackTideLibraryOption?.key === "black-tide-crossing" && blackTideLibraryOption.selected === true, "Black Tide Crossing library option", blackTideLibraryOption);
     check(result, "Travel event library selected details exist", selectedTravelEventDetails?.key === "black-tide-crossing" && selectedTravelEventDetails.roundCount === 5 && selectedTravelEventDetails.baseDC === 20 && selectedTravelEventDetails.category === "environmental", "selected Black Tide details", selectedTravelEventDetails);
+    const derelictSelectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("derelict-lantern-wreck");
+    const feverSelectedTravelEventDetails = prepareSelectedTravelEventLibraryDetails("crew-fever-in-the-lifeveil");
+    check(result, "Travel event library selected details work for Derelict Lantern Wreck", derelictSelectedTravelEventDetails?.key === "derelict-lantern-wreck" && derelictSelectedTravelEventDetails.roundCount === 4 && derelictSelectedTravelEventDetails.baseDC === 19 && derelictSelectedTravelEventDetails.category === "discovery", "selected Derelict Lantern Wreck details", derelictSelectedTravelEventDetails);
+    check(result, "Travel event library selected details work for Crew Fever in the Lifeveil", feverSelectedTravelEventDetails?.key === "crew-fever-in-the-lifeveil" && feverSelectedTravelEventDetails.roundCount === 4 && feverSelectedTravelEventDetails.baseDC === 18 && feverSelectedTravelEventDetails.category === "shipboard", "selected Crew Fever in the Lifeveil details", feverSelectedTravelEventDetails);
     check(result, "Travel runner app imports and helpers are exposed", typeof ArcflightTravelEventRunner === "function" && typeof openTravelEventRunner === "function" && typeof prepareTravelEventLibraryOptions === "function" && typeof prepareSelectedTravelEventLibraryDetails === "function" && typeof globalThis.game?.arcflight?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventLibraryOptions === "function", true, { importedClass: typeof ArcflightTravelEventRunner, importedHelper: typeof openTravelEventRunner, importedLibraryHelper: typeof prepareTravelEventLibraryOptions, apiHelper: typeof globalThis.game?.arcflight?.openTravelEventRunner, devToolsHelper: typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner, apiLibraryHelper: typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions });
     check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
