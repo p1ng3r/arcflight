@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Travel Event Authoring Template MVP
+
+- Added the official Travel Event Authoring Template documentation for canonical event, round, station prompt, roll feedback, outcome branch, and final outcome structures.
+- Added template helper exports for blank event/round/station/feedback/outcome skeletons, authoring guidelines, and strict authoring validation on `game.arcflight` and `game.arcflight.devTools`.
+- Extended travel event validation with optional `strictAuthoring` checks for station `playerAction`, four-key `rollFeedback`, data-only proposed effects, and no AP/RAP references in event data.
+- Made the Travel Event Runner safely display future `playerAction` and degree-based `rollFeedback` fields when present while preserving existing event behavior.
+- Extended smoke coverage for template exports, canonical blank skeletons, strict authoring rejection cases, and continued normal validation for current core travel events.
+- Preserved scope boundaries: no new core events, GM event builder, custom event creation, JSON import/export, compendium packs, automatic combat start, AP/RAP travel use, new mechanics, or automatic staged effect application was added.
+
 ### Core Travel Event Pack 01A
 
 - Added two validated registry-backed core travel events: **Derelict Lantern Wreck** (Discovery, 4 rounds, base DC 19) and **Crew Fever in the Lifeveil** (Shipboard, 4 rounds, base DC 18).

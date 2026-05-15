@@ -33,6 +33,12 @@ The current registry-backed sample/core events are:
 
 Threat branches never launch combat automatically; they only preserve handoff notes for later GM choice.
 
+### Travel Event Authoring Template
+
+Arcflight also includes an official [Travel Event Authoring Template](docs/TRAVEL_EVENT_TEMPLATE.md) for future core event packs and GM-builder compatibility. The template documents the canonical event, round, station prompt, roll feedback, outcome branch, and final outcome shapes, along with prose length standards, tone guidance, proposed-effect boundaries, combat-handoff metadata rules, and the PF2E degree-of-success note.
+
+Template helpers such as `createBlankTravelEventTemplate`, `createBlankStationPromptTemplate`, `getTravelEventAuthoringGuidelines`, and `validateTravelEventAuthoringTemplate` are exposed on both `game.arcflight` and `game.arcflight.devTools`. Strict authoring validation can be requested with `validateTravelEventDefinition(event, { strictAuthoring: true })` without forcing existing core events to adopt the richer station prompt fields until a future content pass.
+
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
 
 ## Ship-Attached Travel Event State Foundation

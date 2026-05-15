@@ -253,6 +253,10 @@ async function prepareStationPromptRows(shipActor, activeEvent, roundDefinition,
     });
     const effectiveDC = calculateEffectiveTravelDc(activeEvent, roundDefinition, prompt);
     const canRecord = !existingResult && roundState?.status !== "completed";
+    const existingResultDegree = normalizeTravelRollDegree(existingResult?.degreeOfSuccess);
+    const existingRollFeedback = existingResultDegree && prompt?.rollFeedback && typeof prompt.rollFeedback === "object"
+      ? prompt.rollFeedback[existingResultDegree] ?? ""
+      : "";
 
     return {
       ...cloneData(prompt),
@@ -267,11 +271,15 @@ async function prepareStationPromptRows(shipActor, activeEvent, roundDefinition,
       hasStatisticOptions: statisticOptions.length > 0,
       effectiveDC,
       effectiveDCLabel: effectiveDC === null ? "—" : String(effectiveDC),
+      playerAction: typeof prompt.playerAction === "string" ? prompt.playerAction : "",
+      hasPlayerAction: typeof prompt.playerAction === "string" && prompt.playerAction.trim().length > 0,
       resourceOptions: Array.isArray(prompt.resourceOptions) ? prompt.resourceOptions : [],
       hasResourceOptions: Array.isArray(prompt.resourceOptions) && prompt.resourceOptions.length > 0,
       existingResult,
       hasExistingResult: Boolean(existingResult),
       existingResultLabel: existingResult ? humanizeIdentifier(existingResult.degreeOfSuccess) : "",
+      existingRollFeedback,
+      hasExistingRollFeedback: existingRollFeedback.trim().length > 0,
       degreeOptions: DEGREE_OPTIONS.map((option) => ({ ...option, selected: option.value === ARCFLIGHT_TRAVEL_RESULT_TIERS.SUCCESS })),
       canRecord,
       canRoll: canRecord && assignmentResolution.actorResolved && statisticOptions.length > 0
