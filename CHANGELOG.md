@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Core Travel Event Pack 01A
+
+- Added two validated registry-backed core travel events: **Derelict Lantern Wreck** (Discovery, 4 rounds, base DC 19) and **Crew Fever in the Lifeveil** (Shipboard, 4 rounds, base DC 18).
+- Kept both events data-only with Travel Five station prompts, known travel resources/tags, staged proposed effects, required round branches, and required final outcomes.
+- Extended framework smoke coverage for all three core event keys, Pack 01A event existence/validation, round counts, Travel Five station constraints, active resource constraints, library options, and selected event details.
+- Preserved no-new-mechanics boundaries: no runner UI changes, GM builder, custom event creation, AP/RAP travel use, automatic combat start, or new resource mechanics were added.
+
 ### Travel Event Library Selector MVP
 
 - Replaced the no-active-event hardcoded **Start Black Tide Crossing** runner control with a small core Travel Event Library selector and **Start Selected Event** control.

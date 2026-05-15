@@ -25,7 +25,13 @@ Arcflight now includes a read-only Travel Event Data Foundation for future narra
 
 The MVP travel event taxonomy is locked around reusable data constants for travel event categories, result tiers, round outcomes, event outcomes, and broad travel tags. Travel events use only the Travel Five stations for MVP prompts: Navigator, Engineer, Veilwarden, Watchmaster, and Captain. Pilot, Gunnery, and Quartermaster remain valid core stations, but they are not Travel Five MVP stations.
 
-The first sample event is **Black Tide Crossing**, a five-round environmental crossing with soft station prompts, staged outcome branches, proposed non-executable effects, and GM-facing `combatHandoff` metadata where appropriate. Threat branches never launch combat automatically; they only preserve handoff notes for later GM choice.
+The current registry-backed sample/core events are:
+
+- **Black Tide Crossing** — a five-round environmental crossing with soft station prompts, staged outcome branches, proposed non-executable effects, and GM-facing `combatHandoff` metadata where appropriate.
+- **Derelict Lantern Wreck** — a four-round discovery event about investigating a dead arkship, choosing salvage risks, handling occult witchlight residue, and preserving severe-branch threat handoff notes for GM choice.
+- **Crew Fever in the Lifeveil** — a four-round shipboard crisis about morale, supplies, Lifeveil contamination, dreamlike crew hallucinations, and stabilization without adding a new station or automation.
+
+Threat branches never launch combat automatically; they only preserve handoff notes for later GM choice.
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
 
@@ -46,7 +52,7 @@ const ship = game.actors.getName("test ship");
 game.arcflight.openTravelEventRunner(ship);
 ```
 
-The runner is ship-attached and starts events from a registered core Travel Event Library selector. When no event is active, it shows the selected ship, a no-active-event message, a Travel Event dropdown, selected event details, a **Start Selected Event** button, and the most recent completed-event summary when one exists. **Black Tide Crossing** is the first sample core event available through this selector. A GM custom event builder remains future work.
+The runner is ship-attached and starts events from a registered core Travel Event Library selector. When no event is active, it shows the selected ship, a no-active-event message, a Travel Event dropdown, selected event details, a **Start Selected Event** button, and the most recent completed-event summary when one exists. The current registry-backed sample/core events (**Black Tide Crossing**, **Derelict Lantern Wreck**, and **Crew Fever in the Lifeveil**) appear through this selector automatically. A GM custom event builder remains future work.
 
 During an active event, the runner displays the current event header, round title and opening vignette, round/event totals, Travel Five station prompts, assigned actor readouts, suggested statistic selectors, optional PF2E assigned-actor roll buttons, resource-option text, duplicate-result hints, staged round effects, final staged effects when available, and combat-handoff notes when backend state marks a handoff as available.
 
