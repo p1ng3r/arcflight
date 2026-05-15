@@ -154,10 +154,38 @@
       <button type="button" class="arcflight-button--danger" data-arcflight-clear-travel-event>Clear Active Event</button>
     </footer>
   {{else}}
-    <section class="arcflight-travel-runner__panel arcflight-travel-runner__empty">
+    <section class="arcflight-travel-runner__panel arcflight-travel-runner__empty arcflight-travel-runner__library">
       <h2>No active travel event.</h2>
-      <p>Select the sample event below to start GM-guided manual travel event tracking for this ship.</p>
-      <button type="button" data-arcflight-start-black-tide>Start Black Tide Crossing</button>
+      <p><strong>Selected Ship:</strong> {{shipName}}</p>
+      <h3>Travel Event Library</h3>
+      <p>Select a registered core travel event to start GM-guided manual travel event tracking for this ship.</p>
+      {{#if hasTravelEventOptions}}
+        <label class="arcflight-sheet__field arcflight-travel-runner__event-select">
+          <span>Travel Event</span>
+          <select data-arcflight-travel-event-select>
+            {{#each travelEventOptions}}
+              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{name}} — {{categoryLabel}}</option>
+            {{/each}}
+          </select>
+        </label>
+        {{#if hasSelectedTravelEvent}}
+          <article class="arcflight-travel-runner__event-details">
+            <h4>{{selectedTravelEvent.name}}</h4>
+            <div class="arcflight-travel-runner__summary">
+              <div class="arcflight-travel-runner__stat"><span>Category</span><strong>{{selectedTravelEvent.categoryLabel}}</strong></div>
+              <div class="arcflight-travel-runner__stat"><span>Round Count</span><strong>{{selectedTravelEvent.roundCount}}</strong></div>
+              <div class="arcflight-travel-runner__stat"><span>Base DC</span><strong>{{selectedTravelEvent.baseDC}}</strong></div>
+            </div>
+            {{#if selectedTravelEvent.description}}<p>{{selectedTravelEvent.description}}</p>{{/if}}
+            {{#if selectedTravelEvent.gmSummary}}<p class="arcflight-sheet__hint">{{selectedTravelEvent.gmSummary}}</p>{{/if}}
+            {{#if selectedTravelEvent.tagsLabel}}<p><strong>Tags:</strong> {{selectedTravelEvent.tagsLabel}}</p>{{/if}}
+          </article>
+        {{/if}}
+        <button type="button" data-arcflight-start-selected-travel-event>Start Selected Event</button>
+      {{else}}
+        <p class="arcflight-sheet__hint">No registered core travel events are available.</p>
+        <button type="button" data-arcflight-start-selected-travel-event disabled>Start Selected Event</button>
+      {{/if}}
     </section>
 
     {{#if hasLastCompletedEvent}}

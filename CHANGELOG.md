@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Travel Event Library Selector MVP
+
+- Replaced the no-active-event hardcoded **Start Black Tide Crossing** runner control with a small core Travel Event Library selector and **Start Selected Event** control.
+- Built selector options and selected-event details from the registered core travel event registry, with Black Tide Crossing remaining the first sample event.
+- Added smoke coverage for registry-backed library options, Black Tide Crossing presence, selected detail metadata, and continued runner/helper exposure.
+- Preserved existing runner boundaries and behavior: active-event flow, manual station entry, PF2E assigned-actor rolls, staged Apply controls, completed summaries, no AP/RAP use, no combat automation, and no GM custom event builder.
+
 ### Travel Staged Effects Apply MVP
 
 - Added explicit GM-controlled Apply controls for staged travel resource effects in the Travel Event Runner, including per-effect Apply buttons, Apply All Resource Effects group buttons, before/after previews, applied status readouts, and disabled applied effects.

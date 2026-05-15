@@ -4,7 +4,7 @@ import {
   findDuplicateArcflightItems,
   organizeArcflightItems
 } from "../helpers/item-organization.js";
-import { ArcflightTravelEventRunner, openTravelEventRunner } from "../apps/travel-event-runner.js";
+import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions } from "../apps/travel-event-runner.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import {
   getTravelFiveStationKeys,
@@ -188,6 +188,16 @@ export function createArcflightDevTools() {
      * Open the GM-facing Travel Event Runner for an Arcflight ship.
      */
     openTravelEventRunner,
+
+    /**
+     * Prepare core Travel Event Library selector options.
+     */
+    prepareTravelEventLibraryOptions,
+
+    /**
+     * Prepare details for the currently selected core Travel Event Library event.
+     */
+    prepareSelectedTravelEventLibraryDetails,
 
     /**
      * Return normalized ship-attached travel event state.

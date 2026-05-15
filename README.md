@@ -46,7 +46,7 @@ const ship = game.actors.getName("test ship");
 game.arcflight.openTravelEventRunner(ship);
 ```
 
-The runner is ship-attached and currently supports the sample **Black Tide Crossing** event. When no event is active, it shows the selected ship, a no-active-event message, a **Start Black Tide Crossing** button, and the most recent completed-event summary when one exists.
+The runner is ship-attached and starts events from a registered core Travel Event Library selector. When no event is active, it shows the selected ship, a no-active-event message, a Travel Event dropdown, selected event details, a **Start Selected Event** button, and the most recent completed-event summary when one exists. **Black Tide Crossing** is the first sample core event available through this selector. A GM custom event builder remains future work.
 
 During an active event, the runner displays the current event header, round title and opening vignette, round/event totals, Travel Five station prompts, assigned actor readouts, suggested statistic selectors, optional PF2E assigned-actor roll buttons, resource-option text, duplicate-result hints, staged round effects, final staged effects when available, and combat-handoff notes when backend state marks a handoff as available.
 
