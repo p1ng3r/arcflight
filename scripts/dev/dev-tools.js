@@ -18,6 +18,17 @@ import {
   getTravelEventStationPrompt
 } from "../helpers/travel-events.js";
 import {
+  TRAVEL_EVENT_TEMPLATE_VERSION,
+  createBlankTravelEventTemplate,
+  createBlankTravelRoundTemplate,
+  createBlankStationPromptTemplate,
+  createBlankRollFeedbackTemplate,
+  createBlankOutcomeBranchesTemplate,
+  createBlankFinalOutcomesTemplate,
+  getTravelEventAuthoringGuidelines,
+  validateTravelEventAuthoringTemplate
+} from "../helpers/travel-event-template.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -163,6 +174,51 @@ export function createArcflightDevTools() {
      * Validate a travel event definition without mutating game data.
      */
     validateTravelEventDefinition,
+
+    /**
+     * Current Travel Event Authoring Template schema version.
+     */
+    TRAVEL_EVENT_TEMPLATE_VERSION,
+
+    /**
+     * Create a blank canonical travel event authoring skeleton.
+     */
+    createBlankTravelEventTemplate,
+
+    /**
+     * Create a blank canonical travel round skeleton.
+     */
+    createBlankTravelRoundTemplate,
+
+    /**
+     * Create a blank canonical station prompt skeleton.
+     */
+    createBlankStationPromptTemplate,
+
+    /**
+     * Create blank degree-based station roll feedback.
+     */
+    createBlankRollFeedbackTemplate,
+
+    /**
+     * Create blank canonical round outcome branches.
+     */
+    createBlankOutcomeBranchesTemplate,
+
+    /**
+     * Create blank canonical final outcomes.
+     */
+    createBlankFinalOutcomesTemplate,
+
+    /**
+     * Return Arcflight travel event authoring prose and data guidelines.
+     */
+    getTravelEventAuthoringGuidelines,
+
+    /**
+     * Validate a travel event with strict authoring-template checks.
+     */
+    validateTravelEventAuthoringTemplate,
 
     /**
      * Prepare cloned travel event summary data for future UI.

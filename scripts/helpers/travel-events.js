@@ -22,6 +22,41 @@ const TRAVEL_DEGREE_ALIASES = Object.freeze({
   critfailure: ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_FAILURE
 });
 
+
+function containsApRapReference(value) {
+  if (typeof value === "string") return /\b(?:AP|RAP|action points?|reaction action points?)\b/i.test(value);
+  if (Array.isArray(value)) return value.some((entry) => containsApRapReference(entry));
+  if (value && typeof value === "object") return Object.values(value).some((entry) => containsApRapReference(entry));
+  return false;
+}
+
+function containsFunctionValue(value) {
+  if (typeof value === "function") return true;
+  if (Array.isArray(value)) return value.some((entry) => containsFunctionValue(entry));
+  if (value && typeof value === "object") return Object.values(value).some((entry) => containsFunctionValue(entry));
+  return false;
+}
+
+function validateStrictAuthoringStationPrompt(prompt, roundNumber, errors) {
+  const stationLabel = `Round ${roundNumber ?? "?"} ${prompt?.stationKey ?? "<missing station>"}`;
+  if (typeof prompt?.playerAction !== "string" || prompt.playerAction.trim().length === 0) errors.push(`${stationLabel} is missing playerAction.`);
+  if (!prompt?.rollFeedback || typeof prompt.rollFeedback !== "object" || Array.isArray(prompt.rollFeedback)) {
+    errors.push(`${stationLabel} is missing rollFeedback.`);
+    return;
+  }
+
+  for (const degree of Object.values(ARCFLIGHT_TRAVEL_RESULT_TIERS)) {
+    if (typeof prompt.rollFeedback[degree] !== "string" || prompt.rollFeedback[degree].trim().length === 0) errors.push(`${stationLabel} rollFeedback.${degree} must be a non-empty string.`);
+  }
+}
+
+function validateProposedEffectsDataOnly(source, label, errors) {
+  if (!Array.isArray(source?.proposedEffects)) return;
+  source.proposedEffects.forEach((effect, index) => {
+    if (containsFunctionValue(effect)) errors.push(`${label} proposedEffects[${index}] must be data only and cannot contain functions.`);
+  });
+}
+
 function cloneData(value) {
   if (value == null) return value;
   if (typeof structuredClone === "function") return structuredClone(value);
@@ -81,7 +116,8 @@ export function getTravelEventOutcome({ successes = 0, failures = 0, catastrophi
   return ARCFLIGHT_TRAVEL_EVENT_OUTCOMES.FAILURE;
 }
 
-export function validateTravelEventDefinition(event) {
+export function validateTravelEventDefinition(event, options = {}) {
+  const { strictAuthoring = false } = options ?? {};
   const errors = [];
   const warnings = [];
 
@@ -116,10 +152,14 @@ export function validateTravelEventDefinition(event) {
     else {
       const invalidStations = round.activeStations.map((station) => station?.stationKey).filter((stationKey) => !isTravelStationKey(stationKey));
       if (invalidStations.length > 0) errors.push(`Round ${round.round} contains non-Travel Five station keys: ${invalidStations.join(", ")}.`);
+      if (strictAuthoring) {
+        for (const prompt of round.activeStations) validateStrictAuthoringStationPrompt(prompt, round.round, errors);
+      }
     }
     const branchKeys = Object.keys(round.outcomeBranches ?? {});
     for (const outcome of Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES)) {
       if (!branchKeys.includes(outcome)) errors.push(`Round ${round.round ?? "?"} is missing outcome branch ${outcome}.`);
+      validateProposedEffectsDataOnly(round.outcomeBranches?.[outcome], `Round ${round.round ?? "?"} ${outcome}`, errors);
     }
   }
 
@@ -127,8 +167,11 @@ export function validateTravelEventDefinition(event) {
   else {
     for (const outcome of TRAVEL_EVENT_OUTCOME_KEYS) {
       if (!event.finalOutcomes[outcome]) errors.push(`Missing final outcome ${outcome}.`);
+      validateProposedEffectsDataOnly(event.finalOutcomes[outcome], `Final outcome ${outcome}`, errors);
     }
   }
+
+  if (strictAuthoring && containsApRapReference(event)) errors.push("Strict authoring travel event prose/data must not reference AP/RAP travel use.");
 
   if (!CORE_TRAVEL_EVENTS[event.key]) warnings.push("Travel event is not registered in CORE_TRAVEL_EVENTS.");
 

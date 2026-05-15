@@ -58,6 +58,7 @@
                 <span>{{stationKey}}</span>
               </header>
               <p class="arcflight-travel-runner__vignette">{{vignette}}</p>
+              {{#if hasPlayerAction}}<p><strong>Player Action:</strong> {{playerAction}}</p>{{/if}}
               <p><strong>Suggested Skills:</strong> {{#if suggestedSkillsLabel}}{{suggestedSkillsLabel}}{{else}}—{{/if}}</p>
               <p><strong>Assigned Actor:</strong> {{assignedActorName}}</p>
               {{#if assignmentHint}}<p class="arcflight-sheet__hint">{{assignmentHint}}</p>{{/if}}
@@ -90,6 +91,7 @@
                 <div class="arcflight-travel-runner__existing-result">
                   <strong>Existing Result:</strong> {{existingResultLabel}}{{#if existingResult.actorName}} by {{existingResult.actorName}}{{/if}}{{#if existingResult.notes}} — {{existingResult.notes}}{{/if}}
                 </div>
+                {{#if hasExistingRollFeedback}}<p class="arcflight-sheet__hint"><strong>Roll Feedback:</strong> {{existingRollFeedback}}</p>{{/if}}
                 <p class="arcflight-sheet__hint">One primary result per station per round is allowed. Duplicate recording is blocked in this MVP.</p>
               {{/if}}
               <div class="arcflight-travel-runner__manual-entry">

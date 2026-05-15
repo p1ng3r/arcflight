@@ -87,6 +87,17 @@ import {
   validateTravelEventDefinition
 } from "../helpers/travel-events.js";
 import {
+  TRAVEL_EVENT_TEMPLATE_VERSION,
+  createBlankTravelEventTemplate,
+  createBlankTravelRoundTemplate,
+  createBlankStationPromptTemplate,
+  createBlankRollFeedbackTemplate,
+  createBlankOutcomeBranchesTemplate,
+  createBlankFinalOutcomesTemplate,
+  getTravelEventAuthoringGuidelines,
+  validateTravelEventAuthoringTemplate
+} from "../helpers/travel-event-template.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -784,6 +795,27 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel event library selected details work for Derelict Lantern Wreck", derelictSelectedTravelEventDetails?.key === "derelict-lantern-wreck" && derelictSelectedTravelEventDetails.roundCount === 4 && derelictSelectedTravelEventDetails.baseDC === 19 && derelictSelectedTravelEventDetails.category === "discovery", "selected Derelict Lantern Wreck details", derelictSelectedTravelEventDetails);
     check(result, "Travel event library selected details work for Crew Fever in the Lifeveil", feverSelectedTravelEventDetails?.key === "crew-fever-in-the-lifeveil" && feverSelectedTravelEventDetails.roundCount === 4 && feverSelectedTravelEventDetails.baseDC === 18 && feverSelectedTravelEventDetails.category === "shipboard", "selected Crew Fever in the Lifeveil details", feverSelectedTravelEventDetails);
     check(result, "Travel runner app imports and helpers are exposed", typeof ArcflightTravelEventRunner === "function" && typeof openTravelEventRunner === "function" && typeof prepareTravelEventLibraryOptions === "function" && typeof prepareSelectedTravelEventLibraryDetails === "function" && typeof globalThis.game?.arcflight?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventLibraryOptions === "function", true, { importedClass: typeof ArcflightTravelEventRunner, importedHelper: typeof openTravelEventRunner, importedLibraryHelper: typeof prepareTravelEventLibraryOptions, apiHelper: typeof globalThis.game?.arcflight?.openTravelEventRunner, devToolsHelper: typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner, apiLibraryHelper: typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions });
+    const blankTravelEventTemplate = createBlankTravelEventTemplate({ key: "smoke-template", name: "Smoke Template", category: "discovery", roundCount: 2, baseDC: 18 });
+    const blankRoundTemplate = createBlankTravelRoundTemplate(1);
+    const blankStationPromptTemplate = createBlankStationPromptTemplate("navigator");
+    const blankRollFeedbackTemplate = createBlankRollFeedbackTemplate();
+    const blankOutcomeBranchesTemplate = createBlankOutcomeBranchesTemplate();
+    const blankFinalOutcomesTemplate = createBlankFinalOutcomesTemplate();
+    const strictMissingPlayerActionEvent = createBlankTravelEventTemplate({ key: "strict-missing-player-action" });
+    delete strictMissingPlayerActionEvent.rounds[0].activeStations[0].playerAction;
+    const strictMissingRollFeedbackEvent = createBlankTravelEventTemplate({ key: "strict-missing-roll-feedback" });
+    delete strictMissingRollFeedbackEvent.rounds[0].activeStations[0].rollFeedback;
+    check(result, "Travel event template helper exports exist", typeof TRAVEL_EVENT_TEMPLATE_VERSION === "string" && typeof createBlankTravelEventTemplate === "function" && typeof createBlankTravelRoundTemplate === "function" && typeof createBlankStationPromptTemplate === "function" && typeof createBlankRollFeedbackTemplate === "function" && typeof createBlankOutcomeBranchesTemplate === "function" && typeof createBlankFinalOutcomesTemplate === "function" && typeof getTravelEventAuthoringGuidelines === "function" && typeof validateTravelEventAuthoringTemplate === "function" && typeof globalThis.game?.arcflight?.createBlankTravelEventTemplate === "function" && typeof globalThis.game?.arcflight?.devTools?.createBlankTravelEventTemplate === "function", true, { version: TRAVEL_EVENT_TEMPLATE_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createBlankTravelEventTemplate, devCreate: typeof globalThis.game?.arcflight?.devTools?.createBlankTravelEventTemplate });
+    check(result, "Blank travel event template has expected canonical fields", ["key", "name", "category", "tags", "roundCount", "baseDC", "activeResources", "travelStations", "description", "gmSummary", "rounds", "finalOutcomes", "rewards", "futureAutomationNotes"].every((key) => Object.hasOwn(blankTravelEventTemplate, key)), "canonical event keys", Object.keys(blankTravelEventTemplate));
+    check(result, "Blank round template has openingVignette and activeStations array", typeof blankRoundTemplate.openingVignette === "string" && Array.isArray(blankRoundTemplate.activeStations), "openingVignette + activeStations", blankRoundTemplate);
+    check(result, "Blank station prompt has playerAction", typeof blankStationPromptTemplate.playerAction === "string" && blankStationPromptTemplate.playerAction.length > 0, "playerAction string", blankStationPromptTemplate);
+    check(result, "Blank station prompt has rollFeedback with four degree keys", ["criticalSuccess", "success", "failure", "criticalFailure"].every((degree) => typeof blankStationPromptTemplate.rollFeedback?.[degree] === "string" && typeof blankRollFeedbackTemplate[degree] === "string"), "four degree keys", blankStationPromptTemplate.rollFeedback);
+    check(result, "Blank outcome branches include all round outcome keys", ["dominantSuccess", "mixed", "dominantFailure", "catastrophicFailure"].every((key) => blankOutcomeBranchesTemplate[key]), "round outcome branches", Object.keys(blankOutcomeBranchesTemplate));
+    check(result, "Blank final outcomes include all final outcome keys", ["majorVictory", "victory", "costlySuccess", "failure", "catastrophicFailure"].every((key) => blankFinalOutcomesTemplate[key]), "final outcomes", Object.keys(blankFinalOutcomesTemplate));
+    check(result, "Strict authoring validator rejects missing playerAction", validateTravelEventAuthoringTemplate(strictMissingPlayerActionEvent).ok === false && validateTravelEventDefinition(strictMissingPlayerActionEvent, { strictAuthoring: true }).errors.some((error) => error.includes("playerAction")), "playerAction rejection", validateTravelEventAuthoringTemplate(strictMissingPlayerActionEvent));
+    check(result, "Strict authoring validator rejects missing rollFeedback", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent).ok === false && validateTravelEventDefinition(strictMissingRollFeedbackEvent, { strictAuthoring: true }).errors.some((error) => error.includes("rollFeedback")), "rollFeedback rejection", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent));
+    check(result, "Normal existing core travel event validation still passes", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => validateTravelEventDefinition(getCoreTravelEvent(key)).ok === true), "all current core events valid", EXPECTED_CORE_TRAVEL_EVENT_KEYS.map((key) => ({ key, validation: validateTravelEventDefinition(getCoreTravelEvent(key)) })));
+
     check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
     shipData = getArcflightShipData(actor);
