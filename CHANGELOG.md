@@ -1,5 +1,11 @@
 # Changelog
 
+### Travel Event Voidsailing Prose Correction
+
+- Corrected core travel event prose toward Arcflight voidsailing/space fantasy tone across Black Tide Crossing, Derelict Lantern Wreck, Crew Fever in the Lifeveil, False Beacon Ambush, and Portside Diplomatic Snare.
+- Added smoke coverage to flag literal-ocean wording regressions in core travel event prose.
+
+
 ## Unreleased
 
 ### Core Travel Event Template Upgrade and Pack 01B

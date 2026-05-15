@@ -219,6 +219,27 @@ function isCoreKeyArray(value) {
   return Array.isArray(value) && value.length > 0;
 }
 
+
+function collectTravelEventProse(value, path = []) {
+  if (typeof value === "string") return [{ path: path.join("."), text: value }];
+  if (!value || typeof value !== "object") return [];
+
+  return Object.entries(value).flatMap(([key, child]) => collectTravelEventProse(child, [...path, key]));
+}
+
+function findLiteralOceanLanguage(event = {}) {
+  const blockedPatterns = [
+    /sea with no honest current/i,
+    /\bsubmerged\b/i,
+    /\bbrin(?:e|y)\b/i,
+    /\bunderwater\b/i
+  ];
+
+  return collectTravelEventProse(event)
+    .filter(({ text }) => blockedPatterns.some((pattern) => pattern.test(text)))
+    .map(({ path, text }) => ({ path, text }));
+}
+
 function hasCoreStationActionFoundationData(action = {}) {
   return typeof action.stationKey === "string"
     && action.stationKey.length > 0
@@ -408,6 +429,8 @@ export async function runFrameworkSmokeTest(options = {}) {
       check(result, `${coreTravelEvent?.name ?? eventKey} station prompts avoid generic authoring defaults`, prompts.every((prompt) => hasNoGenericTravelPromptDefaults(prompt)), true, prompts.filter((prompt) => !hasNoGenericTravelPromptDefaults(prompt)).map((prompt) => ({ stationKey: prompt.stationKey, playerAction: prompt.playerAction, rollFeedback: prompt.rollFeedback })));
       check(result, `${coreTravelEvent?.name ?? eventKey} active stations are Travel Five only`, activeStations.every((stationKey) => travelFiveStationKeys.includes(stationKey)), true, [...new Set(activeStations.filter((stationKey) => !travelFiveStationKeys.includes(stationKey)))]);
       check(result, `${coreTravelEvent?.name ?? eventKey} activeResources use known travel resources`, (coreTravelEvent?.activeResources ?? []).every((resource) => travelResourceValues.includes(resource)), true, (coreTravelEvent?.activeResources ?? []).filter((resource) => !travelResourceValues.includes(resource)));
+      const literalOceanLanguageMatches = findLiteralOceanLanguage(coreTravelEvent);
+      check(result, `${coreTravelEvent?.name ?? eventKey} prose avoids literal-ocean wording`, literalOceanLanguageMatches.length === 0, "no sea-with-no-honest-current/submerged/brine/underwater prose", literalOceanLanguageMatches);
     }
     const blackTideCrossing = getCoreTravelEvent("black-tide-crossing");
     check(result, "Travel degree contribution mapping works", getTravelDegreeContribution("criticalSuccess").successes === 2 && getTravelDegreeContribution("success").successes === 1 && getTravelDegreeContribution("failure").failures === 1 && getTravelDegreeContribution("criticalFailure").failures === 2 && getTravelDegreeContribution("criticalFailure").criticalFailures === 1, "locked mapping", { criticalSuccess: getTravelDegreeContribution("criticalSuccess"), success: getTravelDegreeContribution("success"), failure: getTravelDegreeContribution("failure"), criticalFailure: getTravelDegreeContribution("criticalFailure") });
