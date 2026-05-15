@@ -1,5 +1,5 @@
-import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES } from "../config/constants.js";
-import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
+import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES } from "../config/constants.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData, getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 import { getCoreTravelEvent } from "../../data/travel-events/core-travel-events.js";
 import {
   getTravelDegreeContribution,
@@ -14,6 +14,76 @@ const EMPTY_TRAVEL_EVENT_STATE = Object.freeze({
   activeEvent: null,
   completedEvents: Object.freeze([])
 });
+
+const SUPPORTED_RESOURCE_EFFECT_MODES = Object.freeze(["add", "set"]);
+const SUPPORTED_TRAVEL_EFFECT_RESOURCES = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOURCES));
+
+function isSupportedResourceStagedEffect(effect = {}) {
+  return effect?.type === "resource"
+    && SUPPORTED_TRAVEL_EFFECT_RESOURCES.includes(effect.resource)
+    && SUPPORTED_RESOURCE_EFFECT_MODES.includes(effect.mode)
+    && Number.isFinite(Number(effect.value));
+}
+
+function findIndexedEffect(effects, effect, effectIndex) {
+  if (!Array.isArray(effects)) return null;
+  if (Number.isInteger(effectIndex) && effectIndex >= 0 && effectIndex < effects.length) return effects[effectIndex];
+  return effects.find((candidate) => candidate === effect) ?? null;
+}
+
+function resolveEffectStateReference(state, effect, options = {}) {
+  const effectIndex = Number.isInteger(options.effectIndex) ? options.effectIndex : Number(options.effectIndex);
+  const normalizedEffectIndex = Number.isInteger(effectIndex) ? effectIndex : null;
+  const source = options.source ?? "";
+
+  if (source === "activeRound" || options.round != null) {
+    const roundNumber = Number(options.round);
+    const roundState = state.activeEvent?.rounds?.find((round) => round.round === roundNumber) ?? null;
+    const stateEffect = findIndexedEffect(roundState?.stagedEffects, effect, normalizedEffectIndex);
+    return stateEffect ? { effect: stateEffect, container: roundState, collectionName: "stagedEffects", source: "activeRound", round: roundNumber } : null;
+  }
+
+  if (source === "activeFinal") {
+    const stateEffect = findIndexedEffect(state.activeEvent?.stagedFinalEffects, effect, normalizedEffectIndex);
+    return stateEffect ? { effect: stateEffect, container: state.activeEvent, collectionName: "stagedFinalEffects", source: "activeFinal" } : null;
+  }
+
+  if (source === "completedFinal" || options.completedEventIndex != null) {
+    const completedEvents = Array.isArray(state.completedEvents) ? state.completedEvents : [];
+    const completedEventIndex = Number.isInteger(options.completedEventIndex) ? options.completedEventIndex : Number(options.completedEventIndex);
+    const eventIndex = Number.isInteger(completedEventIndex) ? completedEventIndex : completedEvents.length - 1;
+    const completedEvent = eventIndex >= 0 ? completedEvents[eventIndex] : null;
+    const stateEffect = findIndexedEffect(completedEvent?.stagedFinalEffects, effect, normalizedEffectIndex);
+    return stateEffect ? { effect: stateEffect, container: completedEvent, collectionName: "stagedFinalEffects", source: "completedFinal", completedEventIndex: eventIndex } : null;
+  }
+
+  for (const roundState of state.activeEvent?.rounds ?? []) {
+    const stateEffect = findIndexedEffect(roundState.stagedEffects, effect, normalizedEffectIndex);
+    if (stateEffect) return { effect: stateEffect, container: roundState, collectionName: "stagedEffects", source: "activeRound", round: roundState.round };
+  }
+
+  const activeFinalEffect = findIndexedEffect(state.activeEvent?.stagedFinalEffects, effect, normalizedEffectIndex);
+  if (activeFinalEffect) return { effect: activeFinalEffect, container: state.activeEvent, collectionName: "stagedFinalEffects", source: "activeFinal" };
+
+  const completedEvents = Array.isArray(state.completedEvents) ? state.completedEvents : [];
+  for (let index = completedEvents.length - 1; index >= 0; index -= 1) {
+    const completedFinalEffect = findIndexedEffect(completedEvents[index]?.stagedFinalEffects, effect, normalizedEffectIndex);
+    if (completedFinalEffect) return { effect: completedFinalEffect, container: completedEvents[index], collectionName: "stagedFinalEffects", source: "completedFinal", completedEventIndex: index };
+  }
+
+  return null;
+}
+
+function getResourceEffectChanges(shipActor, effect = {}) {
+  const resource = effect.resource;
+  const value = Number(effect.value);
+  if (effect.mode === "set") {
+    const resources = getShipTravelResources(shipActor);
+    return { [resource]: value - Number(resources[resource] ?? 0) };
+  }
+
+  return { [resource]: value };
+}
 
 function cloneData(value) {
   if (value == null) return value;
@@ -304,6 +374,136 @@ export async function completeShipTravelEvent(shipActor, outcomeKeyOrOptions = {
   state.activeEvent = null;
 
   return updateTravelEventState(shipActor, state);
+}
+
+export function previewTravelStagedEffectApplication(shipActor, effect = {}) {
+  assertArcflightShipActor(shipActor, "previewTravelStagedEffectApplication");
+
+  const effectCopy = cloneData(effect ?? {});
+  if (!isSupportedResourceStagedEffect(effectCopy)) {
+    return {
+      ok: false,
+      supported: false,
+      blocked: true,
+      effect: effectCopy,
+      before: getShipTravelResources(shipActor),
+      after: getShipTravelResources(shipActor),
+      changes: {},
+      warnings: [`${effectCopy?.type ?? "effect"} staged effect is manual / unsupported in this MVP.`],
+      messages: [`${effectCopy?.type ?? "effect"} staged effect is manual / unsupported in this MVP.`]
+    };
+  }
+
+  const preview = previewShipTravelResourceChange(shipActor, getResourceEffectChanges(shipActor, effectCopy));
+  return {
+    ...preview,
+    supported: true,
+    blocked: false,
+    effect: effectCopy,
+    label: effectCopy.label ?? "",
+    resource: effectCopy.resource,
+    mode: effectCopy.mode,
+    value: Number(effectCopy.value)
+  };
+}
+
+export async function applyTravelStagedEffect(shipActor, effect = {}, options = {}) {
+  assertArcflightShipActor(shipActor, "applyTravelStagedEffect");
+
+  const state = getShipTravelEventState(shipActor);
+  const effectRef = resolveEffectStateReference(state, effect, options);
+  const stateEffect = effectRef?.effect ?? cloneData(effect ?? {});
+  const preventDoubleApply = options.preventDoubleApply !== false;
+
+  if (preventDoubleApply && stateEffect?.applied === true) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: "already-applied",
+      effect: cloneData(stateEffect),
+      message: `${stateEffect.label ?? "Travel staged effect"} has already been applied.`
+    };
+  }
+
+  const preview = previewTravelStagedEffectApplication(shipActor, stateEffect);
+  if (!preview.supported) {
+    return {
+      ok: false,
+      blocked: true,
+      unsupported: true,
+      skipped: true,
+      effect: cloneData(stateEffect),
+      preview,
+      message: preview.messages?.[0] ?? "Staged effect is manual / unsupported in this MVP."
+    };
+  }
+
+  const appliedAt = options.appliedAt ?? timestamp();
+  const appliedBy = options.appliedBy ?? currentUserId();
+  const resources = await updateShipTravelResources(shipActor, preview.changes, options.resourceOptions ?? {});
+  const applicationResult = {
+    ok: true,
+    supported: true,
+    resource: stateEffect.resource,
+    mode: stateEffect.mode,
+    value: Number(stateEffect.value),
+    before: preview.before,
+    after: resources,
+    changes: preview.changes,
+    warnings: preview.warnings ?? []
+  };
+
+  if (effectRef?.effect) {
+    effectRef.effect.applied = true;
+    effectRef.effect.appliedAt = appliedAt;
+    effectRef.effect.appliedBy = appliedBy;
+    effectRef.effect.applicationResult = cloneData(applicationResult);
+
+    const historyTarget = effectRef.source === "completedFinal"
+      ? state.completedEvents?.[effectRef.completedEventIndex] ?? null
+      : state.activeEvent ?? null;
+    historyTarget?.history?.push?.({
+      type: "stagedEffectApplied",
+      at: appliedAt,
+      by: appliedBy,
+      source: effectRef.source,
+      round: effectRef.round ?? null,
+      effectIndex: options.effectIndex ?? null,
+      resource: stateEffect.resource,
+      mode: stateEffect.mode,
+      value: Number(stateEffect.value),
+      label: stateEffect.label ?? "",
+      applicationResult: cloneData(applicationResult)
+    });
+
+    await updateTravelEventState(shipActor, state);
+  }
+
+  return {
+    ok: true,
+    blocked: false,
+    supported: true,
+    effect: cloneData(effectRef?.effect ?? stateEffect),
+    applicationResult,
+    resources
+  };
+}
+
+export async function applyTravelStagedEffects(shipActor, effects = [], options = {}) {
+  assertArcflightShipActor(shipActor, "applyTravelStagedEffects");
+
+  const effectList = Array.isArray(effects) ? effects : [];
+  const results = [];
+  for (let index = 0; index < effectList.length; index += 1) {
+    results.push(await applyTravelStagedEffect(shipActor, effectList[index], { ...options, effectIndex: options.effectIndex ?? index }));
+  }
+
+  return {
+    ok: results.every((result) => result.ok === true || result.unsupported === true),
+    appliedCount: results.filter((result) => result.ok === true).length,
+    skippedCount: results.filter((result) => result.skipped === true || result.blocked === true).length,
+    results
+  };
 }
 
 export async function clearShipTravelEvent(shipActor, options = {}) {

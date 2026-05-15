@@ -119,14 +119,15 @@
 
     <section class="arcflight-travel-runner__panel">
       <h2>Staged Effects Preview</h2>
-      <p class="arcflight-sheet__hint">Effects listed here are preview-only and are not applied to hull, lifeveil, strain, morale, supplies, stored spell ranks, AP, or RAP.</p>
+      <p class="arcflight-sheet__hint">Effects listed here are applied only when the GM clicks Apply. Resource effects mutate current travel resources only; AP/RAP and combat automation are never touched.</p>
       {{#if activeEvent.hasStagedRoundEffects}}
         {{#each activeEvent.stagedRoundEffects}}
           <article class="arcflight-travel-runner__effects-group">
             <h3>{{title}} Staged Effects {{#if outcomeLabel}}({{outcomeLabel}}){{/if}}</h3>
+            <button type="button" data-arcflight-apply-staged-effects data-source="activeRound" data-round="{{round}}">Apply All Resource Effects</button>
             <div class="arcflight-travel-runner__effects">
               {{#each effects}}
-                <div><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span></div>
+                <div class="arcflight-travel-runner__effect"><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span><span>Preview: {{previewLabel}}</span><span>Status: {{applyStatusLabel}}</span>{{#if appliedAtLabel}}<span>Applied At: {{appliedAtLabel}}</span>{{/if}}{{#if isResourceEffect}}<button type="button" data-arcflight-apply-staged-effect data-source="activeRound" data-round="{{../round}}" data-effect-index="{{index}}" {{#unless canApply}}disabled{{/unless}}>Apply</button>{{else}}<em>Manual / unsupported in MVP</em>{{/if}}</div>
               {{/each}}
             </div>
           </article>
@@ -137,9 +138,10 @@
       {{#if activeEvent.hasStagedFinalEffects}}
         <article class="arcflight-travel-runner__effects-group">
           <h3>Final Staged Effects</h3>
+          <button type="button" data-arcflight-apply-staged-effects data-source="activeFinal">Apply All Resource Effects</button>
           <div class="arcflight-travel-runner__effects">
             {{#each activeEvent.stagedFinalEffects}}
-              <div><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span></div>
+              <div class="arcflight-travel-runner__effect"><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span><span>Preview: {{previewLabel}}</span><span>Status: {{applyStatusLabel}}</span>{{#if appliedAtLabel}}<span>Applied At: {{appliedAtLabel}}</span>{{/if}}{{#if isResourceEffect}}<button type="button" data-arcflight-apply-staged-effect data-source="activeFinal" data-effect-index="{{index}}" {{#unless canApply}}disabled{{/unless}}>Apply</button>{{else}}<em>Manual / unsupported in MVP</em>{{/if}}</div>
             {{/each}}
           </div>
         </article>
@@ -174,9 +176,10 @@
         {{/if}}
         {{#if lastCompletedEvent.stagedFinalEffectsCount}}
           <h3>Staged Final Effects</h3>
+          <button type="button" data-arcflight-apply-staged-effects data-source="completedFinal" data-completed-event-index="{{lastCompletedEvent.completedEventIndex}}">Apply All Resource Effects</button>
           <div class="arcflight-travel-runner__effects">
             {{#each lastCompletedEvent.stagedFinalEffects}}
-              <div><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span></div>
+              <div class="arcflight-travel-runner__effect"><strong>{{label}}</strong><span>Type: {{typeLabel}}</span><span>Target: {{targetLabel}}</span><span>Mode: {{modeLabel}}</span><span>Value: {{valueLabel}}</span><span>Preview: {{previewLabel}}</span><span>Status: {{applyStatusLabel}}</span>{{#if appliedAtLabel}}<span>Applied At: {{appliedAtLabel}}</span>{{/if}}{{#if isResourceEffect}}<button type="button" data-arcflight-apply-staged-effect data-source="completedFinal" data-completed-event-index="{{../completedEventIndex}}" data-effect-index="{{index}}" {{#unless canApply}}disabled{{/unless}}>Apply</button>{{else}}<em>Manual / unsupported in MVP</em>{{/if}}</div>
             {{/each}}
           </div>
         {{/if}}

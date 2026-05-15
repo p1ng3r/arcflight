@@ -140,11 +140,14 @@ import {
 } from "./helpers/travel-events.js";
 import {
   advanceShipTravelEventRound,
+  applyTravelStagedEffect,
+  applyTravelStagedEffects,
   clearShipTravelEvent,
   completeShipTravelEvent,
   getActiveShipTravelEvent,
   getCurrentShipTravelRound,
   getShipTravelEventState,
+  previewTravelStagedEffectApplication,
   recordShipTravelStationResult,
   startShipTravelEvent
 } from "./helpers/ship-travel-event-state.js";
@@ -386,6 +389,9 @@ Hooks.once("init", () => {
     recordShipTravelStationResult,
     getCurrentShipTravelRound,
     advanceShipTravelEventRound,
+    previewTravelStagedEffectApplication,
+    applyTravelStagedEffect,
+    applyTravelStagedEffects,
     completeShipTravelEvent,
     clearShipTravelEvent,
     ArcflightTravelEventRunner,
@@ -587,6 +593,9 @@ export {
   recordShipTravelStationResult,
   getCurrentShipTravelRound,
   advanceShipTravelEventRound,
+  previewTravelStagedEffectApplication,
+  applyTravelStagedEffect,
+  applyTravelStagedEffects,
   completeShipTravelEvent,
   clearShipTravelEvent,
   ArcflightTravelEventRunner,

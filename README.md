@@ -52,7 +52,9 @@ During an active event, the runner displays the current event header, round titl
 
 Station prompts can optionally roll a selected suggested PF2E statistic for the currently assigned actor and record the travel degree automatically when PF2E provides a degree of success. Manual result entry remains the fallback: GMs can still select a station result degree (`criticalSuccess`, `success`, `failure`, or `criticalFailure`), optionally enter actor name/notes, and click **Record Result** when no actor is assigned, a statistic cannot be resolved, a roll fails or lacks a degree, or the GM wants to override the narrative result.
 
-Staged effects are preview-only. The runner intentionally does not apply staged effects, mutate `current.hull`, `current.lifeveil`, `current.strain`, morale, supplies, or stored spell ranks, spend AP/RAP, start combat, create encounters, roll initiative, run weapons, or merge travel and combat automation.
+Staged resource effects now show explicit GM **Apply** controls. Supported MVP effects have the shape `{ type: "resource", resource: "strain" | "lifeveil" | "hull" | "morale" | "supplies" | "storedSpellRanks", mode: "add" | "set", value: number, label: string }`; each Apply click previews the before/after resource value, mutates only the selected current travel resource, marks the staged effect as applied with metadata, and disables repeat application by default. Non-resource staged effects remain visible as manual / unsupported in MVP.
+
+The runner still intentionally does not apply anything automatically during rolls, station result recording, round advancement, or event completion, and it never spends AP/RAP, starts combat, creates encounters, rolls initiative, runs weapons/movement, or merges travel and combat automation.
 
 ## Shared PF2E Statistic Helpers
 

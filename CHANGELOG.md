@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Travel Staged Effects Apply MVP
+
+- Added explicit GM-controlled Apply controls for staged travel resource effects in the Travel Event Runner, including per-effect Apply buttons, Apply All Resource Effects group buttons, before/after previews, applied status readouts, and disabled applied effects.
+- Added `previewTravelStagedEffectApplication`, `applyTravelStagedEffect`, and `applyTravelStagedEffects` helpers for resource staged effects only, using the existing ship travel resource preview/update helpers.
+- Staged effect application now records `applied`, `appliedAt`, `appliedBy`, and `applicationResult` metadata on active travel state or completed-event final summaries and blocks double application by default.
+- Unsupported non-resource staged effects stay visible as manual / unsupported in MVP and are skipped safely by helpers.
+- Extended smoke coverage for non-mutating previews, resource-only mutation, unchanged AP/RAP, double-apply blocking, unsupported-effect safety, and helper exposure on `game.arcflight` and `game.arcflight.devTools`.
+- Preserved no-automation boundaries: no automatic effect application, automatic combat start, encounter creation, initiative rolling, AP/RAP use, weapon/movement automation, or GM event builder was added.
+
 ### Travel Event Runner PF2E Roll Buttons MVP
 
 - Added optional assigned-actor PF2E roll controls to Travel Event Runner station prompts, including assigned actor readouts, statistic selectors sourced from prompt suggested skills or station primary skills, effective DC display, and a delegated Roll Assigned Actor button.
