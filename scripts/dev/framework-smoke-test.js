@@ -1,4 +1,10 @@
-import { ArcflightTravelEventRunner, openTravelEventRunner, resolveTravelStationAssignedActor } from "../apps/travel-event-runner.js";
+import {
+  ArcflightTravelEventRunner,
+  formatStatisticOptionLabel,
+  getResolvedPf2eStatisticModifier,
+  openTravelEventRunner,
+  resolveTravelStationAssignedActor
+} from "../apps/travel-event-runner.js";
 import { ARCFLIGHT, ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import {
   createCoreArkengine,
@@ -370,6 +376,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Shared PF2E statistic resolution is null-safe", resolvePf2eActorStatistic(null, "diplomacy").ok === false, false, resolvePf2eActorStatistic(null, "diplomacy"));
     const nullTravelAssignment = await resolveTravelStationAssignedActor(null, "captain");
     check(result, "Travel runner assigned actor resolution is null-safe", nullTravelAssignment.actor === null && nullTravelAssignment.actorResolved === false, true, nullTravelAssignment);
+    checkEqual(result, "Travel runner statistic label formats positive modifiers", "Diplomacy (+12)", formatStatisticOptionLabel("diplomacy", { ok: true, statistic: { mod: 12 } }));
+    checkEqual(result, "Travel runner statistic label formats +0 modifiers", "Society (+0)", formatStatisticOptionLabel("society", { ok: true, statistic: { check: { mod: 0 } } }));
+    checkEqual(result, "Travel runner statistic label formats negative modifiers", "Intimidation (-1)", formatStatisticOptionLabel("intimidation", { ok: true, statistic: { totalModifier: -1 } }));
+    checkEqual(result, "Travel runner statistic label formats unavailable statistics", "Piloting Lore (unavailable)", formatStatisticOptionLabel("piloting-lore", { ok: false, statistic: null }));
+    checkEqual(result, "Travel runner statistic label is null-safe without assigned actor", "Diplomacy", formatStatisticOptionLabel("diplomacy", null));
+    checkEqual(result, "Travel runner statistic modifier helper ignores non-finite values", null, getResolvedPf2eStatisticModifier({ mod: Number.POSITIVE_INFINITY, check: { mod: "12" }, totalModifier: Number.NaN }));
     check(result, "Core hull library has 11 locked keys", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => CORE_HULL_PLATFORM_KEYS.includes(key)) && CORE_HULL_PLATFORM_KEYS.length === EXPECTED_CORE_HULL_PLATFORM_KEYS.length, EXPECTED_CORE_HULL_PLATFORM_KEYS, CORE_HULL_PLATFORM_KEYS);
     check(result, "Every core hull has classification", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasClassification(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasClassification(CORE_HULLS[key])));
     check(result, "Every core hull has refit tolerance", EXPECTED_CORE_HULL_PLATFORM_KEYS.every((key) => hasRefitTolerance(CORE_HULLS[key])), true, EXPECTED_CORE_HULL_PLATFORM_KEYS.filter((key) => !hasRefitTolerance(CORE_HULLS[key])));
