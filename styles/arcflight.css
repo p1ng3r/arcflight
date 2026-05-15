@@ -743,3 +743,47 @@
 .arcflight-button--danger {
   border-color: var(--color-border-highlight-alt, #8a1f11);
 }
+
+.arcflight-travel-runner__narrative-log {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner__log-entries {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner__log-entry {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-left: 3px solid var(--color-border-highlight, #a66a00);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-runner__log-entry header,
+.arcflight-travel-runner__log-meta {
+  display: flex;
+  gap: 0.5rem 0.75rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.arcflight-travel-runner__log-entry h3,
+.arcflight-travel-runner__log-entry h4,
+.arcflight-travel-runner__log-entry p {
+  margin: 0 0 0.35rem;
+}
+
+.arcflight-travel-runner__log-entry header span,
+.arcflight-travel-runner__log-meta span {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.arcflight-travel-runner__log-entries--compact .arcflight-travel-runner__log-entry {
+  padding: 0.45rem;
+}

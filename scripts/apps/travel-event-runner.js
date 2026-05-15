@@ -287,6 +287,77 @@ async function prepareStationPromptRows(shipActor, activeEvent, roundDefinition,
   }));
 }
 
+
+function getStationPromptForResult(activeEvent, stationKey) {
+  if (!activeEvent || !stationKey) return null;
+  const eventDefinition = getCoreTravelEvent(activeEvent.eventKey);
+  const roundDefinition = getRoundDefinition(eventDefinition, activeEvent.currentRound);
+  return roundDefinition?.activeStations?.find((entry) => entry.stationKey === stationKey) ?? null;
+}
+
+function getStationResultNarrative(activeEvent, stationKey, degreeOfSuccess) {
+  const degree = normalizeTravelRollDegree(degreeOfSuccess);
+  const prompt = getStationPromptForResult(activeEvent, stationKey);
+  const playerAction = typeof prompt?.playerAction === "string" ? prompt.playerAction.trim() : "";
+  const feedbackText = degree && typeof prompt?.rollFeedback?.[degree] === "string" ? prompt.rollFeedback[degree].trim() : "";
+
+  return {
+    playerAction,
+    feedbackText,
+    narrativeText: feedbackText
+  };
+}
+
+function getStationName(stationKey) {
+  const station = getStation(stationKey) ?? {};
+  return station.displayName || station.name || humanizeIdentifier(stationKey);
+}
+
+export function prepareTravelEventNarrativeLog(activeOrCompletedEvent) {
+  if (!activeOrCompletedEvent || !Array.isArray(activeOrCompletedEvent.rounds)) return [];
+
+  return activeOrCompletedEvent.rounds
+    .flatMap((round, roundIndex) => {
+      const roundNumber = Number(round?.round);
+      const normalizedRound = Number.isFinite(roundNumber) ? roundNumber : roundIndex + 1;
+      const stationResults = Array.isArray(round?.stationResults) ? round.stationResults : [];
+
+      return stationResults.map((result, resultIndex) => {
+        const stationKey = result?.stationKey ?? "";
+        const degreeOfSuccess = normalizeTravelRollDegree(result?.degreeOfSuccess ?? result?.degree) || (result?.degreeOfSuccess ?? "");
+        const recordedAtLabel = formatTimestamp(result?.recordedAt);
+        const feedbackText = typeof result?.feedbackText === "string" ? result.feedbackText.trim() : "";
+        const narrativeText = typeof result?.narrativeText === "string" ? result.narrativeText.trim() : "";
+
+        return {
+          ...cloneData(result),
+          roundNumber: normalizedRound,
+          roundLabel: `Round ${normalizedRound}`,
+          stationKey,
+          stationName: getStationName(stationKey),
+          degreeOfSuccess,
+          degreeLabel: humanizeIdentifier(degreeOfSuccess),
+          actorName: result?.actorName ?? "",
+          statisticKey: result?.statisticKey ?? "",
+          statisticLabel: result?.statisticKey ? humanizeIdentifier(result.statisticKey) : "",
+          rollTotal: result?.rollTotal ?? null,
+          hasRollTotal: result?.rollTotal !== null && result?.rollTotal !== undefined && result?.rollTotal !== "",
+          playerAction: typeof result?.playerAction === "string" ? result.playerAction.trim() : "",
+          feedbackText,
+          narrativeText,
+          resultText: narrativeText || feedbackText,
+          notes: result?.notes ?? "",
+          recordedAtLabel,
+          hasRecordedAtLabel: recordedAtLabel.length > 0,
+          _sortRound: normalizedRound,
+          _sortIndex: resultIndex
+        };
+      });
+    })
+    .sort((a, b) => (a._sortRound - b._sortRound) || (a._sortIndex - b._sortIndex))
+    .map(({ _sortRound, _sortIndex, ...row }) => row);
+}
+
 function prepareCompletedRoundEffects(shipActor, activeEvent = {}) {
   return (activeEvent.rounds ?? [])
     .filter((round) => Array.isArray(round.stagedEffects) && round.stagedEffects.length > 0)
@@ -305,6 +376,8 @@ function prepareLastCompletedSummary(shipActor, state = {}) {
   const event = completedEvents.at?.(-1) ?? completedEvents[completedEvents.length - 1] ?? null;
   if (!event) return null;
 
+  const narrativeLog = prepareTravelEventNarrativeLog(event);
+
   return {
     ...cloneData(event),
     completedEventIndex: completedEvents.length - 1,
@@ -313,6 +386,8 @@ function prepareLastCompletedSummary(shipActor, state = {}) {
     completedAtLabel: formatTimestamp(event.completedAt),
     stagedFinalEffectsCount: Array.isArray(event.stagedFinalEffects) ? event.stagedFinalEffects.length : 0,
     stagedFinalEffects: prepareEffectRows(shipActor, event.stagedFinalEffects),
+    narrativeLog,
+    hasNarrativeLog: narrativeLog.length > 0,
     combatHandoff: event.combatHandoff === true,
     handoffNotes: event.handoffNotes ?? ""
   };
@@ -325,6 +400,8 @@ async function prepareActiveEventContext(shipActor, activeEvent) {
   const isFinalRound = Number(activeEvent.currentRound) >= Number(activeEvent.roundCount);
   const finalOutcomeKey = globalThis.game?.arcflight?.getTravelEventOutcome?.({ ...activeEvent.totals }) ?? "";
   const finalOutcome = finalOutcomeKey ? eventDefinition?.finalOutcomes?.[finalOutcomeKey] : null;
+
+  const narrativeLog = prepareTravelEventNarrativeLog(activeEvent);
 
   return {
     ...cloneData(activeEvent),
@@ -341,6 +418,8 @@ async function prepareActiveEventContext(shipActor, activeEvent) {
     stagedFinalEffects: prepareEffectRows(shipActor, activeEvent.stagedFinalEffects),
     hasStagedFinalEffects: Array.isArray(activeEvent.stagedFinalEffects) && activeEvent.stagedFinalEffects.length > 0,
     combatHandoff: prepareCombatHandoff(activeEvent),
+    narrativeLog,
+    hasNarrativeLog: narrativeLog.length > 0,
     isFinalRound,
     canAdvanceRound: activeEvent.status !== "awaitingCompletion",
     advanceButtonLabel: isFinalRound ? "Stage Final Round Outcome" : "Advance Round",
@@ -395,14 +474,7 @@ function getActiveRollContext(activeEvent) {
 }
 
 function getStationRollFeedback(activeEvent, stationKey, degreeOfSuccess) {
-  const degree = normalizeTravelRollDegree(degreeOfSuccess);
-  if (!activeEvent || !stationKey || !degree) return "";
-
-  const eventDefinition = getCoreTravelEvent(activeEvent.eventKey);
-  const roundDefinition = getRoundDefinition(eventDefinition, activeEvent.currentRound);
-  const prompt = roundDefinition?.activeStations?.find((entry) => entry.stationKey === stationKey) ?? null;
-  const feedback = prompt?.rollFeedback?.[degree];
-  return typeof feedback === "string" ? feedback.trim() : "";
+  return getStationResultNarrative(activeEvent, stationKey, degreeOfSuccess).feedbackText;
 }
 
 async function confirmClearActiveEvent(shipActor) {
@@ -640,7 +712,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const notes = stationElement?.querySelector?.("[data-arcflight-notes]")?.value ?? "";
 
     try {
-      await recordShipTravelStationResult(this.shipActor, { stationKey, degreeOfSuccess, actorName, notes });
+      const activeEvent = getShipTravelEventState(this.shipActor).activeEvent;
+      const narrative = getStationResultNarrative(activeEvent, stationKey, degreeOfSuccess);
+      await recordShipTravelStationResult(this.shipActor, { stationKey, degreeOfSuccess, actorName, notes, ...narrative });
       const updatedActiveEvent = getShipTravelEventState(this.shipActor).activeEvent;
       const feedback = getStationRollFeedback(updatedActiveEvent, stationKey, degreeOfSuccess);
       ui.notifications?.info?.(feedback || `Recorded ${humanizeIdentifier(degreeOfSuccess)} for ${humanizeIdentifier(stationKey)}.`);
@@ -704,6 +778,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       const degreeOfSuccess = normalizeTravelRollDegree(getRollDegree(rollResult));
       if (!degreeOfSuccess) throw new Error("Arcflight | PF2E roll completed, but no degree of success was available. Use manual result entry.");
 
+      const narrative = getStationResultNarrative(activeEvent, stationKey, degreeOfSuccess);
       await recordShipTravelStationResult(this.shipActor, {
         stationKey,
         actorUuid: assignmentResolution.actorUuid,
@@ -712,6 +787,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
         statisticKey,
         degreeOfSuccess,
         notes: `PF2E ${humanizeIdentifier(statisticKey)} roll`,
+        ...narrative,
         rollTotal: getPf2eRollTotal(rollResult),
         rollId: getRollId(rollResult),
         messageId: getMessageId(rollResult),

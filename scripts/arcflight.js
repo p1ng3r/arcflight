@@ -1,6 +1,6 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
-import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions } from "./apps/travel-event-runner.js";
+import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "./apps/travel-event-runner.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
   createArcflightItem,
@@ -418,6 +418,7 @@ Hooks.once("init", () => {
     openTravelEventRunner,
     prepareTravelEventLibraryOptions,
     prepareSelectedTravelEventLibraryDetails,
+    prepareTravelEventNarrativeLog,
     resetShipActionEconomy,
     spendShipActionPoints,
     canSpendShipActionPoints,
@@ -633,6 +634,7 @@ export {
   openTravelEventRunner,
   prepareTravelEventLibraryOptions,
   prepareSelectedTravelEventLibraryDetails,
+  prepareTravelEventNarrativeLog,
   resetShipActionEconomy,
   spendShipActionPoints,
   canSpendShipActionPoints,

@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Travel Event Narrative Log MVP
+
+- Added a persistent Travel Event Log to the Travel Event Runner so recorded station results keep round, station, degree, actor/statistic/roll metadata, player action prose, result feedback, notes, and timestamps visible after notification quips fade.
+- Preserved existing inline station-card feedback and temporary notifications while keeping this pass runner UI only: no automatic chat posting, combat start, AP/RAP travel use, staged-effect automation, new stations, or new travel mechanics were added.
+- Extended smoke coverage for station-result narrative fields, PF2E-style roll metadata compatibility, narrative log row preparation, completed-event preservation, and no AP/RAP or travel-resource mutation from result recording.
+
 ### Core Travel Event Template Upgrade and Pack 01B
 
 - Upgraded all existing core travel events to the Travel Event Authoring Template standard with station `playerAction` text and four-degree `rollFeedback` quips.
