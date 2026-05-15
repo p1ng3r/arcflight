@@ -4,9 +4,11 @@ import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESULT_TIERS } from "../config/co
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
 import {
   advanceShipTravelEventRound,
+  applyTravelStagedEffect,
   clearShipTravelEvent,
   completeShipTravelEvent,
   getShipTravelEventState,
+  previewTravelStagedEffectApplication,
   recordShipTravelStationResult,
   startShipTravelEvent
 } from "../helpers/ship-travel-event-state.js";
@@ -21,7 +23,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-roll-station-prompt]",
   "[data-arcflight-advance-travel-round]",
   "[data-arcflight-complete-travel-event]",
-  "[data-arcflight-clear-travel-event]"
+  "[data-arcflight-clear-travel-event]",
+  "[data-arcflight-apply-staged-effect]",
+  "[data-arcflight-apply-staged-effects]"
 ].join(", ");
 
 const DEGREE_OPTIONS = Object.freeze([
@@ -53,16 +57,36 @@ function formatTimestamp(value) {
   return new Date(timestamp).toLocaleString();
 }
 
-function prepareEffectRows(effects = []) {
-  return (Array.isArray(effects) ? effects : []).map((effect, index) => ({
-    ...effect,
-    index,
-    label: effect.label || humanizeIdentifier(effect.resource || effect.target || effect.type || `Effect ${index + 1}`),
-    typeLabel: humanizeIdentifier(effect.type || "effect"),
-    targetLabel: effect.resource || effect.target || "—",
-    modeLabel: humanizeIdentifier(effect.mode || "preview"),
-    valueLabel: effect.value ?? "—"
-  }));
+function prepareEffectRows(shipActor, effects = []) {
+  return (Array.isArray(effects) ? effects : []).map((effect, index) => {
+    const preview = previewTravelStagedEffectApplication(shipActor, effect);
+    const isResourceEffect = preview.supported === true;
+    const applied = effect.applied === true;
+    const beforeValue = isResourceEffect ? preview.before?.[effect.resource] : null;
+    const afterValue = isResourceEffect ? preview.after?.[effect.resource] : null;
+    const valueLabel = effect.value ?? "—";
+    const previewLabel = isResourceEffect ? `${beforeValue} → ${afterValue}` : "Manual / unsupported in MVP";
+
+    return {
+      ...effect,
+      index,
+      label: effect.label || humanizeIdentifier(effect.resource || effect.target || effect.type || `Effect ${index + 1}`),
+      typeLabel: humanizeIdentifier(effect.type || "effect"),
+      targetLabel: effect.resource || effect.target || "—",
+      modeLabel: humanizeIdentifier(effect.mode || "preview"),
+      valueLabel,
+      preview,
+      previewLabel,
+      beforeValue,
+      afterValue,
+      isResourceEffect,
+      isUnsupportedEffect: !isResourceEffect,
+      applied,
+      appliedAtLabel: formatTimestamp(effect.appliedAt),
+      canApply: isResourceEffect && !applied && globalThis.game?.user?.isGM === true,
+      applyStatusLabel: applied ? "Applied" : (isResourceEffect ? "Ready" : "Manual / unsupported in MVP")
+    };
+  });
 }
 
 function prepareCombatHandoff(source = {}) {
@@ -216,7 +240,7 @@ async function prepareStationPromptRows(shipActor, activeEvent, roundDefinition,
   }));
 }
 
-function prepareCompletedRoundEffects(activeEvent = {}) {
+function prepareCompletedRoundEffects(shipActor, activeEvent = {}) {
   return (activeEvent.rounds ?? [])
     .filter((round) => Array.isArray(round.stagedEffects) && round.stagedEffects.length > 0)
     .map((round) => ({
@@ -224,23 +248,24 @@ function prepareCompletedRoundEffects(activeEvent = {}) {
       title: `Round ${round.round}`,
       outcomeKey: round.outcomeKey ?? "",
       outcomeLabel: humanizeIdentifier(round.outcomeKey),
-      effects: prepareEffectRows(round.stagedEffects),
+      effects: prepareEffectRows(shipActor, round.stagedEffects),
       effectCount: round.stagedEffects.length
     }));
 }
 
-function prepareLastCompletedSummary(state = {}) {
+function prepareLastCompletedSummary(shipActor, state = {}) {
   const completedEvents = Array.isArray(state.completedEvents) ? state.completedEvents : [];
   const event = completedEvents.at?.(-1) ?? completedEvents[completedEvents.length - 1] ?? null;
   if (!event) return null;
 
   return {
     ...cloneData(event),
+    completedEventIndex: completedEvents.length - 1,
     eventName: event.eventName || humanizeIdentifier(event.eventKey),
     finalOutcomeLabel: humanizeIdentifier(event.finalOutcomeKey),
     completedAtLabel: formatTimestamp(event.completedAt),
     stagedFinalEffectsCount: Array.isArray(event.stagedFinalEffects) ? event.stagedFinalEffects.length : 0,
-    stagedFinalEffects: prepareEffectRows(event.stagedFinalEffects),
+    stagedFinalEffects: prepareEffectRows(shipActor, event.stagedFinalEffects),
     combatHandoff: event.combatHandoff === true,
     handoffNotes: event.handoffNotes ?? ""
   };
@@ -264,9 +289,9 @@ async function prepareActiveEventContext(shipActor, activeEvent) {
     currentRoundVignette: currentRoundDefinition?.openingVignette ?? "",
     stationPrompts: await prepareStationPromptRows(shipActor, activeEvent, currentRoundDefinition, currentRound),
     hasStationPrompts: (currentRoundDefinition?.activeStations ?? []).length > 0,
-    stagedRoundEffects: prepareCompletedRoundEffects(activeEvent),
-    hasStagedRoundEffects: prepareCompletedRoundEffects(activeEvent).length > 0,
-    stagedFinalEffects: prepareEffectRows(activeEvent.stagedFinalEffects),
+    stagedRoundEffects: prepareCompletedRoundEffects(shipActor, activeEvent),
+    hasStagedRoundEffects: prepareCompletedRoundEffects(shipActor, activeEvent).length > 0,
+    stagedFinalEffects: prepareEffectRows(shipActor, activeEvent.stagedFinalEffects),
     hasStagedFinalEffects: Array.isArray(activeEvent.stagedFinalEffects) && activeEvent.stagedFinalEffects.length > 0,
     combatHandoff: prepareCombatHandoff(activeEvent),
     isFinalRound,
@@ -372,7 +397,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const context = await super._prepareContext(options);
     const state = getShipTravelEventState(this.shipActor);
     const activeEvent = state.activeEvent ? await prepareActiveEventContext(this.shipActor, state.activeEvent) : null;
-    const lastCompletedEvent = prepareLastCompletedSummary(state);
+    const lastCompletedEvent = prepareLastCompletedSummary(this.shipActor, state);
 
     return {
       ...context,
@@ -385,7 +410,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       lastCompletedEvent,
       hasLastCompletedEvent: Boolean(lastCompletedEvent),
       canStartBlackTideCrossing: !activeEvent,
-      noAutomationHint: "Staged effects are preview-only. This runner does not mutate travel resources, spend AP/RAP, apply staged effects, or start combat."
+      noAutomationHint: "Staged effects require explicit GM Apply clicks. This runner never spends AP/RAP, starts combat, creates encounters, or auto-applies effects."
     };
   }
 
@@ -406,10 +431,96 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-advance-travel-round")) return await this.#onAdvanceRound(event);
     if (target.hasAttribute("data-arcflight-complete-travel-event")) return await this.#onCompleteEvent(event);
     if (target.hasAttribute("data-arcflight-clear-travel-event")) return await this.#onClearEvent(event);
+    if (target.hasAttribute("data-arcflight-apply-staged-effect")) return await this.#onApplyStagedEffect(event, target);
+    if (target.hasAttribute("data-arcflight-apply-staged-effects")) return await this.#onApplyStagedEffects(event, target);
   }
 
   async #rerenderAfterAction() {
     await this.render(true);
+  }
+
+  get #isGm() {
+    return globalThis.game?.user?.isGM === true;
+  }
+
+  #getStagedEffectContext(target) {
+    const source = target?.dataset?.source ?? "";
+    const round = target?.dataset?.round ? Number(target.dataset.round) : null;
+    const completedEventIndex = target?.dataset?.completedEventIndex ? Number(target.dataset.completedEventIndex) : null;
+    const effectIndex = Number(target?.dataset?.effectIndex);
+    const state = getShipTravelEventState(this.shipActor);
+
+    if (source === "activeRound") {
+      const roundState = state.activeEvent?.rounds?.find((entry) => entry.round === round) ?? null;
+      return { source, round, effectIndex, effects: roundState?.stagedEffects ?? [], effect: roundState?.stagedEffects?.[effectIndex] ?? null };
+    }
+
+    if (source === "activeFinal") {
+      return { source, effectIndex, effects: state.activeEvent?.stagedFinalEffects ?? [], effect: state.activeEvent?.stagedFinalEffects?.[effectIndex] ?? null };
+    }
+
+    if (source === "completedFinal") {
+      const eventIndex = Number.isInteger(completedEventIndex) ? completedEventIndex : (state.completedEvents?.length ?? 0) - 1;
+      const completedEvent = state.completedEvents?.[eventIndex] ?? null;
+      return { source, completedEventIndex: eventIndex, effectIndex, effects: completedEvent?.stagedFinalEffects ?? [], effect: completedEvent?.stagedFinalEffects?.[effectIndex] ?? null };
+    }
+
+    return { source, effectIndex, effects: [], effect: null };
+  }
+
+  async #onApplyStagedEffect(event, target) {
+    event.preventDefault();
+
+    if (!this.#isGm) {
+      ui.notifications?.warn?.("Only a GM can apply staged travel effects.");
+      return;
+    }
+
+    const context = this.#getStagedEffectContext(target);
+    if (!context.effect) {
+      ui.notifications?.warn?.("Arcflight could not find that staged effect.");
+      return;
+    }
+
+    try {
+      const result = await applyTravelStagedEffect(this.shipActor, context.effect, context);
+      if (result.ok) ui.notifications?.info?.(`Applied ${context.effect.label ?? "staged travel effect"}.`);
+      else ui.notifications?.warn?.(result.message ?? "That staged effect was not applied.");
+      await this.#rerenderAfterAction();
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not apply that staged effect.");
+      console.warn("Arcflight | Travel runner staged effect apply failed.", { context, error });
+    }
+  }
+
+  async #onApplyStagedEffects(event, target) {
+    event.preventDefault();
+
+    if (!this.#isGm) {
+      ui.notifications?.warn?.("Only a GM can apply staged travel effects.");
+      return;
+    }
+
+    const context = this.#getStagedEffectContext(target);
+    const resourceEffects = context.effects.filter((effect) => previewTravelStagedEffectApplication(this.shipActor, effect).supported && effect.applied !== true);
+    if (resourceEffects.length === 0) {
+      ui.notifications?.warn?.("No unapplied resource staged effects are available in this group.");
+      return;
+    }
+
+    try {
+      const results = [];
+      for (const effect of resourceEffects) {
+        const effectIndex = context.effects.indexOf(effect);
+        results.push(await applyTravelStagedEffect(this.shipActor, effect, { ...context, effectIndex }));
+      }
+      const appliedCount = results.filter((result) => result.ok).length;
+      ui.notifications?.info?.(`Applied ${appliedCount} staged resource effect${appliedCount === 1 ? "" : "s"}.`);
+      await this.#rerenderAfterAction();
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not apply those staged effects.");
+      console.warn("Arcflight | Travel runner staged effects apply failed.", { context, error });
+    }
   }
 
   async #onStartBlackTideCrossing(event) {

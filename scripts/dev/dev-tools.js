@@ -19,11 +19,14 @@ import {
 } from "../helpers/travel-events.js";
 import {
   advanceShipTravelEventRound,
+  applyTravelStagedEffect,
+  applyTravelStagedEffects,
   clearShipTravelEvent,
   completeShipTravelEvent,
   getActiveShipTravelEvent,
   getCurrentShipTravelRound,
   getShipTravelEventState,
+  previewTravelStagedEffectApplication,
   recordShipTravelStationResult,
   startShipTravelEvent
 } from "../helpers/ship-travel-event-state.js";
@@ -390,6 +393,21 @@ export function createArcflightDevTools() {
      * Apply ship travel resource deltas without spending AP/RAP.
      */
     updateShipTravelResources,
+
+    /**
+     * Preview a staged travel resource effect without mutating the actor.
+     */
+    previewTravelStagedEffectApplication,
+
+    /**
+     * Apply one staged travel resource effect by explicit GM choice.
+     */
+    applyTravelStagedEffect,
+
+    /**
+     * Apply multiple staged travel resource effects by explicit GM choice.
+     */
+    applyTravelStagedEffects,
 
     /**
      * Return the core Travel Five station keys.
