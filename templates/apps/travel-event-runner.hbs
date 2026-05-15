@@ -119,6 +119,32 @@
       {{/if}}
     </section>
 
+    <section class="arcflight-travel-runner__panel arcflight-travel-runner__narrative-log">
+      <h2>Travel Event Log</h2>
+      {{#if activeEvent.hasNarrativeLog}}
+        <div class="arcflight-travel-runner__log-entries">
+          {{#each activeEvent.narrativeLog}}
+            <article class="arcflight-travel-runner__log-entry">
+              <header>
+                <h3>{{roundLabel}} — {{stationName}} — {{degreeLabel}}</h3>
+                {{#if hasRecordedAtLabel}}<span>{{recordedAtLabel}}</span>{{/if}}
+              </header>
+              <div class="arcflight-travel-runner__log-meta">
+                {{#if actorName}}<span><strong>Actor:</strong> {{actorName}}</span>{{/if}}
+                {{#if statisticKey}}<span><strong>Statistic:</strong> {{statisticLabel}}</span>{{/if}}
+                {{#if hasRollTotal}}<span><strong>Roll Total:</strong> {{rollTotal}}</span>{{/if}}
+              </div>
+              {{#if playerAction}}<p><strong>Player Action:</strong><br>{{playerAction}}</p>{{/if}}
+              {{#if resultText}}<p><strong>Result:</strong><br>{{resultText}}</p>{{/if}}
+              {{#if notes}}<p><strong>Notes:</strong> {{notes}}</p>{{/if}}
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">Recorded station result prose will appear here as the event progresses.</p>
+      {{/if}}
+    </section>
+
     <section class="arcflight-travel-runner__panel">
       <h2>Staged Effects Preview</h2>
       <p class="arcflight-sheet__hint">Effects listed here are applied only when the GM clicks Apply. Resource effects mutate current travel resources only; AP/RAP and combat automation are never touched.</p>
@@ -203,6 +229,28 @@
         {{#if lastCompletedEvent.combatHandoff}}
           <h3>Combat Handoff Available</h3>
           {{#if lastCompletedEvent.handoffNotes}}<p>{{lastCompletedEvent.handoffNotes}}</p>{{else}}<p class="arcflight-sheet__hint">No handoff notes were staged.</p>{{/if}}
+        {{/if}}
+
+        {{#if lastCompletedEvent.hasNarrativeLog}}
+          <h3>Last Event Log</h3>
+          <div class="arcflight-travel-runner__log-entries arcflight-travel-runner__log-entries--compact">
+            {{#each lastCompletedEvent.narrativeLog}}
+              <article class="arcflight-travel-runner__log-entry">
+                <header>
+                  <h4>{{roundLabel}} — {{stationName}} — {{degreeLabel}}</h4>
+                  {{#if hasRecordedAtLabel}}<span>{{recordedAtLabel}}</span>{{/if}}
+                </header>
+                <div class="arcflight-travel-runner__log-meta">
+                  {{#if actorName}}<span><strong>Actor:</strong> {{actorName}}</span>{{/if}}
+                  {{#if statisticKey}}<span><strong>Statistic:</strong> {{statisticLabel}}</span>{{/if}}
+                  {{#if hasRollTotal}}<span><strong>Roll Total:</strong> {{rollTotal}}</span>{{/if}}
+                </div>
+                {{#if playerAction}}<p><strong>Player Action:</strong><br>{{playerAction}}</p>{{/if}}
+                {{#if resultText}}<p><strong>Result:</strong><br>{{resultText}}</p>{{/if}}
+                {{#if notes}}<p><strong>Notes:</strong> {{notes}}</p>{{/if}}
+              </article>
+            {{/each}}
+          </div>
         {{/if}}
         {{#if lastCompletedEvent.stagedFinalEffectsCount}}
           <h3>Staged Final Effects</h3>
