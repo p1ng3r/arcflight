@@ -25,19 +25,21 @@ Arcflight now includes a read-only Travel Event Data Foundation for future narra
 
 The MVP travel event taxonomy is locked around reusable data constants for travel event categories, result tiers, round outcomes, event outcomes, and broad travel tags. Travel events use only the Travel Five stations for MVP prompts: Navigator, Engineer, Veilwarden, Watchmaster, and Captain. Pilot, Gunnery, and Quartermaster remain valid core stations, but they are not Travel Five MVP stations.
 
-The current registry-backed sample/core events are:
+The current registry-backed core events are all written to the Travel Event Authoring Template standard:
 
-- **Black Tide Crossing** — a five-round environmental crossing with soft station prompts, staged outcome branches, proposed non-executable effects, and GM-facing `combatHandoff` metadata where appropriate.
+- **Black Tide Crossing** — a five-round environmental crossing with Travel Five station prompts, staged outcome branches, proposed non-executable effects, and GM-facing `combatHandoff` metadata where appropriate.
 - **Derelict Lantern Wreck** — a four-round discovery event about investigating a dead arkship, choosing salvage risks, handling occult witchlight residue, and preserving severe-branch threat handoff notes for GM choice.
 - **Crew Fever in the Lifeveil** — a four-round shipboard crisis about morale, supplies, Lifeveil contamination, dreamlike crew hallucinations, and stabilization without adding a new station or automation.
+- **False Beacon Ambush** — a four-round threat event about a false rescue or port signal luring the ship into a kill lane, debris trap, hidden raider vector, or occult snare.
+- **Portside Diplomatic Snare** — a four-round social event about fees, favors, inspections, customs, rumors, legal delay, and polite portside pressure.
 
-Threat branches never launch combat automatically; they only preserve handoff notes for later GM choice.
+Every core station prompt now includes a table-facing vignette, a clear `playerAction`, and degree-based `rollFeedback` for critical success, success, failure, and critical failure. Threat branches never launch combat automatically; they only preserve handoff notes for later GM choice.
 
 ### Travel Event Authoring Template
 
 Arcflight also includes an official [Travel Event Authoring Template](docs/TRAVEL_EVENT_TEMPLATE.md) for future core event packs and GM-builder compatibility. The template documents the canonical event, round, station prompt, roll feedback, outcome branch, and final outcome shapes, along with prose length standards, tone guidance, proposed-effect boundaries, combat-handoff metadata rules, and the PF2E degree-of-success note.
 
-Template helpers such as `createBlankTravelEventTemplate`, `createBlankStationPromptTemplate`, `getTravelEventAuthoringGuidelines`, and `validateTravelEventAuthoringTemplate` are exposed on both `game.arcflight` and `game.arcflight.devTools`. Strict authoring validation can be requested with `validateTravelEventDefinition(event, { strictAuthoring: true })` without forcing existing core events to adopt the richer station prompt fields until a future content pass.
+Template helpers such as `createBlankTravelEventTemplate`, `createBlankStationPromptTemplate`, `getTravelEventAuthoringGuidelines`, and `validateTravelEventAuthoringTemplate` are exposed on both `game.arcflight` and `game.arcflight.devTools`. Strict authoring validation can be requested with `validateTravelEventDefinition(event, { strictAuthoring: true })`, and all current core travel events pass those richer station prompt checks.
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
 
@@ -58,11 +60,11 @@ const ship = game.actors.getName("test ship");
 game.arcflight.openTravelEventRunner(ship);
 ```
 
-The runner is ship-attached and starts events from a registered core Travel Event Library selector. When no event is active, it shows the selected ship, a no-active-event message, a Travel Event dropdown, selected event details, a **Start Selected Event** button, and the most recent completed-event summary when one exists. The current registry-backed sample/core events (**Black Tide Crossing**, **Derelict Lantern Wreck**, and **Crew Fever in the Lifeveil**) appear through this selector automatically. A GM custom event builder remains future work.
+The runner is ship-attached and starts events from a registered core Travel Event Library selector. When no event is active, it shows the selected ship, a no-active-event message, a Travel Event dropdown, selected event details, a **Start Selected Event** button, and the most recent completed-event summary when one exists. The current registry-backed core events (**Black Tide Crossing**, **Derelict Lantern Wreck**, **Crew Fever in the Lifeveil**, **False Beacon Ambush**, and **Portside Diplomatic Snare**) appear through this selector automatically. A GM custom event builder remains future work.
 
 During an active event, the runner displays the current event header, round title and opening vignette, round/event totals, Travel Five station prompts, assigned actor readouts, suggested statistic selectors, optional PF2E assigned-actor roll buttons, resource-option text, duplicate-result hints, staged round effects, final staged effects when available, and combat-handoff notes when backend state marks a handoff as available.
 
-Station prompts can optionally roll a selected suggested PF2E statistic for the currently assigned actor and record the travel degree automatically when PF2E provides a degree of success. Manual result entry remains the fallback: GMs can still select a station result degree (`criticalSuccess`, `success`, `failure`, or `criticalFailure`), optionally enter actor name/notes, and click **Record Result** when no actor is assigned, a statistic cannot be resolved, a roll fails or lacks a degree, or the GM wants to override the narrative result.
+Station prompts can optionally roll a selected suggested PF2E statistic for the currently assigned actor and record the travel degree automatically when PF2E provides a degree of success. PF2E roll buttons use PF2E's native DC and degree-of-success handling; Arcflight does not add custom natural 20 or natural 1 degree adjustment. Manual result entry remains the fallback: GMs can still select a station result degree (`criticalSuccess`, `success`, `failure`, or `criticalFailure`), optionally enter actor name/notes, and click **Record Result** when no actor is assigned, a statistic cannot be resolved, a roll fails or lacks a degree, or the GM wants to override the narrative result.
 
 Staged resource effects now show explicit GM **Apply** controls. Supported MVP effects have the shape `{ type: "resource", resource: "strain" | "lifeveil" | "hull" | "morale" | "supplies" | "storedSpellRanks", mode: "add" | "set", value: number, label: string }`; each Apply click previews the before/after resource value, mutates only the selected current travel resource, marks the staged effect as applied with metadata, and disables repeat application by default. Non-resource staged effects remain visible as manual / unsupported in MVP.
 

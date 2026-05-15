@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Core Travel Event Template Upgrade and Pack 01B
+
+- Upgraded all existing core travel events to the Travel Event Authoring Template standard with station `playerAction` text and four-degree `rollFeedback` quips.
+- Added **False Beacon Ambush** and **Portside Diplomatic Snare** as Core Travel Event Pack 01B, bringing the registry-backed core event selector to five events.
+- Added Travel Runner post-roll notification feedback that prefers station `rollFeedback` after manual result recording or PF2E assigned-actor auto-recording, with existing generic messages preserved as a fallback.
+- Extended framework smoke coverage for five core event keys, normal and strict authoring validation, expected round counts, Travel Five-only station prompts, valid active resources, library selector details for Pack 01B, and runner readout compatibility.
+- Preserved scope boundaries: no GM custom event builder, custom event creation, JSON import/export, compendium packs, automatic combat start, new stations, new travel mechanics, AP/RAP travel use, or automatic staged effect application was added.
+
 ### Travel Event Authoring Template MVP
 
 - Added the official Travel Event Authoring Template documentation for canonical event, round, station prompt, roll feedback, outcome branch, and final outcome structures.
