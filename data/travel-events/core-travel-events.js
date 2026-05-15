@@ -37,12 +37,12 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       "captain"
     ],
     "description": "The ship must cross a lightless current where black rain, living tide, and distant predators turn navigation into a haunted trial. The passage is beautiful in the way a blade is beautiful: all sheen, silence, and danger. Every station has a way to keep the vessel moving, but the crossing asks a price from hull, Lifeveil, supplies, and nerve.",
-    "gmSummary": "Run this as a five-round environmental ordeal in which the Travel Five keep the ship together under unnatural sea-pressure. Keep the Black Tide strange but readable: false lights, hungry water, engine resonance, and pursuing shapes should all give the players choices to make. Proposed effects remain staged for explicit GM review, and combatHandoff notes are only future threat context.",
+    "gmSummary": "Run this as a five-round environmental ordeal in which the Travel Five keep the ship together under unnatural void-pressure. Keep the Black Tide strange but readable: false lights, hungry aether, arkengine resonance, and pursuing shapes in the dark between stars should all give the players choices to make. Proposed effects remain staged for explicit GM review, and combatHandoff notes are only future threat context.",
     "rounds": [
       {
         "round": 1,
         "title": "The Tide Goes Black",
-        "openingVignette": "The horizon folds into an oil-dark swell, and the arkengine wake vanishes behind the ship as if swallowed. Stars wink out one by one until the rigging hangs beneath a blind sky. Black rain begins to fall upward from the tide, tapping the hull like impatient fingers. Old sailor-prayers go quiet on every deck because everyone knows the name of this crossing. Ahead, the current opens a path that looks less like water than a door into a drowned night.",
+        "openingVignette": "The Star Sea folds into an oil-dark void-swell, and the arkengine wake vanishes behind the ship as if swallowed. Stars wink out one by one until the rigging hangs beneath a blind sky. Black rain begins to fall upward from the aether current, tapping the hull like impatient fingers. Old sailor-prayers go quiet on every deck because everyone knows the name of this crossing. Ahead, the Black Tide opens a path through the Void Between Fires, less a channel than a door into starless night.",
         "activeStations": [
           {
             "stationKey": "navigator",
@@ -52,18 +52,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
               "society",
               "sailing-lore"
             ],
-            "playerAction": "Choose whether to spend time sounding the current or risk a narrower but calmer channel, then make the Navigator check for The Tide Goes Black. Tell the table how the crew addresses this problem: Find a bearing through a sky with no stars and a sea with no honest current.",
+            "playerAction": "Choose whether to spend time sounding the current or risk a narrower but calmer channel, then make the Navigator check for The Tide Goes Black. Tell the table how the crew addresses this problem: Find a bearing through a sky with no stars and a Black Tide with no honest current.",
             "rollFeedback": {
-              "criticalSuccess": "Navigator's work during The Tide Goes Black turns \"Find a bearing through a sky with no stars and a sea with no honest current\" into a clear advantage for the crew.",
-              "success": "Navigator resolves \"Find a bearing through a sky with no stars and a sea with no honest current\" well enough for the ship to keep its line through Black Tide Crossing.",
-              "failure": "Navigator cannot fully resolve \"Find a bearing through a sky with no stars and a sea with no honest current\", and Black Tide Crossing leaves a visible cost behind.",
-              "criticalFailure": "Navigator misjudges \"Find a bearing through a sky with no stars and a sea with no honest current\", giving Black Tide Crossing a hard opening before the crew can recover."
+              "criticalSuccess": "Navigator's work during The Tide Goes Black turns \"Find a bearing through a sky with no stars and a Black Tide with no honest current\" into a clear advantage for the crew.",
+              "success": "Navigator resolves \"Find a bearing through a sky with no stars and a Black Tide with no honest current\" well enough for the ship to keep its line through Black Tide Crossing.",
+              "failure": "Navigator cannot fully resolve \"Find a bearing through a sky with no stars and a Black Tide with no honest current\", and Black Tide Crossing leaves a visible cost behind.",
+              "criticalFailure": "Navigator misjudges \"Find a bearing through a sky with no stars and a Black Tide with no honest current\", giving Black Tide Crossing a hard opening before the crew can recover."
             },
             "resourceOptions": [
               "Spend time sounding the current",
               "Risk a narrower but calmer channel"
             ],
-            "vignette": "Find a bearing through a sky with no stars and a sea with no honest current.",
+            "vignette": "Find a bearing through a sky with no stars and a Black Tide with no honest current.",
             "dcModifier": 0
           },
           {
@@ -190,7 +190,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             "nextRoundNotes": "Make the next round feel less forgiving."
           },
           "catastrophicFailure": {
-            "vignette": "Something below answers the ship's wake with a hollow knock against the keel. The moment should land like a bell through the whole vessel.",
+            "vignette": "Something beneath the ship's gravity shadow answers the arkengine wake with a hollow knock against the keel. The moment should land like a bell through the whole vessel.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -385,7 +385,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 3,
         "title": "The Engine Hears a Song",
-        "openingVignette": "The arkengine begins to answer a melody no one aboard is playing. Its housings thrum in phrases, and the Black Tide replies through the keel with a deeper note. Loose tools creep across worktables toward the sound. Below the wake, something vast seems to listen for the ship to complete the song.",
+        "openingVignette": "The arkengine begins to answer a melody no one aboard is playing. Its housings thrum in phrases, and the Black Tide replies through the keel with a deeper note. Loose tools creep across worktables toward the sound. Beneath the arkengine wake, something vast seems to listen from the ship's gravity shadow for the vessel to complete the song.",
         "activeStations": [
           {
             "stationKey": "navigator",
@@ -441,18 +441,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
               "occultism",
               "arcana"
             ],
-            "playerAction": "Choose whether to mute the outer veil or counter-harmonize with ward tones, then make the Veilwarden check for The Engine Hears a Song. Tell the table how the crew addresses this problem: Keep the Lifeveil from repeating the engine's song back to the sea.",
+            "playerAction": "Choose whether to mute the outer veil or counter-harmonize with ward tones, then make the Veilwarden check for The Engine Hears a Song. Tell the table how the crew addresses this problem: Keep the Lifeveil from repeating the engine's song back into the Black Tide.",
             "rollFeedback": {
-              "criticalSuccess": "Veilwarden's work during The Engine Hears a Song turns \"Keep the Lifeveil from repeating the engine's song back to the sea\" into a clear advantage for the crew.",
-              "success": "Veilwarden resolves \"Keep the Lifeveil from repeating the engine's song back to the sea\" well enough for the ship to keep its line through Black Tide Crossing.",
-              "failure": "Veilwarden cannot fully resolve \"Keep the Lifeveil from repeating the engine's song back to the sea\", and Black Tide Crossing leaves a visible cost behind.",
-              "criticalFailure": "Veilwarden misjudges \"Keep the Lifeveil from repeating the engine's song back to the sea\", giving Black Tide Crossing a hard opening before the crew can recover."
+              "criticalSuccess": "Veilwarden's work during The Engine Hears a Song turns \"Keep the Lifeveil from repeating the engine's song back into the Black Tide\" into a clear advantage for the crew.",
+              "success": "Veilwarden resolves \"Keep the Lifeveil from repeating the engine's song back into the Black Tide\" well enough for the ship to keep its line through Black Tide Crossing.",
+              "failure": "Veilwarden cannot fully resolve \"Keep the Lifeveil from repeating the engine's song back into the Black Tide\", and Black Tide Crossing leaves a visible cost behind.",
+              "criticalFailure": "Veilwarden misjudges \"Keep the Lifeveil from repeating the engine's song back into the Black Tide\", giving Black Tide Crossing a hard opening before the crew can recover."
             },
             "resourceOptions": [
               "Mute the outer veil",
               "Counter-harmonize with ward tones"
             ],
-            "vignette": "Keep the Lifeveil from repeating the engine's song back to the sea."
+            "vignette": "Keep the Lifeveil from repeating the engine's song back into the Black Tide."
           },
           {
             "stationKey": "watchmaster",
@@ -461,18 +461,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
               "perception",
               "survival"
             ],
-            "playerAction": "Choose whether to triangulate echoes or hide the ship's rhythm, then make the Watchmaster check for The Engine Hears a Song. Tell the table how the crew addresses this problem: Track the submerged source answering each engine note.",
+            "playerAction": "Choose whether to triangulate echoes or hide the ship's rhythm, then make the Watchmaster check for The Engine Hears a Song. Tell the table how the crew addresses this problem: Track the void-hidden source answering each engine note.",
             "rollFeedback": {
-              "criticalSuccess": "Watchmaster's work during The Engine Hears a Song turns \"Track the submerged source answering each engine note\" into a clear advantage for the crew.",
-              "success": "Watchmaster resolves \"Track the submerged source answering each engine note\" well enough for the ship to keep its line through Black Tide Crossing.",
-              "failure": "Watchmaster cannot fully resolve \"Track the submerged source answering each engine note\", and Black Tide Crossing leaves a visible cost behind.",
-              "criticalFailure": "Watchmaster misjudges \"Track the submerged source answering each engine note\", giving Black Tide Crossing a hard opening before the crew can recover."
+              "criticalSuccess": "Watchmaster's work during The Engine Hears a Song turns \"Track the void-hidden source answering each engine note\" into a clear advantage for the crew.",
+              "success": "Watchmaster resolves \"Track the void-hidden source answering each engine note\" well enough for the ship to keep its line through Black Tide Crossing.",
+              "failure": "Watchmaster cannot fully resolve \"Track the void-hidden source answering each engine note\", and Black Tide Crossing leaves a visible cost behind.",
+              "criticalFailure": "Watchmaster misjudges \"Track the void-hidden source answering each engine note\", giving Black Tide Crossing a hard opening before the crew can recover."
             },
             "resourceOptions": [
               "Triangulate echoes",
               "Hide the ship's rhythm"
             ],
-            "vignette": "Track the submerged source answering each engine note."
+            "vignette": "Track the void-hidden source answering each engine note."
           },
           {
             "stationKey": "captain",
@@ -498,7 +498,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
         ],
         "outcomeBranches": {
           "dominantSuccess": {
-            "vignette": "The engine falls out of tune with the tide and the sea loses interest for a precious mile. The crew can feel the ship answer with cleaner motion.",
+            "vignette": "The engine falls out of tune with the tide, and the dark between stars loses interest for a precious mile. The crew can feel the ship answer with cleaner motion.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -523,7 +523,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             ]
           },
           "dominantFailure": {
-            "vignette": "The arkengine coughs black sparks and the crew smells rainwater in sealed compartments. Orders still work, but they arrive under pressure and with less room for mercy.",
+            "vignette": "The arkengine coughs black sparks and the crew smells void-rain in sealed compartments. Orders still work, but they arrive under pressure and with less room for mercy.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -535,7 +535,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             ]
           },
           "catastrophicFailure": {
-            "vignette": "The engine completes the tide's melody, and something enormous changes direction below. The moment should land like a bell through the whole vessel.",
+            "vignette": "The engine completes the tide's melody, and something enormous changes direction beneath the ship's gravity shadow. The moment should land like a bell through the whole vessel.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -560,7 +560,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 4,
         "title": "Shapes Beneath the Wake",
-        "openingVignette": "Long pale backs roll under the wake, never surfacing, always matching the ship's speed. Their movement is too patient for beasts and too hungry for driftwood. The black water rises in shoulders around the hull, trying to herd the vessel where it wants. Every order now sounds louder than it should.",
+        "openingVignette": "Long pale shapes roll beneath the arkengine wake, never crossing fully into the Lifeveil's light, always matching the ship's speed. Their movement is too patient for beasts and too hungry for simple driftwood. The black current rises in gravity swells around the hull, trying to herd the vessel where it wants. Every order now sounds louder than it should.",
         "activeStations": [
           {
             "stationKey": "navigator",
@@ -570,18 +570,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
               "society",
               "sailing-lore"
             ],
-            "playerAction": "Choose whether to take a jagged route or stay steady and avoid reefs, then make the Navigator check for Shapes Beneath the Wake. Tell the table how the crew addresses this problem: Use shoals, crosscurrents, or darkness to break the pursuit line.",
+            "playerAction": "Choose whether to take a jagged route or stay steady and avoid gravity shears, then make the Navigator check for Shapes Beneath the Wake. Tell the table how the crew addresses this problem: Use asteroid shoals, crosscurrents, or darkness to break the pursuit line.",
             "rollFeedback": {
-              "criticalSuccess": "Navigator's work during Shapes Beneath the Wake turns \"Use shoals, crosscurrents, or darkness to break the pursuit line\" into a clear advantage for the crew.",
-              "success": "Navigator resolves \"Use shoals, crosscurrents, or darkness to break the pursuit line\" well enough for the ship to keep its line through Black Tide Crossing.",
-              "failure": "Navigator cannot fully resolve \"Use shoals, crosscurrents, or darkness to break the pursuit line\", and Black Tide Crossing leaves a visible cost behind.",
-              "criticalFailure": "Navigator misjudges \"Use shoals, crosscurrents, or darkness to break the pursuit line\", giving Black Tide Crossing a hard opening before the crew can recover."
+              "criticalSuccess": "Navigator's work during Shapes Beneath the Wake turns \"Use asteroid shoals, crosscurrents, or darkness to break the pursuit line\" into a clear advantage for the crew.",
+              "success": "Navigator resolves \"Use asteroid shoals, crosscurrents, or darkness to break the pursuit line\" well enough for the ship to keep its line through Black Tide Crossing.",
+              "failure": "Navigator cannot fully resolve \"Use asteroid shoals, crosscurrents, or darkness to break the pursuit line\", and Black Tide Crossing leaves a visible cost behind.",
+              "criticalFailure": "Navigator misjudges \"Use asteroid shoals, crosscurrents, or darkness to break the pursuit line\", giving Black Tide Crossing a hard opening before the crew can recover."
             },
             "resourceOptions": [
               "Take a jagged route",
-              "Stay steady and avoid reefs"
+              "Stay steady and avoid gravity shears"
             ],
-            "vignette": "Use shoals, crosscurrents, or darkness to break the pursuit line."
+            "vignette": "Use asteroid shoals, crosscurrents, or darkness to break the pursuit line."
           },
           {
             "stationKey": "engineer",
@@ -693,7 +693,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             "nextRoundNotes": "The final round should feel earned."
           },
           "dominantFailure": {
-            "vignette": "The ship is herded into a narrower lane of black water. Orders still work, but they arrive under pressure and with less room for mercy.",
+            "vignette": "The ship is herded into a narrower lane of black current. Orders still work, but they arrive under pressure and with less room for mercy.",
             "proposedEffects": [
               {
                 "type": "modifier",
@@ -1082,8 +1082,8 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       "watchmaster",
       "captain"
     ],
-    "description": "A dead arkship drifts with a green-white lantern still burning in its bow, too steady to be accident and too inviting to ignore. The wreck promises salvage, clues, and old names scratched into cold brass. It also carries occult residue that can stain the Lifeveil and turn curiosity into a later threat.",
-    "gmSummary": "Run this as a four-round discovery event about deciding how close to come, what to risk, and when to cut the salvage line. Let the lantern be uncanny but practical at the table: it reveals hazards, tempts greed, and marks careless choices. Bad branches stage resource pressure and GM-facing handoff notes only; no fight begins by itself.",
+    "description": "A dead arkship drifts through the void with a green-white lantern still burning in its bow, too steady to be accident and too inviting to ignore. The wreck promises salvage, frozen cargo tags, and old names scratched into cold brass. It also carries occult Lifeveil residue that can stain the airskin and turn curiosity into a later threat.",
+    "gmSummary": "Run this as a four-round discovery event about a dead arkship in a cold orbit: decide how close to come, what to risk, and when to cut the salvage line. Let the lantern be uncanny but practical at the table: it reveals void hazards, tempts greed, and marks careless choices. Bad branches stage resource pressure and GM-facing handoff notes only; no fight begins by itself.",
     "rounds": [
       {
         "round": 1,
@@ -1214,7 +1214,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             ]
           },
           "catastrophicFailure": {
-            "vignette": "A false survivor waves from the bow beneath the lantern, though no living breath fogs the glass. The moment should land like a bell through the whole vessel.",
+            "vignette": "A false survivor signals from the bow beneath the lantern, though no living breath fogs the glass. The moment should land like a bell through the whole vessel.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -1240,7 +1240,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 2,
         "title": "Matching Drift",
-        "openingVignette": "The two ships slide closer, hull to hull, while the witchlight paints every rope with a sickly shine. Broken plates turn slowly along the derelict's side, opening and closing like gills. The lantern never sways, though everything else in the wreck rolls with the drift. Matching speed now means trusting the dead ship not to wake beneath the touch.",
+        "openingVignette": "The two ships slide closer through the starless drift, hull to hull, while the witchlight paints every rope with a sickly shine. Broken plates turn slowly along the derelict's side, opening and closing like failed Lifeveil shutters. The lantern never sways, though everything else in the wreck rolls through dead orbit. Matching speed now means trusting the dead ship not to wake beneath the touch.",
         "activeStations": [
           {
             "stationKey": "navigator",
@@ -1389,7 +1389,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 3,
         "title": "Salvage or Signal",
-        "openingVignette": "The boarding lines go taut, and the derelict receives them without a sound. Air from its seams smells of old wax, cold salt, and papers kept too long in a grave. The lantern's glow reaches across the gap in a narrow path, bright enough to guide boots and hide stains. Somewhere inside, a loose bell taps once and then remembers silence.",
+        "openingVignette": "The boarding lines go taut, and the derelict receives them without a sound. Air from its seams smells of old wax, star-frost, and papers kept too long in a grave. The lantern's glow reaches across the gap in a narrow path, bright enough to guide boots and hide stains. Somewhere inside, a loose bell taps once and then remembers silence.",
         "activeStations": [
           {
             "stationKey": "captain",
@@ -1929,7 +1929,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       "watchmaster",
       "captain"
     ],
-    "description": "A strange fever moves through the ship by way of breath, rumor, and Lifeveil echo. The sickness carries shared dreams, stale air, and emotional static from bunk to bunk until ordinary fatigue feels like haunting. The crew can survive it, but only if discipline, care, and warding hold together.",
+    "description": "A strange fever moves through the voidship by way of breath, rumor, and Lifeveil echo. The sickness carries shared dreams, stale air, and emotional static from bunk to bunk until ordinary fatigue feels like haunting. The crew can survive it, but only if discipline, care, and warding hold together while the airskin keeps flowing.",
     "gmSummary": "Run this as a four-round shipboard crisis using only the Travel Five; do not add a new medical station or new resource rules. Frame checks around recognition, quarantine, fever-dreams, and the final purge. Proposed effects represent morale, supplies, strain, and Lifeveil pressure for later GM review.",
     "rounds": [
       {
@@ -2238,7 +2238,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 3,
         "title": "Fever Dreams",
-        "openingVignette": "Crew on different decks describe the same impossible shoreline and the same child calling from beneath the floorboards. The Lifeveil carries the dream in pulses, turning familiar corridors briefly strange. Sleep becomes dangerous, but exhaustion makes cowards of the strongest hands. The ship must stay on course while its people doubt the evidence of their own senses.",
+        "openingVignette": "Crew on different decks describe the same impossible starfield and the same child calling from beneath the gravity plane. The Lifeveil carries the dream in pulses, turning familiar corridors briefly strange. Sleep becomes dangerous, but exhaustion makes cowards of the strongest hands. The ship must stay on course through the void while its people doubt the evidence of their own senses.",
         "activeStations": [
           {
             "stationKey": "navigator",
@@ -2772,13 +2772,13 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       "watchmaster",
       "captain"
     ],
-    "description": "A kind rescue-light blooms in the void, promising harbor, help, or a marked channel through danger. Its cadence is almost right, but the shadows around it move with patient intent. The ship is being coaxed toward a kill lane of drifting wreckage, hidden raider vectors, and ward-hungry dark.",
+    "description": "A kind rescue-light blooms in the void, promising safe mooring, help, or a marked channel through danger. Its signal-magic cadence is almost right, but the shadows around it move with patient intent. The ship is being coaxed toward a kill lane of drifting wreckage, hidden raider vectors, and ward-hungry dark.",
     "gmSummary": "Run this as quiet tactical dread, not an automatic fight. The beacon may be raiders, an occult lure, a debris trap, or all three depending on what best fits the voyage. Severe results provide combatHandoff metadata only, leaving any later encounter fully at GM discretion.",
     "rounds": [
       {
         "round": 1,
         "title": "The Beacon Calls",
-        "openingVignette": "A pale blue rescue flare opens ahead like a saint's eye in the dark. It repeats a lawful port cadence, then stutters once on a note no harbor bell should know. The void around it is too still, and even loose chains seem to listen. Far beyond the light, broken spars drift in a pattern that might be chance or teeth. The crew wants the signal to be true because a friendly light in the black is a hard mercy to refuse.",
+        "openingVignette": "A pale blue rescue flare opens ahead like a saint's eye in the dark. It repeats a lawful voidport cadence, then stutters once on a note no dock-ring bell should know. The void around it is too still, and even loose chains seem to listen. Far beyond the light, broken spars drift in a pattern that might be chance or teeth. The crew wants the signal to be true because a friendly light in the black is a hard mercy to refuse.",
         "activeStations": [
           {
             "stationKey": "watchmaster",
@@ -2830,18 +2830,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
               "religion",
               "arcana"
             ],
-            "playerAction": "Choose whether to thicken the veil or let a thin thread taste the lure, then make the Veilwarden check for The Beacon Calls. Tell the table how the crew addresses this problem: The Lifeveil tastes brine, warm iron, and a prayer repeated by no living throat.",
+            "playerAction": "Choose whether to thicken the veil or let a thin thread taste the lure, then make the Veilwarden check for The Beacon Calls. Tell the table how the crew addresses this problem: The Lifeveil tastes ozone, warm iron, and a prayer repeated by no living throat.",
             "rollFeedback": {
-              "criticalSuccess": "Veilwarden's work during The Beacon Calls turns \"The Lifeveil tastes brine, warm iron, and a prayer repeated by no living throat\" into a clear advantage for the crew.",
-              "success": "Veilwarden resolves \"The Lifeveil tastes brine, warm iron, and a prayer repeated by no living throat\" well enough for the ship to keep its line through False Beacon Ambush.",
-              "failure": "Veilwarden cannot fully resolve \"The Lifeveil tastes brine, warm iron, and a prayer repeated by no living throat\", and False Beacon Ambush leaves a visible cost behind.",
-              "criticalFailure": "Veilwarden misjudges \"The Lifeveil tastes brine, warm iron, and a prayer repeated by no living throat\", giving False Beacon Ambush a hard opening before the crew can recover."
+              "criticalSuccess": "Veilwarden's work during The Beacon Calls turns \"The Lifeveil tastes ozone, warm iron, and a prayer repeated by no living throat\" into a clear advantage for the crew.",
+              "success": "Veilwarden resolves \"The Lifeveil tastes ozone, warm iron, and a prayer repeated by no living throat\" well enough for the ship to keep its line through False Beacon Ambush.",
+              "failure": "Veilwarden cannot fully resolve \"The Lifeveil tastes ozone, warm iron, and a prayer repeated by no living throat\", and False Beacon Ambush leaves a visible cost behind.",
+              "criticalFailure": "Veilwarden misjudges \"The Lifeveil tastes ozone, warm iron, and a prayer repeated by no living throat\", giving False Beacon Ambush a hard opening before the crew can recover."
             },
             "resourceOptions": [
               "Thicken the veil",
               "Let a thin thread taste the lure"
             ],
-            "vignette": "The Lifeveil tastes brine, warm iron, and a prayer repeated by no living throat."
+            "vignette": "The Lifeveil tastes ozone, warm iron, and a prayer repeated by no living throat."
           },
           {
             "stationKey": "captain",
@@ -3090,7 +3090,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 3,
         "title": "The Net Tightens",
-        "openingVignette": "The false beacon falls behind, yet its light reflects ahead on shards of glass and frozen spray. The ship is inside the prepared lane now. Soft impacts tap the hull from below as if unseen hands are counting ribs. Far astern, masked lamps begin to follow.",
+        "openingVignette": "The false beacon falls behind, yet its light reflects ahead on shards of spellglass and frozen dust. The ship is inside the prepared debris lane now. Soft impacts tap the hull from beneath the gravity plane as if unseen hands are counting ribs. Far astern, masked lamps begin to follow along hidden raider vectors.",
         "activeStations": [
           {
             "stationKey": "engineer",
@@ -3249,7 +3249,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 4,
         "title": "Break the Kill Lane",
-        "openingVignette": "A gap opens ahead where the debris thins and real stars return. The beacon screams behind the ship now, all kindness burned away. Pursuit, current, and wreckage converge in one final geometry of harm. The next decision decides whether the ship leaves as prey, quarry, or legend.",
+        "openingVignette": "A gap opens ahead where the debris thins and real stars return. The beacon screams behind the ship now, all kindness burned away. Pursuit, gravity shear, and wreckage converge in one final geometry of harm. The next decision decides whether the ship leaves as prey, quarry, or legend.",
         "activeStations": [
           {
             "stationKey": "navigator",
@@ -3574,13 +3574,13 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       "watchmaster",
       "captain"
     ],
-    "description": "A bright port, relay station, or free-floating trade platform welcomes the ship with banners, music, and too many ledgers. Every smile carries a fee, every inspection hides a favor, and every delay gives someone leverage. The danger is polite, perfumed, and written in triplicate.",
+    "description": "A bright voidport, relay station, or free-floating trade platform welcomes the ship with banners, music, and too many ledgers. Every smile carries a fee, every inspection hides a favor, and every delay gives someone leverage. The danger is polite, perfumed, and written in triplicate beneath the dock-ring's lanternlight.",
     "gmSummary": "Run this as a social travel event about pressure, etiquette, debt, and crew patience. Dock officials, guild factors, envoys, creditors, or customs clerks can fill the opposing roles. Catastrophic results may point to faction trouble or a later social handoff, but no combat is assumed.",
     "rounds": [
       {
         "round": 1,
         "title": "The Welcome That Costs Money",
-        "openingVignette": "The port unfolds around the ship in tiers of colored glass, hanging gardens, brass cranes, and prayer flags stitched with tariff seals. A delegation waits beneath a silk awning while clerks release glittering receipt-doves into the air. Musicians play a welcome march just loud enough to hide the argument at the customs desk. Every rope thrown to the dock is measured, stamped, and admired by someone holding a fee schedule. The harbor smells of spice, hot ink, and opportunity with a hook inside it.",
+        "openingVignette": "The voidport unfolds around the ship in dock-ring tiers of colored glass, hanging gardens, brass cranes, and prayer flags stitched with tariff seals. A delegation waits beneath a silk awning while clerks release glittering receipt-doves into the Lifeveil. Musicians play a welcome march just loud enough to hide the argument at the customs desk. Every rope thrown to the mooring spur is measured, stamped, and admired by someone holding a fee schedule. The orbital anchorage smells of spice, hot ink, and opportunity with a hook inside it.",
         "activeStations": [
           {
             "stationKey": "captain",
@@ -3730,7 +3730,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 2,
         "title": "Inspection and Delay",
-        "openingVignette": "Morning finds the ship surrounded by rope barriers, polite signs, and clerks carrying lacquered tablets. An inspector with pearl spectacles requests access to spaces no visitor needs to see. A guild factor offers to hasten matters for a favor phrased as a friendship. Around the docks, other crews pretend not to watch and fail beautifully.",
+        "openingVignette": "Morning finds the ship surrounded by rope barriers, polite signs, and clerks carrying lacquered tablets. An inspector with pearl spectacles requests access to spaces no visitor needs to see. A guild factor offers to hasten matters for a favor phrased as a friendship. Around the dock-ring, other crews pretend not to watch and fail beautifully.",
         "activeStations": [
           {
             "stationKey": "captain",
@@ -4042,7 +4042,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       {
         "round": 4,
         "title": "Depart Clean or Owing",
-        "openingVignette": "Departure bells ring across the harbor while clerks hurry like bright beetles under paper shells. The ship's lines are ready, but three signatures, two blessings, and one final invoice stand between deck and open void. The port offers farewell gifts that may be gifts, tracking marks, or insults wrapped in silk. The crew can smell free air beyond the cranes.",
+        "openingVignette": "Departure bells ring across the dock-ring while clerks hurry like bright beetles under paper shells. The ship's lines are ready, but three signatures, two blessings, and one final invoice stand between deck and open void. The voidport offers farewell gifts that may be gifts, tracking marks, or insults wrapped in silk. The crew can taste free airskin and star-cold beyond the cranes.",
         "activeStations": [
           {
             "stationKey": "captain",
@@ -4073,18 +4073,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
               "society",
               "survival"
             ],
-            "playerAction": "Choose whether to take the busy lane or wait for a quiet bell, then make the Navigator check for Depart Clean or Owing. Tell the table how the crew addresses this problem: The harbor lanes are crowded exactly where delay would be most embarrassing.",
+            "playerAction": "Choose whether to take the busy lane or wait for a quiet bell, then make the Navigator check for Depart Clean or Owing. Tell the table how the crew addresses this problem: The dock-ring lanes are crowded exactly where delay would be most embarrassing.",
             "rollFeedback": {
-              "criticalSuccess": "Navigator's work during Depart Clean or Owing turns \"The harbor lanes are crowded exactly where delay would be most embarrassing\" into a clear advantage for the crew.",
-              "success": "Navigator resolves \"The harbor lanes are crowded exactly where delay would be most embarrassing\" well enough for the ship to keep its line through Portside Diplomatic Snare.",
-              "failure": "Navigator cannot fully resolve \"The harbor lanes are crowded exactly where delay would be most embarrassing\", and Portside Diplomatic Snare leaves a visible cost behind.",
-              "criticalFailure": "Navigator misjudges \"The harbor lanes are crowded exactly where delay would be most embarrassing\", giving Portside Diplomatic Snare a hard opening before the crew can recover."
+              "criticalSuccess": "Navigator's work during Depart Clean or Owing turns \"The dock-ring lanes are crowded exactly where delay would be most embarrassing\" into a clear advantage for the crew.",
+              "success": "Navigator resolves \"The dock-ring lanes are crowded exactly where delay would be most embarrassing\" well enough for the ship to keep its line through Portside Diplomatic Snare.",
+              "failure": "Navigator cannot fully resolve \"The dock-ring lanes are crowded exactly where delay would be most embarrassing\", and Portside Diplomatic Snare leaves a visible cost behind.",
+              "criticalFailure": "Navigator misjudges \"The dock-ring lanes are crowded exactly where delay would be most embarrassing\", giving Portside Diplomatic Snare a hard opening before the crew can recover."
             },
             "resourceOptions": [
               "Take the busy lane",
               "Wait for a quiet bell"
             ],
-            "vignette": "The harbor lanes are crowded exactly where delay would be most embarrassing."
+            "vignette": "The dock-ring lanes are crowded exactly where delay would be most embarrassing."
           },
           {
             "stationKey": "engineer",
@@ -4131,7 +4131,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
         ],
         "outcomeBranches": {
           "dominantSuccess": {
-            "vignette": "The ship departs under its own name and no one else's claim. The port's banners shrink behind the stern while the crew laughs at fees that failed to land. Even the harbor clerks seem to admire the clean exit.",
+            "vignette": "The ship departs under its own name and no one else's claim. The port's banners shrink behind the stern while the crew laughs at fees that failed to land. Even the customs clerks seem to admire the clean exit.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -4143,7 +4143,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             ]
           },
           "mixed": {
-            "vignette": "The ship leaves with papers in order and tempers frayed. A few stores remain behind as the price of speed. The crew is glad to be gone and wiser about beautiful harbors.",
+            "vignette": "The ship leaves with papers in order and tempers frayed. A few stores remain behind as the price of speed. The crew is glad to be gone and wiser about beautiful voidports.",
             "proposedEffects": [
               {
                 "type": "resource",
@@ -4175,7 +4175,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             "handoffNotes": "Potential later social handoff: creditor, guild factor, or offended envoy. No combat starts automatically."
           },
           "catastrophicFailure": {
-            "vignette": "The ship departs only after accepting a public obligation or humiliating delay. The port waves farewell as if it has purchased a piece of the voyage. Nobody draws a blade, but the crew feels the cut all the same.",
+            "vignette": "The ship departs only after accepting a public obligation or humiliating delay. The voidport signals farewell as if it has purchased a piece of the voyage. Nobody draws a blade, but the crew feels the cut all the same.",
             "proposedEffects": [
               {
                 "type": "resource",

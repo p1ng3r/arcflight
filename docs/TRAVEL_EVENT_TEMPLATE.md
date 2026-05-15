@@ -157,6 +157,8 @@ Arcflight travel events should feel like high fantasy voidsailing:
 
 Use broad genre inspiration only. Do not imitate any specific author’s wording. Do not use grim political brutality or a Game of Thrones-style tone.
 
+Arcflight ships are voidsailing space vessels crossing the Star Sea, Black Tides, and the Void Between Fires. Nautical words are acceptable as ship culture or metaphor, but travel events should frame the environment as magical voidsailing and should not read like mundane ocean travel.
+
 ## Proposed Effects Supported MVP Shape
 
 `proposedEffects` are staged data objects. They may describe resource changes or GM-facing modifiers, but the event data must not contain executable functions.
