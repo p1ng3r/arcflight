@@ -242,6 +242,16 @@ function hasTravelPromptAuthoringFields(prompt = {}) {
     && ["criticalSuccess", "success", "failure", "criticalFailure"].every((degree) => typeof prompt.rollFeedback?.[degree] === "string" && prompt.rollFeedback[degree].trim().length > 0);
 }
 
+function hasNoGenericTravelPromptDefaults(prompt = {}) {
+  const feedbackText = Object.values(prompt.rollFeedback ?? {}).join(" ");
+  return !prompt.playerAction?.startsWith?.("Describe how ")
+    && !feedbackText.includes("turns the moment")
+    && !feedbackText.includes("keeps the moment")
+    && !feedbackText.includes("confronts this travel pressure")
+    && !feedbackText.includes("into a clean advantage")
+    && !feedbackText.includes("under control");
+}
+
 function hasCoreWeaponFoundationData(weapon = {}) {
   return typeof weapon.size === "string"
     && weapon.size.length > 0
@@ -395,6 +405,7 @@ export async function runFrameworkSmokeTest(options = {}) {
       checkEqual(result, `${coreTravelEvent?.name ?? eventKey} has expected round count`, EXPECTED_CORE_TRAVEL_EVENT_ROUND_COUNTS[eventKey], coreTravelEvent?.rounds?.length ?? 0);
       check(result, `${coreTravelEvent?.name ?? eventKey} roundCount matches rounds length`, coreTravelEvent?.roundCount === coreTravelEvent?.rounds?.length, coreTravelEvent?.roundCount, coreTravelEvent?.rounds?.length ?? 0);
       check(result, `${coreTravelEvent?.name ?? eventKey} station prompts have playerAction and rollFeedback`, prompts.every((prompt) => hasTravelPromptAuthoringFields(prompt)), true, prompts.filter((prompt) => !hasTravelPromptAuthoringFields(prompt)).map((prompt) => ({ stationKey: prompt.stationKey, playerAction: prompt.playerAction, rollFeedback: prompt.rollFeedback })));
+      check(result, `${coreTravelEvent?.name ?? eventKey} station prompts avoid generic authoring defaults`, prompts.every((prompt) => hasNoGenericTravelPromptDefaults(prompt)), true, prompts.filter((prompt) => !hasNoGenericTravelPromptDefaults(prompt)).map((prompt) => ({ stationKey: prompt.stationKey, playerAction: prompt.playerAction, rollFeedback: prompt.rollFeedback })));
       check(result, `${coreTravelEvent?.name ?? eventKey} active stations are Travel Five only`, activeStations.every((stationKey) => travelFiveStationKeys.includes(stationKey)), true, [...new Set(activeStations.filter((stationKey) => !travelFiveStationKeys.includes(stationKey)))]);
       check(result, `${coreTravelEvent?.name ?? eventKey} activeResources use known travel resources`, (coreTravelEvent?.activeResources ?? []).every((resource) => travelResourceValues.includes(resource)), true, (coreTravelEvent?.activeResources ?? []).filter((resource) => !travelResourceValues.includes(resource)));
     }
