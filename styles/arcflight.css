@@ -630,6 +630,7 @@
 .arcflight-travel-runner__summary,
 .arcflight-travel-runner__totals,
 .arcflight-travel-runner__manual-entry,
+.arcflight-travel-runner__roll-entry,
 .arcflight-travel-runner__controls {
   display: flex;
   gap: 0.75rem;
@@ -694,14 +695,31 @@
   padding-left: 0.5rem;
 }
 
-.arcflight-travel-runner__manual-entry .arcflight-sheet__field {
+.arcflight-travel-runner__manual-entry .arcflight-sheet__field,
+.arcflight-travel-runner__roll-entry .arcflight-sheet__field {
   min-width: min(10rem, 100%);
 }
 
 .arcflight-travel-runner__manual-entry input,
-.arcflight-travel-runner__manual-entry select {
+.arcflight-travel-runner__manual-entry select,
+.arcflight-travel-runner__roll-entry select {
   min-width: 0;
   max-width: 100%;
+}
+
+.arcflight-travel-runner__roll-entry {
+  align-items: flex-end;
+  margin-top: 0.5rem;
+}
+
+.arcflight-travel-runner__dc-readout {
+  min-width: 6rem;
+}
+
+.arcflight-travel-runner__dc-readout span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
 }
 
 .arcflight-travel-runner__controls {

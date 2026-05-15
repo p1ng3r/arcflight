@@ -59,6 +59,26 @@
               </header>
               <p class="arcflight-travel-runner__vignette">{{vignette}}</p>
               <p><strong>Suggested Skills:</strong> {{#if suggestedSkillsLabel}}{{suggestedSkillsLabel}}{{else}}—{{/if}}</p>
+              <p><strong>Assigned Actor:</strong> {{assignedActorName}}</p>
+              {{#if assignmentHint}}<p class="arcflight-sheet__hint">{{assignmentHint}}</p>{{/if}}
+              {{#if hasStatisticOptions}}
+                <div class="arcflight-travel-runner__roll-entry">
+                  <label class="arcflight-sheet__field">
+                    <span>Statistic</span>
+                    <select data-arcflight-statistic {{#if hasExistingResult}}disabled{{/if}}>
+                      {{#each statisticOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  <div class="arcflight-travel-runner__dc-readout">
+                    <span>Effective DC</span>
+                    <strong>{{effectiveDCLabel}}</strong>
+                  </div>
+                  <button type="button" data-arcflight-roll-station-prompt {{#unless canRoll}}disabled{{/unless}}>Roll Assigned Actor</button>
+                </div>
+                <p class="arcflight-sheet__hint">PF2E roll records the result automatically when degree is available. Manual result remains available as fallback.</p>
+              {{else}}
+                <p class="arcflight-sheet__hint">No suggested statistic is available. Use manual result entry.</p>
+              {{/if}}
               {{#if hasResourceOptions}}
                 <p><strong>Resource Options:</strong></p>
                 <ul>
@@ -71,25 +91,24 @@
                   <strong>Existing Result:</strong> {{existingResultLabel}}{{#if existingResult.actorName}} by {{existingResult.actorName}}{{/if}}{{#if existingResult.notes}} — {{existingResult.notes}}{{/if}}
                 </div>
                 <p class="arcflight-sheet__hint">One primary result per station per round is allowed. Duplicate recording is blocked in this MVP.</p>
-              {{else}}
-                <div class="arcflight-travel-runner__manual-entry">
-                  <label class="arcflight-sheet__field">
-                    <span>Degree</span>
-                    <select data-arcflight-degree>
-                      {{#each degreeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-                    </select>
-                  </label>
-                  <label class="arcflight-sheet__field">
-                    <span>Actor Name (optional)</span>
-                    <input type="text" data-arcflight-actor-name placeholder="Crew or PC name">
-                  </label>
-                  <label class="arcflight-sheet__field arcflight-sheet__field--grow">
-                    <span>Notes (optional)</span>
-                    <input type="text" data-arcflight-notes placeholder="Short GM note">
-                  </label>
-                  <button type="button" data-arcflight-record-station-result {{#unless canRecord}}disabled{{/unless}}>Record Result</button>
-                </div>
               {{/if}}
+              <div class="arcflight-travel-runner__manual-entry">
+                <label class="arcflight-sheet__field">
+                  <span>Degree</span>
+                  <select data-arcflight-degree {{#if hasExistingResult}}disabled{{/if}}>
+                    {{#each degreeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                  </select>
+                </label>
+                <label class="arcflight-sheet__field">
+                  <span>Actor Name (optional)</span>
+                  <input type="text" data-arcflight-actor-name placeholder="Crew or PC name" {{#if hasExistingResult}}disabled{{/if}}>
+                </label>
+                <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+                  <span>Notes (optional)</span>
+                  <input type="text" data-arcflight-notes placeholder="Short GM note" {{#if hasExistingResult}}disabled{{/if}}>
+                </label>
+                <button type="button" data-arcflight-record-station-result {{#unless canRecord}}disabled{{/unless}}>Record Result</button>
+              </div>
             </article>
           {{/each}}
         </div>

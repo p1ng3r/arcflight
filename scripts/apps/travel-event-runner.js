@@ -1,7 +1,7 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { getCoreTravelEvent } from "../../data/travel-events/core-travel-events.js";
 import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESULT_TIERS } from "../config/constants.js";
-import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../documents/ships.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
 import {
   advanceShipTravelEventRound,
   clearShipTravelEvent,
@@ -10,6 +10,7 @@ import {
   recordShipTravelStationResult,
   startShipTravelEvent
 } from "../helpers/ship-travel-event-state.js";
+import { getPf2eRollTotal, normalizePf2eStatisticKey, resolvePf2eActorStatistic, rollPf2eStatistic } from "../helpers/pf2e-statistics.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -17,6 +18,7 @@ const BLACK_TIDE_CROSSING_KEY = "black-tide-crossing";
 const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-start-black-tide]",
   "[data-arcflight-record-station-result]",
+  "[data-arcflight-roll-station-prompt]",
   "[data-arcflight-advance-travel-round]",
   "[data-arcflight-complete-travel-event]",
   "[data-arcflight-clear-travel-event]"
@@ -82,27 +84,93 @@ function getPrimaryStationResult(roundState, stationKey) {
   return roundState?.stationResults?.find((result) => result.stationKey === stationKey && result.primary !== false) ?? null;
 }
 
-function prepareStationPromptRows(roundDefinition, roundState) {
-  return (roundDefinition?.activeStations ?? []).map((prompt) => {
+function numericModifier(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function calculateEffectiveTravelDc(activeEvent, roundDefinition, prompt) {
+  const baseDC = Number(activeEvent?.baseDC);
+  if (!Number.isFinite(baseDC)) return null;
+  return baseDC + numericModifier(roundDefinition?.dcModifier) + numericModifier(prompt?.dcModifier);
+}
+
+function getStatisticOptions(prompt, station) {
+  const suggestedSkills = Array.isArray(prompt?.suggestedSkills) && prompt.suggestedSkills.length > 0
+    ? prompt.suggestedSkills
+    : station?.primarySkills ?? [];
+
+  return Array.from(new Set(suggestedSkills.map((skill) => normalizePf2eStatisticKey(skill)).filter(Boolean)))
+    .map((value, index) => ({
+      value,
+      label: humanizeIdentifier(value),
+      selected: index === 0
+    }));
+}
+
+function getStationAssignment(shipActor, stationKey) {
+  if (!shipActor || !stationKey) return null;
+  return getArcflightShipData(shipActor)?.stations?.assignments?.[stationKey] ?? null;
+}
+
+export async function resolveTravelStationAssignedActor(shipActor, stationKey) {
+  const assignment = stationKey ? getStationAssignment(shipActor, stationKey) : null;
+  if (!assignment) return { assignment: null, actor: null, actorResolved: false, actorName: "", actorId: "", actorUuid: "" };
+
+  let actor = null;
+  if (assignment.actorUuid && typeof globalThis.fromUuid === "function") {
+    try {
+      actor = await globalThis.fromUuid(assignment.actorUuid);
+    } catch (error) {
+      console.warn("Arcflight | Could not resolve travel station assigned actor UUID.", { stationKey, actorUuid: assignment.actorUuid, error });
+    }
+  }
+
+  if (!actor && assignment.actorId) actor = globalThis.game?.actors?.get?.(assignment.actorId) ?? null;
+
+  return {
+    assignment: cloneData(assignment),
+    actor,
+    actorResolved: Boolean(actor),
+    actorName: actor?.name ?? assignment.name ?? "",
+    actorId: actor?.id ?? assignment.actorId ?? "",
+    actorUuid: actor?.uuid ?? assignment.actorUuid ?? ""
+  };
+}
+
+async function prepareStationPromptRows(shipActor, activeEvent, roundDefinition, roundState) {
+  return Promise.all((roundDefinition?.activeStations ?? []).map(async (prompt) => {
     const stationKey = prompt.stationKey ?? "";
     const station = getStation(stationKey) ?? {};
     const existingResult = getPrimaryStationResult(roundState, stationKey);
+    const statisticOptions = getStatisticOptions(prompt, station);
+    const assignmentResolution = await resolveTravelStationAssignedActor(shipActor, stationKey);
+    const effectiveDC = calculateEffectiveTravelDc(activeEvent, roundDefinition, prompt);
+    const canRecord = !existingResult && roundState?.status !== "completed";
 
     return {
       ...cloneData(prompt),
       stationKey,
-      stationName: station.name || humanizeIdentifier(stationKey),
-      suggestedSkills: Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : station.primarySkills ?? [],
-      suggestedSkillsLabel: (Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : station.primarySkills ?? []).join(", "),
+      stationName: station.displayName || station.name || humanizeIdentifier(stationKey),
+      assignedActorName: assignmentResolution.actorName || "Unassigned",
+      hasAssignedActor: assignmentResolution.actorResolved,
+      assignmentHint: assignmentResolution.actorResolved ? "" : "No assigned actor. Use manual result entry.",
+      suggestedSkills: statisticOptions.map((option) => option.value),
+      suggestedSkillsLabel: statisticOptions.map((option) => option.label).join(", "),
+      statisticOptions,
+      hasStatisticOptions: statisticOptions.length > 0,
+      effectiveDC,
+      effectiveDCLabel: effectiveDC === null ? "—" : String(effectiveDC),
       resourceOptions: Array.isArray(prompt.resourceOptions) ? prompt.resourceOptions : [],
       hasResourceOptions: Array.isArray(prompt.resourceOptions) && prompt.resourceOptions.length > 0,
       existingResult,
       hasExistingResult: Boolean(existingResult),
       existingResultLabel: existingResult ? humanizeIdentifier(existingResult.degreeOfSuccess) : "",
       degreeOptions: DEGREE_OPTIONS.map((option) => ({ ...option, selected: option.value === ARCFLIGHT_TRAVEL_RESULT_TIERS.SUCCESS })),
-      canRecord: !existingResult && roundState?.status !== "completed"
+      canRecord,
+      canRoll: canRecord && assignmentResolution.actorResolved && statisticOptions.length > 0
     };
-  });
+  }));
 }
 
 function prepareCompletedRoundEffects(activeEvent = {}) {
@@ -135,7 +203,7 @@ function prepareLastCompletedSummary(state = {}) {
   };
 }
 
-function prepareActiveEventContext(activeEvent) {
+async function prepareActiveEventContext(shipActor, activeEvent) {
   const eventDefinition = getCoreTravelEvent(activeEvent.eventKey);
   const currentRound = getRoundState(activeEvent, activeEvent.currentRound);
   const currentRoundDefinition = getRoundDefinition(eventDefinition, activeEvent.currentRound);
@@ -151,7 +219,7 @@ function prepareActiveEventContext(activeEvent) {
     currentRoundDefinition,
     currentRoundTitle: currentRoundDefinition?.title ?? `Round ${activeEvent.currentRound}`,
     currentRoundVignette: currentRoundDefinition?.openingVignette ?? "",
-    stationPrompts: prepareStationPromptRows(currentRoundDefinition, currentRound),
+    stationPrompts: await prepareStationPromptRows(shipActor, activeEvent, currentRoundDefinition, currentRound),
     hasStationPrompts: (currentRoundDefinition?.activeStations ?? []).length > 0,
     stagedRoundEffects: prepareCompletedRoundEffects(activeEvent),
     hasStagedRoundEffects: prepareCompletedRoundEffects(activeEvent).length > 0,
@@ -175,6 +243,40 @@ export function assertArcflightTravelRunnerShipActor(shipActor) {
   if (!isArcflightTravelRunnerShipActor(shipActor)) {
     throw new Error("Arcflight | Travel Event Runner requires an Arcflight-enabled PF2E vehicle actor.");
   }
+}
+
+function normalizeTravelRollDegree(degree) {
+  if (degree === ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_SUCCESS || degree === 3 || degree === "3") return ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_SUCCESS;
+  if (degree === ARCFLIGHT_TRAVEL_RESULT_TIERS.SUCCESS || degree === 2 || degree === "2") return ARCFLIGHT_TRAVEL_RESULT_TIERS.SUCCESS;
+  if (degree === ARCFLIGHT_TRAVEL_RESULT_TIERS.FAILURE || degree === 1 || degree === "1") return ARCFLIGHT_TRAVEL_RESULT_TIERS.FAILURE;
+  if (degree === ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_FAILURE || degree === 0 || degree === "0") return ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_FAILURE;
+  return "";
+}
+
+function getRollDegree(rollResult) {
+  return rollResult?.degreeOfSuccess
+    ?? rollResult?.degree
+    ?? rollResult?.roll?.degreeOfSuccess
+    ?? rollResult?.roll?.degree
+    ?? null;
+}
+
+function getRollId(rollResult) {
+  return rollResult?.rollId ?? rollResult?.id ?? rollResult?.roll?.id ?? "";
+}
+
+function getMessageId(rollResult) {
+  return rollResult?.messageId ?? rollResult?.message?.id ?? rollResult?.message?._id ?? rollResult?.roll?.message?.id ?? rollResult?.roll?.messageId ?? "";
+}
+
+function getActiveRollContext(activeEvent) {
+  const eventDefinition = getCoreTravelEvent(activeEvent?.eventKey);
+  const roundDefinition = getRoundDefinition(eventDefinition, activeEvent?.currentRound);
+  return {
+    eventDefinition,
+    roundDefinition,
+    roundState: getRoundState(activeEvent, activeEvent?.currentRound)
+  };
 }
 
 async function confirmClearActiveEvent(shipActor) {
@@ -226,7 +328,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const state = getShipTravelEventState(this.shipActor);
-    const activeEvent = state.activeEvent ? prepareActiveEventContext(state.activeEvent) : null;
+    const activeEvent = state.activeEvent ? await prepareActiveEventContext(this.shipActor, state.activeEvent) : null;
     const lastCompletedEvent = prepareLastCompletedSummary(state);
 
     return {
@@ -240,7 +342,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       lastCompletedEvent,
       hasLastCompletedEvent: Boolean(lastCompletedEvent),
       canStartBlackTideCrossing: !activeEvent,
-      noAutomationHint: "Staged effects are preview-only. This runner does not mutate travel resources, spend AP/RAP, roll PF2E statistics, or start combat."
+      noAutomationHint: "Staged effects are preview-only. This runner does not mutate travel resources, spend AP/RAP, apply staged effects, or start combat."
     };
   }
 
@@ -257,6 +359,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     if (target.hasAttribute("data-arcflight-start-black-tide")) return await this.#onStartBlackTideCrossing(event);
     if (target.hasAttribute("data-arcflight-record-station-result")) return await this.#onRecordStationResult(event);
+    if (target.hasAttribute("data-arcflight-roll-station-prompt")) return await this.#onRollStationPrompt(event);
     if (target.hasAttribute("data-arcflight-advance-travel-round")) return await this.#onAdvanceRound(event);
     if (target.hasAttribute("data-arcflight-complete-travel-event")) return await this.#onCompleteEvent(event);
     if (target.hasAttribute("data-arcflight-clear-travel-event")) return await this.#onClearEvent(event);
@@ -296,6 +399,81 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not record that station result.");
       console.warn("Arcflight | Travel runner station result failed.", error);
+    }
+  }
+
+  async #onRollStationPrompt(event) {
+    event.preventDefault();
+
+    const stationElement = event.target?.closest?.("[data-arcflight-station-prompt]")
+      ?? event.currentTarget?.closest?.("[data-arcflight-station-prompt]");
+    const stationKey = stationElement?.dataset?.stationKey ?? "";
+    const statisticKey = normalizePf2eStatisticKey(stationElement?.querySelector?.("[data-arcflight-statistic]")?.value ?? "");
+
+    try {
+      const state = getShipTravelEventState(this.shipActor);
+      const activeEvent = state.activeEvent;
+      if (!activeEvent) throw new Error("Arcflight | No active travel event is available for rolling.");
+
+      const { eventDefinition, roundDefinition, roundState } = getActiveRollContext(activeEvent);
+      if (getPrimaryStationResult(roundState, stationKey)) throw new Error(`Arcflight | ${stationKey} already has a primary result for travel round ${roundState?.round ?? activeEvent.currentRound}.`);
+
+      if (!statisticKey) throw new Error("Arcflight | Select a PF2E statistic before rolling this travel prompt.");
+
+      const assignmentResolution = await resolveTravelStationAssignedActor(this.shipActor, stationKey);
+      if (!assignmentResolution.actor) throw new Error("Arcflight | No assigned actor. Use manual result entry.");
+
+      const statisticResolution = resolvePf2eActorStatistic(assignmentResolution.actor, statisticKey);
+      if (!statisticResolution.ok) throw new Error(statisticResolution.message || `Arcflight | Could not resolve ${statisticKey} on ${assignmentResolution.actorName || "assigned actor"}.`);
+
+      const prompt = roundDefinition?.activeStations?.find((entry) => entry.stationKey === stationKey) ?? {};
+      const station = getStation(stationKey) ?? {};
+      const stationName = station.displayName || station.name || humanizeIdentifier(stationKey);
+      const roundTitle = roundDefinition?.title ?? `Round ${activeEvent.currentRound}`;
+      const effectiveDC = calculateEffectiveTravelDc(activeEvent, roundDefinition, prompt);
+      const rollResult = await rollPf2eStatistic(assignmentResolution.actor, statisticResolution.statistic, {
+        event,
+        title: `Arcflight Travel: ${activeEvent.eventName || eventDefinition?.name || humanizeIdentifier(activeEvent.eventKey)} — ${stationName}`,
+        label: `${roundTitle} — ${stationName}`,
+        slug: `arcflight-travel-${activeEvent.eventKey}-${stationKey}`,
+        action: "arcflight-travel",
+        dc: effectiveDC ?? undefined,
+        extraRollOptions: [
+          "arcflight",
+          "arcflight:travel",
+          `arcflight:travel:event:${activeEvent.eventKey}`,
+          `arcflight:travel:station:${stationKey}`,
+          `arcflight:travel:round:${activeEvent.currentRound}`,
+          `arcflight:travel:statistic:${statisticKey}`
+        ],
+        skipDialog: false,
+        createMessage: true
+      });
+
+      if (!rollResult) throw new Error("Arcflight | PF2E statistic roll did not return a result. Use manual result entry.");
+
+      const degreeOfSuccess = normalizeTravelRollDegree(getRollDegree(rollResult));
+      if (!degreeOfSuccess) throw new Error("Arcflight | PF2E roll completed, but no degree of success was available. Use manual result entry.");
+
+      await recordShipTravelStationResult(this.shipActor, {
+        stationKey,
+        actorUuid: assignmentResolution.actorUuid,
+        actorId: assignmentResolution.actorId,
+        actorName: assignmentResolution.actorName,
+        statisticKey,
+        degreeOfSuccess,
+        notes: `PF2E ${humanizeIdentifier(statisticKey)} roll`,
+        rollTotal: getPf2eRollTotal(rollResult),
+        rollId: getRollId(rollResult),
+        messageId: getMessageId(rollResult),
+        source: "pf2e-roll"
+      });
+
+      ui.notifications?.info?.(`Recorded ${humanizeIdentifier(degreeOfSuccess)} for ${stationName}.`);
+      await this.#rerenderAfterAction();
+    } catch (error) {
+      ui.notifications?.warn?.(error.message ?? "Arcflight could not roll that travel station prompt.");
+      console.warn("Arcflight | Travel runner PF2E station prompt roll failed.", { stationKey, statisticKey, error });
     }
   }
 

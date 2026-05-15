@@ -196,6 +196,10 @@ export async function recordShipTravelStationResult(shipActor, resultData = {}) 
     degreeOfSuccess: degree,
     contribution,
     notes: resultData.notes ?? "",
+    rollTotal: resultData.rollTotal ?? null,
+    rollId: resultData.rollId ?? "",
+    messageId: resultData.messageId ?? "",
+    source: resultData.source ?? "manual",
     primary: !allowDuplicateStationResult,
     recordedAt: resultData.recordedAt ?? timestamp(),
     recordedBy: resultData.recordedBy ?? currentUserId()
@@ -215,7 +219,11 @@ export async function recordShipTravelStationResult(shipActor, resultData = {}) 
     round: roundState.round,
     stationKey,
     degreeOfSuccess: degree,
-    contribution
+    contribution,
+    source: resultRecord.source,
+    rollTotal: resultRecord.rollTotal,
+    rollId: resultRecord.rollId,
+    messageId: resultRecord.messageId
   });
 
   await updateTravelEventState(shipActor, state);
