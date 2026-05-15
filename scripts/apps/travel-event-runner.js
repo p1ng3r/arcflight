@@ -1,5 +1,5 @@
 import { getStation } from "../../data/stations/core-stations.js";
-import { getCoreTravelEvent } from "../../data/travel-events/core-travel-events.js";
+import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESULT_TIERS } from "../config/constants.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getArcflightShipData } from "../documents/ships.js";
 import {
@@ -16,9 +16,9 @@ import { getPf2eRollTotal, normalizePf2eStatisticKey, resolvePf2eActorStatistic,
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-const BLACK_TIDE_CROSSING_KEY = "black-tide-crossing";
+const DEFAULT_TRAVEL_EVENT_KEY = "black-tide-crossing";
 const RUNNER_CLICK_SELECTOR = [
-  "[data-arcflight-start-black-tide]",
+  "[data-arcflight-start-selected-travel-event]",
   "[data-arcflight-record-station-result]",
   "[data-arcflight-roll-station-prompt]",
   "[data-arcflight-advance-travel-round]",
@@ -55,6 +55,45 @@ function formatTimestamp(value) {
   const timestamp = Number(value);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
   return new Date(timestamp).toLocaleString();
+}
+
+
+function getDefaultTravelEventKey() {
+  const keys = getCoreTravelEventKeys();
+  if (keys.includes(DEFAULT_TRAVEL_EVENT_KEY)) return DEFAULT_TRAVEL_EVENT_KEY;
+  return keys[0] ?? "";
+}
+
+function normalizeSelectedTravelEventKey(selectedKey = "") {
+  const keys = getCoreTravelEventKeys();
+  if (selectedKey && keys.includes(selectedKey)) return selectedKey;
+  return getDefaultTravelEventKey();
+}
+
+export function prepareTravelEventLibraryOptions(selectedKey = "") {
+  const normalizedSelectedKey = normalizeSelectedTravelEventKey(selectedKey);
+
+  return getCoreTravelEventKeys()
+    .map((key) => getCoreTravelEvent(key))
+    .filter(Boolean)
+    .map((event) => ({
+      key: event.key,
+      name: event.name || humanizeIdentifier(event.key),
+      category: event.category ?? "",
+      categoryLabel: humanizeIdentifier(event.category),
+      roundCount: Number(event.roundCount) || 0,
+      baseDC: Number(event.baseDC) || 0,
+      description: event.description || event.gmSummary || "",
+      gmSummary: event.gmSummary || "",
+      tags: Array.isArray(event.tags) ? [...event.tags] : [],
+      tagsLabel: Array.isArray(event.tags) ? event.tags.map((tag) => humanizeIdentifier(tag)).join(", ") : "",
+      selected: event.key === normalizedSelectedKey
+    }));
+}
+
+export function prepareSelectedTravelEventLibraryDetails(selectedKey = "") {
+  const options = prepareTravelEventLibraryOptions(selectedKey);
+  return options.find((option) => option.selected) ?? options[0] ?? null;
 }
 
 function prepareEffectRows(shipActor, effects = []) {
@@ -367,11 +406,13 @@ async function confirmClearActiveEvent(shipActor) {
 
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
+  #boundRunnerChange = this.#onRunnerChange.bind(this);
 
   constructor(shipActor, options = {}) {
     assertArcflightTravelRunnerShipActor(shipActor);
     super(options);
     this.shipActor = shipActor;
+    this.selectedEventKey = normalizeSelectedTravelEventKey(options.selectedEventKey ?? DEFAULT_TRAVEL_EVENT_KEY);
   }
 
   static DEFAULT_OPTIONS = {
@@ -398,6 +439,10 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const state = getShipTravelEventState(this.shipActor);
     const activeEvent = state.activeEvent ? await prepareActiveEventContext(this.shipActor, state.activeEvent) : null;
     const lastCompletedEvent = prepareLastCompletedSummary(this.shipActor, state);
+    const selectedEventKey = normalizeSelectedTravelEventKey(this.selectedEventKey);
+    this.selectedEventKey = selectedEventKey;
+    const travelEventOptions = prepareTravelEventLibraryOptions(selectedEventKey);
+    const selectedTravelEvent = prepareSelectedTravelEventLibraryDetails(selectedEventKey);
 
     return {
       ...context,
@@ -409,7 +454,10 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       noActiveEvent: !activeEvent,
       lastCompletedEvent,
       hasLastCompletedEvent: Boolean(lastCompletedEvent),
-      canStartBlackTideCrossing: !activeEvent,
+      travelEventOptions,
+      hasTravelEventOptions: travelEventOptions.length > 0,
+      selectedTravelEvent,
+      hasSelectedTravelEvent: Boolean(selectedTravelEvent),
       noAutomationHint: "Staged effects require explicit GM Apply clicks. This runner never spends AP/RAP, starts combat, creates encounters, or auto-applies effects."
     };
   }
@@ -419,13 +467,15 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     this.element?.removeEventListener("click", this.#boundRunnerClick);
     this.element?.addEventListener("click", this.#boundRunnerClick);
+    this.element?.removeEventListener("change", this.#boundRunnerChange);
+    this.element?.addEventListener("change", this.#boundRunnerChange);
   }
 
   async #onRunnerClick(event) {
     const target = event.target?.closest?.(RUNNER_CLICK_SELECTOR);
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
 
-    if (target.hasAttribute("data-arcflight-start-black-tide")) return await this.#onStartBlackTideCrossing(event);
+    if (target.hasAttribute("data-arcflight-start-selected-travel-event")) return await this.#onStartSelectedTravelEvent(event);
     if (target.hasAttribute("data-arcflight-record-station-result")) return await this.#onRecordStationResult(event);
     if (target.hasAttribute("data-arcflight-roll-station-prompt")) return await this.#onRollStationPrompt(event);
     if (target.hasAttribute("data-arcflight-advance-travel-round")) return await this.#onAdvanceRound(event);
@@ -433,6 +483,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-clear-travel-event")) return await this.#onClearEvent(event);
     if (target.hasAttribute("data-arcflight-apply-staged-effect")) return await this.#onApplyStagedEffect(event, target);
     if (target.hasAttribute("data-arcflight-apply-staged-effects")) return await this.#onApplyStagedEffects(event, target);
+  }
+
+  async #onRunnerChange(event) {
+    const target = event.target?.closest?.("[data-arcflight-travel-event-select]");
+    if (!target || !this.element?.contains(target)) return;
+
+    this.selectedEventKey = normalizeSelectedTravelEventKey(target.value);
+    await this.render(true);
   }
 
   async #rerenderAfterAction() {
@@ -523,16 +581,32 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
   }
 
-  async #onStartBlackTideCrossing(event) {
+  async #onStartSelectedTravelEvent(event) {
     event.preventDefault();
 
+    const selectedEventKey = event.target
+      ?.closest?.(".arcflight-travel-runner__library")
+      ?.querySelector?.("[data-arcflight-travel-event-select]")
+      ?.value ?? "";
+
+    if (!selectedEventKey) {
+      ui.notifications?.warn?.("Select a travel event before starting.");
+      return;
+    }
+
+    const eventDefinition = getCoreTravelEvent(selectedEventKey);
+    if (!eventDefinition) {
+      ui.notifications?.warn?.("Arcflight could not find that core travel event.");
+      return;
+    }
+
     try {
-      await startShipTravelEvent(this.shipActor, BLACK_TIDE_CROSSING_KEY);
-      ui.notifications?.info?.("Started Black Tide Crossing.");
+      await startShipTravelEvent(this.shipActor, selectedEventKey);
+      ui.notifications?.info?.(`Started ${eventDefinition.name || humanizeIdentifier(selectedEventKey)}.`);
       await this.#rerenderAfterAction();
     } catch (error) {
       ui.notifications?.warn?.(error.message ?? "Arcflight could not start that travel event.");
-      console.warn("Arcflight | Travel runner start failed.", error);
+      console.warn("Arcflight | Travel runner start failed.", { selectedEventKey, error });
     }
   }
 

@@ -649,7 +649,8 @@
 .arcflight-travel-runner__stat,
 .arcflight-travel-runner__totals article,
 .arcflight-travel-runner__station,
-.arcflight-travel-runner__effects-group {
+.arcflight-travel-runner__effects-group,
+.arcflight-travel-runner__event-details {
   min-width: 0;
   overflow-wrap: anywhere;
   border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
@@ -710,6 +711,19 @@
 .arcflight-travel-runner__roll-entry {
   align-items: flex-end;
   margin-top: 0.5rem;
+}
+
+.arcflight-travel-runner__event-select {
+  display: block;
+  max-width: 28rem;
+}
+
+.arcflight-travel-runner__event-select select {
+  width: 100%;
+}
+
+.arcflight-travel-runner__event-details {
+  margin: 0.75rem 0;
 }
 
 .arcflight-travel-runner__dc-readout {
