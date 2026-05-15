@@ -95,6 +95,33 @@ function calculateEffectiveTravelDc(activeEvent, roundDefinition, prompt) {
   return baseDC + numericModifier(roundDefinition?.dcModifier) + numericModifier(prompt?.dcModifier);
 }
 
+function getFiniteStatisticModifier(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+export function getResolvedPf2eStatisticModifier(statistic) {
+  return getFiniteStatisticModifier(statistic?.mod)
+    ?? getFiniteStatisticModifier(statistic?.check?.mod)
+    ?? getFiniteStatisticModifier(statistic?.totalModifier)
+    ?? getFiniteStatisticModifier(statistic?.check?.totalModifier)
+    ?? null;
+}
+
+function formatSignedStatisticModifier(modifier) {
+  if (!Number.isFinite(modifier)) return "";
+  return modifier >= 0 ? `+${modifier}` : String(modifier);
+}
+
+export function formatStatisticOptionLabel(statisticKey, resolution = null) {
+  const baseLabel = humanizeIdentifier(statisticKey);
+  if (!resolution) return baseLabel;
+  if (!resolution.ok) return `${baseLabel} (unavailable)`;
+
+  const modifier = getResolvedPf2eStatisticModifier(resolution.statistic);
+  const modifierLabel = formatSignedStatisticModifier(modifier);
+  return modifierLabel ? `${baseLabel} (${modifierLabel})` : baseLabel;
+}
+
 function getStatisticOptions(prompt, station) {
   const suggestedSkills = Array.isArray(prompt?.suggestedSkills) && prompt.suggestedSkills.length > 0
     ? prompt.suggestedSkills
@@ -143,8 +170,24 @@ async function prepareStationPromptRows(shipActor, activeEvent, roundDefinition,
     const stationKey = prompt.stationKey ?? "";
     const station = getStation(stationKey) ?? {};
     const existingResult = getPrimaryStationResult(roundState, stationKey);
-    const statisticOptions = getStatisticOptions(prompt, station);
+    const baseStatisticOptions = getStatisticOptions(prompt, station);
     const assignmentResolution = await resolveTravelStationAssignedActor(shipActor, stationKey);
+    const statisticOptions = baseStatisticOptions.map((option) => {
+      const resolution = assignmentResolution.actor
+        ? resolvePf2eActorStatistic(assignmentResolution.actor, option.value)
+        : null;
+      const modifier = resolution?.ok ? getResolvedPf2eStatisticModifier(resolution.statistic) : null;
+      const modifierLabel = formatSignedStatisticModifier(modifier);
+
+      return {
+        ...option,
+        label: formatStatisticOptionLabel(option.value, resolution),
+        modifier,
+        modifierLabel,
+        resolved: Boolean(resolution?.ok),
+        unavailable: Boolean(assignmentResolution.actor && !resolution?.ok)
+      };
+    });
     const effectiveDC = calculateEffectiveTravelDc(activeEvent, roundDefinition, prompt);
     const canRecord = !existingResult && roundState?.status !== "completed";
 
