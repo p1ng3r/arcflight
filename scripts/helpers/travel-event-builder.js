@@ -12,6 +12,11 @@ const ROUND_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_OU
 const FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
 const DEFAULT_CATEGORY = ARCFLIGHT_TRAVEL_EVENT_CATEGORIES.DISCOVERY;
 const DEFAULT_BASE_DC = 18;
+const DEFAULT_ROUND_COUNT = 4;
+const DEFAULT_FUTURE_AUTOMATION_NOTES = Object.freeze([
+  "Metadata only; keep proposed effects staged for GM review.",
+  "Do not add executable code, event-running side effects, combat automation, or ship actor mutation."
+]);
 
 function cloneData(value) {
   if (value == null) return value;
@@ -81,9 +86,9 @@ export function createTravelBuilderResourceEffect(options = {}) {
   return {
     type: "resource",
     resource: TRAVEL_RESOURCE_KEYS.includes(options.resource) ? options.resource : ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES,
-    delta: Number.isFinite(options.delta) ? options.delta : 0,
-    label: stringValue(options.label, "Proposed resource effect"),
-    notes: stringValue(options.notes, "Staged data only; not automatically applied.")
+    mode: ["add", "set"].includes(options.mode) ? options.mode : "add",
+    value: Number.isFinite(options.value) ? options.value : 0,
+    label: stringValue(options.label, "Proposed resource effect")
   };
 }
 
@@ -144,7 +149,7 @@ function normalizeRound(value, fallbackRound, travelStations) {
 
 export function createTravelEventDraft(options = {}) {
   const source = asObject(options);
-  const roundCount = integerValue(source.roundCount, 1);
+  const roundCount = integerValue(source.roundCount, DEFAULT_ROUND_COUNT);
   const travelStations = uniqueKnownValues(source.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS);
   const activeResources = uniqueKnownValues(source.activeResources, TRAVEL_RESOURCE_KEYS, TRAVEL_RESOURCE_KEYS);
   const category = TRAVEL_CATEGORY_KEYS.includes(source.category) ? source.category : DEFAULT_CATEGORY;
@@ -168,7 +173,7 @@ export function createTravelEventDraft(options = {}) {
 
 export function normalizeTravelEventDraft(draft) {
   const source = asObject(draft);
-  const roundCount = integerValue(source.roundCount, 1);
+  const roundCount = integerValue(source.roundCount, DEFAULT_ROUND_COUNT);
   const travelStations = uniqueKnownValues(source.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS);
   const activeResources = uniqueKnownValues(source.activeResources, TRAVEL_RESOURCE_KEYS, TRAVEL_RESOURCE_KEYS);
   const category = TRAVEL_CATEGORY_KEYS.includes(source.category) ? source.category : DEFAULT_CATEGORY;
@@ -188,7 +193,7 @@ export function normalizeTravelEventDraft(draft) {
     rounds,
     finalOutcomes: normalizeFinalOutcomes(source.finalOutcomes),
     rewards: Array.isArray(source.rewards) ? cloneData(source.rewards) : [],
-    futureAutomationNotes: stringValue(source.futureAutomationNotes, "Metadata only. Do not include executable code, travel action economy use, automatic combat start, or automatic staged effect application."),
+    futureAutomationNotes: Array.isArray(source.futureAutomationNotes) ? cloneData(source.futureAutomationNotes) : [...DEFAULT_FUTURE_AUTOMATION_NOTES],
     [BUILDER_METADATA_KEY]: {
       version: TRAVEL_EVENT_BUILDER_VERSION,
       status: "draft",
@@ -206,7 +211,7 @@ export function validateTravelEventDraft(draft, options = {}) {
   const validation = validateTravelEventDefinition(draft, { strictAuthoring: true, ...(options.validationOptions ?? {}) });
   errors.push(...validation.errors);
   warnings.push(...validation.warnings);
-  return { ok: errors.length === 0, errors, warnings };
+  return { ok: errors.length === 0, errors, warnings, normalizedDraft: normalizeTravelEventDraft(draft) };
 }
 
 export function finalizeTravelEventDraft(draft, options = {}) {
