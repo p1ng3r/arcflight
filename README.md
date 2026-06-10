@@ -43,12 +43,6 @@ Template helpers such as `createBlankTravelEventTemplate`, `createBlankStationPr
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` support console inspection and future UI preparation, including core travel event lookups, Travel Five keys, degree contribution mapping, round/event outcome helpers, validation, event summaries, round summaries, and station prompt summaries. These helpers clone summary data and return validation messages instead of throwing for missing events.
 
-### Travel Event Builder Foundation
-
-Arcflight includes backend-only Travel Event Builder foundation helpers for creating, normalizing, validating, previewing, and finalizing editable travel event drafts. Draft import/export helpers are also available for future GM-facing copy/paste or file workflows: `exportTravelEventDraftToJson`, `importTravelEventDraftFromJson`, `importTravelEventDraftFromData`, `exportFinalTravelEventToJson`, `parseTravelEventBuilderJson`, and `prepareTravelEventBuilderExportPreview`. These helpers are exposed on both `game.arcflight` and `game.arcflight.devTools`.
-
-The Builder IO layer is helper-only. It validates imported JSON safely, normalizes drafts through the builder foundation, can preserve work-in-progress drafts, and exports finalized travel event definitions as data-only JSON without builder metadata by default. It does not add UI, persist drafts, create settings storage, create compendium packs, post chat messages, run travel events, mutate ship actors, apply staged effects, spend AP/RAP, create encounters, roll initiative, or start combat.
-
 ## Ship-Attached Travel Event State Foundation
 
 Arcflight ships can now store one active travel event under `flags.arcflight.system.travel`. The backend-only helpers initialize empty travel state, start a validated core travel event such as Black Tide Crossing, record one primary Travel Five station result per station per round, advance rounds by staging the matching proposed effects, complete events into `completedEvents`, and clear the active event when needed.
@@ -56,6 +50,12 @@ Arcflight ships can now store one active travel event under `flags.arcflight.sys
 The state foundation tracks current round, round totals, event totals, normalized station result records, staged round/final proposed effects, combat-handoff metadata, and event history. It deliberately does not apply staged effects, mutate ship travel resources, spend AP/RAP, create PF2E roll buttons, open a Travel Runner UI, build GM tooling, or start combat automatically.
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` include `getShipTravelEventState`, `getActiveShipTravelEvent`, `startShipTravelEvent`, `recordShipTravelStationResult`, `getCurrentShipTravelRound`, `advanceShipTravelEventRound`, `completeShipTravelEvent`, and `clearShipTravelEvent`.
+
+### Travel Event Builder Draft Import/Export Foundation
+
+Travel Event Builder draft import/export helpers are available for future GM-facing copy/paste or file workflows: `exportTravelEventDraftToJson`, `importTravelEventDraftFromJson`, `importTravelEventDraftFromData`, `exportFinalTravelEventToJson`, `parseTravelEventBuilderJson`, and `prepareTravelEventBuilderExportPreview`. These helpers are exposed on both `game.arcflight` and `game.arcflight.devTools`.
+
+The Builder IO layer is helper-only. It validates imported JSON safely, normalizes drafts through the builder foundation, can preserve work-in-progress drafts, and exports finalized travel event definitions as data-only JSON without builder metadata by default. It does not add UI, persist drafts, create settings storage, create compendium packs, post chat messages, run travel events, mutate ship actors, apply staged effects, spend AP/RAP, create encounters, roll initiative, or start combat.
 
 ## Travel Event Runner UI MVP
 

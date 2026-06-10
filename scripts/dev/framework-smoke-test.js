@@ -88,29 +88,6 @@ import {
   validateTravelEventDefinition
 } from "../helpers/travel-events.js";
 import {
-  TRAVEL_EVENT_BUILDER_VERSION,
-  createTravelEventDraft,
-  normalizeTravelEventDraft,
-  validateTravelEventDraft,
-  finalizeTravelEventDraft,
-  cloneTravelEventToDraft,
-  createTravelBuilderResourceEffect,
-  createTravelBuilderRound,
-  createTravelBuilderStationPrompt,
-  createTravelBuilderOutcomeBranch,
-  createTravelBuilderFinalOutcome,
-  prepareTravelEventBuilderPreview
-} from "../helpers/travel-event-builder.js";
-import {
-  TRAVEL_EVENT_BUILDER_IO_VERSION,
-  exportTravelEventDraftToJson,
-  importTravelEventDraftFromJson,
-  importTravelEventDraftFromData,
-  exportFinalTravelEventToJson,
-  parseTravelEventBuilderJson,
-  prepareTravelEventBuilderExportPreview
-} from "../helpers/travel-event-builder-io.js";
-import {
   TRAVEL_EVENT_TEMPLATE_VERSION,
   createBlankTravelEventTemplate,
   createBlankTravelRoundTemplate,
@@ -153,6 +130,15 @@ import {
   recordInstallState,
   removeInstallState
 } from "../helpers/install-state.js";
+import {
+  TRAVEL_EVENT_BUILDER_IO_VERSION,
+  exportTravelEventDraftToJson,
+  importTravelEventDraftFromJson,
+  importTravelEventDraftFromData,
+  exportFinalTravelEventToJson,
+  parseTravelEventBuilderJson,
+  prepareTravelEventBuilderExportPreview
+} from "../helpers/travel-event-builder-io.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -904,6 +890,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Strict authoring validator rejects missing rollFeedback", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent).ok === false && validateTravelEventDefinition(strictMissingRollFeedbackEvent, { strictAuthoring: true }).errors.some((error) => error.includes("rollFeedback")), "rollFeedback rejection", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent));
     check(result, "Normal and strict core travel event validation passes", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => validateTravelEventDefinition(getCoreTravelEvent(key)).ok === true && validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }).ok === true), "all current core events valid", EXPECTED_CORE_TRAVEL_EVENT_KEYS.map((key) => ({ key, validation: validateTravelEventDefinition(getCoreTravelEvent(key)), strictValidation: validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }) })));
 
+
+
+    check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
+    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
+    shipData = getArcflightShipData(actor);
+    check(result, "Ship action economy helpers are exposed", typeof globalThis.game?.arcflight?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.canSpendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints === "function", true, { getShipActionEconomy: typeof globalThis.game?.arcflight?.getShipActionEconomy, resetShipActionEconomy: typeof globalThis.game?.arcflight?.resetShipActionEconomy, spendShipActionPoints: typeof globalThis.game?.arcflight?.spendShipActionPoints, canSpendShipActionPoints: typeof globalThis.game?.arcflight?.canSpendShipActionPoints, devToolsGetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy, devToolsResetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy, devToolsSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints, devToolsCanSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints });
     const builderDraft = createTravelEventDraft({ key: "void-whale-shadow", name: "Void Whale Shadow", category: "discovery", roundCount: 4, baseDC: 19 });
     const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
     const validBuilderJson = JSON.stringify(builderDraft);
@@ -944,11 +936,6 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel event builder foundation preserves PR171 defaults", createTravelEventDraft().roundCount === 4 && Array.isArray(builderDraft.futureAutomationNotes) && createTravelBuilderResourceEffect({ resource: "morale", value: -1 }).mode === "add" && createTravelBuilderResourceEffect({ resource: "morale", value: -1 }).value === -1 && Boolean(validateTravelEventDraft(builderDraft).normalizedDraft) && finalizeTravelEventDraft(builderDraft).event?.builder === undefined, "PR171 builder foundation contract", { defaultRoundCount: createTravelEventDraft().roundCount, futureAutomationNotes: builderDraft.futureAutomationNotes, resourceEffect: createTravelBuilderResourceEffect({ resource: "morale", value: -1 }), validation: validateTravelEventDraft(builderDraft), finalized: finalizeTravelEventDraft(builderDraft) });
     check(result, "Travel event builder preview remains finalizable", builderPreview.finalizable === true && builderPreview.errorCount === 0, "builder preview", builderPreview);
     check(result, "Builder IO introduces no AP/RAP, ship resource, combat, or persistence mutation", JSON.stringify(builderIoEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(builderIoResourcesBefore) === JSON.stringify(getShipTravelResources(actor)), "no actor state mutation by IO helpers", { economyBefore: builderIoEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: builderIoResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
-
-    check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
-    await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
-    shipData = getArcflightShipData(actor);
-    check(result, "Ship action economy helpers are exposed", typeof globalThis.game?.arcflight?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.canSpendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints === "function", true, { getShipActionEconomy: typeof globalThis.game?.arcflight?.getShipActionEconomy, resetShipActionEconomy: typeof globalThis.game?.arcflight?.resetShipActionEconomy, spendShipActionPoints: typeof globalThis.game?.arcflight?.spendShipActionPoints, canSpendShipActionPoints: typeof globalThis.game?.arcflight?.canSpendShipActionPoints, devToolsGetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy, devToolsResetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy, devToolsSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints, devToolsCanSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints });
     check(result, "canSpend AP/RAP passes with enough resources", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }).canSpend === true, "can spend 1 AP", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }));
     check(result, "canSpend AP/RAP blocks insufficient resources", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }).canSpend === false, "cannot overspend AP", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }));
     const spentEconomy = await spendShipActionPoints(actor, { ap: 1, rap: 0, reason: "Smoke spend" });
