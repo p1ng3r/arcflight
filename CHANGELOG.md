@@ -8,6 +8,13 @@
 
 ## Unreleased
 
+### Travel Event Builder Foundation MVP
+
+- Added a data/helper-only Travel Event Builder Foundation for future GM-facing event authoring, including draft creation, normalization, strict validation, finalization, cloning from existing event definitions, staged resource-effect scaffolding, and read-only preview summaries.
+- Exposed builder helpers on `game.arcflight` and `game.arcflight.devTools` while keeping drafts non-persistent and removing builder metadata from finalized event data by default.
+- Extended framework smoke coverage for helper exports, canonical draft shape, non-mutating normalization, safe invalid-draft validation/finalization, source-event cloning, resource-effect validation, preview summaries, continued core-event validation, and no AP/RAP/resource/combat automation.
+- Preserved scope boundaries: no full builder UI, drag/drop editor, AI generation, compendium packs, database persistence, automatic combat start, AP/RAP travel use, new travel mechanics, or automatic staged-effect application was added.
+
 ### Travel Event Narrative Log MVP
 
 - Added a persistent Travel Event Log to the Travel Event Runner so recorded station results keep round, station, degree, actor/statistic/roll metadata, player action prose, result feedback, notes, and timestamps visible after notification quips fade.

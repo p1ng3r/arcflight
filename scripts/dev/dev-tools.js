@@ -29,6 +29,20 @@ import {
   validateTravelEventAuthoringTemplate
 } from "../helpers/travel-event-template.js";
 import {
+  TRAVEL_EVENT_BUILDER_VERSION,
+  createTravelEventDraft,
+  normalizeTravelEventDraft,
+  validateTravelEventDraft,
+  finalizeTravelEventDraft,
+  cloneTravelEventToDraft,
+  createTravelBuilderResourceEffect,
+  createTravelBuilderRound,
+  createTravelBuilderStationPrompt,
+  createTravelBuilderOutcomeBranch,
+  createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderPreview
+} from "../helpers/travel-event-builder.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -228,6 +242,66 @@ export function createArcflightDevTools() {
      * Validate a travel event with strict authoring-template checks.
      */
     validateTravelEventAuthoringTemplate,
+
+    /**
+     * Current Travel Event Builder Foundation helper version.
+     */
+    TRAVEL_EVENT_BUILDER_VERSION,
+
+    /**
+     * Create a builder-owned draft travel event definition.
+     */
+    createTravelEventDraft,
+
+    /**
+     * Normalize a builder draft without mutating input data.
+     */
+    normalizeTravelEventDraft,
+
+    /**
+     * Strict-validate a normalized builder draft without throwing normal failures.
+     */
+    validateTravelEventDraft,
+
+    /**
+     * Produce a data-only event definition from a valid builder draft.
+     */
+    finalizeTravelEventDraft,
+
+    /**
+     * Clone an existing travel event into editable builder draft shape.
+     */
+    cloneTravelEventToDraft,
+
+    /**
+     * Build a staged resource effect object for proposedEffects arrays.
+     */
+    createTravelBuilderResourceEffect,
+
+    /**
+     * Create a builder-compatible travel round skeleton.
+     */
+    createTravelBuilderRound,
+
+    /**
+     * Create a builder-compatible station prompt skeleton.
+     */
+    createTravelBuilderStationPrompt,
+
+    /**
+     * Create a builder-compatible round outcome branch skeleton.
+     */
+    createTravelBuilderOutcomeBranch,
+
+    /**
+     * Create a builder-compatible final outcome skeleton.
+     */
+    createTravelBuilderFinalOutcome,
+
+    /**
+     * Prepare a read-only builder preview summary without running an event.
+     */
+    prepareTravelEventBuilderPreview,
 
     /**
      * Prepare cloned travel event summary data for future UI.

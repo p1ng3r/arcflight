@@ -99,6 +99,20 @@ import {
   validateTravelEventAuthoringTemplate
 } from "../helpers/travel-event-template.js";
 import {
+  TRAVEL_EVENT_BUILDER_VERSION,
+  createTravelEventDraft,
+  normalizeTravelEventDraft,
+  validateTravelEventDraft,
+  finalizeTravelEventDraft,
+  cloneTravelEventToDraft,
+  createTravelBuilderResourceEffect,
+  createTravelBuilderRound,
+  createTravelBuilderStationPrompt,
+  createTravelBuilderOutcomeBranch,
+  createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderPreview
+} from "../helpers/travel-event-builder.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -235,6 +249,17 @@ function collectTravelEventProse(value, path = []) {
   if (!value || typeof value !== "object") return [];
 
   return Object.entries(value).flatMap(([key, child]) => collectTravelEventProse(child, [...path, key]));
+}
+
+function stringifySmokeData(value) {
+  return JSON.stringify(value, (_key, entry) => (typeof entry === "function" ? "<function>" : entry));
+}
+
+function containsSmokeTerm(value, pattern) {
+  if (typeof value === "string") return pattern.test(value);
+  if (Array.isArray(value)) return value.some((entry) => containsSmokeTerm(entry, pattern));
+  if (value && typeof value === "object") return Object.values(value).some((entry) => containsSmokeTerm(entry, pattern));
+  return false;
 }
 
 function findLiteralOceanLanguage(event = {}) {
@@ -890,7 +915,38 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Strict authoring validator rejects missing rollFeedback", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent).ok === false && validateTravelEventDefinition(strictMissingRollFeedbackEvent, { strictAuthoring: true }).errors.some((error) => error.includes("rollFeedback")), "rollFeedback rejection", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent));
     check(result, "Normal and strict core travel event validation passes", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => validateTravelEventDefinition(getCoreTravelEvent(key)).ok === true && validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }).ok === true), "all current core events valid", EXPECTED_CORE_TRAVEL_EVENT_KEYS.map((key) => ({ key, validation: validateTravelEventDefinition(getCoreTravelEvent(key)), strictValidation: validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }) })));
 
-
+    const builderDraft = createTravelEventDraft({ key: "smoke-builder-event", name: "Smoke Builder Event", category: "discovery", roundCount: 4, baseDC: 19 });
+    const normalizeInput = { key: "normalize-smoke", name: "Normalize Smoke", rounds: [{ round: 1 }] };
+    const normalizeBefore = stringifySmokeData(normalizeInput);
+    const normalizedBuilderDraft = normalizeTravelEventDraft(normalizeInput);
+    const invalidBuilderValidation = validateTravelEventDraft({ name: "Incomplete Builder Draft" });
+    const invalidBuilderFinalize = finalizeTravelEventDraft({ key: "incomplete-builder-draft" });
+    const validBuilderFinalize = finalizeTravelEventDraft(builderDraft);
+    const sourceTravelEvent = getCoreTravelEvent("black-tide-crossing");
+    const sourceTravelEventBeforeClone = stringifySmokeData(sourceTravelEvent);
+    const clonedBuilderDraft = cloneTravelEventToDraft(sourceTravelEvent);
+    const validResourceEffect = createTravelBuilderResourceEffect({ resource: "morale", mode: "add", value: -1, label: "Morale -1" });
+    const invalidResourceEffect = createTravelBuilderResourceEffect({ resource: "mystery", mode: "subtract", value: "bad", label: "Bad resource" });
+    const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
+    const builderHelperExportsExist = typeof TRAVEL_EVENT_BUILDER_VERSION === "string"
+      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
+      && typeof globalThis.game?.arcflight?.createTravelEventDraft === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft === "function"
+      && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderPreview === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderPreview === "function";
+    check(result, "Travel Event Builder helper exports exist", builderHelperExportsExist, true, { version: TRAVEL_EVENT_BUILDER_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventDraft, devToolsCreate: typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft });
+    check(result, "createTravelEventDraft returns canonical draft", builderDraft.builder?.status === "draft" && builderDraft.builder?.source === "builder" && builderDraft.roundCount === 4 && builderDraft.rounds.length === 4 && builderDraft.baseDC === 19 && builderDraft.category === "discovery" && builderDraft.travelStations.length === 5 && builderDraft.finalOutcomes && builderDraft.rounds.every((round) => round.outcomeBranches), "canonical builder draft", builderDraft);
+    check(result, "normalizeTravelEventDraft does not mutate input", stringifySmokeData(normalizeInput) === normalizeBefore && normalizedBuilderDraft !== normalizeInput, "input unchanged and new object", { before: normalizeBefore, after: stringifySmokeData(normalizeInput), normalized: normalizedBuilderDraft });
+    check(result, "validateTravelEventDraft rejects incomplete draft safely", invalidBuilderValidation.ok === false && invalidBuilderValidation.errors.some((error) => error.includes("key")), "safe validation failure", invalidBuilderValidation);
+    check(result, "finalizeTravelEventDraft blocks invalid draft", invalidBuilderFinalize.ok === false && invalidBuilderFinalize.event === null, "invalid draft blocked", invalidBuilderFinalize);
+    check(result, "finalized valid draft removes builder metadata", validBuilderFinalize.ok === true && validBuilderFinalize.event?.builder === undefined && validateTravelEventDefinition(validBuilderFinalize.event, { strictAuthoring: true }).ok === true, "final event without builder metadata", validBuilderFinalize);
+    check(result, "cloneTravelEventToDraft preserves source event data but adds builder metadata", stringifySmokeData(sourceTravelEvent) === sourceTravelEventBeforeClone && clonedBuilderDraft.key === sourceTravelEvent.key && clonedBuilderDraft.builder?.source === "builder" && clonedBuilderDraft.builder?.status === "draft", "cloned draft with metadata", { cloned: clonedBuilderDraft, sourceUnchanged: stringifySmokeData(sourceTravelEvent) === sourceTravelEventBeforeClone });
+    check(result, "createTravelBuilderResourceEffect builds resource effect", validResourceEffect.type === "resource" && validResourceEffect.resource === "morale" && validResourceEffect.mode === "add" && validResourceEffect.value === -1 && validResourceEffect.label === "Morale -1" && !Object.hasOwn(validResourceEffect, "warnings"), "valid resource effect", validResourceEffect);
+    check(result, "createTravelBuilderResourceEffect rejects/flags bad resource", invalidResourceEffect.type === "resource" && invalidResourceEffect.resource === "hull" && Array.isArray(invalidResourceEffect.warnings) && invalidResourceEffect.warnings.some((warning) => warning.includes("Unknown travel resource")), "bad resource flagged", invalidResourceEffect);
+    check(result, "prepareTravelEventBuilderPreview returns validation and round summaries", builderPreview.validation?.ok === true && builderPreview.rounds?.length === 4 && builderPreview.finalOutcomes?.length === 5 && builderPreview.baseDC === 19, "preview summary", builderPreview);
+    check(result, "Travel Event Builder finalized data has no AP/RAP mutation", validBuilderFinalize.ok === true && !containsSmokeTerm(validBuilderFinalize.event, /\b(?:spend(?:ing)?\s+)?(?:AP|RAP|action points?|reaction action points?)\b/i), "no AP/RAP references", validBuilderFinalize.event);
+    check(result, "Travel Event Builder helpers do not mutate travel resources", validResourceEffect.type === "resource" && ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, prepareTravelEventBuilderPreview].some((helper) => /updateShipTravelResources|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no resource mutation helper calls", validResourceEffect);
+    check(result, "Travel Event Builder helpers do not automate combat", ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, prepareTravelEventBuilderPreview].some((helper) => /Combat(?:ant)?\.create|createCombat|startCombat|combat\.start/i.test(String(helper))), "no combat automation calls", TRAVEL_EVENT_BUILDER_VERSION);
 
     check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });

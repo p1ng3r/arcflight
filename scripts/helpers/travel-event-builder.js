@@ -8,14 +8,32 @@ export const TRAVEL_EVENT_BUILDER_VERSION = "0.1.0";
 const DEFAULT_ROUND_COUNT = 4;
 const DEFAULT_BASE_DC = 18;
 const DEFAULT_CATEGORY = ARCFLIGHT_TRAVEL_EVENT_CATEGORIES.DISCOVERY;
+
 const TRAVEL_FIVE_STATION_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_STATIONS));
 const TRAVEL_RESOURCE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOURCES));
 const CATEGORY_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_CATEGORIES));
 const ROUND_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES));
 const FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
 const RESOURCE_EFFECT_MODES = Object.freeze(["add", "set"]);
-const CATEGORY_LABELS = Object.freeze({ environmental: "Environmental", navigation: "Navigation", threat: "Threat", social: "Social", shipboard: "Shipboard", discovery: "Discovery", occult: "Occult" });
-const RESOURCE_LABELS = Object.freeze({ hull: "Hull", lifeveil: "Lifeveil", strain: "Strain", morale: "Morale", supplies: "Supplies", storedSpellRanks: "Stored Spell Ranks" });
+
+const CATEGORY_LABELS = Object.freeze({
+  environmental: "Environmental",
+  navigation: "Navigation",
+  threat: "Threat",
+  social: "Social",
+  shipboard: "Shipboard",
+  discovery: "Discovery",
+  occult: "Occult"
+});
+
+const RESOURCE_LABELS = Object.freeze({
+  hull: "Hull",
+  lifeveil: "Lifeveil",
+  strain: "Strain",
+  morale: "Morale",
+  supplies: "Supplies",
+  storedSpellRanks: "Stored Spell Ranks"
+});
 
 function cloneData(value) {
   if (value == null) return value;
@@ -23,7 +41,8 @@ function cloneData(value) {
     try {
       return structuredClone(value);
     } catch (_error) {
-      // Fall through to JSON cloning so validation can report data-only errors.
+      // Fall through to JSON cloning so validation helpers can report data-only
+      // failures instead of throwing on function-bearing draft objects.
     }
   }
   return JSON.parse(JSON.stringify(value));
@@ -80,7 +99,9 @@ function normalizeFutureAutomationNotes(value) {
 }
 
 function assertOptionsObject(options, helperName) {
-  if (options == null || typeof options !== "object" || Array.isArray(options)) throw new TypeError(`${helperName} options must be an object.`);
+  if (options == null || typeof options !== "object" || Array.isArray(options)) {
+    throw new TypeError(`${helperName} options must be an object.`);
+  }
 }
 
 function stripBuilderMetadata(event) {
@@ -128,8 +149,17 @@ function normalizeFinalOutcomes(value) {
 function normalizeRound(round, index, travelStations) {
   const source = round && typeof round === "object" && !Array.isArray(round) ? cloneData(round) : {};
   const template = createBlankTravelRoundTemplate(index + 1, { travelStations });
-  const activeStations = Array.isArray(source.activeStations) ? source.activeStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object") : template.activeStations;
-  return { ...template, ...source, round: Number.isInteger(source.round) && source.round > 0 ? source.round : index + 1, activeStations, outcomeBranches: normalizeOutcomeBranches(source.outcomeBranches) };
+  const activeStations = Array.isArray(source.activeStations)
+    ? source.activeStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object")
+    : template.activeStations;
+
+  return {
+    ...template,
+    ...source,
+    round: Number.isInteger(source.round) && source.round > 0 ? source.round : index + 1,
+    activeStations,
+    outcomeBranches: normalizeOutcomeBranches(source.outcomeBranches)
+  };
 }
 
 export function createTravelBuilderStationPrompt(stationKey, options = {}) {
@@ -177,10 +207,19 @@ export function createTravelBuilderResourceEffect(options = {}) {
   const resource = TRAVEL_RESOURCE_KEYS.includes(options.resource) ? options.resource : ARCFLIGHT_TRAVEL_RESOURCES.HULL;
   const mode = RESOURCE_EFFECT_MODES.includes(options.mode) ? options.mode : "add";
   const value = Number.isFinite(Number(options.value)) ? Number(options.value) : 0;
-  if (resource !== options.resource) warnings.push(`Unknown travel resource "${options.resource ?? ""}"; using hull.`);
-  if (mode !== options.mode) warnings.push(`Unknown resource effect mode "${options.mode ?? ""}"; using add.`);
-  if (!Number.isFinite(Number(options.value))) warnings.push(`Resource effect value "${options.value ?? ""}" is not numeric; using 0.`);
-  const effect = { type: "resource", resource, mode, value, label: options.label ?? `${RESOURCE_LABELS[resource] ?? resource} ${mode} ${value}` };
+
+  if (resource !== options.resource) warnings.push(`Unknown travel resource "${options.resource ?? "<missing>"}"; using hull.`);
+  if (mode !== options.mode) warnings.push(`Unknown resource effect mode "${options.mode ?? "<missing>"}"; using add.`);
+  if (!Number.isFinite(Number(options.value))) warnings.push(`Resource effect value "${options.value ?? "<missing>"}" is not numeric; using 0.`);
+
+  const effect = {
+    type: "resource",
+    resource,
+    mode,
+    value,
+    label: options.label ?? `${RESOURCE_LABELS[resource] ?? resource} ${mode} ${value}`
+  };
+
   if (warnings.length > 0) effect.warnings = warnings;
   return effect;
 }
@@ -195,7 +234,12 @@ export function createTravelEventDraft(options = {}) {
     category: CATEGORY_KEYS.includes(options.category) ? options.category : DEFAULT_CATEGORY,
     travelStations: uniqueKnownValues(options.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS)
   });
-  return normalizeTravelEventDraft({ ...draft, futureAutomationNotes: normalizeFutureAutomationNotes(options.futureAutomationNotes), builder: createBuilderMetadata({}, options) }, { ...options, preserveUpdatedAt: true });
+
+  return normalizeTravelEventDraft({
+    ...draft,
+    futureAutomationNotes: normalizeFutureAutomationNotes(options.futureAutomationNotes),
+    builder: createBuilderMetadata({}, options)
+  }, { ...options, preserveUpdatedAt: true });
 }
 
 export function normalizeTravelEventDraft(draft, options = {}) {
@@ -206,6 +250,7 @@ export function normalizeTravelEventDraft(draft, options = {}) {
   const roundCount = normalizeRoundCount(source.roundCount, sourceRounds.length || DEFAULT_ROUND_COUNT);
   const rounds = Array.from({ length: roundCount }, (_, index) => normalizeRound(sourceRounds[index], index, travelStations));
   const category = CATEGORY_KEYS.includes(source.category) ? source.category : DEFAULT_CATEGORY;
+
   return {
     ...source,
     key: typeof source.key === "string" ? source.key : "",
@@ -230,25 +275,48 @@ export function validateTravelEventDraft(draft, options = {}) {
   const validation = validateTravelEventDefinition(normalizedDraft, { ...options, strictAuthoring: true });
   const errors = [...validation.errors];
   const warnings = [...validation.warnings];
+
   if (normalizedDraft.key.trim().length === 0) errors.push("Builder draft key must be a non-empty string.");
   if (normalizedDraft.name.trim().length === 0) errors.push("Builder draft name must be a non-empty string.");
   if (hasFunctionValue(draft)) errors.push("Builder draft must be data only and cannot contain functions.");
   if (containsAutomationReference(normalizedDraft)) warnings.push("Builder draft references automation language; keep event definitions staged and GM-applied only.");
-  return { ok: errors.length === 0, errors, warnings, normalizedDraft };
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    normalizedDraft
+  };
 }
 
 export function finalizeTravelEventDraft(draft, options = {}) {
   assertOptionsObject(options, "finalizeTravelEventDraft");
   const validation = validateTravelEventDraft(draft, options);
-  if (!validation.ok) return { ok: false, errors: validation.errors, warnings: validation.warnings, event: null };
+  if (!validation.ok) {
+    return {
+      ok: false,
+      errors: validation.errors,
+      warnings: validation.warnings,
+      event: null
+    };
+  }
+
   const event = stripBuilderMetadata(validation.normalizedDraft);
-  return { ok: true, errors: [], warnings: validation.warnings, event };
+  return {
+    ok: true,
+    errors: [],
+    warnings: validation.warnings,
+    event
+  };
 }
 
 export function cloneTravelEventToDraft(eventDefinition, options = {}) {
   assertOptionsObject(options, "cloneTravelEventToDraft");
   const source = eventDefinition && typeof eventDefinition === "object" && !Array.isArray(eventDefinition) ? cloneData(eventDefinition) : {};
-  return normalizeTravelEventDraft({ ...source, builder: createBuilderMetadata({}, options) }, { ...options, preserveUpdatedAt: true });
+  return normalizeTravelEventDraft({
+    ...source,
+    builder: createBuilderMetadata({}, options)
+  }, { ...options, preserveUpdatedAt: true });
 }
 
 export function prepareTravelEventBuilderPreview(draft, options = {}) {
@@ -263,13 +331,21 @@ export function prepareTravelEventBuilderPreview(draft, options = {}) {
     roundCount: normalizedDraft.roundCount,
     activeResourcesLabel: labelList(normalizedDraft.activeResources, RESOURCE_LABELS),
     travelStationsLabel: labelList(normalizedDraft.travelStations, {}),
-    validation: { ok: validation.ok, errors: cloneData(validation.errors), warnings: cloneData(validation.warnings) },
+    validation: {
+      ok: validation.ok,
+      errors: cloneData(validation.errors),
+      warnings: cloneData(validation.warnings)
+    },
     rounds: normalizedDraft.rounds.map((round) => ({
       round: round.round,
       title: round.title,
       activeStationCount: round.activeStations?.length ?? 0,
       activeStationsLabel: labelList((round.activeStations ?? []).map((prompt) => prompt.stationKey), {}),
-      outcomeBranches: ROUND_OUTCOME_KEYS.map((key) => ({ key, hasVignette: typeof round.outcomeBranches?.[key]?.vignette === "string" && round.outcomeBranches[key].vignette.trim().length > 0, proposedEffectCount: round.outcomeBranches?.[key]?.proposedEffects?.length ?? 0 }))
+      outcomeBranches: ROUND_OUTCOME_KEYS.map((key) => ({
+        key,
+        hasVignette: typeof round.outcomeBranches?.[key]?.vignette === "string" && round.outcomeBranches[key].vignette.trim().length > 0,
+        proposedEffectCount: round.outcomeBranches?.[key]?.proposedEffects?.length ?? 0
+      }))
     })),
     finalOutcomes: FINAL_OUTCOME_KEYS.map((key) => ({
       key,
@@ -280,5 +356,6 @@ export function prepareTravelEventBuilderPreview(draft, options = {}) {
       lossCount: normalizedDraft.finalOutcomes?.[key]?.losses?.length ?? 0
     }))
   };
+
   return deepFreeze(summary);
 }
