@@ -59,6 +59,12 @@ The state foundation tracks current round, round totals, event totals, normalize
 
 Public helper exports on `game.arcflight` and `game.arcflight.devTools` include `getShipTravelEventState`, `getActiveShipTravelEvent`, `startShipTravelEvent`, `recordShipTravelStationResult`, `getCurrentShipTravelRound`, `advanceShipTravelEventRound`, `completeShipTravelEvent`, and `clearShipTravelEvent`.
 
+### Travel Event Builder Draft Import/Export Foundation
+
+Travel Event Builder draft import/export helpers are available for future GM-facing copy/paste or file workflows: `exportTravelEventDraftToJson`, `importTravelEventDraftFromJson`, `importTravelEventDraftFromData`, `exportFinalTravelEventToJson`, `parseTravelEventBuilderJson`, and `prepareTravelEventBuilderExportPreview`. These helpers are exposed on both `game.arcflight` and `game.arcflight.devTools`.
+
+The Builder IO layer is helper-only. It validates imported JSON safely, normalizes drafts through the builder foundation, can preserve work-in-progress drafts, and exports finalized travel event definitions as data-only JSON without builder metadata by default. It does not add UI, persist drafts, create settings storage, create compendium packs, post chat messages, run travel events, mutate ship actors, apply staged effects, spend AP/RAP, create encounters, roll initiative, or start combat.
+
 ## Travel Event Runner UI MVP
 
 Arcflight now includes a GM-facing **Travel Event Runner** UI for Arcflight-enabled PF2E vehicle actors. Open it from an Arcflight ship sheet with **Open Travel Runner**, or from the console with:

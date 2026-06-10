@@ -88,6 +88,15 @@ import {
   recordInstallState,
   removeInstallState
 } from "../helpers/install-state.js";
+import {
+  TRAVEL_EVENT_BUILDER_IO_VERSION,
+  exportTravelEventDraftToJson,
+  importTravelEventDraftFromJson,
+  importTravelEventDraftFromData,
+  exportFinalTravelEventToJson,
+  parseTravelEventBuilderJson,
+  prepareTravelEventBuilderExportPreview
+} from "../helpers/travel-event-builder-io.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
@@ -678,6 +687,13 @@ export function createArcflightDevTools() {
      * Dry-run by default. Backfill all Arcflight ships' install-state records from existing installed data.
      */
     backfillInstallStateForAllShips,
+    TRAVEL_EVENT_BUILDER_IO_VERSION,
+    exportTravelEventDraftToJson,
+    importTravelEventDraftFromJson,
+    importTravelEventDraftFromData,
+    exportFinalTravelEventToJson,
+    parseTravelEventBuilderJson,
+    prepareTravelEventBuilderExportPreview,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.

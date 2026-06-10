@@ -21,6 +21,12 @@
 - Preserved existing inline station-card feedback and temporary notifications while keeping this pass runner UI only: no automatic chat posting, combat start, AP/RAP travel use, staged-effect automation, new stations, or new travel mechanics were added.
 - Extended smoke coverage for station-result narrative fields, PF2E-style roll metadata compatibility, narrative log row preparation, completed-event preservation, and no AP/RAP or travel-resource mutation from result recording.
 
+### Travel Event Builder Draft Import/Export Foundation
+
+- Added backend-only Travel Event Builder draft import/export helpers for safe JSON parsing, non-mutating draft normalization/validation, WIP draft export, finalized data-only event export, and export preview summaries.
+- Exposed the builder IO helpers on `game.arcflight` and `game.arcflight.devTools`, with smoke coverage for malformed JSON, non-object JSON roots, round-trip draft import/export, invalid final export blocking, builder metadata stripping, and no AP/RAP, ship-resource, combat, or persistence automation.
+- Preserved scope boundaries: no UI, no draft persistence, no settings storage, no compendium packs, no chat posting, no event running, no actor mutation, no staged-effect application, no AP/RAP travel mechanics, and no combat or encounter automation was added.
+
 ### Core Travel Event Template Upgrade and Pack 01B
 
 - Upgraded all existing core travel events to the Travel Event Authoring Template standard with station `playerAction` text and four-degree `rollFeedback` quips.
