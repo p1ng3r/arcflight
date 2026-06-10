@@ -18,6 +18,29 @@ import {
   getTravelEventStationPrompt
 } from "../helpers/travel-events.js";
 import {
+  TRAVEL_EVENT_BUILDER_VERSION,
+  createTravelEventDraft,
+  normalizeTravelEventDraft,
+  validateTravelEventDraft,
+  finalizeTravelEventDraft,
+  cloneTravelEventToDraft,
+  createTravelBuilderResourceEffect,
+  createTravelBuilderRound,
+  createTravelBuilderStationPrompt,
+  createTravelBuilderOutcomeBranch,
+  createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderPreview
+} from "../helpers/travel-event-builder.js";
+import {
+  TRAVEL_EVENT_BUILDER_IO_VERSION,
+  exportTravelEventDraftToJson,
+  importTravelEventDraftFromJson,
+  importTravelEventDraftFromData,
+  exportFinalTravelEventToJson,
+  parseTravelEventBuilderJson,
+  prepareTravelEventBuilderExportPreview
+} from "../helpers/travel-event-builder-io.js";
+import {
   TRAVEL_EVENT_TEMPLATE_VERSION,
   createBlankTravelEventTemplate,
   createBlankTravelRoundTemplate,
@@ -174,6 +197,25 @@ export function createArcflightDevTools() {
      * Validate a travel event definition without mutating game data.
      */
     validateTravelEventDefinition,
+    TRAVEL_EVENT_BUILDER_VERSION,
+    createTravelEventDraft,
+    normalizeTravelEventDraft,
+    validateTravelEventDraft,
+    finalizeTravelEventDraft,
+    cloneTravelEventToDraft,
+    createTravelBuilderResourceEffect,
+    createTravelBuilderRound,
+    createTravelBuilderStationPrompt,
+    createTravelBuilderOutcomeBranch,
+    createTravelBuilderFinalOutcome,
+    prepareTravelEventBuilderPreview,
+    TRAVEL_EVENT_BUILDER_IO_VERSION,
+    exportTravelEventDraftToJson,
+    importTravelEventDraftFromJson,
+    importTravelEventDraftFromData,
+    exportFinalTravelEventToJson,
+    parseTravelEventBuilderJson,
+    prepareTravelEventBuilderExportPreview,
 
     /**
      * Current Travel Event Authoring Template schema version.

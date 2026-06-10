@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Travel Event Builder Draft Import/Export Foundation
+
+- Added backend-only Travel Event Builder draft import/export helpers for safe JSON parsing, non-mutating draft normalization/validation, WIP draft export, finalized data-only event export, and export preview summaries.
+- Exposed the builder IO helpers on `game.arcflight` and `game.arcflight.devTools`, with smoke coverage for malformed JSON, non-object JSON roots, round-trip draft import/export, invalid final export blocking, builder metadata stripping, and no AP/RAP, ship-resource, combat, or persistence automation.
+- Preserved scope boundaries: no UI, no draft persistence, no settings storage, no compendium packs, no chat posting, no event running, no actor mutation, no staged-effect application, no AP/RAP travel mechanics, and no combat or encounter automation was added.
+
 ### Travel Event Narrative Log MVP
 
 - Added a persistent Travel Event Log to the Travel Event Runner so recorded station results keep round, station, degree, actor/statistic/roll metadata, player action prose, result feedback, notes, and timestamps visible after notification quips fade.
