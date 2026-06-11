@@ -162,6 +162,8 @@ import {
   createTravelBuilderStationPrompt,
   createTravelBuilderOutcomeBranch,
   createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderFormOptions,
+  applyTravelEventBuilderFormDataToDraft,
   prepareTravelEventBuilderPreview
 } from "./helpers/travel-event-builder.js";
 import {
@@ -442,6 +444,8 @@ Hooks.once("init", () => {
     createTravelBuilderStationPrompt,
     createTravelBuilderOutcomeBranch,
     createTravelBuilderFinalOutcome,
+    prepareTravelEventBuilderFormOptions,
+    applyTravelEventBuilderFormDataToDraft,
     prepareTravelEventBuilderPreview,
     prepareTravelEventSummary,
     prepareTravelRoundSummary,
@@ -673,6 +677,8 @@ export {
   createTravelBuilderStationPrompt,
   createTravelBuilderOutcomeBranch,
   createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderFormOptions,
+  applyTravelEventBuilderFormDataToDraft,
   prepareTravelEventBuilderPreview,
   prepareTravelEventSummary,
   prepareTravelRoundSummary,
