@@ -8,6 +8,13 @@
 
 ## Unreleased
 
+### Travel Event Builder Form Editor MVP
+
+- Added basic local-only form editing to the Travel Event Builder shell for top-level draft fields, including key, name, category, base DC, round count, description/GM summary, tags, active resources, and Travel Five stations.
+- Kept raw JSON editing/import/export available as the advanced fallback, with form edits normalized through builder helpers and validation/export readiness continuing to display.
+- Added smoke coverage for builder form option state, local-only form draft updates, continued validation/normalization, JSON import/export after form edits, and no actor/AP/RAP/travel-resource mutation.
+- Preserved scope boundaries: no persistence, no settings or compendium writes, no actor mutation, no chat posting, no event running, no round/station/outcome editors, no AP/RAP mechanics, no combat automation, and no staged-effect application was added.
+
 ### Travel Event Builder Foundation MVP
 
 - Added a data/helper-only Travel Event Builder Foundation for future GM-facing event authoring, including draft creation, normalization, strict validation, finalization, cloning from existing event definitions, staged resource-effect scaffolding, and read-only preview summaries.

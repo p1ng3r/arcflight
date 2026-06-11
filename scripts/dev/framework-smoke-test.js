@@ -115,6 +115,8 @@ import {
   createTravelBuilderStationPrompt,
   createTravelBuilderOutcomeBranch,
   createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderFormOptions,
+  applyTravelEventBuilderFormDataToDraft,
   prepareTravelEventBuilderPreview
 } from "../helpers/travel-event-builder.js";
 import {
@@ -934,15 +936,43 @@ export async function runFrameworkSmokeTest(options = {}) {
     const invalidResourceEffect = createTravelBuilderResourceEffect({ resource: "mystery", mode: "subtract", value: "bad", label: "Bad resource" });
     const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
     const builderHelperExportsExist = typeof TRAVEL_EVENT_BUILDER_VERSION === "string"
-      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
+      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderFormOptions, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
       && typeof globalThis.game?.arcflight?.createTravelEventDraft === "function"
       && typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft === "function"
       && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderPreview === "function"
-      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderPreview === "function";
+      && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderFormOptions === "function"
+      && typeof globalThis.game?.arcflight?.applyTravelEventBuilderFormDataToDraft === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderPreview === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderFormOptions === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderFormDataToDraft === "function";
     check(result, "Travel Event Builder helper exports exist", builderHelperExportsExist, true, { version: TRAVEL_EVENT_BUILDER_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventDraft, devToolsCreate: typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft });
     const builderShellState = prepareTravelEventBuilderShellState(builderDraft);
+    const builderFormOptions = prepareTravelEventBuilderFormOptions(builderDraft);
+    const builderFormEconomyBefore = getShipActionEconomy(actor);
+    const builderFormResourcesBefore = getShipTravelResources(actor);
+    const formEditedBuilderDraft = applyTravelEventBuilderFormDataToDraft(builderDraft, {
+      key: "form-edited-smoke",
+      name: "Form Edited Smoke",
+      category: "navigation",
+      baseDC: "21",
+      roundCount: "2",
+      description: "Form-edited description stays local to the draft.",
+      gmSummary: "Form-edited GM summary stays local to the draft.",
+      tags: "navigation, smoke",
+      activeResources: ["hull", "morale"],
+      travelStations: ["navigator", "engineer"]
+    });
+    const formEditedValidation = validateTravelEventDraft(formEditedBuilderDraft);
+    const formEditedDraftExport = exportTravelEventDraftToJson(formEditedBuilderDraft);
+    const formEditedDraftImport = importTravelEventDraftFromJson(formEditedDraftExport.json ?? "");
+    const formEditedFinalExport = exportFinalTravelEventToJson(formEditedDraftImport.draft);
     check(result, "Travel Event Builder app exports exist", typeof ArcflightTravelEventBuilder === "function" && typeof openTravelEventBuilder === "function" && typeof prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderShellState === "function", true, { importedClass: typeof ArcflightTravelEventBuilder, importedOpen: typeof openTravelEventBuilder, importedShellState: typeof prepareTravelEventBuilderShellState, apiOpen: typeof globalThis.game?.arcflight?.openTravelEventBuilder, devToolsOpen: typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder });
     check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
+    check(result, "Travel Event Builder form option data exists", builderShellState.formOptions?.categories?.length > 0 && builderShellState.formOptions?.activeResources?.length > 0 && builderShellState.formOptions?.travelStations?.length > 0 && builderFormOptions.categories.some((option) => option.value === "discovery" && option.selected === true), "category/resource/station form options", { shell: builderShellState.formOptions, helper: builderFormOptions });
+    check(result, "Travel Event Builder form edits apply locally and normalize rounds", formEditedBuilderDraft.key === "form-edited-smoke" && formEditedBuilderDraft.name === "Form Edited Smoke" && formEditedBuilderDraft.category === "navigation" && formEditedBuilderDraft.baseDC === 21 && formEditedBuilderDraft.roundCount === 2 && formEditedBuilderDraft.rounds.length === 2 && formEditedBuilderDraft.activeResources.join(",") === "hull,morale" && formEditedBuilderDraft.travelStations.join(",") === "navigator,engineer" && builderDraft.key === "smoke-builder-event" && builderDraft.roundCount === 4, "local-only normalized form draft", { original: builderDraft, edited: formEditedBuilderDraft });
+    check(result, "Travel Event Builder form-edited draft remains validatable", formEditedValidation.normalizedDraft?.key === "form-edited-smoke" && Array.isArray(formEditedValidation.errors) && Array.isArray(formEditedValidation.warnings), "validatable form draft", formEditedValidation);
+    check(result, "Travel Event Builder JSON import/export still works after form edits", formEditedDraftExport.ok === true && formEditedDraftImport.ok === true && formEditedDraftImport.draft?.key === "form-edited-smoke" && [true, false].includes(formEditedFinalExport.ok), "post-form JSON IO", { draftExport: formEditedDraftExport, draftImport: formEditedDraftImport, finalExport: formEditedFinalExport });
+    check(result, "Travel Event Builder form edits introduce no AP/RAP, travel resource, or actor mutation", JSON.stringify(builderFormEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(builderFormResourcesBefore) === JSON.stringify(getShipTravelResources(actor)) && ![applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderFormOptions].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|game\.settings\.set|Actor\.update|actor\.update/.test(String(helper))), "no actor state mutation by form helpers", { economyBefore: builderFormEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: builderFormResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
     check(result, "createTravelEventDraft returns canonical draft", builderDraft.builder?.status === "draft" && builderDraft.builder?.source === "builder" && builderDraft.roundCount === 4 && builderDraft.rounds.length === 4 && builderDraft.baseDC === 19 && builderDraft.category === "discovery" && builderDraft.travelStations.length === 5 && builderDraft.finalOutcomes && builderDraft.rounds.every((round) => round.outcomeBranches), "canonical builder draft", builderDraft);
     check(result, "normalizeTravelEventDraft does not mutate input", stringifySmokeData(normalizeInput) === normalizeBefore && normalizedBuilderDraft !== normalizeInput, "input unchanged and new object", { before: normalizeBefore, after: stringifySmokeData(normalizeInput), normalized: normalizedBuilderDraft });
     check(result, "validateTravelEventDraft rejects incomplete draft safely", invalidBuilderValidation.ok === false && invalidBuilderValidation.errors.some((error) => error.includes("key")), "safe validation failure", invalidBuilderValidation);
@@ -953,8 +983,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "createTravelBuilderResourceEffect rejects/flags bad resource", invalidResourceEffect.type === "resource" && invalidResourceEffect.resource === "hull" && Array.isArray(invalidResourceEffect.warnings) && invalidResourceEffect.warnings.some((warning) => warning.includes("Unknown travel resource")), "bad resource flagged", invalidResourceEffect);
     check(result, "prepareTravelEventBuilderPreview returns validation and round summaries", builderPreview.validation?.ok === true && builderPreview.rounds?.length === 4 && builderPreview.finalOutcomes?.length === 5 && builderPreview.baseDC === 19, "preview summary", builderPreview);
     check(result, "Travel Event Builder finalized data has no AP/RAP mutation", validBuilderFinalize.ok === true && !containsSmokeTerm(validBuilderFinalize.event, /\b(?:spend(?:ing)?\s+)?(?:AP|RAP|action points?|reaction action points?)\b/i), "no AP/RAP references", validBuilderFinalize.event);
-    check(result, "Travel Event Builder helpers do not mutate travel resources", validResourceEffect.type === "resource" && ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, prepareTravelEventBuilderPreview].some((helper) => /updateShipTravelResources|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no resource mutation helper calls", validResourceEffect);
-    check(result, "Travel Event Builder helpers do not automate combat", ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, prepareTravelEventBuilderPreview].some((helper) => /Combat(?:ant)?\.create|createCombat|startCombat|combat\.start/i.test(String(helper))), "no combat automation calls", TRAVEL_EVENT_BUILDER_VERSION);
+    check(result, "Travel Event Builder helpers do not mutate travel resources", validResourceEffect.type === "resource" && ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderFormOptions, prepareTravelEventBuilderPreview].some((helper) => /updateShipTravelResources|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no resource mutation helper calls", validResourceEffect);
+    check(result, "Travel Event Builder helpers do not automate combat", ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderFormOptions, prepareTravelEventBuilderPreview].some((helper) => /Combat(?:ant)?\.create|createCombat|startCombat|combat\.start/i.test(String(helper))), "no combat automation calls", TRAVEL_EVENT_BUILDER_VERSION);
 
     check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });

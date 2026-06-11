@@ -11,9 +11,84 @@
     <p class="arcflight-travel-builder__status arcflight-travel-builder__status--{{status.kind}}">{{status.message}}</p>
   {{/if}}
 
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-form>
+    <h2>Basic Form Editor</h2>
+    <p class="arcflight-sheet__hint">Edit top-level draft fields here. Changes stay local to this builder window and re-normalize the draft; round, station prompt, branch, and final outcome editors are intentionally not part of this MVP.</p>
+
+    <div class="arcflight-travel-builder__form-grid">
+      <label class="arcflight-travel-builder__field">
+        <span>Key</span>
+        <input type="text" name="arcflight-builder-key" value="{{draft.key}}" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Name</span>
+        <input type="text" name="arcflight-builder-name" value="{{draft.name}}" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Category</span>
+        <select name="arcflight-builder-category" data-arcflight-builder-form-field>
+          {{#each formOptions.categories}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Base DC</span>
+        <input type="number" name="arcflight-builder-baseDC" value="{{draft.baseDC}}" step="1" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Round Count</span>
+        <input type="number" name="arcflight-builder-roundCount" value="{{draft.roundCount}}" min="1" step="1" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+        <span>Tags</span>
+        <input type="text" name="arcflight-builder-tags" value="{{formOptions.tagsText}}" placeholder="comma-separated tags" data-arcflight-builder-form-field>
+      </label>
+    </div>
+
+    {{#if formOptions.hasDescription}}
+      <label class="arcflight-travel-builder__field">
+        <span>Description</span>
+        <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" name="arcflight-builder-description" data-arcflight-builder-form-field>{{draft.description}}</textarea>
+      </label>
+    {{/if}}
+
+    {{#if formOptions.hasGmSummary}}
+      <label class="arcflight-travel-builder__field">
+        <span>GM Summary</span>
+        <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" name="arcflight-builder-gmSummary" data-arcflight-builder-form-field>{{draft.gmSummary}}</textarea>
+      </label>
+    {{/if}}
+
+    <div class="arcflight-travel-builder__check-groups">
+      <fieldset class="arcflight-travel-builder__check-group">
+        <legend>Active Resources</legend>
+        {{#each formOptions.activeResources}}
+          <label>
+            <input type="checkbox" name="arcflight-builder-activeResources" value="{{value}}" {{#if checked}}checked{{/if}} data-arcflight-builder-form-field>
+            <span>{{label}}</span>
+          </label>
+        {{/each}}
+      </fieldset>
+      <fieldset class="arcflight-travel-builder__check-group">
+        <legend>Travel Stations</legend>
+        {{#each formOptions.travelStations}}
+          <label>
+            <input type="checkbox" name="arcflight-builder-travelStations" value="{{value}}" {{#if checked}}checked{{/if}} data-arcflight-builder-form-field>
+            <span>{{label}}</span>
+          </label>
+        {{/each}}
+      </fieldset>
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-form>Apply Form Edits</button>
+    </div>
+  </section>
+
   <section class="arcflight-travel-builder__panel">
-    <h2>Local Draft JSON</h2>
-    <p class="arcflight-sheet__hint">Edit or paste a draft here, then refresh the preview or export JSON. This shell keeps data in memory only.</p>
+    <h2>Advanced / Raw Draft JSON</h2>
+    <p class="arcflight-sheet__hint">Edit or paste raw draft JSON here as an advanced fallback, then refresh the preview or export JSON. This shell keeps data in memory only.</p>
     <textarea class="arcflight-travel-builder__textarea" data-arcflight-builder-draft-json>{{draftJson}}</textarea>
     <div class="arcflight-travel-builder__controls">
       <button type="button" data-arcflight-builder-preview>Refresh Preview</button>

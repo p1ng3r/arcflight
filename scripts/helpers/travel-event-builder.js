@@ -1,5 +1,5 @@
 import { getStation } from "../../data/stations/core-stations.js";
-import { ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
+import { ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
 import { createBlankFinalOutcomesTemplate, createBlankOutcomeBranchesTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
@@ -11,6 +11,7 @@ const DEFAULT_CATEGORY = ARCFLIGHT_TRAVEL_EVENT_CATEGORIES.DISCOVERY;
 
 const TRAVEL_FIVE_STATION_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_STATIONS));
 const TRAVEL_RESOURCE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOURCES));
+const TRAVEL_TAG_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_TAGS));
 const CATEGORY_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_CATEGORIES));
 const ROUND_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES));
 const FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
@@ -68,6 +69,32 @@ function uniqueKnownValues(values, knownValues, fallback = []) {
 
 function normalizeStringArray(value) {
   return Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : [];
+}
+
+function createOption(value, label, selected = false) {
+  return { value, label, selected };
+}
+
+function createCheckboxOption(value, label, selectedValues = []) {
+  return { value, label, checked: selectedValues.includes(value) };
+}
+
+function coerceFormString(value, fallback = "") {
+  if (Array.isArray(value)) return coerceFormString(value[0], fallback);
+  return typeof value === "string" ? value : fallback;
+}
+
+function coerceFormStringArray(value) {
+  if (Array.isArray(value)) return value.filter((entry) => typeof entry === "string");
+  if (typeof value === "string") return value.length > 0 ? [value] : [];
+  return [];
+}
+
+function splitTagText(value) {
+  return coerceFormString(value)
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 function normalizeBaseDC(value) {
@@ -267,6 +294,48 @@ export function normalizeTravelEventDraft(draft, options = {}) {
     futureAutomationNotes: normalizeFutureAutomationNotes(source.futureAutomationNotes),
     builder: createBuilderMetadata(source.builder, options)
   };
+}
+
+export function prepareTravelEventBuilderFormOptions(draft, options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderFormOptions");
+  const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+
+  return deepFreeze({
+    categories: CATEGORY_KEYS.map((key) => createOption(key, CATEGORY_LABELS[key] ?? key, normalizedDraft.category === key)),
+    activeResources: TRAVEL_RESOURCE_KEYS.map((key) => createCheckboxOption(key, RESOURCE_LABELS[key] ?? key, normalizedDraft.activeResources)),
+    travelStations: TRAVEL_FIVE_STATION_KEYS.map((key) => createCheckboxOption(key, labelForStation(key), normalizedDraft.travelStations)),
+    suggestedTags: TRAVEL_TAG_KEYS.map((key) => createCheckboxOption(key, key, normalizedDraft.tags)),
+    tagsText: normalizedDraft.tags.join(", "),
+    hasDescription: Object.hasOwn(normalizedDraft, "description"),
+    hasGmSummary: Object.hasOwn(normalizedDraft, "gmSummary")
+  });
+}
+
+export function applyTravelEventBuilderFormDataToDraft(draft, formData = {}, options = {}) {
+  assertOptionsObject(options, "applyTravelEventBuilderFormDataToDraft");
+  assertOptionsObject(formData, "applyTravelEventBuilderFormDataToDraft formData");
+  const source = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+  const nextDraft = {
+    ...source,
+    key: coerceFormString(formData.key, source.key),
+    name: coerceFormString(formData.name, source.name),
+    category: coerceFormString(formData.category, source.category),
+    baseDC: coerceFormString(formData.baseDC, String(source.baseDC)),
+    roundCount: coerceFormString(formData.roundCount, String(source.roundCount)),
+    tags: Object.hasOwn(formData, "tags") ? splitTagText(formData.tags) : source.tags,
+    activeResources: Object.hasOwn(formData, "activeResources") ? coerceFormStringArray(formData.activeResources) : source.activeResources,
+    travelStations: Object.hasOwn(formData, "travelStations") ? coerceFormStringArray(formData.travelStations) : source.travelStations
+  };
+
+  if (Object.hasOwn(source, "description") || Object.hasOwn(formData, "description")) {
+    nextDraft.description = coerceFormString(formData.description, source.description ?? "");
+  }
+
+  if (Object.hasOwn(source, "gmSummary") || Object.hasOwn(formData, "gmSummary")) {
+    nextDraft.gmSummary = coerceFormString(formData.gmSummary, source.gmSummary ?? "");
+  }
+
+  return normalizeTravelEventDraft(nextDraft, options);
 }
 
 export function validateTravelEventDraft(draft, options = {}) {
