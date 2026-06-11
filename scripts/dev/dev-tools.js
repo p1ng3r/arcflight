@@ -4,6 +4,7 @@ import {
   findDuplicateArcflightItems,
   organizeArcflightItems
 } from "../helpers/item-organization.js";
+import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "../apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "../apps/travel-event-runner.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import {
@@ -317,6 +318,21 @@ export function createArcflightDevTools() {
      * Prepare a cloned Travel Five station prompt for future UI.
      */
     getTravelEventStationPrompt,
+
+    /**
+     * Travel Event Builder app class for local GM authoring shell checks.
+     */
+    ArcflightTravelEventBuilder,
+
+    /**
+     * Open the GM-facing Travel Event Builder shell.
+     */
+    openTravelEventBuilder,
+
+    /**
+     * Prepare local Travel Event Builder shell preview state.
+     */
+    prepareTravelEventBuilderShellState,
 
     /**
      * Travel Event Runner app class for manual GM UI checks.

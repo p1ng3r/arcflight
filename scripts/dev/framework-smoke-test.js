@@ -1,4 +1,9 @@
 import {
+  ArcflightTravelEventBuilder,
+  openTravelEventBuilder,
+  prepareTravelEventBuilderShellState
+} from "../apps/travel-event-builder.js";
+import {
   ArcflightTravelEventRunner,
   formatStatisticOptionLabel,
   getResolvedPf2eStatisticModifier,
@@ -935,6 +940,9 @@ export async function runFrameworkSmokeTest(options = {}) {
       && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderPreview === "function"
       && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderPreview === "function";
     check(result, "Travel Event Builder helper exports exist", builderHelperExportsExist, true, { version: TRAVEL_EVENT_BUILDER_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventDraft, devToolsCreate: typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft });
+    const builderShellState = prepareTravelEventBuilderShellState(builderDraft);
+    check(result, "Travel Event Builder app exports exist", typeof ArcflightTravelEventBuilder === "function" && typeof openTravelEventBuilder === "function" && typeof prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderShellState === "function", true, { importedClass: typeof ArcflightTravelEventBuilder, importedOpen: typeof openTravelEventBuilder, importedShellState: typeof prepareTravelEventBuilderShellState, apiOpen: typeof globalThis.game?.arcflight?.openTravelEventBuilder, devToolsOpen: typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder });
+    check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
     check(result, "createTravelEventDraft returns canonical draft", builderDraft.builder?.status === "draft" && builderDraft.builder?.source === "builder" && builderDraft.roundCount === 4 && builderDraft.rounds.length === 4 && builderDraft.baseDC === 19 && builderDraft.category === "discovery" && builderDraft.travelStations.length === 5 && builderDraft.finalOutcomes && builderDraft.rounds.every((round) => round.outcomeBranches), "canonical builder draft", builderDraft);
     check(result, "normalizeTravelEventDraft does not mutate input", stringifySmokeData(normalizeInput) === normalizeBefore && normalizedBuilderDraft !== normalizeInput, "input unchanged and new object", { before: normalizeBefore, after: stringifySmokeData(normalizeInput), normalized: normalizedBuilderDraft });
     check(result, "validateTravelEventDraft rejects incomplete draft safely", invalidBuilderValidation.ok === false && invalidBuilderValidation.errors.some((error) => error.includes("key")), "safe validation failure", invalidBuilderValidation);
