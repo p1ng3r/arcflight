@@ -164,6 +164,8 @@ import {
   createTravelBuilderFinalOutcome,
   prepareTravelEventBuilderFormOptions,
   applyTravelEventBuilderFormDataToDraft,
+  prepareTravelEventBuilderRoundEditorState,
+  applyTravelEventBuilderRoundFormDataToDraft,
   prepareTravelEventBuilderPreview
 } from "./helpers/travel-event-builder.js";
 import {
@@ -446,6 +448,8 @@ Hooks.once("init", () => {
     createTravelBuilderFinalOutcome,
     prepareTravelEventBuilderFormOptions,
     applyTravelEventBuilderFormDataToDraft,
+    prepareTravelEventBuilderRoundEditorState,
+    applyTravelEventBuilderRoundFormDataToDraft,
     prepareTravelEventBuilderPreview,
     prepareTravelEventSummary,
     prepareTravelRoundSummary,
@@ -679,6 +683,8 @@ export {
   createTravelBuilderFinalOutcome,
   prepareTravelEventBuilderFormOptions,
   applyTravelEventBuilderFormDataToDraft,
+  prepareTravelEventBuilderRoundEditorState,
+  applyTravelEventBuilderRoundFormDataToDraft,
   prepareTravelEventBuilderPreview,
   prepareTravelEventSummary,
   prepareTravelRoundSummary,

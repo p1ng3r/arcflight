@@ -13,7 +13,7 @@
 
   <section class="arcflight-travel-builder__panel" data-arcflight-builder-form>
     <h2>Basic Form Editor</h2>
-    <p class="arcflight-sheet__hint">Edit top-level draft fields here. Changes stay local to this builder window and re-normalize the draft; round, station prompt, branch, and final outcome editors are intentionally not part of this MVP.</p>
+    <p class="arcflight-sheet__hint">Edit top-level draft fields here. Changes stay local to this builder window and re-normalize the draft; round structure can be edited below, while advanced branch/final outcome details remain available through raw JSON.</p>
 
     <div class="arcflight-travel-builder__form-grid">
       <label class="arcflight-travel-builder__field">
@@ -83,6 +83,68 @@
 
     <div class="arcflight-travel-builder__controls">
       <button type="button" data-arcflight-builder-apply-form>Apply Form Edits</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-round-editor>
+    <h2>Round Editor MVP</h2>
+    <p class="arcflight-sheet__hint">Edit local round structure without touching the advanced JSON fallback. Active station choices use the top-level Travel Stations list; outcome branches are shown as read-only summaries for this phase.</p>
+
+    <div class="arcflight-travel-builder__rounds">
+      {{#each roundEditor.rounds}}
+        <details class="arcflight-travel-builder__round" data-arcflight-builder-round="{{round}}" open>
+          <summary>
+            <strong>Round {{round}}: {{title}}</strong>
+            <span>{{activeStationsLabel}}</span>
+          </summary>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Opening Vignette</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-round-opening-vignette data-arcflight-builder-round-field>{{openingVignette}}</textarea>
+          </label>
+
+          <fieldset class="arcflight-travel-builder__check-group arcflight-travel-builder__check-group--wide">
+            <legend>Active Stations for this Round</legend>
+            {{#each stationOptions}}
+              <label>
+                <input type="checkbox" value="{{value}}" {{#if checked}}checked{{/if}} data-arcflight-builder-round-active-stations data-arcflight-builder-round-field>
+                <span>{{label}}</span>
+              </label>
+            {{/each}}
+          </fieldset>
+
+          <h3>Active Station Player Actions</h3>
+          {{#if stationPrompts}}
+            <div class="arcflight-travel-builder__station-prompts">
+              {{#each stationPrompts}}
+                <label class="arcflight-travel-builder__field arcflight-travel-builder__station-prompt">
+                  <span>{{stationName}} Player Action</span>
+                  <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-player-action="{{stationKey}}" data-arcflight-builder-round-field>{{playerAction}}</textarea>
+                </label>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No active station prompts are selected for this round.</p>
+          {{/if}}
+
+          <h3>Outcome Branch Summary</h3>
+          <div class="arcflight-travel-builder__cards arcflight-travel-builder__outcomes">
+            {{#each outcomeBranches}}
+              <div class="arcflight-travel-builder__card">
+                <strong>{{label}}</strong>
+                <span>{{proposedEffectCount}} proposed effects{{#if hasCombatHandoff}} — combat handoff metadata{{/if}}</span>
+                {{#if vignette}}<p>{{vignette}}</p>{{/if}}
+                {{#if nextRoundNotes}}<span>Next round notes: {{nextRoundNotes}}</span>{{/if}}
+                {{#if handoffNotes}}<span>Handoff notes: {{handoffNotes}}</span>{{/if}}
+              </div>
+            {{/each}}
+          </div>
+        </details>
+      {{/each}}
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-rounds>Apply Round Edits</button>
     </div>
   </section>
 
