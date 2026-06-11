@@ -1,0 +1,105 @@
+<div class="arcflight-travel-builder__body">
+  <header class="arcflight-travel-builder__header">
+    <div>
+      <h1>Travel Event Builder</h1>
+      <p class="arcflight-sheet__hint">GM-facing authoring shell for data-only travel event drafts.</p>
+    </div>
+    <p class="arcflight-sheet__hint arcflight-travel-builder__boundary">{{hardBoundaryHint}}</p>
+  </header>
+
+  {{#if hasStatus}}
+    <p class="arcflight-travel-builder__status arcflight-travel-builder__status--{{status.kind}}">{{status.message}}</p>
+  {{/if}}
+
+  <section class="arcflight-travel-builder__panel">
+    <h2>Local Draft JSON</h2>
+    <p class="arcflight-sheet__hint">Edit or paste a draft here, then refresh the preview or export JSON. This shell keeps data in memory only.</p>
+    <textarea class="arcflight-travel-builder__textarea" data-arcflight-builder-draft-json>{{draftJson}}</textarea>
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-preview>Refresh Preview</button>
+      <button type="button" data-arcflight-builder-export-draft>Export Draft JSON</button>
+      <button type="button" data-arcflight-builder-export-final {{#unless canExportFinal}}disabled{{/unless}}>Export Final Event JSON</button>
+      <button type="button" class="arcflight-button--danger" data-arcflight-builder-reset>New Default Draft</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__grid">
+    <article class="arcflight-travel-builder__panel">
+      <h2>Preview</h2>
+      <div class="arcflight-travel-builder__summary">
+        <div class="arcflight-travel-builder__stat"><span>Key</span><strong>{{preview.key}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Name</span><strong>{{preview.name}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Category</span><strong>{{preview.categoryLabel}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Base DC</span><strong>{{preview.baseDC}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Rounds</span><strong>{{preview.roundCount}}</strong></div>
+      </div>
+      <p><strong>Resources:</strong> {{preview.activeResourcesLabel}}</p>
+      <p><strong>Stations:</strong> {{preview.travelStationsLabel}}</p>
+
+      <h3>Validation</h3>
+      {{#if validationOk}}
+        <p class="arcflight-travel-builder__ok">Draft currently validates.</p>
+      {{else}}
+        <p class="arcflight-travel-builder__warning">Draft has validation errors.</p>
+      {{/if}}
+      {{#if hasValidationErrors}}
+        <ul>
+          {{#each validationErrors}}<li>{{this}}</li>{{/each}}
+        </ul>
+      {{/if}}
+      {{#if hasValidationWarnings}}
+        <ul>
+          {{#each validationWarnings}}<li>{{this}}</li>{{/each}}
+        </ul>
+      {{/if}}
+    </article>
+
+    <article class="arcflight-travel-builder__panel">
+      <h2>Export Readiness</h2>
+      <div class="arcflight-travel-builder__summary">
+        <div class="arcflight-travel-builder__stat"><span>Draft Export</span><strong>{{#if exportPreview.exportDraftAvailable}}Ready{{else}}Blocked{{/if}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Final Export</span><strong>{{#if exportPreview.exportFinalAvailable}}Ready{{else}}Blocked{{/if}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Errors</span><strong>{{exportPreview.errorCount}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Warnings</span><strong>{{exportPreview.warningCount}}</strong></div>
+      </div>
+
+      <h3>Round Summary</h3>
+      <div class="arcflight-travel-builder__cards">
+        {{#each preview.rounds}}
+          <div class="arcflight-travel-builder__card">
+            <strong>Round {{round}}: {{title}}</strong>
+            <span>{{activeStationCount}} station prompts — {{activeStationsLabel}}</span>
+          </div>
+        {{/each}}
+      </div>
+
+      <h3>Final Outcomes</h3>
+      <div class="arcflight-travel-builder__cards">
+        {{#each preview.finalOutcomes}}
+          <div class="arcflight-travel-builder__card">
+            <strong>{{label}}</strong>
+            <span>{{proposedEffectCount}} proposed effects, {{rewardCount}} rewards, {{lossCount}} losses</span>
+          </div>
+        {{/each}}
+      </div>
+    </article>
+  </section>
+
+  <section class="arcflight-travel-builder__panel">
+    <h2>Import Pasted Draft JSON</h2>
+    <p class="arcflight-sheet__hint">Paste exported draft JSON here and click Import. No drag/drop or file import is wired in this MVP.</p>
+    <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--short" data-arcflight-builder-import-json placeholder="Paste draft JSON here"></textarea>
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-import>Import Pasted JSON</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel">
+    <h2>Export Output</h2>
+    {{#if hasOutputJson}}
+      <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--output" readonly>{{outputJson}}</textarea>
+    {{else}}
+      <p class="arcflight-sheet__hint">Exported draft or final event JSON will appear here for manual copy.</p>
+    {{/if}}
+  </section>
+</div>

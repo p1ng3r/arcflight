@@ -1,5 +1,6 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
+import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "./apps/travel-event-runner.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
@@ -456,6 +457,9 @@ Hooks.once("init", () => {
     applyTravelStagedEffects,
     completeShipTravelEvent,
     clearShipTravelEvent,
+    ArcflightTravelEventBuilder,
+    openTravelEventBuilder,
+    prepareTravelEventBuilderShellState,
     ArcflightTravelEventRunner,
     openTravelEventRunner,
     prepareTravelEventLibraryOptions,
@@ -684,6 +688,9 @@ export {
   applyTravelStagedEffects,
   completeShipTravelEvent,
   clearShipTravelEvent,
+  ArcflightTravelEventBuilder,
+  openTravelEventBuilder,
+  prepareTravelEventBuilderShellState,
   ArcflightTravelEventRunner,
   openTravelEventRunner,
   prepareTravelEventLibraryOptions,

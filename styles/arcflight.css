@@ -787,3 +787,116 @@
 .arcflight-travel-runner__log-entries--compact .arcflight-travel-runner__log-entry {
   padding: 0.45rem;
 }
+
+.arcflight-travel-builder {
+  max-height: calc(100vh - 96px);
+}
+
+.arcflight-travel-builder .window-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.arcflight-travel-builder__body {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 0.75rem;
+  padding-right: 1.25rem;
+}
+
+.arcflight-travel-builder__header,
+.arcflight-travel-builder__controls,
+.arcflight-travel-builder__summary {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.arcflight-travel-builder__header {
+  justify-content: space-between;
+}
+
+.arcflight-travel-builder__boundary {
+  max-width: 30rem;
+}
+
+.arcflight-travel-builder__panel {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.arcflight-travel-builder__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-builder__textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 18rem;
+  resize: vertical;
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.85rem;
+}
+
+.arcflight-travel-builder__textarea--short {
+  min-height: 8rem;
+}
+
+.arcflight-travel-builder__textarea--output {
+  min-height: 12rem;
+}
+
+.arcflight-travel-builder__stat,
+.arcflight-travel-builder__card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arcflight-travel-builder__stat {
+  min-width: 7rem;
+}
+
+.arcflight-travel-builder__stat span,
+.arcflight-travel-builder__card span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__cards {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-builder__status {
+  border-left: 3px solid var(--color-border-highlight, #a66a00);
+  margin: 0;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arcflight-travel-builder__status--success,
+.arcflight-travel-builder__ok {
+  color: var(--color-level-success, #1f7a1f);
+}
+
+.arcflight-travel-builder__status--warning,
+.arcflight-travel-builder__warning {
+  color: var(--color-level-warning, #8a5a00);
+}
