@@ -99,6 +99,20 @@ import {
   validateTravelEventAuthoringTemplate
 } from "../helpers/travel-event-template.js";
 import {
+  TRAVEL_EVENT_BUILDER_VERSION,
+  createTravelEventDraft,
+  normalizeTravelEventDraft,
+  validateTravelEventDraft,
+  finalizeTravelEventDraft,
+  cloneTravelEventToDraft,
+  createTravelBuilderResourceEffect,
+  createTravelBuilderRound,
+  createTravelBuilderStationPrompt,
+  createTravelBuilderOutcomeBranch,
+  createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderPreview
+} from "../helpers/travel-event-builder.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -130,6 +144,15 @@ import {
   recordInstallState,
   removeInstallState
 } from "../helpers/install-state.js";
+import {
+  TRAVEL_EVENT_BUILDER_IO_VERSION,
+  exportTravelEventDraftToJson,
+  importTravelEventDraftFromJson,
+  importTravelEventDraftFromData,
+  exportFinalTravelEventToJson,
+  parseTravelEventBuilderJson,
+  prepareTravelEventBuilderExportPreview
+} from "../helpers/travel-event-builder-io.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
@@ -226,6 +249,17 @@ function collectTravelEventProse(value, path = []) {
   if (!value || typeof value !== "object") return [];
 
   return Object.entries(value).flatMap(([key, child]) => collectTravelEventProse(child, [...path, key]));
+}
+
+function stringifySmokeData(value) {
+  return JSON.stringify(value, (_key, entry) => (typeof entry === "function" ? "<function>" : entry));
+}
+
+function containsSmokeTerm(value, pattern) {
+  if (typeof value === "string") return pattern.test(value);
+  if (Array.isArray(value)) return value.some((entry) => containsSmokeTerm(entry, pattern));
+  if (value && typeof value === "object") return Object.values(value).some((entry) => containsSmokeTerm(entry, pattern));
+  return false;
 }
 
 function findLiteralOceanLanguage(event = {}) {
@@ -881,10 +915,83 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Strict authoring validator rejects missing rollFeedback", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent).ok === false && validateTravelEventDefinition(strictMissingRollFeedbackEvent, { strictAuthoring: true }).errors.some((error) => error.includes("rollFeedback")), "rollFeedback rejection", validateTravelEventAuthoringTemplate(strictMissingRollFeedbackEvent));
     check(result, "Normal and strict core travel event validation passes", EXPECTED_CORE_TRAVEL_EVENT_KEYS.every((key) => validateTravelEventDefinition(getCoreTravelEvent(key)).ok === true && validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }).ok === true), "all current core events valid", EXPECTED_CORE_TRAVEL_EVENT_KEYS.map((key) => ({ key, validation: validateTravelEventDefinition(getCoreTravelEvent(key)), strictValidation: validateTravelEventDefinition(getCoreTravelEvent(key), { strictAuthoring: true }) })));
 
+    const builderDraft = createTravelEventDraft({ key: "smoke-builder-event", name: "Smoke Builder Event", category: "discovery", roundCount: 4, baseDC: 19 });
+    const normalizeInput = { key: "normalize-smoke", name: "Normalize Smoke", rounds: [{ round: 1 }] };
+    const normalizeBefore = stringifySmokeData(normalizeInput);
+    const normalizedBuilderDraft = normalizeTravelEventDraft(normalizeInput);
+    const invalidBuilderValidation = validateTravelEventDraft({ name: "Incomplete Builder Draft" });
+    const invalidBuilderFinalize = finalizeTravelEventDraft({ key: "incomplete-builder-draft" });
+    const validBuilderFinalize = finalizeTravelEventDraft(builderDraft);
+    const sourceTravelEvent = getCoreTravelEvent("black-tide-crossing");
+    const sourceTravelEventBeforeClone = stringifySmokeData(sourceTravelEvent);
+    const clonedBuilderDraft = cloneTravelEventToDraft(sourceTravelEvent);
+    const validResourceEffect = createTravelBuilderResourceEffect({ resource: "morale", mode: "add", value: -1, label: "Morale -1" });
+    const invalidResourceEffect = createTravelBuilderResourceEffect({ resource: "mystery", mode: "subtract", value: "bad", label: "Bad resource" });
+    const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
+    const builderHelperExportsExist = typeof TRAVEL_EVENT_BUILDER_VERSION === "string"
+      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
+      && typeof globalThis.game?.arcflight?.createTravelEventDraft === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft === "function"
+      && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderPreview === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderPreview === "function";
+    check(result, "Travel Event Builder helper exports exist", builderHelperExportsExist, true, { version: TRAVEL_EVENT_BUILDER_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventDraft, devToolsCreate: typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft });
+    check(result, "createTravelEventDraft returns canonical draft", builderDraft.builder?.status === "draft" && builderDraft.builder?.source === "builder" && builderDraft.roundCount === 4 && builderDraft.rounds.length === 4 && builderDraft.baseDC === 19 && builderDraft.category === "discovery" && builderDraft.travelStations.length === 5 && builderDraft.finalOutcomes && builderDraft.rounds.every((round) => round.outcomeBranches), "canonical builder draft", builderDraft);
+    check(result, "normalizeTravelEventDraft does not mutate input", stringifySmokeData(normalizeInput) === normalizeBefore && normalizedBuilderDraft !== normalizeInput, "input unchanged and new object", { before: normalizeBefore, after: stringifySmokeData(normalizeInput), normalized: normalizedBuilderDraft });
+    check(result, "validateTravelEventDraft rejects incomplete draft safely", invalidBuilderValidation.ok === false && invalidBuilderValidation.errors.some((error) => error.includes("key")), "safe validation failure", invalidBuilderValidation);
+    check(result, "finalizeTravelEventDraft blocks invalid draft", invalidBuilderFinalize.ok === false && invalidBuilderFinalize.event === null, "invalid draft blocked", invalidBuilderFinalize);
+    check(result, "finalized valid draft removes builder metadata", validBuilderFinalize.ok === true && validBuilderFinalize.event?.builder === undefined && validateTravelEventDefinition(validBuilderFinalize.event, { strictAuthoring: true }).ok === true, "final event without builder metadata", validBuilderFinalize);
+    check(result, "cloneTravelEventToDraft preserves source event data but adds builder metadata", stringifySmokeData(sourceTravelEvent) === sourceTravelEventBeforeClone && clonedBuilderDraft.key === sourceTravelEvent.key && clonedBuilderDraft.builder?.source === "builder" && clonedBuilderDraft.builder?.status === "draft", "cloned draft with metadata", { cloned: clonedBuilderDraft, sourceUnchanged: stringifySmokeData(sourceTravelEvent) === sourceTravelEventBeforeClone });
+    check(result, "createTravelBuilderResourceEffect builds resource effect", validResourceEffect.type === "resource" && validResourceEffect.resource === "morale" && validResourceEffect.mode === "add" && validResourceEffect.value === -1 && validResourceEffect.label === "Morale -1" && !Object.hasOwn(validResourceEffect, "warnings"), "valid resource effect", validResourceEffect);
+    check(result, "createTravelBuilderResourceEffect rejects/flags bad resource", invalidResourceEffect.type === "resource" && invalidResourceEffect.resource === "hull" && Array.isArray(invalidResourceEffect.warnings) && invalidResourceEffect.warnings.some((warning) => warning.includes("Unknown travel resource")), "bad resource flagged", invalidResourceEffect);
+    check(result, "prepareTravelEventBuilderPreview returns validation and round summaries", builderPreview.validation?.ok === true && builderPreview.rounds?.length === 4 && builderPreview.finalOutcomes?.length === 5 && builderPreview.baseDC === 19, "preview summary", builderPreview);
+    check(result, "Travel Event Builder finalized data has no AP/RAP mutation", validBuilderFinalize.ok === true && !containsSmokeTerm(validBuilderFinalize.event, /\b(?:spend(?:ing)?\s+)?(?:AP|RAP|action points?|reaction action points?)\b/i), "no AP/RAP references", validBuilderFinalize.event);
+    check(result, "Travel Event Builder helpers do not mutate travel resources", validResourceEffect.type === "resource" && ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, prepareTravelEventBuilderPreview].some((helper) => /updateShipTravelResources|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no resource mutation helper calls", validResourceEffect);
+    check(result, "Travel Event Builder helpers do not automate combat", ![createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, prepareTravelEventBuilderPreview].some((helper) => /Combat(?:ant)?\.create|createCombat|startCombat|combat\.start/i.test(String(helper))), "no combat automation calls", TRAVEL_EVENT_BUILDER_VERSION);
+
     check(result, "Ship sheet travel runner readout exposes open button state", travelRunnerReadout.canOpen === true && travelRunnerReadout.hasActiveEvent === false && travelRunnerReadout.message === "No active travel event.", "can open with no active event", travelRunnerReadout);
     await actor.update({ [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: preservedCurrent });
     shipData = getArcflightShipData(actor);
     check(result, "Ship action economy helpers are exposed", typeof globalThis.game?.arcflight?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.canSpendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy === "function" && typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints === "function" && typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints === "function", true, { getShipActionEconomy: typeof globalThis.game?.arcflight?.getShipActionEconomy, resetShipActionEconomy: typeof globalThis.game?.arcflight?.resetShipActionEconomy, spendShipActionPoints: typeof globalThis.game?.arcflight?.spendShipActionPoints, canSpendShipActionPoints: typeof globalThis.game?.arcflight?.canSpendShipActionPoints, devToolsGetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.getShipActionEconomy, devToolsResetShipActionEconomy: typeof globalThis.game?.arcflight?.devTools?.resetShipActionEconomy, devToolsSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.spendShipActionPoints, devToolsCanSpendShipActionPoints: typeof globalThis.game?.arcflight?.devTools?.canSpendShipActionPoints });
+    const builderDraft = createTravelEventDraft({ key: "void-whale-shadow", name: "Void Whale Shadow", category: "discovery", roundCount: 4, baseDC: 19 });
+    const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
+    const validBuilderJson = JSON.stringify(builderDraft);
+    const parsedValidBuilderJson = parseTravelEventBuilderJson(validBuilderJson);
+    const parsedMalformedBuilderJson = parseTravelEventBuilderJson("{not valid json");
+    const parsedArrayBuilderJson = parseTravelEventBuilderJson("[]");
+    const importedBuilderDraft = importTravelEventDraftFromJson(validBuilderJson);
+    const malformedImport = importTravelEventDraftFromJson("{not valid json");
+    const importMutationSource = { ...builderDraft, tags: ["before"] };
+    const importMutationSnapshot = JSON.stringify(importMutationSource);
+    const importedFromData = importTravelEventDraftFromData(importMutationSource);
+    const exportedBuilderDraft = exportTravelEventDraftToJson(builderDraft);
+    const invalidBuilderDraft = normalizeTravelEventDraft({ ...builderDraft, tags: [1] });
+    const exportedInvalidBuilderDraft = exportTravelEventDraftToJson(invalidBuilderDraft);
+    const blockedInvalidBuilderDraft = exportTravelEventDraftToJson(invalidBuilderDraft, { requireValid: true });
+    const exportedWithoutBuilderMetadata = exportTravelEventDraftToJson(builderDraft, { includeBuilderMetadata: false });
+    const exportedWithoutBuilderMetadataData = exportedWithoutBuilderMetadata.json ? JSON.parse(exportedWithoutBuilderMetadata.json) : null;
+    const blockedInvalidFinalExport = exportFinalTravelEventToJson(invalidBuilderDraft);
+    const exportedFinalBuilderEvent = exportFinalTravelEventToJson(importedBuilderDraft.draft);
+    const exportedFinalBuilderEventData = exportedFinalBuilderEvent.json ? JSON.parse(exportedFinalBuilderEvent.json) : null;
+    const exportPreview = prepareTravelEventBuilderExportPreview(importedBuilderDraft.draft);
+    const builderIoEconomyBefore = getShipActionEconomy(actor);
+    const builderIoResourcesBefore = getShipTravelResources(actor);
+    check(result, "Travel event builder foundation helper exports exist", typeof TRAVEL_EVENT_BUILDER_VERSION === "string" && typeof createTravelEventDraft === "function" && typeof normalizeTravelEventDraft === "function" && typeof validateTravelEventDraft === "function" && typeof finalizeTravelEventDraft === "function" && typeof cloneTravelEventToDraft === "function" && typeof createTravelBuilderResourceEffect === "function" && typeof createTravelBuilderRound === "function" && typeof createTravelBuilderStationPrompt === "function" && typeof createTravelBuilderOutcomeBranch === "function" && typeof createTravelBuilderFinalOutcome === "function" && typeof prepareTravelEventBuilderPreview === "function", true, { version: TRAVEL_EVENT_BUILDER_VERSION });
+    check(result, "Travel event builder IO helper exports exist", typeof TRAVEL_EVENT_BUILDER_IO_VERSION === "string" && typeof exportTravelEventDraftToJson === "function" && typeof importTravelEventDraftFromJson === "function" && typeof importTravelEventDraftFromData === "function" && typeof exportFinalTravelEventToJson === "function" && typeof parseTravelEventBuilderJson === "function" && typeof prepareTravelEventBuilderExportPreview === "function" && typeof globalThis.game?.arcflight?.exportTravelEventDraftToJson === "function" && typeof globalThis.game?.arcflight?.devTools?.exportTravelEventDraftToJson === "function", true, { version: TRAVEL_EVENT_BUILDER_IO_VERSION, api: typeof globalThis.game?.arcflight?.exportTravelEventDraftToJson, devTools: typeof globalThis.game?.arcflight?.devTools?.exportTravelEventDraftToJson });
+    check(result, "parseTravelEventBuilderJson accepts valid JSON", parsedValidBuilderJson.ok === true && parsedValidBuilderJson.data?.key === builderDraft.key, "parsed object", parsedValidBuilderJson);
+    check(result, "parseTravelEventBuilderJson rejects malformed JSON safely", parsedMalformedBuilderJson.ok === false && parsedMalformedBuilderJson.errors.length > 0 && parsedMalformedBuilderJson.data === null, "safe malformed failure", parsedMalformedBuilderJson);
+    check(result, "parseTravelEventBuilderJson rejects non-object JSON roots safely", parsedArrayBuilderJson.ok === false && parsedArrayBuilderJson.data === null, "safe root failure", parsedArrayBuilderJson);
+    check(result, "importTravelEventDraftFromJson imports valid draft JSON", importedBuilderDraft.ok === true && importedBuilderDraft.draft?.key === builderDraft.key && importedBuilderDraft.validation?.ok === true, "imported draft", importedBuilderDraft);
+    check(result, "importTravelEventDraftFromJson rejects malformed JSON safely", malformedImport.ok === false && malformedImport.draft === null && malformedImport.errors.length > 0, "safe malformed import", malformedImport);
+    check(result, "importTravelEventDraftFromData does not mutate input", importedFromData.ok === true && JSON.stringify(importMutationSource) === importMutationSnapshot, "input unchanged", { before: importMutationSnapshot, after: importMutationSource });
+    check(result, "exportTravelEventDraftToJson exports draft JSON", exportedBuilderDraft.ok === true && typeof exportedBuilderDraft.json === "string" && JSON.parse(exportedBuilderDraft.json).builder?.version === TRAVEL_EVENT_BUILDER_VERSION, "draft JSON", exportedBuilderDraft.json);
+    check(result, "exportTravelEventDraftToJson exports invalid drafts by default but blocks requireValid", exportedInvalidBuilderDraft.ok === true && blockedInvalidBuilderDraft.ok === false && blockedInvalidBuilderDraft.json === null, "WIP export allowed; requireValid blocked", { exportedInvalidBuilderDraft, blockedInvalidBuilderDraft });
+    check(result, "exportTravelEventDraftToJson can omit builder metadata", exportedWithoutBuilderMetadata.ok === true && exportedWithoutBuilderMetadataData?.builder === undefined, "builder metadata omitted", exportedWithoutBuilderMetadataData);
+    check(result, "exportFinalTravelEventToJson blocks invalid data", blockedInvalidFinalExport.ok === false && blockedInvalidFinalExport.json === null, "invalid final blocked", blockedInvalidFinalExport);
+    check(result, "exportFinalTravelEventToJson exports valid event JSON without builder metadata", exportedFinalBuilderEvent.ok === true && exportedFinalBuilderEventData?.builder === undefined && exportedFinalBuilderEventData?.key === builderDraft.key, "final event data", exportedFinalBuilderEventData);
+    check(result, "prepareTravelEventBuilderExportPreview returns useful summary", exportPreview.key === builderDraft.key && exportPreview.finalizable === true && exportPreview.exportDraftAvailable === true && exportPreview.exportFinalAvailable === true, "export preview", exportPreview);
+    check(result, "Travel event builder foundation preserves PR171 defaults", createTravelEventDraft().roundCount === 4 && Array.isArray(builderDraft.futureAutomationNotes) && createTravelBuilderResourceEffect({ resource: "morale", value: -1 }).mode === "add" && createTravelBuilderResourceEffect({ resource: "morale", value: -1 }).value === -1 && Boolean(validateTravelEventDraft(builderDraft).normalizedDraft) && finalizeTravelEventDraft(builderDraft).event?.builder === undefined, "PR171 builder foundation contract", { defaultRoundCount: createTravelEventDraft().roundCount, futureAutomationNotes: builderDraft.futureAutomationNotes, resourceEffect: createTravelBuilderResourceEffect({ resource: "morale", value: -1 }), validation: validateTravelEventDraft(builderDraft), finalized: finalizeTravelEventDraft(builderDraft) });
+    check(result, "Travel event builder preview remains finalizable", builderPreview.finalizable === true && builderPreview.errorCount === 0, "builder preview", builderPreview);
+    check(result, "Builder IO introduces no AP/RAP, ship resource, combat, or persistence mutation", JSON.stringify(builderIoEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(builderIoResourcesBefore) === JSON.stringify(getShipTravelResources(actor)), "no actor state mutation by IO helpers", { economyBefore: builderIoEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: builderIoResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
     check(result, "canSpend AP/RAP passes with enough resources", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }).canSpend === true, "can spend 1 AP", canSpendShipActionPoints(actor, { ap: 1, rap: 0 }));
     check(result, "canSpend AP/RAP blocks insufficient resources", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }).canSpend === false, "cannot overspend AP", canSpendShipActionPoints(actor, { ap: actionEconomy.maxAP + 1, rap: 0 }));
     const spentEconomy = await spendShipActionPoints(actor, { ap: 1, rap: 0, reason: "Smoke spend" });

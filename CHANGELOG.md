@@ -8,11 +8,24 @@
 
 ## Unreleased
 
+### Travel Event Builder Foundation MVP
+
+- Added a data/helper-only Travel Event Builder Foundation for future GM-facing event authoring, including draft creation, normalization, strict validation, finalization, cloning from existing event definitions, staged resource-effect scaffolding, and read-only preview summaries.
+- Exposed builder helpers on `game.arcflight` and `game.arcflight.devTools` while keeping drafts non-persistent and removing builder metadata from finalized event data by default.
+- Extended framework smoke coverage for helper exports, canonical draft shape, non-mutating normalization, safe invalid-draft validation/finalization, source-event cloning, resource-effect validation, preview summaries, continued core-event validation, and no AP/RAP/resource/combat automation.
+- Preserved scope boundaries: no full builder UI, drag/drop editor, AI generation, compendium packs, database persistence, automatic combat start, AP/RAP travel use, new travel mechanics, or automatic staged-effect application was added.
+
 ### Travel Event Narrative Log MVP
 
 - Added a persistent Travel Event Log to the Travel Event Runner so recorded station results keep round, station, degree, actor/statistic/roll metadata, player action prose, result feedback, notes, and timestamps visible after notification quips fade.
 - Preserved existing inline station-card feedback and temporary notifications while keeping this pass runner UI only: no automatic chat posting, combat start, AP/RAP travel use, staged-effect automation, new stations, or new travel mechanics were added.
 - Extended smoke coverage for station-result narrative fields, PF2E-style roll metadata compatibility, narrative log row preparation, completed-event preservation, and no AP/RAP or travel-resource mutation from result recording.
+
+### Travel Event Builder Draft Import/Export Foundation
+
+- Added backend-only Travel Event Builder draft import/export helpers for safe JSON parsing, non-mutating draft normalization/validation, WIP draft export, finalized data-only event export, and export preview summaries.
+- Exposed the builder IO helpers on `game.arcflight` and `game.arcflight.devTools`, with smoke coverage for malformed JSON, non-object JSON roots, round-trip draft import/export, invalid final export blocking, builder metadata stripping, and no AP/RAP, ship-resource, combat, or persistence automation.
+- Preserved scope boundaries: no UI, no draft persistence, no settings storage, no compendium packs, no chat posting, no event running, no actor mutation, no staged-effect application, no AP/RAP travel mechanics, and no combat or encounter automation was added.
 
 ### Core Travel Event Template Upgrade and Pack 01B
 

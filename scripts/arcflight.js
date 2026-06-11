@@ -150,6 +150,20 @@ import {
   validateTravelEventAuthoringTemplate
 } from "./helpers/travel-event-template.js";
 import {
+  TRAVEL_EVENT_BUILDER_VERSION,
+  createTravelEventDraft,
+  normalizeTravelEventDraft,
+  validateTravelEventDraft,
+  finalizeTravelEventDraft,
+  cloneTravelEventToDraft,
+  createTravelBuilderResourceEffect,
+  createTravelBuilderRound,
+  createTravelBuilderStationPrompt,
+  createTravelBuilderOutcomeBranch,
+  createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderPreview
+} from "./helpers/travel-event-builder.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -181,6 +195,15 @@ import {
   recordInstallState,
   removeInstallState
 } from "./helpers/install-state.js";
+import {
+  TRAVEL_EVENT_BUILDER_IO_VERSION,
+  exportTravelEventDraftToJson,
+  importTravelEventDraftFromJson,
+  importTravelEventDraftFromData,
+  exportFinalTravelEventToJson,
+  parseTravelEventBuilderJson,
+  prepareTravelEventBuilderExportPreview
+} from "./helpers/travel-event-builder-io.js";
 
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
@@ -349,6 +372,13 @@ Hooks.once("init", () => {
     findShipsMissingInstallState,
     backfillInstallStateForShip,
     backfillInstallStateForAllShips,
+    TRAVEL_EVENT_BUILDER_IO_VERSION,
+    exportTravelEventDraftToJson,
+    importTravelEventDraftFromJson,
+    importTravelEventDraftFromData,
+    exportFinalTravelEventToJson,
+    parseTravelEventBuilderJson,
+    prepareTravelEventBuilderExportPreview,
     isArcflightVehicle,
     setArcflightVehicleEnabled,
     setHullPattern,
@@ -400,6 +430,18 @@ Hooks.once("init", () => {
     createBlankFinalOutcomesTemplate,
     getTravelEventAuthoringGuidelines,
     validateTravelEventAuthoringTemplate,
+    TRAVEL_EVENT_BUILDER_VERSION,
+    createTravelEventDraft,
+    normalizeTravelEventDraft,
+    validateTravelEventDraft,
+    finalizeTravelEventDraft,
+    cloneTravelEventToDraft,
+    createTravelBuilderResourceEffect,
+    createTravelBuilderRound,
+    createTravelBuilderStationPrompt,
+    createTravelBuilderOutcomeBranch,
+    createTravelBuilderFinalOutcome,
+    prepareTravelEventBuilderPreview,
     prepareTravelEventSummary,
     prepareTravelRoundSummary,
     getTravelEventStationPrompt,
@@ -616,6 +658,18 @@ export {
   createBlankFinalOutcomesTemplate,
   getTravelEventAuthoringGuidelines,
   validateTravelEventAuthoringTemplate,
+  TRAVEL_EVENT_BUILDER_VERSION,
+  createTravelEventDraft,
+  normalizeTravelEventDraft,
+  validateTravelEventDraft,
+  finalizeTravelEventDraft,
+  cloneTravelEventToDraft,
+  createTravelBuilderResourceEffect,
+  createTravelBuilderRound,
+  createTravelBuilderStationPrompt,
+  createTravelBuilderOutcomeBranch,
+  createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderPreview,
   prepareTravelEventSummary,
   prepareTravelRoundSummary,
   getTravelEventStationPrompt,
@@ -674,6 +728,13 @@ export {
   findInstallRecord,
   prepareInstallStateSummary,
   findShipsMissingInstallState,
+  TRAVEL_EVENT_BUILDER_IO_VERSION,
+  exportTravelEventDraftToJson,
+  importTravelEventDraftFromJson,
+  importTravelEventDraftFromData,
+  exportFinalTravelEventToJson,
+  parseTravelEventBuilderJson,
+  prepareTravelEventBuilderExportPreview,
   getDefaultArcflightComponentData,
   arcflightComponentDefaults,
   ARCFLIGHT_SHIP_ACTOR_TYPE,
