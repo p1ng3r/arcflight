@@ -45,11 +45,13 @@ Public helper exports on `game.arcflight` and `game.arcflight.devTools` support 
 
 ### Travel Event Builder Foundation
 
-Arcflight includes a Travel Event Builder Foundation helper layer for a future GM-facing builder. This is foundation only: there is no builder UI yet, no drag/drop editor, no compendium persistence, no AI generation, no automatic combat start, no AP/RAP travel spending, no automatic staged-effect application, and no ship-resource mutation.
+Arcflight includes a Travel Event Builder Foundation helper layer and a local GM-facing builder shell for future event authoring. The builder remains local-only and in-memory: there is no drag/drop editor, round editor, station prompt editor, outcome editor, compendium persistence, AI generation, automatic combat start, AP/RAP travel spending, automatic staged-effect application, or ship-resource mutation.
 
 The builder helpers create, normalize, validate, preview, clone, and finalize draft travel event definitions using the existing Travel Event Authoring Template shape and strict authoring validation. Drafts include non-persistent `builder` metadata while they are editable, and finalization removes that metadata by default so the resulting event remains data-only and safe to add to a future registry or compendium workflow.
 
-Future GM builder UI work should consume this helper layer instead of inventing separate event data shapes. The public helper exports are available on both `game.arcflight` and `game.arcflight.devTools`, including `createTravelEventDraft`, `normalizeTravelEventDraft`, `validateTravelEventDraft`, `finalizeTravelEventDraft`, `cloneTravelEventToDraft`, staged resource-effect helpers, round/prompt/outcome skeleton helpers, and `prepareTravelEventBuilderPreview`.
+Future GM builder UI work should consume this helper layer instead of inventing separate event data shapes. The public helper exports are available on both `game.arcflight` and `game.arcflight.devTools`, including `createTravelEventDraft`, `normalizeTravelEventDraft`, `validateTravelEventDraft`, `finalizeTravelEventDraft`, `cloneTravelEventToDraft`, staged resource-effect helpers, round/prompt/outcome skeleton helpers, `prepareTravelEventBuilderFormOptions`, `applyTravelEventBuilderFormDataToDraft`, and `prepareTravelEventBuilderPreview`.
+
+Open the current builder with `game.arcflight.openTravelEventBuilder()`. It provides basic form controls for top-level draft fields (`key`, `name`, `category`, `baseDC`, `roundCount`, description/GM summary, tags, active resources, and Travel Five stations), keeps the raw JSON editor as an advanced fallback, and continues to support pasted JSON import plus draft/final JSON export without writing settings, compendia, actors, chat, or travel state.
 
 ## Ship-Attached Travel Event State Foundation
 

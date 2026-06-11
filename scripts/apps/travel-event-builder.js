@@ -1,7 +1,9 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import {
+  applyTravelEventBuilderFormDataToDraft,
   createTravelEventDraft,
   normalizeTravelEventDraft,
+  prepareTravelEventBuilderFormOptions,
   prepareTravelEventBuilderPreview
 } from "../helpers/travel-event-builder.js";
 import {
@@ -15,6 +17,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-reset]",
   "[data-arcflight-builder-preview]",
+  "[data-arcflight-builder-apply-form]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
   "[data-arcflight-builder-export-final]"
@@ -29,6 +32,16 @@ function cloneData(value) {
 
 function readTextareaValue(root, selector) {
   return root?.querySelector?.(selector)?.value ?? "";
+}
+
+function readInputValue(root, selector) {
+  return root?.querySelector?.(selector)?.value ?? "";
+}
+
+function readCheckedValues(root, selector) {
+  return Array.from(root?.querySelectorAll?.(selector) ?? [])
+    .filter((input) => input.checked === true)
+    .map((input) => input.value);
 }
 
 function formatJson(value) {
@@ -63,12 +76,14 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
     hasValidationErrors: preview.validation.errors.length > 0,
     hasValidationWarnings: preview.validation.warnings.length > 0,
     canExportFinal: exportPreview.exportFinalAvailable === true,
-    canExportDraft: exportPreview.exportDraftAvailable === true
+    canExportDraft: exportPreview.exportDraftAvailable === true,
+    formOptions: prepareTravelEventBuilderFormOptions(normalizedDraft, options)
   });
 }
 
 export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundBuilderClick = this.#onBuilderClick.bind(this);
+  #boundBuilderChange = this.#onBuilderChange.bind(this);
 
   constructor(options = {}) {
     super(options);
@@ -116,6 +131,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
     this.element?.removeEventListener("click", this.#boundBuilderClick);
     this.element?.addEventListener("click", this.#boundBuilderClick);
+    this.element?.removeEventListener("change", this.#boundBuilderChange);
+    this.element?.addEventListener("change", this.#boundBuilderChange);
   }
 
   async #onBuilderClick(event) {
@@ -124,13 +141,46 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
     if (target.hasAttribute("data-arcflight-builder-reset")) return this.#onResetDraft(event);
     if (target.hasAttribute("data-arcflight-builder-preview")) return this.#onPreviewDraft(event);
+    if (target.hasAttribute("data-arcflight-builder-apply-form")) return this.#onApplyForm(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-final")) return this.#onExportFinal(event);
   }
 
+
+  async #onBuilderChange(event) {
+    const target = event.target?.closest?.("[data-arcflight-builder-form-field]");
+    if (!target || !this.element?.contains(target)) return;
+
+    this.#syncDraftFromForm();
+    this.outputJson = "";
+    this.status = createStatus("success", "Updated the local in-memory draft from the form.");
+    await this.#rerenderAfterAction();
+  }
+
   async #rerenderAfterAction() {
     await this.render(true);
+  }
+
+
+  #readFormData() {
+    return {
+      key: readInputValue(this.element, "[name='arcflight-builder-key']"),
+      name: readInputValue(this.element, "[name='arcflight-builder-name']"),
+      category: readInputValue(this.element, "[name='arcflight-builder-category']"),
+      baseDC: readInputValue(this.element, "[name='arcflight-builder-baseDC']"),
+      roundCount: readInputValue(this.element, "[name='arcflight-builder-roundCount']"),
+      description: readTextareaValue(this.element, "[name='arcflight-builder-description']"),
+      gmSummary: readTextareaValue(this.element, "[name='arcflight-builder-gmSummary']"),
+      tags: readInputValue(this.element, "[name='arcflight-builder-tags']"),
+      activeResources: readCheckedValues(this.element, "[name='arcflight-builder-activeResources']"),
+      travelStations: readCheckedValues(this.element, "[name='arcflight-builder-travelStations']")
+    };
+  }
+
+  #syncDraftFromForm() {
+    this.draft = applyTravelEventBuilderFormDataToDraft(this.draft, this.#readFormData());
+    return this.draft;
   }
 
   #syncDraftFromEditor() {
@@ -157,6 +207,15 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     event.preventDefault();
     const imported = this.#syncDraftFromEditor();
     this.status = createStatus(imported.ok ? (imported.warnings.length > 0 ? "warning" : "success") : "warning", imported.ok ? (imported.warnings[0] ?? "Preview refreshed from local draft JSON.") : firstError(imported, "Preview refreshed with validation errors."));
+    await this.#rerenderAfterAction();
+  }
+
+
+  async #onApplyForm(event) {
+    event.preventDefault();
+    this.#syncDraftFromForm();
+    this.outputJson = "";
+    this.status = createStatus("success", "Applied form edits to the local in-memory draft.");
     await this.#rerenderAfterAction();
   }
 

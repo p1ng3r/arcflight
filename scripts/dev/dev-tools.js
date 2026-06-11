@@ -41,6 +41,8 @@ import {
   createTravelBuilderStationPrompt,
   createTravelBuilderOutcomeBranch,
   createTravelBuilderFinalOutcome,
+  prepareTravelEventBuilderFormOptions,
+  applyTravelEventBuilderFormDataToDraft,
   prepareTravelEventBuilderPreview
 } from "../helpers/travel-event-builder.js";
 import {
@@ -298,6 +300,16 @@ export function createArcflightDevTools() {
      * Create a builder-compatible final outcome skeleton.
      */
     createTravelBuilderFinalOutcome,
+
+    /**
+     * Prepare form control option state for the local Travel Event Builder.
+     */
+    prepareTravelEventBuilderFormOptions,
+
+    /**
+     * Apply top-level form data to a local Travel Event Builder draft.
+     */
+    applyTravelEventBuilderFormDataToDraft,
 
     /**
      * Prepare a read-only builder preview summary without running an event.
