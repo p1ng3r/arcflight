@@ -119,6 +119,8 @@ import {
   applyTravelEventBuilderFormDataToDraft,
   prepareTravelEventBuilderRoundEditorState,
   applyTravelEventBuilderRoundFormDataToDraft,
+  prepareTravelEventBuilderFinalOutcomeEffectEditorState,
+  applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft,
   prepareTravelEventBuilderPreview
 } from "../helpers/travel-event-builder.js";
 import {
@@ -938,7 +940,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     const invalidResourceEffect = createTravelBuilderResourceEffect({ resource: "mystery", mode: "subtract", value: "bad", label: "Bad resource" });
     const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
     const builderHelperExportsExist = typeof TRAVEL_EVENT_BUILDER_VERSION === "string"
-      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderFormOptions, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderRoundEditorState, applyTravelEventBuilderRoundFormDataToDraft, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
+      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderFormOptions, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderRoundEditorState, applyTravelEventBuilderRoundFormDataToDraft, prepareTravelEventBuilderFinalOutcomeEffectEditorState, applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
       && typeof globalThis.game?.arcflight?.createTravelEventDraft === "function"
       && typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft === "function"
       && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderPreview === "function"
@@ -946,11 +948,15 @@ export async function runFrameworkSmokeTest(options = {}) {
       && typeof globalThis.game?.arcflight?.applyTravelEventBuilderFormDataToDraft === "function"
       && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderRoundEditorState === "function"
       && typeof globalThis.game?.arcflight?.applyTravelEventBuilderRoundFormDataToDraft === "function"
+      && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderFinalOutcomeEffectEditorState === "function"
+      && typeof globalThis.game?.arcflight?.applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft === "function"
       && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderPreview === "function"
       && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderFormOptions === "function"
       && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderFormDataToDraft === "function"
       && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderRoundEditorState === "function"
-      && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderRoundFormDataToDraft === "function";
+      && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderRoundFormDataToDraft === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderFinalOutcomeEffectEditorState === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft === "function";
     check(result, "Travel Event Builder helper exports exist", builderHelperExportsExist, true, { version: TRAVEL_EVENT_BUILDER_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventDraft, devToolsCreate: typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft });
     const builderShellState = prepareTravelEventBuilderShellState(builderDraft);
     const builderFormOptions = prepareTravelEventBuilderFormOptions(builderDraft);
@@ -990,6 +996,89 @@ export async function runFrameworkSmokeTest(options = {}) {
     });
     const roundEditedDraftExport = exportTravelEventDraftToJson(roundEditedBuilderDraft);
     const roundEditedDraftImport = importTravelEventDraftFromJson(roundEditedDraftExport.json ?? "");
+
+    const effectEditorDraft = normalizeTravelEventDraft({
+      ...builderDraft,
+      finalOutcomes: {
+        ...builderDraft.finalOutcomes,
+        criticalSuccess: {
+          label: "Critical Success",
+          vignette: "Original critical success text.",
+          proposedEffects: [
+            createTravelBuilderResourceEffect({ resource: "morale", mode: "add", value: 1, label: "Morale +1" }),
+            { type: "modifier", target: "future.dc", mode: "add", value: -1, label: "Unsupported modifier" }
+          ],
+          rewards: [],
+          losses: []
+        },
+        success: {
+          label: "Success",
+          vignette: "Original success text.",
+          proposedEffects: [],
+          rewards: [],
+          losses: []
+        },
+        mixed: {
+          label: "Mixed",
+          vignette: "Original mixed text.",
+          proposedEffects: [],
+          rewards: [],
+          losses: []
+        },
+        criticalFailure: {
+          label: "Critical Failure",
+          vignette: "Original critical failure text.",
+          proposedEffects: [],
+          rewards: [],
+          losses: []
+        }
+      }
+    });
+    const effectEditorState = prepareTravelEventBuilderFinalOutcomeEffectEditorState(effectEditorDraft);
+    const effectEditorEconomyBefore = getShipActionEconomy(actor);
+    const effectEditorResourcesBefore = getShipTravelResources(actor);
+    const addedEffectDraft = applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft(effectEditorDraft, {
+      outcomes: {
+        success: {
+          label: "Success",
+          vignette: "Success text survives.",
+          effects: [],
+          addResourceEffect: true
+        }
+      }
+    });
+    const editedEffectDraft = applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft(addedEffectDraft, {
+      outcomes: {
+        success: {
+          label: "Edited Success",
+          vignette: "Edited success text.",
+          effects: [{ index: 0, resource: "supplies", mode: "set", value: "3", label: "Supplies set to 3" }]
+        }
+      }
+    });
+    const removedEffectDraft = applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft(editedEffectDraft, {
+      outcomes: {
+        success: {
+          label: "Edited Success",
+          vignette: "Edited success text.",
+          effects: [{ index: 0, resource: "supplies", mode: "set", value: "3", label: "Supplies set to 3", remove: true }]
+        }
+      }
+    });
+    const invalidEffectDraft = normalizeTravelEventDraft({
+      ...effectEditorDraft,
+      finalOutcomes: {
+        ...effectEditorDraft.finalOutcomes,
+        mixed: {
+          ...effectEditorDraft.finalOutcomes.mixed,
+          proposedEffects: [{ type: "resource", resource: "mystery", mode: "subtract", value: "bad", label: "Bad resource" }]
+        }
+      }
+    });
+    const invalidEffectValidation = validateTravelEventDraft(invalidEffectDraft);
+    const editedEffectsDraftExport = exportTravelEventDraftToJson(editedEffectDraft);
+    const editedEffectsDraftImport = importTravelEventDraftFromJson(editedEffectsDraftExport.json ?? "");
+    const editedEffectsFinalExport = exportFinalTravelEventToJson(editedEffectsDraftImport.draft);
     check(result, "Travel Event Builder app exports exist", typeof ArcflightTravelEventBuilder === "function" && typeof openTravelEventBuilder === "function" && typeof prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderShellState === "function", true, { importedClass: typeof ArcflightTravelEventBuilder, importedOpen: typeof openTravelEventBuilder, importedShellState: typeof prepareTravelEventBuilderShellState, apiOpen: typeof globalThis.game?.arcflight?.openTravelEventBuilder, devToolsOpen: typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder });
     check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
     check(result, "Travel Event Builder form option data exists", builderShellState.formOptions?.categories?.length > 0 && builderShellState.formOptions?.activeResources?.length > 0 && builderShellState.formOptions?.travelStations?.length > 0 && builderFormOptions.categories.some((option) => option.value === "discovery" && option.selected === true), "category/resource/station form options", { shell: builderShellState.formOptions, helper: builderFormOptions });
@@ -1004,6 +1093,17 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder station prompt playerAction round edit persists", roundEditedBuilderDraft.rounds[0].activeStations.find((prompt) => prompt.stationKey === "navigator")?.playerAction === "Chart the safest path through the smoke-test anomaly.", "updated navigator playerAction", roundEditedBuilderDraft.rounds[0].activeStations.find((prompt) => prompt.stationKey === "navigator"));
     check(result, "Travel Event Builder JSON import/export still works after round edits", roundEditedDraftExport.ok === true && roundEditedDraftImport.ok === true && roundEditedDraftImport.draft?.rounds?.[0]?.openingVignette === "Smoke-edited opening vignette stays in the local draft.", "post-round JSON IO", { draftExport: roundEditedDraftExport, draftImport: roundEditedDraftImport });
     check(result, "Travel Event Builder round edits introduce no actor state, AP/RAP, travel resource, combat, or persistence mutation", JSON.stringify(builderRoundEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(builderRoundResourcesBefore) === JSON.stringify(getShipTravelResources(actor)) && ![applyTravelEventBuilderRoundFormDataToDraft, prepareTravelEventBuilderRoundEditorState].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|game\.settings\.set|Actor\.update|actor\.update|startCombat|Combat\.create/.test(String(helper))), "no actor/combat/persistence mutation by round helpers", { economyBefore: builderRoundEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: builderRoundResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
+
+
+    check(result, "Travel Event Builder final outcome effect editor helper exports exist", typeof prepareTravelEventBuilderFinalOutcomeEffectEditorState === "function" && typeof applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderFinalOutcomeEffectEditorState === "function" && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft === "function", true, { stateHelper: typeof prepareTravelEventBuilderFinalOutcomeEffectEditorState, applyHelper: typeof applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft });
+    check(result, "Travel Event Builder final outcome effect editor state lists resource and read-only effects", effectEditorState.outcomes?.length === 5 && effectEditorState.outcomes.find((outcome) => outcome.key === "criticalSuccess")?.resourceEffects?.length === 1 && effectEditorState.outcomes.find((outcome) => outcome.key === "criticalSuccess")?.unsupportedEffects?.length === 1, "effect editor state", effectEditorState);
+    check(result, "Travel Event Builder adding a final outcome resource effect updates only the draft", (addedEffectDraft.finalOutcomes.success.proposedEffects ?? []).length === 1 && (effectEditorDraft.finalOutcomes.success.proposedEffects ?? []).length === 0, "added local resource effect", { original: effectEditorDraft.finalOutcomes.success, added: addedEffectDraft.finalOutcomes.success });
+    check(result, "Travel Event Builder editing final outcome resource/mode/value/label persists", editedEffectDraft.finalOutcomes.success.label === "Edited Success" && editedEffectDraft.finalOutcomes.success.vignette === "Edited success text." && editedEffectDraft.finalOutcomes.success.proposedEffects[0]?.resource === "supplies" && editedEffectDraft.finalOutcomes.success.proposedEffects[0]?.mode === "set" && editedEffectDraft.finalOutcomes.success.proposedEffects[0]?.value === 3 && editedEffectDraft.finalOutcomes.success.proposedEffects[0]?.label === "Supplies set to 3", "edited resource effect", editedEffectDraft.finalOutcomes.success);
+    check(result, "Travel Event Builder removing final outcome resource effect persists", (removedEffectDraft.finalOutcomes.success.proposedEffects ?? []).length === 0 && editedEffectDraft.finalOutcomes.success.proposedEffects.length === 1, "removed resource effect", { removed: removedEffectDraft.finalOutcomes.success, previous: editedEffectDraft.finalOutcomes.success });
+    check(result, "Travel Event Builder unsupported final outcome effects are preserved read-only", effectEditorDraft.finalOutcomes.criticalSuccess.proposedEffects.some((effect) => effect.type === "modifier") && editedEffectDraft.finalOutcomes.criticalSuccess.proposedEffects.some((effect) => effect.type === "modifier"), "unsupported preserved", editedEffectDraft.finalOutcomes.criticalSuccess.proposedEffects);
+    check(result, "Travel Event Builder invalid final outcome resource effect data fails safely", invalidEffectValidation.ok === false && invalidEffectValidation.errors.some((error) => error.includes("unknown travel resource")) && invalidEffectValidation.errors.some((error) => error.includes("unsupported resource mode")) && invalidEffectValidation.errors.some((error) => error.includes("value must be numeric")), "invalid effect validation", invalidEffectValidation);
+    check(result, "Travel Event Builder final outcome effect edits introduce no actor state, AP/RAP, travel resource, combat, persistence, or staged-effect application", JSON.stringify(effectEditorEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(effectEditorResourcesBefore) === JSON.stringify(getShipTravelResources(actor)) && ![prepareTravelEventBuilderFinalOutcomeEffectEditorState, applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft].some((helper) => /updateShipTravelResources|applyTravelStagedEffect|applyTravelStagedEffects|spendShipActionPoints|resetShipActionEconomy|game\.settings\.set|Actor\.update|actor\.update|startCombat|Combat\.create/.test(String(helper))), "no actor/combat/persistence mutation by effect editor helpers", { economyBefore: effectEditorEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: effectEditorResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
+    check(result, "Travel Event Builder JSON import/export still works after final outcome effect edits", editedEffectsDraftExport.ok === true && editedEffectsDraftImport.ok === true && editedEffectsDraftImport.draft?.finalOutcomes?.success?.proposedEffects?.[0]?.resource === "supplies" && [true, false].includes(editedEffectsFinalExport.ok), "post-effect JSON IO", { draftExport: editedEffectsDraftExport, draftImport: editedEffectsDraftImport, finalExport: editedEffectsFinalExport });
 
     check(result, "Travel Event Builder form edits introduce no AP/RAP, travel resource, or actor mutation", JSON.stringify(builderFormEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(builderFormResourcesBefore) === JSON.stringify(getShipTravelResources(actor)) && ![applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderFormOptions].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|game\.settings\.set|Actor\.update|actor\.update/.test(String(helper))), "no actor state mutation by form helpers", { economyBefore: builderFormEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: builderFormResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
     check(result, "createTravelEventDraft returns canonical draft", builderDraft.builder?.status === "draft" && builderDraft.builder?.source === "builder" && builderDraft.roundCount === 4 && builderDraft.rounds.length === 4 && builderDraft.baseDC === 19 && builderDraft.category === "discovery" && builderDraft.travelStations.length === 5 && builderDraft.finalOutcomes && builderDraft.rounds.every((round) => round.outcomeBranches), "canonical builder draft", builderDraft);

@@ -148,6 +148,93 @@
     </div>
   </section>
 
+
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-final-outcome-editor>
+    <h2>Final Outcome Text & Resource Effects MVP</h2>
+    <p class="arcflight-sheet__hint">Edit the five final outcome blocks locally. Resource effects remain staged JSON data only; unsupported effects are shown read-only and preserved for raw JSON editing.</p>
+
+    <div class="arcflight-travel-builder__final-outcomes">
+      {{#each finalOutcomeEffectEditor.outcomes}}
+        <details class="arcflight-travel-builder__round arcflight-travel-builder__final-outcome" data-arcflight-builder-final-outcome="{{key}}" open>
+          <summary>
+            <strong>{{defaultLabel}}</strong>
+            <span>{{resourceEffects.length}} resource effects{{#if hasUnsupportedEffects}} — {{unsupportedEffects.length}} read-only unsupported{{/if}}</span>
+          </summary>
+
+          <div class="arcflight-travel-builder__form-grid">
+            <label class="arcflight-travel-builder__field">
+              <span>Outcome Label</span>
+              <input type="text" value="{{label}}" data-arcflight-builder-final-outcome-label data-arcflight-builder-final-outcome-field>
+            </label>
+          </div>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Outcome Vignette</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-final-outcome-vignette data-arcflight-builder-final-outcome-field>{{vignette}}</textarea>
+          </label>
+
+          <h3>Staged Resource Effects</h3>
+          {{#if hasResourceEffects}}
+            <div class="arcflight-travel-builder__effect-list">
+              {{#each resourceEffects}}
+                <div class="arcflight-travel-builder__effect-row" data-arcflight-builder-final-effect="{{index}}">
+                  <label class="arcflight-travel-builder__field">
+                    <span>Resource</span>
+                    <select data-arcflight-builder-final-effect-resource data-arcflight-builder-final-outcome-field>
+                      {{#each resourceOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Mode</span>
+                    <select data-arcflight-builder-final-effect-mode data-arcflight-builder-final-outcome-field>
+                      {{#each modeOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Value</span>
+                    <input type="number" step="any" value="{{value}}" data-arcflight-builder-final-effect-value data-arcflight-builder-final-outcome-field>
+                  </label>
+                  <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+                    <span>Label</span>
+                    <input type="text" value="{{label}}" data-arcflight-builder-final-effect-label data-arcflight-builder-final-outcome-field>
+                  </label>
+                  <button type="button" class="arcflight-button--danger" data-arcflight-builder-remove-final-effect="{{../key}}" data-arcflight-builder-final-effect-index="{{index}}">Remove</button>
+                </div>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No editable resource effects are staged for this outcome.</p>
+          {{/if}}
+
+          {{#if hasUnsupportedEffects}}
+            <h3>Read-only Preserved Effects</h3>
+            <div class="arcflight-travel-builder__cards">
+              {{#each unsupportedEffects}}
+                <div class="arcflight-travel-builder__card">
+                  <strong>{{label}}</strong>
+                  <span>{{reason}}</span>
+                  <code>{{summary}}</code>
+                </div>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          <div class="arcflight-travel-builder__controls">
+            <button type="button" data-arcflight-builder-add-final-effect="{{key}}">Add Resource Effect</button>
+          </div>
+        </details>
+      {{/each}}
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-final-outcomes>Apply Final Outcome Edits</button>
+    </div>
+  </section>
+
   <section class="arcflight-travel-builder__panel">
     <h2>Advanced / Raw Draft JSON</h2>
     <p class="arcflight-sheet__hint">Edit or paste raw draft JSON here as an advanced fallback, then refresh the preview or export JSON. This shell keeps data in memory only.</p>
