@@ -53,16 +53,74 @@ export async function resolveTravelStationAssignedActor() {
   return { actor: null, actorUuid: "", actorId: "", actorName: "", actorResolved: false };
 }
 
-export function prepareTravelEventNarrativeLog(event = {}) {
-  return (event?.rounds ?? []).flatMap((round) => (round.stationResults ?? []).map((entry) => ({
-    ...entry,
-    round: round.round,
-    roundLabel: `Round ${round.round ?? "?"}`,
-    stationName: humanizeIdentifier(entry.stationKey),
-    degreeLabel: humanizeIdentifier(entry.degreeOfSuccess ?? entry.result),
-    hasRecordedAtLabel: Boolean(entry.recordedAt),
-    recordedAtLabel: entry.recordedAt ? new Date(entry.recordedAt).toLocaleString() : ""
-  })));
+function cloneData(value) {
+  if (value == null) return value;
+  if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function formatTimestamp(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+  return new Date(timestamp).toLocaleString();
+}
+
+function normalizeTravelRollDegree(degree) {
+  if (degree === "criticalSuccess" || degree === 3 || degree === "3") return "criticalSuccess";
+  if (degree === "success" || degree === 2 || degree === "2") return "success";
+  if (degree === "failure" || degree === 1 || degree === "1") return "failure";
+  if (degree === "criticalFailure" || degree === 0 || degree === "0") return "criticalFailure";
+  return typeof degree === "string" ? degree : "";
+}
+
+function getStationName(stationKey) {
+  return humanizeIdentifier(stationKey);
+}
+
+export function prepareTravelEventNarrativeLog(activeOrCompletedEvent) {
+  if (!activeOrCompletedEvent || !Array.isArray(activeOrCompletedEvent.rounds)) return [];
+
+  return activeOrCompletedEvent.rounds
+    .flatMap((round, roundIndex) => {
+      const roundNumber = Number(round?.round);
+      const normalizedRound = Number.isFinite(roundNumber) ? roundNumber : roundIndex + 1;
+      const stationResults = Array.isArray(round?.stationResults) ? round.stationResults : [];
+
+      return stationResults.map((result, resultIndex) => {
+        const stationKey = result?.stationKey ?? "";
+        const degreeOfSuccess = normalizeTravelRollDegree(result?.degreeOfSuccess ?? result?.degree) || (result?.degreeOfSuccess ?? "");
+        const recordedAtLabel = formatTimestamp(result?.recordedAt);
+        const feedbackText = typeof result?.feedbackText === "string" ? result.feedbackText.trim() : "";
+        const narrativeText = typeof result?.narrativeText === "string" ? result.narrativeText.trim() : "";
+
+        return {
+          ...cloneData(result),
+          roundNumber: normalizedRound,
+          roundLabel: `Round ${normalizedRound}`,
+          stationKey,
+          stationName: getStationName(stationKey),
+          degreeOfSuccess,
+          degreeLabel: humanizeIdentifier(degreeOfSuccess),
+          actorName: result?.actorName ?? "",
+          statisticKey: result?.statisticKey ?? "",
+          statisticLabel: result?.statisticKey ? humanizeIdentifier(result.statisticKey) : "",
+          rollTotal: result?.rollTotal ?? null,
+          hasRollTotal: result?.rollTotal !== null && result?.rollTotal !== undefined && result?.rollTotal !== "",
+          playerAction: typeof result?.playerAction === "string" ? result.playerAction.trim() : "",
+          feedbackText,
+          narrativeText,
+          resultText: narrativeText || feedbackText,
+          notes: result?.notes ?? "",
+          recordedAtLabel,
+          hasRecordedAtLabel: recordedAtLabel.length > 0,
+          _sortRound: normalizedRound,
+          _sortIndex: resultIndex
+        };
+      });
+    })
+    .sort((a, b) => (a._sortRound - b._sortRound) || (a._sortIndex - b._sortIndex))
+    .map(({ _sortRound, _sortIndex, ...row }) => row);
 }
 
 export function prepareTravelEventLibraryOptions(selectedKey = "") {
