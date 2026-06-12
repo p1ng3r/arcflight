@@ -70,6 +70,17 @@ import {
   prepareTravelEventBuilderLibraryState
 } from "../helpers/travel-event-builder.js";
 import {
+  advanceTravelEventRunnerRound,
+  completeTravelEventRunnerSession,
+  createTravelEventRunnerSession,
+  exportTravelEventRunnerSessionToJson,
+  normalizeTravelEventRunnerSession,
+  prepareTravelEventRunnerState,
+  retreatTravelEventRunnerRound,
+  setTravelEventRunnerStationResult,
+  summarizeTravelEventRunnerSession
+} from "../helpers/travel-event-runner.js";
+import {
   advanceShipTravelEventRound,
   applyTravelStagedEffect,
   applyTravelStagedEffects,
@@ -424,24 +435,22 @@ export function createArcflightDevTools() {
     ArcflightTravelEventRunner,
 
     /**
-     * Open the GM-facing Travel Event Runner for an Arcflight ship.
+     * Open the GM-facing local Travel Event Runner.
      */
     openTravelEventRunner,
 
-    /**
-     * Prepare core Travel Event Library selector options.
-     */
-    prepareTravelEventLibraryOptions,
-
-    /**
-     * Prepare details for the currently selected core Travel Event Library event.
-     */
-    prepareSelectedTravelEventLibraryDetails,
-
-    /**
-     * Prepare persistent Travel Event Log rows from active or completed event state.
-     */
-    prepareTravelEventNarrativeLog,
+    createTravelEventRunnerSession,
+    normalizeTravelEventRunnerSession,
+    prepareTravelEventRunnerState,
+    setTravelEventRunnerStationResult,
+    advanceTravelEventRunnerRound,
+    retreatTravelEventRunnerRound,
+    completeTravelEventRunnerSession,
+    summarizeTravelEventRunnerSession,
+    exportTravelEventRunnerSessionToJson,
+  prepareTravelEventLibraryOptions,
+  prepareSelectedTravelEventLibraryDetails,
+  prepareTravelEventNarrativeLog,
 
     /**
      * Return normalized ship-attached travel event state.
