@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Travel Event Builder Final Outcome Resource Effects Editor MVP
+
+- Added local-only final outcome proposed resource-effect editor helpers and UI controls for listing supported resource effects, adding one simple resource effect, editing resource/mode/value/label, and removing resource effects from draft data only.
+- Preserved unsupported or non-resource final outcome effects as read-only summaries, with no effect application, actor mutation, persistence, combat automation, AP/RAP mechanics, runner integration, save/load, or library publishing.
+- Added smoke coverage for helper exposure, existing final outcome text editing, quality reports, resource-effect state, add/edit/remove behavior, unsupported-effect preservation, invalid effect safety/warnings, JSON import/export after effect edits, and boundary leakage checks.
+
 ### Travel Event Builder Quality / Polish Gate
 
 - Added local-only Travel Event Builder quality helpers for table-readiness analysis beyond schema validation, including grouped errors, warnings, suggestions, area checklists, readiness state, and scoring.

@@ -1,11 +1,13 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import {
+  applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft,
   applyTravelEventBuilderFinalOutcomeFormDataToDraft,
   applyTravelEventBuilderFormDataToDraft,
   applyTravelEventBuilderRoundFormDataToDraft,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   prepareTravelEventBuilderFinalOutcomeEditorState,
+  prepareTravelEventBuilderFinalOutcomeEffectEditorState,
   prepareTravelEventBuilderFormOptions,
   prepareTravelEventBuilderPreview,
   prepareTravelEventBuilderQualityReport,
@@ -95,7 +97,8 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
     canExportDraft: exportPreview.exportDraftAvailable === true,
     formOptions: prepareTravelEventBuilderFormOptions(normalizedDraft, options),
     roundEditor: prepareTravelEventBuilderRoundEditorState(normalizedDraft, options),
-    finalOutcomeEditor: prepareTravelEventBuilderFinalOutcomeEditorState(normalizedDraft, options)
+    finalOutcomeEditor: prepareTravelEventBuilderFinalOutcomeEditorState(normalizedDraft, options),
+    finalOutcomeEffectEditor: prepareTravelEventBuilderFinalOutcomeEffectEditorState(normalizedDraft, options)
   });
 }
 
@@ -170,14 +173,15 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
 
   async #onBuilderChange(event) {
-    const target = event.target?.closest?.("[data-arcflight-builder-form-field], [data-arcflight-builder-round-field], [data-arcflight-builder-final-outcome-field]");
+    const target = event.target?.closest?.("[data-arcflight-builder-form-field], [data-arcflight-builder-round-field], [data-arcflight-builder-final-outcome-field], [data-arcflight-builder-final-outcome-effect-field]");
     if (!target || !this.element?.contains(target)) return;
+    if (target.closest?.("[data-arcflight-builder-final-outcome-add-effect]") && !target.hasAttribute("data-arcflight-builder-final-outcome-add-effect-enabled")) return;
 
     if (target.hasAttribute("data-arcflight-builder-round-field")) this.#syncDraftFromRoundForm();
-    else if (target.hasAttribute("data-arcflight-builder-final-outcome-field")) this.#syncDraftFromFinalOutcomeForm();
+    else if (target.hasAttribute("data-arcflight-builder-final-outcome-field") || target.hasAttribute("data-arcflight-builder-final-outcome-effect-field")) this.#syncDraftFromFinalOutcomeForm();
     else this.#syncDraftFromForm();
     this.outputJson = "";
-    this.status = createStatus("success", target.hasAttribute("data-arcflight-builder-round-field") ? "Updated the local in-memory draft from the round editor." : (target.hasAttribute("data-arcflight-builder-final-outcome-field") ? "Updated the local in-memory draft from the final outcome editor." : "Updated the local in-memory draft from the form."));
+    this.status = createStatus("success", target.hasAttribute("data-arcflight-builder-round-field") ? "Updated the local in-memory draft from the round editor." : (target.hasAttribute("data-arcflight-builder-final-outcome-field") || target.hasAttribute("data-arcflight-builder-final-outcome-effect-field") ? "Updated the local in-memory draft from the final outcome editor." : "Updated the local in-memory draft from the form."));
     await this.#rerenderAfterAction();
   }
 
@@ -231,19 +235,42 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   }
 
   #readFinalOutcomeFormData() {
-    const outcomes = Array.from(this.element?.querySelectorAll?.("[data-arcflight-builder-final-outcome]") ?? []).map((outcomeElement) => ({
-      key: outcomeElement.dataset.arcflightBuilderFinalOutcome,
-      label: readInputValue(outcomeElement, "[data-arcflight-builder-final-outcome-label]"),
-      narrative: readTextareaValue(outcomeElement, "[data-arcflight-builder-final-outcome-narrative]"),
-      rewardsText: readTextareaValue(outcomeElement, "[data-arcflight-builder-final-outcome-rewards]"),
-      consequencesText: readTextareaValue(outcomeElement, "[data-arcflight-builder-final-outcome-consequences]")
-    }));
+    const outcomes = Array.from(this.element?.querySelectorAll?.("[data-arcflight-builder-final-outcome]") ?? []).map((outcomeElement) => {
+      const effects = Array.from(outcomeElement.querySelectorAll("[data-arcflight-builder-final-outcome-effect]")).map((effectElement) => ({
+        index: Number(effectElement.dataset.arcflightBuilderFinalOutcomeEffect),
+        resource: readInputValue(effectElement, "[data-arcflight-builder-final-outcome-effect-resource]"),
+        mode: readInputValue(effectElement, "[data-arcflight-builder-final-outcome-effect-mode]"),
+        value: readInputValue(effectElement, "[data-arcflight-builder-final-outcome-effect-value]"),
+        label: readInputValue(effectElement, "[data-arcflight-builder-final-outcome-effect-label]"),
+        remove: effectElement.querySelector("[data-arcflight-builder-final-outcome-effect-remove]")?.checked === true
+      }));
+      const addEffectElement = outcomeElement.querySelector("[data-arcflight-builder-final-outcome-add-effect]");
+      const addEffect = addEffectElement ? {
+        enabled: addEffectElement.querySelector("[data-arcflight-builder-final-outcome-add-effect-enabled]")?.checked === true,
+        resource: readInputValue(addEffectElement, "[data-arcflight-builder-final-outcome-add-effect-resource]"),
+        mode: readInputValue(addEffectElement, "[data-arcflight-builder-final-outcome-add-effect-mode]"),
+        value: readInputValue(addEffectElement, "[data-arcflight-builder-final-outcome-add-effect-value]"),
+        label: readInputValue(addEffectElement, "[data-arcflight-builder-final-outcome-add-effect-label]")
+      } : {};
+
+      return {
+        key: outcomeElement.dataset.arcflightBuilderFinalOutcome,
+        label: readInputValue(outcomeElement, "[data-arcflight-builder-final-outcome-label]"),
+        narrative: readTextareaValue(outcomeElement, "[data-arcflight-builder-final-outcome-narrative]"),
+        rewardsText: readTextareaValue(outcomeElement, "[data-arcflight-builder-final-outcome-rewards]"),
+        consequencesText: readTextareaValue(outcomeElement, "[data-arcflight-builder-final-outcome-consequences]"),
+        effects,
+        addEffect
+      };
+    });
 
     return { outcomes };
   }
 
   #syncDraftFromFinalOutcomeForm() {
-    this.draft = applyTravelEventBuilderFinalOutcomeFormDataToDraft(this.draft, this.#readFinalOutcomeFormData());
+    const formData = this.#readFinalOutcomeFormData();
+    this.draft = applyTravelEventBuilderFinalOutcomeFormDataToDraft(this.draft, formData);
+    this.draft = applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft(this.draft, formData);
     return this.draft;
   }
 
@@ -304,7 +331,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     event.preventDefault();
     this.#syncDraftFromFinalOutcomeForm();
     this.outputJson = "";
-    this.status = createStatus("success", "Applied final outcome text edits to the local in-memory draft.");
+    this.status = createStatus("success", "Applied final outcome text and resource effect edits to the local in-memory draft.");
     await this.#rerenderAfterAction();
   }
 
