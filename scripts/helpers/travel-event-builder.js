@@ -242,6 +242,89 @@ function createReadOnlyEffectSummaries(outcome = {}) {
   });
 }
 
+function isEditableFinalOutcomeResourceEffect(effect) {
+  return isPlainObject(effect) &&
+    effect.type === "resource" &&
+    TRAVEL_RESOURCE_KEYS.includes(effect.resource) &&
+    RESOURCE_EFFECT_MODES.includes(effect.mode) &&
+    Number.isFinite(Number(effect.value));
+}
+
+function createFinalOutcomeResourceEffectEditorEntry(effect, index) {
+  const value = Number(effect.value);
+  return {
+    index,
+    displayIndex: index + 1,
+    label: typeof effect.label === "string" ? effect.label : "",
+    resource: effect.resource,
+    mode: effect.mode,
+    value,
+    valueText: String(value),
+    resourceOptions: TRAVEL_RESOURCE_KEYS.map((key) => createOption(key, RESOURCE_LABELS[key] ?? key, effect.resource === key)),
+    modeOptions: RESOURCE_EFFECT_MODES.map((mode) => createOption(mode, mode, effect.mode === mode))
+  };
+}
+
+function createBlankFinalOutcomeResourceEffectEditorEntry() {
+  const defaultResource = ARCFLIGHT_TRAVEL_RESOURCES.HULL;
+  const defaultMode = "add";
+  return {
+    resource: defaultResource,
+    mode: defaultMode,
+    value: 0,
+    valueText: "0",
+    label: "",
+    resourceOptions: TRAVEL_RESOURCE_KEYS.map((key) => createOption(key, RESOURCE_LABELS[key] ?? key, key === defaultResource)),
+    modeOptions: RESOURCE_EFFECT_MODES.map((mode) => createOption(mode, mode, mode === defaultMode))
+  };
+}
+
+function normalizeEffectEditorEntries(formData = {}) {
+  if (Array.isArray(formData.outcomes)) {
+    return formData.outcomes.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
+  }
+
+  const entries = new Map();
+  for (const [key, value] of Object.entries(formData)) {
+    const match = key.match(/^finalOutcomes\.([^.]+)\.effects(?:\.(\d+)\.(resource|mode|value|label|remove)|\.add\.(enabled|resource|mode|value|label))$/);
+    if (!match || !FINAL_OUTCOME_KEYS.includes(match[1])) continue;
+    const outcomeKey = match[1];
+    const entry = entries.get(outcomeKey) ?? { key: outcomeKey, effects: [], addEffect: {} };
+    if (match[2] != null) {
+      const index = Number(match[2]);
+      if (!Number.isInteger(index) || index < 0) continue;
+      const effectEntry = entry.effects.find((candidate) => candidate.index === index) ?? { index };
+      effectEntry[match[3]] = value;
+      if (!entry.effects.includes(effectEntry)) entry.effects.push(effectEntry);
+    } else {
+      entry.addEffect[match[4]] = value;
+    }
+    entries.set(outcomeKey, entry);
+  }
+
+  return Array.from(entries.values());
+}
+
+function coerceEffectEditorBoolean(value) {
+  if (Array.isArray(value)) return value.some((entry) => coerceEffectEditorBoolean(entry));
+  return value === true || value === "true" || value === "on" || value === "1" || value === 1;
+}
+
+function createValidResourceEffectFromEditor(entry) {
+  const resource = coerceFormString(entry?.resource);
+  const mode = coerceFormString(entry?.mode);
+  const rawValue = entry?.value;
+  const value = Number(Array.isArray(rawValue) ? rawValue[0] : rawValue);
+  if (!TRAVEL_RESOURCE_KEYS.includes(resource) || !RESOURCE_EFFECT_MODES.includes(mode) || !Number.isFinite(value)) return null;
+  return {
+    type: "resource",
+    resource,
+    mode,
+    value,
+    label: coerceFormString(entry?.label, "")
+  };
+}
+
 function stringifyCompactData(value) {
   try {
     return JSON.stringify(value);
@@ -494,14 +577,53 @@ export function prepareTravelEventBuilderRoundEditorState(draft, options = {}) {
   });
 }
 
+export function prepareTravelEventBuilderFinalOutcomeEffectEditorState(draft, options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderFinalOutcomeEffectEditorState");
+  const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+
+  return deepFreeze({
+    resourceOptions: TRAVEL_RESOURCE_KEYS.map((key) => createOption(key, RESOURCE_LABELS[key] ?? key, false)),
+    modeOptions: RESOURCE_EFFECT_MODES.map((mode) => createOption(mode, mode, false)),
+    outcomes: FINAL_OUTCOME_KEYS.map((key) => {
+      const outcome = normalizedDraft.finalOutcomes?.[key] ?? createDefaultFinalOutcomeForKey(key);
+      const proposedEffects = Array.isArray(outcome.proposedEffects) ? outcome.proposedEffects : [];
+      const resourceEffects = [];
+      const readOnlyEffectSummaries = [];
+      proposedEffects.forEach((effect, index) => {
+        if (isEditableFinalOutcomeResourceEffect(effect)) resourceEffects.push(createFinalOutcomeResourceEffectEditorEntry(effect, index));
+        else {
+          const [summary] = createReadOnlyEffectSummaries({ proposedEffects: [effect] });
+          readOnlyEffectSummaries.push({ ...summary, index });
+        }
+      });
+
+      return {
+        key,
+        label: FINAL_OUTCOME_LABELS[key] ?? key,
+        proposedEffectCount: proposedEffects.length,
+        resourceEffectCount: resourceEffects.length,
+        readOnlyEffectCount: readOnlyEffectSummaries.length,
+        resourceEffects,
+        readOnlyEffectSummaries,
+        hasResourceEffects: resourceEffects.length > 0,
+        hasReadOnlyEffects: readOnlyEffectSummaries.length > 0,
+        addEffect: createBlankFinalOutcomeResourceEffectEditorEntry()
+      };
+    })
+  });
+}
+
 export function prepareTravelEventBuilderFinalOutcomeEditorState(draft, options = {}) {
   assertOptionsObject(options, "prepareTravelEventBuilderFinalOutcomeEditorState");
   const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+  const effectEditor = prepareTravelEventBuilderFinalOutcomeEffectEditorState(normalizedDraft, options);
+  const effectsByOutcome = new Map(effectEditor.outcomes.map((outcome) => [outcome.key, outcome]));
 
   return deepFreeze({
     outcomes: FINAL_OUTCOME_KEYS.map((key) => {
       const outcome = normalizedDraft.finalOutcomes?.[key] ?? createDefaultFinalOutcomeForKey(key);
       const effectSummaries = createReadOnlyEffectSummaries(outcome);
+      const effectState = effectsByOutcome.get(key);
       return {
         key,
         label: FINAL_OUTCOME_LABELS[key] ?? key,
@@ -512,6 +634,11 @@ export function prepareTravelEventBuilderFinalOutcomeEditorState(draft, options 
         proposedEffectCount: effectSummaries.length,
         effectSummaries,
         hasProposedEffects: effectSummaries.length > 0,
+        resourceEffects: effectState?.resourceEffects ?? [],
+        hasResourceEffects: effectState?.hasResourceEffects === true,
+        readOnlyEffectSummaries: effectState?.readOnlyEffectSummaries ?? [],
+        hasReadOnlyEffects: effectState?.hasReadOnlyEffects === true,
+        addEffect: effectState?.addEffect ?? createBlankFinalOutcomeResourceEffectEditorEntry(),
         hasCombatHandoff: outcome.combatHandoff === true,
         handoffNotes: typeof outcome.handoffNotes === "string" ? outcome.handoffNotes : ""
       };
@@ -566,6 +693,53 @@ export function applyTravelEventBuilderFinalOutcomeFormDataToDraft(draft, formDa
     else if (Object.hasOwn(entry, "consequenceText")) nextOutcome.losses = splitTextLines(entry.consequenceText);
 
     finalOutcomes[key] = nextOutcome;
+  }
+
+  return normalizeTravelEventDraft({
+    ...source,
+    finalOutcomes
+  }, options);
+}
+
+export function applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft(draft, formData = {}, options = {}) {
+  assertOptionsObject(options, "applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft");
+  assertOptionsObject(formData, "applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft formData");
+  const source = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+  const entries = normalizeEffectEditorEntries(formData);
+  if (entries.length === 0) return source;
+
+  const finalOutcomes = cloneData(source.finalOutcomes);
+  for (const entry of entries) {
+    const key = entry.key;
+    if (!FINAL_OUTCOME_KEYS.includes(key)) continue;
+    const outcome = normalizeFinalOutcomeEntry(key, finalOutcomes[key]);
+    const effects = Array.isArray(outcome.proposedEffects) ? cloneData(outcome.proposedEffects) : [];
+    const editsByIndex = new Map((Array.isArray(entry.effects) ? entry.effects : [])
+      .filter((effectEntry) => Number.isInteger(Number(effectEntry.index)) && Number(effectEntry.index) >= 0)
+      .map((effectEntry) => [Number(effectEntry.index), effectEntry]));
+
+    const nextEffects = effects.flatMap((effect, index) => {
+      const edit = editsByIndex.get(index);
+      if (!edit || !isEditableFinalOutcomeResourceEffect(effect)) return [effect];
+      if (coerceEffectEditorBoolean(edit.remove)) return [];
+      const editedEffect = createValidResourceEffectFromEditor({
+        resource: Object.hasOwn(edit, "resource") ? edit.resource : effect.resource,
+        mode: Object.hasOwn(edit, "mode") ? edit.mode : effect.mode,
+        value: Object.hasOwn(edit, "value") ? edit.value : effect.value,
+        label: Object.hasOwn(edit, "label") ? edit.label : effect.label
+      });
+      return [editedEffect ?? effect];
+    });
+
+    if (coerceEffectEditorBoolean(entry.addEffect?.enabled)) {
+      const addedEffect = createValidResourceEffectFromEditor(entry.addEffect);
+      if (addedEffect) nextEffects.push(addedEffect);
+    }
+
+    finalOutcomes[key] = {
+      ...outcome,
+      proposedEffects: nextEffects
+    };
   }
 
   return normalizeTravelEventDraft({

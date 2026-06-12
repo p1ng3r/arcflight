@@ -1093,3 +1093,47 @@
 .arcflight-travel-builder__checklist-item--open {
   color: var(--color-level-warning, #8a5a00);
 }
+
+.arcflight-travel-builder__resource-effects {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__resource-effect {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem;
+  border: 1px dashed var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.arcflight-travel-builder__resource-effect legend {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12, 0.75rem);
+  font-weight: bold;
+  padding: 0 0.25rem;
+}
+
+.arcflight-travel-builder__resource-effect .arcflight-travel-builder__field {
+  margin-bottom: 0;
+}
+
+.arcflight-travel-builder__resource-effect--add {
+  background: rgba(166, 106, 0, 0.06);
+}
+
+.arcflight-travel-builder__inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.arcflight-travel-builder__resource-effect-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}

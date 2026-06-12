@@ -217,15 +217,15 @@
   </section>
 
   <section class="arcflight-travel-builder__panel" data-arcflight-builder-final-outcome-editor>
-    <h2>Final Outcomes Text Editor MVP</h2>
-    <p class="arcflight-sheet__hint">Edit the five canonical final result blocks in this local draft. Resource and staged effects are displayed as read-only data summaries only; this pass does not apply or edit effects.</p>
+    <h2>Final Outcomes Text + Resource Effects Editor MVP</h2>
+    <p class="arcflight-sheet__hint">Edit the five canonical final result blocks and local-only staged resource effects in this draft. Effects remain proposed/staged data only; this editor never applies them.</p>
 
     <div class="arcflight-travel-builder__final-outcomes">
       {{#each finalOutcomeEditor.outcomes}}
         <details class="arcflight-travel-builder__final-outcome" data-arcflight-builder-final-outcome="{{key}}" open>
           <summary>
             <strong>{{label}}</strong>
-            <span>{{proposedEffectCount}} read-only staged/resource effects</span>
+            <span>{{proposedEffectCount}} proposed effects</span>
           </summary>
 
           <label class="arcflight-travel-builder__field">
@@ -248,10 +248,77 @@
             <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form arcflight-travel-builder__textarea--compact" placeholder="One consequence per line" data-arcflight-builder-final-outcome-consequences data-arcflight-builder-final-outcome-field>{{consequencesText}}</textarea>
           </label>
 
-          <h3>Read-only Staged / Resource Effect Summary</h3>
-          {{#if hasProposedEffects}}
+          <h3>Resource Effects</h3>
+          <p class="arcflight-sheet__hint">These rows edit proposed resource effects in the draft only. They do not apply effects to a ship.</p>
+          {{#if hasResourceEffects}}
+            <div class="arcflight-travel-builder__resource-effects">
+              {{#each resourceEffects}}
+                <fieldset class="arcflight-travel-builder__resource-effect" data-arcflight-builder-final-outcome-effect="{{index}}">
+                  <legend>Resource Effect {{displayIndex}}</legend>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Resource</span>
+                    <select data-arcflight-builder-final-outcome-effect-resource data-arcflight-builder-final-outcome-effect-field>
+                      {{#each resourceOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Mode</span>
+                    <select data-arcflight-builder-final-outcome-effect-mode data-arcflight-builder-final-outcome-effect-field>
+                      {{#each modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Value</span>
+                    <input type="number" step="1" value="{{valueText}}" data-arcflight-builder-final-outcome-effect-value data-arcflight-builder-final-outcome-effect-field>
+                  </label>
+                  <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+                    <span>Label</span>
+                    <input type="text" value="{{label}}" data-arcflight-builder-final-outcome-effect-label data-arcflight-builder-final-outcome-effect-field>
+                  </label>
+                  <label class="arcflight-travel-builder__inline-check arcflight-travel-builder__field--wide">
+                    <input type="checkbox" data-arcflight-builder-final-outcome-effect-remove data-arcflight-builder-final-outcome-effect-field>
+                    <span>Remove this resource effect from the draft</span>
+                  </label>
+                </fieldset>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No editable resource effects are present for this final outcome.</p>
+          {{/if}}
+
+          <fieldset class="arcflight-travel-builder__resource-effect arcflight-travel-builder__resource-effect--add" data-arcflight-builder-final-outcome-add-effect>
+            <legend>Add One Resource Effect</legend>
+            <p class="arcflight-sheet__hint arcflight-travel-builder__resource-effect-hint">Choose values, then check the add box to stage the new draft effect.</p>
+            <label class="arcflight-travel-builder__inline-check arcflight-travel-builder__field--wide">
+              <input type="checkbox" data-arcflight-builder-final-outcome-add-effect-enabled data-arcflight-builder-final-outcome-effect-field>
+              <span>Add this resource effect to the draft</span>
+            </label>
+            <label class="arcflight-travel-builder__field">
+              <span>Resource</span>
+              <select data-arcflight-builder-final-outcome-add-effect-resource data-arcflight-builder-final-outcome-effect-field>
+                {{#each addEffect.resourceOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            <label class="arcflight-travel-builder__field">
+              <span>Mode</span>
+              <select data-arcflight-builder-final-outcome-add-effect-mode data-arcflight-builder-final-outcome-effect-field>
+                {{#each addEffect.modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            <label class="arcflight-travel-builder__field">
+              <span>Value</span>
+              <input type="number" step="1" value="{{addEffect.valueText}}" data-arcflight-builder-final-outcome-add-effect-value data-arcflight-builder-final-outcome-effect-field>
+            </label>
+            <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+              <span>Label</span>
+              <input type="text" value="{{addEffect.label}}" placeholder="Optional table-facing label" data-arcflight-builder-final-outcome-add-effect-label data-arcflight-builder-final-outcome-effect-field>
+            </label>
+          </fieldset>
+
+          <h3>Read-only Unsupported / Non-resource Effect Summary</h3>
+          {{#if hasReadOnlyEffects}}
             <div class="arcflight-travel-builder__cards arcflight-travel-builder__effect-summaries">
-              {{#each effectSummaries}}
+              {{#each readOnlyEffectSummaries}}
                 <div class="arcflight-travel-builder__card">
                   <strong>{{label}}</strong>
                   <span>Type: {{type}}</span>
@@ -260,7 +327,7 @@
               {{/each}}
             </div>
           {{else}}
-            <p class="arcflight-sheet__hint">No staged/resource effects are present for this final outcome.</p>
+            <p class="arcflight-sheet__hint">No unsupported or non-resource effects are present for this final outcome.</p>
           {{/if}}
           {{#if hasCombatHandoff}}<p class="arcflight-sheet__hint">Combat handoff metadata is present and read-only.</p>{{/if}}
           {{#if handoffNotes}}<p class="arcflight-sheet__hint">Handoff notes: {{handoffNotes}}</p>{{/if}}
@@ -269,7 +336,7 @@
     </div>
 
     <div class="arcflight-travel-builder__controls">
-      <button type="button" data-arcflight-builder-apply-final-outcomes>Apply Final Outcome Edits</button>
+      <button type="button" data-arcflight-builder-apply-final-outcomes>Apply Final Outcome Text + Effect Edits</button>
     </div>
   </section>
 
