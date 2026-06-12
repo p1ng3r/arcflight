@@ -8,6 +8,7 @@ import {
   prepareTravelEventBuilderFinalOutcomeEditorState,
   prepareTravelEventBuilderFormOptions,
   prepareTravelEventBuilderPreview,
+  prepareTravelEventBuilderQualityReport,
   prepareTravelEventBuilderRoundEditorState
 } from "../helpers/travel-event-builder.js";
 import {
@@ -21,6 +22,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-reset]",
   "[data-arcflight-builder-preview]",
+  "[data-arcflight-builder-refresh-quality]",
   "[data-arcflight-builder-apply-form]",
   "[data-arcflight-builder-apply-rounds]",
   "[data-arcflight-builder-apply-final-outcomes]",
@@ -70,12 +72,20 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
   const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
   const preview = prepareTravelEventBuilderPreview(normalizedDraft, options);
   const exportPreview = prepareTravelEventBuilderExportPreview(normalizedDraft, options);
+  const qualityReport = prepareTravelEventBuilderQualityReport(normalizedDraft, options);
 
   return Object.freeze({
     draft: normalizedDraft,
     draftJson: formatJson(normalizedDraft),
     preview,
     exportPreview,
+    qualityReport,
+    qualityReadiness: qualityReport.readiness,
+    qualityReadinessClass: qualityReport.readiness.toLowerCase().replace(/\s+/g, "-"),
+    qualityScore: qualityReport.score,
+    qualityReady: qualityReport.ready,
+    qualityBlocked: qualityReport.readiness === "Blocked",
+    qualityNeedsAttention: qualityReport.readiness === "Needs Attention",
     validationOk: preview.validation.ok,
     validationErrors: preview.validation.errors,
     validationWarnings: preview.validation.warnings,
@@ -149,6 +159,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
     if (target.hasAttribute("data-arcflight-builder-reset")) return this.#onResetDraft(event);
     if (target.hasAttribute("data-arcflight-builder-preview")) return this.#onPreviewDraft(event);
+    if (target.hasAttribute("data-arcflight-builder-refresh-quality")) return this.#onRefreshQuality(event);
     if (target.hasAttribute("data-arcflight-builder-apply-form")) return this.#onApplyForm(event);
     if (target.hasAttribute("data-arcflight-builder-apply-rounds")) return this.#onApplyRounds(event);
     if (target.hasAttribute("data-arcflight-builder-apply-final-outcomes")) return this.#onApplyFinalOutcomes(event);
@@ -260,6 +271,15 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     event.preventDefault();
     const imported = this.#syncDraftFromEditor();
     this.status = createStatus(imported.ok ? (imported.warnings.length > 0 ? "warning" : "success") : "warning", imported.ok ? (imported.warnings[0] ?? "Preview refreshed from local draft JSON.") : firstError(imported, "Preview refreshed with validation errors."));
+    await this.#rerenderAfterAction();
+  }
+
+
+  async #onRefreshQuality(event) {
+    event.preventDefault();
+    const imported = this.#syncDraftFromEditor();
+    const qualityReport = prepareTravelEventBuilderQualityReport(this.draft);
+    this.status = createStatus(imported.draft && qualityReport.ok ? "success" : "warning", imported.draft ? `Quality check refreshed: ${qualityReport.readiness}.` : firstError(imported, "Quality check could not read the draft JSON."));
     await this.#rerenderAfterAction();
   }
 

@@ -635,6 +635,300 @@ export function applyTravelEventBuilderFormDataToDraft(draft, formData = {}, opt
   return normalizeTravelEventDraft(nextDraft, options);
 }
 
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function trimmedText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function countWords(value) {
+  const text = trimmedText(value);
+  return text.length > 0 ? text.split(/\s+/).filter(Boolean).length : 0;
+}
+
+function isPlaceholderText(value) {
+  const text = trimmedText(value);
+  if (text.length === 0) return false;
+  return /^\[[^\]]+\]$/.test(text)
+    || /\b(?:placeholder|todo|tbd|lorem ipsum|fill this|replace this|describe how|table-ready prose|opening vignette|final outcome vignette|outcome branch vignette)\b/i.test(text);
+}
+
+function addQualityIssue(collection, area, message, path = "", details = {}) {
+  collection.push({ area, message, path, ...details });
+}
+
+function createChecklistItem(label, passed, severity = "suggestion", message = "") {
+  return { label, passed: Boolean(passed), severity, message };
+}
+
+function collectTextEntries(value, path = "root", entries = []) {
+  if (typeof value === "string") entries.push({ path, text: value });
+  else if (Array.isArray(value)) value.forEach((entry, index) => collectTextEntries(entry, `${path}[${index}]`, entries));
+  else if (value && typeof value === "object") Object.entries(value).forEach(([key, entry]) => collectTextEntries(entry, `${path}.${key}`, entries));
+  return entries;
+}
+
+function collectUnsupportedShapeIssues(value, path = "root", issues = []) {
+  if (typeof value === "function") issues.push(`${path} contains a function value.`);
+  else if (Array.isArray(value)) value.forEach((entry, index) => collectUnsupportedShapeIssues(entry, `${path}[${index}]`, issues));
+  else if (value && typeof value === "object") Object.entries(value).forEach(([key, entry]) => collectUnsupportedShapeIssues(entry, `${path}.${key}`, issues));
+  return issues;
+}
+
+const QUALITY_LEAKAGE_PATTERNS = Object.freeze([
+  { key: "apRap", severity: "error", label: "AP/RAP spending", pattern: /\b(?:spend(?:ing)?\s+)?(?:AP|RAP|action points?|reaction action points?)\b/i },
+  { key: "shipCombat", severity: "warning", label: "ship combat automation", pattern: /\b(?:ship\s+combat|combat\s+automation|automate\s+combat|roll\s+initiative|create\s+combatants?)\b/i },
+  { key: "automaticCombatStart", severity: "error", label: "automatic combat start", pattern: /\b(?:automatically|auto)\s+(?:start|create|launch|begin)\s+(?:combat|encounter|initiative)\b|\bstart\s+(?:combat|encounter|initiative)\s+automatically\b/i },
+  { key: "actorMutation", severity: "error", label: "actor mutation", pattern: /\b(?:actor\.(?:update|create|delete)|Actor\.(?:create|update|delete)|mutate\s+(?:the\s+)?actor|update\s+(?:the\s+)?actor)\b/i },
+  { key: "persistence", severity: "error", label: "compendium/world setting writes", pattern: /\b(?:game\.settings\.set|world\s+setting\s+writes?|compendium\s+writes?|CompendiumCollection|pack\.(?:set|update|create)|save\s+to\s+(?:world|compendium))\b/i },
+  { key: "stagedEffectApplication", severity: "error", label: "direct staged-effect application language", pattern: /\b(?:apply|applies|applied|applying)\s+(?:the\s+)?(?:staged\s+)?effects?\b|\bapplyTravelStagedEffects?\b/i },
+  { key: "oceanOnly", severity: "warning", label: "ocean-only sailing language", pattern: /\b(?:ocean|seas|seawater|saltwater|brine|briny|underwater|submerged|harbor|harbour|tide|tidal)\b/i }
+]);
+
+function collectBoundaryLeakageIssues(draft) {
+  const issues = [];
+  for (const { path, text } of collectTextEntries(draft)) {
+    for (const leakage of QUALITY_LEAKAGE_PATTERNS) {
+      if (leakage.pattern.test(text)) {
+        issues.push({ ...leakage, path, message: `${path} appears to include ${leakage.label}; keep builder data local-only, data-only, and voidsailing-oriented.` });
+      }
+    }
+  }
+  return issues;
+}
+
+function checkFinalOutcomeResourceEffects(sourceFinalOutcomes, normalizedDraft, warnings) {
+  if (!isPlainObject(sourceFinalOutcomes)) return;
+  for (const key of FINAL_OUTCOME_KEYS) {
+    const outcome = sourceFinalOutcomes[key] ?? sourceFinalOutcomes[CANONICAL_TO_LEGACY_FINAL_OUTCOME_KEYS[key]];
+    if (!isPlainObject(outcome) || !Array.isArray(outcome.proposedEffects)) continue;
+    outcome.proposedEffects.forEach((effect, index) => {
+      if (!isPlainObject(effect)) {
+        addQualityIssue(warnings, "finalOutcomes", `Final outcome ${key} staged resource effect ${index + 1} is malformed.`, `finalOutcomes.${key}.proposedEffects[${index}]`);
+        return;
+      }
+      if (effect.type === "resource" || Object.hasOwn(effect, "resource") || Object.hasOwn(effect, "mode") || Object.hasOwn(effect, "value")) {
+        if (!TRAVEL_RESOURCE_KEYS.includes(effect.resource)) addQualityIssue(warnings, "finalOutcomes", `Final outcome ${key} resource effect ${index + 1} references unknown resource "${effect.resource ?? "<missing>"}".`, `finalOutcomes.${key}.proposedEffects[${index}].resource`);
+        if (!RESOURCE_EFFECT_MODES.includes(effect.mode)) addQualityIssue(warnings, "finalOutcomes", `Final outcome ${key} resource effect ${index + 1} references unknown mode "${effect.mode ?? "<missing>"}".`, `finalOutcomes.${key}.proposedEffects[${index}].mode`);
+        if (!Number.isFinite(Number(effect.value))) addQualityIssue(warnings, "finalOutcomes", `Final outcome ${key} resource effect ${index + 1} has non-numeric value "${effect.value ?? "<missing>"}".`, `finalOutcomes.${key}.proposedEffects[${index}].value`);
+        const activeResources = Array.isArray(normalizedDraft.activeResources) ? normalizedDraft.activeResources : [];
+        if (TRAVEL_RESOURCE_KEYS.includes(effect.resource) && !activeResources.includes(effect.resource)) addQualityIssue(warnings, "finalOutcomes", `Final outcome ${key} resource effect ${index + 1} targets inactive resource "${effect.resource}".`, `finalOutcomes.${key}.proposedEffects[${index}].resource`);
+      }
+    });
+  }
+}
+
+function summarizeQualitySeverity(errors, warnings, suggestions) {
+  const score = Math.max(0, 100 - (errors.length * 20) - (warnings.length * 8) - (suggestions.length * 2));
+  const readiness = errors.length > 0 ? "Blocked" : (warnings.length > 0 ? "Needs Attention" : "Ready to Export");
+  return { score, errorCount: errors.length, warningCount: warnings.length, suggestionCount: suggestions.length, readiness };
+}
+
+
+export function analyzeTravelEventBuilderQuality(draft, options = {}) {
+  assertOptionsObject(options, "analyzeTravelEventBuilderQuality");
+  const errors = [];
+  const warnings = [];
+  const suggestions = [];
+  const checklist = {
+    topLevel: [],
+    rounds: [],
+    finalOutcomes: [],
+    boundaries: [],
+    builderReadiness: []
+  };
+
+  if (!isPlainObject(draft)) {
+    addQualityIssue(errors, "builderReadiness", "Travel event quality check requires a plain object draft.", "root");
+    const summary = summarizeQualitySeverity(errors, warnings, suggestions);
+    return deepFreeze({ ok: false, ready: false, ...summary, errors, warnings, suggestions, checklist });
+  }
+
+  const source = draft;
+  const normalizedDraft = normalizeTravelEventDraft(source, options);
+  const validation = validateTravelEventDraft(source, options);
+  for (const validationError of validation.errors) addQualityIssue(errors, "builderReadiness", validationError, "validation");
+  for (const validationWarning of validation.warnings) {
+    if (validationWarning === "Travel event is not registered in CORE_TRAVEL_EVENTS.") continue;
+    addQualityIssue(warnings, "builderReadiness", validationWarning, "validation");
+  }
+
+  const unsupportedShapeIssues = collectUnsupportedShapeIssues(source);
+  for (const issue of unsupportedShapeIssues) addQualityIssue(errors, "builderReadiness", `Unsupported data shape: ${issue}`, "root");
+
+  const sourceRoundCount = Number(source.roundCount);
+  const sourceRounds = Array.isArray(source.rounds) ? source.rounds : [];
+  const topLevelChecks = [
+    createChecklistItem("Event key is present", trimmedText(source.key).length > 0, "error", "Add a stable event key before final export."),
+    createChecklistItem("Event name is present", trimmedText(source.name).length > 0, "error", "Add a table-facing event name."),
+    createChecklistItem("Category is known", CATEGORY_KEYS.includes(source.category), "error", "Choose one of the canonical Arcflight travel event categories."),
+    createChecklistItem("Base DC is a reasonable number", Number.isFinite(Number(source.baseDC)) && Number(source.baseDC) > 0, "error", "Set a positive numeric base DC."),
+    createChecklistItem("Round count matches round array", Number.isInteger(sourceRoundCount) && sourceRoundCount === sourceRounds.length, "warning", "Keep roundCount in sync with authored rounds."),
+    createChecklistItem("At least one active travel resource", Array.isArray(source.activeResources) && source.activeResources.some((resource) => TRAVEL_RESOURCE_KEYS.includes(resource)), "error", "Select at least one active travel resource."),
+    createChecklistItem("At least one Travel Five station", Array.isArray(source.travelStations) && source.travelStations.some((station) => TRAVEL_FIVE_STATION_KEYS.includes(station)), "error", "Select at least one Travel Five station.")
+  ];
+  checklist.topLevel.push(...topLevelChecks);
+  for (const item of topLevelChecks.filter((entry) => !entry.passed)) {
+    addQualityIssue(item.severity === "error" ? errors : warnings, "topLevel", item.message, "topLevel");
+  }
+  if (source.category != null && !CATEGORY_KEYS.includes(source.category)) addQualityIssue(errors, "topLevel", `Unknown category "${source.category}".`, "category");
+  if (Array.isArray(source.activeResources)) {
+    source.activeResources.filter((resource) => !TRAVEL_RESOURCE_KEYS.includes(resource)).forEach((resource) => addQualityIssue(warnings, "topLevel", `Unknown active resource "${resource}" will be ignored by normalization.`, "activeResources"));
+  }
+  if (Array.isArray(source.travelStations)) {
+    source.travelStations.filter((station) => !TRAVEL_FIVE_STATION_KEYS.includes(station)).forEach((station) => addQualityIssue(warnings, "topLevel", `Unknown travel station "${station}" will be ignored by normalization.`, "travelStations"));
+  }
+
+  const actionCounts = new Map();
+  normalizedDraft.rounds.forEach((round, index) => {
+    const roundPath = `rounds[${index}]`;
+    const openingVignette = trimmedText(round.openingVignette);
+    const activeStations = Array.isArray(round.activeStations) ? round.activeStations : [];
+    const roundChecks = [
+      createChecklistItem(`Round ${round.round} has an opening vignette`, openingVignette.length > 0, "warning", `Round ${round.round} needs an opening vignette.`),
+      createChecklistItem(`Round ${round.round} opening vignette is specific`, openingVignette.length > 0 && !isPlaceholderText(openingVignette), "suggestion", `Round ${round.round} opening vignette still looks placeholder/generic.`),
+      createChecklistItem(`Round ${round.round} has active stations`, activeStations.length > 0, "warning", `Round ${round.round} has no active stations.`)
+    ];
+    checklist.rounds.push(...roundChecks);
+    if (!roundChecks[0].passed) addQualityIssue(warnings, "rounds", roundChecks[0].message, `${roundPath}.openingVignette`);
+    else if (!roundChecks[1].passed) addQualityIssue(suggestions, "rounds", roundChecks[1].message, `${roundPath}.openingVignette`);
+    if (!roundChecks[2].passed) addQualityIssue(warnings, "rounds", roundChecks[2].message, `${roundPath}.activeStations`);
+
+    activeStations.forEach((prompt, promptIndex) => {
+      const promptPath = `${roundPath}.activeStations[${promptIndex}]`;
+      if (!isPlainObject(prompt)) {
+        addQualityIssue(warnings, "rounds", `Round ${round.round} station prompt ${promptIndex + 1} is malformed.`, promptPath);
+        return;
+      }
+      if (!TRAVEL_FIVE_STATION_KEYS.includes(prompt.stationKey)) addQualityIssue(warnings, "rounds", `Round ${round.round} station prompt uses unknown station "${prompt.stationKey ?? "<missing>"}".`, `${promptPath}.stationKey`);
+      if (!normalizedDraft.travelStations.includes(prompt.stationKey)) addQualityIssue(warnings, "rounds", `Round ${round.round} station prompt references station "${prompt.stationKey}" that is not active at the event level.`, `${promptPath}.stationKey`);
+      const playerAction = trimmedText(prompt.playerAction);
+      if (playerAction.length === 0) addQualityIssue(warnings, "rounds", `Round ${round.round} ${labelForStation(prompt.stationKey)} prompt has no playerAction.`, `${promptPath}.playerAction`);
+      else {
+        if (countWords(playerAction) < 6) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(prompt.stationKey)} playerAction is short; add clearer table-facing instruction.`, `${promptPath}.playerAction`);
+        const normalizedAction = playerAction.toLowerCase().replace(/\s+/g, " ");
+        actionCounts.set(normalizedAction, [...(actionCounts.get(normalizedAction) ?? []), `${round.round}:${prompt.stationKey}`]);
+      }
+    });
+
+    if (!isPlainObject(round.outcomeBranches)) addQualityIssue(warnings, "rounds", `Round ${round.round} outcomeBranches is missing or malformed.`, `${roundPath}.outcomeBranches`);
+    else {
+      for (const outcomeKey of ROUND_OUTCOME_KEYS) {
+        const branch = round.outcomeBranches[outcomeKey];
+        if (!isPlainObject(branch)) addQualityIssue(warnings, "rounds", `Round ${round.round} outcome branch ${outcomeKey} is missing or malformed.`, `${roundPath}.outcomeBranches.${outcomeKey}`);
+        else if (!Array.isArray(branch.proposedEffects)) addQualityIssue(suggestions, "rounds", `Round ${round.round} outcome branch ${outcomeKey} should keep proposedEffects as an array, even when empty.`, `${roundPath}.outcomeBranches.${outcomeKey}.proposedEffects`);
+      }
+    }
+  });
+  for (const [action, locations] of actionCounts.entries()) {
+    if (action.length > 0 && locations.length > 1) addQualityIssue(warnings, "rounds", `Repeated identical playerAction text appears in ${locations.join(", ")}.`, "rounds.activeStations.playerAction");
+  }
+
+  const sourceFinalOutcomes = source.finalOutcomes;
+  if (!isPlainObject(sourceFinalOutcomes)) addQualityIssue(errors, "finalOutcomes", "finalOutcomes must be an object with the five canonical outcomes.", "finalOutcomes");
+  for (const key of FINAL_OUTCOME_KEYS) {
+    const outcome = normalizedDraft.finalOutcomes?.[key];
+    const sourceOutcome = isPlainObject(sourceFinalOutcomes) ? (sourceFinalOutcomes[key] ?? sourceFinalOutcomes[CANONICAL_TO_LEGACY_FINAL_OUTCOME_KEYS[key]]) : null;
+    if (!isPlainObject(sourceOutcome)) addQualityIssue(errors, "finalOutcomes", `Missing canonical final outcome ${key}.`, `finalOutcomes.${key}`);
+    const label = trimmedText(outcome?.label);
+    const narrative = trimmedText(outcome?.vignette);
+    const rewards = Array.isArray(outcome?.rewards) ? outcome.rewards.filter((entry) => trimmedText(entry).length > 0) : [];
+    const losses = Array.isArray(outcome?.losses) ? outcome.losses.filter((entry) => trimmedText(entry).length > 0) : [];
+    const outcomeChecks = [
+      createChecklistItem(`${FINAL_OUTCOME_LABELS[key]} label is present`, label.length > 0, "warning", `${FINAL_OUTCOME_LABELS[key]} needs a label.`),
+      createChecklistItem(`${FINAL_OUTCOME_LABELS[key]} narrative/result text is present`, narrative.length > 0, "warning", `${FINAL_OUTCOME_LABELS[key]} needs narrative/result text.`),
+      createChecklistItem(`${FINAL_OUTCOME_LABELS[key]} narrative/result text is table-ready length`, countWords(narrative) >= 8 && !isPlaceholderText(narrative), "suggestion", `${FINAL_OUTCOME_LABELS[key]} final outcome text is short or placeholder-like.`)
+    ];
+    checklist.finalOutcomes.push(...outcomeChecks);
+    if (!outcomeChecks[0].passed) addQualityIssue(warnings, "finalOutcomes", outcomeChecks[0].message, `finalOutcomes.${key}.label`);
+    if (!outcomeChecks[1].passed) addQualityIssue(warnings, "finalOutcomes", outcomeChecks[1].message, `finalOutcomes.${key}.vignette`);
+    else if (!outcomeChecks[2].passed) addQualityIssue(suggestions, "finalOutcomes", outcomeChecks[2].message, `finalOutcomes.${key}.vignette`);
+    if (["criticalSuccess", "success"].includes(key) && rewards.length === 0) addQualityIssue(suggestions, "finalOutcomes", `${FINAL_OUTCOME_LABELS[key]} usually benefits from reward text, even if the reward is narrative-only.`, `finalOutcomes.${key}.rewards`);
+    if (["mixed", "failure", "criticalFailure"].includes(key) && losses.length === 0) addQualityIssue(suggestions, "finalOutcomes", `${FINAL_OUTCOME_LABELS[key]} usually benefits from consequence text, even if the consequence is narrative-only.`, `finalOutcomes.${key}.losses`);
+  }
+  checkFinalOutcomeResourceEffects(sourceFinalOutcomes, normalizedDraft, warnings);
+
+  const leakageIssues = collectBoundaryLeakageIssues(source);
+  for (const issue of leakageIssues) {
+    const target = issue.severity === "error" ? errors : warnings;
+    addQualityIssue(target, "boundaries", issue.message, issue.path, { leakage: issue.key });
+  }
+  checklist.boundaries.push(
+    createChecklistItem("No AP/RAP spending language", !leakageIssues.some((issue) => issue.key === "apRap"), "error", "Remove AP/RAP spending language from event data."),
+    createChecklistItem("No combat automation language", !leakageIssues.some((issue) => ["shipCombat", "automaticCombatStart"].includes(issue.key)), "error", "Keep combat handoffs narrative/data-only."),
+    createChecklistItem("No actor/world/compendium mutation language", !leakageIssues.some((issue) => ["actorMutation", "persistence"].includes(issue.key)), "error", "Remove persistence and actor mutation language."),
+    createChecklistItem("No staged-effect application language", !leakageIssues.some((issue) => issue.key === "stagedEffectApplication"), "error", "Describe proposed effects as staged/GM-applied only."),
+    createChecklistItem("Voidsailing wording preferred over ocean-only terms", !leakageIssues.some((issue) => issue.key === "oceanOnly"), "warning", "Swap ocean-only sailing terms for voidsailing language where appropriate.")
+  );
+
+  const canExportDraft = isPlainObject(source) && unsupportedShapeIssues.length === 0;
+  const finalized = finalizeTravelEventDraft(normalizedDraft, options);
+  const stripped = finalized.event ? stripBuilderMetadata(finalized.event) : stripBuilderMetadata(normalizedDraft);
+  checklist.builderReadiness.push(
+    createChecklistItem("Event can be exported as draft", canExportDraft, "error", "Draft export requires data-only object shape."),
+    createChecklistItem("Event can be finalized", finalized.ok === true, "error", "Fix validation errors before final export."),
+    createChecklistItem("Builder metadata can be stripped", !Object.hasOwn(stripped ?? {}, "builder"), "error", "Final export must omit builder metadata."),
+    createChecklistItem("Import/export shape is supported", unsupportedShapeIssues.length === 0, "error", "Remove unsupported values that JSON import/export cannot represent safely.")
+  );
+  for (const item of checklist.builderReadiness.filter((entry) => !entry.passed)) addQualityIssue(errors, "builderReadiness", item.message, "builderReadiness");
+
+  const summary = summarizeQualitySeverity(errors, warnings, suggestions);
+  const ready = summary.readiness === "Ready to Export";
+  return deepFreeze({
+    ok: errors.length === 0,
+    ready,
+    ...summary,
+    errors,
+    warnings,
+    suggestions,
+    checklist,
+    validation: {
+      ok: validation.ok,
+      errors: cloneData(validation.errors),
+      warnings: cloneData(validation.warnings)
+    }
+  });
+}
+
+export function prepareTravelEventBuilderQualityReport(draft, options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderQualityReport");
+  const report = analyzeTravelEventBuilderQuality(draft, options);
+  const grouped = {
+    errors: Object.fromEntries(["topLevel", "rounds", "finalOutcomes", "boundaries", "builderReadiness"].map((area) => [area, report.errors.filter((entry) => entry.area === area)])),
+    warnings: Object.fromEntries(["topLevel", "rounds", "finalOutcomes", "boundaries", "builderReadiness"].map((area) => [area, report.warnings.filter((entry) => entry.area === area)])),
+    suggestions: Object.fromEntries(["topLevel", "rounds", "finalOutcomes", "boundaries", "builderReadiness"].map((area) => [area, report.suggestions.filter((entry) => entry.area === area)]))
+  };
+
+  return deepFreeze({
+    ...report,
+    grouped,
+    hasErrors: report.errors.length > 0,
+    hasWarnings: report.warnings.length > 0,
+    hasSuggestions: report.suggestions.length > 0,
+    areas: Object.entries(report.checklist).map(([key, items]) => ({
+      key,
+      label: {
+        topLevel: "Top-Level Event Quality",
+        rounds: "Round Quality",
+        finalOutcomes: "Final Outcome Quality",
+        boundaries: "Boundary Leakage",
+        builderReadiness: "Builder Readiness"
+      }[key] ?? key,
+      items,
+      passed: items.every((item) => item.passed),
+      errorCount: grouped.errors[key]?.length ?? 0,
+      warningCount: grouped.warnings[key]?.length ?? 0,
+      suggestionCount: grouped.suggestions[key]?.length ?? 0,
+      errors: grouped.errors[key] ?? [],
+      warnings: grouped.warnings[key] ?? [],
+      suggestions: grouped.suggestions[key] ?? []
+    }))
+  });
+}
+
 export function validateTravelEventDraft(draft, options = {}) {
   assertOptionsObject(options, "validateTravelEventDraft");
   const normalizedDraft = normalizeTravelEventDraft(draft, options);

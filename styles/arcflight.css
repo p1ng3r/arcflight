@@ -1018,3 +1018,78 @@
 .arcflight-travel-builder__textarea--compact {
   min-height: 3.5rem;
 }
+
+.arcflight-travel-builder__panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.arcflight-travel-builder__quality {
+  border-left: 4px solid var(--color-border-highlight, #a66a00);
+}
+
+.arcflight-travel-builder__quality-areas {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.arcflight-travel-builder__quality-area {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.arcflight-travel-builder__quality-area summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-builder__quality-list,
+.arcflight-travel-builder__checklist {
+  margin: 0.35rem 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.arcflight-travel-builder__quality-list--errors {
+  color: var(--color-level-error, #9b1c1c);
+}
+
+.arcflight-travel-builder__quality-list--warnings {
+  color: var(--color-level-warning, #8a5a00);
+}
+
+.arcflight-travel-builder__quality-list--suggestions {
+  color: var(--color-text-dark-secondary, #4b4b4b);
+}
+
+.arcflight-travel-builder__checklist {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  padding-left: 0;
+}
+
+.arcflight-travel-builder__checklist-item {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.arcflight-travel-builder__checklist-item small {
+  display: block;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__checklist-item--passed {
+  color: var(--color-level-success, #1f7a1f);
+}
+
+.arcflight-travel-builder__checklist-item--open {
+  color: var(--color-level-warning, #8a5a00);
+}
