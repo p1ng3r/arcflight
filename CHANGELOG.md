@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Travel Event Builder Custom Event Library / Save Drafts MVP
+
+- Added a world-local saved draft library for the Travel Event Builder using the `arcflight.travelEventBuilderLibrary` setting, storing JSON-safe draft entries with ids, names, categories, timestamps, and normalized draft data.
+- Added helper exports and builder UI controls for explicit save current draft, save as new draft, load, duplicate, delete with confirmation, and refresh actions while preserving import/export, quality, round, final outcome text, resource-effect, and raw JSON workflows.
+- Added smoke coverage for library helper exposure, empty state, save/load/duplicate/delete behavior, malformed saved draft safety, post-load quality/editor/export workflows, and continued hard-boundary non-mutation expectations.
+
 ### Travel Event Builder Final Outcome Resource Effects Editor MVP
 
 - Added local-only final outcome proposed resource-effect editor helpers and UI controls for listing supported resource effects, adding one simple resource effect, editing resource/mode/value/label, and removing resource effects from draft data only.

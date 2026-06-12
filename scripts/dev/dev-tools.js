@@ -31,6 +31,8 @@ import {
 } from "../helpers/travel-event-template.js";
 import {
   TRAVEL_EVENT_BUILDER_VERSION,
+  TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+  TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   validateTravelEventDraft,
@@ -51,7 +53,13 @@ import {
   applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft,
   prepareTravelEventBuilderPreview,
   analyzeTravelEventBuilderQuality,
-  prepareTravelEventBuilderQualityReport
+  prepareTravelEventBuilderQualityReport,
+  getTravelEventBuilderLibrary,
+  saveTravelEventBuilderDraftToLibrary,
+  loadTravelEventBuilderDraftFromLibrary,
+  deleteTravelEventBuilderDraftFromLibrary,
+  duplicateTravelEventBuilderLibraryDraft,
+  prepareTravelEventBuilderLibraryState
 } from "../helpers/travel-event-builder.js";
 import {
   advanceShipTravelEventRound,
@@ -355,6 +363,14 @@ export function createArcflightDevTools() {
     prepareTravelEventBuilderPreview,
     analyzeTravelEventBuilderQuality,
     prepareTravelEventBuilderQualityReport,
+    TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+    TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
+    getTravelEventBuilderLibrary,
+    saveTravelEventBuilderDraftToLibrary,
+    loadTravelEventBuilderDraftFromLibrary,
+    deleteTravelEventBuilderDraftFromLibrary,
+    duplicateTravelEventBuilderLibraryDraft,
+    prepareTravelEventBuilderLibraryState,
 
     /**
      * Prepare cloned travel event summary data for future UI.

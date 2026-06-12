@@ -105,6 +105,7 @@ import {
 } from "../helpers/travel-event-template.js";
 import {
   TRAVEL_EVENT_BUILDER_VERSION,
+  TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   validateTravelEventDraft,
@@ -125,7 +126,13 @@ import {
   applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft,
   prepareTravelEventBuilderPreview,
   analyzeTravelEventBuilderQuality,
-  prepareTravelEventBuilderQualityReport
+  prepareTravelEventBuilderQualityReport,
+  getTravelEventBuilderLibrary,
+  saveTravelEventBuilderDraftToLibrary,
+  loadTravelEventBuilderDraftFromLibrary,
+  deleteTravelEventBuilderDraftFromLibrary,
+  duplicateTravelEventBuilderLibraryDraft,
+  prepareTravelEventBuilderLibraryState
 } from "../helpers/travel-event-builder.js";
 import {
   advanceShipTravelEventRound,
@@ -1152,6 +1159,24 @@ export async function runFrameworkSmokeTest(options = {}) {
     const qualityResourcesBefore = getShipTravelResources(actor);
     const postQualityDraftExport = exportTravelEventDraftToJson(completeQualityDraft);
     const postQualityDraftImport = importTravelEventDraftFromJson(postQualityDraftExport.json ?? "");
+    const emptyBuilderLibraryState = prepareTravelEventBuilderLibraryState({ library: { version: 1, drafts: {} } });
+    const savedBuilderLibraryDraft = await saveTravelEventBuilderDraftToLibrary(completeQualityDraft, { library: { version: 1, drafts: {} }, dryRun: true, now: "2026-06-12T00:00:00.000Z" });
+    const loadedBuilderLibraryDraft = loadTravelEventBuilderDraftFromLibrary(savedBuilderLibraryDraft.entry?.id, { library: savedBuilderLibraryDraft.library });
+    const duplicatedBuilderLibraryDraft = await duplicateTravelEventBuilderLibraryDraft(savedBuilderLibraryDraft.entry?.id, { library: savedBuilderLibraryDraft.library, dryRun: true, now: "2026-06-12T00:00:01.000Z" });
+    const deletedBuilderLibraryDraft = await deleteTravelEventBuilderDraftFromLibrary(duplicatedBuilderLibraryDraft.entry?.id, { library: duplicatedBuilderLibraryDraft.library, dryRun: true });
+    const malformedBuilderLibraryDraft = loadTravelEventBuilderDraftFromLibrary("malformed-smoke", {
+      library: {
+        version: 1,
+        drafts: {
+          "malformed-smoke": { id: "malformed-smoke", key: "malformed-smoke", name: "Malformed Smoke", category: "discovery", createdAt: "2026-06-12T00:00:00.000Z", updatedAt: "2026-06-12T00:00:00.000Z", draft: "not an object" }
+        }
+      }
+    });
+    const loadedBuilderQualityReport = loadedBuilderLibraryDraft.draft ? prepareTravelEventBuilderQualityReport(loadedBuilderLibraryDraft.draft) : null;
+    const loadedBuilderFinalOutcomeTextState = loadedBuilderLibraryDraft.draft ? prepareTravelEventBuilderFinalOutcomeEditorState(loadedBuilderLibraryDraft.draft) : null;
+    const loadedBuilderFinalOutcomeEffectState = loadedBuilderLibraryDraft.draft ? prepareTravelEventBuilderFinalOutcomeEffectEditorState(loadedBuilderLibraryDraft.draft) : null;
+    const loadedBuilderDraftExport = loadedBuilderLibraryDraft.draft ? exportTravelEventDraftToJson(loadedBuilderLibraryDraft.draft) : { ok: false };
+    const loadedBuilderFinalExport = loadedBuilderLibraryDraft.draft ? exportFinalTravelEventToJson(loadedBuilderLibraryDraft.draft) : { ok: false };
 
     check(result, "Travel Event Builder quality helper exports exist", typeof analyzeTravelEventBuilderQuality === "function" && typeof prepareTravelEventBuilderQualityReport === "function" && typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport === "function", true, { analyze: typeof analyzeTravelEventBuilderQuality, report: typeof prepareTravelEventBuilderQualityReport, api: typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality, devTools: typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport });
     check(result, "Travel Event Builder quality report returns grouped errors warnings suggestions", Array.isArray(qualityReport.errors) && Array.isArray(qualityReport.warnings) && Array.isArray(qualityReport.suggestions) && qualityReport.grouped?.errors?.topLevel && qualityReport.areas?.length === 5, "grouped quality report", qualityReport);
@@ -1166,6 +1191,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder JSON import/export still works after quality analysis", postQualityDraftExport.ok === true && postQualityDraftImport.ok === true && postQualityDraftImport.draft?.key === completeQualityDraft.key, "post-quality JSON IO", { draftExport: postQualityDraftExport, draftImport: postQualityDraftImport });
 
     check(result, "Travel Event Builder app exports exist", typeof ArcflightTravelEventBuilder === "function" && typeof openTravelEventBuilder === "function" && typeof prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderShellState === "function", true, { importedClass: typeof ArcflightTravelEventBuilder, importedOpen: typeof openTravelEventBuilder, importedShellState: typeof prepareTravelEventBuilderShellState, apiOpen: typeof globalThis.game?.arcflight?.openTravelEventBuilder, devToolsOpen: typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder });
+    check(result, "Travel Event Builder library helper exports exist", typeof getTravelEventBuilderLibrary === "function" && typeof saveTravelEventBuilderDraftToLibrary === "function" && typeof loadTravelEventBuilderDraftFromLibrary === "function" && typeof deleteTravelEventBuilderDraftFromLibrary === "function" && typeof duplicateTravelEventBuilderLibraryDraft === "function" && typeof prepareTravelEventBuilderLibraryState === "function" && typeof globalThis.game?.arcflight?.getTravelEventBuilderLibrary === "function" && typeof globalThis.game?.arcflight?.devTools?.saveTravelEventBuilderDraftToLibrary === "function", true, { setting: TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, api: typeof globalThis.game?.arcflight?.getTravelEventBuilderLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.saveTravelEventBuilderDraftToLibrary });
+    check(result, "Travel Event Builder empty library returns safe state", emptyBuilderLibraryState.count === 0 && emptyBuilderLibraryState.hasDrafts === false && Array.isArray(emptyBuilderLibraryState.entries), "empty safe state", emptyBuilderLibraryState);
+    check(result, "Travel Event Builder library save stores normalized draft", savedBuilderLibraryDraft.ok === true && savedBuilderLibraryDraft.entry?.draft?.key === completeQualityDraft.key && savedBuilderLibraryDraft.entry?.draft?.builder?.version === TRAVEL_EVENT_BUILDER_VERSION, "saved normalized draft", savedBuilderLibraryDraft);
+    check(result, "Travel Event Builder library load returns normalized draft", loadedBuilderLibraryDraft.draft?.key === completeQualityDraft.key && loadedBuilderLibraryDraft.draft?.roundCount === completeQualityDraft.roundCount, "loaded normalized draft", loadedBuilderLibraryDraft);
+    check(result, "Travel Event Builder library duplicate creates distinct saved entry", duplicatedBuilderLibraryDraft.ok === true && duplicatedBuilderLibraryDraft.entry?.id && duplicatedBuilderLibraryDraft.entry.id !== savedBuilderLibraryDraft.entry?.id && Object.keys(duplicatedBuilderLibraryDraft.library?.drafts ?? {}).length === 2, "distinct duplicate", duplicatedBuilderLibraryDraft);
+    check(result, "Travel Event Builder library delete removes entry", deletedBuilderLibraryDraft.ok === true && deletedBuilderLibraryDraft.deleted?.id === duplicatedBuilderLibraryDraft.entry?.id && !Object.hasOwn(deletedBuilderLibraryDraft.library?.drafts ?? {}, duplicatedBuilderLibraryDraft.entry?.id), "deleted duplicate", deletedBuilderLibraryDraft);
+    check(result, "Travel Event Builder malformed library draft fails safely", malformedBuilderLibraryDraft.ok === false && malformedBuilderLibraryDraft.draft === null && malformedBuilderLibraryDraft.errors.length > 0, "safe malformed saved draft", malformedBuilderLibraryDraft);
+    check(result, "Travel Event Builder loaded library draft preserves quality and editors", loadedBuilderQualityReport?.ok === true && loadedBuilderFinalOutcomeTextState?.outcomes?.length === 5 && loadedBuilderFinalOutcomeEffectState?.outcomes?.length === 5, "post-load quality/editor state", { quality: loadedBuilderQualityReport, text: loadedBuilderFinalOutcomeTextState, effects: loadedBuilderFinalOutcomeEffectState });
+    check(result, "Travel Event Builder import/export still works after loading library draft", loadedBuilderDraftExport.ok === true && loadedBuilderFinalExport.ok === true, "post-load exports", { draft: loadedBuilderDraftExport, final: loadedBuilderFinalExport });
+    check(result, "Travel Event Builder library introduces no actor/AP/RAP/combat/staged-effect/travel-resource mutation", ![getTravelEventBuilderLibrary, saveTravelEventBuilderDraftToLibrary, loadTravelEventBuilderDraftFromLibrary, deleteTravelEventBuilderDraftFromLibrary, duplicateTravelEventBuilderLibraryDraft, prepareTravelEventBuilderLibraryState].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|Actor\.update|actor\.update|startCombat|Combat\.create|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no prohibited runtime mutation helpers", "library only reads/writes its world setting");
     check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
     check(result, "Travel Event Builder form option data exists", builderShellState.formOptions?.categories?.length > 0 && builderShellState.formOptions?.activeResources?.length > 0 && builderShellState.formOptions?.travelStations?.length > 0 && builderFormOptions.categories.some((option) => option.value === "discovery" && option.selected === true), "category/resource/station form options", { shell: builderShellState.formOptions, helper: builderFormOptions });
     check(result, "Travel Event Builder form edits apply locally and normalize rounds", formEditedBuilderDraft.key === "form-edited-smoke" && formEditedBuilderDraft.name === "Form Edited Smoke" && formEditedBuilderDraft.category === "navigation" && formEditedBuilderDraft.baseDC === 21 && formEditedBuilderDraft.roundCount === 2 && formEditedBuilderDraft.rounds.length === 2 && formEditedBuilderDraft.activeResources.join(",") === "hull,morale" && formEditedBuilderDraft.travelStations.join(",") === "navigator,engineer" && builderDraft.key === "smoke-builder-event" && builderDraft.roundCount === 4, "local-only normalized form draft", { original: builderDraft, edited: formEditedBuilderDraft });

@@ -1,9 +1,11 @@
 import { getStation } from "../../data/stations/core-stations.js";
-import { ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
+import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
 import { createBlankOutcomeBranchesTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
 export const TRAVEL_EVENT_BUILDER_VERSION = "0.1.0";
+export const TRAVEL_EVENT_BUILDER_LIBRARY_SETTING = "travelEventBuilderLibrary";
+export const TRAVEL_EVENT_BUILDER_LIBRARY_VERSION = 1;
 
 const DEFAULT_ROUND_COUNT = 4;
 const DEFAULT_BASE_DC = 18;
@@ -441,6 +443,197 @@ export function createTravelBuilderRound(options = {}) {
   const roundNumber = Number.isInteger(options.round) && options.round > 0 ? options.round : 1;
   const travelStations = uniqueKnownValues(options.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS);
   return createBlankTravelRoundTemplate(roundNumber, { ...options, travelStations });
+}
+
+
+function containsFunctionValue(value, path = "root", found = []) {
+  if (typeof value === "function") found.push(path);
+  else if (Array.isArray(value)) value.forEach((entry, index) => containsFunctionValue(entry, `${path}[${index}]`, found));
+  else if (value && typeof value === "object") Object.entries(value).forEach(([key, entry]) => containsFunctionValue(entry, `${path}.${key}`, found));
+  return found;
+}
+
+function getGameSettingLibrary() {
+  const settings = globalThis.game?.settings;
+  if (!settings || typeof settings.get !== "function") return null;
+  try {
+    return settings.get(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING);
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function setGameSettingLibrary(library) {
+  const settings = globalThis.game?.settings;
+  if (!settings || typeof settings.set !== "function") throw new Error("Foundry game.settings is not available for the Travel Event Builder library.");
+  return settings.set(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, cloneData(library));
+}
+
+function slugifyLibraryId(value) {
+  const slug = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "travel-event-draft";
+}
+
+function normalizeLibraryDraftEntry(id, entry = {}, options = {}) {
+  const fallbackTimestamp = nowIso(options);
+  const source = isPlainObject(entry) ? entry : {};
+  const draft = isPlainObject(source.draft) ? cloneData(source.draft) : source.draft;
+  const draftSource = isPlainObject(draft) ? draft : {};
+  const key = typeof source.key === "string" && source.key.length > 0 ? source.key : (typeof draftSource.key === "string" ? draftSource.key : "");
+  const name = typeof source.name === "string" && source.name.length > 0 ? source.name : (typeof draftSource.name === "string" ? draftSource.name : key || id);
+  const category = typeof source.category === "string" && source.category.length > 0 ? source.category : (typeof draftSource.category === "string" ? draftSource.category : DEFAULT_CATEGORY);
+  return {
+    id,
+    key,
+    name,
+    category,
+    createdAt: typeof source.createdAt === "string" && source.createdAt.length > 0 ? source.createdAt : fallbackTimestamp,
+    updatedAt: typeof source.updatedAt === "string" && source.updatedAt.length > 0 ? source.updatedAt : fallbackTimestamp,
+    draft
+  };
+}
+
+function normalizeTravelEventBuilderLibraryData(rawLibrary, options = {}) {
+  const source = isPlainObject(rawLibrary) ? rawLibrary : {};
+  const sourceDrafts = isPlainObject(source.drafts) ? source.drafts : {};
+  const drafts = {};
+  for (const [id, entry] of Object.entries(sourceDrafts)) {
+    if (typeof id !== "string" || id.length === 0) continue;
+    drafts[id] = normalizeLibraryDraftEntry(id, entry, options);
+  }
+  return {
+    version: Number.isInteger(source.version) ? source.version : TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
+    drafts
+  };
+}
+
+function getLibraryDraftEntries(library) {
+  return Object.values(library.drafts ?? {}).sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")) || String(a.name ?? "").localeCompare(String(b.name ?? "")));
+}
+
+function createUniqueLibraryDraftId(library, seed, options = {}) {
+  const drafts = library?.drafts ?? {};
+  const base = slugifyLibraryId(seed);
+  if (!Object.hasOwn(drafts, base)) return base;
+
+  const timestamp = nowIso(options).replace(/[^0-9]/g, "").slice(0, 14);
+  const timestamped = `${base}-${timestamp}`;
+  if (!Object.hasOwn(drafts, timestamped)) return timestamped;
+
+  let index = 2;
+  while (Object.hasOwn(drafts, `${timestamped}-${index}`)) index += 1;
+  return `${timestamped}-${index}`;
+}
+
+function buildLibraryResult(ok, data = {}) {
+  return {
+    ok: Boolean(ok),
+    errors: Array.isArray(data.errors) ? data.errors : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
+    ...data
+  };
+}
+
+export function getTravelEventBuilderLibrary(options = {}) {
+  assertOptionsObject(options, "getTravelEventBuilderLibrary");
+  return normalizeTravelEventBuilderLibraryData(Object.hasOwn(options, "library") ? options.library : getGameSettingLibrary(), options);
+}
+
+export async function saveTravelEventBuilderDraftToLibrary(draft, options = {}) {
+  assertOptionsObject(options, "saveTravelEventBuilderDraftToLibrary");
+  const errors = [];
+  const warnings = [];
+  if (!isPlainObject(draft)) errors.push("Travel Event Builder library save requires a draft object.");
+  const functionPaths = containsFunctionValue(draft);
+  if (functionPaths.length > 0) errors.push(`Travel Event Builder library drafts must be data-only; function values found at: ${functionPaths.join(", ")}.`);
+  if (errors.length > 0) return buildLibraryResult(false, { errors, warnings, library: getTravelEventBuilderLibrary(options), entry: null, draft: null });
+
+  const library = getTravelEventBuilderLibrary(options);
+  const normalizedDraft = normalizeTravelEventDraft(draft, options);
+  const explicitId = typeof options.id === "string" && options.id.length > 0 ? options.id : (typeof options.key === "string" && options.key.length > 0 ? options.key : null);
+  const overwrite = options.overwrite === true;
+  const explicitExists = explicitId ? Object.hasOwn(library.drafts, explicitId) : false;
+  const id = explicitId && (!explicitExists || overwrite) ? explicitId : createUniqueLibraryDraftId(library, explicitId ?? normalizedDraft.key ?? normalizedDraft.name, options);
+  const existing = overwrite ? library.drafts[id] : null;
+  if (explicitId && explicitExists && !overwrite) {
+    warnings.push(`Draft id "${explicitId}" already exists; saved as "${id}" instead.`);
+  }
+
+  const timestamp = nowIso(options);
+  const entry = {
+    id,
+    key: normalizedDraft.key,
+    name: typeof options.name === "string" && options.name.length > 0 ? options.name : (normalizedDraft.name || normalizedDraft.key || id),
+    category: typeof options.category === "string" && options.category.length > 0 ? options.category : normalizedDraft.category,
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+    draft: cloneData(normalizedDraft)
+  };
+  const nextLibrary = { ...library, version: TRAVEL_EVENT_BUILDER_LIBRARY_VERSION, drafts: { ...library.drafts, [id]: entry } };
+  if (!options.dryRun) await setGameSettingLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings, library: nextLibrary, entry: cloneData(entry), draft: cloneData(normalizedDraft) });
+}
+
+export function loadTravelEventBuilderDraftFromLibrary(idOrKey, options = {}) {
+  assertOptionsObject(options, "loadTravelEventBuilderDraftFromLibrary");
+  const library = getTravelEventBuilderLibrary(options);
+  const id = String(idOrKey ?? "");
+  const entry = library.drafts[id] ?? getLibraryDraftEntries(library).find((candidate) => candidate.key === id);
+  if (!entry) return buildLibraryResult(false, { errors: [`No saved Travel Event Builder draft found for "${id}".`], warnings: [], library, entry: null, draft: null });
+  if (!isPlainObject(entry.draft)) return buildLibraryResult(false, { errors: [`Saved Travel Event Builder draft "${entry.id}" is malformed and cannot be loaded.`], warnings: [], library, entry: cloneData(entry), draft: null });
+
+  try {
+    const draft = normalizeTravelEventDraft(entry.draft, options);
+    const validation = validateTravelEventDraft(draft, { strictAuthoring: true });
+    return buildLibraryResult(validation.ok, { errors: validation.errors, warnings: validation.warnings, library, entry: cloneData(entry), draft, validation });
+  } catch (error) {
+    return buildLibraryResult(false, { errors: [`Saved Travel Event Builder draft "${entry.id}" could not be normalized: ${error.message}`], warnings: [], library, entry: cloneData(entry), draft: null });
+  }
+}
+
+export async function deleteTravelEventBuilderDraftFromLibrary(idOrKey, options = {}) {
+  assertOptionsObject(options, "deleteTravelEventBuilderDraftFromLibrary");
+  const library = getTravelEventBuilderLibrary(options);
+  const id = String(idOrKey ?? "");
+  const entry = library.drafts[id] ?? getLibraryDraftEntries(library).find((candidate) => candidate.key === id);
+  if (!entry) return buildLibraryResult(false, { errors: [`No saved Travel Event Builder draft found for "${id}".`], warnings: [], library, deleted: null });
+  const { [entry.id]: _deleted, ...remainingDrafts } = library.drafts;
+  const nextLibrary = { ...library, drafts: remainingDrafts };
+  if (!options.dryRun) await setGameSettingLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings: [], library: nextLibrary, deleted: cloneData(entry) });
+}
+
+export async function duplicateTravelEventBuilderLibraryDraft(idOrKey, options = {}) {
+  assertOptionsObject(options, "duplicateTravelEventBuilderLibraryDraft");
+  const loaded = loadTravelEventBuilderDraftFromLibrary(idOrKey, options);
+  if (!loaded.draft) return buildLibraryResult(false, { errors: loaded.errors, warnings: loaded.warnings, library: loaded.library, entry: null, draft: null, source: loaded.entry ?? null });
+  const source = loaded.entry;
+  const duplicateDraft = normalizeTravelEventDraft({ ...loaded.draft, key: options.draftKey ?? loaded.draft.key, name: options.name ?? `${loaded.draft.name || loaded.draft.key || source.id} Copy` }, options);
+  const saveResult = await saveTravelEventBuilderDraftToLibrary(duplicateDraft, { ...options, id: null, key: null, overwrite: false });
+  return buildLibraryResult(saveResult.ok, { errors: saveResult.errors, warnings: [...loaded.warnings, ...saveResult.warnings], library: saveResult.library, entry: saveResult.entry, draft: saveResult.draft, source: cloneData(source) });
+}
+
+export function prepareTravelEventBuilderLibraryState(options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderLibraryState");
+  const library = getTravelEventBuilderLibrary(options);
+  const entries = getLibraryDraftEntries(library).map((entry) => ({
+    ...cloneData(entry),
+    isMalformed: !isPlainObject(entry.draft),
+    canLoad: isPlainObject(entry.draft),
+    isCurrent: typeof options.currentId === "string" && options.currentId === entry.id
+  }));
+  return Object.freeze({
+    settingKey: `${ARCFLIGHT_MODULE_ID}.${TRAVEL_EVENT_BUILDER_LIBRARY_SETTING}`,
+    version: library.version,
+    entries,
+    count: entries.length,
+    hasDrafts: entries.length > 0,
+    currentId: typeof options.currentId === "string" ? options.currentId : ""
+  });
 }
 
 export function createTravelBuilderResourceEffect(options = {}) {
