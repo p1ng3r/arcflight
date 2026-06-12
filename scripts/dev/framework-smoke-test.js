@@ -106,6 +106,7 @@ import {
 import {
   TRAVEL_EVENT_BUILDER_VERSION,
   TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+  PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   validateTravelEventDraft,
@@ -128,6 +129,12 @@ import {
   analyzeTravelEventBuilderQuality,
   prepareTravelEventBuilderQualityReport,
   getTravelEventBuilderLibrary,
+  getPublishedTravelEventLibrary,
+  publishTravelEventDraftToLibrary,
+  loadPublishedTravelEventFromLibrary,
+  clonePublishedTravelEventToDraft,
+  deletePublishedTravelEventFromLibrary,
+  preparePublishedTravelEventLibraryState,
   saveTravelEventBuilderDraftToLibrary,
   loadTravelEventBuilderDraftFromLibrary,
   deleteTravelEventBuilderDraftFromLibrary,
@@ -1164,6 +1171,35 @@ export async function runFrameworkSmokeTest(options = {}) {
     const loadedBuilderLibraryDraft = loadTravelEventBuilderDraftFromLibrary(savedBuilderLibraryDraft.entry?.id, { library: savedBuilderLibraryDraft.library });
     const duplicatedBuilderLibraryDraft = await duplicateTravelEventBuilderLibraryDraft(savedBuilderLibraryDraft.entry?.id, { library: savedBuilderLibraryDraft.library, dryRun: true, now: "2026-06-12T00:00:01.000Z" });
     const deletedBuilderLibraryDraft = await deleteTravelEventBuilderDraftFromLibrary(duplicatedBuilderLibraryDraft.entry?.id, { library: duplicatedBuilderLibraryDraft.library, dryRun: true });
+    const emptyPublishedLibraryState = preparePublishedTravelEventLibraryState({ library: { version: 1, events: {} } });
+    const publishableDraft = normalizeTravelEventDraft({
+      ...completeQualityDraft,
+      key: "published-smoke",
+      name: "Published Smoke",
+      rounds: completeQualityDraft.rounds.map((round, index) => index === 0 ? {
+        ...round,
+        activeStations: [],
+        stationPrompts: {
+          engineer: { playerAction: "Tune the engine through the smoke-safe route." },
+          navigator: { playerAction: "Chart the smoke-safe route." }
+        }
+      } : round),
+      finalOutcomes: {
+        ...completeQualityDraft.finalOutcomes,
+        success: {
+          ...completeQualityDraft.finalOutcomes.success,
+          proposedEffects: [createTravelBuilderResourceEffect({ resource: "supplies", mode: "add", value: 2, label: "Published supplies reward" })]
+        }
+      }
+    });
+    const publishedBuilderEvent = await publishTravelEventDraftToLibrary(publishableDraft, { library: { version: 1, events: {} }, dryRun: true, sourceDraftId: savedBuilderLibraryDraft.entry?.id, now: "2026-06-12T00:00:02.000Z" });
+    const loadedPublishedEvent = loadPublishedTravelEventFromLibrary(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library });
+    const clonedPublishedDraft = clonePublishedTravelEventToDraft(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, now: "2026-06-12T00:00:03.000Z" });
+    const duplicatedPublishedDraft = clonePublishedTravelEventToDraft(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, duplicate: true, now: "2026-06-12T00:00:04.000Z" });
+    const duplicateKeyPublishedEvent = await publishTravelEventDraftToLibrary(publishableDraft, { library: publishedBuilderEvent.library, dryRun: true, now: "2026-06-12T00:00:05.000Z" });
+    const malformedPublishedEvent = loadPublishedTravelEventFromLibrary("malformed", { library: { version: 1, events: { malformed: { id: "malformed", key: "malformed", name: "Malformed", category: "discovery", event: "not an object" } } } });
+    const blockedPublishedEvent = await publishTravelEventDraftToLibrary({ ...publishableDraft, finalOutcomes: { ...publishableDraft.finalOutcomes, success: undefined } }, { library: { version: 1, events: {} }, dryRun: true });
+    const deletedPublishedEvent = await deletePublishedTravelEventFromLibrary(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, dryRun: true });
     const malformedBuilderLibraryDraft = loadTravelEventBuilderDraftFromLibrary("malformed-smoke", {
       library: {
         version: 1,
@@ -1244,6 +1280,17 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder library load returns normalized draft", loadedBuilderLibraryDraft.draft?.key === completeQualityDraft.key && loadedBuilderLibraryDraft.draft?.roundCount === completeQualityDraft.roundCount, "loaded normalized draft", loadedBuilderLibraryDraft);
     check(result, "Travel Event Builder library duplicate creates distinct saved entry", duplicatedBuilderLibraryDraft.ok === true && duplicatedBuilderLibraryDraft.entry?.id && duplicatedBuilderLibraryDraft.entry.id !== savedBuilderLibraryDraft.entry?.id && Object.keys(duplicatedBuilderLibraryDraft.library?.drafts ?? {}).length === 2, "distinct duplicate", duplicatedBuilderLibraryDraft);
     check(result, "Travel Event Builder library delete removes entry", deletedBuilderLibraryDraft.ok === true && deletedBuilderLibraryDraft.deleted?.id === duplicatedBuilderLibraryDraft.entry?.id && !Object.hasOwn(deletedBuilderLibraryDraft.library?.drafts ?? {}, duplicatedBuilderLibraryDraft.entry?.id), "deleted duplicate", deletedBuilderLibraryDraft);
+    check(result, "Published Travel Event library helper exports exist", typeof getPublishedTravelEventLibrary === "function" && typeof publishTravelEventDraftToLibrary === "function" && typeof loadPublishedTravelEventFromLibrary === "function" && typeof clonePublishedTravelEventToDraft === "function" && typeof deletePublishedTravelEventFromLibrary === "function" && typeof preparePublishedTravelEventLibraryState === "function" && typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary === "function" && typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary === "function", true, { setting: PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, api: typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary });
+    check(result, "Published Travel Event empty library returns safe state", emptyPublishedLibraryState.count === 0 && emptyPublishedLibraryState.hasEvents === false && Array.isArray(emptyPublishedLibraryState.entries), "empty published safe state", emptyPublishedLibraryState);
+    check(result, "Publishing current draft stores finalized event with no builder metadata", publishedBuilderEvent.ok === true && publishedBuilderEvent.entry?.event?.builder === undefined && publishedBuilderEvent.entry?.sourceDraftId === savedBuilderLibraryDraft.entry?.id && publishedBuilderEvent.entry?.event?.key === publishableDraft.key, "published finalized entry", publishedBuilderEvent);
+    check(result, "Published event preserves inferred round activeStations", publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.map((station) => station.stationKey).join(",") === "navigator,engineer", "published activeStations inferred in Travel Five order", publishedBuilderEvent.entry?.event?.rounds?.[0]);
+    check(result, "Published event preserves final outcome proposedEffects", publishedBuilderEvent.entry?.event?.finalOutcomes?.success?.proposedEffects?.[0]?.label === "Published supplies reward", "published proposed effects", publishedBuilderEvent.entry?.event?.finalOutcomes?.success?.proposedEffects);
+    check(result, "Load published event as draft restores builder metadata", clonedPublishedDraft.ok === true && clonedPublishedDraft.draft?.builder?.status === "draft" && clonedPublishedDraft.draft?.builder?.source === "builder" && clonedPublishedDraft.draft?.key === publishableDraft.key, "cloned published draft", clonedPublishedDraft);
+    check(result, "Duplicate published event as draft creates distinct editable draft", duplicatedPublishedDraft.ok === true && duplicatedPublishedDraft.draft?.builder?.status === "draft" && duplicatedPublishedDraft.draft?.key !== publishableDraft.key && /Copy/.test(duplicatedPublishedDraft.draft?.name ?? ""), "duplicated published draft", duplicatedPublishedDraft);
+    check(result, "Published event duplicate key does not silently overwrite", duplicateKeyPublishedEvent.ok === true && duplicateKeyPublishedEvent.entry?.id !== publishedBuilderEvent.entry?.id && duplicateKeyPublishedEvent.entry?.key === publishedBuilderEvent.entry?.key && duplicateKeyPublishedEvent.warnings.some((warning) => /already exists|without overwriting/i.test(warning)), "duplicate key published safely", duplicateKeyPublishedEvent);
+    check(result, "Delete published event removes it", deletedPublishedEvent.ok === true && deletedPublishedEvent.deleted?.id === publishedBuilderEvent.entry?.id && !Object.hasOwn(deletedPublishedEvent.library?.events ?? {}, publishedBuilderEvent.entry?.id), "deleted published event", deletedPublishedEvent);
+    check(result, "Malformed published event fails safely", malformedPublishedEvent.ok === false && malformedPublishedEvent.event === null && malformedPublishedEvent.errors.some((error) => /malformed/i.test(error)), "malformed published safe failure", malformedPublishedEvent);
+    check(result, "Publishing fails when quality report has errors", blockedPublishedEvent.ok === false && blockedPublishedEvent.event === null && blockedPublishedEvent.errors.some((error) => /Quality error|Missing canonical final outcome|Missing final outcome/i.test(error)), "blocked published event", blockedPublishedEvent);
     check(result, "Travel Event Builder malformed library draft fails safely", malformedBuilderLibraryDraft.ok === false && malformedBuilderLibraryDraft.draft === null && malformedBuilderLibraryDraft.errors.length > 0, "safe malformed saved draft", malformedBuilderLibraryDraft);
     check(result, "Travel Event Builder loaded library draft preserves quality and editors", loadedBuilderQualityReport?.ok === true && loadedBuilderFinalOutcomeTextState?.outcomes?.length === 5 && loadedBuilderFinalOutcomeEffectState?.outcomes?.length === 5, "post-load quality/editor state", { quality: loadedBuilderQualityReport, text: loadedBuilderFinalOutcomeTextState, effects: loadedBuilderFinalOutcomeEffectState });
     check(result, "Travel Event Builder import/export still works after loading library draft", loadedBuilderDraftExport.ok === true && loadedBuilderFinalExport.ok === true, "post-load exports", { draft: loadedBuilderDraftExport, final: loadedBuilderFinalExport });
