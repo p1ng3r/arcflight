@@ -1,12 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Added the Travel Event Builder final outcome resource effects editor MVP for local-only staged resource effects on `criticalSuccess`, `success`, `mixed`, `failure`, and `criticalFailure` final outcome blocks.
+- Added helper exports for preparing/applying final outcome effect editor state, including safe preservation of unsupported effects and validation failures for malformed resource effects.
+- Extended smoke coverage for add/edit/remove effect flows, unsupported-effect preservation, invalid effect validation, JSON import/export after effect edits, and Phase 0 boundaries.
+
 ### Travel Event Voidsailing Prose Correction
 
 - Corrected core travel event prose toward Arcflight voidsailing/space fantasy tone across Black Tide Crossing, Derelict Lantern Wreck, Crew Fever in the Lifeveil, False Beacon Ambush, and Portside Diplomatic Snare.
 - Added smoke coverage to flag literal-ocean wording regressions in core travel event prose.
-
-
-## Unreleased
 
 
 ### Travel Event Builder Round Editor MVP

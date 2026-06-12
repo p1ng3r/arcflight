@@ -15,6 +15,7 @@ const TRAVEL_TAG_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_TAGS));
 const CATEGORY_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_CATEGORIES));
 const ROUND_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES));
 const FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
+const BUILDER_FINAL_OUTCOME_EFFECT_EDITOR_KEYS = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 const RESOURCE_EFFECT_MODES = Object.freeze(["add", "set"]);
 
 const CATEGORY_LABELS = Object.freeze({
@@ -34,6 +35,19 @@ const RESOURCE_LABELS = Object.freeze({
   morale: "Morale",
   supplies: "Supplies",
   storedSpellRanks: "Stored Spell Ranks"
+});
+
+const FINAL_OUTCOME_EFFECT_EDITOR_LABELS = Object.freeze({
+  criticalSuccess: "Critical Success",
+  success: "Success",
+  mixed: "Mixed",
+  failure: "Failure",
+  criticalFailure: "Critical Failure"
+});
+
+const RESOURCE_EFFECT_MODE_LABELS = Object.freeze({
+  add: "Add",
+  set: "Set"
 });
 
 function cloneData(value) {
@@ -170,7 +184,23 @@ function normalizeOutcomeBranches(value) {
 function normalizeFinalOutcomes(value) {
   const defaults = createBlankFinalOutcomesTemplate();
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  return Object.fromEntries(FINAL_OUTCOME_KEYS.map((key) => [key, { ...cloneData(defaults[key]), ...(cloneData(source[key]) ?? {}) }]));
+  const normalized = Object.fromEntries(FINAL_OUTCOME_KEYS.map((key) => [key, { ...cloneData(defaults[key]), ...(cloneData(source[key]) ?? {}) }]));
+
+  for (const key of BUILDER_FINAL_OUTCOME_EFFECT_EDITOR_KEYS) {
+    const sourceOutcome = source[key] && typeof source[key] === "object" && !Array.isArray(source[key]) ? cloneData(source[key]) : {};
+    normalized[key] = {
+      ...createTravelBuilderFinalOutcome({ label: FINAL_OUTCOME_EFFECT_EDITOR_LABELS[key] ?? key }),
+      ...sourceOutcome,
+      label: typeof sourceOutcome.label === "string" ? sourceOutcome.label : (FINAL_OUTCOME_EFFECT_EDITOR_LABELS[key] ?? key),
+      proposedEffects: Array.isArray(sourceOutcome.proposedEffects) ? sourceOutcome.proposedEffects : []
+    };
+  }
+
+  for (const [key, outcome] of Object.entries(source)) {
+    if (!normalized[key] && outcome && typeof outcome === "object" && !Array.isArray(outcome)) normalized[key] = cloneData(outcome);
+  }
+
+  return normalized;
 }
 
 function normalizeRound(round, index, travelStations) {
@@ -231,6 +261,87 @@ function normalizeRoundEditorEntries(formData = {}) {
   }
 
   return Array.from(entries.values());
+}
+
+
+function isEditableResourceEffect(effect) {
+  return effect?.type === "resource" && TRAVEL_RESOURCE_KEYS.includes(effect.resource) && RESOURCE_EFFECT_MODES.includes(effect.mode) && Number.isFinite(Number(effect.value));
+}
+
+function summarizeUnsupportedEffect(effect, index) {
+  const type = typeof effect?.type === "string" && effect.type.length > 0 ? effect.type : "unsupported";
+  let reason = "Unsupported staged effect; preserved read-only for raw JSON editing.";
+  if (effect?.type === "resource") {
+    const issues = [];
+    if (!TRAVEL_RESOURCE_KEYS.includes(effect.resource)) issues.push(`unknown resource ${effect.resource ?? "<missing>"}`);
+    if (!RESOURCE_EFFECT_MODES.includes(effect.mode)) issues.push(`unknown mode ${effect.mode ?? "<missing>"}`);
+    if (!Number.isFinite(Number(effect.value))) issues.push(`non-numeric value ${effect.value ?? "<missing>"}`);
+    reason = issues.length > 0 ? `Unsupported resource effect: ${issues.join(", ")}. Preserved read-only.` : reason;
+  }
+  return {
+    index,
+    type,
+    label: typeof effect?.label === "string" && effect.label.length > 0 ? effect.label : `Effect ${index + 1}`,
+    summary: JSON.stringify(effect ?? null),
+    reason
+  };
+}
+
+function normalizeFinalOutcomeEffectEditorEntries(formData = {}) {
+  if (formData.outcomes && typeof formData.outcomes === "object" && !Array.isArray(formData.outcomes)) return formData.outcomes;
+
+  const outcomes = {};
+  for (const [key, value] of Object.entries(formData)) {
+    const match = key.match(/^finalOutcomes\.([^.]+)\.(label|vignette|addResourceEffect|effects\.(\d+)\.(resource|mode|value|label|remove))$/);
+    if (!match) continue;
+    const outcomeKey = match[1];
+    const field = match[2];
+    const entry = outcomes[outcomeKey] ?? { effects: [] };
+    if (field === "label" || field === "vignette" || field === "addResourceEffect") entry[field] = value;
+    else {
+      const effectIndex = Number(match[3]);
+      if (!Number.isInteger(effectIndex) || effectIndex < 0) continue;
+      const effectField = match[4];
+      entry.effects[effectIndex] = { ...(entry.effects[effectIndex] ?? { index: effectIndex }), [effectField]: value };
+    }
+    outcomes[outcomeKey] = entry;
+  }
+  return outcomes;
+}
+
+function coerceBooleanFormValue(value) {
+  if (Array.isArray(value)) return value.some((entry) => coerceBooleanFormValue(entry));
+  return value === true || value === "true" || value === "on" || value === "1" || value === 1;
+}
+
+function normalizeEditableResourceEffectFormEntry(entry, existingEffect = {}) {
+  const resource = coerceFormString(entry.resource, existingEffect.resource ?? ARCFLIGHT_TRAVEL_RESOURCES.HULL);
+  const mode = coerceFormString(entry.mode, existingEffect.mode ?? "add");
+  const rawValue = Object.hasOwn(entry, "value") ? entry.value : existingEffect.value;
+  return createTravelBuilderResourceEffect({
+    resource,
+    mode,
+    value: rawValue,
+    label: coerceFormString(entry.label, existingEffect.label ?? "")
+  });
+}
+
+function collectFinalOutcomeEffectValidationMessages(finalOutcomes) {
+  const errors = [];
+  const warnings = [];
+  for (const [outcomeKey, outcome] of Object.entries(finalOutcomes ?? {})) {
+    if (!Array.isArray(outcome?.proposedEffects)) continue;
+    outcome.proposedEffects.forEach((effect, index) => {
+      if (effect?.type !== "resource") {
+        if (BUILDER_FINAL_OUTCOME_EFFECT_EDITOR_KEYS.includes(outcomeKey)) warnings.push(`Final outcome ${outcomeKey} proposedEffects[${index}] is not a resource effect and is preserved read-only by the builder effect editor.`);
+        return;
+      }
+      if (!TRAVEL_RESOURCE_KEYS.includes(effect.resource)) errors.push(`Final outcome ${outcomeKey} proposedEffects[${index}] has unknown travel resource ${effect.resource ?? "<missing>"}.`);
+      if (!RESOURCE_EFFECT_MODES.includes(effect.mode)) errors.push(`Final outcome ${outcomeKey} proposedEffects[${index}] has unsupported resource mode ${effect.mode ?? "<missing>"}.`);
+      if (!Number.isFinite(Number(effect.value))) errors.push(`Final outcome ${outcomeKey} proposedEffects[${index}] value must be numeric.`);
+    });
+  }
+  return { errors, warnings };
 }
 
 export function createTravelBuilderStationPrompt(stationKey, options = {}) {
@@ -440,6 +551,109 @@ export function applyTravelEventBuilderRoundFormDataToDraft(draft, formData = {}
   }, options);
 }
 
+
+export function prepareTravelEventBuilderFinalOutcomeEffectEditorState(draft, options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderFinalOutcomeEffectEditorState");
+  const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+
+  return deepFreeze({
+    resourceOptions: TRAVEL_RESOURCE_KEYS.map((key) => createOption(key, RESOURCE_LABELS[key] ?? key, false)),
+    modeOptions: RESOURCE_EFFECT_MODES.map((key) => createOption(key, RESOURCE_EFFECT_MODE_LABELS[key] ?? key, false)),
+    outcomes: BUILDER_FINAL_OUTCOME_EFFECT_EDITOR_KEYS.map((key) => {
+      const outcome = normalizedDraft.finalOutcomes?.[key] ?? createTravelBuilderFinalOutcome({ label: FINAL_OUTCOME_EFFECT_EDITOR_LABELS[key] ?? key });
+      const proposedEffects = Array.isArray(outcome.proposedEffects) ? outcome.proposedEffects : [];
+      const resourceEffects = [];
+      const unsupportedEffects = [];
+
+      proposedEffects.forEach((effect, index) => {
+        if (!isEditableResourceEffect(effect)) {
+          unsupportedEffects.push(summarizeUnsupportedEffect(effect, index));
+          return;
+        }
+
+        resourceEffects.push({
+          index,
+          label: typeof effect.label === "string" ? effect.label : "",
+          resource: effect.resource,
+          mode: effect.mode,
+          value: Number(effect.value),
+          resourceOptions: TRAVEL_RESOURCE_KEYS.map((resourceKey) => createOption(resourceKey, RESOURCE_LABELS[resourceKey] ?? resourceKey, effect.resource === resourceKey)),
+          modeOptions: RESOURCE_EFFECT_MODES.map((modeKey) => createOption(modeKey, RESOURCE_EFFECT_MODE_LABELS[modeKey] ?? modeKey, effect.mode === modeKey))
+        });
+      });
+
+      return {
+        key,
+        label: typeof outcome.label === "string" ? outcome.label : (FINAL_OUTCOME_EFFECT_EDITOR_LABELS[key] ?? key),
+        defaultLabel: FINAL_OUTCOME_EFFECT_EDITOR_LABELS[key] ?? key,
+        vignette: typeof outcome.vignette === "string" ? outcome.vignette : "",
+        resourceEffects,
+        unsupportedEffects,
+        hasResourceEffects: resourceEffects.length > 0,
+        hasUnsupportedEffects: unsupportedEffects.length > 0
+      };
+    })
+  });
+}
+
+export function applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft(draft, formData = {}, options = {}) {
+  assertOptionsObject(options, "applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft");
+  assertOptionsObject(formData, "applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft formData");
+  const source = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+  const entriesByOutcome = normalizeFinalOutcomeEffectEditorEntries(formData);
+  if (Object.keys(entriesByOutcome).length === 0) return source;
+
+  const finalOutcomes = cloneData(source.finalOutcomes ?? {});
+  for (const outcomeKey of BUILDER_FINAL_OUTCOME_EFFECT_EDITOR_KEYS) {
+    const entry = entriesByOutcome[outcomeKey];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+
+    const existingOutcome = finalOutcomes[outcomeKey] && typeof finalOutcomes[outcomeKey] === "object" && !Array.isArray(finalOutcomes[outcomeKey])
+      ? finalOutcomes[outcomeKey]
+      : createTravelBuilderFinalOutcome({ label: FINAL_OUTCOME_EFFECT_EDITOR_LABELS[outcomeKey] ?? outcomeKey });
+    const existingEffects = Array.isArray(existingOutcome.proposedEffects) ? existingOutcome.proposedEffects : [];
+    const submittedEffects = Array.isArray(entry.effects) ? entry.effects.filter((effectEntry) => effectEntry && typeof effectEntry === "object" && !Array.isArray(effectEntry)) : [];
+    const submittedByIndex = new Map(submittedEffects.map((effectEntry) => [Number(effectEntry.index), effectEntry]));
+
+    const proposedEffects = [];
+    existingEffects.forEach((effect, index) => {
+      if (!isEditableResourceEffect(effect)) {
+        proposedEffects.push(effect);
+        return;
+      }
+
+      const submitted = submittedByIndex.get(index);
+      if (!submitted) {
+        proposedEffects.push(effect);
+        return;
+      }
+      if (coerceBooleanFormValue(submitted.remove)) return;
+      proposedEffects.push(normalizeEditableResourceEffectFormEntry(submitted, effect));
+    });
+
+    if (coerceBooleanFormValue(entry.addResourceEffect)) {
+      proposedEffects.push(createTravelBuilderResourceEffect({
+        resource: TRAVEL_RESOURCE_KEYS[0],
+        mode: RESOURCE_EFFECT_MODES[0],
+        value: 0,
+        label: `${RESOURCE_LABELS[TRAVEL_RESOURCE_KEYS[0]] ?? TRAVEL_RESOURCE_KEYS[0]} +0`
+      }));
+    }
+
+    finalOutcomes[outcomeKey] = {
+      ...existingOutcome,
+      label: Object.hasOwn(entry, "label") ? coerceFormString(entry.label, existingOutcome.label ?? (FINAL_OUTCOME_EFFECT_EDITOR_LABELS[outcomeKey] ?? outcomeKey)) : existingOutcome.label,
+      vignette: Object.hasOwn(entry, "vignette") ? coerceFormString(entry.vignette, existingOutcome.vignette ?? "") : existingOutcome.vignette,
+      proposedEffects
+    };
+  }
+
+  return normalizeTravelEventDraft({
+    ...source,
+    finalOutcomes
+  }, options);
+}
+
 export function applyTravelEventBuilderFormDataToDraft(draft, formData = {}, options = {}) {
   assertOptionsObject(options, "applyTravelEventBuilderFormDataToDraft");
   assertOptionsObject(formData, "applyTravelEventBuilderFormDataToDraft formData");
@@ -477,6 +691,9 @@ export function validateTravelEventDraft(draft, options = {}) {
   if (normalizedDraft.key.trim().length === 0) errors.push("Builder draft key must be a non-empty string.");
   if (normalizedDraft.name.trim().length === 0) errors.push("Builder draft name must be a non-empty string.");
   if (hasFunctionValue(draft)) errors.push("Builder draft must be data only and cannot contain functions.");
+  const effectValidation = collectFinalOutcomeEffectValidationMessages(normalizedDraft.finalOutcomes);
+  errors.push(...effectValidation.errors);
+  warnings.push(...effectValidation.warnings);
   if (containsAutomationReference(normalizedDraft)) warnings.push("Builder draft references automation language; keep event definitions staged and GM-applied only.");
 
   return {
