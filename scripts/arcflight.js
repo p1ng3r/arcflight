@@ -152,6 +152,8 @@ import {
 } from "./helpers/travel-event-template.js";
 import {
   TRAVEL_EVENT_BUILDER_VERSION,
+  TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+  TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   validateTravelEventDraft,
@@ -172,7 +174,13 @@ import {
   applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft,
   prepareTravelEventBuilderPreview,
   analyzeTravelEventBuilderQuality,
-  prepareTravelEventBuilderQualityReport
+  prepareTravelEventBuilderQualityReport,
+  getTravelEventBuilderLibrary,
+  saveTravelEventBuilderDraftToLibrary,
+  loadTravelEventBuilderDraftFromLibrary,
+  deleteTravelEventBuilderDraftFromLibrary,
+  duplicateTravelEventBuilderLibraryDraft,
+  prepareTravelEventBuilderLibraryState
 } from "./helpers/travel-event-builder.js";
 import {
   advanceShipTravelEventRound,
@@ -240,6 +248,15 @@ async function setArcflightVehicleEnabled(actor, enabled = true) {
 
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
+
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, {
+    name: "Travel Event Builder Library",
+    hint: "World-local saved drafts for the Arcflight Travel Event Builder authoring shell.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: TRAVEL_EVENT_BUILDER_LIBRARY_VERSION, drafts: {} }
+  });
 
   CONFIG.arcflight = Object.freeze({
     constants: ARCFLIGHT,
@@ -463,6 +480,14 @@ Hooks.once("init", () => {
     prepareTravelEventBuilderPreview,
     analyzeTravelEventBuilderQuality,
     prepareTravelEventBuilderQualityReport,
+    TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+    TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
+    getTravelEventBuilderLibrary,
+    saveTravelEventBuilderDraftToLibrary,
+    loadTravelEventBuilderDraftFromLibrary,
+    deleteTravelEventBuilderDraftFromLibrary,
+    duplicateTravelEventBuilderLibraryDraft,
+    prepareTravelEventBuilderLibraryState,
     prepareTravelEventSummary,
     prepareTravelRoundSummary,
     getTravelEventStationPrompt,
@@ -683,6 +708,8 @@ export {
   getTravelEventAuthoringGuidelines,
   validateTravelEventAuthoringTemplate,
   TRAVEL_EVENT_BUILDER_VERSION,
+  TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+  TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   validateTravelEventDraft,
@@ -702,6 +729,14 @@ export {
   applyTravelEventBuilderFinalOutcomeFormDataToDraft,
   applyTravelEventBuilderFinalOutcomeEffectFormDataToDraft,
   prepareTravelEventBuilderPreview,
+  analyzeTravelEventBuilderQuality,
+  prepareTravelEventBuilderQualityReport,
+  getTravelEventBuilderLibrary,
+  saveTravelEventBuilderDraftToLibrary,
+  loadTravelEventBuilderDraftFromLibrary,
+  deleteTravelEventBuilderDraftFromLibrary,
+  duplicateTravelEventBuilderLibraryDraft,
+  prepareTravelEventBuilderLibraryState,
   prepareTravelEventSummary,
   prepareTravelRoundSummary,
   getTravelEventStationPrompt,

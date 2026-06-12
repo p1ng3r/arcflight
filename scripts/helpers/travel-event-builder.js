@@ -1,9 +1,11 @@
 import { getStation } from "../../data/stations/core-stations.js";
-import { ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
+import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
 import { createBlankOutcomeBranchesTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
 export const TRAVEL_EVENT_BUILDER_VERSION = "0.1.0";
+export const TRAVEL_EVENT_BUILDER_LIBRARY_SETTING = "travelEventBuilderLibrary";
+export const TRAVEL_EVENT_BUILDER_LIBRARY_VERSION = 1;
 
 const DEFAULT_ROUND_COUNT = 4;
 const DEFAULT_BASE_DC = 18;
@@ -344,20 +346,103 @@ function splitTextLines(value) {
     .filter((entry) => entry.length > 0);
 }
 
+
+function stationKeyFromRoundActiveStationEntry(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) return entry.stationKey;
+  return null;
+}
+
+function normalizeStationPromptMap(value, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  if (!isPlainObject(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .filter(([stationKey, prompt]) => travelStations.includes(stationKey) && isPlainObject(prompt))
+    .map(([stationKey, prompt]) => [stationKey, { ...cloneData(prompt), stationKey, stationName: prompt.stationName ?? labelForStation(stationKey) }]));
+}
+
+function normalizeActiveStationKeys(activeStations, validStations = TRAVEL_FIVE_STATION_KEYS) {
+  if (!Array.isArray(activeStations)) return [];
+  return Array.from(new Set(activeStations
+    .map((entry) => stationKeyFromRoundActiveStationEntry(entry))
+    .filter((stationKey) => validStations.includes(stationKey))));
+}
+
+function inferActiveStationsFromPrompts(stationPrompts, validStations = TRAVEL_FIVE_STATION_KEYS) {
+  if (!isPlainObject(stationPrompts)) return [];
+  return TRAVEL_FIVE_STATION_KEYS.filter((stationKey) => validStations.includes(stationKey) && isPlainObject(stationPrompts[stationKey]));
+}
+
+function getRoundActiveStationKeys(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  const validStations = Array.isArray(travelStations) && travelStations.length > 0 ? travelStations : TRAVEL_FIVE_STATION_KEYS;
+  const activeStationKeys = normalizeActiveStationKeys(round.activeStations, validStations);
+  if (activeStationKeys.length > 0) return activeStationKeys;
+  return inferActiveStationsFromPrompts(round.stationPrompts, validStations);
+}
+
+function getRoundStationPromptsByStation(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  const promptsByStation = new Map(Object.entries(normalizeStationPromptMap(round.stationPrompts, travelStations)));
+  for (const entry of Array.isArray(round.activeStations) ? round.activeStations : []) {
+    if (!isPlainObject(entry) || !travelStations.includes(entry.stationKey)) continue;
+    promptsByStation.set(entry.stationKey, cloneData(entry));
+  }
+  return promptsByStation;
+}
+
+function createStationPromptFromRoundData(stationKey, round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  const promptsByStation = getRoundStationPromptsByStation(round, travelStations);
+  const sourcePrompt = promptsByStation.get(stationKey) ?? {};
+  return {
+    ...createBlankStationPromptTemplate(stationKey, sourcePrompt),
+    ...sourcePrompt,
+    stationKey,
+    stationName: sourcePrompt.stationName ?? labelForStation(stationKey)
+  };
+}
+
+function materializeRoundActiveStationPrompts(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  return getRoundActiveStationKeys(round, travelStations).map((stationKey) => createStationPromptFromRoundData(stationKey, round, travelStations));
+}
+
+function materializeDraftRoundsForEventDefinition(draft = {}) {
+  const travelStations = uniqueKnownValues(draft.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS);
+  return {
+    ...draft,
+    rounds: (Array.isArray(draft.rounds) ? draft.rounds : []).map((round) => ({
+      ...round,
+      activeStations: materializeRoundActiveStationPrompts(round, travelStations)
+    }))
+  };
+}
+
 function normalizeRound(round, index, travelStations) {
   const source = round && typeof round === "object" && !Array.isArray(round) ? cloneData(round) : {};
   const template = createBlankTravelRoundTemplate(index + 1, { travelStations });
-  const activeStations = Array.isArray(source.activeStations)
-    ? source.activeStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object")
-    : template.activeStations;
+  const sourceActiveStations = Array.isArray(source.activeStations) ? source.activeStations : null;
+  const validStations = Array.isArray(travelStations) && travelStations.length > 0 ? travelStations : TRAVEL_FIVE_STATION_KEYS;
+  const normalizedActiveStationKeys = normalizeActiveStationKeys(source.activeStations, validStations);
+  const inferredActiveStations = inferActiveStationsFromPrompts(source.stationPrompts, validStations);
+  const activeStationKeys = normalizedActiveStationKeys.length > 0 ? normalizedActiveStationKeys : inferredActiveStations;
+  let activeStations;
 
-  return {
+  if (sourceActiveStations) {
+    const hasStationKeyArray = sourceActiveStations.some((entry) => typeof entry === "string");
+    activeStations = hasStationKeyArray
+      ? normalizedActiveStationKeys
+      : sourceActiveStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object");
+    if (activeStations.length === 0 && inferredActiveStations.length > 0) activeStations = inferredActiveStations;
+  } else {
+    activeStations = activeStationKeys.length > 0 ? activeStationKeys : template.activeStations;
+  }
+
+  const normalized = {
     ...template,
     ...source,
     round: Number.isInteger(source.round) && source.round > 0 ? source.round : index + 1,
     activeStations,
     outcomeBranches: normalizeOutcomeBranches(source.outcomeBranches)
   };
+  if (Object.hasOwn(source, "stationPrompts")) normalized.stationPrompts = cloneData(source.stationPrompts);
+  return normalized;
 }
 
 function createRoundStationPromptForEditor(stationKey, existingPrompt = {}, promptFormData = {}) {
@@ -441,6 +526,197 @@ export function createTravelBuilderRound(options = {}) {
   const roundNumber = Number.isInteger(options.round) && options.round > 0 ? options.round : 1;
   const travelStations = uniqueKnownValues(options.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS);
   return createBlankTravelRoundTemplate(roundNumber, { ...options, travelStations });
+}
+
+
+function containsFunctionValue(value, path = "root", found = []) {
+  if (typeof value === "function") found.push(path);
+  else if (Array.isArray(value)) value.forEach((entry, index) => containsFunctionValue(entry, `${path}[${index}]`, found));
+  else if (value && typeof value === "object") Object.entries(value).forEach(([key, entry]) => containsFunctionValue(entry, `${path}.${key}`, found));
+  return found;
+}
+
+function getGameSettingLibrary() {
+  const settings = globalThis.game?.settings;
+  if (!settings || typeof settings.get !== "function") return null;
+  try {
+    return settings.get(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING);
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function setGameSettingLibrary(library) {
+  const settings = globalThis.game?.settings;
+  if (!settings || typeof settings.set !== "function") throw new Error("Foundry game.settings is not available for the Travel Event Builder library.");
+  return settings.set(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, cloneData(library));
+}
+
+function slugifyLibraryId(value) {
+  const slug = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "travel-event-draft";
+}
+
+function normalizeLibraryDraftEntry(id, entry = {}, options = {}) {
+  const fallbackTimestamp = nowIso(options);
+  const source = isPlainObject(entry) ? entry : {};
+  const draft = isPlainObject(source.draft) ? cloneData(source.draft) : source.draft;
+  const draftSource = isPlainObject(draft) ? draft : {};
+  const key = typeof source.key === "string" && source.key.length > 0 ? source.key : (typeof draftSource.key === "string" ? draftSource.key : "");
+  const name = typeof source.name === "string" && source.name.length > 0 ? source.name : (typeof draftSource.name === "string" ? draftSource.name : key || id);
+  const category = typeof source.category === "string" && source.category.length > 0 ? source.category : (typeof draftSource.category === "string" ? draftSource.category : DEFAULT_CATEGORY);
+  return {
+    id,
+    key,
+    name,
+    category,
+    createdAt: typeof source.createdAt === "string" && source.createdAt.length > 0 ? source.createdAt : fallbackTimestamp,
+    updatedAt: typeof source.updatedAt === "string" && source.updatedAt.length > 0 ? source.updatedAt : fallbackTimestamp,
+    draft
+  };
+}
+
+function normalizeTravelEventBuilderLibraryData(rawLibrary, options = {}) {
+  const source = isPlainObject(rawLibrary) ? rawLibrary : {};
+  const sourceDrafts = isPlainObject(source.drafts) ? source.drafts : {};
+  const drafts = {};
+  for (const [id, entry] of Object.entries(sourceDrafts)) {
+    if (typeof id !== "string" || id.length === 0) continue;
+    drafts[id] = normalizeLibraryDraftEntry(id, entry, options);
+  }
+  return {
+    version: Number.isInteger(source.version) ? source.version : TRAVEL_EVENT_BUILDER_LIBRARY_VERSION,
+    drafts
+  };
+}
+
+function getLibraryDraftEntries(library) {
+  return Object.values(library.drafts ?? {}).sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")) || String(a.name ?? "").localeCompare(String(b.name ?? "")));
+}
+
+function createUniqueLibraryDraftId(library, seed, options = {}) {
+  const drafts = library?.drafts ?? {};
+  const base = slugifyLibraryId(seed);
+  if (!Object.hasOwn(drafts, base)) return base;
+
+  const timestamp = nowIso(options).replace(/[^0-9]/g, "").slice(0, 14);
+  const timestamped = `${base}-${timestamp}`;
+  if (!Object.hasOwn(drafts, timestamped)) return timestamped;
+
+  let index = 2;
+  while (Object.hasOwn(drafts, `${timestamped}-${index}`)) index += 1;
+  return `${timestamped}-${index}`;
+}
+
+function buildLibraryResult(ok, data = {}) {
+  return {
+    ok: Boolean(ok),
+    errors: Array.isArray(data.errors) ? data.errors : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
+    ...data
+  };
+}
+
+export function getTravelEventBuilderLibrary(options = {}) {
+  assertOptionsObject(options, "getTravelEventBuilderLibrary");
+  return normalizeTravelEventBuilderLibraryData(Object.hasOwn(options, "library") ? options.library : getGameSettingLibrary(), options);
+}
+
+export async function saveTravelEventBuilderDraftToLibrary(draft, options = {}) {
+  assertOptionsObject(options, "saveTravelEventBuilderDraftToLibrary");
+  const errors = [];
+  const warnings = [];
+  if (!isPlainObject(draft)) errors.push("Travel Event Builder library save requires a draft object.");
+  const functionPaths = containsFunctionValue(draft);
+  if (functionPaths.length > 0) errors.push(`Travel Event Builder library drafts must be data-only; function values found at: ${functionPaths.join(", ")}.`);
+  if (errors.length > 0) return buildLibraryResult(false, { errors, warnings, library: getTravelEventBuilderLibrary(options), entry: null, draft: null });
+
+  const library = getTravelEventBuilderLibrary(options);
+  const normalizedDraft = normalizeTravelEventDraft(draft, options);
+  const explicitId = typeof options.id === "string" && options.id.length > 0 ? options.id : (typeof options.key === "string" && options.key.length > 0 ? options.key : null);
+  const overwrite = options.overwrite === true;
+  const explicitExists = explicitId ? Object.hasOwn(library.drafts, explicitId) : false;
+  const id = explicitId && (!explicitExists || overwrite) ? explicitId : createUniqueLibraryDraftId(library, explicitId ?? normalizedDraft.key ?? normalizedDraft.name, options);
+  const existing = overwrite ? library.drafts[id] : null;
+  if (explicitId && explicitExists && !overwrite) {
+    warnings.push(`Draft id "${explicitId}" already exists; saved as "${id}" instead.`);
+  }
+
+  const timestamp = nowIso(options);
+  const entry = {
+    id,
+    key: normalizedDraft.key,
+    name: typeof options.name === "string" && options.name.length > 0 ? options.name : (normalizedDraft.name || normalizedDraft.key || id),
+    category: typeof options.category === "string" && options.category.length > 0 ? options.category : normalizedDraft.category,
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+    draft: cloneData(normalizedDraft)
+  };
+  const nextLibrary = { ...library, version: TRAVEL_EVENT_BUILDER_LIBRARY_VERSION, drafts: { ...library.drafts, [id]: entry } };
+  if (!options.dryRun) await setGameSettingLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings, library: nextLibrary, entry: cloneData(entry), draft: cloneData(normalizedDraft) });
+}
+
+export function loadTravelEventBuilderDraftFromLibrary(idOrKey, options = {}) {
+  assertOptionsObject(options, "loadTravelEventBuilderDraftFromLibrary");
+  const library = getTravelEventBuilderLibrary(options);
+  const id = String(idOrKey ?? "");
+  const entry = library.drafts[id] ?? getLibraryDraftEntries(library).find((candidate) => candidate.key === id);
+  if (!entry) return buildLibraryResult(false, { errors: [`No saved Travel Event Builder draft found for "${id}".`], warnings: [], library, entry: null, draft: null });
+  if (!isPlainObject(entry.draft)) return buildLibraryResult(false, { errors: [`Saved Travel Event Builder draft "${entry.id}" is malformed and cannot be loaded.`], warnings: [], library, entry: cloneData(entry), draft: null });
+
+  try {
+    const draft = normalizeTravelEventDraft(entry.draft, options);
+    const validation = validateTravelEventDraft(draft, { strictAuthoring: true });
+    return buildLibraryResult(validation.ok, { errors: validation.errors, warnings: validation.warnings, library, entry: cloneData(entry), draft, validation });
+  } catch (error) {
+    return buildLibraryResult(false, { errors: [`Saved Travel Event Builder draft "${entry.id}" could not be normalized: ${error.message}`], warnings: [], library, entry: cloneData(entry), draft: null });
+  }
+}
+
+export async function deleteTravelEventBuilderDraftFromLibrary(idOrKey, options = {}) {
+  assertOptionsObject(options, "deleteTravelEventBuilderDraftFromLibrary");
+  const library = getTravelEventBuilderLibrary(options);
+  const id = String(idOrKey ?? "");
+  const entry = library.drafts[id] ?? getLibraryDraftEntries(library).find((candidate) => candidate.key === id);
+  if (!entry) return buildLibraryResult(false, { errors: [`No saved Travel Event Builder draft found for "${id}".`], warnings: [], library, deleted: null });
+  const { [entry.id]: _deleted, ...remainingDrafts } = library.drafts;
+  const nextLibrary = { ...library, drafts: remainingDrafts };
+  if (!options.dryRun) await setGameSettingLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings: [], library: nextLibrary, deleted: cloneData(entry) });
+}
+
+export async function duplicateTravelEventBuilderLibraryDraft(idOrKey, options = {}) {
+  assertOptionsObject(options, "duplicateTravelEventBuilderLibraryDraft");
+  const loaded = loadTravelEventBuilderDraftFromLibrary(idOrKey, options);
+  if (!loaded.draft) return buildLibraryResult(false, { errors: loaded.errors, warnings: loaded.warnings, library: loaded.library, entry: null, draft: null, source: loaded.entry ?? null });
+  const source = loaded.entry;
+  const duplicateDraft = normalizeTravelEventDraft({ ...loaded.draft, key: options.draftKey ?? loaded.draft.key, name: options.name ?? `${loaded.draft.name || loaded.draft.key || source.id} Copy` }, options);
+  const saveResult = await saveTravelEventBuilderDraftToLibrary(duplicateDraft, { ...options, id: null, key: null, overwrite: false });
+  return buildLibraryResult(saveResult.ok, { errors: saveResult.errors, warnings: [...loaded.warnings, ...saveResult.warnings], library: saveResult.library, entry: saveResult.entry, draft: saveResult.draft, source: cloneData(source) });
+}
+
+export function prepareTravelEventBuilderLibraryState(options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderLibraryState");
+  const library = getTravelEventBuilderLibrary(options);
+  const entries = getLibraryDraftEntries(library).map((entry) => ({
+    ...cloneData(entry),
+    isMalformed: !isPlainObject(entry.draft),
+    canLoad: isPlainObject(entry.draft),
+    isCurrent: typeof options.currentId === "string" && options.currentId === entry.id
+  }));
+  return Object.freeze({
+    settingKey: `${ARCFLIGHT_MODULE_ID}.${TRAVEL_EVENT_BUILDER_LIBRARY_SETTING}`,
+    version: library.version,
+    entries,
+    count: entries.length,
+    hasDrafts: entries.length > 0,
+    currentId: typeof options.currentId === "string" ? options.currentId : ""
+  });
 }
 
 export function createTravelBuilderResourceEffect(options = {}) {
@@ -538,13 +814,8 @@ export function prepareTravelEventBuilderRoundEditorState(draft, options = {}) {
       label: labelForStation(stationKey)
     })),
     rounds: normalizedDraft.rounds.map((round) => {
-      const activeStationKeys = (Array.isArray(round.activeStations) ? round.activeStations : [])
-        .map((prompt) => prompt?.stationKey)
-        .filter((stationKey) => allowedStations.includes(stationKey));
-      const uniqueActiveStationKeys = Array.from(new Set(activeStationKeys));
-      const promptsByStation = new Map((Array.isArray(round.activeStations) ? round.activeStations : [])
-        .filter((prompt) => prompt && typeof prompt === "object" && allowedStations.includes(prompt.stationKey))
-        .map((prompt) => [prompt.stationKey, prompt]));
+      const uniqueActiveStationKeys = getRoundActiveStationKeys(round, allowedStations);
+      const promptsByStation = getRoundStationPromptsByStation(round, allowedStations);
 
       return {
         round: round.round,
@@ -761,18 +1032,20 @@ export function applyTravelEventBuilderRoundFormDataToDraft(draft, formData = {}
     const entry = entriesByRound.get(round.round);
     if (!entry) return round;
 
-    const existingPrompts = new Map((Array.isArray(round.activeStations) ? round.activeStations : [])
-      .filter((prompt) => prompt && typeof prompt === "object" && allowedStations.includes(prompt.stationKey))
-      .map((prompt) => [prompt.stationKey, prompt]));
+    const existingPrompts = getRoundStationPromptsByStation(round, allowedStations);
     const requestedActiveStations = Object.hasOwn(entry, "activeStations")
       ? uniqueKnownValues(coerceFormStringArray(entry.activeStations), allowedStations, [])
-      : Array.from(existingPrompts.keys());
+      : getRoundActiveStationKeys(round, allowedStations);
     const stationPromptFormData = entry.stationPrompts && typeof entry.stationPrompts === "object" && !Array.isArray(entry.stationPrompts) ? entry.stationPrompts : {};
+
+    const usesStationPromptMap = Object.hasOwn(round, "stationPrompts") || (Array.isArray(round.activeStations) && round.activeStations.some((activeStation) => typeof activeStation === "string"));
+    const nextPrompts = requestedActiveStations.map((stationKey) => createRoundStationPromptForEditor(stationKey, existingPrompts.get(stationKey), stationPromptFormData[stationKey] ?? {}));
 
     return {
       ...round,
       openingVignette: Object.hasOwn(entry, "openingVignette") ? coerceFormString(entry.openingVignette, round.openingVignette ?? "") : round.openingVignette,
-      activeStations: requestedActiveStations.map((stationKey) => createRoundStationPromptForEditor(stationKey, existingPrompts.get(stationKey), stationPromptFormData[stationKey] ?? {}))
+      activeStations: usesStationPromptMap ? requestedActiveStations : nextPrompts,
+      ...(usesStationPromptMap ? { stationPrompts: { ...(isPlainObject(round.stationPrompts) ? cloneData(round.stationPrompts) : {}), ...Object.fromEntries(nextPrompts.map((prompt) => [prompt.stationKey, prompt])) } } : {})
     };
   });
 
@@ -960,7 +1233,7 @@ export function analyzeTravelEventBuilderQuality(draft, options = {}) {
   normalizedDraft.rounds.forEach((round, index) => {
     const roundPath = `rounds[${index}]`;
     const openingVignette = trimmedText(round.openingVignette);
-    const activeStations = Array.isArray(round.activeStations) ? round.activeStations : [];
+    const activeStations = materializeRoundActiveStationPrompts(round, normalizedDraft.travelStations);
     const roundChecks = [
       createChecklistItem(`Round ${round.round} has an opening vignette`, openingVignette.length > 0, "warning", `Round ${round.round} needs an opening vignette.`),
       createChecklistItem(`Round ${round.round} opening vignette is specific`, openingVignette.length > 0 && !isPlaceholderText(openingVignette), "suggestion", `Round ${round.round} opening vignette still looks placeholder/generic.`),
@@ -1106,7 +1379,8 @@ export function prepareTravelEventBuilderQualityReport(draft, options = {}) {
 export function validateTravelEventDraft(draft, options = {}) {
   assertOptionsObject(options, "validateTravelEventDraft");
   const normalizedDraft = normalizeTravelEventDraft(draft, options);
-  const validation = validateTravelEventDefinition(normalizedDraft, { ...options, strictAuthoring: true });
+  const validationDraft = materializeDraftRoundsForEventDefinition(normalizedDraft);
+  const validation = validateTravelEventDefinition(validationDraft, { ...options, strictAuthoring: true });
   const errors = [...collectMalformedFinalOutcomeErrors(draft), ...validation.errors];
   const warnings = [...validation.warnings];
   const legacyMissingFinalOutcomeMessages = LEGACY_FINAL_OUTCOME_KEYS.map((key) => `Missing final outcome ${key}.`);
@@ -1143,7 +1417,7 @@ export function finalizeTravelEventDraft(draft, options = {}) {
     };
   }
 
-  const event = stripBuilderMetadata(validation.normalizedDraft);
+  const event = stripBuilderMetadata(materializeDraftRoundsForEventDefinition(validation.normalizedDraft));
   return {
     ok: true,
     errors: [],
@@ -1181,8 +1455,8 @@ export function prepareTravelEventBuilderPreview(draft, options = {}) {
     rounds: normalizedDraft.rounds.map((round) => ({
       round: round.round,
       title: round.title,
-      activeStationCount: round.activeStations?.length ?? 0,
-      activeStationsLabel: labelList((round.activeStations ?? []).map((prompt) => prompt.stationKey), {}),
+      activeStationCount: getRoundActiveStationKeys(round, normalizedDraft.travelStations).length,
+      activeStationsLabel: labelList(getRoundActiveStationKeys(round, normalizedDraft.travelStations), {}),
       outcomeBranches: ROUND_OUTCOME_KEYS.map((key) => ({
         key,
         hasVignette: typeof round.outcomeBranches?.[key]?.vignette === "string" && round.outcomeBranches[key].vignette.trim().length > 0,

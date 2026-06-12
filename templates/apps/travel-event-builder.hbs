@@ -11,6 +11,44 @@
     <p class="arcflight-travel-builder__status arcflight-travel-builder__status--{{status.kind}}">{{status.message}}</p>
   {{/if}}
 
+
+  <section class="arcflight-travel-builder__panel arcflight-travel-builder__library" data-arcflight-builder-library>
+    <div class="arcflight-travel-builder__panel-heading">
+      <div>
+        <h2>Saved Drafts Library</h2>
+        <p class="arcflight-sheet__hint">World-local builder drafts for GM authoring only. Saving here does not publish to a compendium, start an event, or apply any ship changes.</p>
+      </div>
+      <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+        <button type="button" data-arcflight-builder-library-save>Save Current Draft</button>
+        <button type="button" data-arcflight-builder-library-save-as>Save As New Draft</button>
+        <button type="button" data-arcflight-builder-library-refresh>Refresh Library</button>
+      </div>
+    </div>
+
+    <p class="arcflight-sheet__hint">Setting: <code>{{library.settingKey}}</code>. Entries: {{library.count}}.</p>
+    {{#if library.hasDrafts}}
+      <div class="arcflight-travel-builder__library-list">
+        {{#each library.entries}}
+          <article class="arcflight-travel-builder__library-row {{#if isCurrent}}arcflight-travel-builder__library-row--current{{/if}} {{#if isMalformed}}arcflight-travel-builder__library-row--malformed{{/if}}">
+            <div>
+              <strong>{{name}}</strong>
+              {{#if isCurrent}}<span class="arcflight-travel-builder__badge">Current</span>{{/if}}
+              {{#if isMalformed}}<span class="arcflight-travel-builder__badge arcflight-travel-builder__badge--warning">Malformed</span>{{/if}}
+              <div class="arcflight-sheet__hint">Saved id: <code>{{id}}</code> · Draft key: <code>{{key}}</code> · Category: {{category}} · Updated: {{updatedAt}}</div>
+            </div>
+            <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-library-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load</button>
+              <button type="button" data-arcflight-builder-library-duplicate="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate</button>
+              <button type="button" class="arcflight-button--danger" data-arcflight-builder-library-delete="{{id}}">Delete</button>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No saved custom travel event drafts yet. Click <strong>Save Current Draft</strong> to create one.</p>
+    {{/if}}
+  </section>
+
   <section class="arcflight-travel-builder__panel arcflight-travel-builder__quality" data-arcflight-builder-quality>
     <div class="arcflight-travel-builder__panel-heading">
       <div>

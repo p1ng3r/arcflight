@@ -6,12 +6,17 @@ import {
   applyTravelEventBuilderRoundFormDataToDraft,
   createTravelEventDraft,
   normalizeTravelEventDraft,
+  deleteTravelEventBuilderDraftFromLibrary,
+  duplicateTravelEventBuilderLibraryDraft,
+  loadTravelEventBuilderDraftFromLibrary,
   prepareTravelEventBuilderFinalOutcomeEditorState,
   prepareTravelEventBuilderFinalOutcomeEffectEditorState,
   prepareTravelEventBuilderFormOptions,
+  prepareTravelEventBuilderLibraryState,
   prepareTravelEventBuilderPreview,
   prepareTravelEventBuilderQualityReport,
-  prepareTravelEventBuilderRoundEditorState
+  prepareTravelEventBuilderRoundEditorState,
+  saveTravelEventBuilderDraftToLibrary
 } from "../helpers/travel-event-builder.js";
 import {
   exportFinalTravelEventToJson,
@@ -28,6 +33,12 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-apply-form]",
   "[data-arcflight-builder-apply-rounds]",
   "[data-arcflight-builder-apply-final-outcomes]",
+  "[data-arcflight-builder-library-save]",
+  "[data-arcflight-builder-library-save-as]",
+  "[data-arcflight-builder-library-load]",
+  "[data-arcflight-builder-library-duplicate]",
+  "[data-arcflight-builder-library-delete]",
+  "[data-arcflight-builder-library-refresh]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
   "[data-arcflight-builder-export-final]"
@@ -98,7 +109,8 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
     formOptions: prepareTravelEventBuilderFormOptions(normalizedDraft, options),
     roundEditor: prepareTravelEventBuilderRoundEditorState(normalizedDraft, options),
     finalOutcomeEditor: prepareTravelEventBuilderFinalOutcomeEditorState(normalizedDraft, options),
-    finalOutcomeEffectEditor: prepareTravelEventBuilderFinalOutcomeEffectEditorState(normalizedDraft, options)
+    finalOutcomeEffectEditor: prepareTravelEventBuilderFinalOutcomeEffectEditorState(normalizedDraft, options),
+    library: prepareTravelEventBuilderLibraryState(options)
   });
 }
 
@@ -110,7 +122,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     super(options);
     this.draft = normalizeTravelEventDraft(options.draft ?? createTravelEventDraft());
     this.outputJson = "";
-    this.status = createStatus("info", "Draft is local to this window. Nothing is persisted or applied.");
+    this.currentLibraryDraftId = typeof options.libraryDraftId === "string" ? options.libraryDraftId : "";
+    this.status = createStatus("info", "Draft is local to this window until you explicitly save it to the Saved Drafts library.");
   }
 
   static DEFAULT_OPTIONS = {
@@ -134,7 +147,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const shell = prepareTravelEventBuilderShellState(this.draft, options);
+    const shell = prepareTravelEventBuilderShellState(this.draft, { ...options, currentId: this.currentLibraryDraftId });
 
     return {
       ...context,
@@ -143,7 +156,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
       hasOutputJson: typeof this.outputJson === "string" && this.outputJson.trim().length > 0,
       status: this.status,
       hasStatus: Boolean(this.status?.message),
-      hardBoundaryHint: "Shell only: no compendium writes, world settings persistence, actor mutation, chat posting, travel-event running, AP/RAP mechanics, combat automation, or staged-effect application."
+      hardBoundaryHint: "Authoring shell only: saved drafts use one Arcflight world setting, but there are no compendium writes, actor mutation, chat posting, travel-event running, AP/RAP mechanics, combat automation, or staged-effect application."
     };
   }
 
@@ -166,6 +179,12 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-apply-form")) return this.#onApplyForm(event);
     if (target.hasAttribute("data-arcflight-builder-apply-rounds")) return this.#onApplyRounds(event);
     if (target.hasAttribute("data-arcflight-builder-apply-final-outcomes")) return this.#onApplyFinalOutcomes(event);
+    if (target.hasAttribute("data-arcflight-builder-library-save")) return this.#onSaveLibraryDraft(event);
+    if (target.hasAttribute("data-arcflight-builder-library-save-as")) return this.#onSaveAsLibraryDraft(event);
+    if (target.hasAttribute("data-arcflight-builder-library-load")) return this.#onLoadLibraryDraft(event, target);
+    if (target.hasAttribute("data-arcflight-builder-library-duplicate")) return this.#onDuplicateLibraryDraft(event, target);
+    if (target.hasAttribute("data-arcflight-builder-library-delete")) return this.#onDeleteLibraryDraft(event, target);
+    if (target.hasAttribute("data-arcflight-builder-library-refresh")) return this.#onRefreshLibrary(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-final")) return this.#onExportFinal(event);
@@ -290,6 +309,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     event.preventDefault();
     this.draft = createTravelEventDraft();
     this.outputJson = "";
+    this.currentLibraryDraftId = "";
     this.status = createStatus("info", "Created a new default local travel event draft.");
     await this.#rerenderAfterAction();
   }
@@ -335,6 +355,80 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     await this.#rerenderAfterAction();
   }
 
+  async #onSaveLibraryDraft(event) {
+    event.preventDefault();
+    const imported = this.#syncDraftFromEditor();
+    if (!imported.draft) return await this.#rerenderAfterAction();
+
+    const saved = await saveTravelEventBuilderDraftToLibrary(this.draft, { id: this.currentLibraryDraftId || undefined, overwrite: Boolean(this.currentLibraryDraftId) });
+    if (saved.entry) this.currentLibraryDraftId = saved.entry.id;
+    this.outputJson = "";
+    this.status = createStatus(saved.ok ? (saved.warnings.length > 0 ? "warning" : "success") : "warning", saved.ok ? (saved.warnings[0] ?? `Saved draft "${saved.entry.name}" to the local library.`) : firstError(saved, "Draft could not be saved to the library."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onSaveAsLibraryDraft(event) {
+    event.preventDefault();
+    const imported = this.#syncDraftFromEditor();
+    if (!imported.draft) return await this.#rerenderAfterAction();
+
+    const saved = await saveTravelEventBuilderDraftToLibrary(this.draft, { overwrite: false });
+    if (saved.entry) this.currentLibraryDraftId = saved.entry.id;
+    this.outputJson = "";
+    this.status = createStatus(saved.ok ? (saved.warnings.length > 0 ? "warning" : "success") : "warning", saved.ok ? (saved.warnings[0] ?? `Saved a new library draft "${saved.entry.name}".`) : firstError(saved, "Draft could not be saved as a new library entry."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onLoadLibraryDraft(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderLibraryLoad;
+    const loaded = loadTravelEventBuilderDraftFromLibrary(id);
+    if (!loaded.draft) {
+      this.status = createStatus("warning", firstError(loaded, "Saved draft could not be loaded."));
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    this.draft = cloneData(loaded.draft);
+    this.currentLibraryDraftId = loaded.entry?.id ?? "";
+    this.outputJson = "";
+    this.status = createStatus(loaded.ok ? (loaded.warnings.length > 0 ? "warning" : "success") : "warning", loaded.ok ? (loaded.warnings[0] ?? `Loaded saved draft "${loaded.entry.name}".`) : firstError(loaded, "Loaded draft with validation errors."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onDuplicateLibraryDraft(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderLibraryDuplicate;
+    const duplicated = await duplicateTravelEventBuilderLibraryDraft(id);
+    if (duplicated.entry) this.currentLibraryDraftId = duplicated.entry.id;
+    if (duplicated.draft) this.draft = cloneData(duplicated.draft);
+    this.outputJson = "";
+    this.status = createStatus(duplicated.ok ? (duplicated.warnings.length > 0 ? "warning" : "success") : "warning", duplicated.ok ? (duplicated.warnings[0] ?? `Duplicated saved draft as "${duplicated.entry.name}" and loaded the duplicate.`) : firstError(duplicated, "Saved draft could not be duplicated."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onDeleteLibraryDraft(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderLibraryDelete;
+    const confirmed = globalThis.confirm?.(`Delete saved travel event draft "${id}"? This only removes the builder-library copy.`) ?? true;
+    if (!confirmed) {
+      this.status = createStatus("info", "Delete cancelled; saved draft library was not changed.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    const deleted = await deleteTravelEventBuilderDraftFromLibrary(id);
+    if (deleted.deleted?.id === this.currentLibraryDraftId) this.currentLibraryDraftId = "";
+    this.status = createStatus(deleted.ok ? "success" : "warning", deleted.ok ? `Deleted saved draft "${deleted.deleted.name}" from the local library.` : firstError(deleted, "Saved draft could not be deleted."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onRefreshLibrary(event) {
+    event.preventDefault();
+    this.status = createStatus("success", "Saved draft library refreshed from the Arcflight world setting.");
+    await this.#rerenderAfterAction();
+  }
+
   async #onImportDraft(event) {
     event.preventDefault();
     const jsonText = readTextareaValue(this.element, "[data-arcflight-builder-import-json]");
@@ -347,6 +441,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     }
 
     this.draft = cloneData(imported.draft);
+    this.currentLibraryDraftId = "";
     this.outputJson = "";
     this.status = createStatus(imported.ok ? (imported.warnings.length > 0 ? "warning" : "success") : "warning", imported.ok ? (imported.warnings[0] ?? "Imported pasted draft JSON into this local builder shell.") : firstError(imported, "Imported draft with validation errors."));
     await this.#rerenderAfterAction();
