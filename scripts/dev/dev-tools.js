@@ -47,7 +47,9 @@ import {
   applyTravelEventBuilderRoundFormDataToDraft,
   prepareTravelEventBuilderFinalOutcomeEditorState,
   applyTravelEventBuilderFinalOutcomeFormDataToDraft,
-  prepareTravelEventBuilderPreview
+  prepareTravelEventBuilderPreview,
+  analyzeTravelEventBuilderQuality,
+  prepareTravelEventBuilderQualityReport
 } from "../helpers/travel-event-builder.js";
 import {
   advanceShipTravelEventRound,
@@ -339,6 +341,8 @@ export function createArcflightDevTools() {
      * Prepare a read-only builder preview summary without running an event.
      */
     prepareTravelEventBuilderPreview,
+    analyzeTravelEventBuilderQuality,
+    prepareTravelEventBuilderQualityReport,
 
     /**
      * Prepare cloned travel event summary data for future UI.

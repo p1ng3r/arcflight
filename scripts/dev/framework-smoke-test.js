@@ -121,7 +121,9 @@ import {
   applyTravelEventBuilderRoundFormDataToDraft,
   prepareTravelEventBuilderFinalOutcomeEditorState,
   applyTravelEventBuilderFinalOutcomeFormDataToDraft,
-  prepareTravelEventBuilderPreview
+  prepareTravelEventBuilderPreview,
+  analyzeTravelEventBuilderQuality,
+  prepareTravelEventBuilderQualityReport
 } from "../helpers/travel-event-builder.js";
 import {
   advanceShipTravelEventRound,
@@ -940,7 +942,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     const invalidResourceEffect = createTravelBuilderResourceEffect({ resource: "mystery", mode: "subtract", value: "bad", label: "Bad resource" });
     const builderPreview = prepareTravelEventBuilderPreview(builderDraft);
     const builderHelperExportsExist = typeof TRAVEL_EVENT_BUILDER_VERSION === "string"
-      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderFormOptions, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderRoundEditorState, applyTravelEventBuilderRoundFormDataToDraft, prepareTravelEventBuilderPreview].every((helper) => typeof helper === "function")
+      && [createTravelEventDraft, normalizeTravelEventDraft, validateTravelEventDraft, finalizeTravelEventDraft, cloneTravelEventToDraft, createTravelBuilderResourceEffect, createTravelBuilderRound, createTravelBuilderStationPrompt, createTravelBuilderOutcomeBranch, createTravelBuilderFinalOutcome, prepareTravelEventBuilderFormOptions, applyTravelEventBuilderFormDataToDraft, prepareTravelEventBuilderRoundEditorState, applyTravelEventBuilderRoundFormDataToDraft, prepareTravelEventBuilderPreview, analyzeTravelEventBuilderQuality, prepareTravelEventBuilderQualityReport].every((helper) => typeof helper === "function")
       && typeof globalThis.game?.arcflight?.createTravelEventDraft === "function"
       && typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft === "function"
       && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderPreview === "function"
@@ -952,7 +954,11 @@ export async function runFrameworkSmokeTest(options = {}) {
       && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderFormOptions === "function"
       && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderFormDataToDraft === "function"
       && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderRoundEditorState === "function"
-      && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderRoundFormDataToDraft === "function";
+      && typeof globalThis.game?.arcflight?.devTools?.applyTravelEventBuilderRoundFormDataToDraft === "function"
+      && typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality === "function"
+      && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderQualityReport === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.analyzeTravelEventBuilderQuality === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport === "function";
     check(result, "Travel Event Builder helper exports exist", builderHelperExportsExist, true, { version: TRAVEL_EVENT_BUILDER_VERSION, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventDraft, devToolsCreate: typeof globalThis.game?.arcflight?.devTools?.createTravelEventDraft });
     const builderShellState = prepareTravelEventBuilderShellState(builderDraft);
     const builderFormOptions = prepareTravelEventBuilderFormOptions(builderDraft);
@@ -1030,6 +1036,81 @@ export async function runFrameworkSmokeTest(options = {}) {
         criticalSuccess: "not an object"
       }
     }));
+    const completeQualityDraft = normalizeTravelEventDraft({
+      ...builderDraft,
+      key: "quality-polish-smoke",
+      name: "Quality Polish Smoke",
+      category: "discovery",
+      baseDC: 19,
+      activeResources: ["hull", "morale", "supplies"],
+      travelStations: ["navigator", "engineer", "captain"],
+      rounds: builderDraft.rounds.map((round, index) => ({
+        ...round,
+        openingVignette: `Round ${index + 1} opens with the crew reading a luminous void current while the arkengine hums in reply.`,
+        activeStations: ["navigator", "engineer", "captain"].map((stationKey) => ({
+          ...createTravelBuilderStationPrompt(stationKey),
+          playerAction: `${stationKey} frames a distinct table action for round ${index + 1} with clear voidsailing stakes.`
+        }))
+      })),
+      finalOutcomes: {
+        criticalSuccess: createTravelBuilderFinalOutcome({ label: "Critical Success", vignette: "The crew turns the void current into a clean route and arrives with confidence to spare.", rewards: ["Gain a narrative route advantage."], losses: [] }),
+        success: createTravelBuilderFinalOutcome({ label: "Success", vignette: "The ship clears the pressure and keeps enough momentum for the next leg of the voyage.", rewards: ["Keep the route notes for future reference."], losses: [] }),
+        mixed: createTravelBuilderFinalOutcome({ label: "Mixed", vignette: "The route is crossed, but one unresolved echo trails the ship into the next watch.", rewards: ["Recover a useful clue."], losses: ["Mark a narrative complication."] }),
+        failure: createTravelBuilderFinalOutcome({ label: "Failure", vignette: "The passage costs time and confidence, forcing the crew to regroup before pressing on.", rewards: [], losses: ["Lose position in the void current."] }),
+        criticalFailure: createTravelBuilderFinalOutcome({ label: "Critical Failure", vignette: "The void current collapses into a dangerous wake that leaves the crew shaken and off-course.", rewards: [], losses: ["Suffer a major narrative setback."] })
+      }
+    });
+    const qualityReport = prepareTravelEventBuilderQualityReport(completeQualityDraft);
+    const badQualityDraft = {
+      ...builderDraft,
+      key: "",
+      name: "",
+      activeResources: [],
+      travelStations: [],
+      rounds: [{ round: 1, openingVignette: "", activeStations: [{ stationKey: "navigator", playerAction: "" }], outcomeBranches: null }],
+      finalOutcomes: {}
+    };
+    const badQualityReport = prepareTravelEventBuilderQualityReport(badQualityDraft);
+    const leakageQualityReport = analyzeTravelEventBuilderQuality({
+      ...completeQualityDraft,
+      gmSummary: "Spend 1 AP, automatically start combat, actor.update the ship, game.settings.set a world flag, then apply staged effects and sail across an ocean tide."
+    });
+    const missingVignetteQualityReport = analyzeTravelEventBuilderQuality({
+      ...completeQualityDraft,
+      rounds: [{ ...completeQualityDraft.rounds[0], openingVignette: "" }, ...completeQualityDraft.rounds.slice(1)]
+    });
+    const missingPlayerActionQualityReport = analyzeTravelEventBuilderQuality({
+      ...completeQualityDraft,
+      rounds: [{ ...completeQualityDraft.rounds[0], activeStations: [{ ...completeQualityDraft.rounds[0].activeStations[0], playerAction: "" }] }, ...completeQualityDraft.rounds.slice(1)]
+    });
+    const missingFinalOutcomeQualityReport = analyzeTravelEventBuilderQuality({ ...completeQualityDraft, finalOutcomes: { ...completeQualityDraft.finalOutcomes, success: undefined } });
+    const badResourceEffectQualityReport = analyzeTravelEventBuilderQuality({
+      ...completeQualityDraft,
+      finalOutcomes: {
+        ...completeQualityDraft.finalOutcomes,
+        criticalSuccess: {
+          ...completeQualityDraft.finalOutcomes.criticalSuccess,
+          proposedEffects: [{ type: "resource", resource: "mystery", mode: "subtract", value: "many" }]
+        }
+      }
+    });
+    const qualityEconomyBefore = getShipActionEconomy(actor);
+    const qualityResourcesBefore = getShipTravelResources(actor);
+    const postQualityDraftExport = exportTravelEventDraftToJson(completeQualityDraft);
+    const postQualityDraftImport = importTravelEventDraftFromJson(postQualityDraftExport.json ?? "");
+
+    check(result, "Travel Event Builder quality helper exports exist", typeof analyzeTravelEventBuilderQuality === "function" && typeof prepareTravelEventBuilderQualityReport === "function" && typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport === "function", true, { analyze: typeof analyzeTravelEventBuilderQuality, report: typeof prepareTravelEventBuilderQualityReport, api: typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality, devTools: typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport });
+    check(result, "Travel Event Builder quality report returns grouped errors warnings suggestions", Array.isArray(qualityReport.errors) && Array.isArray(qualityReport.warnings) && Array.isArray(qualityReport.suggestions) && qualityReport.grouped?.errors?.topLevel && qualityReport.areas?.length === 5, "grouped quality report", qualityReport);
+    check(result, "Travel Event Builder complete stress event passes quality gate", qualityReport.ok === true && qualityReport.ready === true && qualityReport.readiness === "Ready to Export", "ready quality report", qualityReport);
+    check(result, "Travel Event Builder intentionally bad draft returns clear quality errors warnings", badQualityReport.ok === false && badQualityReport.errors.some((entry) => /key|name|final outcome/i.test(entry.message)) && badQualityReport.warnings.some((entry) => /vignette|playerAction|station/i.test(entry.message)), "bad quality report", badQualityReport);
+    check(result, "Travel Event Builder quality leakage detects AP/RAP combat actor persistence and staged application", leakageQualityReport.errors.some((entry) => entry.leakage === "apRap") && leakageQualityReport.errors.some((entry) => entry.leakage === "automaticCombatStart") && leakageQualityReport.errors.some((entry) => entry.leakage === "actorMutation") && leakageQualityReport.errors.some((entry) => entry.leakage === "persistence") && leakageQualityReport.errors.some((entry) => entry.leakage === "stagedEffectApplication") && leakageQualityReport.warnings.some((entry) => entry.leakage === "oceanOnly"), "boundary leakage report", leakageQualityReport);
+    check(result, "Travel Event Builder quality detects missing round vignette", missingVignetteQualityReport.warnings.some((entry) => /opening vignette/i.test(entry.message)), "missing vignette warning", missingVignetteQualityReport.warnings);
+    check(result, "Travel Event Builder quality detects missing station playerAction", missingPlayerActionQualityReport.warnings.some((entry) => /playerAction/i.test(entry.message)), "missing playerAction warning", missingPlayerActionQualityReport.warnings);
+    check(result, "Travel Event Builder quality detects missing final outcome", missingFinalOutcomeQualityReport.errors.some((entry) => /Missing canonical final outcome success/i.test(entry.message)), "missing final outcome error", missingFinalOutcomeQualityReport.errors);
+    check(result, "Travel Event Builder quality detects unknown resource mode and value", badResourceEffectQualityReport.warnings.some((entry) => /unknown resource/i.test(entry.message)) && badResourceEffectQualityReport.warnings.some((entry) => /unknown mode/i.test(entry.message)) && badResourceEffectQualityReport.warnings.some((entry) => /non-numeric value/i.test(entry.message)), "bad resource effect warnings", badResourceEffectQualityReport.warnings);
+    check(result, "Travel Event Builder quality introduces no actor AP/RAP travel resource combat persistence mutation", JSON.stringify(qualityEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(qualityResourcesBefore) === JSON.stringify(getShipTravelResources(actor)) && ![analyzeTravelEventBuilderQuality, prepareTravelEventBuilderQualityReport].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|game\.settings\.set|Actor\.update|actor\.update|startCombat|Combat\.create|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no mutation by quality helpers", { economyBefore: qualityEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: qualityResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
+    check(result, "Travel Event Builder JSON import/export still works after quality analysis", postQualityDraftExport.ok === true && postQualityDraftImport.ok === true && postQualityDraftImport.draft?.key === completeQualityDraft.key, "post-quality JSON IO", { draftExport: postQualityDraftExport, draftImport: postQualityDraftImport });
+
     check(result, "Travel Event Builder app exports exist", typeof ArcflightTravelEventBuilder === "function" && typeof openTravelEventBuilder === "function" && typeof prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventBuilderShellState === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderShellState === "function", true, { importedClass: typeof ArcflightTravelEventBuilder, importedOpen: typeof openTravelEventBuilder, importedShellState: typeof prepareTravelEventBuilderShellState, apiOpen: typeof globalThis.game?.arcflight?.openTravelEventBuilder, devToolsOpen: typeof globalThis.game?.arcflight?.devTools?.openTravelEventBuilder });
     check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
     check(result, "Travel Event Builder form option data exists", builderShellState.formOptions?.categories?.length > 0 && builderShellState.formOptions?.activeResources?.length > 0 && builderShellState.formOptions?.travelStations?.length > 0 && builderFormOptions.categories.some((option) => option.value === "discovery" && option.selected === true), "category/resource/station form options", { shell: builderShellState.formOptions, helper: builderFormOptions });

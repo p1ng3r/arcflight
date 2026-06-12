@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Travel Event Builder Quality / Polish Gate
+
+- Added local-only Travel Event Builder quality helpers for table-readiness analysis beyond schema validation, including grouped errors, warnings, suggestions, area checklists, readiness state, and scoring.
+- Added a Quality / Polish Gate panel to the builder UI with refresh support while preserving existing form, round, final outcome, raw JSON, import, preview, draft export, and final export workflows.
+- Added smoke coverage for helper exports, grouped quality reports, stress/bad draft outcomes, boundary leakage detection, missing vignette/playerAction/final outcome checks, invalid resource effect checks, continued JSON IO, and no actor/AP/RAP/travel-resource/combat/persistence/staged-effect mutation.
+
 
 ### Travel Event Builder Final Outcomes Text Editor MVP
 

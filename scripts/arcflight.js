@@ -168,7 +168,9 @@ import {
   applyTravelEventBuilderRoundFormDataToDraft,
   prepareTravelEventBuilderFinalOutcomeEditorState,
   applyTravelEventBuilderFinalOutcomeFormDataToDraft,
-  prepareTravelEventBuilderPreview
+  prepareTravelEventBuilderPreview,
+  analyzeTravelEventBuilderQuality,
+  prepareTravelEventBuilderQualityReport
 } from "./helpers/travel-event-builder.js";
 import {
   advanceShipTravelEventRound,
@@ -455,6 +457,8 @@ Hooks.once("init", () => {
     prepareTravelEventBuilderFinalOutcomeEditorState,
     applyTravelEventBuilderFinalOutcomeFormDataToDraft,
     prepareTravelEventBuilderPreview,
+    analyzeTravelEventBuilderQuality,
+    prepareTravelEventBuilderQualityReport,
     prepareTravelEventSummary,
     prepareTravelRoundSummary,
     getTravelEventStationPrompt,
