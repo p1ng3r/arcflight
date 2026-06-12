@@ -45,6 +45,8 @@ import {
   applyTravelEventBuilderFormDataToDraft,
   prepareTravelEventBuilderRoundEditorState,
   applyTravelEventBuilderRoundFormDataToDraft,
+  prepareTravelEventBuilderFinalOutcomeEditorState,
+  applyTravelEventBuilderFinalOutcomeFormDataToDraft,
   prepareTravelEventBuilderPreview
 } from "../helpers/travel-event-builder.js";
 import {
@@ -322,6 +324,16 @@ export function createArcflightDevTools() {
      * Apply round editor form data to a local Travel Event Builder draft.
      */
     applyTravelEventBuilderRoundFormDataToDraft,
+
+    /**
+     * Prepare final outcome text editor state for the local Travel Event Builder.
+     */
+    prepareTravelEventBuilderFinalOutcomeEditorState,
+
+    /**
+     * Apply final outcome text form data to a local Travel Event Builder draft.
+     */
+    applyTravelEventBuilderFinalOutcomeFormDataToDraft,
 
     /**
      * Prepare a read-only builder preview summary without running an event.

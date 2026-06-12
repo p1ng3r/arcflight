@@ -13,7 +13,7 @@
 
   <section class="arcflight-travel-builder__panel" data-arcflight-builder-form>
     <h2>Basic Form Editor</h2>
-    <p class="arcflight-sheet__hint">Edit top-level draft fields here. Changes stay local to this builder window and re-normalize the draft; round structure can be edited below, while advanced branch/final outcome details remain available through raw JSON.</p>
+    <p class="arcflight-sheet__hint">Edit top-level draft fields here. Changes stay local to this builder window and re-normalize the draft; round structure can be edited below, while advanced branch details remain available through raw JSON.</p>
 
     <div class="arcflight-travel-builder__form-grid">
       <label class="arcflight-travel-builder__field">
@@ -145,6 +145,63 @@
 
     <div class="arcflight-travel-builder__controls">
       <button type="button" data-arcflight-builder-apply-rounds>Apply Round Edits</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-final-outcome-editor>
+    <h2>Final Outcomes Text Editor MVP</h2>
+    <p class="arcflight-sheet__hint">Edit the five canonical final result blocks in this local draft. Resource and staged effects are displayed as read-only data summaries only; this pass does not apply or edit effects.</p>
+
+    <div class="arcflight-travel-builder__final-outcomes">
+      {{#each finalOutcomeEditor.outcomes}}
+        <details class="arcflight-travel-builder__final-outcome" data-arcflight-builder-final-outcome="{{key}}" open>
+          <summary>
+            <strong>{{label}}</strong>
+            <span>{{proposedEffectCount}} read-only staged/resource effects</span>
+          </summary>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Label / Title</span>
+            <input type="text" value="{{title}}" data-arcflight-builder-final-outcome-label data-arcflight-builder-final-outcome-field>
+          </label>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Narrative / Result Text</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-final-outcome-narrative data-arcflight-builder-final-outcome-field>{{narrative}}</textarea>
+          </label>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Reward Text</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form arcflight-travel-builder__textarea--compact" placeholder="One reward per line" data-arcflight-builder-final-outcome-rewards data-arcflight-builder-final-outcome-field>{{rewardsText}}</textarea>
+          </label>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Consequence Text</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form arcflight-travel-builder__textarea--compact" placeholder="One consequence per line" data-arcflight-builder-final-outcome-consequences data-arcflight-builder-final-outcome-field>{{consequencesText}}</textarea>
+          </label>
+
+          <h3>Read-only Staged / Resource Effect Summary</h3>
+          {{#if hasProposedEffects}}
+            <div class="arcflight-travel-builder__cards arcflight-travel-builder__effect-summaries">
+              {{#each effectSummaries}}
+                <div class="arcflight-travel-builder__card">
+                  <strong>{{label}}</strong>
+                  <span>Type: {{type}}</span>
+                  <code>{{summary}}</code>
+                </div>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No staged/resource effects are present for this final outcome.</p>
+          {{/if}}
+          {{#if hasCombatHandoff}}<p class="arcflight-sheet__hint">Combat handoff metadata is present and read-only.</p>{{/if}}
+          {{#if handoffNotes}}<p class="arcflight-sheet__hint">Handoff notes: {{handoffNotes}}</p>{{/if}}
+        </details>
+      {{/each}}
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-final-outcomes>Apply Final Outcome Edits</button>
     </div>
   </section>
 

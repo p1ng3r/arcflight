@@ -106,7 +106,7 @@ export function importTravelEventDraftFromData(data, options = {}) {
 
   const source = cloneData(data);
   const draft = normalizeTravelEventDraft(source);
-  const validation = validateTravelEventDraft(draft, { strictAuthoring: true });
+  const validation = validateTravelEventDraft(source, { strictAuthoring: true });
   const boundaryWarnings = collectUnsafeBoundaryWarnings(draft);
   warnings.push(...combineValidationWarnings(validation, boundaryWarnings));
   errors.push(...validation.errors);
@@ -136,8 +136,9 @@ export function exportTravelEventDraftToJson(draft, options = {}) {
   const functionPaths = containsFunctionValue(draft);
   if (functionPaths.length > 0) return { ok: false, errors: [`Travel event draft export input must be data-only; function values found at: ${functionPaths.join(", ")}.`], warnings, json: null, draft: null, validation: null };
 
-  const normalized = normalizeTravelEventDraft(cloneData(draft));
-  const validation = validateTravelEventDraft(normalized, { strictAuthoring: true });
+  const source = cloneData(draft);
+  const normalized = normalizeTravelEventDraft(source);
+  const validation = validateTravelEventDraft(source, { strictAuthoring: true });
   const boundaryWarnings = collectUnsafeBoundaryWarnings(normalized);
   warnings.push(...combineValidationWarnings(validation, boundaryWarnings));
   if (!validation.ok && requireValid) errors.push("Travel event draft export requires a valid draft.", ...validation.errors);

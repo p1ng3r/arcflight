@@ -1,6 +1,6 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
-import { createBlankFinalOutcomesTemplate, createBlankOutcomeBranchesTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
+import { createBlankOutcomeBranchesTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
 export const TRAVEL_EVENT_BUILDER_VERSION = "0.1.0";
@@ -14,8 +14,27 @@ const TRAVEL_RESOURCE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOUR
 const TRAVEL_TAG_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_TAGS));
 const CATEGORY_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_CATEGORIES));
 const ROUND_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES));
-const FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
+const LEGACY_FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
+const FINAL_OUTCOME_KEYS = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 const RESOURCE_EFFECT_MODES = Object.freeze(["add", "set"]);
+
+const LEGACY_TO_CANONICAL_FINAL_OUTCOME_KEYS = Object.freeze({
+  majorVictory: "criticalSuccess",
+  victory: "success",
+  costlySuccess: "mixed",
+  failure: "failure",
+  catastrophicFailure: "criticalFailure"
+});
+
+const CANONICAL_TO_LEGACY_FINAL_OUTCOME_KEYS = Object.freeze(Object.fromEntries(Object.entries(LEGACY_TO_CANONICAL_FINAL_OUTCOME_KEYS).map(([legacy, canonical]) => [canonical, legacy])));
+
+const FINAL_OUTCOME_LABELS = Object.freeze({
+  criticalSuccess: "Critical Success",
+  success: "Success",
+  mixed: "Mixed",
+  failure: "Failure",
+  criticalFailure: "Critical Failure"
+});
 
 const CATEGORY_LABELS = Object.freeze({
   environmental: "Environmental",
@@ -167,10 +186,79 @@ function normalizeOutcomeBranches(value) {
   return Object.fromEntries(ROUND_OUTCOME_KEYS.map((key) => [key, { ...cloneData(defaults[key]), ...(cloneData(source[key]) ?? {}) }]));
 }
 
+function createDefaultFinalOutcomeForKey(key) {
+  return createTravelBuilderFinalOutcome({
+    label: FINAL_OUTCOME_LABELS[key] ?? key,
+    vignette: `[${key} final outcome vignette: close the travel event in 3-5 sentences.]`
+  });
+}
+
+function normalizeFinalOutcomeEntry(key, sourceEntry) {
+  const source = sourceEntry && typeof sourceEntry === "object" && !Array.isArray(sourceEntry) ? cloneData(sourceEntry) : {};
+  return {
+    ...createDefaultFinalOutcomeForKey(key),
+    ...source,
+    label: typeof source.label === "string" ? source.label : (typeof source.title === "string" ? source.title : (FINAL_OUTCOME_LABELS[key] ?? key)),
+    vignette: typeof source.vignette === "string" ? source.vignette : (typeof source.narrative === "string" ? source.narrative : (typeof source.result === "string" ? source.result : createDefaultFinalOutcomeForKey(key).vignette)),
+    proposedEffects: Array.isArray(source.proposedEffects) ? cloneData(source.proposedEffects) : [],
+    rewards: Array.isArray(source.rewards) ? cloneData(source.rewards).filter((entry) => typeof entry === "string") : [],
+    losses: Array.isArray(source.losses) ? cloneData(source.losses).filter((entry) => typeof entry === "string") : []
+  };
+}
+
 function normalizeFinalOutcomes(value) {
-  const defaults = createBlankFinalOutcomesTemplate();
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  return Object.fromEntries(FINAL_OUTCOME_KEYS.map((key) => [key, { ...cloneData(defaults[key]), ...(cloneData(source[key]) ?? {}) }]));
+  return Object.fromEntries(FINAL_OUTCOME_KEYS.map((key) => [key, normalizeFinalOutcomeEntry(key, source[key] ?? source[CANONICAL_TO_LEGACY_FINAL_OUTCOME_KEYS[key]])]));
+}
+
+function collectMalformedFinalOutcomeErrors(draft) {
+  const finalOutcomes = draft?.finalOutcomes;
+  if (finalOutcomes == null) return [];
+  if (typeof finalOutcomes !== "object" || Array.isArray(finalOutcomes)) return ["finalOutcomes must be an object."];
+
+  return FINAL_OUTCOME_KEYS.flatMap((key) => {
+    const outcome = finalOutcomes[key];
+    if (outcome == null) return [];
+    if (typeof outcome !== "object" || Array.isArray(outcome)) return [`Final outcome ${key} must be an object.`];
+    const errors = [];
+    if (Object.hasOwn(outcome, "proposedEffects") && !Array.isArray(outcome.proposedEffects)) errors.push(`Final outcome ${key} proposedEffects must be an array when present.`);
+    if (Object.hasOwn(outcome, "rewards") && !Array.isArray(outcome.rewards)) errors.push(`Final outcome ${key} rewards must be an array when present.`);
+    if (Object.hasOwn(outcome, "losses") && !Array.isArray(outcome.losses)) errors.push(`Final outcome ${key} losses must be an array when present.`);
+    return errors;
+  });
+}
+
+function createReadOnlyEffectSummaries(outcome = {}) {
+  const proposedEffects = Array.isArray(outcome.proposedEffects) ? outcome.proposedEffects : [];
+  return proposedEffects.map((effect, index) => {
+    const type = typeof effect?.type === "string" && effect.type.length > 0 ? effect.type : "data";
+    const label = typeof effect?.label === "string" && effect.label.length > 0 ? effect.label : `${type} effect ${index + 1}`;
+    return {
+      index,
+      label,
+      type,
+      summary: stringifyCompactData(effect)
+    };
+  });
+}
+
+function stringifyCompactData(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return "<unserializable data>";
+  }
+}
+
+function joinTextArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string").join("\n") : "";
+}
+
+function splitTextLines(value) {
+  return coerceFormString(value)
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 function normalizeRound(round, index, travelStations) {
@@ -406,6 +494,86 @@ export function prepareTravelEventBuilderRoundEditorState(draft, options = {}) {
   });
 }
 
+export function prepareTravelEventBuilderFinalOutcomeEditorState(draft, options = {}) {
+  assertOptionsObject(options, "prepareTravelEventBuilderFinalOutcomeEditorState");
+  const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+
+  return deepFreeze({
+    outcomes: FINAL_OUTCOME_KEYS.map((key) => {
+      const outcome = normalizedDraft.finalOutcomes?.[key] ?? createDefaultFinalOutcomeForKey(key);
+      const effectSummaries = createReadOnlyEffectSummaries(outcome);
+      return {
+        key,
+        label: FINAL_OUTCOME_LABELS[key] ?? key,
+        title: typeof outcome.label === "string" ? outcome.label : (FINAL_OUTCOME_LABELS[key] ?? key),
+        narrative: typeof outcome.vignette === "string" ? outcome.vignette : "",
+        rewardsText: joinTextArray(outcome.rewards),
+        consequencesText: joinTextArray(outcome.losses),
+        proposedEffectCount: effectSummaries.length,
+        effectSummaries,
+        hasProposedEffects: effectSummaries.length > 0,
+        hasCombatHandoff: outcome.combatHandoff === true,
+        handoffNotes: typeof outcome.handoffNotes === "string" ? outcome.handoffNotes : ""
+      };
+    })
+  });
+}
+
+function normalizeFinalOutcomeEditorEntries(formData = {}) {
+  if (Array.isArray(formData.outcomes)) {
+    return formData.outcomes.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
+  }
+
+  const entries = new Map();
+  for (const [key, value] of Object.entries(formData)) {
+    const match = key.match(/^finalOutcomes\.([^.]+)\.(label|title|vignette|narrative|result|rewardsText|rewardText|lossesText|consequencesText|consequenceText)$/);
+    if (!match || !FINAL_OUTCOME_KEYS.includes(match[1])) continue;
+    const outcomeKey = match[1];
+    const entry = entries.get(outcomeKey) ?? { key: outcomeKey };
+    entry[match[2]] = value;
+    entries.set(outcomeKey, entry);
+  }
+
+  return Array.from(entries.values());
+}
+
+export function applyTravelEventBuilderFinalOutcomeFormDataToDraft(draft, formData = {}, options = {}) {
+  assertOptionsObject(options, "applyTravelEventBuilderFinalOutcomeFormDataToDraft");
+  assertOptionsObject(formData, "applyTravelEventBuilderFinalOutcomeFormDataToDraft formData");
+  const source = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
+  const entries = normalizeFinalOutcomeEditorEntries(formData);
+  if (entries.length === 0) return source;
+
+  const finalOutcomes = cloneData(source.finalOutcomes);
+  for (const entry of entries) {
+    const key = entry.key;
+    if (!FINAL_OUTCOME_KEYS.includes(key)) continue;
+    const outcome = normalizeFinalOutcomeEntry(key, finalOutcomes[key]);
+    const nextOutcome = { ...outcome };
+
+    if (Object.hasOwn(entry, "label")) nextOutcome.label = coerceFormString(entry.label, outcome.label ?? "");
+    else if (Object.hasOwn(entry, "title")) nextOutcome.label = coerceFormString(entry.title, outcome.label ?? "");
+
+    if (Object.hasOwn(entry, "vignette")) nextOutcome.vignette = coerceFormString(entry.vignette, outcome.vignette ?? "");
+    else if (Object.hasOwn(entry, "narrative")) nextOutcome.vignette = coerceFormString(entry.narrative, outcome.vignette ?? "");
+    else if (Object.hasOwn(entry, "result")) nextOutcome.vignette = coerceFormString(entry.result, outcome.vignette ?? "");
+
+    if (Object.hasOwn(entry, "rewardsText")) nextOutcome.rewards = splitTextLines(entry.rewardsText);
+    else if (Object.hasOwn(entry, "rewardText")) nextOutcome.rewards = splitTextLines(entry.rewardText);
+
+    if (Object.hasOwn(entry, "lossesText")) nextOutcome.losses = splitTextLines(entry.lossesText);
+    else if (Object.hasOwn(entry, "consequencesText")) nextOutcome.losses = splitTextLines(entry.consequencesText);
+    else if (Object.hasOwn(entry, "consequenceText")) nextOutcome.losses = splitTextLines(entry.consequenceText);
+
+    finalOutcomes[key] = nextOutcome;
+  }
+
+  return normalizeTravelEventDraft({
+    ...source,
+    finalOutcomes
+  }, options);
+}
+
 export function applyTravelEventBuilderRoundFormDataToDraft(draft, formData = {}, options = {}) {
   assertOptionsObject(options, "applyTravelEventBuilderRoundFormDataToDraft");
   assertOptionsObject(formData, "applyTravelEventBuilderRoundFormDataToDraft formData");
@@ -471,8 +639,16 @@ export function validateTravelEventDraft(draft, options = {}) {
   assertOptionsObject(options, "validateTravelEventDraft");
   const normalizedDraft = normalizeTravelEventDraft(draft, options);
   const validation = validateTravelEventDefinition(normalizedDraft, { ...options, strictAuthoring: true });
-  const errors = [...validation.errors];
+  const errors = [...collectMalformedFinalOutcomeErrors(draft), ...validation.errors];
   const warnings = [...validation.warnings];
+  const legacyMissingFinalOutcomeMessages = LEGACY_FINAL_OUTCOME_KEYS.map((key) => `Missing final outcome ${key}.`);
+  const canonicalFinalOutcomesPresent = FINAL_OUTCOME_KEYS.every((key) => normalizedDraft.finalOutcomes?.[key]);
+  if (canonicalFinalOutcomesPresent) {
+    for (const message of legacyMissingFinalOutcomeMessages) {
+      const index = errors.indexOf(message);
+      if (index >= 0) errors.splice(index, 1);
+    }
+  }
 
   if (normalizedDraft.key.trim().length === 0) errors.push("Builder draft key must be a non-empty string.");
   if (normalizedDraft.name.trim().length === 0) errors.push("Builder draft name must be a non-empty string.");
@@ -547,7 +723,7 @@ export function prepareTravelEventBuilderPreview(draft, options = {}) {
     })),
     finalOutcomes: FINAL_OUTCOME_KEYS.map((key) => ({
       key,
-      label: normalizedDraft.finalOutcomes?.[key]?.label ?? key,
+      label: normalizedDraft.finalOutcomes?.[key]?.label ?? FINAL_OUTCOME_LABELS[key] ?? key,
       hasVignette: typeof normalizedDraft.finalOutcomes?.[key]?.vignette === "string" && normalizedDraft.finalOutcomes[key].vignette.trim().length > 0,
       proposedEffectCount: normalizedDraft.finalOutcomes?.[key]?.proposedEffects?.length ?? 0,
       rewardCount: normalizedDraft.finalOutcomes?.[key]?.rewards?.length ?? 0,

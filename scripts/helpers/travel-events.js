@@ -5,6 +5,7 @@ const TRAVEL_FIVE_STATION_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ST
 const TRAVEL_RESOURCE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOURCES));
 const TRAVEL_EVENT_CATEGORIES = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_CATEGORIES));
 const TRAVEL_EVENT_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
+const CANONICAL_TRAVEL_EVENT_OUTCOME_KEYS = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 const TRAVEL_DEGREE_ALIASES = Object.freeze({
   3: ARCFLIGHT_TRAVEL_RESULT_TIERS.CRITICAL_SUCCESS,
   2: ARCFLIGHT_TRAVEL_RESULT_TIERS.SUCCESS,
@@ -163,9 +164,11 @@ export function validateTravelEventDefinition(event, options = {}) {
     }
   }
 
-  if (!event.finalOutcomes || typeof event.finalOutcomes !== "object") errors.push("finalOutcomes must be an object.");
+  if (!event.finalOutcomes || typeof event.finalOutcomes !== "object" || Array.isArray(event.finalOutcomes)) errors.push("finalOutcomes must be an object.");
   else {
-    for (const outcome of TRAVEL_EVENT_OUTCOME_KEYS) {
+    const hasCanonicalFinalOutcomes = CANONICAL_TRAVEL_EVENT_OUTCOME_KEYS.every((outcome) => Boolean(event.finalOutcomes[outcome]));
+    const expectedFinalOutcomes = hasCanonicalFinalOutcomes ? CANONICAL_TRAVEL_EVENT_OUTCOME_KEYS : TRAVEL_EVENT_OUTCOME_KEYS;
+    for (const outcome of expectedFinalOutcomes) {
       if (!event.finalOutcomes[outcome]) errors.push(`Missing final outcome ${outcome}.`);
       validateProposedEffectsDataOnly(event.finalOutcomes[outcome], `Final outcome ${outcome}`, errors);
     }
