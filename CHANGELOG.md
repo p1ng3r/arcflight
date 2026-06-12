@@ -9,6 +9,12 @@
 ## Unreleased
 
 
+### Travel Event Builder Final Outcomes Text Editor MVP
+
+- Added a local-only Final Outcomes Text Editor MVP for the five canonical final outcomes: `criticalSuccess`, `success`, `mixed`, `failure`, and `criticalFailure`.
+- Added builder helpers and UI wiring for editing label/title, narrative/result text, rewards text, and consequence text while keeping staged/resource effects read-only data summaries.
+- Added smoke coverage for helper exports, canonical editor state, local-only final outcome edits, JSON import/export after edits, and no actor/AP/RAP/travel-resource/combat/persistence/staged-effect application.
+
 ### Travel Event Builder Round Editor MVP
 
 - Added a local-only Round Editor MVP to the Travel Event Builder shell for listing/expanding rounds, editing opening vignettes, choosing active Travel Five station prompts, and editing basic station `playerAction` text.
