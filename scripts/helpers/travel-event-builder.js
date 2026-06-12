@@ -360,12 +360,23 @@ function normalizeStationPromptMap(value, travelStations = TRAVEL_FIVE_STATION_K
     .map(([stationKey, prompt]) => [stationKey, { ...cloneData(prompt), stationKey, stationName: prompt.stationName ?? labelForStation(stationKey) }]));
 }
 
+function normalizeActiveStationKeys(activeStations, validStations = TRAVEL_FIVE_STATION_KEYS) {
+  if (!Array.isArray(activeStations)) return [];
+  return Array.from(new Set(activeStations
+    .map((entry) => stationKeyFromRoundActiveStationEntry(entry))
+    .filter((stationKey) => validStations.includes(stationKey))));
+}
+
+function inferActiveStationsFromPrompts(stationPrompts, validStations = TRAVEL_FIVE_STATION_KEYS) {
+  if (!isPlainObject(stationPrompts)) return [];
+  return TRAVEL_FIVE_STATION_KEYS.filter((stationKey) => validStations.includes(stationKey) && isPlainObject(stationPrompts[stationKey]));
+}
+
 function getRoundActiveStationKeys(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
-  const activeStationKeys = Array.isArray(round.activeStations)
-    ? round.activeStations.map((entry) => stationKeyFromRoundActiveStationEntry(entry)).filter((stationKey) => travelStations.includes(stationKey))
-    : [];
-  if (activeStationKeys.length > 0) return Array.from(new Set(activeStationKeys));
-  return Object.keys(round.stationPrompts ?? {}).filter((stationKey) => travelStations.includes(stationKey));
+  const validStations = Array.isArray(travelStations) && travelStations.length > 0 ? travelStations : TRAVEL_FIVE_STATION_KEYS;
+  const activeStationKeys = normalizeActiveStationKeys(round.activeStations, validStations);
+  if (activeStationKeys.length > 0) return activeStationKeys;
+  return inferActiveStationsFromPrompts(round.stationPrompts, validStations);
 }
 
 function getRoundStationPromptsByStation(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
@@ -407,15 +418,18 @@ function normalizeRound(round, index, travelStations) {
   const source = round && typeof round === "object" && !Array.isArray(round) ? cloneData(round) : {};
   const template = createBlankTravelRoundTemplate(index + 1, { travelStations });
   const sourceActiveStations = Array.isArray(source.activeStations) ? source.activeStations : null;
-  const activeStationKeys = getRoundActiveStationKeys(source, travelStations);
+  const validStations = Array.isArray(travelStations) && travelStations.length > 0 ? travelStations : TRAVEL_FIVE_STATION_KEYS;
+  const normalizedActiveStationKeys = normalizeActiveStationKeys(source.activeStations, validStations);
+  const inferredActiveStations = inferActiveStationsFromPrompts(source.stationPrompts, validStations);
+  const activeStationKeys = normalizedActiveStationKeys.length > 0 ? normalizedActiveStationKeys : inferredActiveStations;
   let activeStations;
 
   if (sourceActiveStations) {
     const hasStationKeyArray = sourceActiveStations.some((entry) => typeof entry === "string");
     activeStations = hasStationKeyArray
-      ? activeStationKeys
+      ? normalizedActiveStationKeys
       : sourceActiveStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object");
-    if (activeStations.length === 0 && activeStationKeys.length > 0) activeStations = activeStationKeys;
+    if (activeStations.length === 0 && inferredActiveStations.length > 0) activeStations = inferredActiveStations;
   } else {
     activeStations = activeStationKeys.length > 0 ? activeStationKeys : template.activeStations;
   }
