@@ -8,6 +8,14 @@
 
 ## Unreleased
 
+
+### Travel Event Builder Round Editor MVP
+
+- Added a local-only Round Editor MVP to the Travel Event Builder shell for listing/expanding rounds, editing opening vignettes, choosing active Travel Five station prompts, and editing basic station `playerAction` text.
+- Kept outcome branches as read-only summaries in the round editor while preserving raw JSON editing/import/export as the advanced fallback for branch and final outcome details.
+- Added builder helpers and smoke coverage for round editor state, local-only round edits, opening vignette/playerAction persistence, allowed-station filtering, JSON import/export after round edits, and no actor/AP/RAP/travel-resource/combat/persistence mutation.
+- Preserved scope boundaries: no persistence, world setting writes, compendium writes, actor mutation, chat posting, travel-event running, AP/RAP mechanics, combat automation, staged-effect application, final outcome editor, save/load, or runner integration was added.
+
 ### Travel Event Builder Form Editor MVP
 
 - Added basic local-only form editing to the Travel Event Builder shell for top-level draft fields, including key, name, category, base DC, round count, description/GM summary, tags, active resources, and Travel Five stations.

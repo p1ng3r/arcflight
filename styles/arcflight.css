@@ -952,3 +952,38 @@
   align-items: center;
   gap: 0.4rem;
 }
+
+.arcflight-travel-builder__rounds,
+.arcflight-travel-builder__station-prompts,
+.arcflight-travel-builder__outcomes {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.arcflight-travel-builder__round {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.arcflight-travel-builder__round summary {
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin: -0.15rem 0 0.5rem;
+}
+
+.arcflight-travel-builder__round summary span {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__check-group--wide {
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__station-prompt {
+  margin-bottom: 0;
+}

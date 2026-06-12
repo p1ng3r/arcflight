@@ -1,10 +1,12 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import {
   applyTravelEventBuilderFormDataToDraft,
+  applyTravelEventBuilderRoundFormDataToDraft,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   prepareTravelEventBuilderFormOptions,
-  prepareTravelEventBuilderPreview
+  prepareTravelEventBuilderPreview,
+  prepareTravelEventBuilderRoundEditorState
 } from "../helpers/travel-event-builder.js";
 import {
   exportFinalTravelEventToJson,
@@ -18,6 +20,7 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-reset]",
   "[data-arcflight-builder-preview]",
   "[data-arcflight-builder-apply-form]",
+  "[data-arcflight-builder-apply-rounds]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
   "[data-arcflight-builder-export-final]"
@@ -77,7 +80,8 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
     hasValidationWarnings: preview.validation.warnings.length > 0,
     canExportFinal: exportPreview.exportFinalAvailable === true,
     canExportDraft: exportPreview.exportDraftAvailable === true,
-    formOptions: prepareTravelEventBuilderFormOptions(normalizedDraft, options)
+    formOptions: prepareTravelEventBuilderFormOptions(normalizedDraft, options),
+    roundEditor: prepareTravelEventBuilderRoundEditorState(normalizedDraft, options)
   });
 }
 
@@ -142,6 +146,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-reset")) return this.#onResetDraft(event);
     if (target.hasAttribute("data-arcflight-builder-preview")) return this.#onPreviewDraft(event);
     if (target.hasAttribute("data-arcflight-builder-apply-form")) return this.#onApplyForm(event);
+    if (target.hasAttribute("data-arcflight-builder-apply-rounds")) return this.#onApplyRounds(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-final")) return this.#onExportFinal(event);
@@ -149,12 +154,13 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
 
   async #onBuilderChange(event) {
-    const target = event.target?.closest?.("[data-arcflight-builder-form-field]");
+    const target = event.target?.closest?.("[data-arcflight-builder-form-field], [data-arcflight-builder-round-field]");
     if (!target || !this.element?.contains(target)) return;
 
-    this.#syncDraftFromForm();
+    if (target.hasAttribute("data-arcflight-builder-round-field")) this.#syncDraftFromRoundForm();
+    else this.#syncDraftFromForm();
     this.outputJson = "";
-    this.status = createStatus("success", "Updated the local in-memory draft from the form.");
+    this.status = createStatus("success", target.hasAttribute("data-arcflight-builder-round-field") ? "Updated the local in-memory draft from the round editor." : "Updated the local in-memory draft from the form.");
     await this.#rerenderAfterAction();
   }
 
@@ -180,6 +186,30 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
   #syncDraftFromForm() {
     this.draft = applyTravelEventBuilderFormDataToDraft(this.draft, this.#readFormData());
+    return this.draft;
+  }
+
+  #readRoundFormData() {
+    const rounds = Array.from(this.element?.querySelectorAll?.("[data-arcflight-builder-round]") ?? []).map((roundElement) => {
+      const round = Number(roundElement.dataset.arcflightBuilderRound);
+      const stationPrompts = Object.fromEntries(Array.from(roundElement.querySelectorAll("[data-arcflight-builder-station-player-action]")).map((input) => [
+        input.dataset.arcflightBuilderStationPlayerAction,
+        { playerAction: input.value ?? "" }
+      ]));
+
+      return {
+        round,
+        openingVignette: readTextareaValue(roundElement, "[data-arcflight-builder-round-opening-vignette]"),
+        activeStations: readCheckedValues(roundElement, "[data-arcflight-builder-round-active-stations]"),
+        stationPrompts
+      };
+    });
+
+    return { rounds };
+  }
+
+  #syncDraftFromRoundForm() {
+    this.draft = applyTravelEventBuilderRoundFormDataToDraft(this.draft, this.#readRoundFormData());
     return this.draft;
   }
 
@@ -216,6 +246,14 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.#syncDraftFromForm();
     this.outputJson = "";
     this.status = createStatus("success", "Applied form edits to the local in-memory draft.");
+    await this.#rerenderAfterAction();
+  }
+
+  async #onApplyRounds(event) {
+    event.preventDefault();
+    this.#syncDraftFromRoundForm();
+    this.outputJson = "";
+    this.status = createStatus("success", "Applied round editor changes to the local in-memory draft.");
     await this.#rerenderAfterAction();
   }
 
