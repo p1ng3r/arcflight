@@ -1177,6 +1177,42 @@ export async function runFrameworkSmokeTest(options = {}) {
     const loadedBuilderFinalOutcomeEffectState = loadedBuilderLibraryDraft.draft ? prepareTravelEventBuilderFinalOutcomeEffectEditorState(loadedBuilderLibraryDraft.draft) : null;
     const loadedBuilderDraftExport = loadedBuilderLibraryDraft.draft ? exportTravelEventDraftToJson(loadedBuilderLibraryDraft.draft) : { ok: false };
     const loadedBuilderFinalExport = loadedBuilderLibraryDraft.draft ? exportFinalTravelEventToJson(loadedBuilderLibraryDraft.draft) : { ok: false };
+    const crystalDriftStationKeys = ["navigator", "engineer", "veilwarden", "watchmaster", "captain"];
+    const crystalDriftStationPrompts = Object.fromEntries(crystalDriftStationKeys.map((stationKey) => [stationKey, {
+      stationKey,
+      stationName: stationKey,
+      vignette: `${stationKey} reads the crystal drift from a distinct angle.`,
+      playerAction: `${stationKey} chooses how to guide the ship through the crystal drift safely.`
+    }]));
+    const crystalDriftDraft = normalizeTravelEventDraft({
+      ...completeQualityDraft,
+      key: "crystal-drift-smoke",
+      name: "Crystal Drift Smoke",
+      travelStations: crystalDriftStationKeys,
+      roundCount: 1,
+      rounds: [{
+        ...completeQualityDraft.rounds[0],
+        round: 1,
+        activeStations: crystalDriftStationKeys,
+        stationPrompts: crystalDriftStationPrompts
+      }]
+    });
+    const crystalDriftImported = importTravelEventDraftFromData(crystalDriftDraft);
+    const crystalDriftSaved = await saveTravelEventBuilderDraftToLibrary(crystalDriftImported.draft, { library: { version: 1, drafts: {} }, dryRun: true, now: "2026-06-12T00:00:02.000Z" });
+    const crystalDriftLoaded = loadTravelEventBuilderDraftFromLibrary(crystalDriftSaved.entry?.id, { library: crystalDriftSaved.library });
+    const crystalDriftExport = crystalDriftLoaded.draft ? exportTravelEventDraftToJson(crystalDriftLoaded.draft) : { ok: false, json: "{}" };
+    const crystalDriftExportData = JSON.parse(crystalDriftExport.json ?? "{}");
+    const crystalDriftDuplicate = await duplicateTravelEventBuilderLibraryDraft(crystalDriftSaved.entry?.id, { library: crystalDriftSaved.library, dryRun: true, now: "2026-06-12T00:00:03.000Z" });
+    const crystalDriftFallbackDraft = normalizeTravelEventDraft({
+      ...crystalDriftDraft,
+      key: "crystal-drift-fallback-smoke",
+      rounds: [{
+        ...crystalDriftDraft.rounds[0],
+        activeStations: [],
+        stationPrompts: crystalDriftStationPrompts
+      }]
+    });
+    const crystalDriftLoadedQuality = crystalDriftLoaded.draft ? prepareTravelEventBuilderQualityReport(crystalDriftLoaded.draft) : null;
 
     check(result, "Travel Event Builder quality helper exports exist", typeof analyzeTravelEventBuilderQuality === "function" && typeof prepareTravelEventBuilderQualityReport === "function" && typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport === "function", true, { analyze: typeof analyzeTravelEventBuilderQuality, report: typeof prepareTravelEventBuilderQualityReport, api: typeof globalThis.game?.arcflight?.analyzeTravelEventBuilderQuality, devTools: typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventBuilderQualityReport });
     check(result, "Travel Event Builder quality report returns grouped errors warnings suggestions", Array.isArray(qualityReport.errors) && Array.isArray(qualityReport.warnings) && Array.isArray(qualityReport.suggestions) && qualityReport.grouped?.errors?.topLevel && qualityReport.areas?.length === 5, "grouped quality report", qualityReport);
@@ -1200,6 +1236,10 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder malformed library draft fails safely", malformedBuilderLibraryDraft.ok === false && malformedBuilderLibraryDraft.draft === null && malformedBuilderLibraryDraft.errors.length > 0, "safe malformed saved draft", malformedBuilderLibraryDraft);
     check(result, "Travel Event Builder loaded library draft preserves quality and editors", loadedBuilderQualityReport?.ok === true && loadedBuilderFinalOutcomeTextState?.outcomes?.length === 5 && loadedBuilderFinalOutcomeEffectState?.outcomes?.length === 5, "post-load quality/editor state", { quality: loadedBuilderQualityReport, text: loadedBuilderFinalOutcomeTextState, effects: loadedBuilderFinalOutcomeEffectState });
     check(result, "Travel Event Builder import/export still works after loading library draft", loadedBuilderDraftExport.ok === true && loadedBuilderFinalExport.ok === true, "post-load exports", { draft: loadedBuilderDraftExport, final: loadedBuilderFinalExport });
+    check(result, "Travel Event Builder import/save/load/export preserves round active station keys", crystalDriftImported.ok === true && crystalDriftSaved.ok === true && crystalDriftLoaded.draft?.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(",") && crystalDriftExportData.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(","), "Crystal Drift active station keys", { imported: crystalDriftImported, saved: crystalDriftSaved, loaded: crystalDriftLoaded, exportData: crystalDriftExportData.rounds?.[0] });
+    check(result, "Travel Event Builder duplicate preserves round active station keys", crystalDriftDuplicate.ok === true && crystalDriftDuplicate.draft?.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(","), "duplicated active station keys", crystalDriftDuplicate);
+    check(result, "Travel Event Builder fallback infers active stations from stationPrompts", crystalDriftFallbackDraft.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(","), "inferred active station keys", crystalDriftFallbackDraft.rounds?.[0]);
+    check(result, "Travel Event Builder quality after library load sees inferred station prompts", crystalDriftLoadedQuality?.warnings?.every((entry) => !/no active stations/i.test(entry.message)) === true, "no no-active-stations warning", crystalDriftLoadedQuality?.warnings);
     check(result, "Travel Event Builder library introduces no actor/AP/RAP/combat/staged-effect/travel-resource mutation", ![getTravelEventBuilderLibrary, saveTravelEventBuilderDraftToLibrary, loadTravelEventBuilderDraftFromLibrary, deleteTravelEventBuilderDraftFromLibrary, duplicateTravelEventBuilderLibraryDraft, prepareTravelEventBuilderLibraryState].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|Actor\.update|actor\.update|startCombat|Combat\.create|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no prohibited runtime mutation helpers", "library only reads/writes its world setting");
     check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
     check(result, "Travel Event Builder form option data exists", builderShellState.formOptions?.categories?.length > 0 && builderShellState.formOptions?.activeResources?.length > 0 && builderShellState.formOptions?.travelStations?.length > 0 && builderFormOptions.categories.some((option) => option.value === "discovery" && option.selected === true), "category/resource/station form options", { shell: builderShellState.formOptions, helper: builderFormOptions });

@@ -346,20 +346,89 @@ function splitTextLines(value) {
     .filter((entry) => entry.length > 0);
 }
 
+
+function stationKeyFromRoundActiveStationEntry(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) return entry.stationKey;
+  return null;
+}
+
+function normalizeStationPromptMap(value, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  if (!isPlainObject(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .filter(([stationKey, prompt]) => travelStations.includes(stationKey) && isPlainObject(prompt))
+    .map(([stationKey, prompt]) => [stationKey, { ...cloneData(prompt), stationKey, stationName: prompt.stationName ?? labelForStation(stationKey) }]));
+}
+
+function getRoundActiveStationKeys(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  const activeStationKeys = Array.isArray(round.activeStations)
+    ? round.activeStations.map((entry) => stationKeyFromRoundActiveStationEntry(entry)).filter((stationKey) => travelStations.includes(stationKey))
+    : [];
+  if (activeStationKeys.length > 0) return Array.from(new Set(activeStationKeys));
+  return Object.keys(round.stationPrompts ?? {}).filter((stationKey) => travelStations.includes(stationKey));
+}
+
+function getRoundStationPromptsByStation(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  const promptsByStation = new Map(Object.entries(normalizeStationPromptMap(round.stationPrompts, travelStations)));
+  for (const entry of Array.isArray(round.activeStations) ? round.activeStations : []) {
+    if (!isPlainObject(entry) || !travelStations.includes(entry.stationKey)) continue;
+    promptsByStation.set(entry.stationKey, cloneData(entry));
+  }
+  return promptsByStation;
+}
+
+function createStationPromptFromRoundData(stationKey, round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  const promptsByStation = getRoundStationPromptsByStation(round, travelStations);
+  const sourcePrompt = promptsByStation.get(stationKey) ?? {};
+  return {
+    ...createBlankStationPromptTemplate(stationKey, sourcePrompt),
+    ...sourcePrompt,
+    stationKey,
+    stationName: sourcePrompt.stationName ?? labelForStation(stationKey)
+  };
+}
+
+function materializeRoundActiveStationPrompts(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
+  return getRoundActiveStationKeys(round, travelStations).map((stationKey) => createStationPromptFromRoundData(stationKey, round, travelStations));
+}
+
+function materializeDraftRoundsForEventDefinition(draft = {}) {
+  const travelStations = uniqueKnownValues(draft.travelStations, TRAVEL_FIVE_STATION_KEYS, TRAVEL_FIVE_STATION_KEYS);
+  return {
+    ...draft,
+    rounds: (Array.isArray(draft.rounds) ? draft.rounds : []).map((round) => ({
+      ...round,
+      activeStations: materializeRoundActiveStationPrompts(round, travelStations)
+    }))
+  };
+}
+
 function normalizeRound(round, index, travelStations) {
   const source = round && typeof round === "object" && !Array.isArray(round) ? cloneData(round) : {};
   const template = createBlankTravelRoundTemplate(index + 1, { travelStations });
-  const activeStations = Array.isArray(source.activeStations)
-    ? source.activeStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object")
-    : template.activeStations;
+  const sourceActiveStations = Array.isArray(source.activeStations) ? source.activeStations : null;
+  const activeStationKeys = getRoundActiveStationKeys(source, travelStations);
+  let activeStations;
 
-  return {
+  if (sourceActiveStations) {
+    const hasStationKeyArray = sourceActiveStations.some((entry) => typeof entry === "string");
+    activeStations = hasStationKeyArray
+      ? activeStationKeys
+      : sourceActiveStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object");
+    if (activeStations.length === 0 && activeStationKeys.length > 0) activeStations = activeStationKeys;
+  } else {
+    activeStations = activeStationKeys.length > 0 ? activeStationKeys : template.activeStations;
+  }
+
+  const normalized = {
     ...template,
     ...source,
     round: Number.isInteger(source.round) && source.round > 0 ? source.round : index + 1,
     activeStations,
     outcomeBranches: normalizeOutcomeBranches(source.outcomeBranches)
   };
+  if (Object.hasOwn(source, "stationPrompts")) normalized.stationPrompts = cloneData(source.stationPrompts);
+  return normalized;
 }
 
 function createRoundStationPromptForEditor(stationKey, existingPrompt = {}, promptFormData = {}) {
@@ -731,13 +800,8 @@ export function prepareTravelEventBuilderRoundEditorState(draft, options = {}) {
       label: labelForStation(stationKey)
     })),
     rounds: normalizedDraft.rounds.map((round) => {
-      const activeStationKeys = (Array.isArray(round.activeStations) ? round.activeStations : [])
-        .map((prompt) => prompt?.stationKey)
-        .filter((stationKey) => allowedStations.includes(stationKey));
-      const uniqueActiveStationKeys = Array.from(new Set(activeStationKeys));
-      const promptsByStation = new Map((Array.isArray(round.activeStations) ? round.activeStations : [])
-        .filter((prompt) => prompt && typeof prompt === "object" && allowedStations.includes(prompt.stationKey))
-        .map((prompt) => [prompt.stationKey, prompt]));
+      const uniqueActiveStationKeys = getRoundActiveStationKeys(round, allowedStations);
+      const promptsByStation = getRoundStationPromptsByStation(round, allowedStations);
 
       return {
         round: round.round,
@@ -954,18 +1018,20 @@ export function applyTravelEventBuilderRoundFormDataToDraft(draft, formData = {}
     const entry = entriesByRound.get(round.round);
     if (!entry) return round;
 
-    const existingPrompts = new Map((Array.isArray(round.activeStations) ? round.activeStations : [])
-      .filter((prompt) => prompt && typeof prompt === "object" && allowedStations.includes(prompt.stationKey))
-      .map((prompt) => [prompt.stationKey, prompt]));
+    const existingPrompts = getRoundStationPromptsByStation(round, allowedStations);
     const requestedActiveStations = Object.hasOwn(entry, "activeStations")
       ? uniqueKnownValues(coerceFormStringArray(entry.activeStations), allowedStations, [])
-      : Array.from(existingPrompts.keys());
+      : getRoundActiveStationKeys(round, allowedStations);
     const stationPromptFormData = entry.stationPrompts && typeof entry.stationPrompts === "object" && !Array.isArray(entry.stationPrompts) ? entry.stationPrompts : {};
+
+    const usesStationPromptMap = Object.hasOwn(round, "stationPrompts") || (Array.isArray(round.activeStations) && round.activeStations.some((activeStation) => typeof activeStation === "string"));
+    const nextPrompts = requestedActiveStations.map((stationKey) => createRoundStationPromptForEditor(stationKey, existingPrompts.get(stationKey), stationPromptFormData[stationKey] ?? {}));
 
     return {
       ...round,
       openingVignette: Object.hasOwn(entry, "openingVignette") ? coerceFormString(entry.openingVignette, round.openingVignette ?? "") : round.openingVignette,
-      activeStations: requestedActiveStations.map((stationKey) => createRoundStationPromptForEditor(stationKey, existingPrompts.get(stationKey), stationPromptFormData[stationKey] ?? {}))
+      activeStations: usesStationPromptMap ? requestedActiveStations : nextPrompts,
+      ...(usesStationPromptMap ? { stationPrompts: { ...(isPlainObject(round.stationPrompts) ? cloneData(round.stationPrompts) : {}), ...Object.fromEntries(nextPrompts.map((prompt) => [prompt.stationKey, prompt])) } } : {})
     };
   });
 
@@ -1153,7 +1219,7 @@ export function analyzeTravelEventBuilderQuality(draft, options = {}) {
   normalizedDraft.rounds.forEach((round, index) => {
     const roundPath = `rounds[${index}]`;
     const openingVignette = trimmedText(round.openingVignette);
-    const activeStations = Array.isArray(round.activeStations) ? round.activeStations : [];
+    const activeStations = materializeRoundActiveStationPrompts(round, normalizedDraft.travelStations);
     const roundChecks = [
       createChecklistItem(`Round ${round.round} has an opening vignette`, openingVignette.length > 0, "warning", `Round ${round.round} needs an opening vignette.`),
       createChecklistItem(`Round ${round.round} opening vignette is specific`, openingVignette.length > 0 && !isPlaceholderText(openingVignette), "suggestion", `Round ${round.round} opening vignette still looks placeholder/generic.`),
@@ -1299,7 +1365,8 @@ export function prepareTravelEventBuilderQualityReport(draft, options = {}) {
 export function validateTravelEventDraft(draft, options = {}) {
   assertOptionsObject(options, "validateTravelEventDraft");
   const normalizedDraft = normalizeTravelEventDraft(draft, options);
-  const validation = validateTravelEventDefinition(normalizedDraft, { ...options, strictAuthoring: true });
+  const validationDraft = materializeDraftRoundsForEventDefinition(normalizedDraft);
+  const validation = validateTravelEventDefinition(validationDraft, { ...options, strictAuthoring: true });
   const errors = [...collectMalformedFinalOutcomeErrors(draft), ...validation.errors];
   const warnings = [...validation.warnings];
   const legacyMissingFinalOutcomeMessages = LEGACY_FINAL_OUTCOME_KEYS.map((key) => `Missing final outcome ${key}.`);
@@ -1336,7 +1403,7 @@ export function finalizeTravelEventDraft(draft, options = {}) {
     };
   }
 
-  const event = stripBuilderMetadata(validation.normalizedDraft);
+  const event = stripBuilderMetadata(materializeDraftRoundsForEventDefinition(validation.normalizedDraft));
   return {
     ok: true,
     errors: [],
@@ -1374,8 +1441,8 @@ export function prepareTravelEventBuilderPreview(draft, options = {}) {
     rounds: normalizedDraft.rounds.map((round) => ({
       round: round.round,
       title: round.title,
-      activeStationCount: round.activeStations?.length ?? 0,
-      activeStationsLabel: labelList((round.activeStations ?? []).map((prompt) => prompt.stationKey), {}),
+      activeStationCount: getRoundActiveStationKeys(round, normalizedDraft.travelStations).length,
+      activeStationsLabel: labelList(getRoundActiveStationKeys(round, normalizedDraft.travelStations), {}),
       outcomeBranches: ROUND_OUTCOME_KEYS.map((key) => ({
         key,
         hasVignette: typeof round.outcomeBranches?.[key]?.vignette === "string" && round.outcomeBranches[key].vignette.trim().length > 0,
