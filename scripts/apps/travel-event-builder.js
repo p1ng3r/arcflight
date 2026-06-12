@@ -6,16 +6,21 @@ import {
   applyTravelEventBuilderRoundFormDataToDraft,
   createTravelEventDraft,
   normalizeTravelEventDraft,
+  clonePublishedTravelEventToDraft,
+  deletePublishedTravelEventFromLibrary,
   deleteTravelEventBuilderDraftFromLibrary,
   duplicateTravelEventBuilderLibraryDraft,
+  loadPublishedTravelEventFromLibrary,
   loadTravelEventBuilderDraftFromLibrary,
   prepareTravelEventBuilderFinalOutcomeEditorState,
   prepareTravelEventBuilderFinalOutcomeEffectEditorState,
   prepareTravelEventBuilderFormOptions,
+  preparePublishedTravelEventLibraryState,
   prepareTravelEventBuilderLibraryState,
   prepareTravelEventBuilderPreview,
   prepareTravelEventBuilderQualityReport,
   prepareTravelEventBuilderRoundEditorState,
+  publishTravelEventDraftToLibrary,
   saveTravelEventBuilderDraftToLibrary
 } from "../helpers/travel-event-builder.js";
 import {
@@ -39,6 +44,11 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-library-duplicate]",
   "[data-arcflight-builder-library-delete]",
   "[data-arcflight-builder-library-refresh]",
+  "[data-arcflight-builder-published-publish]",
+  "[data-arcflight-builder-published-load]",
+  "[data-arcflight-builder-published-duplicate]",
+  "[data-arcflight-builder-published-delete]",
+  "[data-arcflight-builder-published-refresh]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
   "[data-arcflight-builder-export-final]"
@@ -110,7 +120,8 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
     roundEditor: prepareTravelEventBuilderRoundEditorState(normalizedDraft, options),
     finalOutcomeEditor: prepareTravelEventBuilderFinalOutcomeEditorState(normalizedDraft, options),
     finalOutcomeEffectEditor: prepareTravelEventBuilderFinalOutcomeEffectEditorState(normalizedDraft, options),
-    library: prepareTravelEventBuilderLibraryState(options)
+    library: prepareTravelEventBuilderLibraryState(options),
+    publishedLibrary: preparePublishedTravelEventLibraryState(options)
   });
 }
 
@@ -156,7 +167,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
       hasOutputJson: typeof this.outputJson === "string" && this.outputJson.trim().length > 0,
       status: this.status,
       hasStatus: Boolean(this.status?.message),
-      hardBoundaryHint: "Authoring shell only: saved drafts use one Arcflight world setting, but there are no compendium writes, actor mutation, chat posting, travel-event running, AP/RAP mechanics, combat automation, or staged-effect application."
+      hardBoundaryHint: "Authoring shell only: saved drafts and published event records use Arcflight world settings, but there are no compendium writes, actor mutation, chat posting, travel-event running, AP/RAP mechanics, combat automation, or staged-effect application."
     };
   }
 
@@ -185,6 +196,11 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-library-duplicate")) return this.#onDuplicateLibraryDraft(event, target);
     if (target.hasAttribute("data-arcflight-builder-library-delete")) return this.#onDeleteLibraryDraft(event, target);
     if (target.hasAttribute("data-arcflight-builder-library-refresh")) return this.#onRefreshLibrary(event);
+    if (target.hasAttribute("data-arcflight-builder-published-publish")) return this.#onPublishCurrentDraft(event);
+    if (target.hasAttribute("data-arcflight-builder-published-load")) return this.#onLoadPublishedEvent(event, target);
+    if (target.hasAttribute("data-arcflight-builder-published-duplicate")) return this.#onDuplicatePublishedEvent(event, target);
+    if (target.hasAttribute("data-arcflight-builder-published-delete")) return this.#onDeletePublishedEvent(event, target);
+    if (target.hasAttribute("data-arcflight-builder-published-refresh")) return this.#onRefreshPublishedLibrary(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-final")) return this.#onExportFinal(event);
@@ -426,6 +442,74 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   async #onRefreshLibrary(event) {
     event.preventDefault();
     this.status = createStatus("success", "Saved draft library refreshed from the Arcflight world setting.");
+    await this.#rerenderAfterAction();
+  }
+
+  async #onPublishCurrentDraft(event) {
+    event.preventDefault();
+    const imported = this.#syncDraftFromEditor();
+    if (!imported.draft) return await this.#rerenderAfterAction();
+
+    const published = await publishTravelEventDraftToLibrary(this.draft, { sourceDraftId: this.currentLibraryDraftId || undefined });
+    this.outputJson = "";
+    this.status = createStatus(published.ok ? (published.warnings.length > 0 ? "warning" : "success") : "warning", published.ok ? (published.warnings[0] ?? `Published finalized travel event "${published.entry.name}" to the Published Events library.`) : firstError(published, "Published event could not be created."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onLoadPublishedEvent(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedLoad;
+    const cloned = clonePublishedTravelEventToDraft(id);
+    if (!cloned.draft) {
+      this.status = createStatus("warning", firstError(cloned, "Published event could not be loaded as a draft."));
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    this.draft = cloneData(cloned.draft);
+    this.currentLibraryDraftId = "";
+    this.outputJson = "";
+    this.status = createStatus(cloned.warnings.length > 0 ? "warning" : "success", cloned.warnings[0] ?? `Loaded published event "${cloned.entry.name}" as an editable local draft.`);
+    await this.#rerenderAfterAction();
+  }
+
+  async #onDuplicatePublishedEvent(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedDuplicate;
+    const cloned = clonePublishedTravelEventToDraft(id, { duplicate: true });
+    if (!cloned.draft) {
+      this.status = createStatus("warning", firstError(cloned, "Published event could not be duplicated as a draft."));
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    this.draft = cloneData(cloned.draft);
+    this.currentLibraryDraftId = "";
+    this.outputJson = "";
+    this.status = createStatus(cloned.warnings.length > 0 ? "warning" : "success", cloned.warnings[0] ?? `Duplicated published event "${cloned.entry.name}" as a distinct editable local draft.`);
+    await this.#rerenderAfterAction();
+  }
+
+  async #onDeletePublishedEvent(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedDelete;
+    const loaded = loadPublishedTravelEventFromLibrary(id);
+    const label = loaded.entry?.name ?? id;
+    const confirmed = globalThis.confirm?.(`Delete published travel event "${label}"? This removes only the published-library record and does not change saved drafts.`) ?? true;
+    if (!confirmed) {
+      this.status = createStatus("info", "Delete cancelled; Published Events library was not changed.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    const deleted = await deletePublishedTravelEventFromLibrary(id);
+    this.status = createStatus(deleted.ok ? "success" : "warning", deleted.ok ? `Deleted published event "${deleted.deleted.name}" from the Published Events library.` : firstError(deleted, "Published event could not be deleted."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onRefreshPublishedLibrary(event) {
+    event.preventDefault();
+    this.status = createStatus("success", "Published Events library refreshed from the Arcflight world setting.");
     await this.#rerenderAfterAction();
   }
 

@@ -38,6 +38,19 @@ function containsFunctionValue(value) {
   return false;
 }
 
+function getActiveStationKey(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) return entry.stationKey;
+  return null;
+}
+
+function getStrictAuthoringPrompt(round, activeStationEntry) {
+  if (activeStationEntry && typeof activeStationEntry === "object" && !Array.isArray(activeStationEntry)) return activeStationEntry;
+  const stationKey = getActiveStationKey(activeStationEntry);
+  const prompt = round?.stationPrompts?.[stationKey];
+  return prompt && typeof prompt === "object" && !Array.isArray(prompt) ? { ...prompt, stationKey: prompt.stationKey ?? stationKey } : { stationKey };
+}
+
 function validateStrictAuthoringStationPrompt(prompt, roundNumber, errors) {
   const stationLabel = `Round ${roundNumber ?? "?"} ${prompt?.stationKey ?? "<missing station>"}`;
   if (typeof prompt?.playerAction !== "string" || prompt.playerAction.trim().length === 0) errors.push(`${stationLabel} is missing playerAction.`);
@@ -151,10 +164,10 @@ export function validateTravelEventDefinition(event, options = {}) {
     if (!Number.isInteger(round.round) || round.round <= 0) errors.push(`Round has invalid round number: ${round.round ?? "<missing>"}.`);
     if (!Array.isArray(round.activeStations)) errors.push(`Round ${round.round ?? "?"} activeStations must be an array.`);
     else {
-      const invalidStations = round.activeStations.map((station) => station?.stationKey).filter((stationKey) => !isTravelStationKey(stationKey));
+      const invalidStations = round.activeStations.map((station) => getActiveStationKey(station)).filter((stationKey) => !isTravelStationKey(stationKey));
       if (invalidStations.length > 0) errors.push(`Round ${round.round} contains non-Travel Five station keys: ${invalidStations.join(", ")}.`);
       if (strictAuthoring) {
-        for (const prompt of round.activeStations) validateStrictAuthoringStationPrompt(prompt, round.round, errors);
+        for (const activeStation of round.activeStations) validateStrictAuthoringStationPrompt(getStrictAuthoringPrompt(round, activeStation), round.round, errors);
       }
     }
     const branchKeys = Object.keys(round.outcomeBranches ?? {});

@@ -106,6 +106,7 @@ import {
 import {
   TRAVEL_EVENT_BUILDER_VERSION,
   TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+  PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING,
   createTravelEventDraft,
   normalizeTravelEventDraft,
   validateTravelEventDraft,
@@ -128,6 +129,12 @@ import {
   analyzeTravelEventBuilderQuality,
   prepareTravelEventBuilderQualityReport,
   getTravelEventBuilderLibrary,
+  getPublishedTravelEventLibrary,
+  publishTravelEventDraftToLibrary,
+  loadPublishedTravelEventFromLibrary,
+  clonePublishedTravelEventToDraft,
+  deletePublishedTravelEventFromLibrary,
+  preparePublishedTravelEventLibraryState,
   saveTravelEventBuilderDraftToLibrary,
   loadTravelEventBuilderDraftFromLibrary,
   deleteTravelEventBuilderDraftFromLibrary,
@@ -1142,7 +1149,13 @@ export async function runFrameworkSmokeTest(options = {}) {
     });
     const missingPlayerActionQualityReport = analyzeTravelEventBuilderQuality({
       ...completeQualityDraft,
-      rounds: [{ ...completeQualityDraft.rounds[0], activeStations: [{ ...completeQualityDraft.rounds[0].activeStations[0], playerAction: "" }] }, ...completeQualityDraft.rounds.slice(1)]
+      rounds: [{
+        ...completeQualityDraft.rounds[0],
+        stationPrompts: {
+          ...completeQualityDraft.rounds[0].stationPrompts,
+          navigator: { ...completeQualityDraft.rounds[0].stationPrompts.navigator, playerAction: "" }
+        }
+      }, ...completeQualityDraft.rounds.slice(1)]
     });
     const missingFinalOutcomeQualityReport = analyzeTravelEventBuilderQuality({ ...completeQualityDraft, finalOutcomes: { ...completeQualityDraft.finalOutcomes, success: undefined } });
     const badResourceEffectQualityReport = analyzeTravelEventBuilderQuality({
@@ -1164,6 +1177,47 @@ export async function runFrameworkSmokeTest(options = {}) {
     const loadedBuilderLibraryDraft = loadTravelEventBuilderDraftFromLibrary(savedBuilderLibraryDraft.entry?.id, { library: savedBuilderLibraryDraft.library });
     const duplicatedBuilderLibraryDraft = await duplicateTravelEventBuilderLibraryDraft(savedBuilderLibraryDraft.entry?.id, { library: savedBuilderLibraryDraft.library, dryRun: true, now: "2026-06-12T00:00:01.000Z" });
     const deletedBuilderLibraryDraft = await deleteTravelEventBuilderDraftFromLibrary(duplicatedBuilderLibraryDraft.entry?.id, { library: duplicatedBuilderLibraryDraft.library, dryRun: true });
+    const emptyPublishedLibraryState = preparePublishedTravelEventLibraryState({ library: { version: 1, events: {} } });
+    const objectActiveStationsDraft = normalizeTravelEventDraft({
+      ...completeQualityDraft,
+      rounds: [{
+        ...completeQualityDraft.rounds[0],
+        activeStations: [{ stationKey: "captain", playerAction: "Captain object prompt stays in stationPrompts." }],
+        stationPrompts: {}
+      }, ...completeQualityDraft.rounds.slice(1)]
+    });
+    const publishableDraft = normalizeTravelEventDraft({
+      ...completeQualityDraft,
+      key: "published-smoke",
+      name: "Published Smoke",
+      rounds: completeQualityDraft.rounds.map((round, index) => index === 0 ? {
+        ...round,
+        activeStations: [],
+        stationPrompts: {
+          engineer: { playerAction: "Tune the engine through the smoke-safe route." },
+          navigator: { playerAction: "Chart the smoke-safe route." }
+        }
+      } : round),
+      finalOutcomes: {
+        ...completeQualityDraft.finalOutcomes,
+        success: {
+          ...completeQualityDraft.finalOutcomes.success,
+          proposedEffects: [createTravelBuilderResourceEffect({ resource: "supplies", mode: "add", value: 2, label: "Published supplies reward" })]
+        }
+      }
+    });
+    const publishedBuilderEvent = await publishTravelEventDraftToLibrary(publishableDraft, { library: { version: 1, events: {} }, dryRun: true, sourceDraftId: savedBuilderLibraryDraft.entry?.id, now: "2026-06-12T00:00:02.000Z" });
+    const loadedPublishedEvent = loadPublishedTravelEventFromLibrary(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library });
+    const clonedPublishedDraft = clonePublishedTravelEventToDraft(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, now: "2026-06-12T00:00:03.000Z" });
+    const clonedPublishedDraftExport = clonedPublishedDraft.draft ? exportTravelEventDraftToJson(clonedPublishedDraft.draft) : { ok: false, json: null };
+    const clonedPublishedDraftExportData = JSON.parse(clonedPublishedDraftExport.json ?? "{}");
+    const clonedPublishedFinalExport = clonedPublishedDraft.draft ? exportFinalTravelEventToJson(clonedPublishedDraft.draft) : { ok: false, json: null };
+    const clonedPublishedFinalExportData = JSON.parse(clonedPublishedFinalExport.json ?? "{}");
+    const duplicatedPublishedDraft = clonePublishedTravelEventToDraft(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, duplicate: true, now: "2026-06-12T00:00:04.000Z" });
+    const duplicateKeyPublishedEvent = await publishTravelEventDraftToLibrary(publishableDraft, { library: publishedBuilderEvent.library, dryRun: true, now: "2026-06-12T00:00:05.000Z" });
+    const malformedPublishedEvent = loadPublishedTravelEventFromLibrary("malformed", { library: { version: 1, events: { malformed: { id: "malformed", key: "malformed", name: "Malformed", category: "discovery", event: "not an object" } } } });
+    const blockedPublishedEvent = await publishTravelEventDraftToLibrary({ ...publishableDraft, finalOutcomes: { ...publishableDraft.finalOutcomes, success: undefined } }, { library: { version: 1, events: {} }, dryRun: true });
+    const deletedPublishedEvent = await deletePublishedTravelEventFromLibrary(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, dryRun: true });
     const malformedBuilderLibraryDraft = loadTravelEventBuilderDraftFromLibrary("malformed-smoke", {
       library: {
         version: 1,
@@ -1244,6 +1298,22 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder library load returns normalized draft", loadedBuilderLibraryDraft.draft?.key === completeQualityDraft.key && loadedBuilderLibraryDraft.draft?.roundCount === completeQualityDraft.roundCount, "loaded normalized draft", loadedBuilderLibraryDraft);
     check(result, "Travel Event Builder library duplicate creates distinct saved entry", duplicatedBuilderLibraryDraft.ok === true && duplicatedBuilderLibraryDraft.entry?.id && duplicatedBuilderLibraryDraft.entry.id !== savedBuilderLibraryDraft.entry?.id && Object.keys(duplicatedBuilderLibraryDraft.library?.drafts ?? {}).length === 2, "distinct duplicate", duplicatedBuilderLibraryDraft);
     check(result, "Travel Event Builder library delete removes entry", deletedBuilderLibraryDraft.ok === true && deletedBuilderLibraryDraft.deleted?.id === duplicatedBuilderLibraryDraft.entry?.id && !Object.hasOwn(deletedBuilderLibraryDraft.library?.drafts ?? {}, duplicatedBuilderLibraryDraft.entry?.id), "deleted duplicate", deletedBuilderLibraryDraft);
+    check(result, "Published Travel Event library helper exports exist", typeof getPublishedTravelEventLibrary === "function" && typeof publishTravelEventDraftToLibrary === "function" && typeof loadPublishedTravelEventFromLibrary === "function" && typeof clonePublishedTravelEventToDraft === "function" && typeof deletePublishedTravelEventFromLibrary === "function" && typeof preparePublishedTravelEventLibraryState === "function" && typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary === "function" && typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary === "function", true, { setting: PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, api: typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary });
+    check(result, "Published Travel Event empty library returns safe state", emptyPublishedLibraryState.count === 0 && emptyPublishedLibraryState.hasEvents === false && Array.isArray(emptyPublishedLibraryState.entries), "empty published safe state", emptyPublishedLibraryState);
+    check(result, "Travel Event Builder normalize converts object activeStations into string keys", objectActiveStationsDraft.rounds?.[0]?.activeStations?.join(",") === "captain" && objectActiveStationsDraft.rounds?.[0]?.activeStations?.every((station) => typeof station === "string") && objectActiveStationsDraft.rounds?.[0]?.stationPrompts?.captain?.playerAction === "Captain object prompt stays in stationPrompts.", "object activeStations normalized", objectActiveStationsDraft.rounds?.[0]);
+    check(result, "Publishing current draft stores finalized event with no builder metadata", publishedBuilderEvent.ok === true && publishedBuilderEvent.entry?.event?.builder === undefined && publishedBuilderEvent.entry?.sourceDraftId === savedBuilderLibraryDraft.entry?.id && publishedBuilderEvent.entry?.event?.key === publishableDraft.key, "published finalized entry", publishedBuilderEvent);
+    check(result, "Published event preserves inferred round activeStations as string keys", publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.join(",") === "navigator,engineer" && publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.every((station) => typeof station === "string"), "published activeStations inferred in Travel Five order", publishedBuilderEvent.entry?.event?.rounds?.[0]);
+    check(result, "Published event preserves final outcome proposedEffects", publishedBuilderEvent.entry?.event?.finalOutcomes?.success?.proposedEffects?.[0]?.label === "Published supplies reward", "published proposed effects", publishedBuilderEvent.entry?.event?.finalOutcomes?.success?.proposedEffects);
+    check(result, "Load published event as draft restores builder metadata", clonedPublishedDraft.ok === true && clonedPublishedDraft.draft?.builder?.status === "draft" && clonedPublishedDraft.draft?.builder?.source === "builder" && clonedPublishedDraft.draft?.key === publishableDraft.key, "cloned published draft", clonedPublishedDraft);
+    check(result, "clonePublishedTravelEventToDraft exports activeStations as string keys", clonedPublishedDraftExport.ok === true && clonedPublishedDraftExportData.rounds?.every((round) => round.activeStations?.every((station) => typeof station === "string")) && clonedPublishedDraftExportData.rounds?.[0]?.activeStations?.join(",") === "navigator,engineer", "cloned draft export activeStations", clonedPublishedDraftExportData.rounds?.[0]);
+    check(result, "Published publish/load/clone/export draft keeps activeStations as strings only", loadedPublishedEvent.ok === true && loadedPublishedEvent.event?.rounds?.every((round) => round.activeStations?.every((station) => typeof station === "string")) && clonedPublishedDraft.draft?.rounds?.every((round) => round.activeStations?.every((station) => typeof station === "string")) && clonedPublishedDraftExportData.rounds?.every((round) => round.activeStations?.every((station) => typeof station === "string")), "published string activeStations pipeline", { loaded: loadedPublishedEvent.event?.rounds?.[0], cloned: clonedPublishedDraft.draft?.rounds?.[0], exported: clonedPublishedDraftExportData.rounds?.[0] });
+    check(result, "Published clone export final keeps activeStations as string keys only", clonedPublishedFinalExport.ok === true && clonedPublishedFinalExportData.rounds?.every((round) => round.activeStations?.every((station) => typeof station === "string")) && clonedPublishedFinalExportData.rounds?.[0]?.activeStations?.join(",") === "navigator,engineer", "cloned final export activeStations", clonedPublishedFinalExportData.rounds?.[0]);
+    check(result, "No object values appear inside published pipeline rounds activeStations", [publishedBuilderEvent.entry?.event, loadedPublishedEvent.event, clonedPublishedDraft.draft, clonedPublishedDraftExportData, clonedPublishedFinalExportData].every((eventData) => eventData?.rounds?.every((round) => round.activeStations?.every((station) => typeof station === "string"))), "no activeStations objects", { published: publishedBuilderEvent.entry?.event?.rounds?.[0], draftExport: clonedPublishedDraftExportData.rounds?.[0], finalExport: clonedPublishedFinalExportData.rounds?.[0] });
+    check(result, "Duplicate published event as draft creates distinct editable draft", duplicatedPublishedDraft.ok === true && duplicatedPublishedDraft.draft?.builder?.status === "draft" && duplicatedPublishedDraft.draft?.key !== publishableDraft.key && /Copy/.test(duplicatedPublishedDraft.draft?.name ?? ""), "duplicated published draft", duplicatedPublishedDraft);
+    check(result, "Published event duplicate key does not silently overwrite", duplicateKeyPublishedEvent.ok === true && duplicateKeyPublishedEvent.entry?.id !== publishedBuilderEvent.entry?.id && duplicateKeyPublishedEvent.entry?.key === publishedBuilderEvent.entry?.key && duplicateKeyPublishedEvent.warnings.some((warning) => /already exists|without overwriting/i.test(warning)), "duplicate key published safely", duplicateKeyPublishedEvent);
+    check(result, "Delete published event removes it", deletedPublishedEvent.ok === true && deletedPublishedEvent.deleted?.id === publishedBuilderEvent.entry?.id && !Object.hasOwn(deletedPublishedEvent.library?.events ?? {}, publishedBuilderEvent.entry?.id), "deleted published event", deletedPublishedEvent);
+    check(result, "Malformed published event fails safely", malformedPublishedEvent.ok === false && malformedPublishedEvent.event === null && malformedPublishedEvent.errors.some((error) => /malformed/i.test(error)), "malformed published safe failure", malformedPublishedEvent);
+    check(result, "Publishing fails when quality report has errors", blockedPublishedEvent.ok === false && blockedPublishedEvent.event === null && blockedPublishedEvent.errors.some((error) => /Quality error|Missing canonical final outcome|Missing final outcome/i.test(error)), "blocked published event", blockedPublishedEvent);
     check(result, "Travel Event Builder malformed library draft fails safely", malformedBuilderLibraryDraft.ok === false && malformedBuilderLibraryDraft.draft === null && malformedBuilderLibraryDraft.errors.length > 0, "safe malformed saved draft", malformedBuilderLibraryDraft);
     check(result, "Travel Event Builder loaded library draft preserves quality and editors", loadedBuilderQualityReport?.ok === true && loadedBuilderFinalOutcomeTextState?.outcomes?.length === 5 && loadedBuilderFinalOutcomeEffectState?.outcomes?.length === 5, "post-load quality/editor state", { quality: loadedBuilderQualityReport, text: loadedBuilderFinalOutcomeTextState, effects: loadedBuilderFinalOutcomeEffectState });
     check(result, "Travel Event Builder import/export still works after loading library draft", loadedBuilderDraftExport.ok === true && loadedBuilderFinalExport.ok === true, "post-load exports", { draft: loadedBuilderDraftExport, final: loadedBuilderFinalExport });
@@ -1252,7 +1322,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder export draft preserves and infers active station keys", crystalDriftImported.ok === true && crystalDriftSaved.ok === true && crystalDriftLoaded.draft?.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(",") && crystalDriftExportData.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(",") && crystalDriftFallbackExportData.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(","), "Crystal Drift active station keys", { imported: crystalDriftImported, saved: crystalDriftSaved, loaded: crystalDriftLoaded, exportData: crystalDriftExportData.rounds?.[0], fallbackExportData: crystalDriftFallbackExportData.rounds?.[0] });
     check(result, "Travel Event Builder library save/load preserves and infers active station keys", crystalDriftFallbackSaved.ok === true && crystalDriftFallbackLoaded.draft?.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(","), "fallback library active station keys", { saved: crystalDriftFallbackSaved, loaded: crystalDriftFallbackLoaded });
     check(result, "Travel Event Builder duplicate preserves and infers active station keys", crystalDriftDuplicate.ok === true && crystalDriftDuplicate.draft?.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(",") && crystalDriftFallbackDuplicate.draft?.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(","), "duplicated active station keys", { duplicate: crystalDriftDuplicate, fallbackDuplicate: crystalDriftFallbackDuplicate });
-    check(result, "Travel Event Builder export final materializes preserved and inferred active stations", crystalDriftFinalExport.ok === true && crystalDriftFinalExportData.rounds?.[0]?.activeStations?.map((prompt) => prompt.stationKey).join(",") === crystalDriftStationKeys.join(",") && crystalDriftFallbackFinalExport.ok === true && crystalDriftFallbackFinalExportData.rounds?.[0]?.activeStations?.map((prompt) => prompt.stationKey).join(",") === crystalDriftStationKeys.join(","), "final export active station prompts", { final: crystalDriftFinalExportData.rounds?.[0], fallbackFinal: crystalDriftFallbackFinalExportData.rounds?.[0] });
+    check(result, "Travel Event Builder export final preserves active stations as string keys", crystalDriftFinalExport.ok === true && crystalDriftFinalExportData.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(",") && crystalDriftFallbackFinalExport.ok === true && crystalDriftFallbackFinalExportData.rounds?.[0]?.activeStations?.join(",") === crystalDriftStationKeys.join(",") && crystalDriftFinalExportData.rounds?.[0]?.activeStations?.every((station) => typeof station === "string") && crystalDriftFallbackFinalExportData.rounds?.[0]?.activeStations?.every((station) => typeof station === "string"), "final export active station keys", { final: crystalDriftFinalExportData.rounds?.[0], fallbackFinal: crystalDriftFallbackFinalExportData.rounds?.[0] });
     check(result, "Travel Event Builder quality after library load sees inferred station prompts", crystalDriftLoadedQuality?.warnings?.every((entry) => !/no active stations/i.test(entry.message)) === true && crystalDriftFallbackLoadedQuality?.warnings?.every((entry) => !/no active stations/i.test(entry.message)) === true, "no no-active-stations warning", { loaded: crystalDriftLoadedQuality?.warnings, fallbackLoaded: crystalDriftFallbackLoadedQuality?.warnings });
     check(result, "Travel Event Builder library introduces no actor/AP/RAP/combat/staged-effect/travel-resource mutation", ![getTravelEventBuilderLibrary, saveTravelEventBuilderDraftToLibrary, loadTravelEventBuilderDraftFromLibrary, deleteTravelEventBuilderDraftFromLibrary, duplicateTravelEventBuilderLibraryDraft, prepareTravelEventBuilderLibraryState].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|Actor\.update|actor\.update|startCombat|Combat\.create|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "no prohibited runtime mutation helpers", "library only reads/writes its world setting");
     check(result, "Travel Event Builder shell state previews local draft only", builderShellState.preview?.validation?.ok === true && builderShellState.exportPreview?.exportDraftAvailable === true && builderShellState.draft?.key === builderDraft.key && typeof builderShellState.draftJson === "string", "builder shell preview", builderShellState);
@@ -1264,8 +1334,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder round editor state lists normalized rounds", builderRoundEditorState.rounds?.length === builderDraft.roundCount && builderRoundEditorState.rounds[0]?.stationOptions?.length === builderDraft.travelStations.length && builderRoundEditorState.rounds[0]?.stationPrompts?.length === builderDraft.travelStations.length, "normalized round editor state", builderRoundEditorState);
     check(result, "Travel Event Builder round form edits apply locally only", roundEditedBuilderDraft !== builderDraft && builderDraft.rounds[0].openingVignette !== "Smoke-edited opening vignette stays in the local draft." && roundEditedBuilderDraft.key === builderDraft.key, "local-only round edit", { original: builderDraft.rounds[0], edited: roundEditedBuilderDraft.rounds[0] });
     check(result, "Travel Event Builder openingVignette round edit persists", roundEditedBuilderDraft.rounds[0].openingVignette === "Smoke-edited opening vignette stays in the local draft.", "updated openingVignette", roundEditedBuilderDraft.rounds[0].openingVignette);
-    check(result, "Travel Event Builder activeStations round edit persists with allowed stations only", roundEditedBuilderDraft.rounds[0].activeStations.map((prompt) => prompt.stationKey).join(",") === "navigator,captain", "navigator,captain only", roundEditedBuilderDraft.rounds[0].activeStations.map((prompt) => prompt.stationKey));
-    check(result, "Travel Event Builder station prompt playerAction round edit persists", roundEditedBuilderDraft.rounds[0].activeStations.find((prompt) => prompt.stationKey === "navigator")?.playerAction === "Chart the safest path through the smoke-test anomaly.", "updated navigator playerAction", roundEditedBuilderDraft.rounds[0].activeStations.find((prompt) => prompt.stationKey === "navigator"));
+    check(result, "Travel Event Builder activeStations round edit persists with allowed string keys only", roundEditedBuilderDraft.rounds[0].activeStations.join(",") === "navigator,captain" && roundEditedBuilderDraft.rounds[0].activeStations.every((station) => typeof station === "string"), "navigator,captain only", roundEditedBuilderDraft.rounds[0].activeStations);
+    check(result, "Travel Event Builder station prompt playerAction round edit persists in stationPrompts", roundEditedBuilderDraft.rounds[0].stationPrompts.navigator?.playerAction === "Chart the safest path through the smoke-test anomaly.", "updated navigator playerAction", roundEditedBuilderDraft.rounds[0].stationPrompts.navigator);
     check(result, "Travel Event Builder JSON import/export still works after round edits", roundEditedDraftExport.ok === true && roundEditedDraftImport.ok === true && roundEditedDraftImport.draft?.rounds?.[0]?.openingVignette === "Smoke-edited opening vignette stays in the local draft.", "post-round JSON IO", { draftExport: roundEditedDraftExport, draftImport: roundEditedDraftImport });
     check(result, "Travel Event Builder round edits introduce no actor state, AP/RAP, travel resource, combat, or persistence mutation", JSON.stringify(builderRoundEconomyBefore) === JSON.stringify(getShipActionEconomy(actor)) && JSON.stringify(builderRoundResourcesBefore) === JSON.stringify(getShipTravelResources(actor)) && ![applyTravelEventBuilderRoundFormDataToDraft, prepareTravelEventBuilderRoundEditorState].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|game\.settings\.set|Actor\.update|actor\.update|startCombat|Combat\.create/.test(String(helper))), "no actor/combat/persistence mutation by round helpers", { economyBefore: builderRoundEconomyBefore, economyAfter: getShipActionEconomy(actor), resourcesBefore: builderRoundResourcesBefore, resourcesAfter: getShipTravelResources(actor) });
 

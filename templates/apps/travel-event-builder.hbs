@@ -49,6 +49,42 @@
     {{/if}}
   </section>
 
+  <section class="arcflight-travel-builder__panel arcflight-travel-builder__library" data-arcflight-builder-published-library>
+    <div class="arcflight-travel-builder__panel-heading">
+      <div>
+        <h2>Published Events Library</h2>
+        <p class="arcflight-sheet__hint">Finalized travel event records for future runner/registry use. Publishing strips builder metadata, stores the final event separately from editable drafts, and never starts or runs an event.</p>
+      </div>
+      <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+        <button type="button" data-arcflight-builder-published-publish>Publish Current Draft</button>
+        <button type="button" data-arcflight-builder-published-refresh>Refresh Published Library</button>
+      </div>
+    </div>
+
+    <p class="arcflight-sheet__hint">Setting: <code>{{publishedLibrary.settingKey}}</code>. Entries: {{publishedLibrary.count}}.</p>
+    {{#if publishedLibrary.hasEvents}}
+      <div class="arcflight-travel-builder__library-list">
+        {{#each publishedLibrary.entries}}
+          <article class="arcflight-travel-builder__library-row {{#if isMalformed}}arcflight-travel-builder__library-row--malformed{{/if}}">
+            <div>
+              <strong>{{name}}</strong>
+              {{#if isMalformed}}<span class="arcflight-travel-builder__badge arcflight-travel-builder__badge--warning">Malformed</span>{{/if}}
+              <div class="arcflight-sheet__hint">Published id: <code>{{id}}</code> · Event key: <code>{{key}}</code> · Category: {{category}} · Published: {{publishedAt}} · Updated: {{updatedAt}}</div>
+              {{#if sourceDraftId}}<div class="arcflight-sheet__hint">Source draft id: <code>{{sourceDraftId}}</code></div>{{/if}}
+            </div>
+            <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-published-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load as Draft</button>
+              <button type="button" data-arcflight-builder-published-duplicate="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate as Draft</button>
+              <button type="button" class="arcflight-button--danger" data-arcflight-builder-published-delete="{{id}}">Delete</button>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No published travel events yet. Click <strong>Publish Current Draft</strong> after the draft passes validation and has no quality errors.</p>
+    {{/if}}
+  </section>
+
   <section class="arcflight-travel-builder__panel arcflight-travel-builder__quality" data-arcflight-builder-quality>
     <div class="arcflight-travel-builder__panel-heading">
       <div>

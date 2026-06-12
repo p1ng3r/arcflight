@@ -6,6 +6,8 @@ import { validateTravelEventDefinition } from "./travel-events.js";
 export const TRAVEL_EVENT_BUILDER_VERSION = "0.1.0";
 export const TRAVEL_EVENT_BUILDER_LIBRARY_SETTING = "travelEventBuilderLibrary";
 export const TRAVEL_EVENT_BUILDER_LIBRARY_VERSION = 1;
+export const PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING = "publishedTravelEventLibrary";
+export const PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION = 1;
 
 const DEFAULT_ROUND_COUNT = 4;
 const DEFAULT_BASE_DC = 18;
@@ -357,7 +359,7 @@ function normalizeStationPromptMap(value, travelStations = TRAVEL_FIVE_STATION_K
   if (!isPlainObject(value)) return {};
   return Object.fromEntries(Object.entries(value)
     .filter(([stationKey, prompt]) => travelStations.includes(stationKey) && isPlainObject(prompt))
-    .map(([stationKey, prompt]) => [stationKey, { ...cloneData(prompt), stationKey, stationName: prompt.stationName ?? labelForStation(stationKey) }]));
+    .map(([stationKey, prompt]) => [stationKey, { ...createBlankStationPromptTemplate(stationKey, prompt), ...cloneData(prompt), stationKey, stationName: prompt.stationName ?? labelForStation(stationKey) }]));
 }
 
 function normalizeActiveStationKeys(activeStations, validStations = TRAVEL_FIVE_STATION_KEYS) {
@@ -417,32 +419,26 @@ function materializeDraftRoundsForEventDefinition(draft = {}) {
 function normalizeRound(round, index, travelStations) {
   const source = round && typeof round === "object" && !Array.isArray(round) ? cloneData(round) : {};
   const template = createBlankTravelRoundTemplate(index + 1, { travelStations });
-  const sourceActiveStations = Array.isArray(source.activeStations) ? source.activeStations : null;
   const validStations = Array.isArray(travelStations) && travelStations.length > 0 ? travelStations : TRAVEL_FIVE_STATION_KEYS;
   const normalizedActiveStationKeys = normalizeActiveStationKeys(source.activeStations, validStations);
-  const inferredActiveStations = inferActiveStationsFromPrompts(source.stationPrompts, validStations);
-  const activeStationKeys = normalizedActiveStationKeys.length > 0 ? normalizedActiveStationKeys : inferredActiveStations;
-  let activeStations;
+  const sourcePromptMap = normalizeStationPromptMap(source.stationPrompts, validStations);
+  const objectPromptMap = Object.fromEntries((Array.isArray(source.activeStations) ? source.activeStations : [])
+    .filter((entry) => isPlainObject(entry) && validStations.includes(entry.stationKey))
+    .map((entry) => [entry.stationKey, { ...createBlankStationPromptTemplate(entry.stationKey, entry), ...cloneData(entry), stationKey: entry.stationKey, stationName: entry.stationName ?? labelForStation(entry.stationKey) }]));
+  const stationPrompts = { ...sourcePromptMap, ...objectPromptMap };
+  const inferredActiveStations = inferActiveStationsFromPrompts(stationPrompts, validStations);
+  const activeStations = normalizedActiveStationKeys.length > 0
+    ? normalizedActiveStationKeys
+    : (inferredActiveStations.length > 0 ? inferredActiveStations : normalizeActiveStationKeys(template.activeStations, validStations));
 
-  if (sourceActiveStations) {
-    const hasStationKeyArray = sourceActiveStations.some((entry) => typeof entry === "string");
-    activeStations = hasStationKeyArray
-      ? normalizedActiveStationKeys
-      : sourceActiveStations.map((prompt) => cloneData(prompt)).filter((prompt) => prompt && typeof prompt === "object");
-    if (activeStations.length === 0 && inferredActiveStations.length > 0) activeStations = inferredActiveStations;
-  } else {
-    activeStations = activeStationKeys.length > 0 ? activeStationKeys : template.activeStations;
-  }
-
-  const normalized = {
+  return {
     ...template,
     ...source,
     round: Number.isInteger(source.round) && source.round > 0 ? source.round : index + 1,
     activeStations,
+    stationPrompts,
     outcomeBranches: normalizeOutcomeBranches(source.outcomeBranches)
   };
-  if (Object.hasOwn(source, "stationPrompts")) normalized.stationPrompts = cloneData(source.stationPrompts);
-  return normalized;
 }
 
 function createRoundStationPromptForEditor(stationKey, existingPrompt = {}, promptFormData = {}) {
@@ -546,10 +542,26 @@ function getGameSettingLibrary() {
   }
 }
 
+function getGameSettingPublishedLibrary() {
+  const settings = globalThis.game?.settings;
+  if (!settings || typeof settings.get !== "function") return null;
+  try {
+    return settings.get(ARCFLIGHT_MODULE_ID, PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING);
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function setGameSettingLibrary(library) {
   const settings = globalThis.game?.settings;
   if (!settings || typeof settings.set !== "function") throw new Error("Foundry game.settings is not available for the Travel Event Builder library.");
   return settings.set(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, cloneData(library));
+}
+
+async function setGameSettingPublishedLibrary(library) {
+  const settings = globalThis.game?.settings;
+  if (!settings || typeof settings.set !== "function") throw new Error("Foundry game.settings is not available for the Published Travel Event library.");
+  return settings.set(ARCFLIGHT_MODULE_ID, PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, cloneData(library));
 }
 
 function slugifyLibraryId(value) {
@@ -716,6 +728,187 @@ export function prepareTravelEventBuilderLibraryState(options = {}) {
     count: entries.length,
     hasDrafts: entries.length > 0,
     currentId: typeof options.currentId === "string" ? options.currentId : ""
+  });
+}
+
+
+function normalizePublishedEventEntry(id, entry = {}, options = {}) {
+  const fallbackTimestamp = nowIso(options);
+  const source = isPlainObject(entry) ? entry : {};
+  const event = isPlainObject(source.event) ? stripBuilderMetadata(source.event) : source.event;
+  const eventSource = isPlainObject(event) ? event : {};
+  const key = typeof source.key === "string" && source.key.length > 0 ? source.key : (typeof eventSource.key === "string" ? eventSource.key : "");
+  const name = typeof source.name === "string" && source.name.length > 0 ? source.name : (typeof eventSource.name === "string" ? eventSource.name : key || id);
+  const category = typeof source.category === "string" && source.category.length > 0 ? source.category : (typeof eventSource.category === "string" ? eventSource.category : DEFAULT_CATEGORY);
+  return {
+    id,
+    key,
+    name,
+    category,
+    publishedAt: typeof source.publishedAt === "string" && source.publishedAt.length > 0 ? source.publishedAt : fallbackTimestamp,
+    updatedAt: typeof source.updatedAt === "string" && source.updatedAt.length > 0 ? source.updatedAt : fallbackTimestamp,
+    sourceDraftId: typeof source.sourceDraftId === "string" ? source.sourceDraftId : "",
+    version: Number.isInteger(source.version) ? source.version : PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION,
+    event
+  };
+}
+
+function normalizePublishedTravelEventLibraryData(rawLibrary, options = {}) {
+  const source = isPlainObject(rawLibrary) ? rawLibrary : {};
+  const sourceEvents = isPlainObject(source.events) ? source.events : {};
+  const events = {};
+  for (const [id, entry] of Object.entries(sourceEvents)) {
+    if (typeof id !== "string" || id.length === 0) continue;
+    events[id] = normalizePublishedEventEntry(id, entry, options);
+  }
+  return {
+    version: Number.isInteger(source.version) ? source.version : PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION,
+    events
+  };
+}
+
+function getPublishedEventEntries(library) {
+  return Object.values(library.events ?? {}).sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")) || String(a.name ?? "").localeCompare(String(b.name ?? "")));
+}
+
+function createUniquePublishedEventId(library, seed, options = {}) {
+  const events = library?.events ?? {};
+  const base = slugifyLibraryId(seed || "published-travel-event");
+  if (!Object.hasOwn(events, base)) return base;
+
+  const timestamp = nowIso(options).replace(/[^0-9]/g, "").slice(0, 14);
+  const timestamped = `${base}-${timestamp}`;
+  if (!Object.hasOwn(events, timestamped)) return timestamped;
+
+  let index = 2;
+  while (Object.hasOwn(events, `${timestamped}-${index}`)) index += 1;
+  return `${timestamped}-${index}`;
+}
+
+function findPublishedEventEntry(library, idOrKey) {
+  const id = String(idOrKey ?? "");
+  return library.events?.[id] ?? getPublishedEventEntries(library).find((candidate) => candidate.key === id) ?? null;
+}
+
+function validatePublishedEventEntry(entry, options = {}) {
+  if (!isPlainObject(entry?.event)) return { ok: false, errors: [`Published travel event "${entry?.id ?? "<unknown>"}" is malformed and cannot be loaded.`], warnings: [] };
+  if (entry.event.builder !== undefined) return { ok: false, errors: [`Published travel event "${entry.id}" still contains builder metadata.`], warnings: [] };
+  const validation = validateTravelEventDefinition(entry.event, { ...options, strictAuthoring: true });
+  return validation;
+}
+
+export function getPublishedTravelEventLibrary(options = {}) {
+  assertOptionsObject(options, "getPublishedTravelEventLibrary");
+  return normalizePublishedTravelEventLibraryData(Object.hasOwn(options, "library") ? options.library : getGameSettingPublishedLibrary(), options);
+}
+
+export async function publishTravelEventDraftToLibrary(draft, options = {}) {
+  assertOptionsObject(options, "publishTravelEventDraftToLibrary");
+  const errors = [];
+  const warnings = [];
+  if (!isPlainObject(draft)) errors.push("Published Travel Event library publish requires a draft object.");
+  const functionPaths = containsFunctionValue(draft);
+  if (functionPaths.length > 0) errors.push(`Published Travel Event drafts must be data-only; function values found at: ${functionPaths.join(", ")}.`);
+
+  const qualityReport = isPlainObject(draft) ? prepareTravelEventBuilderQualityReport(draft, options) : null;
+  if (qualityReport?.errors?.length > 0) errors.push(...qualityReport.errors.map((issue) => `Quality error at ${issue.path || issue.area}: ${issue.message}`));
+  if (qualityReport?.warnings?.length > 0) warnings.push(...qualityReport.warnings.map((issue) => `Quality warning at ${issue.path || issue.area}: ${issue.message}`));
+
+  const finalized = isPlainObject(draft) ? finalizeTravelEventDraft(draft, options) : { ok: false, errors: [], warnings: [], event: null };
+  if (!finalized.ok) errors.push(...finalized.errors);
+  warnings.push(...(finalized.warnings ?? []));
+
+  const library = getPublishedTravelEventLibrary(options);
+  if (errors.length > 0 || !finalized.event) {
+    return buildLibraryResult(false, { errors, warnings, library, entry: null, event: null, qualityReport, finalized });
+  }
+
+  const event = stripBuilderMetadata(finalized.event);
+  const explicitId = typeof options.id === "string" && options.id.length > 0 ? options.id : null;
+  const overwrite = options.overwrite === true;
+  const explicitExists = explicitId ? Object.hasOwn(library.events, explicitId) : false;
+  const existingByKey = getPublishedEventEntries(library).find((candidate) => candidate.key === event.key);
+  const id = explicitId && (!explicitExists || overwrite) ? explicitId : createUniquePublishedEventId(library, explicitId ?? event.key ?? event.name, options);
+  const existing = overwrite ? library.events[id] : null;
+
+  if (explicitId && explicitExists && !overwrite) warnings.push(`Published event id "${explicitId}" already exists; published as "${id}" instead.`);
+  else if (!explicitId && existingByKey) warnings.push(`A published event with key "${event.key}" already exists; published a new entry "${id}" without overwriting "${existingByKey.id}".`);
+
+  const timestamp = nowIso(options);
+  const entry = {
+    id,
+    key: event.key,
+    name: typeof options.name === "string" && options.name.length > 0 ? options.name : (event.name || event.key || id),
+    category: typeof options.category === "string" && options.category.length > 0 ? options.category : event.category,
+    publishedAt: existing?.publishedAt ?? timestamp,
+    updatedAt: timestamp,
+    sourceDraftId: typeof options.sourceDraftId === "string" ? options.sourceDraftId : "",
+    version: PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION,
+    event
+  };
+
+  const nextLibrary = { ...library, version: PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION, events: { ...library.events, [id]: entry } };
+  if (!options.dryRun) await setGameSettingPublishedLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings, library: nextLibrary, entry: cloneData(entry), event: cloneData(event), qualityReport, finalized });
+}
+
+export function loadPublishedTravelEventFromLibrary(idOrKey, options = {}) {
+  assertOptionsObject(options, "loadPublishedTravelEventFromLibrary");
+  const library = getPublishedTravelEventLibrary(options);
+  const id = String(idOrKey ?? "");
+  const entry = findPublishedEventEntry(library, id);
+  if (!entry) return buildLibraryResult(false, { errors: [`No published Travel Event found for "${id}".`], warnings: [], library, entry: null, event: null });
+  const validation = validatePublishedEventEntry(entry, options);
+  if (!validation.ok) return buildLibraryResult(false, { errors: validation.errors, warnings: validation.warnings, library, entry: cloneData(entry), event: null, validation });
+  return buildLibraryResult(true, { errors: [], warnings: validation.warnings, library, entry: cloneData(entry), event: stripBuilderMetadata(entry.event), validation });
+}
+
+export function clonePublishedTravelEventToDraft(idOrKey, options = {}) {
+  assertOptionsObject(options, "clonePublishedTravelEventToDraft");
+  const loaded = loadPublishedTravelEventFromLibrary(idOrKey, options);
+  if (!loaded.event) return buildLibraryResult(false, { errors: loaded.errors, warnings: loaded.warnings, library: loaded.library, entry: loaded.entry ?? null, event: null, draft: null });
+
+  const duplicate = options.duplicate === true;
+  const timestamp = nowIso(options).replace(/[^0-9]/g, "").slice(0, 14);
+  const draftSource = duplicate
+    ? { ...loaded.event, key: options.draftKey ?? `${loaded.event.key || loaded.entry.id}-copy-${timestamp}`, name: options.name ?? `${loaded.event.name || loaded.event.key || loaded.entry.id} Copy` }
+    : loaded.event;
+  const draft = cloneTravelEventToDraft(draftSource, options);
+  return buildLibraryResult(true, { errors: [], warnings: loaded.warnings, library: loaded.library, entry: loaded.entry, event: loaded.event, draft });
+}
+
+export async function deletePublishedTravelEventFromLibrary(idOrKey, options = {}) {
+  assertOptionsObject(options, "deletePublishedTravelEventFromLibrary");
+  const library = getPublishedTravelEventLibrary(options);
+  const id = String(idOrKey ?? "");
+  const entry = findPublishedEventEntry(library, id);
+  if (!entry) return buildLibraryResult(false, { errors: [`No published Travel Event found for "${id}".`], warnings: [], library, deleted: null });
+  const { [entry.id]: _deleted, ...remainingEvents } = library.events;
+  const nextLibrary = { ...library, events: remainingEvents };
+  if (!options.dryRun) await setGameSettingPublishedLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings: [], library: nextLibrary, deleted: cloneData(entry) });
+}
+
+export function preparePublishedTravelEventLibraryState(options = {}) {
+  assertOptionsObject(options, "preparePublishedTravelEventLibraryState");
+  const library = getPublishedTravelEventLibrary(options);
+  const entries = getPublishedEventEntries(library).map((entry) => {
+    const validation = validatePublishedEventEntry(entry, options);
+    return {
+      ...cloneData(entry),
+      event: undefined,
+      isMalformed: validation.ok !== true,
+      canLoad: validation.ok === true,
+      validationErrors: validation.errors ?? [],
+      validationWarnings: validation.warnings ?? []
+    };
+  });
+  return Object.freeze({
+    settingKey: `${ARCFLIGHT_MODULE_ID}.${PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING}`,
+    version: library.version,
+    entries,
+    count: entries.length,
+    hasEvents: entries.length > 0
   });
 }
 
@@ -1038,14 +1231,13 @@ export function applyTravelEventBuilderRoundFormDataToDraft(draft, formData = {}
       : getRoundActiveStationKeys(round, allowedStations);
     const stationPromptFormData = entry.stationPrompts && typeof entry.stationPrompts === "object" && !Array.isArray(entry.stationPrompts) ? entry.stationPrompts : {};
 
-    const usesStationPromptMap = Object.hasOwn(round, "stationPrompts") || (Array.isArray(round.activeStations) && round.activeStations.some((activeStation) => typeof activeStation === "string"));
     const nextPrompts = requestedActiveStations.map((stationKey) => createRoundStationPromptForEditor(stationKey, existingPrompts.get(stationKey), stationPromptFormData[stationKey] ?? {}));
 
     return {
       ...round,
       openingVignette: Object.hasOwn(entry, "openingVignette") ? coerceFormString(entry.openingVignette, round.openingVignette ?? "") : round.openingVignette,
-      activeStations: usesStationPromptMap ? requestedActiveStations : nextPrompts,
-      ...(usesStationPromptMap ? { stationPrompts: { ...(isPlainObject(round.stationPrompts) ? cloneData(round.stationPrompts) : {}), ...Object.fromEntries(nextPrompts.map((prompt) => [prompt.stationKey, prompt])) } } : {})
+      activeStations: requestedActiveStations,
+      stationPrompts: { ...(isPlainObject(round.stationPrompts) ? cloneData(round.stationPrompts) : {}), ...Object.fromEntries(nextPrompts.map((prompt) => [prompt.stationKey, prompt])) }
     };
   });
 
@@ -1417,7 +1609,7 @@ export function finalizeTravelEventDraft(draft, options = {}) {
     };
   }
 
-  const event = stripBuilderMetadata(materializeDraftRoundsForEventDefinition(validation.normalizedDraft));
+  const event = stripBuilderMetadata(validation.normalizedDraft);
   return {
     ok: true,
     errors: [],
