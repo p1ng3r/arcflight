@@ -1224,7 +1224,7 @@
   background: rgba(20, 18, 16, 0.08);
 }
 
-.arcflight-travel-runner-mvp__session-controls {
+.arcflight-travel-runner-mvp__session-toolbar {
   position: sticky;
   top: 0;
   z-index: 2;
@@ -1232,25 +1232,18 @@
   box-shadow: 0 0.35rem 0.65rem rgba(0, 0, 0, 0.18);
 }
 
-.arcflight-travel-runner-mvp__session-controls-header,
-.arcflight-travel-runner-mvp__session-compact {
+.arcflight-travel-runner-mvp__session-controls-header {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
 }
 
-.arcflight-travel-runner-mvp__session-controls-header h2,
-.arcflight-travel-runner-mvp__session-compact {
+.arcflight-travel-runner-mvp__session-controls-header h2 {
   margin: 0;
 }
 
 .arcflight-travel-runner-mvp__collapse-toggle {
   min-width: 2rem;
-}
-
-.arcflight-travel-runner-mvp__session-compact span {
-  opacity: 0.85;
 }
 
 .arcflight-travel-runner-mvp__session-library summary {
