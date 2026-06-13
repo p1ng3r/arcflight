@@ -455,6 +455,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     canAdvance: Boolean(activeSession && activeSession.currentRoundIndex < activeSession.event.rounds.length - 1 && activeSession.status !== "completed"),
     canComplete: Boolean(activeSession && activeSession.status !== "completed"),
     summary,
+    summaryOutput: prepareTravelEventRunnerSummaryOutputState(activeSession, options),
     summaryJson: summary ? exportTravelEventRunnerSessionToJson(activeSession, options).json : ""
   };
 }
@@ -536,6 +537,116 @@ export function summarizeTravelEventRunnerSession(session, options = {}) {
     }))
   };
   return { ok: true, errors: [], warnings: [], session: activeSession, summary };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatEffectForReport(effect, index) {
+  const label = typeof effect?.label === "string" && effect.label.trim() ? effect.label.trim() : `Proposed Effect ${index + 1}`;
+  return { index, label, json: JSON.stringify(effect ?? {}, null, 2) };
+}
+
+export function prepareTravelEventRunnerSummaryReport(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return { ...normalized, available: false, report: null, reason: normalized.errors?.[0] ?? "Travel Event Runner session is malformed." };
+  if (normalized.session.status !== "completed") return { ok: true, errors: [], warnings: [], session: normalized.session, available: false, report: null, reason: "Completed summary output is unavailable until the runner session is completed." };
+  const summarized = summarizeTravelEventRunnerSession(normalized.session, options);
+  if (!summarized.ok || !summarized.summary) return { ...summarized, available: false, report: null, reason: summarized.errors?.[0] ?? "Unable to prepare completed runner summary." };
+  const summary = summarized.summary;
+  const report = {
+    ...cloneData(summary),
+    available: true,
+    eventName: summary.event.name,
+    eventCategory: summary.event.category,
+    baseDC: summary.event.baseDC,
+    finalOutcomeLabel: summary.suggestedFinalOutcomeLabel,
+    finalOutcomeNarrativeText: summary.finalOutcomeText,
+    proposedEffectsNotice: "Proposed effects have not been applied.",
+    proposedEffectRows: (summary.stagedProposedEffects ?? []).map(formatEffectForReport),
+    rounds: summary.rounds.map((round) => ({
+      ...round,
+      stationRows: Object.entries(round.stationResults ?? {}).map(([stationKey, result]) => ({ stationKey, stationName: humanizeIdentifier(stationKey), result: result ?? "unrecorded", resultLabel: result ? humanizeIdentifier(result) : "Unrecorded" }))
+    }))
+  };
+  return { ok: true, errors: [], warnings: [], session: normalized.session, available: true, report };
+}
+
+export function renderTravelEventRunnerSummaryMarkdown(session, options = {}) {
+  const prepared = prepareTravelEventRunnerSummaryReport(session, options);
+  if (!prepared.available || !prepared.report) return { ...prepared, markdown: "" };
+  const r = prepared.report;
+  const lines = [
+    `# Travel Event Summary — ${r.eventName}`,
+    "",
+    `- **Event Category:** ${r.eventCategory || "Uncategorized"}`,
+    `- **Base DC:** ${r.baseDC}`,
+    `- **Started At:** ${r.startedAt || ""}`,
+    `- **Completed At:** ${r.completedAt || ""}`,
+    `- **Total Score:** ${r.totalScore}`,
+    `- **Suggested Final Outcome:** ${humanizeIdentifier(r.suggestedFinalOutcome)}`,
+    `- **Final Outcome Label:** ${r.finalOutcomeLabel}`,
+    "",
+    "## Final Outcome Narrative",
+    r.finalOutcomeNarrativeText || "No final outcome narrative text provided.",
+    "",
+    "## Round-by-Round Station Results"
+  ];
+  for (const round of r.rounds) {
+    lines.push("", `### Round ${round.roundNumber}: ${round.title}`);
+    for (const row of round.stationRows) lines.push(`- **${row.stationName}** (${row.stationKey}): ${row.resultLabel}`);
+  }
+  lines.push("", "## Pending Consequences / Rewards (Read-only Proposed Effects)", `**${r.proposedEffectsNotice}**`);
+  if (r.proposedEffectRows.length) for (const effect of r.proposedEffectRows) lines.push("", `### ${effect.label}`, "```json", effect.json, "```");
+  else lines.push("", "No proposed effects are attached to the suggested final outcome.");
+  return { ...prepared, markdown: lines.join("\n") };
+}
+
+export function renderTravelEventRunnerSummaryHtml(session, options = {}) {
+  const prepared = prepareTravelEventRunnerSummaryReport(session, options);
+  if (!prepared.available || !prepared.report) return { ...prepared, html: "" };
+  const r = prepared.report;
+  const roundHtml = r.rounds.map((round) => `<h3>Round ${escapeHtml(round.roundNumber)}: ${escapeHtml(round.title)}</h3><ul>${round.stationRows.map((row) => `<li><strong>${escapeHtml(row.stationName)}</strong> (${escapeHtml(row.stationKey)}): ${escapeHtml(row.resultLabel)}</li>`).join("")}</ul>`).join("");
+  const effectsHtml = r.proposedEffectRows.length
+    ? r.proposedEffectRows.map((effect) => `<h3>${escapeHtml(effect.label)}</h3><pre>${escapeHtml(effect.json)}</pre>`).join("")
+    : "<p>No proposed effects are attached to the suggested final outcome.</p>";
+  const html = `<section class="arcflight-travel-runner-summary"><h1>Travel Event Summary — ${escapeHtml(r.eventName)}</h1><ul><li><strong>Event Category:</strong> ${escapeHtml(r.eventCategory || "Uncategorized")}</li><li><strong>Base DC:</strong> ${escapeHtml(r.baseDC)}</li><li><strong>Started At:</strong> ${escapeHtml(r.startedAt)}</li><li><strong>Completed At:</strong> ${escapeHtml(r.completedAt)}</li><li><strong>Total Score:</strong> ${escapeHtml(r.totalScore)}</li><li><strong>Suggested Final Outcome:</strong> ${escapeHtml(humanizeIdentifier(r.suggestedFinalOutcome))}</li><li><strong>Final Outcome Label:</strong> ${escapeHtml(r.finalOutcomeLabel)}</li></ul><h2>Final Outcome Narrative</h2><p>${escapeHtml(r.finalOutcomeNarrativeText || "No final outcome narrative text provided.")}</p><h2>Round-by-Round Station Results</h2>${roundHtml}<h2>Pending Consequences / Rewards (Read-only Proposed Effects)</h2><p><strong>${escapeHtml(r.proposedEffectsNotice)}</strong></p>${effectsHtml}</section>`;
+  return { ...prepared, html };
+}
+
+export function prepareTravelEventRunnerSummaryOutputState(session, options = {}) {
+  const report = prepareTravelEventRunnerSummaryReport(session, options);
+  const markdown = report.available ? renderTravelEventRunnerSummaryMarkdown(session, options).markdown : "";
+  const html = report.available ? renderTravelEventRunnerSummaryHtml(session, options).html : "";
+  return { ...report, markdown, html, canCopyMarkdown: report.available, canCopyHtml: report.available, canPostChat: report.available, canCreateJournal: report.available };
+}
+
+export async function postTravelEventRunnerSummaryToChat(session, options = {}) {
+  const rendered = renderTravelEventRunnerSummaryHtml(session, options);
+  if (!rendered.available || !rendered.html) return { ...rendered, created: false, message: null };
+  const data = { content: rendered.html };
+  if (options.whisper === "gm" || options.gmOnly === true) data.whisper = globalThis.ChatMessage?.getWhisperRecipients?.("GM")?.map((u) => u.id) ?? [];
+  if (options.dryRun === true) return { ...rendered, created: false, messageData: data, message: null };
+  if (!globalThis.ChatMessage?.create) return { ...rendered, ok: false, errors: ["ChatMessage.create is not available."], created: false, message: null };
+  const message = await ChatMessage.create(data);
+  return { ...rendered, created: true, message };
+}
+
+export async function createTravelEventRunnerSummaryJournalEntry(session, options = {}) {
+  const rendered = renderTravelEventRunnerSummaryHtml(session, options);
+  if (!rendered.available || !rendered.html) return { ...rendered, created: false, journalEntry: null };
+  const title = typeof options.title === "string" && options.title.trim() ? options.title.trim() : `Travel Event Summary — ${rendered.report.eventName}`;
+  const data = { name: title, pages: [{ name: "Summary", type: "text", text: { format: 1, content: rendered.html } }] };
+  if (options.dryRun === true) return { ...rendered, created: false, journalData: data, journalEntry: null };
+  if (!globalThis.JournalEntry?.create) return { ...rendered, ok: false, errors: ["JournalEntry.create is not available."], created: false, journalEntry: null };
+  const journalEntry = await JournalEntry.create(data);
+  return { ...rendered, created: true, journalEntry };
 }
 
 export function completeTravelEventRunnerSession(session, options = {}) {
