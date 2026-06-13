@@ -33,6 +33,7 @@
     <div class="arcflight-travel-runner-mvp__actions">
       <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
       <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
+      <button type="button" data-arcflight-runner-import-session>Import Session JSON</button>
       <button type="button" data-arcflight-runner-refresh-sessions>Refresh Sessions</button>
     </div>
 
@@ -153,7 +154,7 @@
           <p class="arcflight-sheet__hint">No proposed effects are attached to the suggested final outcome.</p>
         {{/if}}
 
-        <button type="button" data-arcflight-runner-export>Export Session Summary JSON</button>
+        <button type="button" data-arcflight-runner-export>Export Session JSON</button>
         <textarea readonly class="arcflight-travel-runner-mvp__json">{{state.summaryJson}}</textarea>
       </section>
     {{/if}}

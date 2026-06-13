@@ -17,7 +17,12 @@ import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
   createTravelEventRunnerSession,
+  importTravelEventRunnerSessionFromJson,
   exportTravelEventRunnerSessionToJson,
+  parseTravelEventRunnerSessionJson,
+  prepareTravelEventRunnerSessionImportPreview,
+  saveImportedTravelEventRunnerSessionToLibrary,
+  validateImportedTravelEventRunnerSession,
   prepareTravelEventRunnerSummaryReport,
   renderTravelEventRunnerSummaryMarkdown,
   renderTravelEventRunnerSummaryHtml,
@@ -1476,6 +1481,45 @@ export async function runFrameworkSmokeTest(options = {}) {
     const runnerRetreated = retreatTravelEventRunnerRound(runnerAdvanced.session, { now: "2026-06-12T00:01:05.000Z" });
     const runnerCompleted = completeTravelEventRunnerSession(runnerSetEngineer.session, { now: "2026-06-12T00:01:06.000Z" });
     const runnerExported = exportTravelEventRunnerSessionToJson(runnerCompleted.session, { now: "2026-06-12T00:01:07.000Z" });
+    const runnerExportedData = JSON.parse(runnerExported.json ?? "{}");
+    const runnerHistoricalSession = cloneSmokeData(runnerCompleted.session);
+    runnerHistoricalSession.key = "smoke-import-session";
+    runnerHistoricalSession.name = "Smoke Import Session";
+    runnerHistoricalSession.appliedEffects = { records: [{
+      applicationId: "smoke-application-1",
+      effectIndex: 0,
+      effectKey: "smoke-effect-key",
+      label: "Historical supplies reward",
+      resource: "supplies",
+      mode: "add",
+      value: 1,
+      actorId: actor.id,
+      actorName: actor.name,
+      beforeValue: 3,
+      afterValue: 4,
+      appliedAt: "2026-06-12T00:01:08.000Z",
+      appliedByUserId: "smoke-user",
+      appliedByUserName: "Smoke User",
+      source: "travel-event-runner",
+      undone: true,
+      undoneAt: "2026-06-12T00:01:09.000Z",
+      undoneByUserId: "smoke-user",
+      undoneByUserName: "Smoke User",
+      undoBeforeValue: 4,
+      undoAfterValue: 3,
+      undoReason: "smoke undo"
+    }] };
+    const runnerHistoricalExported = exportTravelEventRunnerSessionToJson(runnerHistoricalSession, { now: "2026-06-12T00:01:10.000Z", userId: "smoke-user", userName: "Smoke User" });
+    const runnerHistoricalExportedData = JSON.parse(runnerHistoricalExported.json ?? "{}");
+    const runnerImportedPreview = importTravelEventRunnerSessionFromJson(runnerHistoricalExported.json, { publishedLibrary: publishedBuilderEvent.library });
+    const runnerMalformedImport = importTravelEventRunnerSessionFromJson("{bad json");
+    const runnerNonObjectImport = importTravelEventRunnerSessionFromJson("[]");
+    const runnerMissingEventPreview = importTravelEventRunnerSessionFromJson(runnerHistoricalExported.json, { publishedLibrary: { version: 1, events: {} } });
+    const runnerDuplicatePreview = importTravelEventRunnerSessionFromJson(runnerHistoricalExported.json, { publishedLibrary: publishedBuilderEvent.library, runnerSessionLibrary: { version: 1, sessions: { "smoke-import-session": { key: "smoke-import-session", name: "Existing", session: runnerHistoricalSession } } } });
+    const runnerSaveCopyImport = await saveImportedTravelEventRunnerSessionToLibrary(runnerDuplicatePreview, { dryRun: true, now: "2026-06-12T00:01:11.000Z" });
+    const runnerOverwriteBlocked = await saveImportedTravelEventRunnerSessionToLibrary(runnerDuplicatePreview, { mode: "overwrite", dryRun: true });
+    const runnerOverwriteImport = await saveImportedTravelEventRunnerSessionToLibrary(runnerDuplicatePreview, { mode: "overwrite", confirmOverwrite: true, dryRun: true, now: "2026-06-12T00:01:12.000Z" });
+    const runnerImportedLoaded = loadTravelEventRunnerSessionFromLibrary(runnerSaveCopyImport.entry?.key, { runnerSessionLibrary: runnerSaveCopyImport.library, publishedLibrary: publishedBuilderEvent.library });
     const runnerIncompleteSummaryOutput = prepareTravelEventRunnerSummaryOutputState(runnerSetEngineer.session);
     const runnerSummaryReport = prepareTravelEventRunnerSummaryReport(runnerCompleted.session);
     const runnerSummaryMarkdown = renderTravelEventRunnerSummaryMarkdown(runnerCompleted.session);
@@ -1604,7 +1648,7 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Publishing current draft stores finalized event with no builder metadata", publishedBuilderEvent.ok === true && publishedBuilderEvent.entry?.event?.builder === undefined && publishedBuilderEvent.entry?.sourceDraftId === savedBuilderLibraryDraft.entry?.id && publishedBuilderEvent.entry?.event?.key === publishableDraft.key, "published finalized entry", publishedBuilderEvent);
     check(result, "Published event preserves inferred round activeStations as string keys", publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.join(",") === "navigator,engineer" && publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.every((station) => typeof station === "string"), "published activeStations inferred in Travel Five order", publishedBuilderEvent.entry?.event?.rounds?.[0]);
     check(result, "Published event preserves final outcome proposedEffects", publishedBuilderEvent.entry?.event?.finalOutcomes?.success?.proposedEffects?.[0]?.label === "Published supplies reward", "published proposed effects", publishedBuilderEvent.entry?.event?.finalOutcomes?.success?.proposedEffects);
-    check(result, "Travel Event Runner helper exports exist", typeof createTravelEventRunnerSession === "function" && typeof prepareTravelEventRunnerState === "function" && typeof setTravelEventRunnerStationResult === "function" && typeof advanceTravelEventRunnerRound === "function" && typeof retreatTravelEventRunnerRound === "function" && typeof completeTravelEventRunnerSession === "function" && typeof exportTravelEventRunnerSessionToJson === "function" && typeof globalThis.game?.arcflight?.createTravelEventRunnerSession === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner === "function", true, { create: typeof createTravelEventRunnerSession, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventRunnerSession });
+    check(result, "Travel Event Runner helper exports exist", typeof createTravelEventRunnerSession === "function" && typeof prepareTravelEventRunnerState === "function" && typeof setTravelEventRunnerStationResult === "function" && typeof advanceTravelEventRunnerRound === "function" && typeof retreatTravelEventRunnerRound === "function" && typeof completeTravelEventRunnerSession === "function" && typeof exportTravelEventRunnerSessionToJson === "function" && typeof importTravelEventRunnerSessionFromJson === "function" && typeof globalThis.game?.arcflight?.createTravelEventRunnerSession === "function" && typeof globalThis.game?.arcflight?.importTravelEventRunnerSessionFromJson === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner === "function", true, { create: typeof createTravelEventRunnerSession, apiCreate: typeof globalThis.game?.arcflight?.createTravelEventRunnerSession });
     check(result, "Travel Event Runner empty published library state is safe", emptyRunnerState.hasPublishedEvents === false && emptyRunnerState.hasSession === false && emptyRunnerState.library?.count === 0, "empty runner state", emptyRunnerState);
     check(result, "Travel Event Runner creates local session from valid published event", runnerSessionCreated.ok === true && runnerSessionCreated.session?.event?.key === "published-smoke" && runnerSessionCreated.session?.status === "active", "created runner session", runnerSessionCreated);
     check(result, "Travel Event Runner current round reads activeStations as string keys", runnerRoundState.currentRound?.activeStations?.join(",") === "navigator,engineer" && runnerRoundState.currentRound.activeStations.every((station) => typeof station === "string"), "runner round active stations", runnerRoundState.currentRound);
@@ -1615,6 +1659,14 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Runner completing session produces final summary", runnerCompleted.ok === true && runnerCompleted.session?.status === "completed" && runnerCompleted.summary?.suggestedFinalOutcome === "success" && runnerCompleted.summary?.rounds?.[0]?.stationResults?.navigator === "success", "completed runner summary", runnerCompleted.summary);
     check(result, "Travel Event Runner final summary includes staged proposedEffects without applying them", runnerCompleted.summary?.stagedProposedEffects?.[0]?.label === "Published supplies reward" && JSON.stringify(qualityResourcesBefore) === JSON.stringify(getShipTravelResources(actor)), "read-only staged proposed effects", { effects: runnerCompleted.summary?.stagedProposedEffects, resources: getShipTravelResources(actor) });
     check(result, "Travel Event Runner export session JSON works", runnerExported.ok === true && /Published Smoke/.test(runnerExported.json ?? "") && /stagedProposedEffects/.test(runnerExported.json ?? ""), "runner export json", runnerExported.json);
+    check(result, "Travel Event Runner session export includes metadata and normalized session", runnerExportedData.exportVersion === 1 && runnerExportedData.exportedAt === "2026-06-12T00:01:07.000Z" && runnerExportedData.session?.status === "completed", "export metadata", runnerExportedData);
+    check(result, "Travel Event Runner session export preserves completed state, staged effects, applied records, and undone metadata", runnerHistoricalExportedData.session?.status === "completed" && runnerHistoricalExportedData.session?.summary?.stagedProposedEffects?.length === 1 && runnerHistoricalExportedData.session?.appliedEffects?.records?.[0]?.undone === true && runnerHistoricalExportedData.session?.appliedEffects?.records?.[0]?.undoReason === "smoke undo", "portable export history", runnerHistoricalExportedData.session?.appliedEffects);
+    check(result, "Travel Event Runner import preview parses valid exported JSON with counts", runnerImportedPreview.ok === true && runnerImportedPreview.preview?.status === "completed" && runnerImportedPreview.preview?.stagedEffectCount === 1 && runnerImportedPreview.preview?.appliedEffectCount === 1 && runnerImportedPreview.preview?.undoneEffectCount === 1, "import preview", runnerImportedPreview.preview);
+    check(result, "Travel Event Runner import malformed and non-object JSON fail safely", runnerMalformedImport.ok === false && runnerNonObjectImport.ok === false, "safe import failures", { malformed: runnerMalformedImport.errors, nonObject: runnerNonObjectImport.errors });
+    check(result, "Travel Event Runner import missing event reference warns without failing", runnerMissingEventPreview.ok === true && runnerMissingEventPreview.warnings?.some((warning) => /not available in this world/.test(warning)), "missing event warning", runnerMissingEventPreview.warnings);
+    check(result, "Travel Event Runner duplicate import key does not silently overwrite", runnerDuplicatePreview.duplicateKey === true && runnerSaveCopyImport.ok === true && runnerSaveCopyImport.entry?.key !== "smoke-import-session" && runnerOverwriteBlocked.ok === false && /explicit confirmation/i.test(runnerOverwriteBlocked.errors?.[0] ?? ""), "duplicate conflict handling", { preview: runnerDuplicatePreview.preview, saveCopy: runnerSaveCopyImport.entry, overwriteBlocked: runnerOverwriteBlocked.errors });
+    check(result, "Travel Event Runner explicit import overwrite writes only Runner Session Library", runnerOverwriteImport.ok === true && runnerOverwriteImport.entry?.key === "smoke-import-session" && Object.keys(runnerOverwriteImport.library?.sessions ?? {}).length === 1, "overwrite import", runnerOverwriteImport.entry);
+    check(result, "Imported completed runner session loads with staged/applied/undone history visible and unapplied", runnerImportedLoaded.ok === true && runnerImportedLoaded.session?.status === "completed" && runnerImportedLoaded.session?.summary?.stagedProposedEffects?.length === 1 && runnerImportedLoaded.session?.appliedEffects?.records?.[0]?.undone === true, "loaded imported session", runnerImportedLoaded.session);
     check(result, "Travel Event Runner staged consequence review helper exports exist", typeof prepareTravelEventStagedEffectReview === "function" && typeof normalizeTravelEventProposedEffectForReview === "function" && typeof prepareTravelEventResourceEffectPreview === "function" && typeof renderTravelEventStagedEffectReviewMarkdown === "function" && typeof renderTravelEventStagedEffectReviewHtml === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventStagedEffectReview === "function" && typeof globalThis.game?.arcflight?.devTools?.renderTravelEventStagedEffectReviewMarkdown === "function", true, { api: typeof globalThis.game?.arcflight?.prepareTravelEventStagedEffectReview, devTools: typeof globalThis.game?.arcflight?.devTools?.renderTravelEventStagedEffectReviewMarkdown });
     check(result, "Travel Event Runner incomplete session staged review is unavailable", runnerIncompleteReview.available === false, "incomplete review", runnerIncompleteReview);
     check(result, "Travel Event Runner completed session with no proposedEffects returns empty staged review safely", runnerEmptyReview.available === true && runnerEmptyReview.review?.effectCount === 0 && runnerEmptyReview.review?.rows?.length === 0, "empty review", runnerEmptyReview.review);

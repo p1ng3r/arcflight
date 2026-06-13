@@ -8,8 +8,10 @@ import {
   createTravelEventRunnerSummaryJournalEntry,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
+  importTravelEventRunnerSessionFromJson,
   loadPublishedTravelEventForRunner,
   postTravelEventRunnerSummaryToChat,
+  saveImportedTravelEventRunnerSessionToLibrary,
   renderTravelEventRunnerSummaryHtml,
   renderTravelEventRunnerSummaryMarkdown,
   renderTravelEventStagedEffectReviewHtml,
@@ -36,6 +38,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-clear]",
   "[data-arcflight-runner-save]",
   "[data-arcflight-runner-save-as]",
+  "[data-arcflight-runner-import-session]",
   "[data-arcflight-runner-load-session]",
   "[data-arcflight-runner-duplicate-session]",
   "[data-arcflight-runner-delete-session]",
@@ -282,6 +285,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-clear")) return this.#clearSession();
     if (target.hasAttribute("data-arcflight-runner-save")) return this.#saveCurrentSession({ saveAs: false });
     if (target.hasAttribute("data-arcflight-runner-save-as")) return this.#saveCurrentSession({ saveAs: true });
+    if (target.hasAttribute("data-arcflight-runner-import-session")) return this.#importSessionJson();
     if (target.hasAttribute("data-arcflight-runner-load-session")) return this.#loadSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-duplicate-session")) return this.#duplicateSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-delete-session")) return this.#deleteSelectedSession(target);
@@ -390,10 +394,85 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
-    await copyTextToClipboard(exported.json);
-    this.statusMessage = "Session summary JSON copied to clipboard.";
+    const filename = `arcflight-runner-session-${this.session?.key || this.session?.event?.key || "export"}.json`;
+    if (globalThis.saveDataToFile) saveDataToFile(exported.json, "application/json", filename);
+    else await copyTextToClipboard(exported.json);
+    this.statusMessage = globalThis.saveDataToFile ? "Session JSON export downloaded." : "Session JSON copied to clipboard.";
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
+  }
+
+  async #importSessionJson() {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.prompt !== "function" || typeof dialogV2?.confirm !== "function") {
+      this.statusMessage = "Import requires Foundry DialogV2; Runner Session Library was not changed.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+
+    let jsonText = "";
+    try {
+      jsonText = await dialogV2.prompt({
+        window: { title: "Import Runner Session JSON" },
+        content: `<form><div class="form-group"><label for="arcflight-runner-import-json">Paste runner session JSON</label><textarea id="arcflight-runner-import-json" name="jsonText" rows="16" placeholder='{"exportVersion":1,"session":{...}}'></textarea></div><p class="notes">Preview is shown before anything is saved. Import never mutates actors, resources, AP/RAP, chat, journals, combat, drafts, or published events.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Preview Import",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            return String(new FormData(form).get("jsonText") ?? "");
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      jsonText = "";
+    }
+    if (!jsonText) {
+      this.statusMessage = "Import cancelled; Runner Session Library was not changed.";
+      return this.render(true);
+    }
+
+    const imported = importTravelEventRunnerSessionFromJson(jsonText);
+    const preview = imported.preview ?? {};
+    const warnings = (preview.warnings ?? []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+    const errors = (preview.errors ?? []).map((error) => `<li>${escapeHtml(error)}</li>`).join("");
+    const content = `<section><h2>Import Preview</h2><dl><dt>Session</dt><dd>${escapeHtml(preview.sessionName)}</dd><dt>Key</dt><dd>${escapeHtml(preview.sessionKey)}</dd><dt>Event</dt><dd>${escapeHtml(preview.eventName)} (${escapeHtml(preview.eventKey)})</dd><dt>Status</dt><dd>${escapeHtml(preview.status)}</dd><dt>Current Round</dt><dd>${escapeHtml(preview.currentRound)}</dd><dt>Completed</dt><dd>${preview.completed ? "Yes" : "No"}</dd><dt>Staged Effects</dt><dd>${escapeHtml(preview.stagedEffectCount)}</dd><dt>Applied Effects</dt><dd>${escapeHtml(preview.appliedEffectCount)}</dd><dt>Undone Effects</dt><dd>${escapeHtml(preview.undoneEffectCount)}</dd></dl>${errors ? `<h3>Errors</h3><ul>${errors}</ul>` : ""}${warnings ? `<h3>Warnings</h3><ul>${warnings}</ul>` : ""}${preview.duplicateKey ? "<p><strong>Conflict:</strong> A saved session with this key already exists. Default import saves a new copy.</p>" : ""}</section>`;
+    if (!imported.ok) {
+      await dialogV2.confirm({ window: { title: "Import Blocked" }, content, yes: { label: "Close" }, no: { label: "Cancel" }, rejectClose: false });
+      this.statusMessage = imported.errors?.[0] ?? "Import blocked by validation errors.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    let mode = "copy";
+    let confirmed = false;
+    if (preview.duplicateKey) {
+      mode = await dialogV2.prompt({
+        window: { title: "Import Key Conflict" },
+        content: `${content}<form><div class="form-group"><label>Conflict action</label><select name="mode"><option value="copy" selected>Save as new copy</option><option value="overwrite">Overwrite existing</option><option value="cancel">Cancel</option></select></div></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Continue",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            return String(new FormData(form).get("mode") ?? "cancel");
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+      confirmed = mode === "copy" || mode === "overwrite";
+      if (mode === "overwrite") {
+        confirmed = await dialogV2.confirm({ window: { title: "Confirm Overwrite" }, content: `${content}<p><strong>Overwrite is permanent for the saved Runner Session Library entry.</strong></p>`, yes: { label: "Overwrite Existing" }, no: { label: "Cancel" }, rejectClose: false });
+      }
+    } else {
+      confirmed = await dialogV2.confirm({ window: { title: "Save Imported Runner Session" }, content, yes: { label: "Import / Save" }, no: { label: "Cancel" }, rejectClose: false });
+    }
+    if (!confirmed) {
+      this.statusMessage = "Import cancelled; Runner Session Library was not changed.";
+      return this.render(true);
+    }
+    const saved = await saveImportedTravelEventRunnerSessionToLibrary(imported, { mode, confirmOverwrite: mode === "overwrite" });
+    return this.#handleSavedSessionResult(saved, "Imported runner session into the Runner Session Library.");
   }
 
 
