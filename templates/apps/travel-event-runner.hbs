@@ -194,7 +194,7 @@
           <p class="arcflight-sheet__hint">No proposed effects are attached to the final outcome.</p>
         {{/if}}
 
-        <h3>Applied Records</h3>
+        <h3>Applied Effects History</h3>
         {{#if state.effectApplication.records.length}}
           <div class="arcflight-travel-runner-mvp__effects">
             {{#each state.effectApplication.records}}
@@ -208,7 +208,15 @@
                   <dt>Before</dt><dd>{{beforeValue}}</dd>
                   <dt>After</dt><dd>{{afterValue}}</dd>
                   <dt>Applied At</dt><dd>{{appliedAt}}</dd>
+                  <dt>Status</dt><dd>{{status}}</dd>
+                  {{#if currentValue}}<dt>Current Value</dt><dd>{{currentValue}}</dd>{{/if}}
                 </dl>
+                {{#if undoable}}
+                  <button type="button" data-arcflight-runner-undo-effect data-application-id="{{applicationId}}">Undo Applied Effect</button>
+                {{else}}
+                  {{#if undone}}<p class="arcflight-sheet__hint"><strong>Undone:</strong> {{undoneAt}}</p>{{/if}}
+                  {{#if undoWarning}}<p class="arcflight-sheet__hint"><strong>Undo Warning:</strong> {{undoWarning}}</p>{{/if}}
+                {{/if}}
               </article>
             {{/each}}
           </div>

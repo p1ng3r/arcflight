@@ -15,6 +15,7 @@ import {
   renderTravelEventStagedEffectReviewHtml,
   renderTravelEventStagedEffectReviewMarkdown,
   applyTravelEventRunnerSelectedEffects,
+  undoTravelEventAppliedEffect,
   loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventEffectApplicationState,
   prepareTravelEventRunnerState,
@@ -48,7 +49,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-copy-review-markdown]",
   "[data-arcflight-runner-copy-review-html]",
   "[data-arcflight-runner-refresh-application]",
-  "[data-arcflight-runner-apply-effects]"
+  "[data-arcflight-runner-apply-effects]",
+  "[data-arcflight-runner-undo-effect]"
 ].join(", ");
 
 
@@ -283,6 +285,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-copy-review-html")) return this.#copyReviewHtml();
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
+    if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
   }
 
   #getSelectedShipActor() {
@@ -481,6 +484,39 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ui.notifications?.info?.(this.statusMessage);
     } else {
       this.statusMessage = result.errors?.[0] ?? result.warnings?.[0] ?? "No effects were applied.";
+      ui.notifications?.warn?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  async #confirmUndo(record, actor) {
+    const content = `<p>Undo this applied travel resource effect?</p><ul><li><strong>Actor:</strong> ${record.actorName || actor?.name || "Unknown"}</li><li><strong>Resource:</strong> ${record.resource}</li><li><strong>Current value:</strong> ${record.afterValue}</li><li><strong>Value after undo:</strong> ${record.beforeValue}</li></ul>`;
+    if (globalThis.foundry?.applications?.api?.DialogV2?.confirm) return foundry.applications.api.DialogV2.confirm({ window: { title: "Undo Applied Effect" }, content, yes: { label: "Undo Applied Effect" }, no: { label: "Cancel" } });
+    return globalThis.confirm?.(`Undo ${record.resource} on ${record.actorName || actor?.name || "the ship"} from ${record.afterValue} to ${record.beforeValue}?`) === true;
+  }
+
+  async #undoAppliedEffect(target) {
+    const applicationId = target.dataset.applicationId ?? "";
+    const record = (this.session?.appliedEffects?.records ?? []).find((entry) => entry.applicationId === applicationId);
+    const actor = this.#getSelectedShipActor() ?? record?.actorId ?? null;
+    if (!record) {
+      this.statusMessage = "Applied effect record was not found.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const confirmed = await this.#confirmUndo(record, actor);
+    if (!confirmed) {
+      this.statusMessage = "Undo cancelled; applied effect history was not changed.";
+      return this.render(true);
+    }
+    const result = await undoTravelEventAppliedEffect(this.session, actor, applicationId);
+    this.session = result.session ?? this.session;
+    this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+    if (result.undone) {
+      this.statusMessage = "Applied effect was undone and recorded in history.";
+      ui.notifications?.info?.(this.statusMessage);
+    } else {
+      this.statusMessage = result.warnings?.[0] ?? result.errors?.[0] ?? "Applied effect could not be undone.";
       ui.notifications?.warn?.(this.statusMessage);
     }
     return this.render(true);

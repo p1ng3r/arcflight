@@ -240,7 +240,14 @@ function normalizeTravelEventAppliedEffects(appliedEffects = {}) {
     beforeValue: Number.isFinite(Number(record.beforeValue)) ? Number(record.beforeValue) : null,
     afterValue: Number.isFinite(Number(record.afterValue)) ? Number(record.afterValue) : null,
     appliedAt: typeof record.appliedAt === "string" ? record.appliedAt : "",
-    source: record.source === "travel-event-runner" ? "travel-event-runner" : "travel-event-runner"
+    source: record.source === "travel-event-runner" ? "travel-event-runner" : "travel-event-runner",
+    undone: record.undone === true,
+    undoneAt: typeof record.undoneAt === "string" ? record.undoneAt : "",
+    undoneByUserId: typeof record.undoneByUserId === "string" ? record.undoneByUserId : "",
+    undoneByUserName: typeof record.undoneByUserName === "string" ? record.undoneByUserName : "",
+    undoBeforeValue: Number.isFinite(Number(record.undoBeforeValue)) ? Number(record.undoBeforeValue) : null,
+    undoAfterValue: Number.isFinite(Number(record.undoAfterValue)) ? Number(record.undoAfterValue) : null,
+    undoReason: typeof record.undoReason === "string" ? record.undoReason : ""
   })) : [];
   return { records };
 }
@@ -744,6 +751,7 @@ export function getTravelEventAppliedEffectRecords(session, options = {}) {
 export function isTravelEventEffectApplied(session, effectIdOrIndex, options = {}) {
   const key = getEffectApplicationKey(effectIdOrIndex);
   return getTravelEventAppliedEffectRecords(session, options).some((record) => {
+    if (record.undone === true) return false;
     if (key.effectId) return record.effectId === key.effectId;
     return key.effectIndex != null && record.effectIndex === key.effectIndex;
   });
@@ -785,7 +793,8 @@ export function buildTravelEventAppliedEffectRecord(session, actor, effectRow, b
     beforeValue: beforeAfter?.before?.[effect?.resource] ?? null,
     afterValue: beforeAfter?.after?.[effect?.resource] ?? null,
     appliedAt: nowIso(options),
-    source: "travel-event-runner"
+    source: "travel-event-runner",
+    undone: false
   };
 }
 
@@ -824,7 +833,7 @@ export function prepareTravelEventEffectApplicationState(session, actorOrId = nu
     hasTarget: actorValid,
     noTargetReason: actorValid ? "" : (actor ? "Selected actor is not an Arcflight ship." : actorWarning),
     rows,
-    records: getTravelEventAppliedEffectRecords(normalized.session, options),
+    records: prepareTravelEventAppliedEffectHistoryState(normalized.session, actor, options).records,
     canApply: rows.some((row) => row.selectable)
   };
 }
@@ -850,6 +859,80 @@ export async function applyTravelEventRunnerResourceEffect(session, actorOrId, e
   const record = buildTravelEventAppliedEffectRecord(normalized.session, actor, row, { before: preview.before, after: resources }, options);
   const marked = markTravelEventEffectApplied(normalized.session, record, options);
   return { ok: true, errors: [], warnings: preview.warnings ?? [], session: marked.session, applied: true, record, preview, resources };
+}
+
+export function isTravelEventAppliedEffectUndoable(session, actorOrId, appliedRecord, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return { undoable: false, status: "not undoable", warning: normalized.errors?.[0] ?? "Runner session is malformed." };
+  const record = appliedRecord ?? {};
+  if (record.undone === true) return { undoable: false, status: "undone", warning: record.undoneAt ? `Undone at ${record.undoneAt}.` : "Already undone." };
+  if (!record.applicationId) return { undoable: false, status: "not undoable", warning: "Applied record is missing an application id." };
+  if (!(record.effectType === "resource" && REVIEW_RESOURCE_KEYS.includes(record.resource) && REVIEW_RESOURCE_MODES.includes(record.mode))) return { undoable: false, status: "not undoable", warning: "Applied record is not a reversible resource effect." };
+  const actor = resolveApplicationActor(actorOrId ?? record.actorId);
+  if (!actor) return { undoable: false, status: "not undoable", warning: "Target ship actor is missing." };
+  let resources;
+  try {
+    resources = getShipTravelResources(actor);
+  } catch (_error) {
+    return { undoable: false, status: "not undoable", warning: "Target actor is not an Arcflight ship." };
+  }
+  const currentValue = resources?.[record.resource];
+  if (currentValue !== record.afterValue) return { undoable: false, status: "blocked", warning: "Cannot undo because the ship resource has changed since this effect was applied.", actor, currentValue };
+  return { undoable: true, status: "applied", warning: "", actor, currentValue, undoAfterValue: record.beforeValue };
+}
+
+export function buildTravelEventEffectUndoRecord(session, actor, appliedRecord, beforeAfter, options = {}) {
+  return {
+    undone: true,
+    undoneAt: nowIso(options),
+    undoneByUserId: options.userId ?? globalThis.game?.user?.id ?? "",
+    undoneByUserName: options.userName ?? globalThis.game?.user?.name ?? "",
+    undoBeforeValue: beforeAfter?.before?.[appliedRecord.resource] ?? null,
+    undoAfterValue: beforeAfter?.after?.[appliedRecord.resource] ?? null,
+    undoReason: typeof options.reason === "string" ? options.reason : ""
+  };
+}
+
+export function markTravelEventAppliedEffectUndone(session, applicationId, undoRecord, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const records = Array.isArray(nextSession.appliedEffects?.records) ? nextSession.appliedEffects.records : [];
+  const index = records.findIndex((record) => record.applicationId === applicationId);
+  if (index < 0) return { ok: false, errors: ["Applied effect record was not found."], warnings: [], session: normalized.session };
+  if (records[index].undone === true) return { ok: false, errors: ["Applied effect record has already been undone."], warnings: [], session: normalized.session };
+  records[index] = { ...records[index], ...cloneData(undoRecord) };
+  nextSession.appliedEffects = { records };
+  nextSession.updatedAt = nowIso(options);
+  return { ok: true, errors: [], warnings: [], session: nextSession, record: cloneData(records[index]) };
+}
+
+export function prepareTravelEventAppliedEffectHistoryState(session, actorOrId = null, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return { ...normalized, available: false, records: [] };
+  const records = getTravelEventAppliedEffectRecords(normalized.session, options).map((record) => {
+    const undo = isTravelEventAppliedEffectUndoable(normalized.session, actorOrId ?? record.actorId, record, options);
+    return { ...record, status: undo.status, undoable: undo.undoable, undoWarning: undo.warning, currentValue: undo.currentValue ?? null, undoTargetValue: record.beforeValue };
+  });
+  return { ok: true, errors: [], warnings: [], session: normalized.session, available: true, records };
+}
+
+export async function undoTravelEventAppliedEffect(session, actorOrId, applicationIdOrEffectIndex, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return { ...normalized, undone: false };
+  const records = getTravelEventAppliedEffectRecords(normalized.session, options);
+  const applicationId = String(applicationIdOrEffectIndex ?? "");
+  const record = records.find((entry) => entry.applicationId === applicationId || (applicationId && String(entry.effectIndex) === applicationId));
+  if (!record) return { ok: false, errors: ["Applied effect record was not found."], warnings: [], session: normalized.session, undone: false };
+  const undoable = isTravelEventAppliedEffectUndoable(normalized.session, actorOrId ?? record.actorId, record, options);
+  if (!undoable.undoable) return { ok: false, errors: undoable.status === "blocked" ? [] : [undoable.warning], warnings: undoable.status === "blocked" ? [undoable.warning] : [], session: normalized.session, undone: false, blocked: true, reason: undoable.warning };
+  const actor = undoable.actor;
+  const before = getShipTravelResources(actor);
+  const changes = { [record.resource]: record.beforeValue - before[record.resource] };
+  const after = options.dryRun ? previewShipTravelResourceChange(actor, changes).after : await updateShipTravelResources(actor, changes, options.resourceOptions ?? {});
+  const undoRecord = buildTravelEventEffectUndoRecord(normalized.session, actor, record, { before, after }, options);
+  const marked = markTravelEventAppliedEffectUndone(normalized.session, record.applicationId, undoRecord, options);
+  return { ok: marked.ok, errors: marked.errors ?? [], warnings: marked.warnings ?? [], session: marked.session, undone: marked.ok, record: marked.record, undoRecord, resources: after };
 }
 
 export async function applyTravelEventRunnerSelectedEffects(session, actorOrId, selectedEffectIds = [], options = {}) {
