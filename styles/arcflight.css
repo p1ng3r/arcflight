@@ -1224,6 +1224,18 @@
   background: rgba(20, 18, 16, 0.08);
 }
 
+.arcflight-travel-runner-mvp__session-controls {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(28, 24, 20, 0.96);
+  box-shadow: 0 0.35rem 0.65rem rgba(0, 0, 0, 0.18);
+}
+
+.arcflight-travel-runner-mvp__session-library summary {
+  cursor: pointer;
+}
+
 .arcflight-travel-runner-mvp__header h1,
 .arcflight-travel-runner-mvp__panel h2,
 .arcflight-travel-runner-mvp__station-card h3 {

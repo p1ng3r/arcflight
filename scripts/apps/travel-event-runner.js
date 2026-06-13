@@ -211,6 +211,7 @@ function defaultSelectedEventId(options = {}) {
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
+  #pendingScrollTop = null;
 
   constructor(options = {}) {
     super(options);
@@ -230,6 +231,37 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   static PARTS = {
     runner: { template: arcflightTemplatePath("apps/travel-event-runner.hbs") }
   };
+
+  render(force, options) {
+    if (force === true) this.#captureScrollPosition();
+    return super.render(force, options);
+  }
+
+  #getScrollContainer() {
+    return this.element?.querySelector?.(".window-content")
+      ?? this.element?.querySelector?.(".application-content")
+      ?? this.element?.querySelector?.("[data-application-part]")
+      ?? this.element?.querySelector?.(".arcflight-travel-runner-mvp")
+      ?? this.element
+      ?? null;
+  }
+
+  #captureScrollPosition() {
+    const scrollContainer = this.#getScrollContainer();
+    if (scrollContainer && Number.isFinite(Number(scrollContainer.scrollTop))) this.#pendingScrollTop = scrollContainer.scrollTop;
+  }
+
+  #restoreScrollPosition() {
+    if (this.#pendingScrollTop == null) return;
+    const scrollTop = this.#pendingScrollTop;
+    this.#pendingScrollTop = null;
+    const restore = () => {
+      const scrollContainer = this.#getScrollContainer();
+      if (scrollContainer) scrollContainer.scrollTop = scrollTop;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+    else restore();
+  }
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
@@ -253,6 +285,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.element?.addEventListener("click", this.#boundRunnerClick);
     this.element?.removeEventListener("change", this.#boundRunnerChange);
     this.element?.addEventListener("change", this.#boundRunnerChange);
+    this.#restoreScrollPosition();
   }
 
   async #onRunnerChange(event) {
@@ -390,7 +423,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #exportSummary() {
     const exported = exportTravelEventRunnerSessionToJson(this.session);
     if (!exported.ok || !exported.json) {
-      this.statusMessage = exported.errors?.[0] ?? "No session summary is available to export.";
+      this.statusMessage = exported.errors?.[0] ?? "No runner session is available to export.";
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
