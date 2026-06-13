@@ -26,6 +26,11 @@ import {
   prepareTravelEventRunnerSummaryOutputState,
   prepareTravelEventStagedEffectReview,
   prepareTravelEventEffectApplicationState,
+  prepareTravelEventAppliedEffectHistoryState,
+  undoTravelEventAppliedEffect,
+  isTravelEventAppliedEffectUndoable,
+  markTravelEventAppliedEffectUndone,
+  buildTravelEventEffectUndoRecord,
   applyTravelEventRunnerSelectedEffects,
   applyTravelEventRunnerResourceEffect,
   getTravelEventAppliedEffectRecords,
@@ -1060,8 +1065,14 @@ export async function runFrameworkSmokeTest(options = {}) {
       && typeof applyTravelEventRunnerResourceEffect === "function"
       && typeof getTravelEventAppliedEffectRecords === "function"
       && typeof isTravelEventEffectApplied === "function"
-      && typeof globalThis.game?.arcflight?.prepareTravelEventEffectApplicationState === "function";
+      && typeof prepareTravelEventAppliedEffectHistoryState === "function"
+      && typeof undoTravelEventAppliedEffect === "function"
+      && typeof isTravelEventAppliedEffectUndoable === "function"
+      && typeof markTravelEventAppliedEffectUndone === "function"
+      && typeof buildTravelEventEffectUndoRecord === "function"
+      && typeof globalThis.game?.arcflight?.prepareTravelEventAppliedEffectHistoryState === "function";
     check(result, "Travel Event Runner manual apply helper exports exist", applicationHelpersExist, true, { prepareTravelEventEffectApplicationState: typeof prepareTravelEventEffectApplicationState, api: typeof globalThis.game?.arcflight?.prepareTravelEventEffectApplicationState });
+    check(result, "Travel Event Runner Save As flow does not rely on unsupported browser dialogs", !/globalThis\.prompt|window\.prompt|globalThis\.confirm|window\.confirm|\bprompt\?\.|\balert\s*\(|\bconfirm\?\./.test(String(ArcflightTravelEventRunner)), "no browser prompt/alert", "DialogV2 or safe cancellation only");
     const incompleteApplyState = prepareTravelEventEffectApplicationState(activeRunnerSessionCreated.session, actor);
     check(result, "Incomplete runner session application state is unavailable", incompleteApplyState.available === false, "unavailable until completed", incompleteApplyState.reason);
     const completedNoTargetApplyState = prepareTravelEventEffectApplicationState(loadedCompletedRunnerSession.session, null);
@@ -1082,6 +1093,45 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Apply selected resource effect does not mutate AP/RAP", stringifySmokeData(applyEconomyBefore) === stringifySmokeData(applyEconomyAfter), "AP/RAP unchanged", { before: applyEconomyBefore, after: applyEconomyAfter });
     check(result, "Apply selected resource effect does not post chat or create JournalEntry", applyChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && applyJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0), "chat/journal unchanged", { chatBefore: applyChatBefore, journalBefore: applyJournalBefore });
     check(result, "Applied record is stored on session and staged proposedEffects remain visible", getTravelEventAppliedEffectRecords(manualApplyResult.session).length === 1 && (manualApplyResult.session.summary?.stagedProposedEffects ?? []).length === expectedCompletedEffects.length, "record stored with staged source", manualApplyResult.session.appliedEffects);
+
+    const undoHelpersExported = typeof globalThis.game?.arcflight?.undoTravelEventAppliedEffect === "function"
+      && typeof globalThis.game?.arcflight?.isTravelEventAppliedEffectUndoable === "function";
+    check(result, "Travel Event Runner undo helper exports exist", undoHelpersExported, true, { undoTravelEventAppliedEffect: typeof undoTravelEventAppliedEffect, api: typeof globalThis.game?.arcflight?.undoTravelEventAppliedEffect });
+    const historyAfterApply = prepareTravelEventAppliedEffectHistoryState(manualApplyResult.session, actor);
+    const firstAppliedRecord = historyAfterApply.records?.[0];
+    check(result, "Applied history state lists applied records", historyAfterApply.records?.length === 1 && firstAppliedRecord?.applicationId === manualApplyResult.applied?.[0]?.applicationId, "history listed", historyAfterApply.records);
+    check(result, "Applied record is undoable immediately after manual apply", firstAppliedRecord?.undoable === true && firstAppliedRecord?.status === "applied", "undoable", firstAppliedRecord);
+    const undoResourcesBefore = getShipTravelResources(actor);
+    const undoEconomyBefore = getShipActionEconomy(actor);
+    const undoChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
+    const undoJournalBefore = globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0;
+    const undoCombatsBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
+    const undoResult = firstAppliedRecord ? await undoTravelEventAppliedEffect(manualApplyResult.session, actor, firstAppliedRecord.applicationId, { now: "2026-01-01T00:04:45.000Z" }) : { ok: false, undone: false, session: manualApplyResult.session };
+    const undoResourcesAfter = getShipTravelResources(actor);
+    const undoEconomyAfter = getShipActionEconomy(actor);
+    const historyAfterUndo = prepareTravelEventAppliedEffectHistoryState(undoResult.session, actor);
+    check(result, "Undo restores resource from afterValue to beforeValue", undoResult.undone === true && firstAppliedRecord && undoResourcesAfter[firstAppliedRecord.resource] === firstAppliedRecord.beforeValue, "resource restored", { before: undoResourcesBefore, after: undoResourcesAfter, record: firstAppliedRecord });
+    check(result, "Undo does not mutate AP/RAP", stringifySmokeData(undoEconomyBefore) === stringifySmokeData(undoEconomyAfter), "AP/RAP unchanged", { before: undoEconomyBefore, after: undoEconomyAfter });
+    check(result, "Undo does not post chat, create JournalEntry, or start combat", undoChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && undoJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0) && undoCombatsBefore === (globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0), "automation unchanged", {});
+    check(result, "Undo records undone metadata and undone record remains visible", historyAfterUndo.records?.length === 1 && historyAfterUndo.records[0].undone === true && historyAfterUndo.records[0].undoneAt === "2026-01-01T00:04:45.000Z", "undone history", historyAfterUndo.records?.[0]);
+    const savedUndoneSession = await saveTravelEventRunnerSessionToLibrary(undoResult.session, { key: "smoke-undone-runner-session", overwrite: true, dryRun: true, now: "2026-01-01T00:04:46.000Z" });
+    const loadedUndoneSession = loadTravelEventRunnerSessionFromLibrary("smoke-undone-runner-session", { runnerSessionLibrary: savedUndoneSession.library });
+    check(result, "Runner session save/load normalization preserves undone history", loadedUndoneSession.session?.appliedEffects?.records?.[0]?.undone === true && loadedUndoneSession.session.appliedEffects.records[0].undoneAt === "2026-01-01T00:04:45.000Z", "undone history preserved", loadedUndoneSession.session?.appliedEffects);
+    const undoTwiceBefore = getShipTravelResources(actor);
+    const undoTwiceResult = firstAppliedRecord ? await undoTravelEventAppliedEffect(undoResult.session, actor, firstAppliedRecord.applicationId) : { undone: false };
+    check(result, "Undo cannot run twice on same record", undoTwiceResult.undone === false && stringifySmokeData(undoTwiceBefore) === stringifySmokeData(getShipTravelResources(actor)), "second undo blocked", undoTwiceResult.errors ?? undoTwiceResult.warnings);
+    const missingActorUndo = firstAppliedRecord ? await undoTravelEventAppliedEffect(manualApplyResult.session, "arcflight-missing-smoke-actor", firstAppliedRecord.applicationId, { dryRun: true }) : { undone: false };
+    check(result, "Undo blocks if target actor is missing", missingActorUndo.undone === false, "missing actor blocked", missingActorUndo.errors ?? missingActorUndo.warnings);
+    const notArcflightUndo = firstAppliedRecord ? await undoTravelEventAppliedEffect(manualApplyResult.session, { id: "not-arcflight", name: "Not Arcflight", type: "npc" }, firstAppliedRecord.applicationId, { dryRun: true }) : { undone: false };
+    check(result, "Undo blocks if actor is not Arcflight-enabled", notArcflightUndo.undone === false, "not Arcflight blocked", notArcflightUndo.errors ?? notArcflightUndo.warnings);
+    const changedResourceSession = manualApplyResult.session;
+    const changedBeforeBlockedUndo = getShipTravelResources(actor);
+    const changedUndo = firstAppliedRecord ? await undoTravelEventAppliedEffect(changedResourceSession, actor, firstAppliedRecord.applicationId) : { undone: false, warnings: [] };
+    const changedAfter = getShipTravelResources(actor);
+    check(result, "Undo blocks if current resource no longer equals applied afterValue and does not mutate resources", changedUndo.undone === false && changedUndo.warnings?.some((warning) => warning.includes("ship resource has changed")) && stringifySmokeData(changedBeforeBlockedUndo) === stringifySmokeData(changedAfter), "changed resource blocked", changedUndo.warnings);
+    check(result, "Staged proposedEffects remain visible after undo", (undoResult.session.summary?.stagedProposedEffects ?? []).length === expectedCompletedEffects.length, "staged effects preserved", undoResult.session.summary?.stagedProposedEffects);
+    const reapplyAfterUndo = readyApplyRow ? await applyTravelEventRunnerSelectedEffects(undoResult.session, actor, [readyApplyRow.index], { now: "2026-01-01T00:04:50.000Z" }) : { applied: [] };
+    check(result, "Reapply after undo creates a new applied record", reapplyAfterUndo.applied?.length === 1 && getTravelEventAppliedEffectRecords(reapplyAfterUndo.session).length === 2, "new record", reapplyAfterUndo.session?.appliedEffects);
     const doubleApplyBefore = getShipTravelResources(actor);
     const runnerDoubleApplyResult = readyApplyRow ? await applyTravelEventRunnerSelectedEffects(manualApplyResult.session, actor, [readyApplyRow.index]) : { applied: [] };
     const doubleApplyAfter = getShipTravelResources(actor);

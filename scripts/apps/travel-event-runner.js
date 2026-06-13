@@ -15,6 +15,7 @@ import {
   renderTravelEventStagedEffectReviewHtml,
   renderTravelEventStagedEffectReviewMarkdown,
   applyTravelEventRunnerSelectedEffects,
+  undoTravelEventAppliedEffect,
   loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventEffectApplicationState,
   prepareTravelEventRunnerState,
@@ -48,7 +49,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-copy-review-markdown]",
   "[data-arcflight-runner-copy-review-html]",
   "[data-arcflight-runner-refresh-application]",
-  "[data-arcflight-runner-apply-effects]"
+  "[data-arcflight-runner-apply-effects]",
+  "[data-arcflight-runner-undo-effect]"
 ].join(", ");
 
 
@@ -86,6 +88,17 @@ function cloneData(value) {
   if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
   if (typeof structuredClone === "function") return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
+}
+
+
+function escapeHtml(value) {
+  if (globalThis.foundry?.utils?.escapeHTML) return foundry.utils.escapeHTML(String(value ?? ""));
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function formatTimestamp(value) {
@@ -283,6 +296,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-copy-review-html")) return this.#copyReviewHtml();
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
+    if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
   }
 
   #getSelectedShipActor() {
@@ -486,6 +500,92 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+  async #confirmRunnerDialog({ title, content, yesLabel = "Confirm", unavailableMessage = "This action requires Foundry DialogV2." } = {}) {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.confirm === "function") return dialogV2.confirm({ window: { title }, content, yes: { label: yesLabel }, no: { label: "Cancel" }, rejectClose: false });
+    ui.notifications?.warn?.(unavailableMessage);
+    return false;
+  }
+
+  async #confirmUndo(record, actor) {
+    const content = `<p>Undo this applied travel resource effect?</p><ul><li><strong>Actor:</strong> ${record.actorName || actor?.name || "Unknown"}</li><li><strong>Resource:</strong> ${record.resource}</li><li><strong>Current value:</strong> ${record.afterValue}</li><li><strong>Value after undo:</strong> ${record.beforeValue}</li></ul>`;
+    return this.#confirmRunnerDialog({
+      title: "Undo Applied Effect",
+      content,
+      yesLabel: "Undo Applied Effect",
+      unavailableMessage: "Undo requires Foundry DialogV2; this environment cannot show the confirmation dialog."
+    });
+  }
+
+  async #undoAppliedEffect(target) {
+    const applicationId = target.dataset.applicationId ?? "";
+    const record = (this.session?.appliedEffects?.records ?? []).find((entry) => entry.applicationId === applicationId);
+    const actor = this.#getSelectedShipActor() ?? record?.actorId ?? null;
+    if (!record) {
+      this.statusMessage = "Applied effect record was not found.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const confirmed = await this.#confirmUndo(record, actor);
+    if (!confirmed) {
+      this.statusMessage = "Undo cancelled; applied effect history was not changed.";
+      return this.render(true);
+    }
+    const result = await undoTravelEventAppliedEffect(this.session, actor, applicationId);
+    this.session = result.session ?? this.session;
+    this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+    if (result.undone) {
+      this.statusMessage = "Applied effect was undone and recorded in history.";
+      ui.notifications?.info?.(this.statusMessage);
+    } else {
+      this.statusMessage = result.warnings?.[0] ?? result.errors?.[0] ?? "Applied effect could not be undone.";
+      ui.notifications?.warn?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  #getDefaultSaveAsName() {
+    const sessionName = typeof this.session?.name === "string" ? this.session.name.trim() : "";
+    const eventName = typeof this.session?.event?.name === "string" ? this.session.event.name.trim() : "";
+    return sessionName || (eventName ? `${eventName} Session Copy` : "Travel Event Session Copy");
+  }
+
+  async #requestSaveAsSessionName() {
+    const defaultName = this.#getDefaultSaveAsName();
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.prompt !== "function") {
+      this.statusMessage = "Save As cancelled.";
+      ui.notifications?.warn?.("Save As requires Foundry DialogV2; this environment cannot show the naming dialog.");
+      return { cancelled: true, name: "" };
+    }
+
+    const content = `<form class="arcflight-travel-runner-mvp__save-as-form"><div class="form-group"><label for="arcflight-travel-runner-save-as-name">Session name</label><input id="arcflight-travel-runner-save-as-name" name="sessionName" type="text" value="${escapeHtml(defaultName)}" autocomplete="off" autofocus></div></form>`;
+    let name = null;
+    try {
+      name = await dialogV2.prompt({
+        window: { title: "Save Runner Session As" },
+        content,
+        rejectClose: false,
+        ok: {
+          label: "Save Copy",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form")
+              ?? dialog?.element?.querySelector?.("form")
+              ?? dialog?.element?.[0]?.querySelector?.("form");
+            const formData = form ? new FormData(form) : null;
+            return String(formData?.get("sessionName") ?? "").trim();
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      return { cancelled: true, name: "" };
+    }
+
+    if (typeof name !== "string") return { cancelled: true, name: "" };
+    return { cancelled: false, name: name.trim() };
+  }
+
   async #saveCurrentSession({ saveAs = false } = {}) {
     if (!this.session) {
       this.statusMessage = "No runner session is active to save.";
@@ -495,13 +595,17 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     const options = {};
     if (saveAs) {
-      const defaultName = `${this.session.event?.name ?? "Travel Event"} Session Copy`;
-      const name = globalThis.prompt?.("Save runner session as:", defaultName) ?? defaultName;
-      if (!name || !String(name).trim()) {
-        this.statusMessage = "Save As cancelled; Runner Session Library was not changed.";
+      const requested = await this.#requestSaveAsSessionName();
+      if (requested.cancelled) {
+        this.statusMessage = "Save As cancelled.";
         return this.render(true);
       }
-      options.name = String(name).trim();
+      if (!requested.name) {
+        this.statusMessage = "Save As requires a session name.";
+        ui.notifications?.warn?.(this.statusMessage);
+        return this.render(true);
+      }
+      options.name = requested.name;
       options.key = "";
       const copy = cloneData(this.session);
       delete copy.key;
@@ -573,7 +677,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #deleteSelectedSession(target) {
     const key = this.#getSessionKeyFromTarget(target);
     const label = target.dataset.sessionName || key;
-    const confirmed = globalThis.confirm?.(`Delete saved runner session "${label}"? This does not modify published events, actors, resources, chat, or combat.`) ?? true;
+    const confirmed = await this.#confirmRunnerDialog({
+      title: "Delete Runner Session",
+      content: `<p>Delete saved runner session <strong>${escapeHtml(label)}</strong>?</p><p>This does not modify published events, actors, resources, chat, or combat.</p>`,
+      yesLabel: "Delete",
+      unavailableMessage: "Delete requires Foundry DialogV2; this environment cannot show the confirmation dialog."
+    });
     if (!confirmed) {
       this.statusMessage = "Delete cancelled; Runner Session Library was not changed.";
       return this.render(true);
