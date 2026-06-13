@@ -214,6 +214,8 @@ import {
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
 
+const cloneSmokeData = (value) => globalThis.foundry?.utils?.deepClone?.(value) ?? JSON.parse(JSON.stringify(value));
+
 const EXPECTED_CORE_TRAVEL_EVENT_KEYS = Object.freeze([
   "black-tide-crossing",
   "derelict-lantern-wreck",
@@ -1378,11 +1380,11 @@ export async function runFrameworkSmokeTest(options = {}) {
     const runnerReview = prepareTravelEventStagedEffectReview(runnerCompleted.session, { resources: { supplies: 3, hull: 4, strain: 1, lifeveil: 2, morale: 5, maxHull: 10, maxStrain: 3, maxLifeveil: 8 } });
     const runnerReviewMarkdown = renderTravelEventStagedEffectReviewMarkdown(runnerCompleted.session);
     const runnerReviewHtml = renderTravelEventStagedEffectReviewHtml({ ...runnerCompleted.session, event: { ...runnerCompleted.session.event, name: "<script>unsafe</script>" } });
-    const runnerEmptyReviewSession = cloneData(runnerCompleted.session);
+    const runnerEmptyReviewSession = cloneSmokeData(runnerCompleted.session);
     runnerEmptyReviewSession.event.finalOutcomes.success.proposedEffects = [];
     runnerEmptyReviewSession.summary = null;
     const runnerEmptyReview = prepareTravelEventStagedEffectReview(runnerEmptyReviewSession);
-    const runnerMixedReviewSession = cloneData(runnerCompleted.session);
+    const runnerMixedReviewSession = cloneSmokeData(runnerCompleted.session);
     runnerMixedReviewSession.event.finalOutcomes.success.proposedEffects = [
       { type: "resource", resource: "hull", mode: "add", value: 2, label: "Hull patch" },
       { type: "note", label: "GM Note", text: "Read-only note" },
