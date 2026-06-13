@@ -160,6 +160,65 @@
 
 
 
+    {{#if state.effectApplication.available}}
+      <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__effect-application">
+        <h2>Manual Apply Proposed Effects</h2>
+        {{#if state.effectApplication.hasTarget}}
+          <p class="arcflight-sheet__hint"><strong>Target Ship:</strong> {{state.effectApplication.targetActorName}}</p>
+        {{else}}
+          <p class="arcflight-sheet__hint"><strong>Warning:</strong> {{state.effectApplication.noTargetReason}}</p>
+        {{/if}}
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-refresh-application>Refresh Application Preview</button>
+          <button type="button" data-arcflight-runner-apply-effects {{#unless state.effectApplication.canApply}}disabled{{/unless}}>Apply Selected Effects</button>
+        </div>
+        {{#if state.effectApplication.rows.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.effectApplication.rows}}
+              <article class="arcflight-travel-runner-mvp__effect-row">
+                <h3>{{#if selectable}}<input type="checkbox" data-arcflight-runner-apply-effect value="{{index}}" checked>{{else}}<input type="checkbox" disabled>{{/if}} {{displayIndex}}. {{label}}</h3>
+                <dl>
+                  <dt>Type</dt><dd>{{type}}</dd>
+                  <dt>Status</dt><dd>{{status}}</dd>
+                  <dt>Resource</dt><dd>{{resource}}</dd>
+                  <dt>Mode</dt><dd>{{mode}}</dd>
+                  <dt>Value</dt><dd>{{value}}</dd>
+                  <dt>Current Value</dt><dd>{{currentValue}}</dd>
+                  <dt>Preview Value</dt><dd>{{previewValue}}</dd>
+                </dl>
+                {{#if warnings.length}}<p class="arcflight-sheet__hint"><strong>Warnings:</strong> {{warnings}}</p>{{/if}}
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No proposed effects are attached to the final outcome.</p>
+        {{/if}}
+
+        <h3>Applied Records</h3>
+        {{#if state.effectApplication.records.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.effectApplication.records}}
+              <article class="arcflight-travel-runner-mvp__effect-row">
+                <strong>{{effectLabel}}</strong>
+                <dl>
+                  <dt>Resource</dt><dd>{{resource}}</dd>
+                  <dt>Mode</dt><dd>{{mode}}</dd>
+                  <dt>Value</dt><dd>{{value}}</dd>
+                  <dt>Actor</dt><dd>{{actorName}}</dd>
+                  <dt>Before</dt><dd>{{beforeValue}}</dd>
+                  <dt>After</dt><dd>{{afterValue}}</dd>
+                  <dt>Applied At</dt><dd>{{appliedAt}}</dd>
+                </dl>
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No effects from this runner session have been applied yet.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+
     <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__staged-review">
       <h2>Staged Consequence Review</h2>
       {{#if state.stagedEffectReview.available}}

@@ -1,6 +1,6 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
-import { getShipTravelResources } from "../documents/ships.js";
+import { getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
@@ -218,9 +218,31 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     startedAt: typeof session.startedAt === "string" ? session.startedAt : nowIso(options),
     updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowIso(options),
     completedAt: typeof session.completedAt === "string" ? session.completedAt : "",
-    summary: session.summary && typeof session.summary === "object" ? cloneData(session.summary) : null
+    summary: session.summary && typeof session.summary === "object" ? cloneData(session.summary) : null,
+    appliedEffects: normalizeTravelEventAppliedEffects(session.appliedEffects)
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
+}
+
+function normalizeTravelEventAppliedEffects(appliedEffects = {}) {
+  const source = isPlainObject(appliedEffects) ? appliedEffects : {};
+  const records = Array.isArray(source.records) ? source.records.filter(isPlainObject).map((record) => ({
+    applicationId: typeof record.applicationId === "string" ? record.applicationId : "",
+    effectId: typeof record.effectId === "string" ? record.effectId : "",
+    effectIndex: Number.isInteger(Number(record.effectIndex)) ? Number(record.effectIndex) : null,
+    effectLabel: typeof record.effectLabel === "string" ? record.effectLabel : "",
+    effectType: typeof record.effectType === "string" ? record.effectType : "",
+    resource: typeof record.resource === "string" ? record.resource : "",
+    mode: typeof record.mode === "string" ? record.mode : "",
+    value: Number.isFinite(Number(record.value)) ? Number(record.value) : null,
+    actorId: typeof record.actorId === "string" ? record.actorId : "",
+    actorName: typeof record.actorName === "string" ? record.actorName : "",
+    beforeValue: Number.isFinite(Number(record.beforeValue)) ? Number(record.beforeValue) : null,
+    afterValue: Number.isFinite(Number(record.afterValue)) ? Number(record.afterValue) : null,
+    appliedAt: typeof record.appliedAt === "string" ? record.appliedAt : "",
+    source: record.source === "travel-event-runner" ? "travel-event-runner" : "travel-event-runner"
+  })) : [];
+  return { records };
 }
 
 function prepareStationRows(session, round, roundResult) {
@@ -594,8 +616,19 @@ export function prepareTravelEventResourceEffectPreview(effect, shipOrResources 
   const mode = effect?.mode;
   const value = Number(effect?.value);
   const currentValue = resources && Object.hasOwn(resources, resource) && Number.isFinite(Number(resources[resource])) ? Number(resources[resource]) : null;
-  const previewValue = currentValue == null || !Number.isFinite(value) ? null : (mode === "set" ? value : currentValue + value);
+  let previewValue = currentValue == null || !Number.isFinite(value) ? null : (mode === "set" ? value : currentValue + value);
   const warnings = [];
+  const actor = options.ship ?? null;
+  if (actor && currentValue != null && Number.isFinite(value)) {
+    try {
+      const changes = { [resource]: (mode === "set" ? value : currentValue + value) - currentValue };
+      const helperPreview = previewShipTravelResourceChange(actor, changes);
+      previewValue = helperPreview.after?.[resource] ?? previewValue;
+      warnings.push(...(helperPreview.warnings ?? []));
+    } catch (_error) {
+      // Review previews can also run against plain resource snapshots.
+    }
+  }
   const maxKey = getResourceMaxKey(resource);
   const maxValue = maxKey && resources && Number.isFinite(Number(resources[maxKey])) ? Number(resources[maxKey]) : null;
   if (previewValue != null && previewValue < 0) warnings.push(`${resource} preview value ${previewValue} is below minimum 0.`);
@@ -674,6 +707,170 @@ export function prepareTravelEventStagedEffectReviewState(session, options = {})
   const markdown = review.available ? renderTravelEventStagedEffectReviewMarkdown(session, options).markdown : "";
   const html = review.available ? renderTravelEventStagedEffectReviewHtml(session, options).html : "";
   return { ...review, markdown, html, canCopyMarkdown: review.available, canCopyHtml: review.available };
+}
+
+function resolveApplicationActor(actorOrId) {
+  if (!actorOrId) return null;
+  if (typeof actorOrId === "object") return actorOrId;
+  return globalThis.game?.actors?.get?.(String(actorOrId)) ?? null;
+}
+
+function getEffectApplicationKey(effectRowOrIndex) {
+  if (Number.isInteger(Number(effectRowOrIndex))) return { effectIndex: Number(effectRowOrIndex), effectId: "" };
+  const row = effectRowOrIndex ?? {};
+  const effectId = typeof row.effectId === "string" && row.effectId.length > 0 ? row.effectId : (typeof row.id === "string" ? row.id : "");
+  const effectIndex = Number.isInteger(Number(row.index)) ? Number(row.index) : null;
+  return { effectIndex, effectId };
+}
+
+function findStagedEffect(session, effectRowOrIndex, options = {}) {
+  const summarized = summarizeTravelEventRunnerSession(session, options);
+  const effects = Array.isArray(summarized.summary?.stagedProposedEffects) ? summarized.summary.stagedProposedEffects : [];
+  const key = getEffectApplicationKey(effectRowOrIndex);
+  if (key.effectIndex != null && effects[key.effectIndex] !== undefined) return { effect: effects[key.effectIndex], index: key.effectIndex, effectId: key.effectId };
+  if (key.effectId) {
+    const index = effects.findIndex((effect) => effect?.id === key.effectId || effect?.effectId === key.effectId);
+    if (index >= 0) return { effect: effects[index], index, effectId: key.effectId };
+  }
+  return { effect: null, index: key.effectIndex, effectId: key.effectId };
+}
+
+export function getTravelEventAppliedEffectRecords(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return [];
+  return cloneData(normalized.session.appliedEffects?.records ?? []);
+}
+
+export function isTravelEventEffectApplied(session, effectIdOrIndex, options = {}) {
+  const key = getEffectApplicationKey(effectIdOrIndex);
+  return getTravelEventAppliedEffectRecords(session, options).some((record) => {
+    if (key.effectId) return record.effectId === key.effectId;
+    return key.effectIndex != null && record.effectIndex === key.effectIndex;
+  });
+}
+
+export function markTravelEventEffectApplied(session, appliedRecord, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const records = Array.isArray(nextSession.appliedEffects?.records) ? nextSession.appliedEffects.records : [];
+  nextSession.appliedEffects = { records: [...records, cloneData(appliedRecord)] };
+  nextSession.updatedAt = nowIso(options);
+  return { ok: true, errors: [], warnings: [], session: nextSession, record: cloneData(appliedRecord) };
+}
+
+function buildResourceEffectChanges(actor, effect) {
+  const resources = getShipTravelResources(actor);
+  const value = Number(effect.value);
+  const target = effect.mode === "set" ? value : resources[effect.resource] + value;
+  return { [effect.resource]: target - resources[effect.resource] };
+}
+
+export function buildTravelEventAppliedEffectRecord(session, actor, effectRow, beforeAfter, options = {}) {
+  const effect = effectRow?.raw ?? effectRow?.effect ?? effectRow;
+  const index = Number.isInteger(Number(effectRow?.index)) ? Number(effectRow.index) : null;
+  const effectId = typeof effect?.id === "string" ? effect.id : (typeof effect?.effectId === "string" ? effect.effectId : "");
+  const effectLabel = typeof effect?.label === "string" && effect.label.trim() ? effect.label.trim() : (index == null ? "Staged Effect" : `Staged Effect ${index + 1}`);
+  return {
+    applicationId: `${session?.key || session?.event?.key || "runner"}-${effectId || (index ?? "effect")}-${nowIso(options).replace(/[^0-9]/g, "")}`,
+    effectId,
+    effectIndex: index,
+    effectLabel,
+    effectType: effect?.type ?? "",
+    resource: effect?.resource ?? "",
+    mode: effect?.mode ?? "",
+    value: Number.isFinite(Number(effect?.value)) ? Number(effect.value) : null,
+    actorId: actor?.id ?? "",
+    actorName: actor?.name ?? "",
+    beforeValue: beforeAfter?.before?.[effect?.resource] ?? null,
+    afterValue: beforeAfter?.after?.[effect?.resource] ?? null,
+    appliedAt: nowIso(options),
+    source: "travel-event-runner"
+  };
+}
+
+export function prepareTravelEventEffectApplicationState(session, actorOrId = null, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return { ...normalized, available: false, reason: normalized.errors?.[0] ?? "Travel Event Runner session is malformed.", rows: [], records: [] };
+  if (normalized.session.status !== "completed") return { ok: true, errors: [], warnings: [], session: normalized.session, available: false, reason: "Manual effect application is unavailable until the runner session is completed.", rows: [], records: getTravelEventAppliedEffectRecords(normalized.session, options) };
+  const actor = resolveApplicationActor(actorOrId ?? options.actor ?? options.actorId);
+  let actorResources = null;
+  let actorValid = false;
+  const actorWarning = actor ? "" : "Select an Arcflight ship token or actor to apply effects.";
+  if (actor) {
+    try {
+      actorResources = getShipTravelResources(actor);
+      actorValid = true;
+    } catch (_error) {
+      actorValid = false;
+    }
+  }
+  const review = prepareTravelEventStagedEffectReview(normalized.session, { ...options, resources: actorResources });
+  const rows = (review.review?.rows ?? []).map((row) => {
+    const applied = isTravelEventEffectApplied(normalized.session, row, options);
+    const selectable = actorValid && row.type === "resource" && row.status === "ready" && row.supported === true && !applied;
+    const status = applied ? "already applied" : (!actorValid && row.type === "resource" && row.status === "ready" ? "no target" : row.status);
+    return { ...row, applied, selectable, status, selected: selectable };
+  });
+  return {
+    ok: true,
+    errors: [],
+    warnings: actorWarning ? [actorWarning] : [],
+    session: normalized.session,
+    available: true,
+    actor,
+    targetActorId: actor?.id ?? "",
+    targetActorName: actorValid ? actor.name : "",
+    hasTarget: actorValid,
+    noTargetReason: actorValid ? "" : (actor ? "Selected actor is not an Arcflight ship." : actorWarning),
+    rows,
+    records: getTravelEventAppliedEffectRecords(normalized.session, options),
+    canApply: rows.some((row) => row.selectable)
+  };
+}
+
+export async function applyTravelEventRunnerResourceEffect(session, actorOrId, effectRowOrIndex, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return { ...normalized, applied: false };
+  if (normalized.session.status !== "completed") return { ok: false, errors: ["Manual effect application is unavailable until the runner session is completed."], warnings: [], session: normalized.session, applied: false };
+  const actor = resolveApplicationActor(actorOrId);
+  if (!actor) return { ok: false, errors: ["Select an Arcflight ship token or actor to apply effects."], warnings: [], session: normalized.session, applied: false };
+  try {
+    getShipTravelResources(actor);
+  } catch (_error) {
+    return { ok: false, errors: ["Selected actor is not an Arcflight ship."], warnings: [], session: normalized.session, applied: false };
+  }
+  const found = findStagedEffect(normalized.session, effectRowOrIndex, options);
+  if (!found.effect) return { ok: false, errors: ["Unknown staged effect id/index."], warnings: [], session: normalized.session, applied: false };
+  const row = normalizeTravelEventProposedEffectForReview(found.effect, found.index, { ...options, ship: actor });
+  if (!(row.type === "resource" && row.status === "ready" && row.supported === true)) return { ok: false, errors: ["Staged effect is not a supported resource effect."], warnings: row.warnings ?? [], session: normalized.session, applied: false };
+  if (isTravelEventEffectApplied(normalized.session, row, options)) return { ok: false, errors: [], warnings: [`${row.label} has already been applied for this runner session.`], session: normalized.session, applied: false, blocked: true, reason: "already-applied" };
+  const preview = previewShipTravelResourceChange(actor, buildResourceEffectChanges(actor, found.effect));
+  const resources = options.dryRun ? preview.after : await updateShipTravelResources(actor, preview.changes, options.resourceOptions ?? {});
+  const record = buildTravelEventAppliedEffectRecord(normalized.session, actor, row, { before: preview.before, after: resources }, options);
+  const marked = markTravelEventEffectApplied(normalized.session, record, options);
+  return { ok: true, errors: [], warnings: preview.warnings ?? [], session: marked.session, applied: true, record, preview, resources };
+}
+
+export async function applyTravelEventRunnerSelectedEffects(session, actorOrId, selectedEffectIds = [], options = {}) {
+  const selected = Array.isArray(selectedEffectIds) ? selectedEffectIds : [];
+  let currentSession = normalizeTravelEventRunnerSession(session, options).session;
+  const applied = [];
+  const skipped = [];
+  const errors = [];
+  const warnings = [];
+  for (const selection of selected) {
+    const result = await applyTravelEventRunnerResourceEffect(currentSession, actorOrId, selection, options);
+    if (result.applied) {
+      applied.push(result.record);
+      currentSession = result.session;
+    } else {
+      skipped.push(selection);
+    }
+    errors.push(...(result.errors ?? []));
+    warnings.push(...(result.warnings ?? []));
+  }
+  return { ok: errors.length === 0, errors, warnings, session: currentSession, applied, skipped };
 }
 
 export function prepareTravelEventRunnerSummaryReport(session, options = {}) {

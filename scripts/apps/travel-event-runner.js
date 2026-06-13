@@ -14,7 +14,9 @@ import {
   renderTravelEventRunnerSummaryMarkdown,
   renderTravelEventStagedEffectReviewHtml,
   renderTravelEventStagedEffectReviewMarkdown,
+  applyTravelEventRunnerSelectedEffects,
   loadTravelEventRunnerSessionFromLibrary,
+  prepareTravelEventEffectApplicationState,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
@@ -44,7 +46,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-refresh-summary]",
   "[data-arcflight-runner-refresh-review]",
   "[data-arcflight-runner-copy-review-markdown]",
-  "[data-arcflight-runner-copy-review-html]"
+  "[data-arcflight-runner-copy-review-html]",
+  "[data-arcflight-runner-refresh-application]",
+  "[data-arcflight-runner-apply-effects]"
 ].join(", ");
 
 
@@ -213,14 +217,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey });
+    const targetActor = this.#getSelectedShipActor();
+    const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey, actor: targetActor });
+    state.effectApplication = prepareTravelEventEffectApplicationState(this.session, targetActor);
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
       state,
       selectedEventId: this.selectedEventId,
       statusMessage: this.statusMessage,
-      hardBoundaryHint: "Manual MVP only: no dice automation, actor mutation, resource application, chat posting, combat, encounters, AP/RAP, or published-event edits. Proposed effects are staged/read-only.",
+      hardBoundaryHint: "Manual MVP only: no automatic application, combat, encounters, AP/RAP, or published-event edits. Proposed effects apply only after explicit GM selection.",
       resultValues: ["criticalFailure", "failure", "success", "criticalSuccess", "skipped"]
     };
   }
@@ -275,6 +281,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-refresh-review")) return this.#refreshReview();
     if (target.hasAttribute("data-arcflight-runner-copy-review-markdown")) return this.#copyReviewMarkdown();
     if (target.hasAttribute("data-arcflight-runner-copy-review-html")) return this.#copyReviewHtml();
+    if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
+    if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
+  }
+
+  #getSelectedShipActor() {
+    const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+    for (const token of controlled) {
+      const actor = token?.actor;
+      if (!actor) continue;
+      try {
+        if (prepareTravelEventEffectApplicationState(this.session, actor).hasTarget) return actor;
+      } catch (_error) {
+        // Try the next available actor source.
+      }
+    }
+    return null;
   }
 
   async #startSelectedEvent() {
@@ -434,6 +456,33 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async #refreshReview() {
     this.statusMessage = this.session?.status === "completed" ? "Staged consequence review refreshed. Review only; effects have not been applied." : "Staged consequence review is unavailable until this runner session is completed.";
+    return this.render(true);
+  }
+
+  async #refreshApplicationPreview() {
+    this.statusMessage = this.session?.status === "completed" ? "Manual apply preview refreshed." : "Manual apply preview is unavailable until this runner session is completed.";
+    return this.render(true);
+  }
+
+  async #applySelectedEffects() {
+    const checked = Array.from(this.element?.querySelectorAll?.("[data-arcflight-runner-apply-effect]:checked") ?? []);
+    const selectedEffectIds = checked.map((input) => Number(input.value)).filter((value) => Number.isInteger(value));
+    if (!selectedEffectIds.length) {
+      this.statusMessage = "Select at least one ready resource effect before applying.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const actor = this.#getSelectedShipActor();
+    const result = await applyTravelEventRunnerSelectedEffects(this.session, actor, selectedEffectIds);
+    this.session = result.session ?? this.session;
+    this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+    if (result.applied?.length) {
+      this.statusMessage = `Applied ${result.applied.length} selected travel resource effect(s). Save the runner session to preserve records.`;
+      ui.notifications?.info?.(this.statusMessage);
+    } else {
+      this.statusMessage = result.errors?.[0] ?? result.warnings?.[0] ?? "No effects were applied.";
+      ui.notifications?.warn?.(this.statusMessage);
+    }
     return this.render(true);
   }
 
