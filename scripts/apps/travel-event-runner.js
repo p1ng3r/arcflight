@@ -34,6 +34,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-previous]",
   "[data-arcflight-runner-next]",
   "[data-arcflight-runner-complete]",
+  "[data-arcflight-runner-toggle-session-actions]",
   "[data-arcflight-runner-toggle-current-session]",
   "[data-arcflight-runner-export]",
   "[data-arcflight-runner-clear]",
@@ -222,6 +223,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.statusMessage = "Select a published finalized travel event to begin.";
     this.uiState = {
       currentSessionCollapsed: options.currentSessionCollapsed !== false,
+      sessionActionsExpanded: options.sessionActionsExpanded === true,
       scrollTop: 0,
       scrollSelector: ""
     };
@@ -317,6 +319,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey, actor: targetActor });
     state.effectApplication = prepareTravelEventEffectApplicationState(this.session, targetActor);
     state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
+    state.sessionActionsExpanded = this.uiState.sessionActionsExpanded;
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
@@ -363,6 +366,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-previous")) return this.#retreatRound();
     if (target.hasAttribute("data-arcflight-runner-next")) return this.#advanceRound();
     if (target.hasAttribute("data-arcflight-runner-complete")) return this.#completeEvent();
+    if (target.hasAttribute("data-arcflight-runner-toggle-session-actions")) return this.#toggleSessionActions();
     if (target.hasAttribute("data-arcflight-runner-toggle-current-session")) return this.#toggleCurrentSession();
     if (target.hasAttribute("data-arcflight-runner-export")) return this.#exportSummary();
     if (target.hasAttribute("data-arcflight-runner-clear")) return this.#clearSession();
@@ -384,6 +388,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
+  }
+
+  async #toggleSessionActions() {
+    this.uiState.sessionActionsExpanded = !this.uiState.sessionActionsExpanded;
+    this.statusMessage = this.uiState.sessionActionsExpanded ? "Session actions expanded." : "Session actions collapsed.";
+    return this.render(true);
   }
 
   async #toggleCurrentSession() {

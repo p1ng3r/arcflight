@@ -6,6 +6,10 @@
   </header>
 
   <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-toolbar">
+    <button type="button" class="arcflight-travel-runner-mvp__action-toggle" data-arcflight-runner-toggle-session-actions aria-label="{{#if state.sessionActionsExpanded}}Collapse Session Actions{{else}}Expand Session Actions{{/if}}" aria-expanded="{{#if state.sessionActionsExpanded}}true{{else}}false{{/if}}">
+      {{#if state.sessionActionsExpanded}}▼{{else}}▶{{/if}} Session Actions
+    </button>
+    {{#if state.sessionActionsExpanded}}
     <div class="arcflight-travel-runner-mvp__actions">
       <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
       <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
@@ -13,6 +17,7 @@
       <button type="button" data-arcflight-runner-import-session>Import Session JSON</button>
       <button type="button" data-arcflight-runner-clear {{#unless state.hasSession}}disabled{{/unless}}>Clear Local Session</button>
     </div>
+    {{/if}}
   </section>
 
   <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-controls {{#if state.currentSessionCollapsed}}arcflight-travel-runner-mvp__session-controls--collapsed{{/if}}">
