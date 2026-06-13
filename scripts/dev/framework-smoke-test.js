@@ -24,6 +24,11 @@ import {
   postTravelEventRunnerSummaryToChat,
   createTravelEventRunnerSummaryJournalEntry,
   prepareTravelEventRunnerSummaryOutputState,
+  prepareTravelEventStagedEffectReview,
+  normalizeTravelEventProposedEffectForReview,
+  prepareTravelEventResourceEffectPreview,
+  renderTravelEventStagedEffectReviewMarkdown,
+  renderTravelEventStagedEffectReviewHtml,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
   cloneTravelEventRunnerSession,
   deleteTravelEventRunnerSessionFromLibrary,
@@ -208,6 +213,8 @@ import {
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
 const SMOKE_TEST_FLAG = "frameworkSmokeTestHelper";
+
+const cloneSmokeData = (value) => globalThis.foundry?.utils?.deepClone?.(value) ?? JSON.parse(JSON.stringify(value));
 
 const EXPECTED_CORE_TRAVEL_EVENT_KEYS = Object.freeze([
   "black-tide-crossing",
@@ -1349,7 +1356,7 @@ export async function runFrameworkSmokeTest(options = {}) {
         ...completeQualityDraft.finalOutcomes,
         success: {
           ...completeQualityDraft.finalOutcomes.success,
-          proposedEffects: [createTravelBuilderResourceEffect({ resource: "supplies", mode: "add", value: 2, label: "Published supplies reward" })]
+          proposedEffects: [createTravelBuilderResourceEffect({ resource: "supplies", mode: "add", value: 1, label: "Published supplies reward" })]
         }
       }
     });
@@ -1369,6 +1376,27 @@ export async function runFrameworkSmokeTest(options = {}) {
     const runnerSummaryReport = prepareTravelEventRunnerSummaryReport(runnerCompleted.session);
     const runnerSummaryMarkdown = renderTravelEventRunnerSummaryMarkdown(runnerCompleted.session);
     const runnerSummaryHtml = renderTravelEventRunnerSummaryHtml(runnerCompleted.session);
+    const runnerIncompleteReview = prepareTravelEventStagedEffectReview(runnerSetEngineer.session);
+    const runnerReview = prepareTravelEventStagedEffectReview(runnerCompleted.session, { resources: { supplies: 3, hull: 4, strain: 1, lifeveil: 2, morale: 5, maxHull: 10, maxStrain: 3, maxLifeveil: 8 } });
+    const runnerReviewMarkdown = renderTravelEventStagedEffectReviewMarkdown(runnerCompleted.session);
+    const runnerReviewHtml = renderTravelEventStagedEffectReviewHtml({ ...runnerCompleted.session, event: { ...runnerCompleted.session.event, name: "<script>unsafe</script>" } });
+    const runnerEmptyReviewSession = cloneSmokeData(runnerCompleted.session);
+    runnerEmptyReviewSession.event.finalOutcomes.success.proposedEffects = [];
+    runnerEmptyReviewSession.summary = null;
+    const runnerEmptyReview = prepareTravelEventStagedEffectReview(runnerEmptyReviewSession);
+    const runnerMixedReviewSession = cloneSmokeData(runnerCompleted.session);
+    runnerMixedReviewSession.event.finalOutcomes.success.proposedEffects = [
+      { type: "resource", resource: "hull", mode: "add", value: 2, label: "Hull patch" },
+      { type: "note", label: "GM Note", text: "Read-only note" },
+      { type: "clock", label: "Unsupported clock" },
+      "malformed"
+    ];
+    runnerMixedReviewSession.summary = null;
+    const runnerMixedReviewBefore = JSON.stringify(runnerMixedReviewSession);
+    const runnerResourcesBeforeReview = JSON.stringify(getShipTravelResources(actor));
+    const runnerMixedReview = prepareTravelEventStagedEffectReview(runnerMixedReviewSession, { resources: getShipTravelResources(actor) });
+    const runnerResourcesAfterReview = JSON.stringify(getShipTravelResources(actor));
+    const runnerReviewNoSessionMutation = runnerMixedReviewBefore === JSON.stringify(runnerMixedReviewSession);
     const runnerSessionBeforeSummary = JSON.stringify(runnerCompleted.session);
     prepareTravelEventRunnerSummaryReport(runnerCompleted.session);
     const runnerChatIncomplete = await postTravelEventRunnerSummaryToChat(runnerSetEngineer.session, { dryRun: true });
@@ -1483,6 +1511,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Runner completing session produces final summary", runnerCompleted.ok === true && runnerCompleted.session?.status === "completed" && runnerCompleted.summary?.suggestedFinalOutcome === "success" && runnerCompleted.summary?.rounds?.[0]?.stationResults?.navigator === "success", "completed runner summary", runnerCompleted.summary);
     check(result, "Travel Event Runner final summary includes staged proposedEffects without applying them", runnerCompleted.summary?.stagedProposedEffects?.[0]?.label === "Published supplies reward" && JSON.stringify(qualityResourcesBefore) === JSON.stringify(getShipTravelResources(actor)), "read-only staged proposed effects", { effects: runnerCompleted.summary?.stagedProposedEffects, resources: getShipTravelResources(actor) });
     check(result, "Travel Event Runner export session JSON works", runnerExported.ok === true && /Published Smoke/.test(runnerExported.json ?? "") && /stagedProposedEffects/.test(runnerExported.json ?? ""), "runner export json", runnerExported.json);
+    check(result, "Travel Event Runner staged consequence review helper exports exist", typeof prepareTravelEventStagedEffectReview === "function" && typeof normalizeTravelEventProposedEffectForReview === "function" && typeof prepareTravelEventResourceEffectPreview === "function" && typeof renderTravelEventStagedEffectReviewMarkdown === "function" && typeof renderTravelEventStagedEffectReviewHtml === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventStagedEffectReview === "function" && typeof globalThis.game?.arcflight?.devTools?.renderTravelEventStagedEffectReviewMarkdown === "function", true, { api: typeof globalThis.game?.arcflight?.prepareTravelEventStagedEffectReview, devTools: typeof globalThis.game?.arcflight?.devTools?.renderTravelEventStagedEffectReviewMarkdown });
+    check(result, "Travel Event Runner incomplete session staged review is unavailable", runnerIncompleteReview.available === false, "incomplete review", runnerIncompleteReview);
+    check(result, "Travel Event Runner completed session with no proposedEffects returns empty staged review safely", runnerEmptyReview.available === true && runnerEmptyReview.review?.effectCount === 0 && runnerEmptyReview.review?.rows?.length === 0, "empty review", runnerEmptyReview.review);
+    check(result, "Travel Event Runner resource proposedEffects return detailed staged review rows", runnerReview.available === true && runnerReview.review?.rows?.[0]?.label === "Published supplies reward" && runnerReview.review?.rows?.[0]?.type === "resource" && runnerReview.review?.rows?.[0]?.resource === "supplies" && runnerReview.review?.rows?.[0]?.mode === "add" && runnerReview.review?.rows?.[0]?.value === 1 && /supplies/.test(runnerReview.review?.rows?.[0]?.rawJson ?? ""), "resource review", runnerReview.review?.rows?.[0]);
+    check(result, "Travel Event Runner staged review supported and unsupported counts are correct", runnerMixedReview.review?.supportedEffectCount === 2 && runnerMixedReview.review?.unsupportedEffectCount === 2, "mixed counts", runnerMixedReview.review);
+    check(result, "Travel Event Runner note effect appears as read-only note", runnerMixedReview.review?.rows?.[1]?.status === "note" && runnerMixedReview.review?.rows?.[1]?.type === "note", "note review", runnerMixedReview.review?.rows?.[1]);
+    check(result, "Travel Event Runner malformed and unknown effects appear unsupported read-only", runnerMixedReview.review?.rows?.[2]?.status === "unsupported" && runnerMixedReview.review?.rows?.[3]?.status === "unsupported" && /malformed/.test(runnerMixedReview.review?.rows?.[3]?.rawJson ?? ""), "unsupported review", runnerMixedReview.review?.rows);
+    check(result, "Travel Event Runner staged review markdown includes not-applied warning", /Review only\. Effects have not been applied\./.test(runnerReviewMarkdown.markdown ?? ""), "review markdown", runnerReviewMarkdown.markdown);
+    check(result, "Travel Event Runner staged review html escapes unsafe content", /&lt;script&gt;unsafe&lt;\/script&gt;/.test(runnerReviewHtml.html ?? "") && !/<script/i.test(runnerReviewHtml.html ?? ""), "review html", runnerReviewHtml.html);
+    check(result, "Travel Event Runner staged review generation does not mutate session or actor resources", runnerReviewNoSessionMutation && runnerResourcesBeforeReview === runnerResourcesAfterReview, "review no mutation", { session: runnerReviewNoSessionMutation, resourcesBefore: runnerResourcesBeforeReview, resourcesAfter: runnerResourcesAfterReview });
     check(result, "Travel Event Runner summary report helper exports exist", typeof prepareTravelEventRunnerSummaryReport === "function" && typeof renderTravelEventRunnerSummaryMarkdown === "function" && typeof renderTravelEventRunnerSummaryHtml === "function" && typeof postTravelEventRunnerSummaryToChat === "function" && typeof createTravelEventRunnerSummaryJournalEntry === "function" && typeof prepareTravelEventRunnerSummaryOutputState === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventRunnerSummaryReport === "function" && typeof globalThis.game?.arcflight?.devTools?.renderTravelEventRunnerSummaryMarkdown === "function", true, { api: typeof globalThis.game?.arcflight?.prepareTravelEventRunnerSummaryReport, devTools: typeof globalThis.game?.arcflight?.devTools?.renderTravelEventRunnerSummaryMarkdown });
     check(result, "Travel Event Runner incomplete session summary output is unavailable", runnerIncompleteSummaryOutput.available === false && runnerIncompleteSummaryOutput.canPostChat === false, "incomplete summary output", runnerIncompleteSummaryOutput);
     check(result, "Travel Event Runner completed session returns summary report", runnerSummaryReport.available === true && runnerSummaryReport.report?.eventName === "Published Smoke" && runnerSummaryReport.report?.finalOutcomeLabel, "summary report", runnerSummaryReport.report);

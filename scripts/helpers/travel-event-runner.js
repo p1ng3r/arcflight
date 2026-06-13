@@ -1,5 +1,6 @@
 import { getStation } from "../../data/stations/core-stations.js";
-import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
+import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
+import { getShipTravelResources } from "../documents/ships.js";
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
@@ -18,6 +19,39 @@ const FINAL_OUTCOME_LABELS = Object.freeze({
   failure: "Failure",
   criticalFailure: "Critical Failure"
 });
+
+const REVIEW_RESOURCE_KEYS = Object.freeze([
+  ARCFLIGHT_TRAVEL_RESOURCES.HULL,
+  ARCFLIGHT_TRAVEL_RESOURCES.STRAIN,
+  ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL,
+  ARCFLIGHT_TRAVEL_RESOURCES.MORALE,
+  ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES
+]);
+const REVIEW_RESOURCE_MODES = Object.freeze(["add", "set"]);
+const REVIEW_NOT_APPLIED_WARNING = "Review only. Effects have not been applied.";
+
+function getResourceMaxKey(resource) {
+  if (resource === ARCFLIGHT_TRAVEL_RESOURCES.HULL) return "maxHull";
+  if (resource === ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL) return "maxLifeveil";
+  if (resource === ARCFLIGHT_TRAVEL_RESOURCES.STRAIN) return "maxStrain";
+  return "";
+}
+
+function resolveReviewResources(shipOrResources = null) {
+  if (!shipOrResources || typeof shipOrResources !== "object") return null;
+  if (typeof shipOrResources.getFlag === "function" || shipOrResources.type) {
+    try {
+      return getShipTravelResources(shipOrResources);
+    } catch (_error) {
+      return null;
+    }
+  }
+  return cloneData(shipOrResources);
+}
+
+function valueDisplay(value) {
+  return value === null || value === undefined || value === "" ? "—" : String(value);
+}
 
 function cloneData(value) {
   if (value == null) return value;
@@ -456,6 +490,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     canComplete: Boolean(activeSession && activeSession.status !== "completed"),
     summary,
     summaryOutput: prepareTravelEventRunnerSummaryOutputState(activeSession, options),
+    stagedEffectReview: prepareTravelEventStagedEffectReviewState(activeSession, options),
     summaryJson: summary ? exportTravelEventRunnerSessionToJson(activeSession, options).json : ""
   };
 }
@@ -551,6 +586,94 @@ function escapeHtml(value) {
 function formatEffectForReport(effect, index) {
   const label = typeof effect?.label === "string" && effect.label.trim() ? effect.label.trim() : `Proposed Effect ${index + 1}`;
   return { index, label, json: JSON.stringify(effect ?? {}, null, 2) };
+}
+
+export function prepareTravelEventResourceEffectPreview(effect, shipOrResources = null, options = {}) {
+  const resources = resolveReviewResources(shipOrResources ?? options.ship ?? options.resources ?? null);
+  const resource = effect?.resource;
+  const mode = effect?.mode;
+  const value = Number(effect?.value);
+  const currentValue = resources && Object.hasOwn(resources, resource) && Number.isFinite(Number(resources[resource])) ? Number(resources[resource]) : null;
+  const previewValue = currentValue == null || !Number.isFinite(value) ? null : (mode === "set" ? value : currentValue + value);
+  const warnings = [];
+  const maxKey = getResourceMaxKey(resource);
+  const maxValue = maxKey && resources && Number.isFinite(Number(resources[maxKey])) ? Number(resources[maxKey]) : null;
+  if (previewValue != null && previewValue < 0) warnings.push(`${resource} preview value ${previewValue} is below minimum 0.`);
+  if (previewValue != null && maxValue != null && maxValue > 0 && previewValue > maxValue) warnings.push(`${resource} preview value ${previewValue} exceeds known maximum ${maxValue}.`);
+  return { resources, currentValue, previewValue, hasCurrentValue: currentValue != null, hasPreviewValue: previewValue != null, maxValue, warnings };
+}
+
+export function normalizeTravelEventProposedEffectForReview(effect, index, options = {}) {
+  const rawJson = JSON.stringify(effect ?? null, null, 2);
+  const label = typeof effect?.label === "string" && effect.label.trim() ? effect.label.trim() : `Staged Effect ${index + 1}`;
+  const base = { index, displayIndex: index + 1, label, type: typeof effect?.type === "string" ? effect.type : "unsupported", resource: "", mode: "", value: null, currentValue: null, previewValue: null, hasCurrentValue: false, hasPreviewValue: false, status: "unsupported", supported: false, warnings: [], raw: cloneData(effect), rawJson };
+  if (!isPlainObject(effect)) return { ...base, status: "unsupported", warnings: ["Effect is not a data object."] };
+  if (effect.type === "note") return { ...base, type: "note", text: typeof effect.text === "string" ? effect.text : "", status: "note", supported: true };
+  if (effect.type !== "resource") return base;
+
+  const value = Number(effect.value);
+  const warnings = [];
+  if (!REVIEW_RESOURCE_KEYS.includes(effect.resource)) warnings.push(`Unsupported resource "${effect.resource ?? "<missing>"}".`);
+  if (!REVIEW_RESOURCE_MODES.includes(effect.mode)) warnings.push(`Unsupported resource mode "${effect.mode ?? "<missing>"}".`);
+  if (!Number.isFinite(value)) warnings.push(`Resource effect value "${effect.value ?? "<missing>"}" is not numeric.`);
+  if (warnings.length) return { ...base, type: "resource", resource: effect.resource ?? "", mode: effect.mode ?? "", value: effect.value ?? null, status: "invalid", warnings };
+
+  const preview = prepareTravelEventResourceEffectPreview(effect, options.ship ?? options.resources ?? null, options);
+  return { ...base, type: "resource", resource: effect.resource, mode: effect.mode, value, currentValue: preview.currentValue, previewValue: preview.previewValue, hasCurrentValue: preview.hasCurrentValue, hasPreviewValue: preview.hasPreviewValue, status: "ready", supported: true, warnings: preview.warnings };
+}
+
+export function prepareTravelEventStagedEffectReview(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return { ...normalized, available: false, reason: normalized.errors?.[0] ?? "Travel Event Runner session is malformed.", review: null };
+  if (normalized.session.status !== "completed") return { ok: true, errors: [], warnings: [], session: normalized.session, available: false, reason: "Staged consequence review is unavailable until the runner session is completed.", review: null };
+  const summarized = summarizeTravelEventRunnerSession(normalized.session, options);
+  const summary = summarized.summary;
+  const effects = Array.isArray(summary?.stagedProposedEffects) ? summary.stagedProposedEffects : [];
+  const rows = effects.map((effect, index) => normalizeTravelEventProposedEffectForReview(effect, index, options));
+  const supportedEffectCount = rows.filter((row) => row.supported).length;
+  const unsupportedEffectCount = rows.length - supportedEffectCount;
+  const review = {
+    available: true,
+    eventName: summary.event.name,
+    finalOutcomeKey: summary.suggestedFinalOutcome,
+    finalOutcomeLabel: summary.suggestedFinalOutcomeLabel,
+    effectCount: rows.length,
+    supportedEffectCount,
+    unsupportedEffectCount,
+    notAppliedWarning: REVIEW_NOT_APPLIED_WARNING,
+    rows
+  };
+  return { ok: true, errors: [], warnings: [], session: normalized.session, available: true, review };
+}
+
+export function renderTravelEventStagedEffectReviewMarkdown(session, options = {}) {
+  const prepared = prepareTravelEventStagedEffectReview(session, options);
+  if (!prepared.available || !prepared.review) return { ...prepared, markdown: "" };
+  const r = prepared.review;
+  const lines = [`# Staged Consequence Review — ${r.eventName}`, "", `**${r.notAppliedWarning}**`, "", `- **Final Outcome:** ${r.finalOutcomeLabel}`, `- **Effect Count:** ${r.effectCount}`, `- **Supported Effects:** ${r.supportedEffectCount}`, `- **Unsupported Effects:** ${r.unsupportedEffectCount}`];
+  if (!r.rows.length) lines.push("", "No proposed effects are attached to the final outcome.");
+  for (const row of r.rows) {
+    lines.push("", `## ${row.displayIndex}. ${row.label}`, `- **Type:** ${row.type}`, `- **Status:** ${row.status}`, `- **Resource:** ${valueDisplay(row.resource)}`, `- **Mode:** ${valueDisplay(row.mode)}`, `- **Value:** ${valueDisplay(row.value)}`, `- **Current Value:** ${valueDisplay(row.currentValue)}`, `- **Preview Value:** ${valueDisplay(row.previewValue)}`);
+    if (row.warnings.length) lines.push(`- **Warnings:** ${row.warnings.join("; ")}`);
+    lines.push("", "```json", row.rawJson, "```");
+  }
+  return { ...prepared, markdown: lines.join("\n") };
+}
+
+export function renderTravelEventStagedEffectReviewHtml(session, options = {}) {
+  const prepared = prepareTravelEventStagedEffectReview(session, options);
+  if (!prepared.available || !prepared.review) return { ...prepared, html: "" };
+  const r = prepared.review;
+  const rows = r.rows.length ? r.rows.map((row) => `<article class="arcflight-travel-runner-review__effect"><h3>${escapeHtml(row.displayIndex)}. ${escapeHtml(row.label)}</h3><dl><dt>Type</dt><dd>${escapeHtml(row.type)}</dd><dt>Status</dt><dd>${escapeHtml(row.status)}</dd><dt>Resource</dt><dd>${escapeHtml(valueDisplay(row.resource))}</dd><dt>Mode</dt><dd>${escapeHtml(valueDisplay(row.mode))}</dd><dt>Value</dt><dd>${escapeHtml(valueDisplay(row.value))}</dd><dt>Current Value</dt><dd>${escapeHtml(valueDisplay(row.currentValue))}</dd><dt>Preview Value</dt><dd>${escapeHtml(valueDisplay(row.previewValue))}</dd></dl>${row.warnings.length ? `<p><strong>Warnings:</strong> ${escapeHtml(row.warnings.join("; "))}</p>` : ""}<pre>${escapeHtml(row.rawJson)}</pre></article>`).join("") : "<p>No proposed effects are attached to the final outcome.</p>";
+  const html = `<section class="arcflight-travel-runner-review"><h1>Staged Consequence Review — ${escapeHtml(r.eventName)}</h1><p><strong>${escapeHtml(r.notAppliedWarning)}</strong></p><ul><li><strong>Final Outcome:</strong> ${escapeHtml(r.finalOutcomeLabel)}</li><li><strong>Effect Count:</strong> ${escapeHtml(r.effectCount)}</li><li><strong>Supported Effects:</strong> ${escapeHtml(r.supportedEffectCount)}</li><li><strong>Unsupported Effects:</strong> ${escapeHtml(r.unsupportedEffectCount)}</li></ul>${rows}</section>`;
+  return { ...prepared, html };
+}
+
+export function prepareTravelEventStagedEffectReviewState(session, options = {}) {
+  const review = prepareTravelEventStagedEffectReview(session, options);
+  const markdown = review.available ? renderTravelEventStagedEffectReviewMarkdown(session, options).markdown : "";
+  const html = review.available ? renderTravelEventStagedEffectReviewHtml(session, options).html : "";
+  return { ...review, markdown, html, canCopyMarkdown: review.available, canCopyHtml: review.available };
 }
 
 export function prepareTravelEventRunnerSummaryReport(session, options = {}) {
