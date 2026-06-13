@@ -8,8 +8,10 @@ import {
   createTravelEventRunnerSummaryJournalEntry,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
+  importTravelEventRunnerSessionFromJson,
   loadPublishedTravelEventForRunner,
   postTravelEventRunnerSummaryToChat,
+  saveImportedTravelEventRunnerSessionToLibrary,
   renderTravelEventRunnerSummaryHtml,
   renderTravelEventRunnerSummaryMarkdown,
   renderTravelEventStagedEffectReviewHtml,
@@ -32,10 +34,13 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-previous]",
   "[data-arcflight-runner-next]",
   "[data-arcflight-runner-complete]",
+  "[data-arcflight-runner-toggle-session-actions]",
+  "[data-arcflight-runner-toggle-current-session]",
   "[data-arcflight-runner-export]",
   "[data-arcflight-runner-clear]",
   "[data-arcflight-runner-save]",
   "[data-arcflight-runner-save-as]",
+  "[data-arcflight-runner-import-session]",
   "[data-arcflight-runner-load-session]",
   "[data-arcflight-runner-duplicate-session]",
   "[data-arcflight-runner-delete-session]",
@@ -208,6 +213,7 @@ function defaultSelectedEventId(options = {}) {
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
+  #pendingScrollState = null;
 
   constructor(options = {}) {
     super(options);
@@ -215,6 +221,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.session = options.session ?? null;
     this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
     this.statusMessage = "Select a published finalized travel event to begin.";
+    this.uiState = {
+      currentSessionCollapsed: options.currentSessionCollapsed !== false,
+      sessionActionsExpanded: options.sessionActionsExpanded === true,
+      scrollTop: 0,
+      scrollSelector: ""
+    };
   }
 
   static DEFAULT_OPTIONS = {
@@ -228,11 +240,86 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     runner: { template: arcflightTemplatePath("apps/travel-event-runner.hbs") }
   };
 
+  render(force, options) {
+    if (force === true) this.#captureScrollPosition();
+    return super.render(force, options);
+  }
+
+  #getApplicationRoot() {
+    return this.element?.closest?.(".app, .application, .window-app")
+      ?? this.element
+      ?? null;
+  }
+
+  #getScrollCandidates() {
+    const root = this.#getApplicationRoot();
+    const selectors = [
+      ".arcflight-travel-runner-mvp",
+      ".window-content",
+      ".application-content",
+      "[data-application-part='runner']",
+      "[data-application-part]"
+    ];
+    const candidates = [];
+    for (const element of [this.element, root]) {
+      if (element) candidates.push({ element, selector: "" });
+    }
+    for (const selector of selectors) {
+      const scoped = root?.querySelector?.(selector);
+      if (scoped) candidates.push({ element: scoped, selector });
+      const local = this.element?.querySelector?.(selector);
+      if (local) candidates.push({ element: local, selector });
+    }
+    return candidates.filter((candidate, index, array) => candidate.element && array.findIndex((other) => other.element === candidate.element) === index);
+  }
+
+  #findScrollContainer(preferredSelector = "") {
+    const candidates = this.#getScrollCandidates();
+    if (preferredSelector) {
+      const preferred = candidates.find((candidate) => candidate.selector === preferredSelector && this.#isScrollable(candidate.element));
+      if (preferred) return preferred;
+    }
+    return candidates.find((candidate) => this.#isScrollable(candidate.element) && Number(candidate.element.scrollTop) > 0)
+      ?? candidates.find((candidate) => this.#isScrollable(candidate.element))
+      ?? candidates.find((candidate) => candidate.element)
+      ?? null;
+  }
+
+  #isScrollable(element) {
+    return Boolean(element && Number(element.scrollHeight) > Number(element.clientHeight) + 1);
+  }
+
+  #captureScrollPosition() {
+    const candidate = this.#findScrollContainer(this.uiState.scrollSelector);
+    if (!candidate?.element || !Number.isFinite(Number(candidate.element.scrollTop))) return;
+    this.uiState.scrollTop = candidate.element.scrollTop;
+    this.uiState.scrollSelector = candidate.selector;
+    this.#pendingScrollState = { scrollTop: candidate.element.scrollTop, selector: candidate.selector };
+  }
+
+  #restoreScrollPosition() {
+    if (!this.#pendingScrollState) return;
+    const { scrollTop, selector } = this.#pendingScrollState;
+    this.#pendingScrollState = null;
+    const restore = () => {
+      const candidate = this.#findScrollContainer(selector);
+      if (candidate?.element) {
+        candidate.element.scrollTop = scrollTop;
+        this.uiState.scrollTop = scrollTop;
+        this.uiState.scrollSelector = candidate.selector;
+      }
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
+    else setTimeout(restore, 0);
+  }
+
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const targetActor = this.#getSelectedShipActor();
     const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey, actor: targetActor });
     state.effectApplication = prepareTravelEventEffectApplicationState(this.session, targetActor);
+    state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
+    state.sessionActionsExpanded = this.uiState.sessionActionsExpanded;
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
@@ -250,6 +337,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.element?.addEventListener("click", this.#boundRunnerClick);
     this.element?.removeEventListener("change", this.#boundRunnerChange);
     this.element?.addEventListener("change", this.#boundRunnerChange);
+    this.#restoreScrollPosition();
   }
 
   async #onRunnerChange(event) {
@@ -278,10 +366,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-previous")) return this.#retreatRound();
     if (target.hasAttribute("data-arcflight-runner-next")) return this.#advanceRound();
     if (target.hasAttribute("data-arcflight-runner-complete")) return this.#completeEvent();
+    if (target.hasAttribute("data-arcflight-runner-toggle-session-actions")) return this.#toggleSessionActions();
+    if (target.hasAttribute("data-arcflight-runner-toggle-current-session")) return this.#toggleCurrentSession();
     if (target.hasAttribute("data-arcflight-runner-export")) return this.#exportSummary();
     if (target.hasAttribute("data-arcflight-runner-clear")) return this.#clearSession();
     if (target.hasAttribute("data-arcflight-runner-save")) return this.#saveCurrentSession({ saveAs: false });
     if (target.hasAttribute("data-arcflight-runner-save-as")) return this.#saveCurrentSession({ saveAs: true });
+    if (target.hasAttribute("data-arcflight-runner-import-session")) return this.#importSessionJson();
     if (target.hasAttribute("data-arcflight-runner-load-session")) return this.#loadSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-duplicate-session")) return this.#duplicateSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-delete-session")) return this.#deleteSelectedSession(target);
@@ -297,6 +388,18 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
+  }
+
+  async #toggleSessionActions() {
+    this.uiState.sessionActionsExpanded = !this.uiState.sessionActionsExpanded;
+    this.statusMessage = this.uiState.sessionActionsExpanded ? "Session actions expanded." : "Session actions collapsed.";
+    return this.render(true);
+  }
+
+  async #toggleCurrentSession() {
+    this.uiState.currentSessionCollapsed = !this.uiState.currentSessionCollapsed;
+    this.statusMessage = this.uiState.currentSessionCollapsed ? "Current Runner Session controls collapsed." : "Current Runner Session details expanded.";
+    return this.render(true);
   }
 
   #getSelectedShipActor() {
@@ -386,14 +489,89 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #exportSummary() {
     const exported = exportTravelEventRunnerSessionToJson(this.session);
     if (!exported.ok || !exported.json) {
-      this.statusMessage = exported.errors?.[0] ?? "No session summary is available to export.";
+      this.statusMessage = exported.errors?.[0] ?? "No runner session is available to export.";
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
-    await copyTextToClipboard(exported.json);
-    this.statusMessage = "Session summary JSON copied to clipboard.";
+    const filename = `arcflight-runner-session-${this.session?.key || this.session?.event?.key || "export"}.json`;
+    if (globalThis.saveDataToFile) saveDataToFile(exported.json, "application/json", filename);
+    else await copyTextToClipboard(exported.json);
+    this.statusMessage = globalThis.saveDataToFile ? "Session JSON export downloaded." : "Session JSON copied to clipboard.";
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
+  }
+
+  async #importSessionJson() {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.prompt !== "function" || typeof dialogV2?.confirm !== "function") {
+      this.statusMessage = "Import requires Foundry DialogV2; Runner Session Library was not changed.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+
+    let jsonText = "";
+    try {
+      jsonText = await dialogV2.prompt({
+        window: { title: "Import Runner Session JSON" },
+        content: `<form><div class="form-group"><label for="arcflight-runner-import-json">Paste runner session JSON</label><textarea id="arcflight-runner-import-json" name="jsonText" rows="16" placeholder='{"exportVersion":1,"session":{...}}'></textarea></div><p class="notes">Preview is shown before anything is saved. Import never mutates actors, resources, AP/RAP, chat, journals, combat, drafts, or published events.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Preview Import",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            return String(new FormData(form).get("jsonText") ?? "");
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      jsonText = "";
+    }
+    if (!jsonText) {
+      this.statusMessage = "Import cancelled; Runner Session Library was not changed.";
+      return this.render(true);
+    }
+
+    const imported = importTravelEventRunnerSessionFromJson(jsonText);
+    const preview = imported.preview ?? {};
+    const warnings = (preview.warnings ?? []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+    const errors = (preview.errors ?? []).map((error) => `<li>${escapeHtml(error)}</li>`).join("");
+    const content = `<section><h2>Import Preview</h2><dl><dt>Session</dt><dd>${escapeHtml(preview.sessionName)}</dd><dt>Key</dt><dd>${escapeHtml(preview.sessionKey)}</dd><dt>Event</dt><dd>${escapeHtml(preview.eventName)} (${escapeHtml(preview.eventKey)})</dd><dt>Status</dt><dd>${escapeHtml(preview.status)}</dd><dt>Current Round</dt><dd>${escapeHtml(preview.currentRound)}</dd><dt>Completed</dt><dd>${preview.completed ? "Yes" : "No"}</dd><dt>Staged Effects</dt><dd>${escapeHtml(preview.stagedEffectCount)}</dd><dt>Applied Effects</dt><dd>${escapeHtml(preview.appliedEffectCount)}</dd><dt>Undone Effects</dt><dd>${escapeHtml(preview.undoneEffectCount)}</dd></dl>${errors ? `<h3>Errors</h3><ul>${errors}</ul>` : ""}${warnings ? `<h3>Warnings</h3><ul>${warnings}</ul>` : ""}${preview.duplicateKey ? "<p><strong>Conflict:</strong> A saved session with this key already exists. Default import saves a new copy.</p>" : ""}</section>`;
+    if (!imported.ok) {
+      await dialogV2.confirm({ window: { title: "Import Blocked" }, content, yes: { label: "Close" }, no: { label: "Cancel" }, rejectClose: false });
+      this.statusMessage = imported.errors?.[0] ?? "Import blocked by validation errors.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    let mode = "copy";
+    let confirmed = false;
+    if (preview.duplicateKey) {
+      mode = await dialogV2.prompt({
+        window: { title: "Import Key Conflict" },
+        content: `${content}<form><div class="form-group"><label>Conflict action</label><select name="mode"><option value="copy" selected>Save as new copy</option><option value="overwrite">Overwrite existing</option><option value="cancel">Cancel</option></select></div></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Continue",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            return String(new FormData(form).get("mode") ?? "cancel");
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+      confirmed = mode === "copy" || mode === "overwrite";
+      if (mode === "overwrite") {
+        confirmed = await dialogV2.confirm({ window: { title: "Confirm Overwrite" }, content: `${content}<p><strong>Overwrite is permanent for the saved Runner Session Library entry.</strong></p>`, yes: { label: "Overwrite Existing" }, no: { label: "Cancel" }, rejectClose: false });
+      }
+    } else {
+      confirmed = await dialogV2.confirm({ window: { title: "Save Imported Runner Session" }, content, yes: { label: "Import / Save" }, no: { label: "Cancel" }, rejectClose: false });
+    }
+    if (!confirmed) {
+      this.statusMessage = "Import cancelled; Runner Session Library was not changed.";
+      return this.render(true);
+    }
+    const saved = await saveImportedTravelEventRunnerSessionToLibrary(imported, { mode, confirmOverwrite: mode === "overwrite" });
+    return this.#handleSavedSessionResult(saved, "Imported runner session into the Runner Session Library.");
   }
 
 

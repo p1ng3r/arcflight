@@ -5,6 +5,7 @@ import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, pr
 import { validateTravelEventDefinition } from "./travel-events.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
+export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING = "travelEventRunnerSessionLibrary";
 export const TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_RESULT_VALUES = Object.freeze(["criticalFailure", "failure", "success", "criticalSuccess", "skipped"]);
@@ -210,6 +211,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
   });
   const normalized = {
     key: typeof session.key === "string" ? session.key : "",
+    name: typeof session.name === "string" ? session.name : "",
     version: TRAVEL_EVENT_RUNNER_SESSION_VERSION,
     status: ["active", "completed"].includes(session.status) ? session.status : "active",
     event,
@@ -228,9 +230,11 @@ function normalizeTravelEventAppliedEffects(appliedEffects = {}) {
   const source = isPlainObject(appliedEffects) ? appliedEffects : {};
   const records = Array.isArray(source.records) ? source.records.filter(isPlainObject).map((record) => ({
     applicationId: typeof record.applicationId === "string" ? record.applicationId : "",
-    effectId: typeof record.effectId === "string" ? record.effectId : "",
+    effectId: typeof record.effectId === "string" ? record.effectId : (typeof record.effectKey === "string" ? record.effectKey : ""),
+    effectKey: typeof record.effectKey === "string" ? record.effectKey : (typeof record.effectId === "string" ? record.effectId : ""),
     effectIndex: Number.isInteger(Number(record.effectIndex)) ? Number(record.effectIndex) : null,
-    effectLabel: typeof record.effectLabel === "string" ? record.effectLabel : "",
+    effectLabel: typeof record.effectLabel === "string" ? record.effectLabel : (typeof record.label === "string" ? record.label : ""),
+    label: typeof record.label === "string" ? record.label : (typeof record.effectLabel === "string" ? record.effectLabel : ""),
     effectType: typeof record.effectType === "string" ? record.effectType : "",
     resource: typeof record.resource === "string" ? record.resource : "",
     mode: typeof record.mode === "string" ? record.mode : "",
@@ -240,6 +244,8 @@ function normalizeTravelEventAppliedEffects(appliedEffects = {}) {
     beforeValue: Number.isFinite(Number(record.beforeValue)) ? Number(record.beforeValue) : null,
     afterValue: Number.isFinite(Number(record.afterValue)) ? Number(record.afterValue) : null,
     appliedAt: typeof record.appliedAt === "string" ? record.appliedAt : "",
+    appliedByUserId: typeof record.appliedByUserId === "string" ? record.appliedByUserId : "",
+    appliedByUserName: typeof record.appliedByUserName === "string" ? record.appliedByUserName : "",
     source: record.source === "travel-event-runner" ? "travel-event-runner" : "travel-event-runner",
     undone: record.undone === true,
     undoneAt: typeof record.undoneAt === "string" ? record.undoneAt : "",
@@ -399,12 +405,13 @@ export async function saveTravelEventRunnerSessionToLibrary(session, options = {
   const existing = library.sessions[key] ?? null;
   const nextSession = cloneData(normalized.session);
   nextSession.key = key;
+  nextSession.name = typeof options.name === "string" && options.name.length > 0 ? options.name : (existing?.name ?? nextSession.name ?? `${nextSession.event.name} Session`);
   nextSession.updatedAt = timestamp;
   if (nextSession.status === "completed" && !nextSession.summary) nextSession.summary = summarizeTravelEventRunnerSession(nextSession, options).summary;
 
   const entry = {
     key,
-    name: typeof options.name === "string" && options.name.length > 0 ? options.name : (existing?.name ?? `${nextSession.event.name} Session`),
+    name: nextSession.name,
     eventKey: nextSession.event.key,
     eventName: nextSession.event.name,
     eventCategory: nextSession.event.category,
@@ -504,6 +511,10 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     canSaveSessionAs: Boolean(activeSession),
     hasPublishedEvents: libraryState.hasEvents === true,
     hasLoadableEvents: libraryState.hasLoadableEvents === true,
+    canImportSession: true,
+    canExportSession: Boolean(activeSession),
+    currentSessionName: activeSession?.name || (activeSession?.event?.name ? `${activeSession.event.name} Session` : "No active session"),
+    currentSessionStatusLabel: activeSession ? humanizeIdentifier(activeSession.status) : "No Active Session",
     session: activeSession,
     hasSession: Boolean(activeSession),
     isCompleted: activeSession?.status === "completed",
@@ -1066,9 +1077,103 @@ export function completeTravelEventRunnerSession(session, options = {}) {
 }
 
 export function exportTravelEventRunnerSessionToJson(session, options = {}) {
-  const summaryResult = summarizeTravelEventRunnerSession(session, options);
-  if (!summaryResult.ok) return { ...summaryResult, json: "" };
-  return { ...summaryResult, json: JSON.stringify(summaryResult.summary, null, 2) };
+  const built = buildTravelEventRunnerSessionExportData(session, options);
+  if (!built.ok) return { ...built, json: "" };
+  return { ...built, json: JSON.stringify(built.data, null, 2) };
+}
+
+export function buildTravelEventRunnerSessionExportData(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return { ...normalized, data: null, json: "" };
+  const metadata = {
+    exportVersion: TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION,
+    exportedAt: nowIso(options),
+    exportedByUserId: options.userId ?? globalThis.game?.user?.id ?? "",
+    exportedByUserName: options.userName ?? globalThis.game?.user?.name ?? "",
+    arcflightVersion: options.arcflightVersion ?? globalThis.game?.modules?.get?.(ARCFLIGHT_MODULE_ID)?.version ?? "",
+    sourceWorldId: options.sourceWorldId ?? globalThis.game?.world?.id ?? "",
+    sourceWorldTitle: options.sourceWorldTitle ?? globalThis.game?.world?.title ?? ""
+  };
+  return { ok: true, errors: [], warnings: normalized.warnings ?? [], session: cloneData(normalized.session), metadata, data: { ...metadata, session: cloneData(normalized.session) } };
+}
+
+export function parseTravelEventRunnerSessionJson(jsonText, options = {}) {
+  const errors = [];
+  let data;
+  try {
+    data = JSON.parse(String(jsonText ?? ""));
+  } catch (_error) {
+    return { ok: false, errors: ["Travel Event Runner session JSON is malformed."], warnings: [], data: null, session: null, preview: null };
+  }
+  if (!isPlainObject(data)) return { ok: false, errors: ["Travel Event Runner session import root must be a JSON object."], warnings: [], data, session: null, preview: null };
+  const sessionData = isPlainObject(data.session) ? data.session : data;
+  const normalized = normalizeTravelEventRunnerSession(sessionData, options);
+  errors.push(...(normalized.errors ?? []));
+  return { ok: errors.length === 0, errors, warnings: normalized.warnings ?? [], data, session: normalized.session, preview: null };
+}
+
+export function validateImportedTravelEventRunnerSession(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  const errors = [...(normalized.errors ?? [])];
+  const warnings = [...(normalized.warnings ?? [])];
+  if (normalized.session?.event?.key) {
+    const entry = { eventKey: normalized.session.event.key, session: normalized.session };
+    if (!publishedEventExistsForSession(entry, options)) warnings.push("Imported session references a published event that is not available in this world.");
+  }
+  if (!normalized.session?.key) warnings.push("Imported session has no saved library key; a new key will be generated when saved.");
+  return { ok: errors.length === 0, errors, warnings, session: normalized.session };
+}
+
+export function prepareTravelEventRunnerSessionImportPreview(dataOrSession, options = {}) {
+  const parsed = typeof dataOrSession === "string" ? parseTravelEventRunnerSessionJson(dataOrSession, options) : { ok: isPlainObject(dataOrSession), errors: isPlainObject(dataOrSession) ? [] : ["Travel Event Runner session import root must be a JSON object."], warnings: [], data: dataOrSession, session: isPlainObject(dataOrSession?.session) ? dataOrSession.session : dataOrSession };
+  if (!parsed.ok) return { ...parsed, importResult: parsed, preview: { errors: parsed.errors, warnings: parsed.warnings } };
+  const validated = validateImportedTravelEventRunnerSession(parsed.session, options);
+  const session = validated.session;
+  const library = getTravelEventRunnerSessionLibrary(options);
+  const key = session?.key ?? "";
+  const duplicateKey = Boolean(key && Object.hasOwn(library.sessions, key));
+  const records = session?.appliedEffects?.records ?? [];
+  const staged = session?.summary?.stagedProposedEffects ?? summarizeTravelEventRunnerSession(session, options).summary?.stagedProposedEffects ?? [];
+  const preview = {
+    sessionName: session?.name || (session?.event?.name ? `${session.event.name} Session` : key),
+    sessionKey: key,
+    eventName: session?.event?.name ?? "",
+    eventKey: session?.event?.key ?? "",
+    status: session?.status ?? "",
+    currentRound: Number(session?.currentRoundIndex ?? 0) + 1,
+    completed: session?.status === "completed",
+    stagedEffectCount: Array.isArray(staged) ? staged.length : 0,
+    appliedEffectCount: records.length,
+    undoneEffectCount: records.filter((record) => record.undone === true).length,
+    duplicateKey,
+    warnings: validated.warnings,
+    errors: validated.errors
+  };
+  const importResult = { ok: validated.ok, errors: validated.errors, warnings: validated.warnings, data: parsed.data, session, preview, library, duplicateKey };
+  return { ...importResult, importResult };
+}
+
+export function importTravelEventRunnerSessionFromJson(jsonText, options = {}) {
+  return prepareTravelEventRunnerSessionImportPreview(jsonText, options);
+}
+
+export async function saveImportedTravelEventRunnerSessionToLibrary(importResult, options = {}) {
+  const source = importResult?.session ? importResult : prepareTravelEventRunnerSessionImportPreview(importResult, options);
+  if (!source.ok || !source.session) return buildRunnerLibraryResult(false, { errors: source.errors ?? ["Imported runner session is not valid."], warnings: source.warnings ?? [], session: null, entry: null });
+  const mode = options.mode === "overwrite" ? "overwrite" : "copy";
+  const libraryOptions = source.library ? { ...options, library: source.library } : options;
+  if (source.duplicateKey && mode !== "overwrite" && options.allowDuplicateKey !== true) {
+    const key = createUniqueRunnerSessionKey(source.library ?? getTravelEventRunnerSessionLibrary(options), `${source.session.key || source.session.event?.key || "runner-session"}-import`, options);
+    const copy = cloneData(source.session);
+    copy.key = key;
+    const savedCopy = await saveTravelEventRunnerSessionToLibrary(copy, { ...libraryOptions, key, name: `${source.preview?.sessionName || source.session.event?.name || key} Imported Copy`, overwrite: false });
+    return { ...savedCopy, importMode: "copy", overwritten: false };
+  }
+  if (source.duplicateKey && mode === "overwrite" && options.confirmOverwrite !== true) {
+    return buildRunnerLibraryResult(false, { errors: ["Overwrite requires explicit confirmation."], warnings: source.warnings ?? [], session: cloneData(source.session), entry: null, importMode: "overwrite", overwritten: false });
+  }
+  const saved = await saveTravelEventRunnerSessionToLibrary(source.session, { ...libraryOptions, key: source.session.key, overwrite: mode === "overwrite" });
+  return { ...saved, importMode: mode, overwritten: mode === "overwrite" && saved.ok === true };
 }
 
 export function loadPublishedTravelEventForRunner(idOrKey, options = {}) {

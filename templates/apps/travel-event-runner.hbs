@@ -5,6 +5,40 @@
     <p class="arcflight-sheet__hint"><strong>Status:</strong> {{statusMessage}}</p>
   </header>
 
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-toolbar">
+    <button type="button" class="arcflight-travel-runner-mvp__action-toggle" data-arcflight-runner-toggle-session-actions aria-label="{{#if state.sessionActionsExpanded}}Collapse Session Actions{{else}}Expand Session Actions{{/if}}" aria-expanded="{{#if state.sessionActionsExpanded}}true{{else}}false{{/if}}">
+      {{#if state.sessionActionsExpanded}}▼{{else}}▶{{/if}} Session Actions
+    </button>
+    {{#if state.sessionActionsExpanded}}
+    <div class="arcflight-travel-runner-mvp__actions">
+      <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
+      <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
+      <button type="button" data-arcflight-runner-export {{#unless state.canExportSession}}disabled{{/unless}}>Export Session JSON</button>
+      <button type="button" data-arcflight-runner-import-session>Import Session JSON</button>
+      <button type="button" data-arcflight-runner-clear {{#unless state.hasSession}}disabled{{/unless}}>Clear Local Session</button>
+    </div>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-controls {{#if state.currentSessionCollapsed}}arcflight-travel-runner-mvp__session-controls--collapsed{{/if}}">
+    <div class="arcflight-travel-runner-mvp__session-controls-header">
+      <button type="button" class="arcflight-travel-runner-mvp__collapse-toggle" data-arcflight-runner-toggle-current-session aria-label="{{#if state.currentSessionCollapsed}}Expand Current Runner Session{{else}}Collapse Current Runner Session{{/if}}" aria-expanded="{{#unless state.currentSessionCollapsed}}true{{else}}false{{/unless}}">
+        {{#if state.currentSessionCollapsed}}▶{{else}}▼{{/if}}
+      </button>
+      <h2>Current Runner Session</h2>
+    </div>
+    {{#unless state.currentSessionCollapsed}}
+      <div class="arcflight-travel-runner-mvp__stats">
+        <div><span>Session</span><strong>{{state.currentSessionName}}</strong></div>
+        <div><span>Status</span><strong>{{state.currentSessionStatusLabel}}</strong></div>
+        <div><span>Event</span><strong>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</strong></div>
+        <div><span>Progress</span><strong>{{#if state.isCompleted}}Completed{{else}}Round {{state.currentRoundNumber}}{{/if}}</strong></div>
+      </div>
+      <p class="arcflight-sheet__hint">Session import/export only reads or writes Runner Session Library data after explicit confirmation; it never applies effects or mutates actors, AP/RAP, chat, journals, combat, drafts, or published events.</p>
+    {{/unless}}
+  </section>
+
+
   <section class="arcflight-travel-runner-mvp__panel">
     <h2>Published Travel Event Library</h2>
     {{#if state.hasPublishedEvents}}
@@ -18,7 +52,6 @@
       </label>
       <div class="arcflight-travel-runner-mvp__actions">
         <button type="button" data-arcflight-start-travel-event-runner {{#if state.hasSession}}disabled{{/if}}>Start Event</button>
-        <button type="button" data-arcflight-runner-clear {{#unless state.hasSession}}disabled{{/unless}}>Clear Local Session</button>
       </div>
       {{#unless state.hasLoadableEvents}}<p class="arcflight-sheet__hint">Published library entries exist, but none are valid finalized travel events.</p>{{/unless}}
     {{else}}
@@ -27,54 +60,7 @@
     {{/if}}
   </section>
 
-  <section class="arcflight-travel-runner-mvp__panel">
-    <h2>Runner Session Library</h2>
-    <p class="arcflight-sheet__hint">World-local manual save/resume snapshots. Saved runner sessions are separate from drafts and published events, and never mutate actors, resources, chat, combat, or proposed effects.</p>
-    <div class="arcflight-travel-runner-mvp__actions">
-      <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
-      <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
-      <button type="button" data-arcflight-runner-refresh-sessions>Refresh Sessions</button>
-    </div>
 
-    {{#if state.hasSavedSessions}}
-      <label class="arcflight-sheet__field">
-        <span>Saved Session</span>
-        <select data-arcflight-runner-session-select>
-          <option value="">Select a saved session…</option>
-          {{#each state.sessionLibrary.entries}}
-            <option value="{{key}}" {{#if selected}}selected{{/if}} {{#unless canLoad}}disabled{{/unless}}>{{name}} — {{statusLabel}}{{#if missingPublishedEvent}} (missing published event){{/if}}{{#if isMalformed}} (malformed){{/if}}</option>
-          {{/each}}
-        </select>
-      </label>
-
-      <div class="arcflight-travel-runner-mvp__sessions">
-        {{#each state.sessionLibrary.entries}}
-          <article class="arcflight-travel-runner-mvp__session-row">
-            <header>
-              <strong>{{name}}</strong>
-              <span>{{statusLabel}}</span>
-            </header>
-            <p>{{eventName}}{{#if eventCategoryLabel}} — {{eventCategoryLabel}}{{/if}}</p>
-            <p class="arcflight-sheet__hint">Round {{currentRoundNumber}} • Updated {{updatedAtLabel}}</p>
-            {{#if missingPublishedEvent}}<p class="arcflight-sheet__hint"><strong>Warning:</strong> The source published event is not currently available. Loading uses the saved snapshot only.</p>{{/if}}
-            {{#if validationErrors.length}}<p class="arcflight-sheet__hint"><strong>Malformed:</strong> {{validationErrors}}</p>{{/if}}
-            <div class="arcflight-travel-runner-mvp__actions">
-              <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canLoad}}disabled{{/unless}}>Load Session</button>
-              <button type="button" data-arcflight-runner-duplicate-session="{{key}}" {{#unless canDuplicate}}disabled{{/unless}}>Duplicate Session</button>
-              <button type="button" data-arcflight-runner-delete-session="{{key}}" data-session-name="{{name}}" {{#unless canDelete}}disabled{{/unless}}>Delete Session</button>
-            </div>
-          </article>
-        {{/each}}
-      </div>
-    {{else}}
-      <p class="arcflight-sheet__hint">No runner sessions have been saved yet. Start or load a published event, record manual results, then choose Save Current Session.</p>
-      <div class="arcflight-travel-runner-mvp__actions">
-        <button type="button" data-arcflight-runner-load-session disabled>Load Session</button>
-        <button type="button" data-arcflight-runner-duplicate-session disabled>Duplicate Session</button>
-        <button type="button" data-arcflight-runner-delete-session disabled>Delete Session</button>
-      </div>
-    {{/if}}
-  </section>
 
 
   {{#if state.hasSession}}
@@ -88,7 +74,8 @@
     </section>
 
     <section class="arcflight-travel-runner-mvp__panel">
-      <h2>Round {{state.currentRoundNumber}}: {{state.currentRoundTitle}}</h2>
+      <h2>Current Round / Run Event</h2>
+      <h3>Round {{state.currentRoundNumber}}: {{state.currentRoundTitle}}</h3>
       {{#if state.currentRoundOpeningVignette}}<p class="arcflight-travel-runner-mvp__vignette">{{state.currentRoundOpeningVignette}}</p>{{/if}}
 
       {{#if state.hasStations}}
@@ -153,7 +140,6 @@
           <p class="arcflight-sheet__hint">No proposed effects are attached to the suggested final outcome.</p>
         {{/if}}
 
-        <button type="button" data-arcflight-runner-export>Export Session Summary JSON</button>
         <textarea readonly class="arcflight-travel-runner-mvp__json">{{state.summaryJson}}</textarea>
       </section>
     {{/if}}
@@ -302,4 +288,53 @@
       {{/if}}
     </section>
   {{/if}}
+
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-library">
+    <details>
+      <summary><strong>Runner Session Library</strong></summary>
+    <p class="arcflight-sheet__hint">World-local manual save/resume snapshots. Saved runner sessions are separate from drafts and published events, and never mutate actors, resources, chat, combat, or proposed effects.</p>
+    <div class="arcflight-travel-runner-mvp__actions">
+      <button type="button" data-arcflight-runner-refresh-sessions>Refresh Sessions</button>
+    </div>
+
+    {{#if state.hasSavedSessions}}
+      <label class="arcflight-sheet__field">
+        <span>Saved Session</span>
+        <select data-arcflight-runner-session-select>
+          <option value="">Select a saved session…</option>
+          {{#each state.sessionLibrary.entries}}
+            <option value="{{key}}" {{#if selected}}selected{{/if}} {{#unless canLoad}}disabled{{/unless}}>{{name}} — {{statusLabel}}{{#if missingPublishedEvent}} (missing published event){{/if}}{{#if isMalformed}} (malformed){{/if}}</option>
+          {{/each}}
+        </select>
+      </label>
+
+      <div class="arcflight-travel-runner-mvp__sessions">
+        {{#each state.sessionLibrary.entries}}
+          <article class="arcflight-travel-runner-mvp__session-row">
+            <header>
+              <strong>{{name}}</strong>
+              <span>{{statusLabel}}</span>
+            </header>
+            <p>{{eventName}}{{#if eventCategoryLabel}} — {{eventCategoryLabel}}{{/if}}</p>
+            <p class="arcflight-sheet__hint">Round {{currentRoundNumber}} • Updated {{updatedAtLabel}}</p>
+            {{#if missingPublishedEvent}}<p class="arcflight-sheet__hint"><strong>Warning:</strong> The source published event is not currently available. Loading uses the saved snapshot only.</p>{{/if}}
+            {{#if validationErrors.length}}<p class="arcflight-sheet__hint"><strong>Malformed:</strong> {{validationErrors}}</p>{{/if}}
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canLoad}}disabled{{/unless}}>Load Session</button>
+              <button type="button" data-arcflight-runner-duplicate-session="{{key}}" {{#unless canDuplicate}}disabled{{/unless}}>Duplicate Session</button>
+              <button type="button" data-arcflight-runner-delete-session="{{key}}" data-session-name="{{name}}" {{#unless canDelete}}disabled{{/unless}}>Delete Session</button>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No runner sessions have been saved yet. Start or load a published event, record manual results, then choose Save Current Session.</p>
+      <div class="arcflight-travel-runner-mvp__actions">
+        <button type="button" data-arcflight-runner-load-session disabled>Load Session</button>
+        <button type="button" data-arcflight-runner-duplicate-session disabled>Duplicate Session</button>
+        <button type="button" data-arcflight-runner-delete-session disabled>Delete Session</button>
+      </div>
+    {{/if}}
+    </details>
+  </section>
 </div>
