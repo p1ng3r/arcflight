@@ -316,7 +316,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 }
 
 export function openTravelEventRunner(options = {}, maybeOptions = {}) {
-  const appOptions = options?.type && typeof options.getFlag === "function" ? maybeOptions : options;
+  // Phase J runner sessions are published-event based and local-only. Older
+  // ship-sheet callers may still pass a PF2E vehicle actor as the first
+  // argument, but opening the runner must never require or validate an actor.
+  const actorLikeArgument = options?.type && typeof options.getFlag === "function";
+  const appOptions = actorLikeArgument ? maybeOptions : options;
   const app = new ArcflightTravelEventRunner(appOptions ?? {});
   app.render(true);
   return app;
