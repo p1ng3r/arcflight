@@ -158,6 +158,56 @@
       </section>
     {{/if}}
 
+
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__staged-review">
+      <h2>Staged Consequence Review</h2>
+      {{#if state.stagedEffectReview.available}}
+        <p class="arcflight-sheet__hint"><strong>{{state.stagedEffectReview.review.notAppliedWarning}}</strong></p>
+        <div class="arcflight-travel-runner-mvp__stats">
+          <div><span>Event</span><strong>{{state.stagedEffectReview.review.eventName}}</strong></div>
+          <div><span>Final Outcome</span><strong>{{state.stagedEffectReview.review.finalOutcomeLabel}}</strong></div>
+          <div><span>Effects</span><strong>{{state.stagedEffectReview.review.effectCount}}</strong></div>
+          <div><span>Supported</span><strong>{{state.stagedEffectReview.review.supportedEffectCount}}</strong></div>
+          <div><span>Unsupported</span><strong>{{state.stagedEffectReview.review.unsupportedEffectCount}}</strong></div>
+        </div>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-refresh-review>Refresh Review</button>
+          <button type="button" data-arcflight-runner-copy-review-markdown>Copy Review Markdown</button>
+          <button type="button" data-arcflight-runner-copy-review-html>Copy Review HTML</button>
+        </div>
+        {{#if state.stagedEffectReview.review.rows.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.stagedEffectReview.review.rows}}
+              <article class="arcflight-travel-runner-mvp__effect-row">
+                <h3>{{displayIndex}}. {{label}}</h3>
+                <dl>
+                  <dt>Type</dt><dd>{{type}}</dd>
+                  <dt>Status</dt><dd>{{status}}</dd>
+                  <dt>Resource</dt><dd>{{resource}}</dd>
+                  <dt>Mode</dt><dd>{{mode}}</dd>
+                  <dt>Value</dt><dd>{{value}}</dd>
+                  <dt>Current Value</dt><dd>{{currentValue}}</dd>
+                  <dt>Preview Value</dt><dd>{{previewValue}}</dd>
+                </dl>
+                {{#if warnings.length}}<p class="arcflight-sheet__hint"><strong>Warnings:</strong> {{warnings}}</p>{{/if}}
+                <pre>{{rawJson}}</pre>
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No proposed effects are attached to the final outcome.</p>
+        {{/if}}
+      {{else}}
+        <p class="arcflight-sheet__hint">{{state.stagedEffectReview.reason}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-refresh-review>Refresh Review</button>
+          <button type="button" data-arcflight-runner-copy-review-markdown disabled>Copy Review Markdown</button>
+          <button type="button" data-arcflight-runner-copy-review-html disabled>Copy Review HTML</button>
+        </div>
+      {{/if}}
+    </section>
+
     <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__summary-output">
       <h2>Completed Summary Output</h2>
       {{#if state.summaryOutput.available}}

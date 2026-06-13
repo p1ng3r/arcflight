@@ -12,6 +12,8 @@ import {
   postTravelEventRunnerSummaryToChat,
   renderTravelEventRunnerSummaryHtml,
   renderTravelEventRunnerSummaryMarkdown,
+  renderTravelEventStagedEffectReviewHtml,
+  renderTravelEventStagedEffectReviewMarkdown,
   loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
@@ -39,7 +41,10 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-copy-html]",
   "[data-arcflight-runner-post-chat]",
   "[data-arcflight-runner-create-journal]",
-  "[data-arcflight-runner-refresh-summary]"
+  "[data-arcflight-runner-refresh-summary]",
+  "[data-arcflight-runner-refresh-review]",
+  "[data-arcflight-runner-copy-review-markdown]",
+  "[data-arcflight-runner-copy-review-html]"
 ].join(", ");
 
 
@@ -267,6 +272,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-post-chat")) return this.#postSummaryToChat();
     if (target.hasAttribute("data-arcflight-runner-create-journal")) return this.#createSummaryJournal();
     if (target.hasAttribute("data-arcflight-runner-refresh-summary")) return this.#refreshSummary();
+    if (target.hasAttribute("data-arcflight-runner-refresh-review")) return this.#refreshReview();
+    if (target.hasAttribute("data-arcflight-runner-copy-review-markdown")) return this.#copyReviewMarkdown();
+    if (target.hasAttribute("data-arcflight-runner-copy-review-html")) return this.#copyReviewHtml();
   }
 
   async #startSelectedEvent() {
@@ -400,6 +408,32 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async #refreshSummary() {
     this.statusMessage = this.session?.status === "completed" ? "Completed summary output refreshed." : "Completed summary output is unavailable until this runner session is completed.";
+    return this.render(true);
+  }
+
+
+  async #copyReviewMarkdown() {
+    const rendered = renderTravelEventStagedEffectReviewMarkdown(this.session);
+    if (!rendered.available || !rendered.markdown) {
+      this.statusMessage = rendered.reason ?? "Staged consequence review is unavailable.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    return this.#copyOrFallback(rendered.markdown, "Staged consequence review Markdown copied to clipboard.");
+  }
+
+  async #copyReviewHtml() {
+    const rendered = renderTravelEventStagedEffectReviewHtml(this.session);
+    if (!rendered.available || !rendered.html) {
+      this.statusMessage = rendered.reason ?? "Staged consequence review is unavailable.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    return this.#copyOrFallback(rendered.html, "Staged consequence review HTML copied to clipboard.");
+  }
+
+  async #refreshReview() {
+    this.statusMessage = this.session?.status === "completed" ? "Staged consequence review refreshed. Review only; effects have not been applied." : "Staged consequence review is unavailable until this runner session is completed.";
     return this.render(true);
   }
 
