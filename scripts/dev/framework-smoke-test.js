@@ -1011,12 +1011,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     const loadedRunnerFixtureEvent = loadPublishedTravelEventFromLibrary(runnerFixtureKey);
     check(result, "Travel Event Runner Session Library smoke creates/uses a valid published fixture", loadedRunnerFixtureEvent.ok === true && loadedRunnerFixtureEvent.event?.key === runnerFixtureKey, "published runner fixture", loadedRunnerFixtureEvent.entry);
 
-    const runnerSessionActorBefore = stringifySmokeData(actor.toObject?.() ?? actor);
-    const runnerSessionResourcesBefore = getShipTravelResources(actor);
-    const runnerSessionEconomyBefore = getShipActionEconomy(actor);
-    const runnerSessionChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
-    const runnerSessionCombatsBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
-    const runnerSessionActiveCombatBefore = globalThis.game?.combat?.id ?? "";
+    let runnerSessionActorBefore = stringifySmokeData(actor.toObject?.() ?? actor);
+    let runnerSessionResourcesBefore = getShipTravelResources(actor);
+    let runnerSessionEconomyBefore = getShipActionEconomy(actor);
+    let runnerSessionChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
+    let runnerSessionCombatsBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
+    let runnerSessionActiveCombatBefore = globalThis.game?.combat?.id ?? "";
 
     const activeRunnerSessionCreated = createTravelEventRunnerSession(loadedRunnerFixtureEvent.event);
     let activeRunnerSession = activeRunnerSessionCreated.session;
@@ -1051,6 +1051,9 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Load completed runner session restores suggestedFinalOutcome", loadedCompletedRunnerSession.session.summary?.suggestedFinalOutcome === expectedCompletedOutcome && completedRunnerUiState.summary?.suggestedFinalOutcome === expectedCompletedOutcome, expectedCompletedOutcome, { loaded: loadedCompletedRunnerSession.session.summary?.suggestedFinalOutcome, state: completedRunnerUiState.summary?.suggestedFinalOutcome });
     check(result, "Load completed runner session restores staged proposedEffects as read-only data", expectedCompletedEffects.length > 0 && stringifySmokeData(loadedCompletedRunnerSession.session.summary?.stagedProposedEffects ?? []) === stringifySmokeData(expectedCompletedEffects) && stringifySmokeData(completedRunnerUiState.summary?.stagedProposedEffects ?? []) === stringifySmokeData(expectedCompletedEffects), "read-only staged effects restored", completedRunnerUiState.summary?.stagedProposedEffects);
     check(result, "Travel Event Runner completed session UI state exposes summary and save controls", completedRunnerUiState.summary?.suggestedFinalOutcome === expectedCompletedOutcome && completedRunnerUiState.canSaveSession === true && completedRunnerUiState.canSaveSessionAs === true, "completed save UI state", { canSaveSession: completedRunnerUiState.canSaveSession, canSaveSessionAs: completedRunnerUiState.canSaveSessionAs, summary: completedRunnerUiState.summary });
+    check(result, "Runner session library does not mutate actor data before manual apply", runnerSessionActorBefore === stringifySmokeData(actor.toObject?.() ?? actor), "actor unchanged before manual apply", { before: runnerSessionActorBefore, after: stringifySmokeData(actor.toObject?.() ?? actor) });
+    check(result, "Runner session library does not mutate ship resources before manual apply", stringifySmokeData(runnerSessionResourcesBefore) === stringifySmokeData(getShipTravelResources(actor)), "resources unchanged before manual apply", { before: runnerSessionResourcesBefore, after: getShipTravelResources(actor) });
+
 
     const applicationHelpersExist = typeof prepareTravelEventEffectApplicationState === "function"
       && typeof applyTravelEventRunnerSelectedEffects === "function"
@@ -1087,6 +1090,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Applying unknown effect id/index fails safely", unknownApplyResult.ok === false && unknownApplyResult.applied === false, "unknown blocked", unknownApplyResult.errors);
     const postApplyState = prepareTravelEventEffectApplicationState(manualApplyResult.session, actor);
     check(result, "Application state after apply shows already applied", postApplyState.rows.some((row) => row.index === readyApplyRow?.index && row.applied === true && row.selectable === false), "already applied", postApplyState.rows);
+
+    // Manual apply intentionally mutates the smoke actor's travel resources above.
+    // Refresh the library non-mutation baseline so the following checks isolate
+    // save/load/overwrite/malformed-session behavior instead of that explicit apply.
+    runnerSessionActorBefore = stringifySmokeData(actor.toObject?.() ?? actor);
+    runnerSessionResourcesBefore = getShipTravelResources(actor);
+    runnerSessionEconomyBefore = getShipActionEconomy(actor);
+    runnerSessionChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
+    runnerSessionCombatsBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
+    runnerSessionActiveCombatBefore = globalThis.game?.combat?.id ?? "";
 
     const libraryBeforeBlockedOverwrite = stringifySmokeData(getTravelEventRunnerSessionLibrary().sessions[savedActiveRunnerSession.entry.key]);
     const blockedRunnerOverwrite = await saveTravelEventRunnerSessionToLibrary({ ...loadedCompletedRunnerSession.session, currentRoundIndex: 0 }, { key: savedActiveRunnerSession.entry.key, overwrite: false, now: "2026-01-01T00:05:00.000Z" });
