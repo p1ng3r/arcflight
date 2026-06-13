@@ -31,8 +31,8 @@
     <h2>Runner Session Library</h2>
     <p class="arcflight-sheet__hint">World-local manual save/resume snapshots. Saved runner sessions are separate from drafts and published events, and never mutate actors, resources, chat, combat, or proposed effects.</p>
     <div class="arcflight-travel-runner-mvp__actions">
-      <button type="button" data-arcflight-runner-save {{#unless state.hasSession}}disabled{{/unless}}>Save Current Session</button>
-      <button type="button" data-arcflight-runner-save-as {{#unless state.hasSession}}disabled{{/unless}}>Save Current Session As</button>
+      <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
+      <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
       <button type="button" data-arcflight-runner-refresh-sessions>Refresh Sessions</button>
     </div>
 
@@ -60,8 +60,8 @@
             {{#if validationErrors.length}}<p class="arcflight-sheet__hint"><strong>Malformed:</strong> {{validationErrors}}</p>{{/if}}
             <div class="arcflight-travel-runner-mvp__actions">
               <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canLoad}}disabled{{/unless}}>Load Session</button>
-              <button type="button" data-arcflight-runner-duplicate-session="{{key}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate Session</button>
-              <button type="button" data-arcflight-runner-delete-session="{{key}}" data-session-name="{{name}}">Delete Session</button>
+              <button type="button" data-arcflight-runner-duplicate-session="{{key}}" {{#unless canDuplicate}}disabled{{/unless}}>Duplicate Session</button>
+              <button type="button" data-arcflight-runner-delete-session="{{key}}" data-session-name="{{name}}" {{#unless canDelete}}disabled{{/unless}}>Delete Session</button>
             </div>
           </article>
         {{/each}}

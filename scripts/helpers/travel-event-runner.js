@@ -316,7 +316,8 @@ export function cloneTravelEventRunnerSession(session, options = {}) {
 }
 
 export function getTravelEventRunnerSessionLibrary(options = {}) {
-  return normalizeTravelEventRunnerSessionLibraryData(Object.hasOwn(options, "library") ? options.library : getGameSettingRunnerSessionLibrary(), options);
+  const rawLibrary = Object.hasOwn(options, "runnerSessionLibrary") ? options.runnerSessionLibrary : (Object.hasOwn(options, "library") ? options.library : getGameSettingRunnerSessionLibrary());
+  return normalizeTravelEventRunnerSessionLibraryData(rawLibrary, options);
 }
 
 export async function saveTravelEventRunnerSessionToLibrary(session, options = {}) {
@@ -404,6 +405,8 @@ export function prepareTravelEventRunnerSessionLibraryState(options = {}) {
     startedAtLabel: entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "",
     completedAtLabel: entry.completedAt ? new Date(entry.completedAt).toLocaleString() : "",
     canLoad: entry.isMalformed !== true && Boolean(entry.session),
+    canDuplicate: entry.isMalformed !== true && Boolean(entry.session),
+    canDelete: true,
     selected: selectedSessionKey ? entry.key === selectedSessionKey : false,
     missingPublishedEvent: !publishedEventExistsForSession(entry, options)
   }));
@@ -419,7 +422,8 @@ export function prepareTravelEventRunnerSessionLibraryState(options = {}) {
 
 export function prepareTravelEventRunnerState(session = null, options = {}) {
   const libraryState = prepareTravelEventRunnerLibraryState(options);
-  const sessionLibraryState = prepareTravelEventRunnerSessionLibraryState(options);
+  const sessionLibraryOptions = Object.hasOwn(options, "runnerSessionLibrary") ? { ...options, library: options.runnerSessionLibrary } : options;
+  const sessionLibraryState = prepareTravelEventRunnerSessionLibraryState(sessionLibraryOptions);
   const normalized = session ? normalizeTravelEventRunnerSession(session, options) : { ok: true, errors: [], warnings: [], session: null };
   const activeSession = normalized.session;
   const currentRound = activeSession?.event.rounds[activeSession.currentRoundIndex] ?? null;
@@ -433,6 +437,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     library: libraryState,
     sessionLibrary: sessionLibraryState,
     hasSavedSessions: sessionLibraryState.hasSessions === true,
+    canSaveSession: Boolean(activeSession),
+    canSaveSessionAs: Boolean(activeSession),
     hasPublishedEvents: libraryState.hasEvents === true,
     hasLoadableEvents: libraryState.hasLoadableEvents === true,
     session: activeSession,
