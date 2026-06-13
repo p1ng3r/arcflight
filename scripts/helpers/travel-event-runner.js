@@ -1161,16 +1161,19 @@ export async function saveImportedTravelEventRunnerSessionToLibrary(importResult
   const source = importResult?.session ? importResult : prepareTravelEventRunnerSessionImportPreview(importResult, options);
   if (!source.ok || !source.session) return buildRunnerLibraryResult(false, { errors: source.errors ?? ["Imported runner session is not valid."], warnings: source.warnings ?? [], session: null, entry: null });
   const mode = options.mode === "overwrite" ? "overwrite" : "copy";
+  const libraryOptions = source.library ? { ...options, library: source.library } : options;
   if (source.duplicateKey && mode !== "overwrite" && options.allowDuplicateKey !== true) {
     const key = createUniqueRunnerSessionKey(source.library ?? getTravelEventRunnerSessionLibrary(options), `${source.session.key || source.session.event?.key || "runner-session"}-import`, options);
     const copy = cloneData(source.session);
     copy.key = key;
-    return saveTravelEventRunnerSessionToLibrary(copy, { ...options, key, name: `${source.preview?.sessionName || source.session.event?.name || key} Imported Copy`, overwrite: false });
+    const savedCopy = await saveTravelEventRunnerSessionToLibrary(copy, { ...libraryOptions, key, name: `${source.preview?.sessionName || source.session.event?.name || key} Imported Copy`, overwrite: false });
+    return { ...savedCopy, importMode: "copy", overwritten: false };
   }
   if (source.duplicateKey && mode === "overwrite" && options.confirmOverwrite !== true) {
-    return buildRunnerLibraryResult(false, { errors: ["Overwrite requires explicit confirmation."], warnings: source.warnings ?? [], session: cloneData(source.session), entry: null });
+    return buildRunnerLibraryResult(false, { errors: ["Overwrite requires explicit confirmation."], warnings: source.warnings ?? [], session: cloneData(source.session), entry: null, importMode: "overwrite", overwritten: false });
   }
-  return saveTravelEventRunnerSessionToLibrary(source.session, { ...options, key: source.session.key, overwrite: mode === "overwrite" });
+  const saved = await saveTravelEventRunnerSessionToLibrary(source.session, { ...libraryOptions, key: source.session.key, overwrite: mode === "overwrite" });
+  return { ...saved, importMode: mode, overwritten: mode === "overwrite" && saved.ok === true };
 }
 
 export function loadPublishedTravelEventForRunner(idOrKey, options = {}) {
