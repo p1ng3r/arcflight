@@ -5,9 +5,13 @@ import {
   completeTravelEventRunnerSession,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
+  deleteTravelEventRunnerSessionFromLibrary,
+  duplicateTravelEventRunnerSession,
   loadPublishedTravelEventForRunner,
+  loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
+  saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult
 } from "../helpers/travel-event-runner.js";
 
@@ -20,7 +24,13 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-next]",
   "[data-arcflight-runner-complete]",
   "[data-arcflight-runner-export]",
-  "[data-arcflight-runner-clear]"
+  "[data-arcflight-runner-clear]",
+  "[data-arcflight-runner-save]",
+  "[data-arcflight-runner-save-as]",
+  "[data-arcflight-runner-load-session]",
+  "[data-arcflight-runner-duplicate-session]",
+  "[data-arcflight-runner-delete-session]",
+  "[data-arcflight-runner-refresh-sessions]"
 ].join(", ");
 
 
@@ -172,6 +182,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     super(options);
     this.selectedEventId = typeof options.selectedEventId === "string" ? options.selectedEventId : defaultSelectedEventId(options);
     this.session = options.session ?? null;
+    this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
     this.statusMessage = "Select a published finalized travel event to begin.";
   }
 
@@ -188,7 +199,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId });
+    const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey });
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
@@ -209,11 +220,19 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #onRunnerChange(event) {
-    const target = event.target?.closest?.("[data-arcflight-runner-event-select]");
-    if (!target || !this.element?.contains(target)) return;
-    this.selectedEventId = target.value ?? "";
-    this.statusMessage = "Published travel event selected. Start Event creates a local in-memory session.";
-    await this.render(true);
+    const eventSelect = event.target?.closest?.("[data-arcflight-runner-event-select]");
+    if (eventSelect && this.element?.contains(eventSelect)) {
+      this.selectedEventId = eventSelect.value ?? "";
+      this.statusMessage = "Published travel event selected. Start Event creates a local in-memory session.";
+      return this.render(true);
+    }
+
+    const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
+    if (sessionSelect && this.element?.contains(sessionSelect)) {
+      this.selectedSessionKey = sessionSelect.value ?? "";
+      this.statusMessage = this.selectedSessionKey ? "Saved runner session selected. Load Session resumes from the saved snapshot." : "Select a saved runner session to load, duplicate, or delete.";
+      return this.render(true);
+    }
   }
 
   async #onRunnerClick(event) {
@@ -228,6 +247,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-complete")) return this.#completeEvent();
     if (target.hasAttribute("data-arcflight-runner-export")) return this.#exportSummary();
     if (target.hasAttribute("data-arcflight-runner-clear")) return this.#clearSession();
+    if (target.hasAttribute("data-arcflight-runner-save")) return this.#saveCurrentSession({ saveAs: false });
+    if (target.hasAttribute("data-arcflight-runner-save-as")) return this.#saveCurrentSession({ saveAs: true });
+    if (target.hasAttribute("data-arcflight-runner-load-session")) return this.#loadSelectedSession(target);
+    if (target.hasAttribute("data-arcflight-runner-duplicate-session")) return this.#duplicateSelectedSession(target);
+    if (target.hasAttribute("data-arcflight-runner-delete-session")) return this.#deleteSelectedSession(target);
+    if (target.hasAttribute("data-arcflight-runner-refresh-sessions")) return this.#refreshSessions();
   }
 
   async #startSelectedEvent() {
@@ -246,6 +271,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
 
     this.session = created.session;
+    this.selectedSessionKey = "";
     this.statusMessage = `Started local runner session for ${created.session.event.name}.`;
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
@@ -261,6 +287,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ui.notifications?.warn?.(this.statusMessage);
     } else {
       this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
       this.statusMessage = `Recorded ${result} for ${stationKey}.`;
     }
     return this.render(true);
@@ -269,6 +296,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #advanceRound() {
     const updated = advanceTravelEventRunnerRound(this.session);
     this.session = updated.session ?? this.session;
+    this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
     this.statusMessage = updated.ok ? "Advanced to the next round." : (updated.errors?.[0] ?? "Could not advance the runner round.");
     if (!updated.ok) ui.notifications?.warn?.(this.statusMessage);
     return this.render(true);
@@ -277,6 +305,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #retreatRound() {
     const updated = retreatTravelEventRunnerRound(this.session);
     this.session = updated.session ?? this.session;
+    this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
     this.statusMessage = updated.ok ? "Returned to the previous round." : (updated.errors?.[0] ?? "Could not return to the previous round.");
     if (!updated.ok) ui.notifications?.warn?.(this.statusMessage);
     return this.render(true);
@@ -289,6 +318,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ui.notifications?.warn?.(this.statusMessage);
     } else {
       this.session = completed.session;
+      this.selectedSessionKey = completed.session.key ?? this.selectedSessionKey;
       this.statusMessage = "Travel event complete. Summary and read-only staged proposed effects are ready.";
       ui.notifications?.info?.(this.statusMessage);
     }
@@ -308,8 +338,121 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+
+  async #saveCurrentSession({ saveAs = false } = {}) {
+    if (!this.session) {
+      this.statusMessage = "No runner session is active to save.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+
+    const options = {};
+    if (saveAs) {
+      const defaultName = `${this.session.event?.name ?? "Travel Event"} Session Copy`;
+      const name = globalThis.prompt?.("Save runner session as:", defaultName) ?? defaultName;
+      if (!name || !String(name).trim()) {
+        this.statusMessage = "Save As cancelled; Runner Session Library was not changed.";
+        return this.render(true);
+      }
+      options.name = String(name).trim();
+      options.key = "";
+      const copy = cloneData(this.session);
+      delete copy.key;
+      const savedAs = await saveTravelEventRunnerSessionToLibrary(copy, options);
+      return this.#handleSavedSessionResult(savedAs, "Saved current runner session as a new library entry.");
+    }
+
+    if (this.session.key) {
+      options.key = this.session.key;
+      options.overwrite = true;
+    }
+
+    const saved = await saveTravelEventRunnerSessionToLibrary(this.session, options);
+    return this.#handleSavedSessionResult(saved, "Saved current runner session to the Runner Session Library.");
+  }
+
+  async #handleSavedSessionResult(saved, successMessage) {
+    if (!saved.ok) {
+      this.statusMessage = saved.errors?.[0] ?? "Runner session could not be saved.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = saved.session;
+      this.selectedSessionKey = saved.entry.key;
+      this.statusMessage = successMessage;
+      ui.notifications?.info?.(`${successMessage} (${saved.entry.name})`);
+    }
+    return this.render(true);
+  }
+
+  #getSessionKeyFromTarget(target) {
+    return target.dataset.arcflightRunnerLoadSession
+      ?? target.dataset.arcflightRunnerDuplicateSession
+      ?? target.dataset.arcflightRunnerDeleteSession
+      ?? this.selectedSessionKey
+      ?? "";
+  }
+
+  async #loadSelectedSession(target) {
+    const key = this.#getSessionKeyFromTarget(target);
+    const loaded = loadTravelEventRunnerSessionFromLibrary(key);
+    if (!loaded.ok || !loaded.session) {
+      this.statusMessage = loaded.errors?.[0] ?? "Saved runner session could not be loaded.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = loaded.session;
+      this.selectedSessionKey = loaded.entry.key;
+      this.selectedEventId = loaded.entry.eventKey || this.selectedEventId;
+      this.statusMessage = loaded.warnings?.[0] ?? `Loaded saved runner session "${loaded.entry.name}".`;
+      if (loaded.warnings?.length) ui.notifications?.warn?.(this.statusMessage);
+      else ui.notifications?.info?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  async #duplicateSelectedSession(target) {
+    const key = this.#getSessionKeyFromTarget(target);
+    const duplicated = await duplicateTravelEventRunnerSession(key);
+    if (!duplicated.ok) {
+      this.statusMessage = duplicated.errors?.[0] ?? "Saved runner session could not be duplicated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.selectedSessionKey = duplicated.entry.key;
+      this.statusMessage = `Duplicated runner session as "${duplicated.entry.name}".`;
+      ui.notifications?.info?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  async #deleteSelectedSession(target) {
+    const key = this.#getSessionKeyFromTarget(target);
+    const label = target.dataset.sessionName || key;
+    const confirmed = globalThis.confirm?.(`Delete saved runner session "${label}"? This does not modify published events, actors, resources, chat, or combat.`) ?? true;
+    if (!confirmed) {
+      this.statusMessage = "Delete cancelled; Runner Session Library was not changed.";
+      return this.render(true);
+    }
+
+    const deleted = await deleteTravelEventRunnerSessionFromLibrary(key);
+    if (!deleted.ok) {
+      this.statusMessage = deleted.errors?.[0] ?? "Saved runner session could not be deleted.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      if (this.selectedSessionKey === deleted.deleted.key) this.selectedSessionKey = "";
+      if (this.session?.key === deleted.deleted.key) this.session = null;
+      this.statusMessage = `Deleted saved runner session "${deleted.deleted.name}".`;
+      ui.notifications?.info?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  async #refreshSessions() {
+    this.statusMessage = "Runner Session Library refreshed from the Arcflight world setting.";
+    return this.render(true);
+  }
+
   async #clearSession() {
     this.session = null;
+    this.selectedSessionKey = "";
     this.statusMessage = "Local runner session cleared. Published events were not modified.";
     return this.render(true);
   }

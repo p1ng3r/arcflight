@@ -18,8 +18,15 @@ import {
   completeTravelEventRunnerSession,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
+  cloneTravelEventRunnerSession,
+  deleteTravelEventRunnerSessionFromLibrary,
+  duplicateTravelEventRunnerSession,
+  getTravelEventRunnerSessionLibrary,
+  loadTravelEventRunnerSessionFromLibrary,
+  prepareTravelEventRunnerSessionLibraryState,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
+  saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult
 } from "../helpers/travel-event-runner.js";
 import { ARCFLIGHT, ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
@@ -932,6 +939,59 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel event library selected details work for False Beacon Ambush", falseBeaconSelectedTravelEventDetails?.key === "false-beacon-ambush" && falseBeaconSelectedTravelEventDetails.roundCount === 4 && falseBeaconSelectedTravelEventDetails.baseDC === 20 && falseBeaconSelectedTravelEventDetails.category === "threat", "selected False Beacon Ambush details", falseBeaconSelectedTravelEventDetails);
     check(result, "Travel event library selected details work for Portside Diplomatic Snare", portsideSelectedTravelEventDetails?.key === "portside-diplomatic-snare" && portsideSelectedTravelEventDetails.roundCount === 4 && portsideSelectedTravelEventDetails.baseDC === 18 && portsideSelectedTravelEventDetails.category === "social", "selected Portside Diplomatic Snare details", portsideSelectedTravelEventDetails);
     check(result, "Travel runner app imports and helpers are exposed", typeof ArcflightTravelEventRunner === "function" && typeof openTravelEventRunner === "function" && typeof prepareTravelEventLibraryOptions === "function" && typeof prepareSelectedTravelEventLibraryDetails === "function" && typeof prepareTravelEventNarrativeLog === "function" && typeof globalThis.game?.arcflight?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.devTools?.ArcflightTravelEventRunner === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventLibraryOptions === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventNarrativeLog === "function" && typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventNarrativeLog === "function", true, { importedClass: typeof ArcflightTravelEventRunner, importedHelper: typeof openTravelEventRunner, importedLibraryHelper: typeof prepareTravelEventLibraryOptions, importedNarrativeHelper: typeof prepareTravelEventNarrativeLog, apiHelper: typeof globalThis.game?.arcflight?.openTravelEventRunner, devToolsHelper: typeof globalThis.game?.arcflight?.devTools?.openTravelEventRunner, apiLibraryHelper: typeof globalThis.game?.arcflight?.prepareTravelEventLibraryOptions, apiNarrativeHelper: typeof globalThis.game?.arcflight?.prepareTravelEventNarrativeLog, devToolsNarrativeHelper: typeof globalThis.game?.arcflight?.devTools?.prepareTravelEventNarrativeLog });
+    const runnerSessionLibraryHelpersExist = [getTravelEventRunnerSessionLibrary, saveTravelEventRunnerSessionToLibrary, loadTravelEventRunnerSessionFromLibrary, deleteTravelEventRunnerSessionFromLibrary, duplicateTravelEventRunnerSession, prepareTravelEventRunnerSessionLibraryState, cloneTravelEventRunnerSession].every((helper) => typeof helper === "function")
+      && typeof globalThis.game?.arcflight?.getTravelEventRunnerSessionLibrary === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.getTravelEventRunnerSessionLibrary === "function"
+      && typeof globalThis.game?.arcflight?.saveTravelEventRunnerSessionToLibrary === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.saveTravelEventRunnerSessionToLibrary === "function";
+    check(result, "Travel Event Runner Session Library helpers exist", runnerSessionLibraryHelpersExist, true, { getTravelEventRunnerSessionLibrary: typeof getTravelEventRunnerSessionLibrary, api: typeof globalThis.game?.arcflight?.getTravelEventRunnerSessionLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.getTravelEventRunnerSessionLibrary });
+
+    const emptyRunnerSessionLibrary = getTravelEventRunnerSessionLibrary({ library: null });
+    const emptyRunnerSessionLibraryState = prepareTravelEventRunnerSessionLibraryState({ library: null });
+    check(result, "Empty runner session library state is safe", emptyRunnerSessionLibrary.version === 1 && Object.keys(emptyRunnerSessionLibrary.sessions).length === 0 && emptyRunnerSessionLibraryState.count === 0 && emptyRunnerSessionLibraryState.hasSessions === false, "empty safe library", { emptyRunnerSessionLibrary, emptyRunnerSessionLibraryState });
+
+    const runnerSessionActorBefore = stringifySmokeData(actor.toObject?.() ?? actor);
+    const runnerSessionResourcesBefore = getShipTravelResources(actor);
+    const runnerSessionEconomyBefore = getShipActionEconomy(actor);
+    const runnerSessionChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
+    const runnerSessionCombatsBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
+    const activeRunnerSessionCreated = createTravelEventRunnerSession(getCoreTravelEvent("black-tide-crossing"));
+    let activeRunnerSession = activeRunnerSessionCreated.session;
+    activeRunnerSession = setTravelEventRunnerStationResult(activeRunnerSession, 0, "navigator", "success").session;
+    activeRunnerSession = advanceTravelEventRunnerRound(activeRunnerSession).session;
+    activeRunnerSession = setTravelEventRunnerStationResult(activeRunnerSession, 1, "engineer", "failure").session;
+    const savedActiveRunnerSession = await saveTravelEventRunnerSessionToLibrary(activeRunnerSession, { library: emptyRunnerSessionLibrary, dryRun: true, now: "2026-01-01T00:00:00.000Z" });
+    const loadedActiveRunnerSession = loadTravelEventRunnerSessionFromLibrary(savedActiveRunnerSession.entry?.key, { library: savedActiveRunnerSession.library });
+    check(result, "Save active runner session works", savedActiveRunnerSession.ok === true && savedActiveRunnerSession.entry?.status === "active" && savedActiveRunnerSession.entry?.session?.event?.key === "black-tide-crossing", "saved active session", savedActiveRunnerSession.entry);
+    check(result, "Load active runner session restores currentRoundIndex and station results", loadedActiveRunnerSession.ok === true && loadedActiveRunnerSession.session.currentRoundIndex === 1 && loadedActiveRunnerSession.session.roundResults[0].stationResults.navigator === "success" && loadedActiveRunnerSession.session.roundResults[1].stationResults.engineer === "failure", "loaded active session", loadedActiveRunnerSession.session);
+    const duplicateRunnerSession = await duplicateTravelEventRunnerSession(savedActiveRunnerSession.entry.key, { library: savedActiveRunnerSession.library, dryRun: true, now: "2026-01-01T00:00:01.000Z" });
+    check(result, "Duplicate runner session creates distinct key", duplicateRunnerSession.ok === true && duplicateRunnerSession.entry.key !== savedActiveRunnerSession.entry.key, "duplicate key", { original: savedActiveRunnerSession.entry.key, duplicate: duplicateRunnerSession.entry?.key });
+    const deletedRunnerSession = await deleteTravelEventRunnerSessionFromLibrary(savedActiveRunnerSession.entry.key, { library: duplicateRunnerSession.library, dryRun: true });
+    check(result, "Delete runner session removes it", deletedRunnerSession.ok === true && !Object.hasOwn(deletedRunnerSession.library.sessions, savedActiveRunnerSession.entry.key), "deleted session", deletedRunnerSession.deleted?.key);
+
+    const completedRunnerSession = completeTravelEventRunnerSession(activeRunnerSession, { now: "2026-01-01T00:05:00.000Z" }).session;
+    const savedCompletedRunnerSession = await saveTravelEventRunnerSessionToLibrary(completedRunnerSession, { library: emptyRunnerSessionLibrary, dryRun: true, key: "completed-runner-smoke", now: "2026-01-01T00:06:00.000Z" });
+    const loadedCompletedRunnerSession = loadTravelEventRunnerSessionFromLibrary("completed-runner-smoke", { library: savedCompletedRunnerSession.library });
+    const completedRunnerState = prepareTravelEventRunnerState(loadedCompletedRunnerSession.session, { library: { version: 1, events: {} }, selectedSessionKey: "completed-runner-smoke" });
+    check(result, "Save completed runner session preserves summary/proposedEffects", savedCompletedRunnerSession.ok === true && savedCompletedRunnerSession.entry.status === "completed" && savedCompletedRunnerSession.entry.session.summary?.suggestedFinalOutcome && Array.isArray(savedCompletedRunnerSession.entry.session.summary?.stagedProposedEffects), "saved completed summary", savedCompletedRunnerSession.entry.session.summary);
+    check(result, "Load completed runner session shows completed state", loadedCompletedRunnerSession.ok === true && completedRunnerState.isCompleted === true && completedRunnerState.summary?.suggestedFinalOutcome === loadedCompletedRunnerSession.session.summary?.suggestedFinalOutcome, "completed runner state", completedRunnerState.summary);
+    const blockedRunnerOverwrite = await saveTravelEventRunnerSessionToLibrary(loadedActiveRunnerSession.session, { library: savedActiveRunnerSession.library, dryRun: true, key: savedActiveRunnerSession.entry.key, overwrite: false });
+    const allowedRunnerOverwrite = await saveTravelEventRunnerSessionToLibrary({ ...loadedActiveRunnerSession.session, currentRoundIndex: 0 }, { library: savedActiveRunnerSession.library, dryRun: true, key: savedActiveRunnerSession.entry.key, overwrite: true, now: "2026-01-01T00:07:00.000Z" });
+    check(result, "Save without overwrite does not silently replace existing session", blockedRunnerOverwrite.ok === false && blockedRunnerOverwrite.errors.some((error) => error.includes("already exists")) && savedActiveRunnerSession.library.sessions[savedActiveRunnerSession.entry.key].currentRoundIndex === 1, "overwrite blocked", blockedRunnerOverwrite.errors);
+    check(result, "Overwrite true updates existing runner session", allowedRunnerOverwrite.ok === true && allowedRunnerOverwrite.entry.currentRoundIndex === 0, "overwrite allowed", allowedRunnerOverwrite.entry);
+    const malformedRunnerSessionLibrary = getTravelEventRunnerSessionLibrary({ library: { version: 1, sessions: { malformed: { key: "malformed", session: { event: { key: "bad", rounds: [] } } } } } });
+    const malformedRunnerSessionLoad = loadTravelEventRunnerSessionFromLibrary("malformed", { library: malformedRunnerSessionLibrary });
+    check(result, "Malformed session library fails safely", malformedRunnerSessionLibrary.sessions.malformed.isMalformed === true && malformedRunnerSessionLoad.ok === false, "malformed safely rejected", malformedRunnerSessionLoad.errors);
+    const missingPublishedEventLoad = loadTravelEventRunnerSessionFromLibrary(savedActiveRunnerSession.entry.key, { library: savedActiveRunnerSession.library, publishedLibrary: { version: 1, events: {} } });
+    check(result, "Saved session referencing missing published event loads with warning", missingPublishedEventLoad.ok === true && missingPublishedEventLoad.warnings.some((warning) => warning.includes("not currently in the Published Travel Event Library")), "missing published warning", missingPublishedEventLoad.warnings);
+    const runnerSessionChatAfter = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
+    const runnerSessionCombatsAfter = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
+    check(result, "Runner session library does not mutate actor data", runnerSessionActorBefore === stringifySmokeData(actor.toObject?.() ?? actor), "actor unchanged", { before: runnerSessionActorBefore, after: stringifySmokeData(actor.toObject?.() ?? actor) });
+    check(result, "Runner session library does not mutate ship resources", stringifySmokeData(runnerSessionResourcesBefore) === stringifySmokeData(getShipTravelResources(actor)), "resources unchanged", { before: runnerSessionResourcesBefore, after: getShipTravelResources(actor) });
+    check(result, "Runner session library does not apply proposedEffects", stringifySmokeData(runnerSessionResourcesBefore) === stringifySmokeData(getShipTravelResources(actor)), "proposed effects staged only", savedCompletedRunnerSession.entry.session.summary?.stagedProposedEffects ?? []);
+    check(result, "Runner session library does not post chat", runnerSessionChatBefore === runnerSessionChatAfter, "chat count unchanged", { before: runnerSessionChatBefore, after: runnerSessionChatAfter });
+    check(result, "Runner session library does not start combat", runnerSessionCombatsBefore === runnerSessionCombatsAfter, "combat count unchanged", { before: runnerSessionCombatsBefore, after: runnerSessionCombatsAfter });
+    check(result, "Runner session library does not introduce AP/RAP mechanics", stringifySmokeData(runnerSessionEconomyBefore) === stringifySmokeData(getShipActionEconomy(actor)), "AP/RAP unchanged", { before: runnerSessionEconomyBefore, after: getShipActionEconomy(actor) });
     let noActorRunnerApp = null;
     try {
       noActorRunnerApp = globalThis.game?.arcflight?.openTravelEventRunner?.();

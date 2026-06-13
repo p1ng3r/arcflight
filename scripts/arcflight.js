@@ -116,9 +116,18 @@ import {
   completeTravelEventRunnerSession,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
+  TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
+  TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
+  cloneTravelEventRunnerSession,
+  deleteTravelEventRunnerSessionFromLibrary,
+  duplicateTravelEventRunnerSession,
+  getTravelEventRunnerSessionLibrary,
+  loadTravelEventRunnerSessionFromLibrary,
   normalizeTravelEventRunnerSession,
+  prepareTravelEventRunnerSessionLibraryState,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
+  saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
   summarizeTravelEventRunnerSession
 } from "./helpers/travel-event-runner.js";
@@ -284,6 +293,15 @@ Hooks.once("init", () => {
     config: false,
     type: Object,
     default: { version: PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION, events: {} }
+  });
+
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING, {
+    name: "Travel Event Runner Session Library",
+    hint: "World-local manual save/resume snapshots for the Travel Event Runner. Separate from drafts, published events, actors, resources, chat, and combat.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION, sessions: {} }
   });
 
   CONFIG.arcflight = Object.freeze({
@@ -552,9 +570,18 @@ Hooks.once("init", () => {
     completeTravelEventRunnerSession,
     summarizeTravelEventRunnerSession,
     exportTravelEventRunnerSessionToJson,
-  prepareTravelEventLibraryOptions,
-  prepareSelectedTravelEventLibraryDetails,
-  prepareTravelEventNarrativeLog,
+    TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
+    TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
+    getTravelEventRunnerSessionLibrary,
+    saveTravelEventRunnerSessionToLibrary,
+    loadTravelEventRunnerSessionFromLibrary,
+    deleteTravelEventRunnerSessionFromLibrary,
+    duplicateTravelEventRunnerSession,
+    prepareTravelEventRunnerSessionLibraryState,
+    cloneTravelEventRunnerSession,
+    prepareTravelEventLibraryOptions,
+    prepareSelectedTravelEventLibraryDetails,
+    prepareTravelEventNarrativeLog,
     resetShipActionEconomy,
     spendShipActionPoints,
     canSpendShipActionPoints,
@@ -818,6 +845,15 @@ export {
   completeTravelEventRunnerSession,
   summarizeTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
+  TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
+  TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
+  getTravelEventRunnerSessionLibrary,
+  saveTravelEventRunnerSessionToLibrary,
+  loadTravelEventRunnerSessionFromLibrary,
+  deleteTravelEventRunnerSessionFromLibrary,
+  duplicateTravelEventRunnerSession,
+  prepareTravelEventRunnerSessionLibraryState,
+  cloneTravelEventRunnerSession,
   prepareTravelEventLibraryOptions,
   prepareSelectedTravelEventLibraryDetails,
   prepareTravelEventNarrativeLog,
