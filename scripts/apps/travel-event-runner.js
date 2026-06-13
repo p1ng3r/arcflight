@@ -34,6 +34,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-previous]",
   "[data-arcflight-runner-next]",
   "[data-arcflight-runner-complete]",
+  "[data-arcflight-runner-toggle-current-session]",
   "[data-arcflight-runner-export]",
   "[data-arcflight-runner-clear]",
   "[data-arcflight-runner-save]",
@@ -211,7 +212,7 @@ function defaultSelectedEventId(options = {}) {
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
-  #pendingScrollTop = null;
+  #pendingScrollState = null;
 
   constructor(options = {}) {
     super(options);
@@ -219,6 +220,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.session = options.session ?? null;
     this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
     this.statusMessage = "Select a published finalized travel event to begin.";
+    this.uiState = {
+      currentSessionCollapsed: options.currentSessionCollapsed !== false,
+      scrollTop: 0,
+      scrollSelector: ""
+    };
   }
 
   static DEFAULT_OPTIONS = {
@@ -237,30 +243,72 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return super.render(force, options);
   }
 
-  #getScrollContainer() {
-    return this.element?.querySelector?.(".window-content")
-      ?? this.element?.querySelector?.(".application-content")
-      ?? this.element?.querySelector?.("[data-application-part]")
-      ?? this.element?.querySelector?.(".arcflight-travel-runner-mvp")
+  #getApplicationRoot() {
+    return this.element?.closest?.(".app, .application, .window-app")
       ?? this.element
       ?? null;
   }
 
+  #getScrollCandidates() {
+    const root = this.#getApplicationRoot();
+    const selectors = [
+      ".arcflight-travel-runner-mvp",
+      ".window-content",
+      ".application-content",
+      "[data-application-part='runner']",
+      "[data-application-part]"
+    ];
+    const candidates = [];
+    for (const element of [this.element, root]) {
+      if (element) candidates.push({ element, selector: "" });
+    }
+    for (const selector of selectors) {
+      const scoped = root?.querySelector?.(selector);
+      if (scoped) candidates.push({ element: scoped, selector });
+      const local = this.element?.querySelector?.(selector);
+      if (local) candidates.push({ element: local, selector });
+    }
+    return candidates.filter((candidate, index, array) => candidate.element && array.findIndex((other) => other.element === candidate.element) === index);
+  }
+
+  #findScrollContainer(preferredSelector = "") {
+    const candidates = this.#getScrollCandidates();
+    if (preferredSelector) {
+      const preferred = candidates.find((candidate) => candidate.selector === preferredSelector && this.#isScrollable(candidate.element));
+      if (preferred) return preferred;
+    }
+    return candidates.find((candidate) => this.#isScrollable(candidate.element) && Number(candidate.element.scrollTop) > 0)
+      ?? candidates.find((candidate) => this.#isScrollable(candidate.element))
+      ?? candidates.find((candidate) => candidate.element)
+      ?? null;
+  }
+
+  #isScrollable(element) {
+    return Boolean(element && Number(element.scrollHeight) > Number(element.clientHeight) + 1);
+  }
+
   #captureScrollPosition() {
-    const scrollContainer = this.#getScrollContainer();
-    if (scrollContainer && Number.isFinite(Number(scrollContainer.scrollTop))) this.#pendingScrollTop = scrollContainer.scrollTop;
+    const candidate = this.#findScrollContainer(this.uiState.scrollSelector);
+    if (!candidate?.element || !Number.isFinite(Number(candidate.element.scrollTop))) return;
+    this.uiState.scrollTop = candidate.element.scrollTop;
+    this.uiState.scrollSelector = candidate.selector;
+    this.#pendingScrollState = { scrollTop: candidate.element.scrollTop, selector: candidate.selector };
   }
 
   #restoreScrollPosition() {
-    if (this.#pendingScrollTop == null) return;
-    const scrollTop = this.#pendingScrollTop;
-    this.#pendingScrollTop = null;
+    if (!this.#pendingScrollState) return;
+    const { scrollTop, selector } = this.#pendingScrollState;
+    this.#pendingScrollState = null;
     const restore = () => {
-      const scrollContainer = this.#getScrollContainer();
-      if (scrollContainer) scrollContainer.scrollTop = scrollTop;
+      const candidate = this.#findScrollContainer(selector);
+      if (candidate?.element) {
+        candidate.element.scrollTop = scrollTop;
+        this.uiState.scrollTop = scrollTop;
+        this.uiState.scrollSelector = candidate.selector;
+      }
     };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
-    else restore();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
+    else setTimeout(restore, 0);
   }
 
   async _prepareContext(options) {
@@ -268,6 +316,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const targetActor = this.#getSelectedShipActor();
     const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey, actor: targetActor });
     state.effectApplication = prepareTravelEventEffectApplicationState(this.session, targetActor);
+    state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
@@ -314,6 +363,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-previous")) return this.#retreatRound();
     if (target.hasAttribute("data-arcflight-runner-next")) return this.#advanceRound();
     if (target.hasAttribute("data-arcflight-runner-complete")) return this.#completeEvent();
+    if (target.hasAttribute("data-arcflight-runner-toggle-current-session")) return this.#toggleCurrentSession();
     if (target.hasAttribute("data-arcflight-runner-export")) return this.#exportSummary();
     if (target.hasAttribute("data-arcflight-runner-clear")) return this.#clearSession();
     if (target.hasAttribute("data-arcflight-runner-save")) return this.#saveCurrentSession({ saveAs: false });
@@ -334,6 +384,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
+  }
+
+  async #toggleCurrentSession() {
+    this.uiState.currentSessionCollapsed = !this.uiState.currentSessionCollapsed;
+    this.statusMessage = this.uiState.currentSessionCollapsed ? "Current Runner Session controls collapsed." : "Current Runner Session details expanded.";
+    return this.render(true);
   }
 
   #getSelectedShipActor() {

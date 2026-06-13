@@ -6,12 +6,26 @@
   </header>
 
   <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-controls">
-    <h2>Current Runner Session</h2>
-    <div class="arcflight-travel-runner-mvp__stats">
-      <div><span>Session</span><strong>{{state.currentSessionName}}</strong></div>
-      <div><span>Status</span><strong>{{state.currentSessionStatusLabel}}</strong></div>
-      <div><span>Event</span><strong>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</strong></div>
+    <div class="arcflight-travel-runner-mvp__session-controls-header">
+      <button type="button" class="arcflight-travel-runner-mvp__collapse-toggle" data-arcflight-runner-toggle-current-session aria-expanded="{{#unless state.currentSessionCollapsed}}true{{else}}false{{/unless}}">
+        {{#if state.currentSessionCollapsed}}▶{{else}}▼{{/if}}
+      </button>
+      <h2>Current Runner Session</h2>
+      <p class="arcflight-travel-runner-mvp__session-compact">
+        <strong>{{state.currentSessionName}}</strong>
+        <span>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</span>
+        <span>{{state.currentSessionStatusLabel}}</span>
+        <span>{{#if state.isCompleted}}Completed{{else}}Round {{state.currentRoundNumber}}{{/if}}</span>
+      </p>
     </div>
+    {{#unless state.currentSessionCollapsed}}
+      <div class="arcflight-travel-runner-mvp__stats">
+        <div><span>Session</span><strong>{{state.currentSessionName}}</strong></div>
+        <div><span>Status</span><strong>{{state.currentSessionStatusLabel}}</strong></div>
+        <div><span>Event</span><strong>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</strong></div>
+        <div><span>Progress</span><strong>{{#if state.isCompleted}}Completed{{else}}Round {{state.currentRoundNumber}}{{/if}}</strong></div>
+      </div>
+    {{/unless}}
     <div class="arcflight-travel-runner-mvp__actions">
       <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
       <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
@@ -19,7 +33,9 @@
       <button type="button" data-arcflight-runner-import-session>Import Session JSON</button>
       <button type="button" data-arcflight-runner-clear {{#unless state.hasSession}}disabled{{/unless}}>Clear Local Session</button>
     </div>
-    <p class="arcflight-sheet__hint">Session import/export only reads or writes Runner Session Library data after explicit confirmation; it never applies effects or mutates actors, AP/RAP, chat, journals, combat, drafts, or published events.</p>
+    {{#unless state.currentSessionCollapsed}}
+      <p class="arcflight-sheet__hint">Session import/export only reads or writes Runner Session Library data after explicit confirmation; it never applies effects or mutates actors, AP/RAP, chat, journals, combat, drafts, or published events.</p>
+    {{/unless}}
   </section>
 
 
