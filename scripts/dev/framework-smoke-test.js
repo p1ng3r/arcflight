@@ -1356,7 +1356,7 @@ export async function runFrameworkSmokeTest(options = {}) {
         ...completeQualityDraft.finalOutcomes,
         success: {
           ...completeQualityDraft.finalOutcomes.success,
-          proposedEffects: [createTravelBuilderResourceEffect({ resource: "supplies", mode: "add", value: 2, label: "Published supplies reward" })]
+          proposedEffects: [createTravelBuilderResourceEffect({ resource: "supplies", mode: "add", value: 1, label: "Published supplies reward" })]
         }
       }
     });
