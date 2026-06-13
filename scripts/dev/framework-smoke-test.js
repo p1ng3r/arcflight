@@ -18,6 +18,12 @@ import {
   completeTravelEventRunnerSession,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
+  prepareTravelEventRunnerSummaryReport,
+  renderTravelEventRunnerSummaryMarkdown,
+  renderTravelEventRunnerSummaryHtml,
+  postTravelEventRunnerSummaryToChat,
+  createTravelEventRunnerSummaryJournalEntry,
+  prepareTravelEventRunnerSummaryOutputState,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
   cloneTravelEventRunnerSession,
   deleteTravelEventRunnerSessionFromLibrary,
@@ -1359,6 +1365,16 @@ export async function runFrameworkSmokeTest(options = {}) {
     const runnerRetreated = retreatTravelEventRunnerRound(runnerAdvanced.session, { now: "2026-06-12T00:01:05.000Z" });
     const runnerCompleted = completeTravelEventRunnerSession(runnerSetEngineer.session, { now: "2026-06-12T00:01:06.000Z" });
     const runnerExported = exportTravelEventRunnerSessionToJson(runnerCompleted.session, { now: "2026-06-12T00:01:07.000Z" });
+    const runnerIncompleteSummaryOutput = prepareTravelEventRunnerSummaryOutputState(runnerSetEngineer.session);
+    const runnerSummaryReport = prepareTravelEventRunnerSummaryReport(runnerCompleted.session);
+    const runnerSummaryMarkdown = renderTravelEventRunnerSummaryMarkdown(runnerCompleted.session);
+    const runnerSummaryHtml = renderTravelEventRunnerSummaryHtml(runnerCompleted.session);
+    const runnerSessionBeforeSummary = JSON.stringify(runnerCompleted.session);
+    prepareTravelEventRunnerSummaryReport(runnerCompleted.session);
+    const runnerChatIncomplete = await postTravelEventRunnerSummaryToChat(runnerSetEngineer.session, { dryRun: true });
+    const runnerChatDryRun = await postTravelEventRunnerSummaryToChat(runnerCompleted.session, { dryRun: true });
+    const runnerJournalIncomplete = await createTravelEventRunnerSummaryJournalEntry(runnerSetEngineer.session, { dryRun: true });
+    const runnerJournalDryRun = await createTravelEventRunnerSummaryJournalEntry(runnerCompleted.session, { dryRun: true });
     const runnerMalformedSession = createTravelEventRunnerSession("not an event");
     const clonedPublishedDraft = clonePublishedTravelEventToDraft(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library, now: "2026-06-12T00:00:03.000Z" });
     const clonedPublishedDraftExport = clonedPublishedDraft.draft ? exportTravelEventDraftToJson(clonedPublishedDraft.draft) : { ok: false, json: null };
@@ -1467,6 +1483,14 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Runner completing session produces final summary", runnerCompleted.ok === true && runnerCompleted.session?.status === "completed" && runnerCompleted.summary?.suggestedFinalOutcome === "success" && runnerCompleted.summary?.rounds?.[0]?.stationResults?.navigator === "success", "completed runner summary", runnerCompleted.summary);
     check(result, "Travel Event Runner final summary includes staged proposedEffects without applying them", runnerCompleted.summary?.stagedProposedEffects?.[0]?.label === "Published supplies reward" && JSON.stringify(qualityResourcesBefore) === JSON.stringify(getShipTravelResources(actor)), "read-only staged proposed effects", { effects: runnerCompleted.summary?.stagedProposedEffects, resources: getShipTravelResources(actor) });
     check(result, "Travel Event Runner export session JSON works", runnerExported.ok === true && /Published Smoke/.test(runnerExported.json ?? "") && /stagedProposedEffects/.test(runnerExported.json ?? ""), "runner export json", runnerExported.json);
+    check(result, "Travel Event Runner summary report helper exports exist", typeof prepareTravelEventRunnerSummaryReport === "function" && typeof renderTravelEventRunnerSummaryMarkdown === "function" && typeof renderTravelEventRunnerSummaryHtml === "function" && typeof postTravelEventRunnerSummaryToChat === "function" && typeof createTravelEventRunnerSummaryJournalEntry === "function" && typeof prepareTravelEventRunnerSummaryOutputState === "function" && typeof globalThis.game?.arcflight?.prepareTravelEventRunnerSummaryReport === "function" && typeof globalThis.game?.arcflight?.devTools?.renderTravelEventRunnerSummaryMarkdown === "function", true, { api: typeof globalThis.game?.arcflight?.prepareTravelEventRunnerSummaryReport, devTools: typeof globalThis.game?.arcflight?.devTools?.renderTravelEventRunnerSummaryMarkdown });
+    check(result, "Travel Event Runner incomplete session summary output is unavailable", runnerIncompleteSummaryOutput.available === false && runnerIncompleteSummaryOutput.canPostChat === false, "incomplete summary output", runnerIncompleteSummaryOutput);
+    check(result, "Travel Event Runner completed session returns summary report", runnerSummaryReport.available === true && runnerSummaryReport.report?.eventName === "Published Smoke" && runnerSummaryReport.report?.finalOutcomeLabel, "summary report", runnerSummaryReport.report);
+    check(result, "Travel Event Runner markdown summary includes required report content", /Published Smoke/.test(runnerSummaryMarkdown.markdown ?? "") && /Final Outcome/.test(runnerSummaryMarkdown.markdown ?? "") && /Navigator/.test(runnerSummaryMarkdown.markdown ?? "") && /Published supplies reward/.test(runnerSummaryMarkdown.markdown ?? "") && /Proposed effects have not been applied/.test(runnerSummaryMarkdown.markdown ?? ""), "markdown summary", runnerSummaryMarkdown.markdown);
+    check(result, "Travel Event Runner html summary includes escaped required report content", /Published Smoke/.test(runnerSummaryHtml.html ?? "") && /Final Outcome/.test(runnerSummaryHtml.html ?? "") && /Navigator/.test(runnerSummaryHtml.html ?? "") && /Published supplies reward/.test(runnerSummaryHtml.html ?? "") && /Proposed effects have not been applied/.test(runnerSummaryHtml.html ?? "") && !/<script/i.test(runnerSummaryHtml.html ?? ""), "html summary", runnerSummaryHtml.html);
+    check(result, "Travel Event Runner summary generation does not mutate session", runnerSessionBeforeSummary === JSON.stringify(runnerCompleted.session), "summary no session mutation", runnerCompleted.session);
+    check(result, "Travel Event Runner chat helper blocks incomplete and dry-runs completed", runnerChatIncomplete.available === false && runnerChatIncomplete.created === false && runnerChatDryRun.available === true && runnerChatDryRun.created === false && /Proposed effects have not been applied/.test(runnerChatDryRun.messageData?.content ?? ""), "chat dry runs", { incomplete: runnerChatIncomplete, completed: runnerChatDryRun });
+    check(result, "Travel Event Runner journal helper blocks incomplete and dry-runs completed", runnerJournalIncomplete.available === false && runnerJournalIncomplete.created === false && runnerJournalDryRun.available === true && runnerJournalDryRun.created === false && /Travel Event Summary/.test(runnerJournalDryRun.journalData?.name ?? ""), "journal dry runs", { incomplete: runnerJournalIncomplete, completed: runnerJournalDryRun });
     check(result, "Travel Event Runner malformed event fails safely", runnerMalformedSession.ok === false && runnerMalformedSession.session === null, "malformed runner event", runnerMalformedSession);
     check(result, "Travel Event Runner introduces no actor resource chat AP/RAP combat automation", ![createTravelEventRunnerSession, setTravelEventRunnerStationResult, advanceTravelEventRunnerRound, retreatTravelEventRunnerRound, completeTravelEventRunnerSession, exportTravelEventRunnerSessionToJson].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|Actor\.update|actor\.update|ChatMessage|startCombat|Combat\.create|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "runner helpers remain manual/local", "no prohibited helpers");
     check(result, "Load published event as draft restores builder metadata", clonedPublishedDraft.ok === true && clonedPublishedDraft.draft?.builder?.status === "draft" && clonedPublishedDraft.draft?.builder?.source === "builder" && clonedPublishedDraft.draft?.key === publishableDraft.key, "cloned published draft", clonedPublishedDraft);

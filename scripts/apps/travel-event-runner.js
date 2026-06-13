@@ -5,9 +5,13 @@ import {
   completeTravelEventRunnerSession,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
+  createTravelEventRunnerSummaryJournalEntry,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
   loadPublishedTravelEventForRunner,
+  postTravelEventRunnerSummaryToChat,
+  renderTravelEventRunnerSummaryHtml,
+  renderTravelEventRunnerSummaryMarkdown,
   loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
@@ -30,7 +34,12 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-load-session]",
   "[data-arcflight-runner-duplicate-session]",
   "[data-arcflight-runner-delete-session]",
-  "[data-arcflight-runner-refresh-sessions]"
+  "[data-arcflight-runner-refresh-sessions]",
+  "[data-arcflight-runner-copy-markdown]",
+  "[data-arcflight-runner-copy-html]",
+  "[data-arcflight-runner-post-chat]",
+  "[data-arcflight-runner-create-journal]",
+  "[data-arcflight-runner-refresh-summary]"
 ].join(", ");
 
 
@@ -253,6 +262,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-duplicate-session")) return this.#duplicateSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-delete-session")) return this.#deleteSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-refresh-sessions")) return this.#refreshSessions();
+    if (target.hasAttribute("data-arcflight-runner-copy-markdown")) return this.#copySummaryMarkdown();
+    if (target.hasAttribute("data-arcflight-runner-copy-html")) return this.#copySummaryHtml();
+    if (target.hasAttribute("data-arcflight-runner-post-chat")) return this.#postSummaryToChat();
+    if (target.hasAttribute("data-arcflight-runner-create-journal")) return this.#createSummaryJournal();
+    if (target.hasAttribute("data-arcflight-runner-refresh-summary")) return this.#refreshSummary();
   }
 
   async #startSelectedEvent() {
@@ -338,6 +352,56 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+
+  async #copyOrFallback(text, successMessage) {
+    try {
+      await copyTextToClipboard(text);
+      this.statusMessage = successMessage;
+    } catch (_error) {
+      this.statusMessage = "Clipboard unavailable; summary output is shown in the textarea below.";
+    }
+    ui.notifications?.info?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #copySummaryMarkdown() {
+    const rendered = renderTravelEventRunnerSummaryMarkdown(this.session);
+    if (!rendered.available || !rendered.markdown) {
+      this.statusMessage = rendered.reason ?? "Completed summary output is unavailable.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    return this.#copyOrFallback(rendered.markdown, "Markdown summary copied to clipboard.");
+  }
+
+  async #copySummaryHtml() {
+    const rendered = renderTravelEventRunnerSummaryHtml(this.session);
+    if (!rendered.available || !rendered.html) {
+      this.statusMessage = rendered.reason ?? "Completed summary output is unavailable.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    return this.#copyOrFallback(rendered.html, "HTML summary copied to clipboard.");
+  }
+
+  async #postSummaryToChat() {
+    const posted = await postTravelEventRunnerSummaryToChat(this.session);
+    this.statusMessage = posted.created ? "Posted completed runner summary to chat." : (posted.reason ?? posted.errors?.[0] ?? "Summary was not posted to chat.");
+    if (posted.created) ui.notifications?.info?.(this.statusMessage); else ui.notifications?.warn?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #createSummaryJournal() {
+    const created = await createTravelEventRunnerSummaryJournalEntry(this.session);
+    this.statusMessage = created.created ? "Created JournalEntry for completed runner summary." : (created.reason ?? created.errors?.[0] ?? "Summary JournalEntry was not created.");
+    if (created.created) ui.notifications?.info?.(this.statusMessage); else ui.notifications?.warn?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #refreshSummary() {
+    this.statusMessage = this.session?.status === "completed" ? "Completed summary output refreshed." : "Completed summary output is unavailable until this runner session is completed.";
+    return this.render(true);
+  }
 
   async #saveCurrentSession({ saveAs = false } = {}) {
     if (!this.session) {

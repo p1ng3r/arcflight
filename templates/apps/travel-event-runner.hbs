@@ -153,9 +153,36 @@
           <p class="arcflight-sheet__hint">No proposed effects are attached to the suggested final outcome.</p>
         {{/if}}
 
-        <button type="button" data-arcflight-runner-export>Export Session Summary</button>
+        <button type="button" data-arcflight-runner-export>Export Session Summary JSON</button>
         <textarea readonly class="arcflight-travel-runner-mvp__json">{{state.summaryJson}}</textarea>
       </section>
     {{/if}}
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__summary-output">
+      <h2>Completed Summary Output</h2>
+      {{#if state.summaryOutput.available}}
+        <p class="arcflight-sheet__hint"><strong>Read-only:</strong> {{state.summaryOutput.report.proposedEffectsNotice}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-copy-markdown>Copy Markdown Summary</button>
+          <button type="button" data-arcflight-runner-copy-html>Copy HTML Summary</button>
+          <button type="button" data-arcflight-runner-post-chat>Post Summary to Chat</button>
+          <button type="button" data-arcflight-runner-create-journal>Create Journal Entry</button>
+          <button type="button" data-arcflight-runner-refresh-summary>Refresh Summary</button>
+        </div>
+        <label class="arcflight-sheet__field">
+          <span>Markdown Summary Output</span>
+          <textarea readonly class="arcflight-travel-runner-mvp__json">{{state.summaryOutput.markdown}}</textarea>
+        </label>
+      {{else}}
+        <p class="arcflight-sheet__hint">{{state.summaryOutput.reason}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-copy-markdown disabled>Copy Markdown Summary</button>
+          <button type="button" data-arcflight-runner-copy-html disabled>Copy HTML Summary</button>
+          <button type="button" data-arcflight-runner-post-chat disabled>Post Summary to Chat</button>
+          <button type="button" data-arcflight-runner-create-journal disabled>Create Journal Entry</button>
+          <button type="button" data-arcflight-runner-refresh-summary>Refresh Summary</button>
+        </div>
+      {{/if}}
+    </section>
   {{/if}}
 </div>
