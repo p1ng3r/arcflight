@@ -15,9 +15,9 @@
     </div>
   </section>
 
-  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-controls">
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-controls {{#if state.currentSessionCollapsed}}arcflight-travel-runner-mvp__session-controls--collapsed{{/if}}">
     <div class="arcflight-travel-runner-mvp__session-controls-header">
-      <button type="button" class="arcflight-travel-runner-mvp__collapse-toggle" data-arcflight-runner-toggle-current-session aria-expanded="{{#unless state.currentSessionCollapsed}}true{{else}}false{{/unless}}">
+      <button type="button" class="arcflight-travel-runner-mvp__collapse-toggle" data-arcflight-runner-toggle-current-session aria-label="{{#if state.currentSessionCollapsed}}Expand Current Runner Session{{else}}Collapse Current Runner Session{{/if}}" aria-expanded="{{#unless state.currentSessionCollapsed}}true{{else}}false{{/unless}}">
         {{#if state.currentSessionCollapsed}}▶{{else}}▼{{/if}}
       </button>
       <h2>Current Runner Session</h2>

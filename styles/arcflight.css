@@ -1236,14 +1236,21 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: nowrap;
 }
 
 .arcflight-travel-runner-mvp__session-controls-header h2 {
   margin: 0;
+  line-height: 1.2;
 }
 
 .arcflight-travel-runner-mvp__collapse-toggle {
   min-width: 2rem;
+}
+
+.arcflight-travel-runner-mvp__session-controls--collapsed {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 .arcflight-travel-runner-mvp__session-library summary {
