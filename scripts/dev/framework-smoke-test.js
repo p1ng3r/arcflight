@@ -1080,9 +1080,9 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Apply selected resource effect does not post chat or create JournalEntry", applyChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && applyJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0), "chat/journal unchanged", { chatBefore: applyChatBefore, journalBefore: applyJournalBefore });
     check(result, "Applied record is stored on session and staged proposedEffects remain visible", getTravelEventAppliedEffectRecords(manualApplyResult.session).length === 1 && (manualApplyResult.session.summary?.stagedProposedEffects ?? []).length === expectedCompletedEffects.length, "record stored with staged source", manualApplyResult.session.appliedEffects);
     const doubleApplyBefore = getShipTravelResources(actor);
-    const doubleApplyResult = readyApplyRow ? await applyTravelEventRunnerSelectedEffects(manualApplyResult.session, actor, [readyApplyRow.index]) : { applied: [] };
+    const runnerDoubleApplyResult = readyApplyRow ? await applyTravelEventRunnerSelectedEffects(manualApplyResult.session, actor, [readyApplyRow.index]) : { applied: [] };
     const doubleApplyAfter = getShipTravelResources(actor);
-    check(result, "Double-apply same effect is blocked and does not mutate resources", doubleApplyResult.applied?.length === 0 && stringifySmokeData(doubleApplyBefore) === stringifySmokeData(doubleApplyAfter), "double apply blocked", doubleApplyResult.warnings);
+    check(result, "Double-apply same effect is blocked and does not mutate resources", runnerDoubleApplyResult.applied?.length === 0 && stringifySmokeData(doubleApplyBefore) === stringifySmokeData(doubleApplyAfter), "double apply blocked", runnerDoubleApplyResult.warnings);
     const unknownApplyResult = await applyTravelEventRunnerResourceEffect(manualApplyResult.session, actor, 9999);
     check(result, "Applying unknown effect id/index fails safely", unknownApplyResult.ok === false && unknownApplyResult.applied === false, "unknown blocked", unknownApplyResult.errors);
     const postApplyState = prepareTravelEventEffectApplicationState(manualApplyResult.session, actor);
