@@ -1072,6 +1072,7 @@ export async function runFrameworkSmokeTest(options = {}) {
       && typeof buildTravelEventEffectUndoRecord === "function"
       && typeof globalThis.game?.arcflight?.prepareTravelEventAppliedEffectHistoryState === "function";
     check(result, "Travel Event Runner manual apply helper exports exist", applicationHelpersExist, true, { prepareTravelEventEffectApplicationState: typeof prepareTravelEventEffectApplicationState, api: typeof globalThis.game?.arcflight?.prepareTravelEventEffectApplicationState });
+    check(result, "Travel Event Runner Save As flow does not rely on unsupported browser dialogs", !/globalThis\.prompt|window\.prompt|globalThis\.confirm|window\.confirm|\bprompt\?\.|\balert\s*\(|\bconfirm\?\./.test(String(ArcflightTravelEventRunner)), "no browser prompt/alert", "DialogV2 or safe cancellation only");
     const incompleteApplyState = prepareTravelEventEffectApplicationState(activeRunnerSessionCreated.session, actor);
     check(result, "Incomplete runner session application state is unavailable", incompleteApplyState.available === false, "unavailable until completed", incompleteApplyState.reason);
     const completedNoTargetApplyState = prepareTravelEventEffectApplicationState(loadedCompletedRunnerSession.session, null);
