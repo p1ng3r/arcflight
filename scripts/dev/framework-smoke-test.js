@@ -1113,8 +1113,9 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Undo does not mutate AP/RAP", stringifySmokeData(undoEconomyBefore) === stringifySmokeData(undoEconomyAfter), "AP/RAP unchanged", { before: undoEconomyBefore, after: undoEconomyAfter });
     check(result, "Undo does not post chat, create JournalEntry, or start combat", undoChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && undoJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0) && undoCombatsBefore === (globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0), "automation unchanged", {});
     check(result, "Undo records undone metadata and undone record remains visible", historyAfterUndo.records?.length === 1 && historyAfterUndo.records[0].undone === true && historyAfterUndo.records[0].undoneAt === "2026-01-01T00:04:45.000Z", "undone history", historyAfterUndo.records?.[0]);
-    const normalizedUndoneSession = cloneTravelEventRunnerSession(undoResult.session);
-    check(result, "Runner session save/load normalization preserves undone history", normalizedUndoneSession.appliedEffects?.records?.[0]?.undone === true && normalizedUndoneSession.appliedEffects.records[0].undoneAt === "2026-01-01T00:04:45.000Z", "undone history preserved", normalizedUndoneSession.appliedEffects);
+    const savedUndoneSession = await saveTravelEventRunnerSessionToLibrary(undoResult.session, { key: "smoke-undone-runner-session", overwrite: true, dryRun: true, now: "2026-01-01T00:04:46.000Z" });
+    const loadedUndoneSession = loadTravelEventRunnerSessionFromLibrary("smoke-undone-runner-session", { runnerSessionLibrary: savedUndoneSession.library });
+    check(result, "Runner session save/load normalization preserves undone history", loadedUndoneSession.session?.appliedEffects?.records?.[0]?.undone === true && loadedUndoneSession.session.appliedEffects.records[0].undoneAt === "2026-01-01T00:04:45.000Z", "undone history preserved", loadedUndoneSession.session?.appliedEffects);
     const undoTwiceBefore = getShipTravelResources(actor);
     const undoTwiceResult = firstAppliedRecord ? await undoTravelEventAppliedEffect(undoResult.session, actor, firstAppliedRecord.applicationId) : { undone: false };
     check(result, "Undo cannot run twice on same record", undoTwiceResult.undone === false && stringifySmokeData(undoTwiceBefore) === stringifySmokeData(getShipTravelResources(actor)), "second undo blocked", undoTwiceResult.errors ?? undoTwiceResult.warnings);
@@ -1123,13 +1124,10 @@ export async function runFrameworkSmokeTest(options = {}) {
     const notArcflightUndo = firstAppliedRecord ? await undoTravelEventAppliedEffect(manualApplyResult.session, { id: "not-arcflight", name: "Not Arcflight", type: "npc" }, firstAppliedRecord.applicationId, { dryRun: true }) : { undone: false };
     check(result, "Undo blocks if actor is not Arcflight-enabled", notArcflightUndo.undone === false, "not Arcflight blocked", notArcflightUndo.errors ?? notArcflightUndo.warnings);
     const changedResourceSession = manualApplyResult.session;
-    const changedBaseline = getShipTravelResources(actor);
-    if (firstAppliedRecord) await updateShipTravelResources(actor, { [firstAppliedRecord.resource]: 1 });
     const changedBeforeBlockedUndo = getShipTravelResources(actor);
     const changedUndo = firstAppliedRecord ? await undoTravelEventAppliedEffect(changedResourceSession, actor, firstAppliedRecord.applicationId) : { undone: false, warnings: [] };
     const changedAfter = getShipTravelResources(actor);
     check(result, "Undo blocks if current resource no longer equals applied afterValue and does not mutate resources", changedUndo.undone === false && changedUndo.warnings?.some((warning) => warning.includes("ship resource has changed")) && stringifySmokeData(changedBeforeBlockedUndo) === stringifySmokeData(changedAfter), "changed resource blocked", changedUndo.warnings);
-    if (firstAppliedRecord) await updateShipTravelResources(actor, { [firstAppliedRecord.resource]: changedBaseline[firstAppliedRecord.resource] - changedAfter[firstAppliedRecord.resource] });
     check(result, "Staged proposedEffects remain visible after undo", (undoResult.session.summary?.stagedProposedEffects ?? []).length === expectedCompletedEffects.length, "staged effects preserved", undoResult.session.summary?.stagedProposedEffects);
     const reapplyAfterUndo = readyApplyRow ? await applyTravelEventRunnerSelectedEffects(undoResult.session, actor, [readyApplyRow.index], { now: "2026-01-01T00:04:50.000Z" }) : { applied: [] };
     check(result, "Reapply after undo creates a new applied record", reapplyAfterUndo.applied?.length === 1 && getTravelEventAppliedEffectRecords(reapplyAfterUndo.session).length === 2, "new record", reapplyAfterUndo.session?.appliedEffects);
