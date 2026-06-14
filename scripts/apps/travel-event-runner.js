@@ -494,9 +494,10 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.render(true);
     }
     const filename = `arcflight-runner-session-${this.session?.key || this.session?.event?.key || "export"}.json`;
-    if (globalThis.saveDataToFile) saveDataToFile(exported.json, "application/json", filename);
+    const saveDataToFile = globalThis.foundry?.utils?.saveDataToFile;
+    if (typeof saveDataToFile === "function") saveDataToFile(exported.json, "application/json", filename);
     else await copyTextToClipboard(exported.json);
-    this.statusMessage = globalThis.saveDataToFile ? "Session JSON export downloaded." : "Session JSON copied to clipboard.";
+    this.statusMessage = typeof saveDataToFile === "function" ? "Session JSON export downloaded." : "Session JSON copied to clipboard.";
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }

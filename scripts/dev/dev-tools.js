@@ -160,7 +160,20 @@ import {
   importTravelEventDraftFromData,
   exportFinalTravelEventToJson,
   parseTravelEventBuilderJson,
-  prepareTravelEventBuilderExportPreview
+  prepareTravelEventBuilderExportPreview,
+  buildPublishedTravelEventExportData,
+  exportPublishedTravelEventToJson,
+  buildPublishedTravelEventPackExportData,
+  exportPublishedTravelEventPackToJson,
+  parsePublishedTravelEventJson,
+  parsePublishedTravelEventPackJson,
+  validateImportedPublishedTravelEvent,
+  preparePublishedTravelEventImportPreview,
+  preparePublishedTravelEventPackImportPreview,
+  importPublishedTravelEventFromJson,
+  importPublishedTravelEventPackFromJson,
+  saveImportedPublishedTravelEventToLibrary,
+  saveImportedPublishedTravelEventPackToLibrary
 } from "../helpers/travel-event-builder-io.js";
 
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
@@ -857,6 +870,19 @@ export function createArcflightDevTools() {
     exportFinalTravelEventToJson,
     parseTravelEventBuilderJson,
     prepareTravelEventBuilderExportPreview,
+    buildPublishedTravelEventExportData,
+    exportPublishedTravelEventToJson,
+    buildPublishedTravelEventPackExportData,
+    exportPublishedTravelEventPackToJson,
+    parsePublishedTravelEventJson,
+    parsePublishedTravelEventPackJson,
+    validateImportedPublishedTravelEvent,
+    preparePublishedTravelEventImportPreview,
+    preparePublishedTravelEventPackImportPreview,
+    importPublishedTravelEventFromJson,
+    importPublishedTravelEventPackFromJson,
+    saveImportedPublishedTravelEventToLibrary,
+    saveImportedPublishedTravelEventPackToLibrary,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
