@@ -25,7 +25,8 @@ import {
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
   updateTravelEventRunnerStationAssignment,
-  clearTravelEventRunnerStationAssignment
+  clearTravelEventRunnerStationAssignment,
+  resetTravelEventRunnerStationAssignmentToShip
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -58,7 +59,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-refresh-application]",
   "[data-arcflight-runner-apply-effects]",
   "[data-arcflight-runner-undo-effect]",
-  "[data-arcflight-runner-clear-assignment]"
+  "[data-arcflight-runner-clear-assignment]",
+  "[data-arcflight-runner-reset-assignment]"
 ].join(", ");
 
 
@@ -397,6 +399,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
     if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
+    if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
   }
 
   async #toggleSessionActions() {
@@ -425,6 +428,19 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return null;
   }
 
+  #getSessionShipActor() {
+    const ship = this.session?.ship ?? {};
+    const actors = globalThis.game?.actors;
+    if (ship.actorId && typeof actors?.get === "function") {
+      const actor = actors.get(ship.actorId);
+      if (actor) return actor;
+    }
+    if (ship.actorUuid && typeof actors?.values === "function") {
+      for (const actor of actors.values()) if (actor?.uuid === ship.actorUuid) return actor;
+    }
+    return this.#getSelectedShipActor();
+  }
+
   async #startSelectedEvent() {
     const loaded = loadPublishedTravelEventForRunner(this.selectedEventId);
     if (!loaded.ok || !loaded.event) {
@@ -433,7 +449,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.render(true);
     }
 
-    const created = createTravelEventRunnerSession(loaded.event);
+    const selectedShip = this.#getSelectedShipActor();
+    const created = createTravelEventRunnerSession(loaded.event, selectedShip ? { ship: selectedShip } : {});
     if (!created.ok) {
       this.statusMessage = created.errors?.[0] ?? "Selected published travel event is not valid for the runner.";
       ui.notifications?.warn?.(this.statusMessage);
@@ -451,8 +468,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const stationKey = select.dataset.stationKey ?? "";
     const actorIdOrUuid = select.value ?? "";
     const updated = actorIdOrUuid
-      ? updateTravelEventRunnerStationAssignment(this.session, stationKey, actorIdOrUuid)
-      : clearTravelEventRunnerStationAssignment(this.session, stationKey);
+      ? updateTravelEventRunnerStationAssignment(this.session, stationKey, actorIdOrUuid, { ship: this.#getSessionShipActor() })
+      : clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.#getSessionShipActor() });
     if (!updated.ok) {
       this.statusMessage = updated.errors?.[0] ?? "Station assignment was not updated.";
       ui.notifications?.warn?.(this.statusMessage);
@@ -466,7 +483,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async #clearStationAssignment(target) {
     const stationKey = target.dataset.stationKey ?? "";
-    const updated = clearTravelEventRunnerStationAssignment(this.session, stationKey);
+    const updated = clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.#getSessionShipActor() });
     if (!updated.ok) {
       this.statusMessage = updated.errors?.[0] ?? "Station assignment was not cleared.";
       ui.notifications?.warn?.(this.statusMessage);
@@ -474,6 +491,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = updated.session;
       this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
       this.statusMessage = `Cleared ${humanizeIdentifier(stationKey)} assignment.`;
+    }
+    return this.render(true);
+  }
+
+  async #resetStationAssignment(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = resetTravelEventRunnerStationAssignmentToShip(this.session, stationKey, { ship: this.#getSessionShipActor() });
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station assignment was not reset.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = updated.warnings?.[0] ?? `Reset ${humanizeIdentifier(stationKey)} to the selected ship assignment.`;
+      if (updated.warnings?.length) ui.notifications?.warn?.(this.statusMessage);
     }
     return this.render(true);
   }

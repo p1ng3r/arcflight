@@ -176,18 +176,52 @@ export function getArcflightTravelEventRunnerShipOptions(options = {}) {
 }
 
 
-function emptyStationAssignment() {
-  return { actorId: "", actorUuid: "", actorName: "", actorType: "" };
+function emptyStationAssignment(source = "empty", overridden = false) {
+  return { actorId: "", actorUuid: "", actorName: "", actorType: "", source, overridden: Boolean(overridden) };
+}
+
+function normalizeAssignmentSource(value, hasActor = false) {
+  if (["ship", "override", "manual", "empty"].includes(value)) return value;
+  return hasActor ? "manual" : "empty";
 }
 
 function normalizeStationAssignment(value = null) {
   if (!isPlainObject(value)) return emptyStationAssignment();
-  return {
-    actorId: typeof value.actorId === "string" ? value.actorId : (typeof value.id === "string" ? value.id : ""),
-    actorUuid: typeof value.actorUuid === "string" ? value.actorUuid : (typeof value.uuid === "string" ? value.uuid : ""),
-    actorName: typeof value.actorName === "string" ? value.actorName : (typeof value.name === "string" ? value.name : ""),
-    actorType: typeof value.actorType === "string" ? value.actorType : (typeof value.type === "string" ? value.type : "")
-  };
+  const actorId = typeof value.actorId === "string" ? value.actorId : (typeof value.id === "string" ? value.id : "");
+  const actorUuid = typeof value.actorUuid === "string" ? value.actorUuid : (typeof value.uuid === "string" ? value.uuid : "");
+  const actorName = typeof value.actorName === "string" ? value.actorName : (typeof value.name === "string" ? value.name : "");
+  const actorType = typeof value.actorType === "string" ? value.actorType : (typeof value.type === "string" ? value.type : "");
+  const hasActor = Boolean(actorId || actorUuid || actorName || actorType);
+  const source = normalizeAssignmentSource(value.source, hasActor);
+  return { actorId, actorUuid, actorName, actorType, source, overridden: value.overridden === true || source === "override" };
+}
+
+function actorTypeFromAssigneeType(assigneeType = "") {
+  if (assigneeType === "npc") return "npc";
+  if (assigneeType === "crewAsset") return "crewAsset";
+  return assigneeType || "actor";
+}
+
+function normalizeShipStationAssignment(assignment = null) {
+  if (!isPlainObject(assignment)) return emptyStationAssignment();
+  const actorId = typeof assignment.actorId === "string" ? assignment.actorId : "";
+  const actorUuid = typeof assignment.actorUuid === "string" ? assignment.actorUuid : "";
+  const actorName = typeof assignment.name === "string" ? assignment.name : (typeof assignment.actorName === "string" ? assignment.actorName : "");
+  const actorType = typeof assignment.actorType === "string" ? assignment.actorType : actorTypeFromAssigneeType(assignment.assigneeType);
+  if (!actorId && !actorUuid && !actorName) return emptyStationAssignment();
+  return { actorId, actorUuid, actorName, actorType, source: "ship", overridden: false };
+}
+
+function getShipStationAssignmentData(ship = null) {
+  if (!ship || typeof ship !== "object") return {};
+  const flagSystem = ship.getFlag?.(ARCFLIGHT_MODULE_ID, "system") ?? {};
+  const directAssignments = ship.stationAssignments ?? ship.stations?.assignments ?? ship.system?.stations?.assignments ?? flagSystem?.stations?.assignments ?? {};
+  return isPlainObject(directAssignments) ? directAssignments : {};
+}
+
+export function getTravelEventRunnerShipStationAssignments(ship = null, options = {}) {
+  const assignments = getShipStationAssignmentData(ship ?? options.ship ?? options.actor);
+  return Object.fromEntries(TRAVEL_FIVE_STATION_KEYS.map((stationKey) => [stationKey, normalizeShipStationAssignment(assignments[stationKey])]));
 }
 
 export function normalizeTravelEventRunnerStationAssignments(value = {}, options = {}) {
@@ -249,7 +283,7 @@ export function updateTravelEventRunnerStationAssignment(session, stationKey, ac
   if (!actor) return { ok: false, errors: [`No eligible station actor found for "${String(actorIdOrUuid ?? "")}".`], warnings: [], session: cloneData(normalized.session) };
   const nextSession = cloneData(normalized.session);
   nextSession.stationAssignments = normalizeTravelEventRunnerStationAssignments(nextSession.stationAssignments);
-  nextSession.stationAssignments[stationKey] = { actorId: actor.actorId, actorUuid: actor.actorUuid, actorName: actor.actorName, actorType: actor.actorType };
+  nextSession.stationAssignments[stationKey] = { actorId: actor.actorId, actorUuid: actor.actorUuid, actorName: actor.actorName, actorType: actor.actorType, source: "override", overridden: true };
   nextSession.updatedAt = nowIso(options);
   return { ok: true, errors: [], warnings: [], session: nextSession, assignment: cloneData(nextSession.stationAssignments[stationKey]) };
 }
@@ -260,9 +294,21 @@ export function clearTravelEventRunnerStationAssignment(session, stationKey, opt
   if (!TRAVEL_FIVE_STATION_KEYS.includes(stationKey)) return { ok: false, errors: [`Invalid travel runner station key "${stationKey}".`], warnings: [], session: cloneData(normalized.session) };
   const nextSession = cloneData(normalized.session);
   nextSession.stationAssignments = normalizeTravelEventRunnerStationAssignments(nextSession.stationAssignments);
-  nextSession.stationAssignments[stationKey] = emptyStationAssignment();
+  nextSession.stationAssignments[stationKey] = emptyStationAssignment("override", true);
   nextSession.updatedAt = nowIso(options);
   return { ok: true, errors: [], warnings: [], session: nextSession, assignment: cloneData(nextSession.stationAssignments[stationKey]) };
+}
+
+export function resetTravelEventRunnerStationAssignmentToShip(session, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return normalized;
+  if (!TRAVEL_FIVE_STATION_KEYS.includes(stationKey)) return { ok: false, errors: [`Invalid travel runner station key "${stationKey}".`], warnings: [], session: cloneData(normalized.session) };
+  const shipAssignment = getTravelEventRunnerShipStationAssignments(options.ship ?? options.actor)[stationKey] ?? emptyStationAssignment();
+  const nextSession = cloneData(normalized.session);
+  nextSession.stationAssignments = normalizeTravelEventRunnerStationAssignments(nextSession.stationAssignments);
+  nextSession.stationAssignments[stationKey] = shipAssignment.actorId || shipAssignment.actorUuid || shipAssignment.actorName ? shipAssignment : emptyStationAssignment();
+  nextSession.updatedAt = nowIso(options);
+  return { ok: true, errors: [], warnings: shipAssignment.source === "empty" ? [`No ship assignment exists for ${humanizeIdentifier(stationKey)}.`] : [], session: nextSession, assignment: cloneData(nextSession.stationAssignments[stationKey]) };
 }
 
 function getActorByAssignment(assignment, options = {}) {
@@ -275,7 +321,9 @@ function resolveSafeStatisticLabel(actor, suggestedSkills = []) {
   if (!key) return "No rollable statistic found";
   const label = humanizeIdentifier(key);
   if (!actor) return `${label} (unavailable)`;
-  const statistic = actor?.system?.skills?.[key] ?? actor?.system?.statistics?.[key] ?? actor?.skills?.[key] ?? actor?.statistics?.[key] ?? null;
+  const statistic = key === "perception"
+    ? (actor?.system?.perception ?? actor?.system?.attributes?.perception ?? actor?.perception ?? actor?.system?.proficiencies?.perception ?? actor?.system?.skills?.perception ?? actor?.system?.statistics?.perception ?? actor?.skills?.perception ?? actor?.statistics?.perception ?? null)
+    : (actor?.system?.skills?.[key] ?? actor?.system?.statistics?.[key] ?? actor?.skills?.[key] ?? actor?.statistics?.[key] ?? null);
   const mod = Number(statistic?.mod ?? statistic?.check?.mod ?? statistic?.totalModifier);
   if (Number.isFinite(mod)) return `${label} (${mod >= 0 ? "+" : ""}${mod})`;
   return `${label} (unavailable)`;
@@ -294,6 +342,9 @@ export function prepareTravelEventRunnerStationAssignmentState(session, options 
       assignment,
       assigned,
       assignedActorName: assigned ? (assignment.actorName || "Unknown Actor") : "Unassigned",
+      sourceLabel: assignment.source === "ship" ? "Ship" : (assignment.source === "override" ? "Temporary Override" : (assignment.source === "manual" ? "Manual" : "Empty")),
+      hasShipSource: assignment.source === "ship",
+      hasOverride: assignment.overridden === true,
       options: actorOptions.map((actor) => ({ ...actor, selected: Boolean((assignment.actorUuid && actor.actorUuid === assignment.actorUuid) || (assignment.actorId && actor.actorId === assignment.actorId)) })),
       canClear: assigned
     };
@@ -379,7 +430,7 @@ export function createTravelEventRunnerSession(event, options = {}) {
     summary: null,
     ship: normalizeTravelEventRunnerShipSelection(options),
     notes: typeof options.notes === "string" ? options.notes.trim() : "",
-    stationAssignments: normalizeTravelEventRunnerStationAssignments(options.stationAssignments)
+    stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(options.ship ?? options.actor))
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -473,6 +524,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       assignment,
       assigned,
       assignedActorName: assigned ? (assignment.actorName || "Unknown Actor") : "Unassigned",
+      assignmentSourceLabel: assignment.source === "ship" ? "Ship" : (assignment.source === "override" ? "Temporary Override" : (assignment.source === "manual" ? "Manual" : "Empty")),
       statisticLabel: resolveSafeStatisticLabel(assignedActor, suggestedSkills),
       result,
       resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",

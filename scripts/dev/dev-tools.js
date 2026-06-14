@@ -117,6 +117,8 @@ import {
   prepareTravelEventRunnerStationAssignmentState,
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
+  resetTravelEventRunnerStationAssignmentToShip,
+  getTravelEventRunnerShipStationAssignments,
   summarizeTravelEventRunnerSession
 } from "../helpers/travel-event-runner.js";
 import {
@@ -507,6 +509,8 @@ export function createArcflightDevTools() {
     prepareTravelEventRunnerStationAssignmentState,
     updateTravelEventRunnerStationAssignment,
     clearTravelEventRunnerStationAssignment,
+  resetTravelEventRunnerStationAssignmentToShip,
+  getTravelEventRunnerShipStationAssignments,
     advanceTravelEventRunnerRound,
     retreatTravelEventRunnerRound,
     completeTravelEventRunnerSession,

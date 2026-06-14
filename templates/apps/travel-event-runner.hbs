@@ -83,14 +83,15 @@
         {{#each state.stationAssignments.rows}}
           <div class="arcflight-travel-runner-mvp__assignment-row">
             <strong>{{stationName}}</strong>
-            <span>{{assignedActorName}}</span>
+            <span>{{assignedActorName}} — {{sourceLabel}}</span>
             <select data-arcflight-runner-assignment-select data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>
               <option value="">Unassigned</option>
               {{#each options}}
                 <option value="{{actorUuid}}" {{#if selected}}selected{{/if}}>{{label}}</option>
               {{/each}}
             </select>
-            {{#if canClear}}<button type="button" data-arcflight-runner-clear-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear</button>{{/if}}
+            {{#if canClear}}<button type="button" data-arcflight-runner-clear-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear Override</button>{{/if}}
+            <button type="button" data-arcflight-runner-reset-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Reset to Ship Assignment</button>
           </div>
         {{/each}}
       </div>
@@ -110,8 +111,8 @@
                 <span>{{resultLabel}}</span>
               </header>
               <p>{{prompt}}</p>
-              {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Vignette:</strong> {{vignette}}</p>{{/if}}
-              <p class="arcflight-sheet__hint"><strong>Assigned:</strong> {{assignedActorName}}</p>
+              {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Problem / Vignette:</strong> {{vignette}}</p>{{/if}}
+              <p class="arcflight-sheet__hint"><strong>Assigned:</strong> {{assignedActorName}} <strong>Source:</strong> {{assignmentSourceLabel}}</p>
               {{#if suggestedSkillsLabel}}<p><strong>Suggested Skills:</strong> {{suggestedSkillsLabel}}</p>{{/if}}
               <p class="arcflight-sheet__hint"><strong>Statistic:</strong> {{statisticLabel}}</p>
               <div class="arcflight-travel-runner-mvp__result-buttons">
