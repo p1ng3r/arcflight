@@ -158,6 +158,7 @@ export function prepareTravelEventBuilderShellState(draft, options = {}) {
 export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundBuilderClick = this.#onBuilderClick.bind(this);
   #boundBuilderChange = this.#onBuilderChange.bind(this);
+  #pendingScrollState = null;
 
   constructor(options = {}) {
     super(options);
@@ -165,6 +166,10 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.outputJson = "";
     this.currentLibraryDraftId = typeof options.libraryDraftId === "string" ? options.libraryDraftId : "";
     this.status = createStatus("info", "Draft is local to this window until you explicitly save it to the Saved Drafts library.");
+    this.uiState = {
+      scrollTop: 0,
+      scrollSelector: ""
+    };
   }
 
   static DEFAULT_OPTIONS = {
@@ -186,6 +191,80 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     }
   };
 
+  render(force, options) {
+    if (force === true) this.#captureScrollPosition();
+    return super.render(force, options);
+  }
+
+  #getApplicationRoot() {
+    return this.element?.closest?.(".app, .application, .window-app")
+      ?? this.element
+      ?? null;
+  }
+
+  #getScrollCandidates() {
+    const root = this.#getApplicationRoot();
+    const selectors = [
+      ".arcflight-travel-builder",
+      ".arcflight-travel-builder-mvp",
+      ".window-content",
+      ".application-content",
+      "[data-application-part='builder']",
+      "[data-application-part]"
+    ];
+    const candidates = [];
+    for (const element of [this.element, root]) {
+      if (element) candidates.push({ element, selector: "" });
+    }
+    for (const selector of selectors) {
+      const scoped = root?.querySelector?.(selector);
+      if (scoped) candidates.push({ element: scoped, selector });
+      const local = this.element?.querySelector?.(selector);
+      if (local) candidates.push({ element: local, selector });
+    }
+    return candidates.filter((candidate, index, array) => candidate.element && array.findIndex((other) => other.element === candidate.element) === index);
+  }
+
+  #isScrollable(element) {
+    return Boolean(element && Number(element.scrollHeight) > Number(element.clientHeight) + 1);
+  }
+
+  #findScrollContainer(preferredSelector = "") {
+    const candidates = this.#getScrollCandidates();
+    if (preferredSelector) {
+      const preferred = candidates.find((candidate) => candidate.selector === preferredSelector && this.#isScrollable(candidate.element));
+      if (preferred) return preferred;
+    }
+    return candidates.find((candidate) => this.#isScrollable(candidate.element) && Number(candidate.element.scrollTop) > 0)
+      ?? candidates.find((candidate) => this.#isScrollable(candidate.element))
+      ?? candidates.find((candidate) => candidate.element)
+      ?? null;
+  }
+
+  #captureScrollPosition() {
+    const candidate = this.#findScrollContainer(this.uiState.scrollSelector);
+    if (!candidate?.element || !Number.isFinite(Number(candidate.element.scrollTop))) return;
+    this.uiState.scrollTop = candidate.element.scrollTop;
+    this.uiState.scrollSelector = candidate.selector;
+    this.#pendingScrollState = { scrollTop: candidate.element.scrollTop, selector: candidate.selector };
+  }
+
+  #restoreScrollPosition() {
+    if (!this.#pendingScrollState) return;
+    const { scrollTop, selector } = this.#pendingScrollState;
+    this.#pendingScrollState = null;
+    const restore = () => {
+      const candidate = this.#findScrollContainer(selector);
+      if (candidate?.element) {
+        candidate.element.scrollTop = scrollTop;
+        this.uiState.scrollTop = scrollTop;
+        this.uiState.scrollSelector = candidate.selector;
+      }
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
+    else setTimeout(restore, 0);
+  }
+
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const shell = prepareTravelEventBuilderShellState(this.draft, { ...options, currentId: this.currentLibraryDraftId });
@@ -197,6 +276,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
       hasOutputJson: typeof this.outputJson === "string" && this.outputJson.trim().length > 0,
       status: this.status,
       hasStatus: Boolean(this.status?.message),
+      uiState: this.uiState,
       hardBoundaryHint: "Authoring shell only: saved drafts and published event records use Arcflight world settings, but there are no compendium writes, actor mutation, chat posting, travel-event running, AP/RAP mechanics, combat automation, or staged-effect application."
     };
   }
@@ -208,6 +288,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.element?.addEventListener("click", this.#boundBuilderClick);
     this.element?.removeEventListener("change", this.#boundBuilderChange);
     this.element?.addEventListener("change", this.#boundBuilderChange);
+    this.#restoreScrollPosition();
   }
 
   async #onBuilderClick(event) {
