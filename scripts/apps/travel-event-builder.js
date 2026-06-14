@@ -555,7 +555,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   }
 
   async #writeJsonOutput(json, filename) {
-    if (globalThis.saveDataToFile) {
+    const saveDataToFile = globalThis.foundry?.utils?.saveDataToFile;
+    if (typeof saveDataToFile === "function") {
       saveDataToFile(json, "application/json", filename);
       return "downloaded";
     }
