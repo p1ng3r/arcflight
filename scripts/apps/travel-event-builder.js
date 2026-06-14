@@ -166,6 +166,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   #boundBuilderClick = this.#onBuilderClick.bind(this);
   #boundBuilderChange = this.#onBuilderChange.bind(this);
   #pendingScrollState = null;
+  #publishedSearchRenderTimeout = null;
+  #pendingPublishedSearchFocus = null;
 
   constructor(options = {}) {
     super(options);
@@ -304,6 +306,45 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.element?.removeEventListener("input", this.#boundBuilderChange);
     this.element?.addEventListener("input", this.#boundBuilderChange);
     this.#restoreScrollPosition();
+    this.#restorePublishedSearchFocus();
+  }
+
+  #capturePublishedSearchFocus(target) {
+    if (!target || target.dataset?.arcflightBuilderPublishedFilter !== "librarySearchText") return;
+    this.#pendingPublishedSearchFocus = {
+      name: target.getAttribute?.("name") ?? "arcflight-builder-published-search",
+      value: target.value ?? "",
+      selectionStart: Number.isInteger(target.selectionStart) ? target.selectionStart : null,
+      selectionEnd: Number.isInteger(target.selectionEnd) ? target.selectionEnd : null
+    };
+  }
+
+  #restorePublishedSearchFocus() {
+    if (!this.#pendingPublishedSearchFocus) return;
+    const pending = this.#pendingPublishedSearchFocus;
+    this.#pendingPublishedSearchFocus = null;
+    const restore = () => {
+      const input = this.element?.querySelector?.(`[name="${pending.name}"][data-arcflight-builder-published-filter="librarySearchText"]`);
+      if (!input) return;
+      input.value = pending.value;
+      input.focus?.();
+      if (typeof input.setSelectionRange === "function" && pending.selectionStart !== null && pending.selectionEnd !== null) {
+        input.setSelectionRange(pending.selectionStart, pending.selectionEnd);
+      }
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
+    else setTimeout(restore, 0);
+  }
+
+  #schedulePublishedSearchRender(target) {
+    this.#capturePublishedSearchFocus(target);
+    if (this.#publishedSearchRenderTimeout) clearTimeout(this.#publishedSearchRenderTimeout);
+    this.#publishedSearchRenderTimeout = setTimeout(async () => {
+      this.#publishedSearchRenderTimeout = null;
+      this.#capturePublishedSearchFocus(this.element?.querySelector?.('[data-arcflight-builder-published-filter="librarySearchText"]'));
+      this.status = createStatus("success", "Updated Published Events library search.");
+      await this.#rerenderAfterAction();
+    }, 150);
   }
 
   async #onBuilderClick(event) {
@@ -372,13 +413,28 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   async #onPublishedLibraryFilterChange(event, target) {
     event.preventDefault();
     const key = target.dataset.arcflightBuilderPublishedFilter;
-    if (Object.hasOwn(this.uiState, key)) this.uiState[key] = target.value ?? "";
+    if (!Object.hasOwn(this.uiState, key)) return;
+    this.uiState[key] = target.value ?? "";
+    if (key === "librarySearchText" && event.type === "input") {
+      this.#schedulePublishedSearchRender(target);
+      return;
+    }
+    if (this.#publishedSearchRenderTimeout) {
+      clearTimeout(this.#publishedSearchRenderTimeout);
+      this.#publishedSearchRenderTimeout = null;
+    }
+    if (key === "librarySearchText") this.#capturePublishedSearchFocus(target);
     this.status = createStatus("success", "Updated Published Events library filters.");
     await this.#rerenderAfterAction();
   }
 
   async #onClearPublishedLibraryFilters(event) {
     event.preventDefault();
+    if (this.#publishedSearchRenderTimeout) {
+      clearTimeout(this.#publishedSearchRenderTimeout);
+      this.#publishedSearchRenderTimeout = null;
+    }
+    this.#pendingPublishedSearchFocus = null;
     this.uiState.librarySearchText = "";
     this.uiState.libraryCategoryFilter = "all";
     this.uiState.libraryTagFilter = "all";
