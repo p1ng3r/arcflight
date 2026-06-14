@@ -673,11 +673,45 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     await this.#rerenderAfterAction();
   }
 
+  #getDialogForm(event, dialog) {
+    return event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form") ?? null;
+  }
+
   #readDialogFormValue(event, dialog, fieldName) {
-    const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form") ?? null;
+    const form = this.#getDialogForm(event, dialog);
     if (!form) return "";
     try {
       return String(new FormData(form).get(fieldName) ?? "");
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  async #readFileText(file) {
+    if (!file) return "";
+    try {
+      if (typeof file.text === "function") return String(await file.text());
+      if (typeof FileReader === "function") {
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.addEventListener("load", () => resolve(String(reader.result ?? "")), { once: true });
+          reader.addEventListener("error", () => resolve(""), { once: true });
+          reader.readAsText(file);
+        });
+      }
+    } catch (_error) {
+      return "";
+    }
+    return "";
+  }
+
+  async #readPublishedImportJsonInput(event, dialog) {
+    const form = this.#getDialogForm(event, dialog);
+    if (!form) return "";
+    const file = form.querySelector?.("[name='jsonFile']")?.files?.[0] ?? null;
+    if (file) return this.#readFileText(file);
+    try {
+      return String(new FormData(form).get("jsonText") ?? "");
     } catch (_error) {
       return "";
     }
@@ -742,7 +776,16 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     }
     let jsonText = "";
     try {
-      jsonText = await dialogV2.prompt({ window: { title: "Import Published Travel Event JSON" }, content: `<form><div class="form-group"><label>Paste single event or pack JSON</label><textarea name="jsonText" rows="16"></textarea></div><p class="notes">Preview is shown before saving. Import writes only to the Published Travel Event Library after confirmation.</p></form>`, rejectClose: false, ok: { label: "Preview Import", callback: (event, _button, dialog) => this.#readDialogFormValue(event, dialog, "jsonText") }, cancel: { label: "Cancel" } });
+      jsonText = await dialogV2.prompt({
+        window: { title: "Import Published Travel Event JSON" },
+        content: `<form><div class="form-group"><label>Choose JSON file</label><input type="file" name="jsonFile" accept=".json,application/json"></div><div class="form-group"><label>Or paste single event or pack JSON</label><textarea name="jsonText" rows="16"></textarea></div><p class="notes">If both a file and pasted JSON are provided, the selected file is used. Preview is shown before saving. Import writes only to the Published Travel Event Library after confirmation.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Preview Import",
+          callback: (event, _button, dialog) => this.#readPublishedImportJsonInput(event, dialog)
+        },
+        cancel: { label: "Cancel" }
+      });
     } catch (_error) { jsonText = ""; }
     if (!jsonText) {
       this.status = createStatus("info", "Import cancelled; Published Events library was not changed.");
