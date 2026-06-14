@@ -61,10 +61,12 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-published-export]",
   "[data-arcflight-builder-published-export-pack]",
   "[data-arcflight-builder-published-import]",
+  "[data-arcflight-builder-published-clear-filters]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
   "[data-arcflight-builder-export-final]"
 ].join(", ");
+const BUILDER_LIBRARY_FILTER_SELECTOR = "[data-arcflight-builder-published-filter]";
 
 function cloneData(value) {
   if (value == null) return value;
@@ -168,7 +170,12 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.status = createStatus("info", "Draft is local to this window until you explicitly save it to the Saved Drafts library.");
     this.uiState = {
       scrollTop: 0,
-      scrollSelector: ""
+      scrollSelector: "",
+      librarySearchText: "",
+      libraryCategoryFilter: "all",
+      libraryTagFilter: "all",
+      libraryRoundCountFilter: "all",
+      librarySortMode: "updatedDesc"
     };
   }
 
@@ -267,7 +274,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const shell = prepareTravelEventBuilderShellState(this.draft, { ...options, currentId: this.currentLibraryDraftId });
+    const shell = prepareTravelEventBuilderShellState(this.draft, { ...options, currentId: this.currentLibraryDraftId, ...this.#publishedLibraryFilterOptions() });
 
     return {
       ...context,
@@ -288,6 +295,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.element?.addEventListener("click", this.#boundBuilderClick);
     this.element?.removeEventListener("change", this.#boundBuilderChange);
     this.element?.addEventListener("change", this.#boundBuilderChange);
+    this.element?.removeEventListener("input", this.#boundBuilderChange);
+    this.element?.addEventListener("input", this.#boundBuilderChange);
     this.#restoreScrollPosition();
   }
 
@@ -315,6 +324,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-published-export")) return this.#onExportPublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-export-pack")) return this.#onExportPublishedPack(event);
     if (target.hasAttribute("data-arcflight-builder-published-import")) return this.#onImportPublishedJson(event);
+    if (target.hasAttribute("data-arcflight-builder-published-clear-filters")) return this.#onClearPublishedLibraryFilters(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-final")) return this.#onExportFinal(event);
@@ -322,8 +332,9 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
 
   async #onBuilderChange(event) {
-    const target = event.target?.closest?.("[data-arcflight-builder-form-field], [data-arcflight-builder-round-field], [data-arcflight-builder-final-outcome-field], [data-arcflight-builder-final-outcome-effect-field]");
+    const target = event.target?.closest?.(`[data-arcflight-builder-form-field], [data-arcflight-builder-round-field], [data-arcflight-builder-final-outcome-field], [data-arcflight-builder-final-outcome-effect-field], ${BUILDER_LIBRARY_FILTER_SELECTOR}`);
     if (!target || !this.element?.contains(target)) return;
+    if (target.hasAttribute("data-arcflight-builder-published-filter")) return this.#onPublishedLibraryFilterChange(event, target);
     if (target.closest?.("[data-arcflight-builder-final-outcome-add-effect]") && !target.hasAttribute("data-arcflight-builder-final-outcome-add-effect-enabled")) return;
 
     if (target.hasAttribute("data-arcflight-builder-round-field")) this.#syncDraftFromRoundForm();
@@ -336,6 +347,35 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
 
   async #rerenderAfterAction() {
     await this.render(true);
+  }
+
+  #publishedLibraryFilterOptions() {
+    return {
+      librarySearchText: this.uiState.librarySearchText,
+      libraryCategoryFilter: this.uiState.libraryCategoryFilter,
+      libraryTagFilter: this.uiState.libraryTagFilter,
+      libraryRoundCountFilter: this.uiState.libraryRoundCountFilter,
+      librarySortMode: this.uiState.librarySortMode
+    };
+  }
+
+  async #onPublishedLibraryFilterChange(event, target) {
+    event.preventDefault();
+    const key = target.dataset.arcflightBuilderPublishedFilter;
+    if (Object.hasOwn(this.uiState, key)) this.uiState[key] = target.value ?? "";
+    this.status = createStatus("success", "Updated Published Events library filters.");
+    await this.#rerenderAfterAction();
+  }
+
+  async #onClearPublishedLibraryFilters(event) {
+    event.preventDefault();
+    this.uiState.librarySearchText = "";
+    this.uiState.libraryCategoryFilter = "all";
+    this.uiState.libraryTagFilter = "all";
+    this.uiState.libraryRoundCountFilter = "all";
+    this.uiState.librarySortMode = "updatedDesc";
+    this.status = createStatus("success", "Cleared Published Events library filters.");
+    await this.#rerenderAfterAction();
   }
 
 

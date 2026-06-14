@@ -63,15 +63,62 @@
       </div>
     </div>
 
-    <p class="arcflight-sheet__hint">Setting: <code>{{publishedLibrary.settingKey}}</code>. Entries: {{publishedLibrary.count}}.</p>
+    <p class="arcflight-sheet__hint">Setting: <code>{{publishedLibrary.settingKey}}</code>. Entries: {{publishedLibrary.count}}. Showing: {{publishedLibrary.visibleCount}}.</p>
     {{#if publishedLibrary.hasEvents}}
+      <div class="arcflight-travel-builder__form-grid arcflight-travel-builder__published-filters">
+        <label class="arcflight-travel-builder__field">
+          <span>Search published events</span>
+          <input type="search" name="arcflight-builder-published-search" value="{{publishedLibrary.view.searchText}}" placeholder="Name, key, category, tag, or description" data-arcflight-builder-published-filter="librarySearchText">
+        </label>
+        <label class="arcflight-travel-builder__field">
+          <span>Category</span>
+          <select name="arcflight-builder-published-category" data-arcflight-builder-published-filter="libraryCategoryFilter">
+            {{#each publishedLibrary.view.categoryOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        {{#if publishedLibrary.view.hasTags}}
+          <label class="arcflight-travel-builder__field">
+            <span>Tag</span>
+            <select name="arcflight-builder-published-tag" data-arcflight-builder-published-filter="libraryTagFilter">
+              {{#each publishedLibrary.view.tagOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+        {{/if}}
+        <label class="arcflight-travel-builder__field">
+          <span>Round count</span>
+          <select name="arcflight-builder-published-round-count" data-arcflight-builder-published-filter="libraryRoundCountFilter">
+            {{#each publishedLibrary.view.roundCountOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <label class="arcflight-travel-builder__field">
+          <span>Sort</span>
+          <select name="arcflight-builder-published-sort" data-arcflight-builder-published-filter="librarySortMode">
+            {{#each publishedLibrary.view.sortOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+          <button type="button" data-arcflight-builder-published-clear-filters {{#unless publishedLibrary.view.filtersActive}}disabled{{/unless}}>Clear Filters</button>
+        </div>
+      </div>
+      {{#unless publishedLibrary.hasVisibleEvents}}
+        <p class="arcflight-sheet__hint">No published travel events match the current filters.</p>
+      {{/unless}}
       <div class="arcflight-travel-builder__library-list">
         {{#each publishedLibrary.entries}}
           <article class="arcflight-travel-builder__library-row {{#if isMalformed}}arcflight-travel-builder__library-row--malformed{{/if}}">
             <div>
               <strong>{{name}}</strong>
               {{#if isMalformed}}<span class="arcflight-travel-builder__badge arcflight-travel-builder__badge--warning">Malformed</span>{{/if}}
-              <div class="arcflight-sheet__hint">Published id: <code>{{id}}</code> · Event key: <code>{{key}}</code> · Category: {{category}} · Published: {{publishedAt}} · Updated: {{updatedAt}}</div>
+              <div class="arcflight-sheet__hint">Published id: <code>{{id}}</code> · Event key: <code>{{key}}</code> · Category: {{category}} · Rounds: {{roundCount}} · Published: {{publishedAt}} · Updated: {{updatedAt}}</div>
+              {{#if tagText}}<div class="arcflight-sheet__hint">Tags: {{tagText}}</div>{{/if}}
               {{#if sourceDraftId}}<div class="arcflight-sheet__hint">Source draft id: <code>{{sourceDraftId}}</code></div>{{/if}}
             </div>
             <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
