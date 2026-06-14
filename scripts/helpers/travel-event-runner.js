@@ -1253,9 +1253,11 @@ export function preparePublishedTravelEventRunnerLaunchState(options = {}) {
   const shipOptions = getArcflightTravelEventRunnerShipOptions(options);
   const selectedShip = shipOptions.find((actor) => actor.selected) ?? null;
   const defaultSessionName = loaded.event?.name ? `${loaded.event.name} Run` : "Travel Event Run";
+  const errors = [...(loaded.errors ?? [])];
+  if (loaded.ok === true && shipOptions.length === 0) errors.push("No Arcflight ship or PF2E vehicle actors are available. Create or enable a vehicle actor before starting a travel event run.");
   return {
-    ok: loaded.ok === true,
-    errors: loaded.errors ?? [],
+    ok: loaded.ok === true && shipOptions.length > 0,
+    errors,
     warnings: loaded.warnings ?? [],
     entry: loaded.entry ?? null,
     event: loaded.event ? cloneData(loaded.event) : null,
@@ -1273,7 +1275,13 @@ export async function startTravelEventRunnerFromPublishedEvent(idOrKey, options 
   const actorId = String(options.actorId ?? options.shipId ?? launchState.selectedShip?.id ?? "");
   const selectedActorUuid = String(options.actorUuid ?? options.shipUuid ?? launchState.selectedShip?.uuid ?? "");
   const actor = actorCollectionValues(getActorCollection(options)).find((candidate) => (selectedActorUuid && actorUuid(candidate) === selectedActorUuid) || (actorId && candidate?.id === actorId)) ?? null;
+  if (!actor && !launchState.selectedShip) {
+    return buildRunnerLibraryResult(false, { errors: ["No Arcflight ship or PF2E vehicle actor could be resolved for this travel event run."], warnings: launchState.warnings, launchState, session: null, entry: launchState.entry });
+  }
   const ship = normalizeTravelEventRunnerShipSelection(actor ?? launchState.selectedShip);
+  if (!ship.actorId && !ship.actorUuid) {
+    return buildRunnerLibraryResult(false, { errors: ["No Arcflight ship or PF2E vehicle actor could be resolved for this travel event run."], warnings: launchState.warnings, launchState, session: null, entry: launchState.entry });
+  }
   const sessionName = typeof options.sessionName === "string" && options.sessionName.trim() ? options.sessionName.trim() : launchState.defaultSessionName;
   const created = createTravelEventRunnerSession(cloneData(launchState.event), { ...options, ship, notes: options.notes ?? "" });
   if (!created.ok || !created.session) return buildRunnerLibraryResult(false, { errors: created.errors, warnings: created.warnings, launchState, session: null, entry: launchState.entry });

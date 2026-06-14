@@ -51,10 +51,12 @@ import {
   duplicateTravelEventRunnerSession,
   getTravelEventRunnerSessionLibrary,
   loadTravelEventRunnerSessionFromLibrary,
+  preparePublishedTravelEventRunnerLaunchState,
   prepareTravelEventRunnerSessionLibraryState,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
+  startTravelEventRunnerFromPublishedEvent,
   setTravelEventRunnerStationResult
 } from "../helpers/travel-event-runner.js";
 import { ARCFLIGHT, ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
@@ -1048,6 +1050,23 @@ export async function runFrameworkSmokeTest(options = {}) {
     let runnerSessionChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
     let runnerSessionCombatsBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
     let runnerSessionActiveCombatBefore = globalThis.game?.combat?.id ?? "";
+    const noShipLaunchActorBefore = runnerSessionActorBefore;
+    const noShipLaunchResourcesBefore = stringifySmokeData(runnerSessionResourcesBefore);
+    const noShipLaunchEconomyBefore = stringifySmokeData(runnerSessionEconomyBefore);
+    const noShipLaunchPublishedBefore = stringifySmokeData(runnerFixturePublishedLibrary);
+    const noShipLaunchRunnerLibraryBefore = stringifySmokeData(getTravelEventRunnerSessionLibrary());
+    const noShipLaunchActorCountBefore = globalThis.game?.actors?.size ?? globalThis.game?.actors?.contents?.length ?? 0;
+    const noShipLaunchChatBefore = runnerSessionChatBefore;
+    const noShipLaunchJournalBefore = globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0;
+    const noShipLaunchCombatBefore = runnerSessionCombatsBefore;
+    const noShipLaunchActiveCombatBefore = runnerSessionActiveCombatBefore;
+    const noShipLaunchState = preparePublishedTravelEventRunnerLaunchState({ idOrKey: runnerFixtureKey, library: runnerFixturePublishedLibrary, actors: [] });
+    const noShipStartResult = await startTravelEventRunnerFromPublishedEvent(runnerFixtureKey, { library: runnerFixturePublishedLibrary, runnerSessionLibrary: { version: 1, sessions: {} }, actors: [] });
+    check(result, "Published runner launch without ship options is not ok", noShipLaunchState.ok === false && noShipLaunchState.hasShipOptions === false && noShipLaunchState.errors.some((error) => error.includes("vehicle")), "no ship blocked", noShipLaunchState);
+    check(result, "Starting published runner without ships is not ok and creates no session", noShipStartResult.ok === false && noShipStartResult.session === null, "no session created", noShipStartResult.errors);
+    check(result, "Blocked no-ship runner launch does not mutate published event/library metadata", stringifySmokeData(runnerFixturePublishedLibrary) === noShipLaunchPublishedBefore, "published library unchanged", runnerFixturePublishedLibrary);
+    check(result, "Blocked no-ship runner launch does not write runner sessions", stringifySmokeData(getTravelEventRunnerSessionLibrary()) === noShipLaunchRunnerLibraryBefore, "runner session library unchanged", getTravelEventRunnerSessionLibrary());
+    check(result, "Blocked no-ship runner launch does not mutate actors, resources, chat, journals, or combat", noShipLaunchActorBefore === stringifySmokeData(actor.toObject?.() ?? actor) && noShipLaunchResourcesBefore === stringifySmokeData(getShipTravelResources(actor)) && noShipLaunchEconomyBefore === stringifySmokeData(getShipActionEconomy(actor)) && noShipLaunchActorCountBefore === (globalThis.game?.actors?.size ?? globalThis.game?.actors?.contents?.length ?? 0) && noShipLaunchChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && noShipLaunchJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0) && noShipLaunchCombatBefore === (globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0) && noShipLaunchActiveCombatBefore === (globalThis.game?.combat?.id ?? ""), "world state unchanged", {});
 
     const activeRunnerSessionCreated = createTravelEventRunnerSession(loadedRunnerFixtureEvent.event);
     let activeRunnerSession = activeRunnerSessionCreated.session;

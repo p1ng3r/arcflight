@@ -721,7 +721,18 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     const id = target.dataset.arcflightBuilderPublishedRun;
     const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
     const launchState = preparePublishedTravelEventRunnerLaunchState({ idOrKey: id });
-    if (!launchState.ok || !launchState.event) {
+    if (!launchState.event) {
+      this.status = createStatus("warning", launchState.errors?.[0] ?? "Published event could not be prepared for the runner.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+    if (!launchState.hasShipOptions) {
+      this.status = createStatus("warning", "No Arcflight ship or PF2E vehicle actors are available. Create or enable a vehicle actor before starting a travel event run.");
+      ui.notifications?.warn?.(this.status.message);
+      await this.#rerenderAfterAction();
+      return;
+    }
+    if (!launchState.ok) {
       this.status = createStatus("warning", launchState.errors?.[0] ?? "Published event could not be prepared for the runner.");
       await this.#rerenderAfterAction();
       return;
