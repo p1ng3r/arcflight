@@ -749,6 +749,8 @@ function normalizePublishedEventEntry(id, entry = {}, options = {}) {
     updatedAt: typeof source.updatedAt === "string" && source.updatedAt.length > 0 ? source.updatedAt : fallbackTimestamp,
     sourceDraftId: typeof source.sourceDraftId === "string" ? source.sourceDraftId : "",
     version: Number.isInteger(source.version) ? source.version : PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION,
+    favorite: source.favorite === true,
+    tags: normalizePublishedTravelEventLibraryTags(source.tags),
     event
   };
 }
@@ -778,8 +780,24 @@ function publishedEventRoundCount(entry) {
   return Array.isArray(source.rounds) ? source.rounds.length : 0;
 }
 
+export function normalizePublishedTravelEventLibraryTags(value) {
+  const source = typeof value === "string" ? value.split(/[\n,]/) : (Array.isArray(value) ? value : []);
+  return Array.from(new Set(source.map((entry) => typeof entry === "string" ? entry.trim() : "").filter((entry) => entry.length > 0)));
+}
+
 function publishedEventTags(entry) {
-  return normalizeStringArray(entry?.event?.tags ?? entry?.tags);
+  return Array.from(new Set([
+    ...normalizePublishedTravelEventLibraryTags(entry?.event?.tags),
+    ...normalizePublishedTravelEventLibraryTags(entry?.tags)
+  ]));
+}
+
+function publishedEventLibraryTags(entry) {
+  return normalizePublishedTravelEventLibraryTags(entry?.tags);
+}
+
+function isPublishedEventFavorite(entry) {
+  return entry?.favorite === true;
 }
 
 function publishedEventDescription(entry) {
@@ -793,7 +811,8 @@ function normalizeLibrarySearchOptions(options = {}) {
     categoryFilter: coerceFormString(options.categoryFilter ?? options.libraryCategoryFilter, "all") || "all",
     tagFilter: coerceFormString(options.tagFilter ?? options.libraryTagFilter, "all") || "all",
     roundCountFilter: coerceFormString(options.roundCountFilter ?? options.libraryRoundCountFilter, "all") || "all",
-    sortMode: coerceFormString(options.sortMode ?? options.librarySortMode, "updatedDesc") || "updatedDesc"
+    sortMode: coerceFormString(options.sortMode ?? options.librarySortMode, "updatedDesc") || "updatedDesc",
+    favoritesOnly: options.favoritesOnly === true || options.libraryFavoritesOnly === true || coerceFormString(options.favoritesOnly ?? options.libraryFavoritesOnly, "") === "favorites"
   };
 }
 
@@ -810,6 +829,7 @@ export function filterPublishedTravelEvents(events, options = {}) {
   return source.filter((entry) => {
     const tags = publishedEventTags(entry);
     const roundCount = publishedEventRoundCount(entry);
+    if (normalized.favoritesOnly && !isPublishedEventFavorite(entry)) return false;
     if (normalized.categoryFilter !== "all" && entry?.category !== normalized.categoryFilter && entry?.event?.category !== normalized.categoryFilter) return false;
     if (normalized.tagFilter !== "all" && !tags.includes(normalized.tagFilter)) return false;
     if (!matchesRoundCountFilter(roundCount, normalized.roundCountFilter)) return false;
@@ -838,6 +858,7 @@ export function sortPublishedTravelEvents(events, options = {}) {
   const byUpdated = (a, b) => String(b?.updatedAt ?? b?.publishedAt ?? "").localeCompare(String(a?.updatedAt ?? a?.publishedAt ?? "")) || byName(a, b);
   if (normalized.sortMode === "nameDesc") return sorted.sort((a, b) => byName(b, a));
   if (normalized.sortMode === "category") return sorted.sort(byCategory);
+  if (normalized.sortMode === "favoritesFirst") return sorted.sort((a, b) => Number(isPublishedEventFavorite(b)) - Number(isPublishedEventFavorite(a)) || byUpdated(a, b));
   if (normalized.sortMode === "updatedDesc") return sorted.sort(byUpdated);
   return sorted.sort(byName);
 }
@@ -849,6 +870,7 @@ export function preparePublishedTravelEventLibraryViewState(events, options = {}
   const categories = Array.from(new Set(sourceEntries.map((entry) => entry?.category ?? entry?.event?.category).filter((value) => typeof value === "string" && value.length > 0))).sort((a, b) => a.localeCompare(b));
   const tags = Array.from(new Set(sourceEntries.flatMap((entry) => publishedEventTags(entry)))).sort((a, b) => a.localeCompare(b));
   const filteredEntries = sortPublishedTravelEvents(filterPublishedTravelEvents(sourceEntries, filters), filters);
+  const categoryViews = preparePublishedTravelEventCategoryViewState(sourceEntries, filters);
   return Object.freeze({
     ...filters,
     categoryOptions: [createOption("all", "All categories", filters.categoryFilter === "all"), ...categories.map((category) => createOption(category, CATEGORY_LABELS[category] ?? category, filters.categoryFilter === category))],
@@ -858,6 +880,7 @@ export function preparePublishedTravelEventLibraryViewState(events, options = {}
       createOption("nameAsc", "Name A–Z", filters.sortMode === "nameAsc"),
       createOption("nameDesc", "Name Z–A", filters.sortMode === "nameDesc"),
       createOption("category", "Category", filters.sortMode === "category"),
+      createOption("favoritesFirst", "Favorites first", filters.sortMode === "favoritesFirst"),
       createOption("updatedDesc", "Recently updated / created", filters.sortMode === "updatedDesc")
     ],
     entries: filteredEntries,
@@ -866,7 +889,9 @@ export function preparePublishedTravelEventLibraryViewState(events, options = {}
     hasEvents: sourceEntries.length > 0,
     hasVisibleEvents: filteredEntries.length > 0,
     hasTags: tags.length > 0,
-    filtersActive: Boolean(filters.searchText) || filters.categoryFilter !== "all" || filters.tagFilter !== "all" || filters.roundCountFilter !== "all" || filters.sortMode !== "updatedDesc",
+    favoritesOnly: filters.favoritesOnly,
+    categoryViews,
+    filtersActive: Boolean(filters.searchText) || filters.categoryFilter !== "all" || filters.tagFilter !== "all" || filters.roundCountFilter !== "all" || filters.favoritesOnly || filters.sortMode !== "updatedDesc",
     emptyMessage: sourceEntries.length === 0 ? "No published travel events yet. Click Publish Current Draft after the draft passes validation and has no quality errors." : "No published travel events match the current filters."
   });
 }
@@ -895,6 +920,46 @@ function validatePublishedEventEntry(entry, options = {}) {
   if (entry.event.builder !== undefined) return { ok: false, errors: [`Published travel event "${entry.id}" still contains builder metadata.`], warnings: [] };
   const validation = validateTravelEventDefinition(entry.event, { ...options, strictAuthoring: true });
   return validation;
+}
+
+export function preparePublishedTravelEventCategoryViewState(events, options = {}) {
+  assertOptionsObject(options, "preparePublishedTravelEventCategoryViewState");
+  const source = Array.isArray(events) ? events : [];
+  const filters = normalizeLibrarySearchOptions(options);
+  const categories = Array.from(new Set(source.map((entry) => entry?.category ?? entry?.event?.category).filter((value) => typeof value === "string" && value.length > 0))).sort((a, b) => a.localeCompare(b));
+  const favoriteCount = source.filter((entry) => isPublishedEventFavorite(entry)).length;
+  return Object.freeze({
+    activeView: filters.favoritesOnly ? "favorites" : (filters.categoryFilter === "all" ? "all" : filters.categoryFilter),
+    views: [
+      { key: "all", label: "All", count: source.length, selected: !filters.favoritesOnly && filters.categoryFilter === "all", categoryFilter: "all", favoritesOnly: false },
+      { key: "favorites", label: "Favorites", count: favoriteCount, selected: filters.favoritesOnly, categoryFilter: "all", favoritesOnly: true },
+      ...categories.map((category) => ({ key: category, label: CATEGORY_LABELS[category] ?? category, count: source.filter((entry) => (entry?.category ?? entry?.event?.category) === category).length, selected: !filters.favoritesOnly && filters.categoryFilter === category, categoryFilter: category, favoritesOnly: false }))
+    ]
+  });
+}
+
+export async function togglePublishedTravelEventFavorite(idOrKey, options = {}) {
+  assertOptionsObject(options, "togglePublishedTravelEventFavorite");
+  const library = getPublishedTravelEventLibrary(options);
+  const entry = findPublishedEventEntry(library, idOrKey);
+  if (!entry) return buildLibraryResult(false, { errors: [`No published Travel Event found for "${String(idOrKey ?? "")}".`], warnings: [], library, entry: null });
+  const favorite = typeof options.favorite === "boolean" ? options.favorite : !entry.favorite;
+  const nextEntry = { ...cloneData(entry), favorite, updatedAt: nowIso(options), event: cloneData(entry.event) };
+  const nextLibrary = { ...library, events: { ...library.events, [entry.id]: nextEntry } };
+  if (!options.dryRun) await setGameSettingPublishedLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings: [], library: nextLibrary, entry: cloneData(nextEntry), favorite });
+}
+
+export async function updatePublishedTravelEventLibraryTags(idOrKey, tags, options = {}) {
+  assertOptionsObject(options, "updatePublishedTravelEventLibraryTags");
+  const library = getPublishedTravelEventLibrary(options);
+  const entry = findPublishedEventEntry(library, idOrKey);
+  if (!entry) return buildLibraryResult(false, { errors: [`No published Travel Event found for "${String(idOrKey ?? "")}".`], warnings: [], library, entry: null, tags: [] });
+  const nextTags = normalizePublishedTravelEventLibraryTags(tags);
+  const nextEntry = { ...cloneData(entry), tags: nextTags, updatedAt: nowIso(options), event: cloneData(entry.event) };
+  const nextLibrary = { ...library, events: { ...library.events, [entry.id]: nextEntry } };
+  if (!options.dryRun) await setGameSettingPublishedLibrary(nextLibrary);
+  return buildLibraryResult(true, { warnings: [], library: nextLibrary, entry: cloneData(nextEntry), tags: nextTags });
 }
 
 export function getPublishedTravelEventLibrary(options = {}) {
@@ -995,14 +1060,19 @@ export function preparePublishedTravelEventLibraryState(options = {}) {
   const entries = getPublishedEventEntries(library).map((entry) => {
     const validation = validatePublishedEventEntry(entry, options);
     const tags = publishedEventTags(entry);
+    const libraryTags = publishedEventLibraryTags(entry);
     const descriptionText = publishedEventDescription(entry);
     return {
       ...cloneData(entry),
       event: undefined,
       descriptionText,
       roundCount: publishedEventRoundCount(entry),
+      favorite: isPublishedEventFavorite(entry),
+      favoriteLabel: isPublishedEventFavorite(entry) ? "★ Favorited" : "☆ Not favorited",
       tags,
+      libraryTags,
       tagText: tags.join(", "),
+      libraryTagText: libraryTags.join(", "),
       isMalformed: validation.ok !== true,
       canLoad: validation.ok === true,
       validationErrors: validation.errors ?? [],

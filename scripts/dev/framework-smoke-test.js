@@ -182,6 +182,10 @@ import {
   filterPublishedTravelEvents,
   sortPublishedTravelEvents,
   preparePublishedTravelEventLibraryViewState,
+  preparePublishedTravelEventCategoryViewState,
+  togglePublishedTravelEventFavorite,
+  updatePublishedTravelEventLibraryTags,
+  normalizePublishedTravelEventLibraryTags,
   saveTravelEventBuilderDraftToLibrary,
   loadTravelEventBuilderDraftFromLibrary,
   deleteTravelEventBuilderDraftFromLibrary,
@@ -1544,13 +1548,15 @@ export async function runFrameworkSmokeTest(options = {}) {
           name: "Threat Filter Smoke",
           category: "threat",
           updatedAt: "2026-06-12T00:00:04.000Z",
+          tags: ["library-only", "danger"],
+          favorite: true,
           event: {
             ...publishedBaseEntry.event,
             key: "threat-filter-smoke",
             name: "Threat Filter Smoke",
             category: "threat",
             roundCount: 9,
-            tags: ["danger"],
+            tags: ["danger", "danger"],
             description: "Hazard description search fixture.",
             rounds: Array.from({ length: 9 }, (_value, index) => ({ ...(publishedBaseEntry.event?.rounds?.[0] ?? {}), round: index + 1 }))
           }
@@ -1565,10 +1571,20 @@ export async function runFrameworkSmokeTest(options = {}) {
     const publishedLibraryStateRouteDescriptionSearch = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "route library" });
     const publishedLibraryStateCategoryFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryCategoryFilter: "navigation" });
     const publishedLibraryStateTagFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryTagFilter: "danger" });
+    const publishedLibraryStateLibraryTagFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryTagFilter: "library-only" });
+    const publishedLibraryStateEventTagFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryTagFilter: "route" });
+    const publishedLibraryStateLibraryTagSearch = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "library-only" });
+    const publishedLibraryFavoritesOnly = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryFavoritesOnly: true });
+    const publishedLibraryFavoritesFirst = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySortMode: "favoritesFirst" });
+    const publishedCategoryViewState = preparePublishedTravelEventCategoryViewState(Object.values(publishedLibrarySearchFixture.events));
+    const publishedFavoriteToggle = await togglePublishedTravelEventFavorite("navigation-filter-smoke", { library: publishedLibrarySearchFixture, dryRun: true, now: "2026-06-12T00:00:05.000Z" });
+    const publishedFavoriteEventUnchanged = JSON.stringify(publishedFavoriteToggle.entry?.event) === JSON.stringify(publishedLibrarySearchFixture.events["navigation-filter-smoke"].event);
+    const publishedLibraryTagUpdate = await updatePublishedTravelEventLibraryTags("navigation-filter-smoke", "route, library-only, route", { library: publishedLibrarySearchFixture, dryRun: true, now: "2026-06-12T00:00:06.000Z" });
+    const publishedNormalizeTags = normalizePublishedTravelEventLibraryTags("alpha, beta\nalpha");
     const publishedLibraryStateRoundFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryRoundCountFilter: "9+" });
     const publishedLibraryStateSortName = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySortMode: "nameAsc" });
     const publishedLibraryStateSortCategory = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySortMode: "category" });
-    const publishedLibraryStateClearFilters = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "", libraryCategoryFilter: "all", libraryTagFilter: "all", libraryRoundCountFilter: "all", librarySortMode: "updatedDesc" });
+    const publishedLibraryStateClearFilters = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "", libraryCategoryFilter: "all", libraryTagFilter: "all", libraryRoundCountFilter: "all", libraryFavoritesOnly: false, librarySortMode: "updatedDesc" });
     const publishedLibraryStateEmptyResults = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "no-matching-published-event" });
     const publishedLibraryFilteringNoMutation = JSON.stringify(publishedBuilderEvent.library) === publishedLibrarySourceSnapshot && JSON.stringify(publishedLibrarySearchFixture.events["navigation-filter-smoke"].event.tags) === "[\"route\",\"beacon\"]";
     const unsafePublishedPreviewHtml = renderPublishedTravelEventImportPreviewHtml({ importType: "single", eventCount: 1, events: [{ valid: true, name: '<img src=x onerror="alert(1)">', key: '<script>key</script>', category: '<b>bad</b>', roundCount: '<svg onload=alert(1)>', duplicateKey: true, actionRequired: '<em>overwrite</em>' }], warnings: ['<script>warning</script>'], errors: ['<img src=x onerror="alert(2)">'], duplicateKeyConflicts: [] }, { isPack: false, modeHint: '<strong>mode</strong>' });
@@ -1752,10 +1768,18 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Published Travel Event library search matches name key category and tags", publishedLibraryStateSearch.entries?.[0]?.name === "Navigation Filter Smoke" && publishedLibraryStateKeySearch.entries?.[0]?.key === "threat-filter-smoke" && publishedLibraryStateCategorySearch.entries?.some((entry) => entry.category === "threat") && publishedLibraryStateTagSearch.entries?.[0]?.tagText?.includes("beacon"), "search fields", { name: publishedLibraryStateSearch.entries, key: publishedLibraryStateKeySearch.entries, category: publishedLibraryStateCategorySearch.entries, tag: publishedLibraryStateTagSearch.entries });
     check(result, "Published Travel Event library search matches description text after event stripping", publishedLibraryStateHazardDescriptionSearch.visibleCount === 1 && publishedLibraryStateHazardDescriptionSearch.entries?.[0]?.key === "threat-filter-smoke" && publishedLibraryStateRouteDescriptionSearch.visibleCount === 1 && publishedLibraryStateRouteDescriptionSearch.entries?.[0]?.key === "navigation-filter-smoke" && publishedLibraryStateHazardDescriptionSearch.entries?.[0]?.event === undefined && publishedLibraryStateRouteDescriptionSearch.entries?.[0]?.event === undefined, "description search without rendered event", { hazard: publishedLibraryStateHazardDescriptionSearch.entries, route: publishedLibraryStateRouteDescriptionSearch.entries });
     check(result, "Published Travel Event library category filter works", publishedLibraryStateCategoryFilter.visibleCount === 1 && publishedLibraryStateCategoryFilter.entries?.[0]?.category === "navigation", "category filter", publishedLibraryStateCategoryFilter.entries);
-    check(result, "Published Travel Event library tag filter works", publishedLibraryStateTagFilter.visibleCount === 1 && publishedLibraryStateTagFilter.entries?.[0]?.tagText === "danger", "tag filter", publishedLibraryStateTagFilter.entries);
+    check(result, "Published Travel Event library tag filter works", publishedLibraryStateTagFilter.visibleCount === 1 && publishedLibraryStateTagFilter.entries?.[0]?.tagText?.includes("danger"), "tag filter", publishedLibraryStateTagFilter.entries);
+    check(result, "Published Travel Event favorite helper export exists and toggles entry metadata only", typeof togglePublishedTravelEventFavorite === "function" && publishedFavoriteToggle.ok === true && publishedFavoriteToggle.library.events["navigation-filter-smoke"].favorite === true && publishedFavoriteEventUnchanged === true, "favorite helper", publishedFavoriteToggle);
+    check(result, "Published Travel Event favorites-only filter/view works", publishedLibraryFavoritesOnly.visibleCount === 1 && publishedLibraryFavoritesOnly.entries?.[0]?.key === "threat-filter-smoke", "favorites filter", publishedLibraryFavoritesOnly.entries);
+    check(result, "Published Travel Event favorites-first sort works", publishedLibraryFavoritesFirst.entries?.[0]?.favorite === true, "favorites sort", publishedLibraryFavoritesFirst.entries?.map((entry) => ({ key: entry.key, favorite: entry.favorite })));
+    check(result, "Published Travel Event library tag helper exists and updates entry metadata", typeof updatePublishedTravelEventLibraryTags === "function" && publishedLibraryTagUpdate.ok === true && publishedLibraryTagUpdate.library.events["navigation-filter-smoke"].tags.join("|") === "route|library-only" && JSON.stringify(publishedLibraryTagUpdate.entry.event) === JSON.stringify(publishedLibrarySearchFixture.events["navigation-filter-smoke"].event), "tag update", publishedLibraryTagUpdate);
+    check(result, "Published Travel Event event and library tags merge and deduplicate", publishedLibraryStateTagFilter.entries?.[0]?.tagText === "danger, library-only" && publishedNormalizeTags.join("|") === "alpha|beta", "merged tags", { entry: publishedLibraryStateTagFilter.entries?.[0], normalized: publishedNormalizeTags });
+    check(result, "Published Travel Event tag filter matches library-only and event-only tags", publishedLibraryStateLibraryTagFilter.visibleCount === 1 && publishedLibraryStateLibraryTagFilter.entries?.[0]?.key === "threat-filter-smoke" && publishedLibraryStateEventTagFilter.visibleCount === 1 && publishedLibraryStateEventTagFilter.entries?.[0]?.key === "navigation-filter-smoke", "tag filters", { libraryOnly: publishedLibraryStateLibraryTagFilter.entries, eventOnly: publishedLibraryStateEventTagFilter.entries });
+    check(result, "Published Travel Event search matches library-only tags", publishedLibraryStateLibraryTagSearch.visibleCount === 1 && publishedLibraryStateLibraryTagSearch.entries?.[0]?.key === "threat-filter-smoke", "library tag search", publishedLibraryStateLibraryTagSearch.entries);
+    check(result, "Published Travel Event category view state returns counts", publishedCategoryViewState.views?.find((view) => view.key === "all")?.count === 3 && publishedCategoryViewState.views?.find((view) => view.key === "favorites")?.count === 1 && publishedCategoryViewState.views?.find((view) => view.key === "navigation")?.count === 1 && publishedCategoryViewState.views?.find((view) => view.key === "threat")?.count === 1, "category views", publishedCategoryViewState);
     check(result, "Published Travel Event library round count filter works", publishedLibraryStateRoundFilter.visibleCount === 1 && publishedLibraryStateRoundFilter.entries?.[0]?.roundCount === 9, "round count filter", publishedLibraryStateRoundFilter.entries);
     check(result, "Published Travel Event library sort modes work", publishedLibraryStateSortName.entries?.map((entry) => entry.name).join("|") === [...publishedLibraryStateSortName.entries].map((entry) => entry.name).sort((a, b) => a.localeCompare(b)).join("|") && publishedLibraryStateSortCategory.entries?.[0]?.category <= publishedLibraryStateSortCategory.entries?.[1]?.category, "sort modes", { name: publishedLibraryStateSortName.entries?.map((entry) => entry.name), category: publishedLibraryStateSortCategory.entries?.map((entry) => entry.category) });
-    check(result, "Published Travel Event library clear filters resets view state", publishedLibraryStateClearFilters.visibleCount === 3 && publishedLibraryStateClearFilters.view.filtersActive === false, "clear filters", publishedLibraryStateClearFilters.view);
+    check(result, "Published Travel Event library clear filters resets view state", publishedLibraryStateClearFilters.visibleCount === 3 && publishedLibraryStateClearFilters.view.filtersActive === false && publishedLibraryStateClearFilters.view.favoritesOnly === false && publishedLibraryStateClearFilters.view.categoryFilter === "all" && publishedLibraryStateClearFilters.view.tagFilter === "all" && publishedLibraryStateClearFilters.view.roundCountFilter === "all" && publishedLibraryStateClearFilters.view.searchText === "" && publishedLibraryStateClearFilters.view.sortMode === "updatedDesc", "clear filters", publishedLibraryStateClearFilters.view);
     check(result, "Published Travel Event library empty results state works", publishedLibraryStateEmptyResults.hasEvents === true && publishedLibraryStateEmptyResults.hasVisibleEvents === false && /No published travel events match/.test(publishedLibraryStateEmptyResults.emptyMessage), "empty filtered state", publishedLibraryStateEmptyResults);
     check(result, "Published Travel Event empty library returns safe state", emptyPublishedLibraryState.count === 0 && emptyPublishedLibraryState.hasEvents === false && Array.isArray(emptyPublishedLibraryState.entries), "empty published safe state", emptyPublishedLibraryState);
     check(result, "Published Travel Event import/export helper exports exist", typeof exportPublishedTravelEventToJson === "function" && typeof exportPublishedTravelEventPackToJson === "function" && typeof importPublishedTravelEventFromJson === "function" && typeof saveImportedPublishedTravelEventToLibrary === "function" && typeof globalThis.game?.arcflight?.exportPublishedTravelEventToJson === "function" && typeof globalThis.game?.arcflight?.devTools?.saveImportedPublishedTravelEventPackToLibrary === "function", true, { api: typeof globalThis.game?.arcflight?.exportPublishedTravelEventToJson, devTools: typeof globalThis.game?.arcflight?.devTools?.saveImportedPublishedTravelEventPackToLibrary });

@@ -65,10 +65,22 @@
 
     <p class="arcflight-sheet__hint">Setting: <code>{{publishedLibrary.settingKey}}</code>. Entries: {{publishedLibrary.count}}. Showing: {{publishedLibrary.visibleCount}}.</p>
     {{#if publishedLibrary.hasEvents}}
+      <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline arcflight-travel-builder__published-views">
+        {{#each publishedLibrary.view.categoryViews.views}}
+          <button type="button" data-arcflight-builder-published-category-view="{{key}}" {{#if selected}}disabled{{/if}}>{{label}} ({{count}})</button>
+        {{/each}}
+      </div>
       <div class="arcflight-travel-builder__form-grid arcflight-travel-builder__published-filters">
         <label class="arcflight-travel-builder__field">
           <span>Search published events</span>
           <input type="search" name="arcflight-builder-published-search" value="{{publishedLibrary.view.searchText}}" placeholder="Name, key, category, tag, or description" data-arcflight-builder-published-filter="librarySearchText">
+        </label>
+        <label class="arcflight-travel-builder__field">
+          <span>View</span>
+          <select name="arcflight-builder-published-favorites" data-arcflight-builder-published-filter="libraryFavoritesOnly">
+            <option value="" {{#unless publishedLibrary.view.favoritesOnly}}selected{{/unless}}>All</option>
+            <option value="favorites" {{#if publishedLibrary.view.favoritesOnly}}selected{{/if}}>Favorites</option>
+          </select>
         </label>
         <label class="arcflight-travel-builder__field">
           <span>Category</span>
@@ -115,13 +127,17 @@
         {{#each publishedLibrary.entries}}
           <article class="arcflight-travel-builder__library-row {{#if isMalformed}}arcflight-travel-builder__library-row--malformed{{/if}}">
             <div>
+              <button type="button" title="Toggle favorite" data-arcflight-builder-published-favorite="{{id}}">{{#if favorite}}★{{else}}☆{{/if}}</button>
               <strong>{{name}}</strong>
+              <span class="arcflight-travel-builder__badge">{{favoriteLabel}}</span>
               {{#if isMalformed}}<span class="arcflight-travel-builder__badge arcflight-travel-builder__badge--warning">Malformed</span>{{/if}}
               <div class="arcflight-sheet__hint">Published id: <code>{{id}}</code> · Event key: <code>{{key}}</code> · Category: {{category}} · Rounds: {{roundCount}} · Published: {{publishedAt}} · Updated: {{updatedAt}}</div>
-              {{#if tagText}}<div class="arcflight-sheet__hint">Tags: {{tagText}}</div>{{/if}}
+              {{#if tagText}}<div class="arcflight-sheet__hint">Tags: {{tagText}}</div>{{else}}<div class="arcflight-sheet__hint">No tags</div>{{/if}}
+              {{#if libraryTagText}}<div class="arcflight-sheet__hint">Library tags: {{libraryTagText}}</div>{{/if}}
               {{#if sourceDraftId}}<div class="arcflight-sheet__hint">Source draft id: <code>{{sourceDraftId}}</code></div>{{/if}}
             </div>
             <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-published-edit-tags="{{id}}">Edit Library Tags</button>
               <button type="button" data-arcflight-builder-published-export="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Export Published Event JSON</button>
               <button type="button" data-arcflight-builder-published-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load as Draft</button>
               <button type="button" data-arcflight-builder-published-duplicate="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate as Draft</button>

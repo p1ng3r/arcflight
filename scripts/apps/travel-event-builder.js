@@ -22,6 +22,8 @@ import {
   prepareTravelEventBuilderQualityReport,
   prepareTravelEventBuilderRoundEditorState,
   publishTravelEventDraftToLibrary,
+  togglePublishedTravelEventFavorite,
+  updatePublishedTravelEventLibraryTags,
   saveTravelEventBuilderDraftToLibrary
 } from "../helpers/travel-event-builder.js";
 import {
@@ -61,6 +63,9 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-published-export]",
   "[data-arcflight-builder-published-export-pack]",
   "[data-arcflight-builder-published-import]",
+  "[data-arcflight-builder-published-favorite]",
+  "[data-arcflight-builder-published-edit-tags]",
+  "[data-arcflight-builder-published-category-view]",
   "[data-arcflight-builder-published-clear-filters]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
@@ -175,7 +180,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
       libraryCategoryFilter: "all",
       libraryTagFilter: "all",
       libraryRoundCountFilter: "all",
-      librarySortMode: "updatedDesc"
+      librarySortMode: "updatedDesc",
+      libraryFavoritesOnly: false
     };
   }
 
@@ -324,6 +330,9 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-published-export")) return this.#onExportPublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-export-pack")) return this.#onExportPublishedPack(event);
     if (target.hasAttribute("data-arcflight-builder-published-import")) return this.#onImportPublishedJson(event);
+    if (target.hasAttribute("data-arcflight-builder-published-favorite")) return this.#onTogglePublishedFavorite(event, target);
+    if (target.hasAttribute("data-arcflight-builder-published-edit-tags")) return this.#onEditPublishedTags(event, target);
+    if (target.hasAttribute("data-arcflight-builder-published-category-view")) return this.#onPublishedCategoryView(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-clear-filters")) return this.#onClearPublishedLibraryFilters(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
@@ -355,7 +364,8 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
       libraryCategoryFilter: this.uiState.libraryCategoryFilter,
       libraryTagFilter: this.uiState.libraryTagFilter,
       libraryRoundCountFilter: this.uiState.libraryRoundCountFilter,
-      librarySortMode: this.uiState.librarySortMode
+      librarySortMode: this.uiState.librarySortMode,
+      libraryFavoritesOnly: this.uiState.libraryFavoritesOnly === true || this.uiState.libraryFavoritesOnly === "favorites"
     };
   }
 
@@ -374,6 +384,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.uiState.libraryTagFilter = "all";
     this.uiState.libraryRoundCountFilter = "all";
     this.uiState.librarySortMode = "updatedDesc";
+    this.uiState.libraryFavoritesOnly = false;
     this.status = createStatus("success", "Cleared Published Events library filters.");
     await this.#rerenderAfterAction();
   }
@@ -615,6 +626,55 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     const published = await publishTravelEventDraftToLibrary(this.draft, { sourceDraftId: this.currentLibraryDraftId || undefined });
     this.outputJson = "";
     this.status = createStatus(published.ok ? (published.warnings.length > 0 ? "warning" : "success") : "warning", published.ok ? (published.warnings[0] ?? `Published finalized travel event "${published.entry.name}" to the Published Events library.`) : firstError(published, "Published event could not be created."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onTogglePublishedFavorite(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedFavorite;
+    const toggled = await togglePublishedTravelEventFavorite(id);
+    this.status = createStatus(toggled.ok ? "success" : "warning", toggled.ok ? `${toggled.favorite ? "Favorited" : "Unfavorited"} published event "${toggled.entry.name}".` : firstError(toggled, "Published event favorite could not be updated."));
+    await this.#rerenderAfterAction();
+  }
+
+  async #onPublishedCategoryView(event, target) {
+    event.preventDefault();
+    const view = target.dataset.arcflightBuilderPublishedCategoryView || "all";
+    this.uiState.libraryFavoritesOnly = view === "favorites";
+    this.uiState.libraryCategoryFilter = view === "favorites" ? "all" : view;
+    this.status = createStatus("success", "Updated Published Events category view.");
+    await this.#rerenderAfterAction();
+  }
+
+  async #onEditPublishedTags(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedEditTags;
+    const loaded = loadPublishedTravelEventFromLibrary(id);
+    if (!loaded.entry) {
+      this.status = createStatus("warning", firstError(loaded, "Published event tags could not be edited."));
+      await this.#rerenderAfterAction();
+      return;
+    }
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (!dialogV2?.wait) {
+      this.status = createStatus("warning", "Editing library tags requires Foundry DialogV2; Published Events library was not changed.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+    const currentTags = Array.isArray(loaded.entry.tags) ? loaded.entry.tags.join(", ") : "";
+    const result = await dialogV2.wait({
+      window: { title: `Edit Library Tags: ${loaded.entry.name}` },
+      content: `<form><div class="form-group"><label>Library tags</label><textarea name="libraryTags" rows="6">${escapeHtml(currentTags)}</textarea></div><p class="notes">Separate tags with commas or new lines. This updates only Published Travel Event Library entry metadata.</p></form>`,
+      buttons: [{ action: "save", label: "Save Tags", default: true, callback: (event, _button, dialog) => readTextareaValue(dialog.element, "[name='libraryTags']") }, { action: "cancel", label: "Cancel" }],
+      close: () => null
+    });
+    if (result == null) {
+      this.status = createStatus("info", "Library tag edit cancelled; Published Events library was not changed.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+    const updated = await updatePublishedTravelEventLibraryTags(id, result);
+    this.status = createStatus(updated.ok ? "success" : "warning", updated.ok ? `Updated library tags for "${updated.entry.name}".` : firstError(updated, "Published event tags could not be saved."));
     await this.#rerenderAfterAction();
   }
 
