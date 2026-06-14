@@ -40,6 +40,11 @@ import {
   saveImportedPublishedTravelEventToLibrary,
   saveImportedPublishedTravelEventPackToLibrary
 } from "../helpers/travel-event-builder-io.js";
+import {
+  preparePublishedTravelEventRunnerLaunchState,
+  startTravelEventRunnerFromPublishedEvent
+} from "../helpers/travel-event-runner.js";
+import { openTravelEventRunner } from "./travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const BUILDER_CLICK_SELECTOR = [
@@ -63,6 +68,7 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-published-export]",
   "[data-arcflight-builder-published-export-pack]",
   "[data-arcflight-builder-published-import]",
+  "[data-arcflight-builder-published-run]",
   "[data-arcflight-builder-published-favorite]",
   "[data-arcflight-builder-published-edit-tags]",
   "[data-arcflight-builder-published-category-view]",
@@ -333,6 +339,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-published-export")) return this.#onExportPublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-export-pack")) return this.#onExportPublishedPack(event);
     if (target.hasAttribute("data-arcflight-builder-published-import")) return this.#onImportPublishedJson(event);
+    if (target.hasAttribute("data-arcflight-builder-published-run")) return this.#onRunPublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-favorite")) return this.#onTogglePublishedFavorite(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-edit-tags")) return this.#onEditPublishedTags(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-category-view")) return this.#onPublishedCategoryView(event, target);
@@ -706,6 +713,67 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     this.currentLibraryDraftId = "";
     this.outputJson = "";
     this.status = createStatus(cloned.warnings.length > 0 ? "warning" : "success", cloned.warnings[0] ?? `Loaded published event "${cloned.entry.name}" as an editable local draft.`);
+    await this.#rerenderAfterAction();
+  }
+
+  async #onRunPublishedEvent(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedRun;
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    const launchState = preparePublishedTravelEventRunnerLaunchState({ idOrKey: id });
+    if (!launchState.ok || !launchState.event) {
+      this.status = createStatus("warning", launchState.errors?.[0] ?? "Published event could not be prepared for the runner.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+    if (typeof dialogV2?.prompt !== "function") {
+      this.status = createStatus("warning", "Starting a published event from the library requires Foundry DialogV2; no runner session was created.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    const shipOptions = launchState.shipOptions.length
+      ? launchState.shipOptions.map((ship) => `<option value="${escapeHtml(ship.id)}" data-actor-uuid="${escapeHtml(ship.uuid)}" ${ship.selected ? "selected" : ""}>${escapeHtml(ship.label)}</option>`).join("")
+      : `<option value="" selected>No PF2E vehicle actors available</option>`;
+    let formData = null;
+    try {
+      formData = await dialogV2.prompt({
+        window: { title: `Start Travel Event Run: ${launchState.event.name}` },
+        content: `<form><p>Start a local Travel Event Runner session from a cloned snapshot of <strong>${escapeHtml(launchState.event.name)}</strong>.</p><div class="form-group"><label>Ship / PF2E vehicle</label><select name="actorId" ${launchState.shipOptions.length ? "" : "disabled"}>${shipOptions}</select></div><div class="form-group"><label>Session name</label><input type="text" name="sessionName" value="${escapeHtml(launchState.defaultSessionName)}"></div><div class="form-group"><label>Session notes</label><textarea name="notes" rows="4" placeholder="Optional GM notes for this runner session"></textarea></div><p class="notes">This creates only a local runner session. It does not mutate actors, resources, proposed effects, chat, journals, combat, drafts, published events, favorites, or tags.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Start Run",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            const data = new FormData(form);
+            const select = form?.querySelector?.("[name='actorId']");
+            return {
+              actorId: String(data.get("actorId") ?? ""),
+              actorUuid: select?.selectedOptions?.[0]?.dataset?.actorUuid ?? "",
+              sessionName: String(data.get("sessionName") ?? ""),
+              notes: String(data.get("notes") ?? "")
+            };
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      formData = null;
+    }
+    if (!formData) {
+      this.status = createStatus("info", "Run start cancelled; no runner session was created.");
+      await this.#rerenderAfterAction();
+      return;
+    }
+
+    const started = await startTravelEventRunnerFromPublishedEvent(id, formData);
+    if (!started.ok || !started.session) {
+      this.status = createStatus("warning", firstError(started, "Published event runner session could not be started."));
+      await this.#rerenderAfterAction();
+      return;
+    }
+    openTravelEventRunner({ session: started.session, selectedEventId: id, currentSessionCollapsed: false });
+    this.status = createStatus(started.warnings.length > 0 ? "warning" : "success", started.warnings[0] ?? `Started runner session "${started.session.name}" from published event "${started.session.event.name}".`);
     await this.#rerenderAfterAction();
   }
 

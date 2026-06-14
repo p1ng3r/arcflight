@@ -71,6 +71,8 @@
         <div><span>Base DC</span><strong>{{state.event.baseDC}}</strong></div>
         <div><span>Status</span><strong>{{state.session.status}}</strong></div>
       </div>
+      {{#if state.session.ship.actorName}}<p class="arcflight-sheet__hint"><strong>Selected ship / vehicle:</strong> {{state.session.ship.actorName}}</p>{{/if}}
+      {{#if state.session.notes}}<p class="arcflight-sheet__hint"><strong>Session notes:</strong> {{state.session.notes}}</p>{{/if}}
     </section>
 
     <section class="arcflight-travel-runner-mvp__panel">
