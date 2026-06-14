@@ -23,7 +23,9 @@ import {
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
-  setTravelEventRunnerStationResult
+  setTravelEventRunnerStationResult,
+  updateTravelEventRunnerStationAssignment,
+  clearTravelEventRunnerStationAssignment
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -55,7 +57,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-copy-review-html]",
   "[data-arcflight-runner-refresh-application]",
   "[data-arcflight-runner-apply-effects]",
-  "[data-arcflight-runner-undo-effect]"
+  "[data-arcflight-runner-undo-effect]",
+  "[data-arcflight-runner-clear-assignment]"
 ].join(", ");
 
 
@@ -348,6 +351,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.render(true);
     }
 
+    const assignmentSelect = event.target?.closest?.("[data-arcflight-runner-assignment-select]");
+    if (assignmentSelect && this.element?.contains(assignmentSelect)) {
+      return this.#updateStationAssignment(assignmentSelect);
+    }
+
     const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
     if (sessionSelect && this.element?.contains(sessionSelect)) {
       this.selectedSessionKey = sessionSelect.value ?? "";
@@ -388,6 +396,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
+    if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
   }
 
   async #toggleSessionActions() {
@@ -435,6 +444,37 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.selectedSessionKey = "";
     this.statusMessage = `Started local runner session for ${created.session.event.name}.`;
     ui.notifications?.info?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #updateStationAssignment(select) {
+    const stationKey = select.dataset.stationKey ?? "";
+    const actorIdOrUuid = select.value ?? "";
+    const updated = actorIdOrUuid
+      ? updateTravelEventRunnerStationAssignment(this.session, stationKey, actorIdOrUuid)
+      : clearTravelEventRunnerStationAssignment(this.session, stationKey);
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station assignment was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = actorIdOrUuid ? `Assigned ${updated.assignment?.actorName ?? "actor"} to ${humanizeIdentifier(stationKey)}.` : `Cleared ${humanizeIdentifier(stationKey)} assignment.`;
+    }
+    return this.render(true);
+  }
+
+  async #clearStationAssignment(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = clearTravelEventRunnerStationAssignment(this.session, stationKey);
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station assignment was not cleared.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = `Cleared ${humanizeIdentifier(stationKey)} assignment.`;
+    }
     return this.render(true);
   }
 

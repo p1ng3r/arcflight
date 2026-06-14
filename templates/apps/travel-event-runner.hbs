@@ -75,6 +75,27 @@
       {{#if state.session.notes}}<p class="arcflight-sheet__hint"><strong>Session notes:</strong> {{state.session.notes}}</p>{{/if}}
     </section>
 
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__assignments">
+      <h2>Station Assignments</h2>
+      <p class="arcflight-sheet__hint">Assignments are local runner-session metadata only. They never mutate actors, ship data, resources, AP/RAP, chat, journals, combat, drafts, or published events.</p>
+      <div class="arcflight-travel-runner-mvp__assignment-rows">
+        {{#each state.stationAssignments.rows}}
+          <div class="arcflight-travel-runner-mvp__assignment-row">
+            <strong>{{stationName}}</strong>
+            <span>{{assignedActorName}}</span>
+            <select data-arcflight-runner-assignment-select data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>
+              <option value="">Unassigned</option>
+              {{#each options}}
+                <option value="{{actorUuid}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+            {{#if canClear}}<button type="button" data-arcflight-runner-clear-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear</button>{{/if}}
+          </div>
+        {{/each}}
+      </div>
+    </section>
+
     <section class="arcflight-travel-runner-mvp__panel">
       <h2>Current Round / Run Event</h2>
       <h3>Round {{state.currentRoundNumber}}: {{state.currentRoundTitle}}</h3>
@@ -90,7 +111,9 @@
               </header>
               <p>{{prompt}}</p>
               {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Vignette:</strong> {{vignette}}</p>{{/if}}
+              <p class="arcflight-sheet__hint"><strong>Assigned:</strong> {{assignedActorName}}</p>
               {{#if suggestedSkillsLabel}}<p><strong>Suggested Skills:</strong> {{suggestedSkillsLabel}}</p>{{/if}}
+              <p class="arcflight-sheet__hint"><strong>Statistic:</strong> {{statisticLabel}}</p>
               <div class="arcflight-travel-runner-mvp__result-buttons">
                 {{#each resultOptions}}
                   <button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>

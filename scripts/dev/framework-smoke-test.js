@@ -57,7 +57,12 @@ import {
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   startTravelEventRunnerFromPublishedEvent,
-  setTravelEventRunnerStationResult
+  setTravelEventRunnerStationResult,
+  getTravelEventRunnerStationActorOptions,
+  normalizeTravelEventRunnerStationAssignments,
+  prepareTravelEventRunnerStationAssignmentState,
+  updateTravelEventRunnerStationAssignment,
+  clearTravelEventRunnerStationAssignment
 } from "../helpers/travel-event-runner.js";
 import { ARCFLIGHT, ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
 import {
@@ -1068,17 +1073,44 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Blocked no-ship runner launch does not write runner sessions", stringifySmokeData(getTravelEventRunnerSessionLibrary()) === noShipLaunchRunnerLibraryBefore, "runner session library unchanged", getTravelEventRunnerSessionLibrary());
     check(result, "Blocked no-ship runner launch does not mutate actors, resources, chat, journals, or combat", noShipLaunchActorBefore === stringifySmokeData(actor.toObject?.() ?? actor) && noShipLaunchResourcesBefore === stringifySmokeData(getShipTravelResources(actor)) && noShipLaunchEconomyBefore === stringifySmokeData(getShipActionEconomy(actor)) && noShipLaunchActorCountBefore === (globalThis.game?.actors?.size ?? globalThis.game?.actors?.contents?.length ?? 0) && noShipLaunchChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && noShipLaunchJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0) && noShipLaunchCombatBefore === (globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0) && noShipLaunchActiveCombatBefore === (globalThis.game?.combat?.id ?? ""), "world state unchanged", {});
 
+    const stationActor = { id: "crew-a", uuid: "Actor.crew-a", name: "Aster Vale", type: "character", system: { skills: { diplomacy: { mod: 7 } } } };
+    const vehicleActor = { id: "ship-a", uuid: "Actor.ship-a", name: "The Arc", type: "vehicle" };
+    const assignmentActors = [stationActor, { id: "crew-b", uuid: "Actor.crew-b", name: "Brindle", type: "npc" }, vehicleActor];
+    const assignmentExportsExist = [getTravelEventRunnerStationActorOptions, normalizeTravelEventRunnerStationAssignments, prepareTravelEventRunnerStationAssignmentState, updateTravelEventRunnerStationAssignment, clearTravelEventRunnerStationAssignment].every((helper) => typeof helper === "function")
+      && typeof globalThis.game?.arcflight?.getTravelEventRunnerStationActorOptions === "function"
+      && typeof globalThis.game?.arcflight?.devTools?.getTravelEventRunnerStationActorOptions === "function";
+    check(result, "Travel Event Runner station assignment helper exports exist", assignmentExportsExist, true, { api: typeof globalThis.game?.arcflight?.getTravelEventRunnerStationActorOptions, devTools: typeof globalThis.game?.arcflight?.devTools?.getTravelEventRunnerStationActorOptions });
+    const assignmentHelperSource = [getTravelEventRunnerStationActorOptions, normalizeTravelEventRunnerStationAssignments, prepareTravelEventRunnerStationAssignmentState, updateTravelEventRunnerStationAssignment, clearTravelEventRunnerStationAssignment].map((helper) => String(helper)).join("\n");
+    check(result, "Station assignment helper source avoids actor/resource/chat/journal/combat mutation calls", !/actor\.update|updateShipTravelResources|ChatMessage\.create|JournalEntry\.create|Combat\.create/.test(assignmentHelperSource), "no forbidden mutation calls", null);
+    const assignmentOptions = getTravelEventRunnerStationActorOptions({ actors: assignmentActors, ship: vehicleActor });
+    check(result, "Station assignment actor options exclude vehicles and selected ship", assignmentOptions.length === 2 && assignmentOptions.every((actor) => actor.actorType !== "vehicle" && actor.actorId !== vehicleActor.id), "only crew actors", assignmentOptions);
+
     const activeRunnerSessionCreated = createTravelEventRunnerSession(loadedRunnerFixtureEvent.event);
     let activeRunnerSession = activeRunnerSessionCreated.session;
+    const emptyAssignmentState = prepareTravelEventRunnerStationAssignmentState(activeRunnerSession, { actors: assignmentActors });
+    check(result, "Station assignment state returns exactly Travel Five safe rows", emptyAssignmentState.rows.length === 5 && emptyAssignmentState.rows.every((row) => row.assignedActorName === "Unassigned"), "five unassigned rows", emptyAssignmentState.rows);
+    const sessionBeforeAssignment = stringifySmokeData(activeRunnerSession);
+    const assignedNavigator = updateTravelEventRunnerStationAssignment(activeRunnerSession, "navigator", stationActor.uuid, { actors: assignmentActors });
+    check(result, "Assigning actor to Navigator succeeds and stores safe metadata without mutation", assignedNavigator.ok === true && assignedNavigator.session !== activeRunnerSession && stringifySmokeData(activeRunnerSession) === sessionBeforeAssignment && assignedNavigator.session.stationAssignments.navigator.actorId === stationActor.id && assignedNavigator.session.stationAssignments.navigator.actorUuid === stationActor.uuid && assignedNavigator.session.stationAssignments.navigator.actorName === stationActor.name && assignedNavigator.session.stationAssignments.navigator.actorType === stationActor.type, "safe assignment metadata", assignedNavigator.session?.stationAssignments?.navigator);
+    check(result, "Assigning invalid station key and missing actor fail safely", updateTravelEventRunnerStationAssignment(activeRunnerSession, "pilot", stationActor.uuid, { actors: assignmentActors }).ok === false && updateTravelEventRunnerStationAssignment(activeRunnerSession, "navigator", "missing", { actors: assignmentActors }).ok === false, "safe failures", null);
+    const clearedNavigator = clearTravelEventRunnerStationAssignment(assignedNavigator.session, "navigator", { actors: assignmentActors });
+    check(result, "Clearing Navigator assignment succeeds", clearedNavigator.ok === true && clearedNavigator.session.stationAssignments.navigator.actorId === "" && clearedNavigator.session.stationAssignments.navigator.actorName === "", "cleared", clearedNavigator.session.stationAssignments.navigator);
+    const malformedAssignments = normalizeTravelEventRunnerStationAssignments({ navigator: { actorId: 42 }, extra: { actorId: "bad" } });
+    check(result, "Malformed assignment data normalizes safely with only Travel Five keys", Object.keys(malformedAssignments).length === 5 && !Object.hasOwn(malformedAssignments, "extra") && malformedAssignments.navigator.actorId === "", "normalized", malformedAssignments);
+    activeRunnerSession = assignedNavigator.session;
+    const assignmentUiState = prepareTravelEventRunnerState(activeRunnerSession, { actors: assignmentActors });
+    check(result, "Current round UI state includes assigned actor names and safe statistic labels", assignmentUiState.stations.some((row) => row.stationKey === "navigator" && row.assignedActorName === stationActor.name && typeof row.statisticLabel === "string" && row.statisticLabel.length > 0) && assignmentUiState.stations.some((row) => row.assignedActorName === "Unassigned"), "assignment UI state", assignmentUiState.stations);
     activeRunnerSession = setTravelEventRunnerStationResult(activeRunnerSession, 0, "navigator", "success").session;
     activeRunnerSession = advanceTravelEventRunnerRound(activeRunnerSession).session;
     activeRunnerSession = setTravelEventRunnerStationResult(activeRunnerSession, 1, "engineer", "criticalSuccess").session;
     const expectedActiveStationResults = activeRunnerSession.roundResults.map((round) => ({ ...round.stationResults }));
+    const expectedStationAssignments = stringifySmokeData(activeRunnerSession.stationAssignments);
     const savedActiveRunnerSession = await saveTravelEventRunnerSessionToLibrary(activeRunnerSession, { now: "2026-01-01T00:01:00.000Z" });
     const loadedActiveRunnerSession = loadTravelEventRunnerSessionFromLibrary(savedActiveRunnerSession.entry?.key);
     check(result, "Save active runner session writes to the runner session library setting", savedActiveRunnerSession.ok === true && getTravelEventRunnerSessionLibrary().sessions[savedActiveRunnerSession.entry?.key]?.status === "active", "saved active setting entry", savedActiveRunnerSession.entry);
     check(result, "Load active runner session restores currentRoundIndex", loadedActiveRunnerSession.ok === true && loadedActiveRunnerSession.session.currentRoundIndex === 1, 1, loadedActiveRunnerSession.session?.currentRoundIndex);
     check(result, "Load active runner session restores station results exactly", stringifySmokeData(loadedActiveRunnerSession.session.roundResults.map((round) => round.stationResults)) === stringifySmokeData(expectedActiveStationResults), "exact station results", { expected: expectedActiveStationResults, actual: loadedActiveRunnerSession.session.roundResults.map((round) => round.stationResults) });
+    check(result, "Load active runner session preserves station assignments", stringifySmokeData(loadedActiveRunnerSession.session.stationAssignments) === expectedStationAssignments, "preserved assignments", loadedActiveRunnerSession.session.stationAssignments);
 
     const populatedRunnerLibraryState = prepareTravelEventRunnerSessionLibraryState({ selectedSessionKey: savedActiveRunnerSession.entry.key });
     const activeRunnerUiState = prepareTravelEventRunnerState(loadedActiveRunnerSession.session, { selectedSessionKey: savedActiveRunnerSession.entry.key });
@@ -1087,7 +1119,7 @@ export async function runFrameworkSmokeTest(options = {}) {
 
     const duplicateRunnerSession = await duplicateTravelEventRunnerSession(savedActiveRunnerSession.entry.key, { now: "2026-01-01T00:02:00.000Z" });
     const loadedDuplicateRunnerSession = loadTravelEventRunnerSessionFromLibrary(duplicateRunnerSession.entry?.key);
-    check(result, "Duplicate runner session creates distinct key and preserves session data", duplicateRunnerSession.ok === true && duplicateRunnerSession.entry.key !== savedActiveRunnerSession.entry.key && loadedDuplicateRunnerSession.ok === true && loadedDuplicateRunnerSession.session.currentRoundIndex === loadedActiveRunnerSession.session.currentRoundIndex && stringifySmokeData(loadedDuplicateRunnerSession.session.roundResults.map((round) => round.stationResults)) === stringifySmokeData(loadedActiveRunnerSession.session.roundResults.map((round) => round.stationResults)), "duplicated session", { original: savedActiveRunnerSession.entry.key, duplicate: duplicateRunnerSession.entry?.key });
+    check(result, "Duplicate runner session creates distinct key and preserves session data", duplicateRunnerSession.ok === true && duplicateRunnerSession.entry.key !== savedActiveRunnerSession.entry.key && loadedDuplicateRunnerSession.ok === true && loadedDuplicateRunnerSession.session.currentRoundIndex === loadedActiveRunnerSession.session.currentRoundIndex && stringifySmokeData(loadedDuplicateRunnerSession.session.roundResults.map((round) => round.stationResults)) === stringifySmokeData(loadedActiveRunnerSession.session.roundResults.map((round) => round.stationResults)) && stringifySmokeData(loadedDuplicateRunnerSession.session.stationAssignments) === expectedStationAssignments, "duplicated session", { original: savedActiveRunnerSession.entry.key, duplicate: duplicateRunnerSession.entry?.key });
     const deletedDuplicateRunnerSession = await deleteTravelEventRunnerSessionFromLibrary(duplicateRunnerSession.entry.key);
     check(result, "Delete duplicate runner session removes only the duplicate", deletedDuplicateRunnerSession.ok === true && !Object.hasOwn(getTravelEventRunnerSessionLibrary().sessions, duplicateRunnerSession.entry.key) && Object.hasOwn(getTravelEventRunnerSessionLibrary().sessions, savedActiveRunnerSession.entry.key), "deleted duplicate", deletedDuplicateRunnerSession.deleted?.key);
 
