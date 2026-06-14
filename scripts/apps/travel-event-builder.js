@@ -33,6 +33,8 @@ import {
   exportPublishedTravelEventPackToJson,
   importPublishedTravelEventFromJson,
   importPublishedTravelEventPackFromJson,
+  parsePublishedTravelEventJson,
+  parsePublishedTravelEventPackJson,
   saveImportedPublishedTravelEventToLibrary,
   saveImportedPublishedTravelEventPackToLibrary
 } from "../helpers/travel-event-builder-io.js";
@@ -600,13 +602,13 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   }
 
   #getPublishedImportKind(jsonText) {
-    try {
-      const data = JSON.parse(jsonText);
-      if (!data || typeof data !== "object" || Array.isArray(data)) return { ok: false, isPack: false };
-      return { ok: true, isPack: data.exportType === "arcflight.publishedTravelEventPack" };
-    } catch (_error) {
-      return { ok: false, isPack: false };
-    }
+    const packParsed = parsePublishedTravelEventPackJson(jsonText);
+    if (packParsed.ok || packParsed.data?.exportType === "arcflight.publishedTravelEventPack") return { ok: true, isPack: true };
+
+    const singleParsed = parsePublishedTravelEventJson(jsonText);
+    if (singleParsed.ok || singleParsed.data?.exportType === "arcflight.publishedTravelEvent") return { ok: true, isPack: false };
+
+    return { ok: false, isPack: false };
   }
 
   async #requestPublishedImportDuplicateMode(preview, isPack) {
