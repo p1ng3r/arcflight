@@ -821,6 +821,7 @@ export function filterPublishedTravelEvents(events, options = {}) {
       entry?.event?.name,
       entry?.event?.key,
       entry?.event?.category,
+      entry?.descriptionText,
       ...tags,
       publishedEventDescription(entry)
     ].filter((value) => typeof value === "string").join(" ").toLowerCase();
@@ -994,9 +995,11 @@ export function preparePublishedTravelEventLibraryState(options = {}) {
   const entries = getPublishedEventEntries(library).map((entry) => {
     const validation = validatePublishedEventEntry(entry, options);
     const tags = publishedEventTags(entry);
+    const descriptionText = publishedEventDescription(entry);
     return {
       ...cloneData(entry),
       event: undefined,
+      descriptionText,
       roundCount: publishedEventRoundCount(entry),
       tags,
       tagText: tags.join(", "),
