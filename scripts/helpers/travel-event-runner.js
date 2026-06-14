@@ -1,6 +1,6 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
-import { getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE, getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
@@ -129,6 +129,67 @@ function normalizeFinalOutcomes(finalOutcomes = {}) {
   }));
 }
 
+function getActorCollection(options = {}) {
+  if (options.actors) return options.actors;
+  return globalThis.game?.actors ?? [];
+}
+
+function actorCollectionValues(actors) {
+  if (!actors) return [];
+  if (Array.isArray(actors)) return actors;
+  if (typeof actors.values === "function") return Array.from(actors.values());
+  if (typeof actors.contents !== "undefined") return Array.from(actors.contents ?? []);
+  if (typeof actors === "object") return Object.values(actors);
+  return [];
+}
+
+function actorUuid(actor) {
+  return typeof actor?.uuid === "string" ? actor.uuid : (typeof actor?.documentName === "string" && actor?.id ? `${actor.documentName}.${actor.id}` : "");
+}
+
+function isArcflightRunnerShipActor(actor) {
+  return actor?.type === "vehicle"
+    && (actor.getFlag?.(ARCFLIGHT_MODULE_ID, "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE || actor.getFlag?.(ARCFLIGHT_MODULE_ID, "enabled") === true);
+}
+
+export function getArcflightTravelEventRunnerShipOptions(options = {}) {
+  const selectedId = String(options.selectedActorId ?? options.actorId ?? options.shipId ?? "");
+  const selectedUuid = String(options.selectedActorUuid ?? options.actorUuid ?? options.shipUuid ?? "");
+  const actors = actorCollectionValues(getActorCollection(options))
+    .filter((actor) => actor?.type === "vehicle")
+    .map((actor) => {
+      const uuid = actorUuid(actor);
+      const arcflight = isArcflightRunnerShipActor(actor);
+      return {
+        id: actor.id ?? "",
+        uuid,
+        name: actor.name ?? actor.id ?? "Unnamed Vehicle",
+        type: actor.type ?? "",
+        arcflight,
+        label: `${actor.name ?? actor.id ?? "Unnamed Vehicle"}${arcflight ? " (Arcflight ship)" : " (PF2E vehicle)"}`,
+        selected: Boolean((selectedUuid && uuid === selectedUuid) || (selectedId && actor.id === selectedId))
+      };
+    })
+    .sort((a, b) => Number(b.arcflight) - Number(a.arcflight) || a.name.localeCompare(b.name));
+  if (!actors.some((actor) => actor.selected) && actors[0]) actors[0].selected = true;
+  return actors;
+}
+
+function normalizeTravelEventRunnerShipSelection(selection = null) {
+  const actor = selection?.actor ?? (selection?.type === "vehicle" ? selection : null);
+  const source = actor ?? selection ?? {};
+  const id = typeof source.id === "string" ? source.id : (typeof source.actorId === "string" ? source.actorId : "");
+  const uuid = typeof source.uuid === "string" ? source.uuid : (typeof source.actorUuid === "string" ? source.actorUuid : actorUuid(actor));
+  const name = typeof source.name === "string" ? source.name : (typeof source.actorName === "string" ? source.actorName : "");
+  return {
+    actorId: id,
+    actorUuid: uuid,
+    actorName: name,
+    actorType: typeof source.type === "string" ? source.type : (typeof source.actorType === "string" ? source.actorType : ""),
+    arcflight: source.arcflight === true || isArcflightRunnerShipActor(actor)
+  };
+}
+
 function normalizeEventForRunner(event) {
   const rounds = Array.isArray(event?.rounds) ? event.rounds.map(normalizeRoundDefinition) : [];
   return {
@@ -189,7 +250,9 @@ export function createTravelEventRunnerSession(event, options = {}) {
     startedAt: timestamp,
     updatedAt: timestamp,
     completedAt: "",
-    summary: null
+    summary: null,
+    ship: normalizeTravelEventRunnerShipSelection(options),
+    notes: typeof options.notes === "string" ? options.notes.trim() : ""
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -221,7 +284,9 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowIso(options),
     completedAt: typeof session.completedAt === "string" ? session.completedAt : "",
     summary: session.summary && typeof session.summary === "object" ? cloneData(session.summary) : null,
-    appliedEffects: normalizeTravelEventAppliedEffects(session.appliedEffects)
+    appliedEffects: normalizeTravelEventAppliedEffects(session.appliedEffects),
+    ship: normalizeTravelEventRunnerShipSelection(session.ship ?? session.shipSelection ?? session.actor ?? null),
+    notes: typeof session.notes === "string" ? session.notes : ""
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
 }
@@ -1180,6 +1245,50 @@ export function loadPublishedTravelEventForRunner(idOrKey, options = {}) {
   const loaded = loadPublishedTravelEventFromLibrary(idOrKey, options);
   if (!loaded.ok || !loaded.event) return { ok: false, errors: loaded.errors ?? ["Published travel event could not be loaded."], warnings: loaded.warnings ?? [], entry: loaded.entry ?? null, event: null };
   return { ok: true, errors: [], warnings: loaded.warnings ?? [], entry: loaded.entry, event: loaded.event };
+}
+
+export function preparePublishedTravelEventRunnerLaunchState(options = {}) {
+  const idOrKey = options.idOrKey ?? options.eventId ?? options.selectedEventId ?? "";
+  const loaded = idOrKey ? loadPublishedTravelEventForRunner(idOrKey, options) : { ok: false, errors: ["Choose a published travel event before starting the runner."], warnings: [], entry: null, event: null };
+  const shipOptions = getArcflightTravelEventRunnerShipOptions(options);
+  const selectedShip = shipOptions.find((actor) => actor.selected) ?? null;
+  const defaultSessionName = loaded.event?.name ? `${loaded.event.name} Run` : "Travel Event Run";
+  const errors = [...(loaded.errors ?? [])];
+  if (loaded.ok === true && shipOptions.length === 0) errors.push("No Arcflight ship or PF2E vehicle actors are available. Create or enable a vehicle actor before starting a travel event run.");
+  return {
+    ok: loaded.ok === true && shipOptions.length > 0,
+    errors,
+    warnings: loaded.warnings ?? [],
+    entry: loaded.entry ?? null,
+    event: loaded.event ? cloneData(loaded.event) : null,
+    shipOptions,
+    hasShipOptions: shipOptions.length > 0,
+    selectedShip,
+    defaultSessionName,
+    notes: typeof options.notes === "string" ? options.notes : ""
+  };
+}
+
+export async function startTravelEventRunnerFromPublishedEvent(idOrKey, options = {}) {
+  const launchState = preparePublishedTravelEventRunnerLaunchState({ ...options, idOrKey });
+  if (!launchState.ok || !launchState.event) return buildRunnerLibraryResult(false, { errors: launchState.errors, warnings: launchState.warnings, launchState, session: null, entry: launchState.entry ?? null });
+  const actorId = String(options.actorId ?? options.shipId ?? launchState.selectedShip?.id ?? "");
+  const selectedActorUuid = String(options.actorUuid ?? options.shipUuid ?? launchState.selectedShip?.uuid ?? "");
+  const actor = actorCollectionValues(getActorCollection(options)).find((candidate) => (selectedActorUuid && actorUuid(candidate) === selectedActorUuid) || (actorId && candidate?.id === actorId)) ?? null;
+  if (!actor && !launchState.selectedShip) {
+    return buildRunnerLibraryResult(false, { errors: ["No Arcflight ship or PF2E vehicle actor could be resolved for this travel event run."], warnings: launchState.warnings, launchState, session: null, entry: launchState.entry });
+  }
+  const ship = normalizeTravelEventRunnerShipSelection(actor ?? launchState.selectedShip);
+  if (!ship.actorId && !ship.actorUuid) {
+    return buildRunnerLibraryResult(false, { errors: ["No Arcflight ship or PF2E vehicle actor could be resolved for this travel event run."], warnings: launchState.warnings, launchState, session: null, entry: launchState.entry });
+  }
+  const sessionName = typeof options.sessionName === "string" && options.sessionName.trim() ? options.sessionName.trim() : launchState.defaultSessionName;
+  const created = createTravelEventRunnerSession(cloneData(launchState.event), { ...options, ship, notes: options.notes ?? "" });
+  if (!created.ok || !created.session) return buildRunnerLibraryResult(false, { errors: created.errors, warnings: created.warnings, launchState, session: null, entry: launchState.entry });
+  created.session.name = sessionName;
+  created.session.ship = ship;
+  created.session.notes = typeof options.notes === "string" ? options.notes.trim() : "";
+  return buildRunnerLibraryResult(true, { warnings: [...launchState.warnings, ...created.warnings], launchState, session: cloneData(created.session), entry: launchState.entry });
 }
 
 export function getPublishedTravelEventRunnerEntries(options = {}) {

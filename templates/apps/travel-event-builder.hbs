@@ -137,6 +137,7 @@
               {{#if sourceDraftId}}<div class="arcflight-sheet__hint">Source draft id: <code>{{sourceDraftId}}</code></div>{{/if}}
             </div>
             <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-published-run="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Start Run</button>
               <button type="button" data-arcflight-builder-published-edit-tags="{{id}}">Edit Library Tags</button>
               <button type="button" data-arcflight-builder-published-export="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Export Published Event JSON</button>
               <button type="button" data-arcflight-builder-published-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load as Draft</button>
