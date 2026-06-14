@@ -57,6 +57,8 @@
       </div>
       <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
         <button type="button" data-arcflight-builder-published-publish>Publish Current Draft</button>
+        <button type="button" data-arcflight-builder-published-export-pack {{#unless publishedLibrary.hasEvents}}disabled{{/unless}}>Export Published Event Pack JSON</button>
+        <button type="button" data-arcflight-builder-published-import>Import Published Event / Pack JSON</button>
         <button type="button" data-arcflight-builder-published-refresh>Refresh Published Library</button>
       </div>
     </div>
@@ -73,6 +75,7 @@
               {{#if sourceDraftId}}<div class="arcflight-sheet__hint">Source draft id: <code>{{sourceDraftId}}</code></div>{{/if}}
             </div>
             <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-published-export="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Export Published Event JSON</button>
               <button type="button" data-arcflight-builder-published-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load as Draft</button>
               <button type="button" data-arcflight-builder-published-duplicate="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate as Draft</button>
               <button type="button" class="arcflight-button--danger" data-arcflight-builder-published-delete="{{id}}">Delete</button>

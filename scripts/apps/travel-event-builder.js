@@ -9,6 +9,7 @@ import {
   clonePublishedTravelEventToDraft,
   deletePublishedTravelEventFromLibrary,
   deleteTravelEventBuilderDraftFromLibrary,
+  getPublishedTravelEventLibrary,
   duplicateTravelEventBuilderLibraryDraft,
   loadPublishedTravelEventFromLibrary,
   loadTravelEventBuilderDraftFromLibrary,
@@ -27,7 +28,13 @@ import {
   exportFinalTravelEventToJson,
   exportTravelEventDraftToJson,
   importTravelEventDraftFromJson,
-  prepareTravelEventBuilderExportPreview
+  prepareTravelEventBuilderExportPreview,
+  exportPublishedTravelEventToJson,
+  exportPublishedTravelEventPackToJson,
+  importPublishedTravelEventFromJson,
+  importPublishedTravelEventPackFromJson,
+  saveImportedPublishedTravelEventToLibrary,
+  saveImportedPublishedTravelEventPackToLibrary
 } from "../helpers/travel-event-builder-io.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -49,6 +56,9 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-published-duplicate]",
   "[data-arcflight-builder-published-delete]",
   "[data-arcflight-builder-published-refresh]",
+  "[data-arcflight-builder-published-export]",
+  "[data-arcflight-builder-published-export-pack]",
+  "[data-arcflight-builder-published-import]",
   "[data-arcflight-builder-import]",
   "[data-arcflight-builder-export-draft]",
   "[data-arcflight-builder-export-final]"
@@ -201,6 +211,9 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-published-duplicate")) return this.#onDuplicatePublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-delete")) return this.#onDeletePublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-refresh")) return this.#onRefreshPublishedLibrary(event);
+    if (target.hasAttribute("data-arcflight-builder-published-export")) return this.#onExportPublishedEvent(event, target);
+    if (target.hasAttribute("data-arcflight-builder-published-export-pack")) return this.#onExportPublishedPack(event);
+    if (target.hasAttribute("data-arcflight-builder-published-import")) return this.#onImportPublishedJson(event);
     if (target.hasAttribute("data-arcflight-builder-import")) return this.#onImportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-draft")) return this.#onExportDraft(event);
     if (target.hasAttribute("data-arcflight-builder-export-final")) return this.#onExportFinal(event);
@@ -371,6 +384,14 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     await this.#rerenderAfterAction();
   }
 
+
+  async #confirmBuilderDialog({ title, content, yesLabel = "Confirm", unavailableMessage = "This action requires Foundry DialogV2." } = {}) {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.confirm === "function") return dialogV2.confirm({ window: { title }, content, yes: { label: yesLabel }, no: { label: "Cancel" }, rejectClose: false });
+    this.status = createStatus("warning", unavailableMessage);
+    return false;
+  }
+
   async #onSaveLibraryDraft(event) {
     event.preventDefault();
     const imported = this.#syncDraftFromEditor();
@@ -426,7 +447,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   async #onDeleteLibraryDraft(event, target) {
     event.preventDefault();
     const id = target.dataset.arcflightBuilderLibraryDelete;
-    const confirmed = globalThis.confirm?.(`Delete saved travel event draft "${id}"? This only removes the builder-library copy.`) ?? true;
+    const confirmed = await this.#confirmBuilderDialog({ title: "Delete Saved Draft", content: `<p>Delete saved travel event draft <strong>${id}</strong>? This only removes the builder-library copy.</p>`, yesLabel: "Delete Draft", unavailableMessage: "Delete requires Foundry DialogV2; saved draft library was not changed." });
     if (!confirmed) {
       this.status = createStatus("info", "Delete cancelled; saved draft library was not changed.");
       await this.#rerenderAfterAction();
@@ -495,7 +516,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     const id = target.dataset.arcflightBuilderPublishedDelete;
     const loaded = loadPublishedTravelEventFromLibrary(id);
     const label = loaded.entry?.name ?? id;
-    const confirmed = globalThis.confirm?.(`Delete published travel event "${label}"? This removes only the published-library record and does not change saved drafts.`) ?? true;
+    const confirmed = await this.#confirmBuilderDialog({ title: "Delete Published Event", content: `<p>Delete published travel event <strong>${label}</strong>? This removes only the published-library record and does not change saved drafts.</p>`, yesLabel: "Delete Published Event", unavailableMessage: "Delete requires Foundry DialogV2; Published Events library was not changed." });
     if (!confirmed) {
       this.status = createStatus("info", "Delete cancelled; Published Events library was not changed.");
       await this.#rerenderAfterAction();
@@ -510,6 +531,74 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   async #onRefreshPublishedLibrary(event) {
     event.preventDefault();
     this.status = createStatus("success", "Published Events library refreshed from the Arcflight world setting.");
+    await this.#rerenderAfterAction();
+  }
+
+  async #writeJsonOutput(json, filename) {
+    if (globalThis.saveDataToFile) {
+      saveDataToFile(json, "application/json", filename);
+      return "downloaded";
+    }
+    await globalThis.navigator?.clipboard?.writeText?.(json);
+    return "copied";
+  }
+
+  async #onExportPublishedEvent(event, target) {
+    event.preventDefault();
+    const id = target.dataset.arcflightBuilderPublishedExport;
+    const loaded = loadPublishedTravelEventFromLibrary(id);
+    const exported = loaded.event ? exportPublishedTravelEventToJson(loaded.event) : { ok: false, errors: loaded.errors, json: null };
+    if (!exported.ok || !exported.json) {
+      this.status = createStatus("warning", firstError(exported, "Published event export failed."));
+      return this.#rerenderAfterAction();
+    }
+    const mode = await this.#writeJsonOutput(exported.json, `arcflight-published-travel-event-${loaded.event.key || id}.json`);
+    this.outputJson = exported.json;
+    this.status = createStatus("success", `Published event JSON ${mode}; export did not mutate anything.`);
+    await this.#rerenderAfterAction();
+  }
+
+  async #onExportPublishedPack(event) {
+    event.preventDefault();
+    const exported = exportPublishedTravelEventPackToJson(getPublishedTravelEventLibrary());
+    if (!exported.ok || !exported.json) {
+      this.status = createStatus("warning", firstError(exported, "Published event pack export failed."));
+      return this.#rerenderAfterAction();
+    }
+    const mode = await this.#writeJsonOutput(exported.json, "arcflight-published-travel-event-pack.json");
+    this.outputJson = exported.json;
+    this.status = createStatus("success", `Published event pack JSON ${mode}; export did not mutate anything.`);
+    await this.#rerenderAfterAction();
+  }
+
+  async #onImportPublishedJson(event) {
+    event.preventDefault();
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.prompt !== "function" || typeof dialogV2?.confirm !== "function") {
+      this.status = createStatus("warning", "Import requires Foundry DialogV2; Published Events library was not changed.");
+      return this.#rerenderAfterAction();
+    }
+    let jsonText = "";
+    try {
+      jsonText = await dialogV2.prompt({ window: { title: "Import Published Travel Event JSON" }, content: `<form><div class="form-group"><label>Paste single event or pack JSON</label><textarea name="jsonText" rows="16"></textarea></div><p class="notes">Preview is shown before saving. Import writes only to the Published Travel Event Library after confirmation.</p></form>`, rejectClose: false, ok: { label: "Preview Import", callback: (event, _button, dialog) => String(new FormData(event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form")).get("jsonText") ?? "") }, cancel: { label: "Cancel" } });
+    } catch (_error) { jsonText = ""; }
+    if (!jsonText) {
+      this.status = createStatus("info", "Import cancelled; Published Events library was not changed.");
+      return this.#rerenderAfterAction();
+    }
+    const isPack = /arcflight\.publishedTravelEventPack/.test(jsonText);
+    const imported = isPack ? importPublishedTravelEventPackFromJson(jsonText) : importPublishedTravelEventFromJson(jsonText);
+    const preview = imported.preview ?? {};
+    const rows = (preview.events ?? []).map((row) => `<li>${row.valid ? "✓" : "✗"} <strong>${row.name}</strong> (<code>${row.key}</code>) — ${row.category}, ${row.roundCount} rounds${row.duplicateKey ? " — duplicate key" : ""}; ${row.actionRequired}</li>`).join("");
+    const errors = (preview.errors ?? imported.errors ?? []).map((error) => `<li>${error}</li>`).join("");
+    const warnings = (preview.warnings ?? imported.warnings ?? []).map((warning) => `<li>${warning}</li>`).join("");
+    const confirmed = await dialogV2.confirm({ window: { title: imported.ok ? "Confirm Published Import" : "Published Import Blocked" }, content: `<section><p>Type: ${isPack ? "pack" : "single event"}. Events: ${preview.eventCount ?? 0}.</p><ul>${rows}</ul>${errors ? `<h3>Errors</h3><ul>${errors}</ul>` : ""}${warnings ? `<h3>Warnings</h3><ul>${warnings}</ul>` : ""}<p>Duplicate defaults: ${preview.defaultDuplicateBehavior ?? "save-as-copy"}. Overwrite is not used by this default import.</p></section>`, yes: { label: imported.ok ? "Save Import" : "Close" }, no: { label: "Cancel" }, rejectClose: false });
+    if (!imported.ok || !confirmed) {
+      this.status = createStatus(imported.ok ? "info" : "warning", imported.ok ? "Import cancelled; Published Events library was not changed." : firstError(imported, "Import blocked by validation errors."));
+      return this.#rerenderAfterAction();
+    }
+    const saved = isPack ? await saveImportedPublishedTravelEventPackToLibrary(imported.events, { duplicateMode: "copy" }) : await saveImportedPublishedTravelEventToLibrary(imported.event, { duplicateMode: "copy" });
+    this.status = createStatus(saved.ok ? "success" : "warning", saved.ok ? `Imported ${isPack ? saved.entries.length : 1} published travel event record(s).` : firstError(saved, "Import save failed."));
     await this.#rerenderAfterAction();
   }
 

@@ -223,7 +223,20 @@ import {
   importTravelEventDraftFromData,
   exportFinalTravelEventToJson,
   parseTravelEventBuilderJson,
-  prepareTravelEventBuilderExportPreview
+  prepareTravelEventBuilderExportPreview,
+  buildPublishedTravelEventExportData,
+  exportPublishedTravelEventToJson,
+  buildPublishedTravelEventPackExportData,
+  exportPublishedTravelEventPackToJson,
+  parsePublishedTravelEventJson,
+  parsePublishedTravelEventPackJson,
+  validateImportedPublishedTravelEvent,
+  preparePublishedTravelEventImportPreview,
+  preparePublishedTravelEventPackImportPreview,
+  importPublishedTravelEventFromJson,
+  importPublishedTravelEventPackFromJson,
+  saveImportedPublishedTravelEventToLibrary,
+  saveImportedPublishedTravelEventPackToLibrary
 } from "../helpers/travel-event-builder-io.js";
 
 const SMOKE_TEST_ACTOR_NAME = "Arcflight Smoke Test Ship";
@@ -1471,6 +1484,30 @@ export async function runFrameworkSmokeTest(options = {}) {
     });
     const publishedBuilderEvent = await publishTravelEventDraftToLibrary(publishableDraft, { library: { version: 1, events: {} }, dryRun: true, sourceDraftId: savedBuilderLibraryDraft.entry?.id, now: "2026-06-12T00:00:02.000Z" });
     const loadedPublishedEvent = loadPublishedTravelEventFromLibrary(publishedBuilderEvent.entry?.id, { library: publishedBuilderEvent.library });
+    const publishedIoActorsBefore = JSON.stringify(globalThis.game?.actors?.contents?.map?.((entry) => ({ id: entry.id, name: entry.name, type: entry.type })) ?? []);
+    const publishedIoResourcesBefore = JSON.stringify(getShipTravelResources(actor));
+    const publishedIoEconomyBefore = JSON.stringify(getShipActionEconomy(actor));
+    const publishedIoChatBefore = globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0;
+    const publishedIoJournalBefore = globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0;
+    const publishedIoCombatBefore = globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0;
+    const publishedIoRunnerBefore = JSON.stringify(globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING) ?? null);
+    const publishedIoBuilderBefore = JSON.stringify(globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING) ?? null);
+    const publishedSingleExport = exportPublishedTravelEventToJson(loadedPublishedEvent.event, { exportedAt: "2026-06-12T00:02:00.000Z" });
+    const publishedSingleExportData = JSON.parse(publishedSingleExport.json ?? "{}");
+    const publishedPackExport = exportPublishedTravelEventPackToJson(publishedBuilderEvent.library, { exportedAt: "2026-06-12T00:02:01.000Z" });
+    const publishedPackExportData = JSON.parse(publishedPackExport.json ?? "{}");
+    const publishedSinglePreview = preparePublishedTravelEventImportPreview(publishedSingleExport.json, { library: { version: 1, events: {} } });
+    const publishedPackPreview = preparePublishedTravelEventPackImportPreview(publishedPackExport.json, { library: { version: 1, events: {} } });
+    const publishedMalformedImport = importPublishedTravelEventFromJson("{bad json");
+    const publishedNonObjectImport = importPublishedTravelEventFromJson("[]");
+    const publishedMissingDataImport = importPublishedTravelEventFromJson(JSON.stringify({ exportType: "arcflight.publishedTravelEvent", exportVersion: 1 }));
+    const publishedDuplicatePreview = preparePublishedTravelEventImportPreview(publishedSingleExport.json, { library: publishedBuilderEvent.library });
+    const publishedDuplicateSaveCopy = await saveImportedPublishedTravelEventToLibrary(publishedSingleExportData.event, { library: publishedBuilderEvent.library, dryRun: true, now: "2026-06-12T00:02:02.000Z" });
+    const publishedOverwriteBlocked = await saveImportedPublishedTravelEventToLibrary(publishedSingleExportData.event, { library: publishedBuilderEvent.library, duplicateMode: "overwrite", dryRun: true });
+    const publishedOverwriteSaved = await saveImportedPublishedTravelEventToLibrary(publishedSingleExportData.event, { library: publishedBuilderEvent.library, duplicateMode: "overwrite", confirmOverwrite: true, dryRun: true, now: "2026-06-12T00:02:03.000Z" });
+    const publishedPackDuplicateCopy = await saveImportedPublishedTravelEventPackToLibrary(publishedPackExportData.events, { library: publishedBuilderEvent.library, duplicateMode: "copy", dryRun: true, now: "2026-06-12T00:02:04.000Z" });
+    const publishedPackOverwriteBlocked = await saveImportedPublishedTravelEventPackToLibrary(publishedPackExportData.events, { library: publishedBuilderEvent.library, duplicateMode: "overwrite", dryRun: true });
+    const publishedIoNoMutation = publishedIoActorsBefore === JSON.stringify(globalThis.game?.actors?.contents?.map?.((entry) => ({ id: entry.id, name: entry.name, type: entry.type })) ?? []) && publishedIoResourcesBefore === JSON.stringify(getShipTravelResources(actor)) && publishedIoEconomyBefore === JSON.stringify(getShipActionEconomy(actor)) && publishedIoChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && publishedIoJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0) && publishedIoCombatBefore === (globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0) && publishedIoRunnerBefore === JSON.stringify(globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING) ?? null) && publishedIoBuilderBefore === JSON.stringify(globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING) ?? null);
     const emptyRunnerState = prepareTravelEventRunnerState(null, { library: { version: 1, events: {} } });
     const runnerSessionCreated = createTravelEventRunnerSession(loadedPublishedEvent.event, { now: "2026-06-12T00:01:00.000Z" });
     const runnerRoundState = prepareTravelEventRunnerState(runnerSessionCreated.session, { library: publishedBuilderEvent.library });
@@ -1645,6 +1682,15 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder library delete removes entry", deletedBuilderLibraryDraft.ok === true && deletedBuilderLibraryDraft.deleted?.id === duplicatedBuilderLibraryDraft.entry?.id && !Object.hasOwn(deletedBuilderLibraryDraft.library?.drafts ?? {}, duplicatedBuilderLibraryDraft.entry?.id), "deleted duplicate", deletedBuilderLibraryDraft);
     check(result, "Published Travel Event library helper exports exist", typeof getPublishedTravelEventLibrary === "function" && typeof publishTravelEventDraftToLibrary === "function" && typeof loadPublishedTravelEventFromLibrary === "function" && typeof clonePublishedTravelEventToDraft === "function" && typeof deletePublishedTravelEventFromLibrary === "function" && typeof preparePublishedTravelEventLibraryState === "function" && typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary === "function" && typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary === "function", true, { setting: PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, api: typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary });
     check(result, "Published Travel Event empty library returns safe state", emptyPublishedLibraryState.count === 0 && emptyPublishedLibraryState.hasEvents === false && Array.isArray(emptyPublishedLibraryState.entries), "empty published safe state", emptyPublishedLibraryState);
+    check(result, "Published Travel Event import/export helper exports exist", typeof exportPublishedTravelEventToJson === "function" && typeof exportPublishedTravelEventPackToJson === "function" && typeof importPublishedTravelEventFromJson === "function" && typeof saveImportedPublishedTravelEventToLibrary === "function" && typeof globalThis.game?.arcflight?.exportPublishedTravelEventToJson === "function" && typeof globalThis.game?.arcflight?.devTools?.saveImportedPublishedTravelEventPackToLibrary === "function", true, { api: typeof globalThis.game?.arcflight?.exportPublishedTravelEventToJson, devTools: typeof globalThis.game?.arcflight?.devTools?.saveImportedPublishedTravelEventPackToLibrary });
+    check(result, "Published Travel Event single export works", publishedSingleExport.ok === true && publishedSingleExportData.exportType === "arcflight.publishedTravelEvent" && publishedSingleExportData.event?.key === "published-smoke", "single published export", publishedSingleExportData);
+    check(result, "Published Travel Event pack export works", publishedPackExport.ok === true && publishedPackExportData.exportType === "arcflight.publishedTravelEventPack" && publishedPackExportData.events?.length === 1, "pack published export", publishedPackExportData);
+    check(result, "Published Travel Event import previews parse valid single and pack", publishedSinglePreview.valid === true && publishedSinglePreview.eventCount === 1 && publishedPackPreview.valid === true && publishedPackPreview.eventCount === 1, "published import previews", { single: publishedSinglePreview, pack: publishedPackPreview });
+    check(result, "Published Travel Event malformed non-object and missing data imports fail safely", publishedMalformedImport.ok === false && publishedNonObjectImport.ok === false && publishedMissingDataImport.ok === false, "safe published import failures", { malformed: publishedMalformedImport.errors, nonObject: publishedNonObjectImport.errors, missing: publishedMissingDataImport.errors });
+    check(result, "Published Travel Event duplicate single import does not silently overwrite", publishedDuplicatePreview.duplicateKeyConflicts?.length === 1 && publishedDuplicateSaveCopy.ok === true && publishedDuplicateSaveCopy.entry?.key !== publishedBuilderEvent.entry?.key && publishedOverwriteBlocked.ok === false && /requires explicit/i.test(publishedOverwriteBlocked.errors?.[0] ?? ""), "published duplicate handling", { preview: publishedDuplicatePreview, copy: publishedDuplicateSaveCopy.entry, overwriteBlocked: publishedOverwriteBlocked.errors });
+    check(result, "Published Travel Event duplicate pack import does not silently overwrite", publishedPackDuplicateCopy.ok === true && publishedPackDuplicateCopy.entries?.[0]?.key !== publishedBuilderEvent.entry?.key && publishedPackOverwriteBlocked.ok === false && /confirmOverwrite/i.test(publishedPackOverwriteBlocked.errors?.[0] ?? ""), "published pack duplicate handling", { copy: publishedPackDuplicateCopy.entries, overwriteBlocked: publishedPackOverwriteBlocked.errors });
+    check(result, "Published Travel Event explicit overwrite validates and preserves proposedEffects data-only", publishedOverwriteSaved.ok === true && publishedOverwriteSaved.entry?.id === publishedBuilderEvent.entry?.id && publishedOverwriteSaved.event?.finalOutcomes?.success?.proposedEffects?.[0]?.label === "Published supplies reward" && validateImportedPublishedTravelEvent(publishedOverwriteSaved.event).ok === true, "published explicit overwrite", publishedOverwriteSaved.entry);
+    check(result, "Published Travel Event import/export does not mutate actors resources AP/RAP chat journals combat runner sessions or builder drafts", publishedIoNoMutation === true, "published io no mutation", { resources: getShipTravelResources(actor), economy: getShipActionEconomy(actor) });
     check(result, "Travel Event Builder normalize converts object activeStations into string keys", objectActiveStationsDraft.rounds?.[0]?.activeStations?.join(",") === "captain" && objectActiveStationsDraft.rounds?.[0]?.activeStations?.every((station) => typeof station === "string") && objectActiveStationsDraft.rounds?.[0]?.stationPrompts?.captain?.playerAction === "Captain object prompt stays in stationPrompts.", "object activeStations normalized", objectActiveStationsDraft.rounds?.[0]);
     check(result, "Publishing current draft stores finalized event with no builder metadata", publishedBuilderEvent.ok === true && publishedBuilderEvent.entry?.event?.builder === undefined && publishedBuilderEvent.entry?.sourceDraftId === savedBuilderLibraryDraft.entry?.id && publishedBuilderEvent.entry?.event?.key === publishableDraft.key, "published finalized entry", publishedBuilderEvent);
     check(result, "Published event preserves inferred round activeStations as string keys", publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.join(",") === "navigator,engineer" && publishedBuilderEvent.entry?.event?.rounds?.[0]?.activeStations?.every((station) => typeof station === "string"), "published activeStations inferred in Travel Five order", publishedBuilderEvent.entry?.event?.rounds?.[0]);
