@@ -101,6 +101,24 @@ function createStatus(kind = "info", message = "") {
   return { kind, message };
 }
 
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function renderPublishedTravelEventImportPreviewHtml(preview = {}, options = {}) {
+  const isPack = options.isPack === true;
+  const rows = (Array.isArray(preview.events) ? preview.events : []).map((row) => `<li>${row.valid ? "✓" : "✗"} <strong>${escapeHtml(row.name)}</strong> (<code>${escapeHtml(row.key)}</code>) — ${escapeHtml(row.category)}, ${escapeHtml(row.roundCount)} rounds${row.duplicateKey ? " — duplicate key" : ""}; ${escapeHtml(row.actionRequired)}</li>`).join("");
+  const errors = (Array.isArray(preview.errors) ? preview.errors : []).map((error) => `<li>${escapeHtml(error)}</li>`).join("");
+  const warnings = (Array.isArray(preview.warnings) ? preview.warnings : []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+  const modeHint = typeof options.modeHint === "string" && options.modeHint.length > 0 ? `<p>${escapeHtml(options.modeHint)}</p>` : "";
+  return `<section><p>Type: ${isPack ? "pack" : "single event"}. Events: ${escapeHtml(preview.eventCount ?? 0)}.</p><ul>${rows}</ul>${errors ? `<h3>Errors</h3><ul>${errors}</ul>` : ""}${warnings ? `<h3>Warnings</h3><ul>${warnings}</ul>` : ""}${modeHint}</section>`;
+}
+
 export function prepareTravelEventBuilderShellState(draft, options = {}) {
   const normalizedDraft = normalizeTravelEventDraft(draft ?? createTravelEventDraft(), options);
   const preview = prepareTravelEventBuilderPreview(normalizedDraft, options);
@@ -447,7 +465,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   async #onDeleteLibraryDraft(event, target) {
     event.preventDefault();
     const id = target.dataset.arcflightBuilderLibraryDelete;
-    const confirmed = await this.#confirmBuilderDialog({ title: "Delete Saved Draft", content: `<p>Delete saved travel event draft <strong>${id}</strong>? This only removes the builder-library copy.</p>`, yesLabel: "Delete Draft", unavailableMessage: "Delete requires Foundry DialogV2; saved draft library was not changed." });
+    const confirmed = await this.#confirmBuilderDialog({ title: "Delete Saved Draft", content: `<p>Delete saved travel event draft <strong>${escapeHtml(id)}</strong>? This only removes the builder-library copy.</p>`, yesLabel: "Delete Draft", unavailableMessage: "Delete requires Foundry DialogV2; saved draft library was not changed." });
     if (!confirmed) {
       this.status = createStatus("info", "Delete cancelled; saved draft library was not changed.");
       await this.#rerenderAfterAction();
@@ -516,7 +534,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     const id = target.dataset.arcflightBuilderPublishedDelete;
     const loaded = loadPublishedTravelEventFromLibrary(id);
     const label = loaded.entry?.name ?? id;
-    const confirmed = await this.#confirmBuilderDialog({ title: "Delete Published Event", content: `<p>Delete published travel event <strong>${label}</strong>? This removes only the published-library record and does not change saved drafts.</p>`, yesLabel: "Delete Published Event", unavailableMessage: "Delete requires Foundry DialogV2; Published Events library was not changed." });
+    const confirmed = await this.#confirmBuilderDialog({ title: "Delete Published Event", content: `<p>Delete published travel event <strong>${escapeHtml(label)}</strong>? This removes only the published-library record and does not change saved drafts.</p>`, yesLabel: "Delete Published Event", unavailableMessage: "Delete requires Foundry DialogV2; Published Events library was not changed." });
     if (!confirmed) {
       this.status = createStatus("info", "Delete cancelled; Published Events library was not changed.");
       await this.#rerenderAfterAction();
@@ -571,6 +589,66 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     await this.#rerenderAfterAction();
   }
 
+  #readDialogFormValue(event, dialog, fieldName) {
+    const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form") ?? null;
+    if (!form) return "";
+    try {
+      return String(new FormData(form).get(fieldName) ?? "");
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  #getPublishedImportKind(jsonText) {
+    try {
+      const data = JSON.parse(jsonText);
+      if (!data || typeof data !== "object" || Array.isArray(data)) return { ok: false, isPack: false };
+      return { ok: true, isPack: data.exportType === "arcflight.publishedTravelEventPack" };
+    } catch (_error) {
+      return { ok: false, isPack: false };
+    }
+  }
+
+  async #requestPublishedImportDuplicateMode(preview, isPack) {
+    const conflicts = Array.isArray(preview?.duplicateKeyConflicts) ? preview.duplicateKeyConflicts : [];
+    if (conflicts.length === 0) return { cancelled: false, duplicateMode: "copy", confirmOverwrite: false };
+
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.prompt !== "function" || typeof dialogV2?.confirm !== "function") return { cancelled: true, duplicateMode: "cancel", confirmOverwrite: false };
+
+    const copyLabel = isPack ? "Save duplicates as copies" : "Save as copy";
+    const options = isPack
+      ? `<option value="copy">${copyLabel}</option><option value="skip">Skip duplicates</option><option value="overwrite">Overwrite duplicates</option>`
+      : `<option value="copy">${copyLabel}</option><option value="overwrite">Overwrite existing event</option>`;
+    const conflictRows = conflicts.map((conflict) => `<li><strong>${escapeHtml(conflict.name)}</strong> (<code>${escapeHtml(conflict.key)}</code>) conflicts with published id <code>${escapeHtml(conflict.duplicateId)}</code>.</li>`).join("");
+    let duplicateMode = "";
+    try {
+      duplicateMode = await dialogV2.prompt({
+        window: { title: isPack ? "Resolve Published Event Pack Duplicates" : "Resolve Published Event Duplicate" },
+        content: `<form><p>${isPack ? "This pack contains duplicate published event keys." : "This event has a duplicate published event key."}</p><ul>${conflictRows}</ul><div class="form-group"><label>Duplicate handling</label><select name="duplicateMode">${options}</select></div><p class="notes">No overwrite occurs unless you choose overwrite and confirm it in the next dialog.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Continue",
+          callback: (event, _button, dialog) => this.#readDialogFormValue(event, dialog, "duplicateMode")
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      duplicateMode = "";
+    }
+    if (!duplicateMode) return { cancelled: true, duplicateMode: "cancel", confirmOverwrite: false };
+    if (duplicateMode !== "overwrite") return { cancelled: false, duplicateMode, confirmOverwrite: false };
+
+    const overwriteConfirmed = await dialogV2.confirm({
+      window: { title: isPack ? "Confirm Published Event Pack Overwrite" : "Confirm Published Event Overwrite" },
+      content: `<section><p><strong>Overwrite is destructive for the Published Travel Event Library entries listed below.</strong></p><ul>${conflictRows}</ul><p>Actors, ship resources, AP/RAP, chat, journals, combat, runner sessions, and builder drafts are still not touched.</p></section>`,
+      yes: { label: isPack ? "Overwrite Duplicate Events" : "Overwrite Published Event" },
+      no: { label: "Cancel" },
+      rejectClose: false
+    });
+    return { cancelled: !overwriteConfirmed, duplicateMode: overwriteConfirmed ? "overwrite" : "cancel", confirmOverwrite: overwriteConfirmed === true };
+  }
+
   async #onImportPublishedJson(event) {
     event.preventDefault();
     const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
@@ -580,24 +658,32 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     }
     let jsonText = "";
     try {
-      jsonText = await dialogV2.prompt({ window: { title: "Import Published Travel Event JSON" }, content: `<form><div class="form-group"><label>Paste single event or pack JSON</label><textarea name="jsonText" rows="16"></textarea></div><p class="notes">Preview is shown before saving. Import writes only to the Published Travel Event Library after confirmation.</p></form>`, rejectClose: false, ok: { label: "Preview Import", callback: (event, _button, dialog) => String(new FormData(event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form")).get("jsonText") ?? "") }, cancel: { label: "Cancel" } });
+      jsonText = await dialogV2.prompt({ window: { title: "Import Published Travel Event JSON" }, content: `<form><div class="form-group"><label>Paste single event or pack JSON</label><textarea name="jsonText" rows="16"></textarea></div><p class="notes">Preview is shown before saving. Import writes only to the Published Travel Event Library after confirmation.</p></form>`, rejectClose: false, ok: { label: "Preview Import", callback: (event, _button, dialog) => this.#readDialogFormValue(event, dialog, "jsonText") }, cancel: { label: "Cancel" } });
     } catch (_error) { jsonText = ""; }
     if (!jsonText) {
       this.status = createStatus("info", "Import cancelled; Published Events library was not changed.");
       return this.#rerenderAfterAction();
     }
-    const isPack = /arcflight\.publishedTravelEventPack/.test(jsonText);
+
+    const importKind = this.#getPublishedImportKind(jsonText);
+    const isPack = importKind.ok === true && importKind.isPack === true;
     const imported = isPack ? importPublishedTravelEventPackFromJson(jsonText) : importPublishedTravelEventFromJson(jsonText);
     const preview = imported.preview ?? {};
-    const rows = (preview.events ?? []).map((row) => `<li>${row.valid ? "✓" : "✗"} <strong>${row.name}</strong> (<code>${row.key}</code>) — ${row.category}, ${row.roundCount} rounds${row.duplicateKey ? " — duplicate key" : ""}; ${row.actionRequired}</li>`).join("");
-    const errors = (preview.errors ?? imported.errors ?? []).map((error) => `<li>${error}</li>`).join("");
-    const warnings = (preview.warnings ?? imported.warnings ?? []).map((warning) => `<li>${warning}</li>`).join("");
-    const confirmed = await dialogV2.confirm({ window: { title: imported.ok ? "Confirm Published Import" : "Published Import Blocked" }, content: `<section><p>Type: ${isPack ? "pack" : "single event"}. Events: ${preview.eventCount ?? 0}.</p><ul>${rows}</ul>${errors ? `<h3>Errors</h3><ul>${errors}</ul>` : ""}${warnings ? `<h3>Warnings</h3><ul>${warnings}</ul>` : ""}<p>Duplicate defaults: ${preview.defaultDuplicateBehavior ?? "save-as-copy"}. Overwrite is not used by this default import.</p></section>`, yes: { label: imported.ok ? "Save Import" : "Close" }, no: { label: "Cancel" }, rejectClose: false });
+    const previewContent = renderPublishedTravelEventImportPreviewHtml(preview, { isPack, modeHint: "Duplicate defaults are safe: save as copy unless you explicitly choose another duplicate action." });
+    const confirmed = await dialogV2.confirm({ window: { title: imported.ok ? "Confirm Published Import" : "Published Import Blocked" }, content: previewContent, yes: { label: imported.ok ? "Continue" : "Close" }, no: { label: "Cancel" }, rejectClose: false });
     if (!imported.ok || !confirmed) {
       this.status = createStatus(imported.ok ? "info" : "warning", imported.ok ? "Import cancelled; Published Events library was not changed." : firstError(imported, "Import blocked by validation errors."));
       return this.#rerenderAfterAction();
     }
-    const saved = isPack ? await saveImportedPublishedTravelEventPackToLibrary(imported.events, { duplicateMode: "copy" }) : await saveImportedPublishedTravelEventToLibrary(imported.event, { duplicateMode: "copy" });
+
+    const duplicateChoice = await this.#requestPublishedImportDuplicateMode(preview, isPack);
+    if (duplicateChoice.cancelled) {
+      this.status = createStatus("info", "Import cancelled; Published Events library was not changed.");
+      return this.#rerenderAfterAction();
+    }
+
+    const saveOptions = { duplicateMode: duplicateChoice.duplicateMode, confirmOverwrite: duplicateChoice.confirmOverwrite === true };
+    const saved = isPack ? await saveImportedPublishedTravelEventPackToLibrary(imported.events, saveOptions) : await saveImportedPublishedTravelEventToLibrary(imported.event, saveOptions);
     this.status = createStatus(saved.ok ? "success" : "warning", saved.ok ? `Imported ${isPack ? saved.entries.length : 1} published travel event record(s).` : firstError(saved, "Import save failed."));
     await this.#rerenderAfterAction();
   }
