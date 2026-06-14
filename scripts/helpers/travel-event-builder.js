@@ -771,6 +771,105 @@ function getPublishedEventEntries(library) {
   return Object.values(library.events ?? {}).sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")) || String(a.name ?? "").localeCompare(String(b.name ?? "")));
 }
 
+function publishedEventRoundCount(entry) {
+  const source = entry?.event ?? entry ?? {};
+  const explicit = Number(source.roundCount ?? entry?.roundCount);
+  if (Number.isInteger(explicit) && explicit > 0) return explicit;
+  return Array.isArray(source.rounds) ? source.rounds.length : 0;
+}
+
+function publishedEventTags(entry) {
+  return normalizeStringArray(entry?.event?.tags ?? entry?.tags);
+}
+
+function publishedEventDescription(entry) {
+  const event = entry?.event ?? {};
+  return [event.description, event.gmSummary, entry?.description].filter((value) => typeof value === "string").join(" ");
+}
+
+function normalizeLibrarySearchOptions(options = {}) {
+  return {
+    searchText: coerceFormString(options.searchText ?? options.librarySearchText).trim().toLowerCase(),
+    categoryFilter: coerceFormString(options.categoryFilter ?? options.libraryCategoryFilter, "all") || "all",
+    tagFilter: coerceFormString(options.tagFilter ?? options.libraryTagFilter, "all") || "all",
+    roundCountFilter: coerceFormString(options.roundCountFilter ?? options.libraryRoundCountFilter, "all") || "all",
+    sortMode: coerceFormString(options.sortMode ?? options.librarySortMode, "updatedDesc") || "updatedDesc"
+  };
+}
+
+function matchesRoundCountFilter(roundCount, filter) {
+  if (filter === "all") return true;
+  if (filter === "9+") return Number(roundCount) >= 9;
+  return Number(roundCount) === Number(filter);
+}
+
+export function filterPublishedTravelEvents(events, options = {}) {
+  assertOptionsObject(options, "filterPublishedTravelEvents");
+  const normalized = normalizeLibrarySearchOptions(options);
+  const source = Array.isArray(events) ? events : [];
+  return source.filter((entry) => {
+    const tags = publishedEventTags(entry);
+    const roundCount = publishedEventRoundCount(entry);
+    if (normalized.categoryFilter !== "all" && entry?.category !== normalized.categoryFilter && entry?.event?.category !== normalized.categoryFilter) return false;
+    if (normalized.tagFilter !== "all" && !tags.includes(normalized.tagFilter)) return false;
+    if (!matchesRoundCountFilter(roundCount, normalized.roundCountFilter)) return false;
+    if (!normalized.searchText) return true;
+    const haystack = [
+      entry?.name,
+      entry?.key,
+      entry?.category,
+      entry?.event?.name,
+      entry?.event?.key,
+      entry?.event?.category,
+      ...tags,
+      publishedEventDescription(entry)
+    ].filter((value) => typeof value === "string").join(" ").toLowerCase();
+    return haystack.includes(normalized.searchText);
+  });
+}
+
+export function sortPublishedTravelEvents(events, options = {}) {
+  assertOptionsObject(options, "sortPublishedTravelEvents");
+  const normalized = normalizeLibrarySearchOptions(options);
+  const sorted = Array.isArray(events) ? [...events] : [];
+  const byName = (a, b) => String(a?.name ?? a?.key ?? "").localeCompare(String(b?.name ?? b?.key ?? ""));
+  const byCategory = (a, b) => String(a?.category ?? a?.event?.category ?? "").localeCompare(String(b?.category ?? b?.event?.category ?? "")) || byName(a, b);
+  const byUpdated = (a, b) => String(b?.updatedAt ?? b?.publishedAt ?? "").localeCompare(String(a?.updatedAt ?? a?.publishedAt ?? "")) || byName(a, b);
+  if (normalized.sortMode === "nameDesc") return sorted.sort((a, b) => byName(b, a));
+  if (normalized.sortMode === "category") return sorted.sort(byCategory);
+  if (normalized.sortMode === "updatedDesc") return sorted.sort(byUpdated);
+  return sorted.sort(byName);
+}
+
+export function preparePublishedTravelEventLibraryViewState(events, options = {}) {
+  assertOptionsObject(options, "preparePublishedTravelEventLibraryViewState");
+  const sourceEntries = Array.isArray(events) ? events : [];
+  const filters = normalizeLibrarySearchOptions(options);
+  const categories = Array.from(new Set(sourceEntries.map((entry) => entry?.category ?? entry?.event?.category).filter((value) => typeof value === "string" && value.length > 0))).sort((a, b) => a.localeCompare(b));
+  const tags = Array.from(new Set(sourceEntries.flatMap((entry) => publishedEventTags(entry)))).sort((a, b) => a.localeCompare(b));
+  const filteredEntries = sortPublishedTravelEvents(filterPublishedTravelEvents(sourceEntries, filters), filters);
+  return Object.freeze({
+    ...filters,
+    categoryOptions: [createOption("all", "All categories", filters.categoryFilter === "all"), ...categories.map((category) => createOption(category, CATEGORY_LABELS[category] ?? category, filters.categoryFilter === category))],
+    tagOptions: [createOption("all", "All tags", filters.tagFilter === "all"), ...tags.map((tag) => createOption(tag, tag, filters.tagFilter === tag))],
+    roundCountOptions: ["all", "1", "3", "5", "7", "9+"].map((value) => createOption(value, value === "all" ? "All rounds" : `${value} rounds`, filters.roundCountFilter === value)),
+    sortOptions: [
+      createOption("nameAsc", "Name A–Z", filters.sortMode === "nameAsc"),
+      createOption("nameDesc", "Name Z–A", filters.sortMode === "nameDesc"),
+      createOption("category", "Category", filters.sortMode === "category"),
+      createOption("updatedDesc", "Recently updated / created", filters.sortMode === "updatedDesc")
+    ],
+    entries: filteredEntries,
+    count: filteredEntries.length,
+    totalCount: sourceEntries.length,
+    hasEvents: sourceEntries.length > 0,
+    hasVisibleEvents: filteredEntries.length > 0,
+    hasTags: tags.length > 0,
+    filtersActive: Boolean(filters.searchText) || filters.categoryFilter !== "all" || filters.tagFilter !== "all" || filters.roundCountFilter !== "all" || filters.sortMode !== "updatedDesc",
+    emptyMessage: sourceEntries.length === 0 ? "No published travel events yet. Click Publish Current Draft after the draft passes validation and has no quality errors." : "No published travel events match the current filters."
+  });
+}
+
 function createUniquePublishedEventId(library, seed, options = {}) {
   const events = library?.events ?? {};
   const base = slugifyLibraryId(seed || "published-travel-event");
@@ -894,21 +993,31 @@ export function preparePublishedTravelEventLibraryState(options = {}) {
   const library = getPublishedTravelEventLibrary(options);
   const entries = getPublishedEventEntries(library).map((entry) => {
     const validation = validatePublishedEventEntry(entry, options);
+    const tags = publishedEventTags(entry);
     return {
       ...cloneData(entry),
       event: undefined,
+      roundCount: publishedEventRoundCount(entry),
+      tags,
+      tagText: tags.join(", "),
       isMalformed: validation.ok !== true,
       canLoad: validation.ok === true,
       validationErrors: validation.errors ?? [],
       validationWarnings: validation.warnings ?? []
     };
   });
+  const view = preparePublishedTravelEventLibraryViewState(entries, options);
   return Object.freeze({
     settingKey: `${ARCFLIGHT_MODULE_ID}.${PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING}`,
     version: library.version,
-    entries,
+    allEntries: entries,
+    entries: view.entries,
     count: entries.length,
-    hasEvents: entries.length > 0
+    visibleCount: view.count,
+    hasEvents: view.hasEvents,
+    hasVisibleEvents: view.hasVisibleEvents,
+    view,
+    emptyMessage: view.emptyMessage
   });
 }
 

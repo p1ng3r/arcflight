@@ -179,6 +179,9 @@ import {
   clonePublishedTravelEventToDraft,
   deletePublishedTravelEventFromLibrary,
   preparePublishedTravelEventLibraryState,
+  filterPublishedTravelEvents,
+  sortPublishedTravelEvents,
+  preparePublishedTravelEventLibraryViewState,
   saveTravelEventBuilderDraftToLibrary,
   loadTravelEventBuilderDraftFromLibrary,
   deleteTravelEventBuilderDraftFromLibrary,
@@ -1510,6 +1513,62 @@ export async function runFrameworkSmokeTest(options = {}) {
     const publishedPackOverwriteBlocked = await saveImportedPublishedTravelEventPackToLibrary(publishedPackExportData.events, { library: publishedBuilderEvent.library, duplicateMode: "overwrite", dryRun: true });
     const publishedPackSkipDuplicates = await saveImportedPublishedTravelEventPackToLibrary(publishedPackExportData.events, { library: publishedBuilderEvent.library, duplicateMode: "skip", dryRun: true });
     const publishedPackOverwriteSaved = await saveImportedPublishedTravelEventPackToLibrary(publishedPackExportData.events, { library: publishedBuilderEvent.library, duplicateMode: "overwrite", confirmOverwrite: true, dryRun: true, now: "2026-06-12T00:02:05.000Z" });
+    const publishedLibrarySourceSnapshot = JSON.stringify(publishedBuilderEvent.library);
+    const publishedBaseEntry = JSON.parse(JSON.stringify(publishedBuilderEvent.entry ?? {}));
+    const publishedLibrarySearchFixture = {
+      version: 1,
+      events: {
+        [publishedBaseEntry.id]: publishedBaseEntry,
+        "navigation-filter-smoke": {
+          ...publishedBaseEntry,
+          id: "navigation-filter-smoke",
+          key: "navigation-filter-smoke",
+          name: "Navigation Filter Smoke",
+          category: "navigation",
+          updatedAt: "2026-06-12T00:00:03.000Z",
+          event: {
+            ...publishedBaseEntry.event,
+            key: "navigation-filter-smoke",
+            name: "Navigation Filter Smoke",
+            category: "navigation",
+            roundCount: 3,
+            tags: ["route", "beacon"],
+            description: "Beacon route library filtering fixture.",
+            rounds: (publishedBaseEntry.event?.rounds ?? []).slice(0, 3)
+          }
+        },
+        "threat-filter-smoke": {
+          ...publishedBaseEntry,
+          id: "threat-filter-smoke",
+          key: "threat-filter-smoke",
+          name: "Threat Filter Smoke",
+          category: "threat",
+          updatedAt: "2026-06-12T00:00:04.000Z",
+          event: {
+            ...publishedBaseEntry.event,
+            key: "threat-filter-smoke",
+            name: "Threat Filter Smoke",
+            category: "threat",
+            roundCount: 9,
+            tags: ["danger"],
+            description: "Hazard description search fixture.",
+            rounds: Array.from({ length: 9 }, (_value, index) => ({ ...(publishedBaseEntry.event?.rounds?.[0] ?? {}), round: index + 1 }))
+          }
+        }
+      }
+    };
+    const publishedLibraryStateSearch = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "navigation" });
+    const publishedLibraryStateKeySearch = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "threat-filter" });
+    const publishedLibraryStateCategorySearch = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "threat" });
+    const publishedLibraryStateTagSearch = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "beacon" });
+    const publishedLibraryStateCategoryFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryCategoryFilter: "navigation" });
+    const publishedLibraryStateTagFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryTagFilter: "danger" });
+    const publishedLibraryStateRoundFilter = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, libraryRoundCountFilter: "9+" });
+    const publishedLibraryStateSortName = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySortMode: "nameAsc" });
+    const publishedLibraryStateSortCategory = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySortMode: "category" });
+    const publishedLibraryStateClearFilters = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "", libraryCategoryFilter: "all", libraryTagFilter: "all", libraryRoundCountFilter: "all", librarySortMode: "updatedDesc" });
+    const publishedLibraryStateEmptyResults = preparePublishedTravelEventLibraryState({ library: publishedLibrarySearchFixture, librarySearchText: "no-matching-published-event" });
+    const publishedLibraryFilteringNoMutation = JSON.stringify(publishedBuilderEvent.library) === publishedLibrarySourceSnapshot && JSON.stringify(publishedLibrarySearchFixture.events["navigation-filter-smoke"].event.tags) === "[\"route\",\"beacon\"]";
     const unsafePublishedPreviewHtml = renderPublishedTravelEventImportPreviewHtml({ importType: "single", eventCount: 1, events: [{ valid: true, name: '<img src=x onerror="alert(1)">', key: '<script>key</script>', category: '<b>bad</b>', roundCount: '<svg onload=alert(1)>', duplicateKey: true, actionRequired: '<em>overwrite</em>' }], warnings: ['<script>warning</script>'], errors: ['<img src=x onerror="alert(2)">'], duplicateKeyConflicts: [] }, { isPack: false, modeHint: '<strong>mode</strong>' });
     const travelEventBuilderUiSource = String(ArcflightTravelEventBuilder);
     const publishedIoNoMutation = publishedIoActorsBefore === JSON.stringify(globalThis.game?.actors?.contents?.map?.((entry) => ({ id: entry.id, name: entry.name, type: entry.type })) ?? []) && publishedIoResourcesBefore === JSON.stringify(getShipTravelResources(actor)) && publishedIoEconomyBefore === JSON.stringify(getShipActionEconomy(actor)) && publishedIoChatBefore === (globalThis.game?.messages?.size ?? globalThis.game?.messages?.contents?.length ?? 0) && publishedIoJournalBefore === (globalThis.game?.journal?.size ?? globalThis.game?.journal?.contents?.length ?? 0) && publishedIoCombatBefore === (globalThis.game?.combats?.size ?? globalThis.game?.combats?.contents?.length ?? 0) && publishedIoRunnerBefore === JSON.stringify(globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING) ?? null) && publishedIoBuilderBefore === JSON.stringify(globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING) ?? null);
@@ -1686,7 +1745,15 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Travel Event Builder library load returns normalized draft", loadedBuilderLibraryDraft.draft?.key === completeQualityDraft.key && loadedBuilderLibraryDraft.draft?.roundCount === completeQualityDraft.roundCount, "loaded normalized draft", loadedBuilderLibraryDraft);
     check(result, "Travel Event Builder library duplicate creates distinct saved entry", duplicatedBuilderLibraryDraft.ok === true && duplicatedBuilderLibraryDraft.entry?.id && duplicatedBuilderLibraryDraft.entry.id !== savedBuilderLibraryDraft.entry?.id && Object.keys(duplicatedBuilderLibraryDraft.library?.drafts ?? {}).length === 2, "distinct duplicate", duplicatedBuilderLibraryDraft);
     check(result, "Travel Event Builder library delete removes entry", deletedBuilderLibraryDraft.ok === true && deletedBuilderLibraryDraft.deleted?.id === duplicatedBuilderLibraryDraft.entry?.id && !Object.hasOwn(deletedBuilderLibraryDraft.library?.drafts ?? {}, duplicatedBuilderLibraryDraft.entry?.id), "deleted duplicate", deletedBuilderLibraryDraft);
-    check(result, "Published Travel Event library helper exports exist", typeof getPublishedTravelEventLibrary === "function" && typeof publishTravelEventDraftToLibrary === "function" && typeof loadPublishedTravelEventFromLibrary === "function" && typeof clonePublishedTravelEventToDraft === "function" && typeof deletePublishedTravelEventFromLibrary === "function" && typeof preparePublishedTravelEventLibraryState === "function" && typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary === "function" && typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary === "function", true, { setting: PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, api: typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary });
+    check(result, "Published Travel Event library helper exports exist", typeof getPublishedTravelEventLibrary === "function" && typeof publishTravelEventDraftToLibrary === "function" && typeof loadPublishedTravelEventFromLibrary === "function" && typeof clonePublishedTravelEventToDraft === "function" && typeof deletePublishedTravelEventFromLibrary === "function" && typeof preparePublishedTravelEventLibraryState === "function" && typeof filterPublishedTravelEvents === "function" && typeof sortPublishedTravelEvents === "function" && typeof preparePublishedTravelEventLibraryViewState === "function" && typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary === "function" && typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary === "function" && typeof globalThis.game?.arcflight?.filterPublishedTravelEvents === "function" && typeof globalThis.game?.arcflight?.devTools?.preparePublishedTravelEventLibraryViewState === "function", true, { setting: PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, api: typeof globalThis.game?.arcflight?.getPublishedTravelEventLibrary, devTools: typeof globalThis.game?.arcflight?.devTools?.publishTravelEventDraftToLibrary });
+    check(result, "Published Travel Event library view state supports search", publishedLibraryStateSearch.visibleCount === 1 && publishedLibraryStateSearch.entries?.[0]?.key === "navigation-filter-smoke", "search view state", publishedLibraryStateSearch.view);
+    check(result, "Published Travel Event library search matches name key category and tags", publishedLibraryStateSearch.entries?.[0]?.name === "Navigation Filter Smoke" && publishedLibraryStateKeySearch.entries?.[0]?.key === "threat-filter-smoke" && publishedLibraryStateCategorySearch.entries?.some((entry) => entry.category === "threat") && publishedLibraryStateTagSearch.entries?.[0]?.tagText?.includes("beacon"), "search fields", { name: publishedLibraryStateSearch.entries, key: publishedLibraryStateKeySearch.entries, category: publishedLibraryStateCategorySearch.entries, tag: publishedLibraryStateTagSearch.entries });
+    check(result, "Published Travel Event library category filter works", publishedLibraryStateCategoryFilter.visibleCount === 1 && publishedLibraryStateCategoryFilter.entries?.[0]?.category === "navigation", "category filter", publishedLibraryStateCategoryFilter.entries);
+    check(result, "Published Travel Event library tag filter works", publishedLibraryStateTagFilter.visibleCount === 1 && publishedLibraryStateTagFilter.entries?.[0]?.tagText === "danger", "tag filter", publishedLibraryStateTagFilter.entries);
+    check(result, "Published Travel Event library round count filter works", publishedLibraryStateRoundFilter.visibleCount === 1 && publishedLibraryStateRoundFilter.entries?.[0]?.roundCount === 9, "round count filter", publishedLibraryStateRoundFilter.entries);
+    check(result, "Published Travel Event library sort modes work", publishedLibraryStateSortName.entries?.map((entry) => entry.name).join("|") === [...publishedLibraryStateSortName.entries].map((entry) => entry.name).sort((a, b) => a.localeCompare(b)).join("|") && publishedLibraryStateSortCategory.entries?.[0]?.category <= publishedLibraryStateSortCategory.entries?.[1]?.category, "sort modes", { name: publishedLibraryStateSortName.entries?.map((entry) => entry.name), category: publishedLibraryStateSortCategory.entries?.map((entry) => entry.category) });
+    check(result, "Published Travel Event library clear filters resets view state", publishedLibraryStateClearFilters.visibleCount === 3 && publishedLibraryStateClearFilters.view.filtersActive === false, "clear filters", publishedLibraryStateClearFilters.view);
+    check(result, "Published Travel Event library empty results state works", publishedLibraryStateEmptyResults.hasEvents === true && publishedLibraryStateEmptyResults.hasVisibleEvents === false && /No published travel events match/.test(publishedLibraryStateEmptyResults.emptyMessage), "empty filtered state", publishedLibraryStateEmptyResults);
     check(result, "Published Travel Event empty library returns safe state", emptyPublishedLibraryState.count === 0 && emptyPublishedLibraryState.hasEvents === false && Array.isArray(emptyPublishedLibraryState.entries), "empty published safe state", emptyPublishedLibraryState);
     check(result, "Published Travel Event import/export helper exports exist", typeof exportPublishedTravelEventToJson === "function" && typeof exportPublishedTravelEventPackToJson === "function" && typeof importPublishedTravelEventFromJson === "function" && typeof saveImportedPublishedTravelEventToLibrary === "function" && typeof globalThis.game?.arcflight?.exportPublishedTravelEventToJson === "function" && typeof globalThis.game?.arcflight?.devTools?.saveImportedPublishedTravelEventPackToLibrary === "function", true, { api: typeof globalThis.game?.arcflight?.exportPublishedTravelEventToJson, devTools: typeof globalThis.game?.arcflight?.devTools?.saveImportedPublishedTravelEventPackToLibrary });
     check(result, "Published Travel Event single export works", publishedSingleExport.ok === true && publishedSingleExportData.exportType === "arcflight.publishedTravelEvent" && publishedSingleExportData.event?.key === "published-smoke", "single published export", publishedSingleExportData);
@@ -1698,6 +1765,8 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Published Travel Event duplicate pack import does not silently overwrite", publishedPackDuplicateCopy.ok === true && publishedPackDuplicateCopy.entries?.[0]?.key !== publishedBuilderEvent.entry?.key && publishedPackSkipDuplicates.ok === true && publishedPackSkipDuplicates.entries?.length === 0 && publishedPackOverwriteBlocked.ok === false && /confirmOverwrite/i.test(publishedPackOverwriteBlocked.errors?.[0] ?? "") && publishedPackOverwriteSaved.ok === true && publishedPackOverwriteSaved.entries?.[0]?.key === publishedBuilderEvent.entry?.key, "published pack duplicate handling", { copy: publishedPackDuplicateCopy.entries, skip: publishedPackSkipDuplicates.entries, overwriteBlocked: publishedPackOverwriteBlocked.errors, overwriteSaved: publishedPackOverwriteSaved.entries });
     check(result, "Published Travel Event explicit overwrite validates and preserves proposedEffects data-only", publishedOverwriteSaved.ok === true && publishedOverwriteSaved.entry?.id === publishedBuilderEvent.entry?.id && publishedOverwriteSaved.event?.finalOutcomes?.success?.proposedEffects?.[0]?.label === "Published supplies reward" && validateImportedPublishedTravelEvent(publishedOverwriteSaved.event).ok === true, "published explicit overwrite", publishedOverwriteSaved.entry);
     check(result, "Published Travel Event import/export does not mutate actors resources AP/RAP chat journals combat runner sessions or builder drafts", publishedIoNoMutation === true, "published io no mutation", { resources: getShipTravelResources(actor), economy: getShipActionEconomy(actor) });
+    check(result, "Published Travel Event library filtering and sorting does not mutate source published event data", publishedLibraryFilteringNoMutation === true, "library source unchanged", { source: publishedBuilderEvent.library, fixtureTags: publishedLibrarySearchFixture.events["navigation-filter-smoke"].event.tags });
+    check(result, "Published Travel Event library filtering introduces no actor resource AP/RAP chat journal combat mutation", ![filterPublishedTravelEvents, sortPublishedTravelEvents, preparePublishedTravelEventLibraryViewState, preparePublishedTravelEventLibraryState].some((helper) => /updateShipTravelResources|spendShipActionPoints|resetShipActionEconomy|Actor\.update|actor\.update|ChatMessage|JournalEntry|startCombat|Combat\.create|applyTravelStagedEffect|applyTravelStagedEffects/.test(String(helper))), "filter helpers remain local", "no prohibited helper calls");
     check(result, "Travel Event Builder Published import UI avoids browser prompt alert confirm APIs", !/(^|[^.])\b(prompt|alert|confirm)\s*\(/.test(travelEventBuilderUiSource), "no browser prompt/alert/confirm", "DialogV2-only published import confirmations");
     check(result, "Travel Event Builder Published import UI avoids regex pack detection", !/\.test\(jsonText\)/.test(travelEventBuilderUiSource) && /parsePublishedTravelEventPackJson/.test(travelEventBuilderUiSource), "parsed exportType detection", "safe parse helpers used");
     check(result, "Travel Event Builder Published import UI offers file upload and paste fallback", /type="file"/.test(travelEventBuilderUiSource) && /accept="\.json,application\/json"/.test(travelEventBuilderUiSource) && /#readPublishedImportJsonInput/.test(travelEventBuilderUiSource) && /#readFileText/.test(travelEventBuilderUiSource) && /file\.text/.test(travelEventBuilderUiSource), "file or paste import", "file input preferred with paste fallback");
