@@ -7,6 +7,7 @@ import {
 } from "../helpers/item-organization.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "../apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "../apps/travel-event-runner.js";
+import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "../apps/travel-scene-overlay.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import {
   getTravelFiveStationKeys,
@@ -605,9 +606,20 @@ export function createArcflightDevTools() {
      */
     openTravelEventRunner,
 
+    /**
+     * Travel Scene Overlay read-only app shell for active runner sessions.
+     */
+    ArcflightTravelSceneOverlay,
+
+    /**
+     * Open the read-only Travel Scene Overlay shell.
+     */
+    openTravelSceneOverlay,
+
     createTravelEventRunnerSession,
     normalizeTravelEventRunnerSession,
     prepareTravelEventRunnerState,
+    prepareTravelSceneOverlayState,
     setTravelEventRunnerStationResult,
     getTravelEventRunnerStationActorOptions,
     normalizeTravelEventRunnerStationAssignments,

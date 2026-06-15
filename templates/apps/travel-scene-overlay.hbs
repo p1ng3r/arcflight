@@ -1,0 +1,52 @@
+<div class="arcflight-travel-scene-overlay__shell">
+  <header class="arcflight-travel-scene-overlay__header">
+    <p class="arcflight-sheet__hint">{{hardBoundaryHint}}</p>
+    {{#if state.hasSession}}
+      <h1>{{state.eventName}}</h1>
+      <p><strong>{{state.roundLabel}}</strong>{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</p>
+    {{else}}
+      <h1>Travel Scene Overlay</h1>
+      <p class="arcflight-sheet__hint">{{state.emptyMessage}}</p>
+    {{/if}}
+  </header>
+
+  {{#if state.hasSession}}
+    <section class="arcflight-travel-scene-overlay__panel">
+      <h2>Scene Vignette</h2>
+      {{#if state.vignette}}
+        <p>{{state.vignette}}</p>
+      {{else}}
+        <p class="arcflight-sheet__hint">No opening/current round vignette is available for this runner round.</p>
+      {{/if}}
+    </section>
+
+    <section class="arcflight-travel-scene-overlay__panel">
+      <h2>Active Stations</h2>
+      {{#if state.hasStations}}
+        <div class="arcflight-travel-scene-overlay__station-list">
+          {{#each state.stations}}
+            <article class="arcflight-travel-scene-overlay__station-card">
+              <h3>{{stationName}}</h3>
+              <dl>
+                <div><dt>Assigned Actor</dt><dd>{{assignedActorName}}</dd></div>
+                <div><dt>Approach</dt><dd>{{approachLabel}}</dd></div>
+                <div><dt>Result</dt><dd>{{resultLabel}}</dd></div>
+              </dl>
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">No active stations are listed for this round.</p>
+      {{/if}}
+    </section>
+
+    <section class="arcflight-travel-scene-overlay__panel">
+      <h2>GM Round Summary</h2>
+      {{#if state.gmRoundSummaryText}}
+        <p>{{state.gmRoundSummaryText}}</p>
+      {{else}}
+        <p class="arcflight-sheet__hint">No GM round summary is available yet.</p>
+      {{/if}}
+    </section>
+  {{/if}}
+</div>

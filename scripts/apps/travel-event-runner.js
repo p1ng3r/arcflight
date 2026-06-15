@@ -1,5 +1,6 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
+import { openTravelSceneOverlay } from "./travel-scene-overlay.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
@@ -61,7 +62,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-apply-effects]",
   "[data-arcflight-runner-undo-effect]",
   "[data-arcflight-runner-clear-assignment]",
-  "[data-arcflight-runner-reset-assignment]"
+  "[data-arcflight-runner-reset-assignment]",
+  "[data-arcflight-open-travel-scene-overlay]"
 ].join(", ");
 
 
@@ -408,6 +410,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
     if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
+    if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
+  }
+
+  async #openTravelSceneOverlay() {
+    openTravelSceneOverlay({ session: this.session, actor: this.#getSelectedShipActor() });
+    this.statusMessage = this.session ? "Travel Scene Overlay opened for the current local runner session." : "Travel Scene Overlay opened with no active runner session.";
+    return this.render(true);
   }
 
   async #toggleSessionActions() {

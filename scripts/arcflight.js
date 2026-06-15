@@ -2,6 +2,7 @@ import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "./apps/travel-event-runner.js";
+import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "./apps/travel-scene-overlay.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
   createArcflightItem,
@@ -166,6 +167,7 @@ import {
   getTravelEventRunnerShipStationAssignments,
   startTravelEventRunnerFromPublishedEvent,
   prepareTravelEventRunnerState,
+  prepareTravelSceneOverlayState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
@@ -641,9 +643,12 @@ Hooks.once("init", () => {
     prepareTravelEventBuilderShellState,
     ArcflightTravelEventRunner,
     openTravelEventRunner,
+    ArcflightTravelSceneOverlay,
+    openTravelSceneOverlay,
     createTravelEventRunnerSession,
     normalizeTravelEventRunnerSession,
     prepareTravelEventRunnerState,
+    prepareTravelSceneOverlayState,
     setTravelEventRunnerStationResult,
     advanceTravelEventRunnerRound,
     retreatTravelEventRunnerRound,
@@ -969,9 +974,12 @@ export {
   prepareTravelEventBuilderShellState,
   ArcflightTravelEventRunner,
   openTravelEventRunner,
+  ArcflightTravelSceneOverlay,
+  openTravelSceneOverlay,
   createTravelEventRunnerSession,
   normalizeTravelEventRunnerSession,
   prepareTravelEventRunnerState,
+  prepareTravelSceneOverlayState,
   setTravelEventRunnerStationResult,
   advanceTravelEventRunnerRound,
   retreatTravelEventRunnerRound,
