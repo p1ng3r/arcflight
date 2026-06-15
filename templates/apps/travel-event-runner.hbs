@@ -122,12 +122,8 @@
                       {{/each}}
                     </select>
                   </label>
-                  <p><strong>Selected:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}{{#if selectedApproach.helpText}} — {{selectedApproach.helpText}}{{/if}}</p>
-                  <ul>
-                    {{#each skillApproaches}}
-                      <li><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if skill}} ({{skill}}){{/if}}{{#if helpText}} — {{helpText}}{{/if}}</li>
-                    {{/each}}
-                  </ul>
+                  <p><strong>Selected Approach:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}</p>
+                  {{#if selectedApproach.helpText}}<p><strong>Approach Vignette:</strong> {{selectedApproach.helpText}}</p>{{/if}}
                 </div>
               {{/if}}
               {{#if rollFeedback.success}}
