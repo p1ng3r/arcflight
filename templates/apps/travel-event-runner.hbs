@@ -144,7 +144,9 @@
           <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
             <h2>GM Round Summary</h2>
             <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
-            <p>{{state.roundSummaryCard.summaryText}}</p>
+            {{#each state.roundSummaryCard.summaryLines}}
+              <p>{{this}}</p>
+            {{/each}}
           </section>
         {{/if}}
       {{else}}
