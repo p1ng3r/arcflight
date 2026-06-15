@@ -735,14 +735,20 @@ Hooks.once("init", () => {
     cleanupDuplicateItems: cleanupDuplicateArcflightItems,
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
-    devTools: createArcflightDevTools()
+    devTools: createArcflightDevTools(),
+    get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
+    get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; }
   });
 
   game.arcflight = CONFIG.arcflight;
 
-  registerArcflightSheets().catch((error) => {
-    console.warn("Arcflight | Sheet registration failed; continuing startup.", error);
-  });
+  registerArcflightSheets()
+    .then((registeredSheets) => {
+      CONFIG.arcflightSheets = Object.freeze({ ...(registeredSheets ?? {}) });
+    })
+    .catch((error) => {
+      console.warn("Arcflight | Sheet registration failed; continuing startup.", error);
+    });
 });
 
 export {

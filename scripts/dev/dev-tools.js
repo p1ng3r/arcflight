@@ -190,6 +190,101 @@ import {
   saveImportedPublishedTravelEventPackToLibrary
 } from "../helpers/travel-event-builder-io.js";
 
+
+function hasRegisteredSetting(settingKey) {
+  const fullKey = `${ARCFLIGHT_MODULE_ID}.${settingKey}`;
+  const settings = globalThis.game?.settings?.settings;
+  if (typeof settings?.has === "function") return settings.has(fullKey);
+  return Boolean(settings?.[fullKey]);
+}
+
+function checkReport(report, name, passed, details = {}) {
+  const entry = { name, passed: Boolean(passed), details };
+  report.checks.push(entry);
+  return entry;
+}
+
+function summarizeCompatibilityReport(report) {
+  report.passed = report.checks.every((entry) => entry.passed);
+  const rows = report.checks.map((entry) => ({
+    check: entry.name,
+    passed: entry.passed,
+    details: entry.details
+  }));
+  console.group(`Arcflight | Foundry V14 compatibility report ${report.passed ? "PASSED" : "NEEDS REVIEW"}`);
+  console.table(rows);
+  console.log("Arcflight | Foundry V14 compatibility report", report);
+  console.groupEnd();
+  return report;
+}
+
+/**
+ * Run a non-mutating Foundry V14 compatibility report from the console.
+ *
+ * This verifies Arcflight's public API, settings, sheet class exports, core
+ * registries, and Foundry V2 application API availability without creating or
+ * updating world documents. Manual V14 smoke testing is still required.
+ *
+ * @returns {{passed: boolean, checks: Array}} Compatibility check summary.
+ */
+export function runV14CompatibilityReport() {
+  const api = globalThis.game?.arcflight;
+  const report = { passed: false, checks: [] };
+  const applicationApi = globalThis.foundry?.applications?.api ?? {};
+  const sheetApi = globalThis.foundry?.applications?.sheets ?? {};
+
+  checkReport(report, "module API exists at game.arcflight", Boolean(api), { type: typeof api });
+  checkReport(report, "world settings are registered", [
+    TRAVEL_EVENT_BUILDER_LIBRARY_SETTING,
+    PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING,
+    TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING
+  ].every(hasRegisteredSetting), {
+    [TRAVEL_EVENT_BUILDER_LIBRARY_SETTING]: hasRegisteredSetting(TRAVEL_EVENT_BUILDER_LIBRARY_SETTING),
+    [PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING]: hasRegisteredSetting(PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING),
+    [TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING]: hasRegisteredSetting(TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING)
+  });
+  checkReport(report, "Foundry V2 application APIs exist", typeof applicationApi.ApplicationV2 === "function" && typeof applicationApi.HandlebarsApplicationMixin === "function" && typeof applicationApi.DialogV2 === "function" && typeof sheetApi.ActorSheetV2 === "function" && typeof sheetApi.ItemSheetV2 === "function", {
+    ApplicationV2: typeof applicationApi.ApplicationV2,
+    HandlebarsApplicationMixin: typeof applicationApi.HandlebarsApplicationMixin,
+    DialogV2: typeof applicationApi.DialogV2,
+    ActorSheetV2: typeof sheetApi.ActorSheetV2,
+    ItemSheetV2: typeof sheetApi.ItemSheetV2
+  });
+  checkReport(report, "sheet classes load", typeof api?.ArcflightShipSheet === "function" && typeof api?.ArcflightItemSheet === "function", {
+    ArcflightShipSheet: typeof api?.ArcflightShipSheet,
+    ArcflightItemSheet: typeof api?.ArcflightItemSheet
+  });
+  checkReport(report, "core hull keys resolve", Array.isArray(CORE_HULL_PLATFORM_KEYS) && CORE_HULL_PLATFORM_KEYS.length > 0, { count: CORE_HULL_PLATFORM_KEYS.length });
+  checkReport(report, "core arkengine keys resolve", Array.isArray(CORE_ARKENGINE_KEYS) && CORE_ARKENGINE_KEYS.length > 0, { count: CORE_ARKENGINE_KEYS.length });
+  checkReport(report, "core room keys resolve", Array.isArray(CORE_ROOM_KEYS) && CORE_ROOM_KEYS.length > 0, { count: CORE_ROOM_KEYS.length });
+  checkReport(report, "core ship upgrade keys resolve", Array.isArray(CORE_SHIP_UPGRADE_KEYS) && CORE_SHIP_UPGRADE_KEYS.length > 0, { count: CORE_SHIP_UPGRADE_KEYS.length });
+  checkReport(report, "travel event keys resolve", Array.isArray(CORE_TRAVEL_EVENT_KEYS) && CORE_TRAVEL_EVENT_KEYS.length > 0, { count: CORE_TRAVEL_EVENT_KEYS.length });
+  checkReport(report, "builder class exists", typeof ArcflightTravelEventBuilder === "function", { type: typeof ArcflightTravelEventBuilder });
+  checkReport(report, "runner class exists", typeof ArcflightTravelEventRunner === "function", { type: typeof ArcflightTravelEventRunner });
+  checkReport(report, "PF2E statistic helper functions exist", [normalizePf2eStatisticKey, getPf2eStatisticCandidateKeys, resolvePf2eActorStatistic, isRollablePf2eStatistic, getPf2eRollTotal, rollPf2eStatistic].every((helper) => typeof helper === "function"), {
+    normalizePf2eStatisticKey: typeof normalizePf2eStatisticKey,
+    getPf2eStatisticCandidateKeys: typeof getPf2eStatisticCandidateKeys,
+    resolvePf2eActorStatistic: typeof resolvePf2eActorStatistic,
+    isRollablePf2eStatistic: typeof isRollablePf2eStatistic,
+    getPf2eRollTotal: typeof getPf2eRollTotal,
+    rollPf2eStatistic: typeof rollPf2eStatistic
+  });
+  checkReport(report, "Arcflight item creation helper exists", typeof createCoreHull === "function" && typeof createCoreArkengine === "function" && typeof createCoreRoom === "function" && typeof createCoreShipUpgrade === "function", {
+    createCoreHull: typeof createCoreHull,
+    createCoreArkengine: typeof createCoreArkengine,
+    createCoreRoom: typeof createCoreRoom,
+    createCoreShipUpgrade: typeof createCoreShipUpgrade
+  });
+  checkReport(report, "Arcflight ship helper functions exist", typeof getArcflightShipData === "function" && typeof installHull === "function" && typeof installArkengine === "function" && typeof assignStation === "function", {
+    getArcflightShipData: typeof getArcflightShipData,
+    installHull: typeof installHull,
+    installArkengine: typeof installArkengine,
+    assignStation: typeof assignStation
+  });
+
+  return summarizeCompatibilityReport(report);
+}
+
 const ARCFLIGHT_TYPE_PREFIX = "arcflight.";
 const TEMPORARY_CLEANUP_ITEM_NAMES = new Set(["test", "Arkengine", "arkengine"]);
 
@@ -210,6 +305,11 @@ function isTemporaryArcflightTestItem(item) {
  */
 export function createArcflightDevTools() {
   return Object.freeze({
+    /**
+     * Run a non-mutating Foundry V14 compatibility report from the console.
+     */
+    runV14CompatibilityReport,
+
     /**
      * Create the suggested Arcflight folder tree in the world Items panel.
      */

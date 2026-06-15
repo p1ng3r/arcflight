@@ -17,9 +17,13 @@ async function loadArcflightShipSheetClass() {
   return ShipSheetClass;
 }
 
-function getSheetRegistry(collectionName) {
-  const collection = foundry?.documents?.collections?.[collectionName];
-  return typeof collection?.registerSheet === "function" ? collection : null;
+export function getFoundrySheetRegistry(collectionName) {
+  const registries = [
+    globalThis.foundry?.documents?.collections?.[collectionName],
+    globalThis[collectionName]
+  ];
+
+  return registries.find((collection) => typeof collection?.registerSheet === "function") ?? null;
 }
 
 function pf2eVehicleActorsAvailable() {
@@ -33,7 +37,7 @@ function pf2eVehicleActorsAvailable() {
 export async function registerArcflightSheets() {
   const registered = {};
 
-  const actors = getSheetRegistry("Actors");
+  const actors = getFoundrySheetRegistry("Actors");
   if (actors && pf2eVehicleActorsAvailable()) {
     try {
       const ShipSheetClass = await loadArcflightShipSheetClass();
@@ -50,7 +54,7 @@ export async function registerArcflightSheets() {
     console.debug("Arcflight | PF2E vehicle actor sheet registry not available; skipping Arcflight ship sheet registration.");
   }
 
-  const items = getSheetRegistry("Items");
+  const items = getFoundrySheetRegistry("Items");
   if (items) {
     try {
       const ItemSheetClass = await loadArcflightItemSheetClass();
