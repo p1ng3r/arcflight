@@ -331,7 +331,6 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
     state.sessionActionsExpanded = this.uiState.sessionActionsExpanded;
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
-    updateActiveTravelSceneOverlayContext({ session: this.session, actor: targetActor }, { render: true });
     return {
       ...context,
       state,
@@ -348,6 +347,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.element?.addEventListener("click", this.#boundRunnerClick);
     this.element?.removeEventListener("change", this.#boundRunnerChange);
     this.element?.addEventListener("change", this.#boundRunnerChange);
+    // Keep any open overlay in sync after the runner has rendered, avoiding render side effects during _prepareContext.
+    updateActiveTravelSceneOverlayContext({ session: this.session, actor: this.#getSelectedShipActor() }, { render: true });
     this.#restoreScrollPosition();
   }
 
