@@ -36,6 +36,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
       "watchmaster",
       "captain"
     ],
+    "openingVignette": "The Star Sea ahead stains black before the ship reaches it, and every lantern aboard seems to dim in sympathy. The crossing announces itself as a cinematic voyage problem before any station takes action: choose a line, protect the vessel, keep watch, and hold the crew together while the Black Tide decides whether to let you pass.",
     "description": "The ship must cross a lightless current where black rain, living tide, and distant predators turn navigation into a haunted trial. The passage is beautiful in the way a blade is beautiful: all sheen, silence, and danger. Every station has a way to keep the vessel moving, but the crossing asks a price from hull, Lifeveil, supplies, and nerve.",
     "gmSummary": "Run this as a five-round environmental ordeal in which the Travel Five keep the ship together under unnatural void-pressure. Keep the Black Tide strange but readable: false lights, hungry aether, arkengine resonance, and pursuing shapes in the dark between stars should all give the players choices to make. Proposed effects remain staged for explicit GM review, and combatHandoff notes are only future threat context.",
     "rounds": [
@@ -43,6 +44,43 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
         "round": 1,
         "title": "The Tide Goes Black",
         "openingVignette": "The Star Sea folds into an oil-dark void-swell, and the arkengine wake vanishes behind the ship as if swallowed. Stars wink out one by one until the rigging hangs beneath a blind sky. Black rain begins to fall upward from the aether current, tapping the hull like impatient fingers. Old sailor-prayers go quiet on every deck because everyone knows the name of this crossing. Ahead, the Black Tide opens a path through the Void Between Fires, less a channel than a door into starless night.",
+        "stationCards": [
+          {
+            "stationKey": "navigator",
+            "stationName": "Navigator",
+            "problem": "Find a bearing through a sky with no stars and a Black Tide with no honest current.",
+            "skillApproaches": [
+              {
+                "skill": "survival",
+                "label": "Sound the black current",
+                "helpText": "Read pressure, drift, and false wake to keep the ship on a living route."
+              },
+              {
+                "skill": "society",
+                "label": "Recall forbidden crossing marks",
+                "helpText": "Use old route customs, warning songs, and voidsailor taboo to identify safe bearings."
+              },
+              {
+                "skill": "sailing-lore",
+                "label": "Trust tidecraft",
+                "helpText": "Name the pattern of the current and choose a line that a mundane chart would miss."
+              }
+            ],
+            "rollFeedback": {
+              "criticalSuccess": "The Navigator names the hidden seam before the Tide can close it.",
+              "success": "The ship holds a workable bearing through the blind current.",
+              "failure": "The bearing wanders, and the Black Tide takes a visible price.",
+              "criticalFailure": "The chosen line is a lie, and the crossing surges around the ship."
+            },
+            "hooks": {
+              "rooms": [],
+              "shipUpgrades": [],
+              "arkengineMods": [],
+              "crewAssets": [],
+              "factions": []
+            }
+          }
+        ],
         "activeStations": [
           {
             "stationKey": "navigator",

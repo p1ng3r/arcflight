@@ -103,6 +103,90 @@ function getPromptFromRound(round, stationKey) {
   return { stationKey };
 }
 
+function getStationCardFromRound(round, stationKey) {
+  const cardFromArray = (Array.isArray(round?.stationCards) ? round.stationCards : []).find((entry) => normalizeStationKey(entry) === stationKey);
+  if (cardFromArray && typeof cardFromArray === "object" && !Array.isArray(cardFromArray)) return { ...cardFromArray, stationKey };
+  const cardFromMap = round?.stationCards?.[stationKey];
+  if (cardFromMap && typeof cardFromMap === "object" && !Array.isArray(cardFromMap)) return { ...cardFromMap, stationKey: cardFromMap.stationKey ?? stationKey };
+  return null;
+}
+
+function createBlankRollFeedback() {
+  return {
+    criticalSuccess: "",
+    success: "",
+    failure: "",
+    criticalFailure: ""
+  };
+}
+
+function createEmptyStationCardHooks() {
+  return {
+    rooms: [],
+    shipUpgrades: [],
+    arkengineMods: [],
+    crewAssets: [],
+    factions: []
+  };
+}
+
+function normalizeStationCardHooks(value = {}) {
+  const source = isPlainObject(value) ? value : {};
+  return {
+    rooms: Array.isArray(source.rooms) ? cloneData(source.rooms) : [],
+    shipUpgrades: Array.isArray(source.shipUpgrades) ? cloneData(source.shipUpgrades) : [],
+    arkengineMods: Array.isArray(source.arkengineMods) ? cloneData(source.arkengineMods) : [],
+    crewAssets: Array.isArray(source.crewAssets) ? cloneData(source.crewAssets) : [],
+    factions: Array.isArray(source.factions) ? cloneData(source.factions) : []
+  };
+}
+
+function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
+  const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : (Array.isArray(prompt.skillApproaches) ? prompt.skillApproaches : []);
+  const approaches = explicit
+    .filter(isPlainObject)
+    .map((entry) => ({
+      skill: typeof entry.skill === "string" ? entry.skill : "",
+      label: typeof entry.label === "string" ? entry.label : (typeof entry.skill === "string" ? humanizeIdentifier(entry.skill) : ""),
+      helpText: typeof entry.helpText === "string" ? entry.helpText : ""
+    }))
+    .filter((entry) => entry.skill || entry.label || entry.helpText);
+  if (approaches.length > 0) return approaches;
+  const suggestedSkills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
+  return suggestedSkills.slice(0, 3).map((skill) => ({
+    skill,
+    label: humanizeIdentifier(skill),
+    helpText: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
+  }));
+}
+
+function normalizeStationCardForRunner(stationKey, card = null, prompt = {}) {
+  const sourceCard = isPlainObject(card) ? card : {};
+  const sourcePrompt = isPlainObject(prompt) ? prompt : {};
+  const station = getStation(stationKey) ?? {};
+  return {
+    ...cloneData(sourceCard),
+    stationKey,
+    stationName: typeof sourceCard.stationName === "string"
+      ? sourceCard.stationName
+      : (typeof sourcePrompt.stationName === "string" ? sourcePrompt.stationName : (station.displayName ?? station.name ?? humanizeIdentifier(stationKey))),
+    problem: typeof sourceCard.problem === "string"
+      ? sourceCard.problem
+      : (typeof sourcePrompt.problem === "string"
+        ? sourcePrompt.problem
+        : (typeof sourcePrompt.vignette === "string"
+          ? sourcePrompt.vignette
+          : (typeof sourcePrompt.playerAction === "string" ? sourcePrompt.playerAction : `[${stationKey} station problem]`))),
+    skillApproaches: normalizeStationCardSkillApproaches(sourceCard, sourcePrompt),
+    rollFeedback: {
+      ...createBlankRollFeedback(),
+      ...(isPlainObject(sourcePrompt.rollFeedback) ? cloneData(sourcePrompt.rollFeedback) : {}),
+      ...(isPlainObject(sourceCard.rollFeedback) ? cloneData(sourceCard.rollFeedback) : {})
+    },
+    hooks: sourceCard.hooks == null ? createEmptyStationCardHooks() : normalizeStationCardHooks(sourceCard.hooks)
+  };
+}
+
 function normalizeRoundDefinition(round, index) {
   const activeStationKeys = Array.isArray(round?.activeStations)
     ? round.activeStations.map(normalizeStationKey).filter((stationKey) => TRAVEL_FIVE_STATION_KEYS.includes(stationKey))
@@ -112,7 +196,12 @@ function normalizeRoundDefinition(round, index) {
     title: typeof round?.title === "string" ? round.title : `Round ${index + 1}`,
     openingVignette: typeof round?.openingVignette === "string" ? round.openingVignette : "",
     activeStations: Array.from(new Set(activeStationKeys)),
-    stationPrompts: Object.fromEntries(Array.from(new Set(activeStationKeys)).map((stationKey) => [stationKey, cloneData(getPromptFromRound(round, stationKey))]))
+    stationPrompts: Object.fromEntries(Array.from(new Set(activeStationKeys)).map((stationKey) => [stationKey, cloneData(getPromptFromRound(round, stationKey))])),
+    stationCards: Array.from(new Set(activeStationKeys)).map((stationKey) => {
+      const prompt = getPromptFromRound(round, stationKey);
+      const card = getStationCardFromRound(round, stationKey);
+      return normalizeStationCardForRunner(stationKey, card, prompt);
+    })
   };
 }
 

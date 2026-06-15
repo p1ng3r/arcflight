@@ -64,6 +64,30 @@ function validateStrictAuthoringStationPrompt(prompt, roundNumber, errors) {
   }
 }
 
+function validateStationCard(card, roundNumber, errors) {
+  const stationLabel = `Round ${roundNumber ?? "?"} stationCards ${card?.stationKey ?? "<missing station>"}`;
+  if (!card || typeof card !== "object" || Array.isArray(card)) {
+    errors.push(`${stationLabel} must be an object.`);
+    return;
+  }
+  if (!isTravelStationKey(card.stationKey)) errors.push(`${stationLabel} has an invalid stationKey.`);
+  if (typeof card.problem !== "string" || card.problem.trim().length === 0) errors.push(`${stationLabel} is missing problem.`);
+  if (!Array.isArray(card.skillApproaches)) errors.push(`${stationLabel} skillApproaches must be an array.`);
+  else {
+    for (const [index, approach] of card.skillApproaches.entries()) {
+      if (!approach || typeof approach !== "object" || Array.isArray(approach)) errors.push(`${stationLabel} skillApproaches[${index}] must be an object.`);
+      else if (typeof approach.skill !== "string" || approach.skill.trim().length === 0) errors.push(`${stationLabel} skillApproaches[${index}].skill must be a non-empty string.`);
+    }
+  }
+  if (!card.rollFeedback || typeof card.rollFeedback !== "object" || Array.isArray(card.rollFeedback)) errors.push(`${stationLabel} is missing rollFeedback.`);
+  else {
+    for (const degree of Object.values(ARCFLIGHT_TRAVEL_RESULT_TIERS)) {
+      if (typeof card.rollFeedback[degree] !== "string" || card.rollFeedback[degree].trim().length === 0) errors.push(`${stationLabel} rollFeedback.${degree} must be a non-empty string.`);
+    }
+  }
+  if (card.hooks != null && (typeof card.hooks !== "object" || Array.isArray(card.hooks))) errors.push(`${stationLabel} hooks must be an object when present.`);
+}
+
 function validateProposedEffectsDataOnly(source, label, errors) {
   if (!Array.isArray(source?.proposedEffects)) return;
   source.proposedEffects.forEach((effect, index) => {
@@ -169,6 +193,10 @@ export function validateTravelEventDefinition(event, options = {}) {
       if (strictAuthoring) {
         for (const activeStation of round.activeStations) validateStrictAuthoringStationPrompt(getStrictAuthoringPrompt(round, activeStation), round.round, errors);
       }
+    }
+    if (round.stationCards != null) {
+      if (!Array.isArray(round.stationCards)) errors.push(`Round ${round.round ?? "?"} stationCards must be an array when present.`);
+      else for (const card of round.stationCards) validateStationCard(card, round.round, errors);
     }
     const branchKeys = Object.keys(round.outcomeBranches ?? {});
     for (const outcome of Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES)) {

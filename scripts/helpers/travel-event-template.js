@@ -85,6 +85,30 @@ export function createBlankStationPromptTemplate(stationKey, options = {}) {
   };
 }
 
+export function createBlankStationCardTemplate(stationKey, options = {}) {
+  const prompt = createBlankStationPromptTemplate(stationKey, options);
+  return {
+    stationKey: prompt.stationKey,
+    stationName: prompt.stationName,
+    problem: options.problem ?? options.vignette ?? prompt.vignette,
+    skillApproaches: Array.isArray(options.skillApproaches)
+      ? cloneData(options.skillApproaches)
+      : prompt.suggestedSkills.slice(0, 3).map((skill) => ({
+        skill,
+        label: `${prompt.stationName} ${skill}`,
+        helpText: options.playerAction ?? prompt.playerAction
+      })),
+    rollFeedback: createBlankRollFeedbackTemplate(options.rollFeedback ?? {}),
+    hooks: {
+      rooms: Array.isArray(options.hooks?.rooms) ? cloneData(options.hooks.rooms) : [],
+      shipUpgrades: Array.isArray(options.hooks?.shipUpgrades) ? cloneData(options.hooks.shipUpgrades) : [],
+      arkengineMods: Array.isArray(options.hooks?.arkengineMods) ? cloneData(options.hooks.arkengineMods) : [],
+      crewAssets: Array.isArray(options.hooks?.crewAssets) ? cloneData(options.hooks.crewAssets) : [],
+      factions: Array.isArray(options.hooks?.factions) ? cloneData(options.hooks.factions) : []
+    }
+  };
+}
+
 export function createBlankOutcomeBranchesTemplate(options = {}) {
   return Object.fromEntries(ROUND_OUTCOME_KEYS.map((key) => [key, createOutcomeBranch(key, options)]));
 }
@@ -99,6 +123,7 @@ export function createBlankTravelRoundTemplate(roundNumber, options = {}) {
     round: Number.isInteger(roundNumber) && roundNumber > 0 ? roundNumber : 1,
     title: options.title ?? `Round ${Number.isInteger(roundNumber) && roundNumber > 0 ? roundNumber : 1}`,
     openingVignette: options.openingVignette ?? placeholder("round opening vignette: table-ready prose; round 1 is usually 4-6 sentences, later rounds 3-5 sentences."),
+    stationCards: activeStationKeys.map((stationKey) => createBlankStationCardTemplate(stationKey, options.stationCards?.[stationKey] ?? options.stationPrompts?.[stationKey] ?? {})),
     activeStations: activeStationKeys.map((stationKey) => createBlankStationPromptTemplate(stationKey, options.stationPrompts?.[stationKey] ?? {})),
     outcomeBranches: createBlankOutcomeBranchesTemplate(options.outcomeBranches ?? {})
   };
@@ -119,6 +144,7 @@ export function createBlankTravelEventTemplate(options = {}) {
     baseDC: Number.isFinite(options.baseDC) ? options.baseDC : DEFAULT_BASE_DC,
     activeResources,
     travelStations,
+    openingVignette: options.openingVignette ?? options.description ?? placeholder("event opening vignette: cinematic table-ready setup before round play begins."),
     description: options.description ?? placeholder("event description: 2-4 sentences explaining situation and gameplay feel."),
     gmSummary: options.gmSummary ?? placeholder("GM summary: 2-4 practical sentences explaining how to run the event and its consequences."),
     rounds: Array.from({ length: roundCount }, (_, index) => createBlankTravelRoundTemplate(index + 1, {
