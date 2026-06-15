@@ -367,6 +367,13 @@ function normalizeTravelEventRunnerShipSelection(selection = null) {
   };
 }
 
+
+function resolveTravelEventRunnerShipActor(selection = null, options = {}) {
+  if (selection && typeof selection === "object" && typeof selection.getFlag === "function") return selection;
+  const normalized = normalizeTravelEventRunnerShipSelection(selection ?? options.ship ?? options.actor ?? options);
+  return actorCollectionValues(getActorCollection(options)).find((candidate) => (normalized.actorUuid && actorUuid(candidate) === normalized.actorUuid) || (normalized.actorId && candidate?.id === normalized.actorId)) ?? null;
+}
+
 function normalizeEventForRunner(event) {
   const rounds = Array.isArray(event?.rounds) ? event.rounds.map(normalizeRoundDefinition) : [];
   return {
@@ -417,6 +424,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
   if (!runnerValidation.ok) return { ok: false, errors: runnerValidation.errors, warnings: runnerValidation.warnings, session: null };
 
   const normalizedEvent = normalizeEventForRunner(event);
+  const shipActor = resolveTravelEventRunnerShipActor(options.ship ?? options.actor ?? options, options);
+  const shipSelection = normalizeTravelEventRunnerShipSelection(shipActor ?? options.ship ?? options.actor ?? options);
   const timestamp = nowIso(options);
   const session = {
     version: TRAVEL_EVENT_RUNNER_SESSION_VERSION,
@@ -428,9 +437,9 @@ export function createTravelEventRunnerSession(event, options = {}) {
     updatedAt: timestamp,
     completedAt: "",
     summary: null,
-    ship: normalizeTravelEventRunnerShipSelection(options),
+    ship: shipSelection,
     notes: typeof options.notes === "string" ? options.notes.trim() : "",
-    stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(options.ship ?? options.actor))
+    stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(shipActor ?? options.ship ?? options.actor))
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1472,7 +1481,8 @@ export async function startTravelEventRunnerFromPublishedEvent(idOrKey, options 
     return buildRunnerLibraryResult(false, { errors: ["No Arcflight ship or PF2E vehicle actor could be resolved for this travel event run."], warnings: launchState.warnings, launchState, session: null, entry: launchState.entry });
   }
   const sessionName = typeof options.sessionName === "string" && options.sessionName.trim() ? options.sessionName.trim() : launchState.defaultSessionName;
-  const created = createTravelEventRunnerSession(cloneData(launchState.event), { ...options, ship, notes: options.notes ?? "" });
+  const seedShipActor = actor ?? resolveTravelEventRunnerShipActor(ship, options);
+  const created = createTravelEventRunnerSession(cloneData(launchState.event), { ...options, ship: seedShipActor ?? ship, notes: options.notes ?? "" });
   if (!created.ok || !created.session) return buildRunnerLibraryResult(false, { errors: created.errors, warnings: created.warnings, launchState, session: null, entry: launchState.entry });
   created.session.name = sessionName;
   created.session.ship = ship;

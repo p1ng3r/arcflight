@@ -225,6 +225,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.selectedEventId = typeof options.selectedEventId === "string" ? options.selectedEventId : defaultSelectedEventId(options);
     this.session = options.session ?? null;
     this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
+    this.selectedShipActorId = typeof options.actorId === "string" ? options.actorId : (typeof options.shipId === "string" ? options.shipId : (typeof options.selectedActorId === "string" ? options.selectedActorId : ""));
+    this.selectedShipActorUuid = typeof options.actorUuid === "string" ? options.actorUuid : (typeof options.shipUuid === "string" ? options.shipUuid : (typeof options.selectedActorUuid === "string" ? options.selectedActorUuid : ""));
     this.statusMessage = "Select a published finalized travel event to begin.";
     this.uiState = {
       currentSessionCollapsed: options.currentSessionCollapsed !== false,
@@ -414,7 +416,19 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
-  #getSelectedShipActor() {
+  #resolveActorByIdOrUuid(actorId = "", actorUuid = "") {
+    const actors = globalThis.game?.actors;
+    if (actorId && typeof actors?.get === "function") {
+      const actor = actors.get(actorId);
+      if (actor) return actor;
+    }
+    if (actorUuid && typeof actors?.values === "function") {
+      for (const actor of actors.values()) if (actor?.uuid === actorUuid) return actor;
+    }
+    return null;
+  }
+
+  #getControlledShipActorFallback() {
     const controlled = globalThis.canvas?.tokens?.controlled ?? [];
     for (const token of controlled) {
       const actor = token?.actor;
@@ -428,17 +442,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return null;
   }
 
+  #getSelectedShipActor() {
+    return this.#resolveActorByIdOrUuid(this.selectedShipActorId, this.selectedShipActorUuid) ?? this.#getControlledShipActorFallback();
+  }
+
   #getSessionShipActor() {
     const ship = this.session?.ship ?? {};
-    const actors = globalThis.game?.actors;
-    if (ship.actorId && typeof actors?.get === "function") {
-      const actor = actors.get(ship.actorId);
-      if (actor) return actor;
-    }
-    if (ship.actorUuid && typeof actors?.values === "function") {
-      for (const actor of actors.values()) if (actor?.uuid === ship.actorUuid) return actor;
-    }
-    return this.#getSelectedShipActor();
+    return this.#resolveActorByIdOrUuid(ship.actorId, ship.actorUuid) ?? this.#getSelectedShipActor();
   }
 
   async #startSelectedEvent() {
