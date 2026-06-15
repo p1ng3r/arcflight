@@ -1,3 +1,7 @@
+import { LOCKED_CORE_ROOM_KEYS } from "./rooms/core-rooms.js";
+
+const LOCKED_CORE_ROOM_KEY_SET = new Set(LOCKED_CORE_ROOM_KEYS);
+
 function deepFreeze(value) {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -18,6 +22,8 @@ function exampleShipBuild({
   arkenginePatternKey,
   arkengineMods = [],
   rooms = [],
+  expectedCoreRoomKeys = rooms.filter((roomKey) => LOCKED_CORE_ROOM_KEY_SET.has(roomKey)),
+  expansionRooms = rooms.filter((roomKey) => !LOCKED_CORE_ROOM_KEY_SET.has(roomKey)),
   shipUpgrades = [],
   crewAssets = [],
   stationAssignmentSuggestions = {}
@@ -33,6 +39,8 @@ function exampleShipBuild({
     arkenginePatternKey,
     arkengineMods,
     rooms,
+    expectedCoreRoomKeys,
+    expansionRooms,
     shipUpgrades,
     crewAssets,
     stationAssignmentSuggestions

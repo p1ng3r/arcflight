@@ -118,11 +118,12 @@ import {
 import { CORE_HULL_PLATFORM_KEYS, CORE_HULLS } from "../../data/hulls/core-hulls.js";
 import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
 import { CORE_ARKENGINE_MOD_KEYS } from "../../data/arkengine-mods/core-arkengine-mods.js";
-import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
+import { CORE_ROOM_KEYS, LOCKED_CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
 import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_CREW_ASSET_KEYS } from "../../data/crew/core-crew-assets.js";
 import { CORE_WEAPON_KEYS, CORE_WEAPONS } from "../../data/weapons/core-weapons.js";
 import { CORE_STATIONS, STATION_KEYS } from "../../data/stations/core-stations.js";
+import { EXAMPLE_SHIP_BUILD_KEYS, getExampleShipBuild } from "../../data/example-ships.js";
 import { CORE_TRAVEL_EVENT_KEYS, getCoreTravelEvent } from "../../data/travel-events/core-travel-events.js";
 import {
   CORE_STATION_ACTION_KEYS,
@@ -630,6 +631,12 @@ export async function runFrameworkSmokeTest(options = {}) {
     check(result, "Core item sync devTools exposed", typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems === "function" && typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems === "function", true, { findMissingCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.findMissingCoreArcflightItems, syncCoreArcflightItems: typeof globalThis.game?.arcflight?.devTools?.syncCoreArcflightItems });
     check(result, "Core weapon helpers exposed", typeof globalThis.game?.arcflight?.getCoreWeapon === "function" && typeof globalThis.game?.arcflight?.getCoreWeaponKeys === "function" && typeof globalThis.game?.arcflight?.createCoreWeapon === "function" && typeof globalThis.game?.arcflight?.createWeapon === "function", true, { getCoreWeapon: typeof globalThis.game?.arcflight?.getCoreWeapon, getCoreWeaponKeys: typeof globalThis.game?.arcflight?.getCoreWeaponKeys, createCoreWeapon: typeof globalThis.game?.arcflight?.createCoreWeapon, createWeapon: typeof globalThis.game?.arcflight?.createWeapon });
     check(result, "Core weapon devTools exposed", typeof globalThis.game?.arcflight?.devTools?.getCoreWeapon === "function" && typeof globalThis.game?.arcflight?.devTools?.getCoreWeaponKeys === "function" && typeof globalThis.game?.arcflight?.devTools?.createCoreWeapon === "function" && typeof globalThis.game?.arcflight?.devTools?.createWeapon === "function", true, { getCoreWeapon: typeof globalThis.game?.arcflight?.devTools?.getCoreWeapon, getCoreWeaponKeys: typeof globalThis.game?.arcflight?.devTools?.getCoreWeaponKeys, createCoreWeapon: typeof globalThis.game?.arcflight?.devTools?.createCoreWeapon, createWeapon: typeof globalThis.game?.arcflight?.devTools?.createWeapon });
+
+    const lockedCoreRoomKeys = new Set(LOCKED_CORE_ROOM_KEYS);
+    const exampleBuilds = EXAMPLE_SHIP_BUILD_KEYS.map((buildKey) => getExampleShipBuild(buildKey));
+    check(result, "Example ship expansion room lists exclude hull-provided core rooms", exampleBuilds.every((build) => build.expansionRooms.every((roomKey) => !lockedCoreRoomKeys.has(roomKey))), "no locked core room keys in expansionRooms", exampleBuilds.map((build) => ({ key: build.key, expansionRooms: build.expansionRooms })));
+    const tradeGalleonBuild = getExampleShipBuild("trade-galleon");
+    check(result, "Example ship build metadata preserves expected hull-provided core rooms", tradeGalleonBuild.expectedCoreRoomKeys.includes("officer-wardroom") && !tradeGalleonBuild.expansionRooms.includes("officer-wardroom"), "officer-wardroom metadata only", { expectedCoreRoomKeys: tradeGalleonBuild.expectedCoreRoomKeys, expansionRooms: tradeGalleonBuild.expansionRooms });
 
     const weaponItem = await createCoreWeapon("deck-ballista");
     createdItems.push(weaponItem);
