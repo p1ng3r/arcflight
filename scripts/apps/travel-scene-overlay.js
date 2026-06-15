@@ -5,6 +5,8 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 let activeTravelSceneOverlay = null;
 
+const DEFAULT_OVERLAY_POSITION = Object.freeze({ left: 880, top: 120, width: 640 });
+
 function isOverlayRendered(app) {
   return Boolean(app && (app.rendered === true || app.element));
 }
@@ -30,7 +32,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   static DEFAULT_OPTIONS = {
     id: "arcflight-travel-scene-overlay",
     classes: ["arcflight", "arcflight-travel-scene-overlay"],
-    position: { width: 640, height: "auto" },
+    position: { ...DEFAULT_OVERLAY_POSITION, height: "auto" },
     window: { title: "Travel Scene Overlay", resizable: true }
   };
 
@@ -90,5 +92,7 @@ export function openTravelSceneOverlay(options = {}) {
     ? activeTravelSceneOverlay
     : new ArcflightTravelSceneOverlay(appOptions);
   activeTravelSceneOverlay = app;
-  return app.setContext(appOptions, { render: true, bringToFront: true });
+  const rendered = app.setContext(appOptions, { render: true, bringToFront: true });
+  if (typeof rendered.setPosition === "function") rendered.setPosition({ ...DEFAULT_OVERLAY_POSITION, ...(appOptions.position ?? {}) });
+  return rendered;
 }
