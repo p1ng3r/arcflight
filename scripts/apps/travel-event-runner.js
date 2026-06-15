@@ -3,13 +3,13 @@ import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
-  createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
   createTravelEventRunnerSummaryJournalEntry,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
   importTravelEventRunnerSessionFromJson,
-  loadPublishedTravelEventForRunner,
+  preparePublishedTravelEventRunnerLaunchState,
+  startTravelEventRunnerFromPublishedEvent,
   postTravelEventRunnerSummaryToChat,
   saveImportedTravelEventRunnerSessionToLibrary,
   renderTravelEventRunnerSummaryHtml,
@@ -452,24 +452,77 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #startSelectedEvent() {
-    const loaded = loadPublishedTravelEventForRunner(this.selectedEventId);
-    if (!loaded.ok || !loaded.event) {
-      this.statusMessage = loaded.errors?.[0] ?? "Selected published travel event could not be loaded.";
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    const launchState = preparePublishedTravelEventRunnerLaunchState({ idOrKey: this.selectedEventId });
+    if (!launchState.event) {
+      this.statusMessage = launchState.errors?.[0] ?? "Selected published travel event could not be loaded.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    if (!launchState.hasShipOptions) {
+      this.statusMessage = "No Arcflight ship or PF2E vehicle actors are available. Create or enable a vehicle actor before starting a travel event run.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    if (!launchState.ok) {
+      this.statusMessage = launchState.errors?.[0] ?? "Selected published travel event is not valid for the runner.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    if (typeof dialogV2?.prompt !== "function") {
+      this.statusMessage = "Starting a published event from the runner requires Foundry DialogV2; no runner session was created.";
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
 
-    const selectedShip = this.#getSelectedShipActor();
-    const created = createTravelEventRunnerSession(loaded.event, selectedShip ? { ship: selectedShip } : {});
-    if (!created.ok) {
-      this.statusMessage = created.errors?.[0] ?? "Selected published travel event is not valid for the runner.";
+    const fallbackShip = this.#getSelectedShipActor();
+    const preferredShipId = fallbackShip?.id ?? this.selectedShipActorId;
+    const shipOptions = launchState.shipOptions.length
+      ? launchState.shipOptions.map((ship) => `<option value="${escapeHtml(ship.id)}" data-actor-uuid="${escapeHtml(ship.uuid)}" ${(preferredShipId ? ship.id === preferredShipId : ship.selected) ? "selected" : ""}>${escapeHtml(ship.label)}</option>`).join("")
+      : `<option value="" selected>No PF2E vehicle actors available</option>`;
+
+    let formData = null;
+    try {
+      formData = await dialogV2.prompt({
+        window: { title: `Start Travel Event Run: ${escapeHtml(launchState.event.name)}` },
+        content: `<form><p>Start a local Travel Event Runner session from a cloned snapshot of <strong>${escapeHtml(launchState.event.name)}</strong>.</p><div class="form-group"><label>Ship / PF2E vehicle</label><select name="actorId" ${launchState.shipOptions.length ? "" : "disabled"}>${shipOptions}</select></div><div class="form-group"><label>Session name</label><input type="text" name="sessionName" value="${escapeHtml(launchState.defaultSessionName)}"></div><div class="form-group"><label>Session notes</label><textarea name="notes" rows="4" placeholder="Optional GM notes for this runner session"></textarea></div><p class="notes">This creates only a local runner session. It does not mutate actors, resources, proposed effects, chat, journals, combat, drafts, published events, favorites, or tags.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Start Run",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            const data = new FormData(form);
+            const select = form?.querySelector?.("[name='actorId']");
+            return {
+              actorId: String(data.get("actorId") ?? ""),
+              actorUuid: select?.selectedOptions?.[0]?.dataset?.actorUuid ?? "",
+              sessionName: String(data.get("sessionName") ?? ""),
+              notes: String(data.get("notes") ?? "")
+            };
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      formData = null;
+    }
+    if (!formData) {
+      this.statusMessage = "Run start cancelled; no runner session was created.";
+      return this.render(true);
+    }
+
+    const started = await startTravelEventRunnerFromPublishedEvent(this.selectedEventId, formData);
+    if (!started.ok || !started.session) {
+      this.statusMessage = started.errors?.[0] ?? "Selected published travel event could not be started.";
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
 
-    this.session = created.session;
+    this.selectedShipActorId = started.session.ship?.actorId ?? formData.actorId ?? this.selectedShipActorId;
+    this.selectedShipActorUuid = started.session.ship?.actorUuid ?? formData.actorUuid ?? this.selectedShipActorUuid;
+    this.session = started.session;
     this.selectedSessionKey = "";
-    this.statusMessage = `Started local runner session for ${created.session.event.name}.`;
+    this.statusMessage = `Started local runner session for ${started.session.event.name}.`;
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }
