@@ -103,6 +103,14 @@ function getPromptFromRound(round, stationKey) {
   return { stationKey };
 }
 
+function getStationCardFromRound(round, stationKey) {
+  const cardFromArray = (Array.isArray(round?.stationCards) ? round.stationCards : []).find((entry) => normalizeStationKey(entry) === stationKey);
+  if (cardFromArray && typeof cardFromArray === "object" && !Array.isArray(cardFromArray)) return { ...cardFromArray, stationKey };
+  const cardFromMap = round?.stationCards?.[stationKey];
+  if (cardFromMap && typeof cardFromMap === "object" && !Array.isArray(cardFromMap)) return { ...cardFromMap, stationKey: cardFromMap.stationKey ?? stationKey };
+  return null;
+}
+
 function normalizeRoundDefinition(round, index) {
   const activeStationKeys = Array.isArray(round?.activeStations)
     ? round.activeStations.map(normalizeStationKey).filter((stationKey) => TRAVEL_FIVE_STATION_KEYS.includes(stationKey))
@@ -112,7 +120,11 @@ function normalizeRoundDefinition(round, index) {
     title: typeof round?.title === "string" ? round.title : `Round ${index + 1}`,
     openingVignette: typeof round?.openingVignette === "string" ? round.openingVignette : "",
     activeStations: Array.from(new Set(activeStationKeys)),
-    stationPrompts: Object.fromEntries(Array.from(new Set(activeStationKeys)).map((stationKey) => [stationKey, cloneData(getPromptFromRound(round, stationKey))]))
+    stationPrompts: Object.fromEntries(Array.from(new Set(activeStationKeys)).map((stationKey) => [stationKey, cloneData(getPromptFromRound(round, stationKey))])),
+    stationCards: Array.from(new Set(activeStationKeys)).map((stationKey) => {
+      const card = getStationCardFromRound(round, stationKey);
+      return card ? cloneData(card) : cloneData(getPromptFromRound(round, stationKey));
+    })
   };
 }
 

@@ -1,6 +1,6 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
-import { createBlankOutcomeBranchesTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
+import { createBlankOutcomeBranchesTemplate, createBlankStationCardTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 
 export const TRAVEL_EVENT_BUILDER_VERSION = "0.1.0";
@@ -401,6 +401,75 @@ function createStationPromptFromRoundData(stationKey, round = {}, travelStations
   };
 }
 
+function normalizeFutureHookList(value) {
+  return Array.isArray(value) ? cloneData(value).filter((entry) => entry != null) : [];
+}
+
+function normalizeStationCardHooks(value = {}) {
+  const source = isPlainObject(value) ? value : {};
+  return {
+    rooms: normalizeFutureHookList(source.rooms),
+    shipUpgrades: normalizeFutureHookList(source.shipUpgrades),
+    arkengineMods: normalizeFutureHookList(source.arkengineMods),
+    crewAssets: normalizeFutureHookList(source.crewAssets),
+    factions: normalizeFutureHookList(source.factions)
+  };
+}
+
+function normalizeSkillApproaches(card = {}, prompt = {}) {
+  const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
+  const approaches = explicit
+    .filter((entry) => isPlainObject(entry))
+    .map((entry) => ({
+      skill: typeof entry.skill === "string" ? entry.skill : "",
+      label: typeof entry.label === "string" ? entry.label : (typeof entry.skill === "string" ? entry.skill : ""),
+      helpText: typeof entry.helpText === "string" ? entry.helpText : ""
+    }))
+    .filter((entry) => entry.skill || entry.label || entry.helpText);
+  if (approaches.length > 0) return approaches;
+  const skills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
+  return skills.slice(0, 3).map((skill) => ({
+    skill,
+    label: skill,
+    helpText: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
+  }));
+}
+
+function normalizeStationCard(stationKey, card = {}, prompt = {}) {
+  const source = isPlainObject(card) ? cloneData(card) : {};
+  const sourcePrompt = isPlainObject(prompt) ? cloneData(prompt) : {};
+  return {
+    ...createBlankStationCardTemplate(stationKey, sourcePrompt),
+    ...source,
+    stationKey,
+    stationName: source.stationName ?? sourcePrompt.stationName ?? labelForStation(stationKey),
+    problem: typeof source.problem === "string" ? source.problem : (typeof sourcePrompt.vignette === "string" ? sourcePrompt.vignette : ""),
+    skillApproaches: normalizeSkillApproaches(source, sourcePrompt),
+    rollFeedback: {
+      ...createBlankStationCardTemplate(stationKey, sourcePrompt).rollFeedback,
+      ...(isPlainObject(sourcePrompt.rollFeedback) ? sourcePrompt.rollFeedback : {}),
+      ...(isPlainObject(source.rollFeedback) ? source.rollFeedback : {})
+    },
+    hooks: normalizeStationCardHooks(source.hooks)
+  };
+}
+
+function normalizeStationCards(sourceCards, stationPrompts, activeStations) {
+  const cardsByStation = new Map();
+  if (Array.isArray(sourceCards)) {
+    for (const card of sourceCards) {
+      if (!isPlainObject(card) || !activeStations.includes(card.stationKey)) continue;
+      cardsByStation.set(card.stationKey, card);
+    }
+  } else if (isPlainObject(sourceCards)) {
+    for (const [stationKey, card] of Object.entries(sourceCards)) {
+      if (!activeStations.includes(stationKey)) continue;
+      cardsByStation.set(stationKey, { ...(isPlainObject(card) ? card : {}), stationKey });
+    }
+  }
+  return activeStations.map((stationKey) => normalizeStationCard(stationKey, cardsByStation.get(stationKey), stationPrompts[stationKey]));
+}
+
 function materializeRoundActiveStationPrompts(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
   return getRoundActiveStationKeys(round, travelStations).map((stationKey) => createStationPromptFromRoundData(stationKey, round, travelStations));
 }
@@ -436,6 +505,7 @@ function normalizeRound(round, index, travelStations) {
     ...source,
     round: Number.isInteger(source.round) && source.round > 0 ? source.round : index + 1,
     activeStations,
+    stationCards: normalizeStationCards(source.stationCards, stationPrompts, activeStations),
     stationPrompts,
     outcomeBranches: normalizeOutcomeBranches(source.outcomeBranches)
   };
@@ -1154,6 +1224,7 @@ export function normalizeTravelEventDraft(draft, options = {}) {
     baseDC: normalizeBaseDC(source.baseDC),
     activeResources: uniqueKnownValues(source.activeResources, TRAVEL_RESOURCE_KEYS, TRAVEL_RESOURCE_KEYS),
     travelStations,
+    openingVignette: typeof source.openingVignette === "string" ? source.openingVignette : (typeof source.description === "string" ? source.description : ""),
     rounds,
     finalOutcomes: normalizeFinalOutcomes(source.finalOutcomes),
     rewards: Array.isArray(source.rewards) ? cloneData(source.rewards) : [],
