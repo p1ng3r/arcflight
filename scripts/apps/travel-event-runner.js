@@ -3,13 +3,13 @@ import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
-  createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
   createTravelEventRunnerSummaryJournalEntry,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
   importTravelEventRunnerSessionFromJson,
-  loadPublishedTravelEventForRunner,
+  preparePublishedTravelEventRunnerLaunchState,
+  startTravelEventRunnerFromPublishedEvent,
   postTravelEventRunnerSummaryToChat,
   saveImportedTravelEventRunnerSessionToLibrary,
   renderTravelEventRunnerSummaryHtml,
@@ -23,7 +23,10 @@ import {
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
-  setTravelEventRunnerStationResult
+  setTravelEventRunnerStationResult,
+  updateTravelEventRunnerStationAssignment,
+  clearTravelEventRunnerStationAssignment,
+  resetTravelEventRunnerStationAssignmentToShip
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -55,7 +58,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-copy-review-html]",
   "[data-arcflight-runner-refresh-application]",
   "[data-arcflight-runner-apply-effects]",
-  "[data-arcflight-runner-undo-effect]"
+  "[data-arcflight-runner-undo-effect]",
+  "[data-arcflight-runner-clear-assignment]",
+  "[data-arcflight-runner-reset-assignment]"
 ].join(", ");
 
 
@@ -220,6 +225,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.selectedEventId = typeof options.selectedEventId === "string" ? options.selectedEventId : defaultSelectedEventId(options);
     this.session = options.session ?? null;
     this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
+    this.selectedShipActorId = typeof options.actorId === "string" ? options.actorId : (typeof options.shipId === "string" ? options.shipId : (typeof options.selectedActorId === "string" ? options.selectedActorId : ""));
+    this.selectedShipActorUuid = typeof options.actorUuid === "string" ? options.actorUuid : (typeof options.shipUuid === "string" ? options.shipUuid : (typeof options.selectedActorUuid === "string" ? options.selectedActorUuid : ""));
     this.statusMessage = "Select a published finalized travel event to begin.";
     this.uiState = {
       currentSessionCollapsed: options.currentSessionCollapsed !== false,
@@ -344,8 +351,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const eventSelect = event.target?.closest?.("[data-arcflight-runner-event-select]");
     if (eventSelect && this.element?.contains(eventSelect)) {
       this.selectedEventId = eventSelect.value ?? "";
-      this.statusMessage = "Published travel event selected. Start Event creates a local in-memory session.";
+      this.statusMessage = "Published travel event selected. Start Local Runner Session will ask for a ship/PF2E vehicle before creating a local session.";
       return this.render(true);
+    }
+
+    const assignmentSelect = event.target?.closest?.("[data-arcflight-runner-assignment-select]");
+    if (assignmentSelect && this.element?.contains(assignmentSelect)) {
+      return this.#updateStationAssignment(assignmentSelect);
     }
 
     const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
@@ -388,6 +400,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-refresh-application")) return this.#refreshApplicationPreview();
     if (target.hasAttribute("data-arcflight-runner-apply-effects")) return this.#applySelectedEffects();
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
+    if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
+    if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
   }
 
   async #toggleSessionActions() {
@@ -402,7 +416,19 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
-  #getSelectedShipActor() {
+  #resolveActorByIdOrUuid(actorId = "", actorUuid = "") {
+    const actors = globalThis.game?.actors;
+    if (actorId && typeof actors?.get === "function") {
+      const actor = actors.get(actorId);
+      if (actor) return actor;
+    }
+    if (actorUuid && typeof actors?.values === "function") {
+      for (const actor of actors.values()) if (actor?.uuid === actorUuid) return actor;
+    }
+    return null;
+  }
+
+  #getControlledShipActorFallback() {
     const controlled = globalThis.canvas?.tokens?.controlled ?? [];
     for (const token of controlled) {
       const actor = token?.actor;
@@ -416,25 +442,134 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return null;
   }
 
+  #getSelectedShipActor() {
+    return this.#resolveActorByIdOrUuid(this.selectedShipActorId, this.selectedShipActorUuid) ?? this.#getControlledShipActorFallback();
+  }
+
+  #getSessionShipActor() {
+    const ship = this.session?.ship ?? {};
+    return this.#resolveActorByIdOrUuid(ship.actorId, ship.actorUuid) ?? this.#getSelectedShipActor();
+  }
+
   async #startSelectedEvent() {
-    const loaded = loadPublishedTravelEventForRunner(this.selectedEventId);
-    if (!loaded.ok || !loaded.event) {
-      this.statusMessage = loaded.errors?.[0] ?? "Selected published travel event could not be loaded.";
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    const launchState = preparePublishedTravelEventRunnerLaunchState({ idOrKey: this.selectedEventId });
+    if (!launchState.event) {
+      this.statusMessage = launchState.errors?.[0] ?? "Selected published travel event could not be loaded.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    if (!launchState.hasShipOptions) {
+      this.statusMessage = "No Arcflight ship or PF2E vehicle actors are available. Create or enable a vehicle actor before starting a travel event run.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    if (!launchState.ok) {
+      this.statusMessage = launchState.errors?.[0] ?? "Selected published travel event is not valid for the runner.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    if (typeof dialogV2?.prompt !== "function") {
+      this.statusMessage = "Starting a published event from the runner requires Foundry DialogV2; no runner session was created.";
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
 
-    const created = createTravelEventRunnerSession(loaded.event);
-    if (!created.ok) {
-      this.statusMessage = created.errors?.[0] ?? "Selected published travel event is not valid for the runner.";
+    const fallbackShip = this.#getSelectedShipActor();
+    const preferredShipId = fallbackShip?.id ?? this.selectedShipActorId;
+    const shipOptions = launchState.shipOptions.length
+      ? launchState.shipOptions.map((ship) => `<option value="${escapeHtml(ship.id)}" data-actor-uuid="${escapeHtml(ship.uuid)}" ${(preferredShipId ? ship.id === preferredShipId : ship.selected) ? "selected" : ""}>${escapeHtml(ship.label)}</option>`).join("")
+      : `<option value="" selected>No PF2E vehicle actors available</option>`;
+
+    let formData = null;
+    try {
+      formData = await dialogV2.prompt({
+        window: { title: `Start Travel Event Run: ${escapeHtml(launchState.event.name)}` },
+        content: `<form><p>Start a local Travel Event Runner session from a cloned snapshot of <strong>${escapeHtml(launchState.event.name)}</strong>.</p><div class="form-group"><label>Ship / PF2E vehicle</label><select name="actorId" ${launchState.shipOptions.length ? "" : "disabled"}>${shipOptions}</select></div><div class="form-group"><label>Session name</label><input type="text" name="sessionName" value="${escapeHtml(launchState.defaultSessionName)}"></div><div class="form-group"><label>Session notes</label><textarea name="notes" rows="4" placeholder="Optional GM notes for this runner session"></textarea></div><p class="notes">This creates only a local runner session. It does not mutate actors, resources, proposed effects, chat, journals, combat, drafts, published events, favorites, or tags.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Start Run",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            const data = new FormData(form);
+            const select = form?.querySelector?.("[name='actorId']");
+            return {
+              actorId: String(data.get("actorId") ?? ""),
+              actorUuid: select?.selectedOptions?.[0]?.dataset?.actorUuid ?? "",
+              sessionName: String(data.get("sessionName") ?? ""),
+              notes: String(data.get("notes") ?? "")
+            };
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+    } catch (_error) {
+      formData = null;
+    }
+    if (!formData) {
+      this.statusMessage = "Run start cancelled; no runner session was created.";
+      return this.render(true);
+    }
+
+    const started = await startTravelEventRunnerFromPublishedEvent(this.selectedEventId, formData);
+    if (!started.ok || !started.session) {
+      this.statusMessage = started.errors?.[0] ?? "Selected published travel event could not be started.";
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
 
-    this.session = created.session;
+    this.selectedShipActorId = started.session.ship?.actorId ?? formData.actorId ?? this.selectedShipActorId;
+    this.selectedShipActorUuid = started.session.ship?.actorUuid ?? formData.actorUuid ?? this.selectedShipActorUuid;
+    this.session = started.session;
     this.selectedSessionKey = "";
-    this.statusMessage = `Started local runner session for ${created.session.event.name}.`;
+    this.statusMessage = `Started local runner session for ${started.session.event.name}.`;
     ui.notifications?.info?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #updateStationAssignment(select) {
+    const stationKey = select.dataset.stationKey ?? "";
+    const actorIdOrUuid = select.value ?? "";
+    const updated = actorIdOrUuid
+      ? updateTravelEventRunnerStationAssignment(this.session, stationKey, actorIdOrUuid, { ship: this.#getSessionShipActor() })
+      : clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.#getSessionShipActor() });
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station assignment was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = actorIdOrUuid ? `Assigned ${updated.assignment?.actorName ?? "actor"} to ${humanizeIdentifier(stationKey)}.` : `Cleared ${humanizeIdentifier(stationKey)} assignment.`;
+    }
+    return this.render(true);
+  }
+
+  async #clearStationAssignment(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.#getSessionShipActor() });
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station assignment was not cleared.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = `Cleared ${humanizeIdentifier(stationKey)} assignment.`;
+    }
+    return this.render(true);
+  }
+
+  async #resetStationAssignment(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = resetTravelEventRunnerStationAssignmentToShip(this.session, stationKey, { ship: this.#getSessionShipActor() });
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station assignment was not reset.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = updated.warnings?.[0] ?? `Reset ${humanizeIdentifier(stationKey)} to the selected ship assignment.`;
+      if (updated.warnings?.length) ui.notifications?.warn?.(this.statusMessage);
+    }
     return this.render(true);
   }
 
