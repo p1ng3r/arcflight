@@ -681,11 +681,47 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       statisticLabel: resolveSafeStatisticLabel(assignedActor, [selectedApproach.skill]),
       result,
       resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",
+      resultFeedback: result ? (card.rollFeedback?.[result] ?? "") : "",
+      hasResultFeedback: Boolean(result && card.rollFeedback?.[result]),
       resultOptions: TRAVEL_EVENT_RUNNER_RESULT_VALUES.map((value) => ({ value, label: humanizeIdentifier(value), selected: value === result }))
     };
   });
 }
 
+export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundResult, options = {}) {
+  if (!session || !round || !roundResult) {
+    return {
+      hasResolvedStations: false,
+      resolvedStationCount: 0,
+      unresolvedStationCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      summaryLines: [],
+      summaryText: ""
+    };
+  }
+  const stationRows = prepareStationRows(session, round, roundResult, options);
+  const resolvedRows = stationRows.filter((row) => Boolean(row.result));
+  const successCount = resolvedRows.filter((row) => ["success", "criticalSuccess"].includes(row.result)).length;
+  const failureCount = resolvedRows.filter((row) => ["failure", "criticalFailure"].includes(row.result)).length;
+  const unresolvedStationCount = stationRows.length - resolvedRows.length;
+  const summaryLines = resolvedRows.map((row) => {
+    const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
+    const approachLabel = row.selectedApproach?.label || row.selectedSkillLabel || "an approach";
+    const feedback = row.resultFeedback ? ` ${row.resultFeedback}` : "";
+    return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}`;
+  });
+  if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} success-side results, ${failureCount} failure-side results, ${unresolvedStationCount} unresolved stations.`);
+  return {
+    hasResolvedStations: resolvedRows.length > 0,
+    resolvedStationCount: resolvedRows.length,
+    unresolvedStationCount,
+    successCount,
+    failureCount,
+    summaryLines,
+    summaryText: summaryLines.join("\n")
+  };
+}
 
 function getGameSettingRunnerSessionLibrary() {
   const settings = globalThis.game?.settings;
@@ -905,6 +941,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const currentRound = activeSession?.event.rounds[activeSession.currentRoundIndex] ?? null;
   const currentRoundResult = activeSession?.roundResults[activeSession.currentRoundIndex] ?? null;
   const summary = activeSession?.status === "completed" ? summarizeTravelEventRunnerSession(activeSession, options).summary : null;
+  const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
+  const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
 
   return {
     ok: normalized.ok,
@@ -930,7 +968,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     currentRoundTitle: currentRound?.title ?? "",
     currentRoundOpeningVignette: currentRound?.openingVignette ?? "",
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
-    stations: activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [],
+    stations,
+    roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
     canAdvance: Boolean(activeSession && activeSession.currentRoundIndex < activeSession.event.rounds.length - 1 && activeSession.status !== "completed"),

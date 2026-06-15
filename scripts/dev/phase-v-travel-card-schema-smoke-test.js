@@ -5,6 +5,7 @@ import {
   exportTravelEventRunnerSessionToJson,
   importTravelEventRunnerSessionFromJson,
   prepareTravelEventRunnerState,
+  setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach
 } from "../helpers/travel-event-runner.js";
 
@@ -154,6 +155,83 @@ const importedRunnerCard = sessionImport.session.event.rounds[0].stationCards[0]
 assert(importedRunnerCard.skillApproaches[1].label === "Recall Past Crossings", "selected approach label survives runner session export/import");
 assert(importedRunnerCard.skillApproaches[1].helpText === selectedRow.selectedApproach.helpText, "selected approach How This Helps text survives runner session export/import");
 
+
+
+const twoStationEvent = JSON.parse(JSON.stringify(legacyEvent));
+twoStationEvent.key = "phase-v-two-station-feedback-smoke";
+twoStationEvent.name = "Phase V Two Station Feedback Smoke";
+twoStationEvent.travelStations = ["navigator", "engineer", "watchmaster"];
+twoStationEvent.rounds[0].activeStations = ["navigator", "engineer", "watchmaster"];
+twoStationEvent.rounds[0].stationPrompts.engineer = {
+  stationKey: "engineer",
+  stationName: "Engineer",
+  playerAction: "Keep the engine rhythm steady against the false current.",
+  suggestedSkills: ["crafting", "arcana"],
+  rollFeedback: feedback
+};
+twoStationEvent.rounds[0].stationPrompts.watchmaster = {
+  stationKey: "watchmaster",
+  stationName: "Watchmaster",
+  playerAction: "Watch for false silhouettes along the current.",
+  suggestedSkills: ["perception"],
+  rollFeedback: feedback
+};
+twoStationEvent.rounds[0].stationCards = [
+  {
+    stationKey: "navigator",
+    stationName: "Navigator",
+    problem: "The void-current is pulling the ship off its charted path.",
+    skillApproaches: [
+      { skill: "society", label: "Recall Past Crossings", helpText: "Remember route marks, port records, warning songs, and reports from crews who survived this passage." }
+    ],
+    rollFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." }
+  },
+  {
+    stationKey: "engineer",
+    stationName: "Engineer",
+    problem: "The arkengine is humming in sympathy with the false current.",
+    skillApproaches: [
+      { skill: "arcana", label: "Tune the Harmonic", helpText: "Adjust the arkengine resonance to reveal and counter the current dragging the ship off course." }
+    ],
+    rollFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." }
+  },
+  {
+    stationKey: "watchmaster",
+    stationName: "Watchmaster",
+    problem: "False silhouettes pace the ship without choosing a side.",
+    skillApproaches: [
+      { skill: "perception", label: "Track the True Shadow", helpText: "Compare reflections and movement to separate real threats from tricks of the crossing." }
+    ],
+    rollFeedback: feedback
+  }
+];
+const twoStationRunner = createTravelEventRunnerSession(twoStationEvent, {
+  ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" },
+  stationAssignments: {
+    navigator: { stationKey: "navigator", actorId: "naria", actorUuid: "Actor.naria", actorName: "Naria", source: "manual" },
+    engineer: { stationKey: "engineer", actorId: "bramble", actorUuid: "Actor.bramble", actorName: "Bramble", source: "manual" }
+  },
+  now: "2026-06-15T00:00:00.000Z"
+});
+assert(twoStationRunner.ok, `two-station runner starts: ${(twoStationRunner.errors ?? []).join(", ")}`);
+const selectedTwoStationApproach = setTravelEventRunnerStationSkillApproach(twoStationRunner.session, 0, "navigator", "society", { now: "2026-06-15T00:00:00.000Z" });
+assert(selectedTwoStationApproach.ok, `two-station navigator approach selects: ${(selectedTwoStationApproach.errors ?? []).join(", ")}`);
+const navigatorFailure = setTravelEventRunnerStationResult(selectedTwoStationApproach.session, 0, "navigator", "failure", { now: "2026-06-15T00:00:00.000Z" });
+assert(navigatorFailure.ok, `navigator failure result records: ${(navigatorFailure.errors ?? []).join(", ")}`);
+const engineerSuccess = setTravelEventRunnerStationResult(navigatorFailure.session, 0, "engineer", "success", { now: "2026-06-15T00:00:00.000Z" });
+assert(engineerSuccess.ok, `engineer success result records: ${(engineerSuccess.errors ?? []).join(", ")}`);
+const feedbackState = prepareTravelEventRunnerState(engineerSuccess.session);
+const navigatorFeedbackRow = feedbackState.stations.find((row) => row.stationKey === "navigator");
+const engineerFeedbackRow = feedbackState.stations.find((row) => row.stationKey === "engineer");
+assert(navigatorFeedbackRow.resultFeedback === "Naria remembers the warning, but not the safe bearing.", "station row exposes failure resultFeedback from rollFeedback.failure");
+assert(navigatorFeedbackRow.hasResultFeedback, "station row marks resultFeedback as available");
+assert(engineerFeedbackRow.resultFeedback === "Bramble syncs the arkengine cleanly against the song's vibration.", "station row exposes success resultFeedback from rollFeedback.success");
+assert(feedbackState.roundSummaryCard.hasResolvedStations, "round summary card appears when stations have results");
+assert(feedbackState.roundSummaryCard.resolvedStationCount === 2, "round summary includes both resolved stations");
+assert(feedbackState.roundSummaryCard.unresolvedStationCount === 1, "round summary counts unresolved stations");
+assert(feedbackState.roundSummaryCard.successCount === 1 && feedbackState.roundSummaryCard.failureCount === 1, "round summary counts success-side and failure-side results");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Naria at Navigator used Recall Past Crossings and scored Failure"), "round summary includes actor, station, result, and selected navigator approach");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Bramble at Engineer used Tune the Harmonic and scored Success"), "round summary includes actor, station, result, and selected engineer approach");
 
 const formApplied = applyTravelEventBuilderFormDataToDraft(legacyEvent, {
   openingVignette: "A form-provided opening survives normalization."

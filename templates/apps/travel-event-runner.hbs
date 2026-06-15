@@ -126,9 +126,7 @@
                   {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
                 </div>
               {{/if}}
-              {{#if rollFeedback.success}}
-                <p class="arcflight-sheet__hint"><strong>Feedback:</strong> CS {{rollFeedback.criticalSuccess}} · S {{rollFeedback.success}} · F {{rollFeedback.failure}} · CF {{rollFeedback.criticalFailure}}</p>
-              {{/if}}
+
               {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Legacy Vignette:</strong> {{vignette}}</p>{{/if}}
               <p class="arcflight-sheet__hint"><strong>Assigned:</strong> {{assignedActorName}} <strong>Source:</strong> {{assignmentSourceLabel}}</p>
               {{#if suggestedSkillsLabel}}<p><strong>Suggested Skills:</strong> {{suggestedSkillsLabel}}</p>{{/if}}
@@ -138,9 +136,17 @@
                   <button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>
                 {{/each}}
               </div>
+              {{#if hasResultFeedback}}<p class="arcflight-sheet__hint"><strong>Station Vignette:</strong> {{resultFeedback}}</p>{{/if}}
             </article>
           {{/each}}
         </div>
+        {{#if state.roundSummaryCard.hasResolvedStations}}
+          <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
+            <h2>GM Round Summary</h2>
+            <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
+            <p>{{state.roundSummaryCard.summaryText}}</p>
+          </section>
+        {{/if}}
       {{else}}
         <p class="arcflight-sheet__hint">This round has no active station prompts.</p>
       {{/if}}
