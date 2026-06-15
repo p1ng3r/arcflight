@@ -438,15 +438,17 @@ function normalizeSkillApproaches(card = {}, prompt = {}) {
 function normalizeStationCard(stationKey, card = {}, prompt = {}) {
   const source = isPlainObject(card) ? cloneData(card) : {};
   const sourcePrompt = isPlainObject(prompt) ? cloneData(prompt) : {};
+  const template = createBlankStationCardTemplate(stationKey, sourcePrompt);
+  const promptVignette = typeof sourcePrompt.vignette === "string" && !sourcePrompt.vignette.startsWith(`[${stationKey} station vignette:`) ? sourcePrompt.vignette : "";
   return {
-    ...createBlankStationCardTemplate(stationKey, sourcePrompt),
+    ...template,
     ...source,
     stationKey,
     stationName: source.stationName ?? sourcePrompt.stationName ?? labelForStation(stationKey),
-    problem: typeof source.problem === "string" ? source.problem : (typeof sourcePrompt.vignette === "string" ? sourcePrompt.vignette : ""),
+    problem: typeof source.problem === "string" ? source.problem : (promptVignette || (typeof sourcePrompt.playerAction === "string" ? sourcePrompt.playerAction : template.problem)),
     skillApproaches: normalizeSkillApproaches(source, sourcePrompt),
     rollFeedback: {
-      ...createBlankStationCardTemplate(stationKey, sourcePrompt).rollFeedback,
+      ...template.rollFeedback,
       ...(isPlainObject(sourcePrompt.rollFeedback) ? sourcePrompt.rollFeedback : {}),
       ...(isPlainObject(source.rollFeedback) ? source.rollFeedback : {})
     },
@@ -1518,6 +1520,10 @@ export function applyTravelEventBuilderFormDataToDraft(draft, formData = {}, opt
 
   if (Object.hasOwn(source, "description") || Object.hasOwn(formData, "description")) {
     nextDraft.description = coerceFormString(formData.description, source.description ?? "");
+  }
+
+  if (Object.hasOwn(source, "openingVignette") || Object.hasOwn(formData, "openingVignette")) {
+    nextDraft.openingVignette = coerceFormString(formData.openingVignette, source.openingVignette ?? "");
   }
 
   if (Object.hasOwn(source, "gmSummary") || Object.hasOwn(formData, "gmSummary")) {
