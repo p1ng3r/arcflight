@@ -111,7 +111,21 @@
                 <span>{{resultLabel}}</span>
               </header>
               <p>{{prompt}}</p>
-              {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Problem / Vignette:</strong> {{vignette}}</p>{{/if}}
+              {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
+              {{#if skillApproaches.length}}
+                <div class="arcflight-sheet__hint">
+                  <strong>Skill Approaches:</strong>
+                  <ul>
+                    {{#each skillApproaches}}
+                      <li><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if skill}} ({{skill}}){{/if}}{{#if helpText}} — {{helpText}}{{/if}}</li>
+                    {{/each}}
+                  </ul>
+                </div>
+              {{/if}}
+              {{#if rollFeedback.success}}
+                <p class="arcflight-sheet__hint"><strong>Feedback:</strong> CS {{rollFeedback.criticalSuccess}} · S {{rollFeedback.success}} · F {{rollFeedback.failure}} · CF {{rollFeedback.criticalFailure}}</p>
+              {{/if}}
+              {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Legacy Vignette:</strong> {{vignette}}</p>{{/if}}
               <p class="arcflight-sheet__hint"><strong>Assigned:</strong> {{assignedActorName}} <strong>Source:</strong> {{assignmentSourceLabel}}</p>
               {{#if suggestedSkillsLabel}}<p><strong>Suggested Skills:</strong> {{suggestedSkillsLabel}}</p>{{/if}}
               <p class="arcflight-sheet__hint"><strong>Statistic:</strong> {{statisticLabel}}</p>
