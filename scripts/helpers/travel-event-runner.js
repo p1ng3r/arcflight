@@ -141,6 +141,24 @@ function normalizeStationCardHooks(value = {}) {
   };
 }
 
+
+const FALLBACK_SKILL_APPROACH_COPY = Object.freeze({
+  arcana: { label: "Read the arcane pattern", helpText: "Use magical theory to interpret the strange forces affecting the station problem." },
+  survival: { label: "Read the environment", helpText: "Use instinct, pressure, motion, and hazard signs to find a practical way through." },
+  society: { label: "Recall known routes", helpText: "Use records, customs, stories, and prior voyages to identify a known solution." },
+  "sailing-lore": { label: "Apply voidsailor craft", helpText: "Use shiphandling tradition and starlane knowledge to choose a safe course." }
+});
+
+function fallbackSkillApproachCopy(skill) {
+  const key = String(skill ?? "").trim().toLowerCase();
+  if (FALLBACK_SKILL_APPROACH_COPY[key]) return { skill, ...FALLBACK_SKILL_APPROACH_COPY[key] };
+  return {
+    skill,
+    label: `Apply ${humanizeIdentifier(key || skill)} method`,
+    helpText: "Use this training as a practical plan to solve or bypass the station problem."
+  };
+}
+
 function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
   const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : (Array.isArray(prompt.skillApproaches) ? prompt.skillApproaches : []);
   const approaches = explicit
@@ -153,11 +171,7 @@ function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
   if (approaches.length > 0) return approaches;
   const suggestedSkills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
-  const fallback = suggestedSkills.slice(0, 3).map((skill) => ({
-    skill,
-    label: humanizeIdentifier(skill),
-    helpText: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
-  }));
+  const fallback = suggestedSkills.slice(0, 3).map((skill) => fallbackSkillApproachCopy(skill));
   if (fallback.length > 0) return fallback;
   return [{ skill: "", label: "Approach", helpText: "" }];
 }
@@ -407,6 +421,34 @@ function getActorByAssignment(assignment, options = {}) {
   return actorCollectionValues(getActorCollection(options)).find((actor) => actor?.id === assignment.actorId || actorUuid(actor) === assignment.actorUuid) ?? null;
 }
 
+
+function normalizeSelectedStationSkills(roundResult = {}, round = null) {
+  const source = isPlainObject(roundResult?.selectedStationSkills) ? roundResult.selectedStationSkills : {};
+  const activeKeys = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
+  return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, typeof source[stationKey] === "string" ? source[stationKey] : ""]));
+}
+
+function resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills = []) {
+  const approaches = Array.isArray(card?.skillApproaches) ? card.skillApproaches.filter((entry) => isPlainObject(entry) && typeof entry.skill === "string" && entry.skill.length > 0) : [];
+  const storedSkill = typeof roundResult?.selectedStationSkills?.[stationKey] === "string" ? roundResult.selectedStationSkills[stationKey] : "";
+  const selectedApproach = approaches.find((entry) => entry.skill === storedSkill) ?? approaches[0] ?? null;
+  const fallbackSkill = Array.isArray(suggestedSkills) ? suggestedSkills.find(Boolean) : "";
+  const skill = selectedApproach?.skill || fallbackSkill || "";
+  const label = selectedApproach?.label || (skill ? humanizeIdentifier(skill) : "Approach");
+  return {
+    skill,
+    label,
+    helpText: selectedApproach?.helpText ?? "",
+    source: selectedApproach ? "stationCard" : (fallbackSkill ? "suggestedSkills" : "default"),
+    options: approaches.map((entry) => ({
+      skill: entry.skill,
+      label: entry.label || humanizeIdentifier(entry.skill),
+      helpText: entry.helpText || "",
+      selected: entry.skill === skill
+    }))
+  };
+}
+
 function resolveSafeStatisticLabel(actor, suggestedSkills = []) {
   const key = Array.isArray(suggestedSkills) ? suggestedSkills.find(Boolean) : "";
   if (!key) return "No rollable statistic found";
@@ -494,7 +536,8 @@ function createRoundResults(event) {
     roundIndex: index,
     roundNumber: round.round,
     title: round.title,
-    stationResults: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, null]))
+    stationResults: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, null])),
+    selectedStationSkills: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, ""]))
   }));
 }
 
@@ -547,7 +590,8 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     const sourceResults = source?.stationResults && typeof source.stationResults === "object" && !Array.isArray(source.stationResults) ? source.stationResults : {};
     return {
       ...roundResult,
-      stationResults: Object.fromEntries(Object.keys(roundResult.stationResults).map((stationKey) => [stationKey, TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(sourceResults[stationKey]) ? sourceResults[stationKey] : null]))
+      stationResults: Object.fromEntries(Object.keys(roundResult.stationResults).map((stationKey) => [stationKey, TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(sourceResults[stationKey]) ? sourceResults[stationKey] : null])),
+      selectedStationSkills: normalizeSelectedStationSkills(source, event.rounds[index])
     };
   });
   const normalized = {
@@ -615,6 +659,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
     const assignment = assignments[stationKey] ?? emptyStationAssignment();
     const assignedActor = getActorByAssignment(assignment, options);
     const assigned = Boolean(assignment.actorId || assignment.actorUuid || assignment.actorName);
+    const selectedApproach = resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills);
     return {
       stationKey,
       stationName: card.stationName || prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey),
@@ -622,7 +667,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       vignette: prompt.vignette || "",
       stationCard: card,
       problem: card.problem || prompt.playerAction || prompt.vignette || "No station card problem provided.",
-      skillApproaches: Array.isArray(card.skillApproaches) ? card.skillApproaches : [],
+      skillApproaches: selectedApproach.options,
       rollFeedback: card.rollFeedback ?? {},
       suggestedSkills,
       suggestedSkillsLabel: suggestedSkills.map(humanizeIdentifier).join(", "),
@@ -630,14 +675,88 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       assigned,
       assignedActorName: assigned ? (assignment.actorName || "Unknown Actor") : "Unassigned",
       assignmentSourceLabel: assignment.source === "ship" ? "Ship" : (assignment.source === "override" ? "Temporary Override" : (assignment.source === "manual" ? "Manual" : "Empty")),
-      statisticLabel: resolveSafeStatisticLabel(assignedActor, suggestedSkills),
+      selectedApproach,
+      selectedSkill: selectedApproach.skill,
+      selectedSkillLabel: selectedApproach.skill ? humanizeIdentifier(selectedApproach.skill) : "No rollable statistic found",
+      statisticLabel: resolveSafeStatisticLabel(assignedActor, [selectedApproach.skill]),
       result,
       resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",
+      resultFeedback: result ? (card.rollFeedback?.[result] ?? "") : "",
+      hasResultFeedback: Boolean(result && card.rollFeedback?.[result]),
       resultOptions: TRAVEL_EVENT_RUNNER_RESULT_VALUES.map((value) => ({ value, label: humanizeIdentifier(value), selected: value === result }))
     };
   });
 }
 
+function resultTone(row) {
+  if (["success", "criticalSuccess"].includes(row?.result)) return "success";
+  if (["failure", "criticalFailure"].includes(row?.result)) return "failure";
+  return "neutral";
+}
+
+function buildTravelEventRunnerRoundSummaryText(resolvedRows, successCount, failureCount) {
+  if (!Array.isArray(resolvedRows) || resolvedRows.length === 0) return "";
+  const hasMixedResults = successCount > 0 && failureCount > 0;
+  const allSuccesses = successCount > 0 && failureCount === 0;
+  const allFailures = failureCount > 0 && successCount === 0;
+  const connectors = ["Meanwhile", "At the same time", "Before the problem can worsen", "Then"];
+  return resolvedRows.map((row, index) => {
+    const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
+    const approachLabel = row.selectedApproach?.label || row.selectedSkillLabel || "an approach";
+    const stationName = row.stationName || humanizeIdentifier(row.stationKey);
+    const resultLabel = row.resultLabel ? row.resultLabel.toLowerCase() : "unrecorded result";
+    const feedback = row.resultFeedback || `${actorName}'s work at ${stationName} changes the round's momentum.`;
+    const tone = resultTone(row);
+    if (index === 0) {
+      if (allSuccesses) return `The round steadies as ${actorName}'s ${approachLabel} at ${stationName} turns into a ${resultLabel}: ${feedback}`;
+      if (allFailures) return `The round darkens as ${actorName}'s ${approachLabel} at ${stationName} collapses into a ${resultLabel}: ${feedback}`;
+      if (tone === "failure") return `${actorName}'s ${approachLabel} at ${stationName} falters into a ${resultLabel}: ${feedback}`;
+      return `${actorName}'s ${approachLabel} at ${stationName} creates an opening with a ${resultLabel}: ${feedback}`;
+    }
+    if (hasMixedResults && tone === "success" && failureCount > 0) return `Before the problem can worsen, ${actorName}'s ${approachLabel} at ${stationName} answers with a ${resultLabel}: ${feedback}`;
+    if (hasMixedResults && tone === "failure" && successCount > 0) return `Then the pressure shifts to ${stationName}, where ${actorName}'s ${approachLabel} slips into a ${resultLabel}: ${feedback}`;
+    const connector = connectors[(index - 1) % connectors.length];
+    if (tone === "success") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} keeps control with a ${resultLabel}: ${feedback}`;
+    if (tone === "failure") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} lets the danger spread with a ${resultLabel}: ${feedback}`;
+    return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} resolves as ${resultLabel}: ${feedback}`;
+  }).join(" ");
+}
+
+export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundResult, options = {}) {
+  if (!session || !round || !roundResult) {
+    return {
+      hasResolvedStations: false,
+      resolvedStationCount: 0,
+      unresolvedStationCount: 0,
+      successCount: 0,
+      failureCount: 0,
+      summaryLines: [],
+      summaryText: ""
+    };
+  }
+  const stationRows = prepareStationRows(session, round, roundResult, options);
+  const resolvedRows = stationRows.filter((row) => Boolean(row.result));
+  const successCount = resolvedRows.filter((row) => ["success", "criticalSuccess"].includes(row.result)).length;
+  const failureCount = resolvedRows.filter((row) => ["failure", "criticalFailure"].includes(row.result)).length;
+  const unresolvedStationCount = stationRows.length - resolvedRows.length;
+  const summaryLines = resolvedRows.map((row) => {
+    const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
+    const approachLabel = row.selectedApproach?.label || row.selectedSkillLabel || "an approach";
+    const feedback = row.resultFeedback ? ` ${row.resultFeedback}` : "";
+    return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}`;
+  });
+  const summaryText = buildTravelEventRunnerRoundSummaryText(resolvedRows, successCount, failureCount);
+  if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} success-side results, ${failureCount} failure-side results, ${unresolvedStationCount} unresolved stations.`);
+  return {
+    hasResolvedStations: resolvedRows.length > 0,
+    resolvedStationCount: resolvedRows.length,
+    unresolvedStationCount,
+    successCount,
+    failureCount,
+    summaryLines,
+    summaryText
+  };
+}
 
 function getGameSettingRunnerSessionLibrary() {
   const settings = globalThis.game?.settings;
@@ -857,6 +976,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const currentRound = activeSession?.event.rounds[activeSession.currentRoundIndex] ?? null;
   const currentRoundResult = activeSession?.roundResults[activeSession.currentRoundIndex] ?? null;
   const summary = activeSession?.status === "completed" ? summarizeTravelEventRunnerSession(activeSession, options).summary : null;
+  const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
+  const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
 
   return {
     ok: normalized.ok,
@@ -882,7 +1003,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     currentRoundTitle: currentRound?.title ?? "",
     currentRoundOpeningVignette: currentRound?.openingVignette ?? "",
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
-    stations: activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [],
+    stations,
+    roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
     canAdvance: Boolean(activeSession && activeSession.currentRoundIndex < activeSession.event.rounds.length - 1 && activeSession.status !== "completed"),
@@ -903,6 +1025,25 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   if (!Object.hasOwn(normalized.session.roundResults[index].stationResults, stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number(roundIndex);
+  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const round = normalized.session.event.rounds[index];
+  if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
+  const prompt = round.stationPrompts[stationKey] ?? { stationKey };
+  const card = (Array.isArray(round.stationCards) ? round.stationCards : []).find((entry) => entry?.stationKey === stationKey) ?? normalizeStationCardForRunner(stationKey, null, prompt);
+  const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches.filter((entry) => isPlainObject(entry) && entry.skill) : [];
+  if (approaches.length > 0 && !approaches.some((entry) => entry.skill === skill)) return { ok: false, errors: [`Skill approach "${skill}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundResults[index].selectedStationSkills = normalizeSelectedStationSkills(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].selectedStationSkills[stationKey] = typeof skill === "string" ? skill : "";
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };

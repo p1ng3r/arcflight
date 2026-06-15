@@ -24,6 +24,7 @@ import {
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
+  setTravelEventRunnerStationSkillApproach,
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
   resetTravelEventRunnerStationAssignmentToShip
@@ -360,6 +361,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.#updateStationAssignment(assignmentSelect);
     }
 
+    const approachSelect = event.target?.closest?.("[data-arcflight-runner-approach-select]");
+    if (approachSelect && this.element?.contains(approachSelect)) {
+      return this.#updateStationSkillApproach(approachSelect);
+    }
+
     const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
     if (sessionSelect && this.element?.contains(sessionSelect)) {
       this.selectedSessionKey = sessionSelect.value ?? "";
@@ -524,6 +530,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.selectedSessionKey = "";
     this.statusMessage = `Started local runner session for ${started.session.event.name}.`;
     ui.notifications?.info?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #updateStationSkillApproach(select) {
+    const roundIndex = Number(select.dataset.roundIndex);
+    const stationKey = select.dataset.stationKey ?? "";
+    const skill = select.value ?? "";
+    const updated = setTravelEventRunnerStationSkillApproach(this.session, roundIndex, stationKey, skill);
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station skill approach was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = `Selected ${humanizeIdentifier(skill)} for ${humanizeIdentifier(stationKey)}.`;
+    }
     return this.render(true);
   }
 

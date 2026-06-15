@@ -52,18 +52,18 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
             "skillApproaches": [
               {
                 "skill": "survival",
-                "label": "Sound the black current",
-                "helpText": "Read pressure, drift, and false wake to keep the ship on a living route."
+                "label": "Hold the original course",
+                "helpText": "Read pressure, drift, vibration, and false wake to keep the vessel aligned when the Black Tide hides every honest bearing."
               },
               {
                 "skill": "society",
-                "label": "Recall forbidden crossing marks",
-                "helpText": "Use old route customs, warning songs, and voidsailor taboo to identify safe bearings."
+                "label": "Recall past crossings",
+                "helpText": "Remember route marks, port records, warning songs, and reports from crews who survived starless water like this."
               },
               {
                 "skill": "sailing-lore",
-                "label": "Trust tidecraft",
-                "helpText": "Name the pattern of the current and choose a line that a mundane chart would miss."
+                "label": "Chart the old tide",
+                "helpText": "Use voidsailor tidecraft to identify the Black Tide's older current pattern and plot a safe line through it."
               }
             ],
             "rollFeedback": {

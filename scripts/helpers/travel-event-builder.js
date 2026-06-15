@@ -417,6 +417,24 @@ function normalizeStationCardHooks(value = {}) {
   };
 }
 
+
+const FALLBACK_SKILL_APPROACH_COPY = Object.freeze({
+  arcana: { label: "Read the arcane pattern", helpText: "Use magical theory to interpret the strange forces affecting the station problem." },
+  survival: { label: "Read the environment", helpText: "Use instinct, pressure, motion, and hazard signs to find a practical way through." },
+  society: { label: "Recall known routes", helpText: "Use records, customs, stories, and prior voyages to identify a known solution." },
+  "sailing-lore": { label: "Apply voidsailor craft", helpText: "Use shiphandling tradition and starlane knowledge to choose a safe course." }
+});
+
+function fallbackSkillApproachCopy(skill) {
+  const key = String(skill ?? "").trim().toLowerCase();
+  if (FALLBACK_SKILL_APPROACH_COPY[key]) return { skill, ...FALLBACK_SKILL_APPROACH_COPY[key] };
+  return {
+    skill,
+    label: `Apply ${labelForStation(key || skill)} method`,
+    helpText: "Use this training as a practical plan to solve or bypass the station problem."
+  };
+}
+
 function normalizeSkillApproaches(card = {}, prompt = {}) {
   const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
   const approaches = explicit
@@ -429,11 +447,7 @@ function normalizeSkillApproaches(card = {}, prompt = {}) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
   if (approaches.length > 0) return approaches;
   const skills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
-  const fallback = skills.slice(0, 3).map((skill) => ({
-    skill,
-    label: skill,
-    helpText: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
-  }));
+  const fallback = skills.slice(0, 3).map((skill) => fallbackSkillApproachCopy(skill));
   if (fallback.length > 0) return fallback;
   return [{ skill: "", label: "Approach", helpText: "" }];
 }
@@ -1796,6 +1810,25 @@ export function analyzeTravelEventBuilderQuality(draft, options = {}) {
       const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
       if (approaches.length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card has no skill approaches.`, `${cardPath}.skillApproaches`);
       else if (approaches.length > 3) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card has more than 3 skill approaches; prefer 2–3.`, `${cardPath}.skillApproaches`);
+      const seenHelpText = new Map();
+      approaches.forEach((approach, approachIndex) => {
+        const approachPath = `${cardPath}.skillApproaches.${approachIndex}`;
+        const skill = trimmedText(approach?.skill);
+        const label = trimmedText(approach?.label);
+        const helpText = trimmedText(approach?.helpText);
+        if (!label) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing an Approach / Plan label.`, `${approachPath}.label`);
+        else if (skill && label.toLowerCase() === skill.toLowerCase()) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} label should be a plan, not just the skill name.`, `${approachPath}.label`);
+        if (!helpText) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing How This Helps text.`, `${approachPath}.helpText`);
+        else {
+          if (countWords(helpText) < 8) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} How This Helps text is short.`, `${approachPath}.helpText`);
+          const duplicateIndex = seenHelpText.get(helpText.toLowerCase());
+          if (duplicateIndex !== undefined) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} duplicates How This Helps text from approach ${duplicateIndex + 1}.`, `${approachPath}.helpText`);
+          seenHelpText.set(helpText.toLowerCase(), approachIndex);
+          const problemText = problem.toLowerCase();
+          const helpTextKey = helpText.toLowerCase();
+          if (problem && (helpTextKey === problemText || helpTextKey.includes(problemText) || problemText.includes(helpTextKey))) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} How This Helps repeats the station problem instead of explaining a method.`, `${approachPath}.helpText`);
+        }
+      });
       const feedback = isPlainObject(card.rollFeedback) ? card.rollFeedback : {};
       for (const key of ROLL_FEEDBACK_KEYS) {
         if (trimmedText(feedback[key]).length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card is missing rollFeedback.${key}.`, `${cardPath}.rollFeedback.${key}`);
