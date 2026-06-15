@@ -51,12 +51,12 @@
         </select>
       </label>
       <div class="arcflight-travel-runner-mvp__actions">
-        <button type="button" data-arcflight-start-travel-event-runner {{#if state.hasSession}}disabled{{/if}}>Start Event</button>
+        <button type="button" data-arcflight-start-travel-event-runner {{#if state.hasSession}}disabled{{/if}}>Start Local Runner Session</button>
       </div>
       {{#unless state.hasLoadableEvents}}<p class="arcflight-sheet__hint">Published library entries exist, but none are valid finalized travel events.</p>{{/unless}}
     {{else}}
       <p class="arcflight-sheet__hint">No published travel events are available. Publish a finalized event from the Published Travel Event Library before starting the runner.</p>
-      <button type="button" data-arcflight-start-travel-event-runner disabled>Start Event</button>
+      <button type="button" data-arcflight-start-travel-event-runner disabled>Start Local Runner Session</button>
     {{/if}}
   </section>
 

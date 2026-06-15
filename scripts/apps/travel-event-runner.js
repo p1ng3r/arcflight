@@ -351,7 +351,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const eventSelect = event.target?.closest?.("[data-arcflight-runner-event-select]");
     if (eventSelect && this.element?.contains(eventSelect)) {
       this.selectedEventId = eventSelect.value ?? "";
-      this.statusMessage = "Published travel event selected. Start Event creates a local in-memory session.";
+      this.statusMessage = "Published travel event selected. Start Local Runner Session will ask for a ship/PF2E vehicle before creating a local session.";
       return this.render(true);
     }
 
