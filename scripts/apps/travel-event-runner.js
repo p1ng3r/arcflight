@@ -1,6 +1,6 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
-import { openTravelSceneOverlay } from "./travel-scene-overlay.js";
+import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
@@ -331,6 +331,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
     state.sessionActionsExpanded = this.uiState.sessionActionsExpanded;
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
+    updateActiveTravelSceneOverlayContext({ session: this.session, actor: targetActor }, { render: true });
     return {
       ...context,
       state,

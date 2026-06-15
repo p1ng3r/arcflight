@@ -1,6 +1,9 @@
 <div class="arcflight-travel-scene-overlay__shell">
   <header class="arcflight-travel-scene-overlay__header">
     <p class="arcflight-sheet__hint">{{hardBoundaryHint}}</p>
+    <div class="arcflight-travel-scene-overlay__actions">
+      <button type="button" data-arcflight-refresh-travel-scene-overlay>Refresh Overlay</button>
+    </div>
     {{#if state.hasSession}}
       <h1>{{state.eventName}}</h1>
       <p><strong>{{state.roundLabel}}</strong>{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</p>
