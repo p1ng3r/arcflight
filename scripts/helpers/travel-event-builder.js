@@ -21,6 +21,7 @@ const ROUND_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_OU
 const LEGACY_FINAL_OUTCOME_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_EVENT_OUTCOMES));
 const FINAL_OUTCOME_KEYS = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 const RESOURCE_EFFECT_MODES = Object.freeze(["add", "set"]);
+const ROLL_FEEDBACK_KEYS = Object.freeze(["criticalSuccess", "success", "failure", "criticalFailure"]);
 
 const LEGACY_TO_CANONICAL_FINAL_OUTCOME_KEYS = Object.freeze({
   majorVictory: "criticalSuccess",
@@ -428,11 +429,13 @@ function normalizeSkillApproaches(card = {}, prompt = {}) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
   if (approaches.length > 0) return approaches;
   const skills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
-  return skills.slice(0, 3).map((skill) => ({
+  const fallback = skills.slice(0, 3).map((skill) => ({
     skill,
     label: skill,
     helpText: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
   }));
+  if (fallback.length > 0) return fallback;
+  return [{ skill: "", label: "Approach", helpText: "" }];
 }
 
 function normalizeStationCard(stationKey, card = {}, prompt = {}) {
@@ -470,6 +473,43 @@ function normalizeStationCards(sourceCards, stationPrompts, activeStations) {
     }
   }
   return activeStations.map((stationKey) => normalizeStationCard(stationKey, cardsByStation.get(stationKey), stationPrompts[stationKey]));
+}
+
+function summarizeStationCardHooks(hooks = {}) {
+  const normalized = normalizeStationCardHooks(hooks);
+  const counts = Object.fromEntries(Object.entries(normalized).map(([key, value]) => [key, value.length]));
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  return {
+    counts,
+    total,
+    label: total > 0 ? `${total} hooks` : "No hooks"
+  };
+}
+
+function createStationCardEditorEntry(stationKey, existingCard = {}, cardFormData = {}) {
+  const baseCard = normalizeStationCard(stationKey, existingCard, {});
+  const source = isPlainObject(cardFormData) ? cardFormData : {};
+  const skillApproachForms = Array.isArray(source.skillApproaches) ? source.skillApproaches : [];
+  const nextApproaches = baseCard.skillApproaches.map((approach, index) => {
+    const approachForm = isPlainObject(skillApproachForms[index]) ? skillApproachForms[index] : {};
+    return {
+      skill: Object.hasOwn(approachForm, "skill") ? coerceFormString(approachForm.skill, approach.skill ?? "") : approach.skill,
+      label: Object.hasOwn(approachForm, "label") ? coerceFormString(approachForm.label, approach.label ?? "") : approach.label,
+      helpText: Object.hasOwn(approachForm, "helpText") ? coerceFormString(approachForm.helpText, approach.helpText ?? "") : approach.helpText
+    };
+  });
+  if (nextApproaches.length === 0) nextApproaches.push({ skill: "", label: "Approach", helpText: "" });
+  const rollFeedbackForm = isPlainObject(source.rollFeedback) ? source.rollFeedback : {};
+  const rollFeedback = { ...baseCard.rollFeedback };
+  for (const key of ROLL_FEEDBACK_KEYS) {
+    if (Object.hasOwn(rollFeedbackForm, key)) rollFeedback[key] = coerceFormString(rollFeedbackForm[key], rollFeedback[key] ?? "");
+  }
+  return normalizeStationCard(stationKey, {
+    ...baseCard,
+    problem: Object.hasOwn(source, "problem") ? coerceFormString(source.problem, baseCard.problem ?? "") : baseCard.problem,
+    skillApproaches: nextApproaches,
+    rollFeedback
+  }, {});
 }
 
 function materializeRoundActiveStationPrompts(round = {}, travelStations = TRAVEL_FIVE_STATION_KEYS) {
@@ -537,19 +577,32 @@ function normalizeRoundEditorEntries(formData = {}) {
 
   const entries = new Map();
   for (const [key, value] of Object.entries(formData)) {
-    const match = key.match(/^rounds\.(\d+)\.(openingVignette|activeStations|stationPrompts\.[^.]+\.playerAction)$/);
+    const match = key.match(/^rounds\.(\d+)\.(openingVignette|activeStations|stationPrompts\.[^.]+\.playerAction|stationCards\.[^.]+\.(?:problem|skillApproaches\.\d+\.(?:skill|label|helpText)|rollFeedback\.(?:criticalSuccess|success|failure|criticalFailure)))$/);
     if (!match) continue;
 
     const roundNumber = Number(match[1]);
     if (!Number.isInteger(roundNumber) || roundNumber <= 0) continue;
 
-    const entry = entries.get(roundNumber) ?? { round: roundNumber, stationPrompts: {} };
+    const entry = entries.get(roundNumber) ?? { round: roundNumber, stationPrompts: {}, stationCards: {} };
     const field = match[2];
     if (field === "openingVignette") entry.openingVignette = value;
     else if (field === "activeStations") entry.activeStations = value;
     else {
-      const stationKey = field.split(".")[1];
-      entry.stationPrompts[stationKey] = { ...(entry.stationPrompts[stationKey] ?? {}), playerAction: value };
+      const parts = field.split(".");
+      const stationKey = parts[1];
+      if (parts[0] === "stationPrompts") entry.stationPrompts[stationKey] = { ...(entry.stationPrompts[stationKey] ?? {}), playerAction: value };
+      else if (parts[2] === "problem") entry.stationCards[stationKey] = { ...(entry.stationCards[stationKey] ?? {}), problem: value };
+      else if (parts[2] === "skillApproaches") {
+        const approachIndex = Number(parts[3]);
+        if (!Number.isInteger(approachIndex) || approachIndex < 0) continue;
+        const card = entry.stationCards[stationKey] ?? {};
+        const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
+        approaches[approachIndex] = { ...(approaches[approachIndex] ?? {}), [parts[4]]: value };
+        entry.stationCards[stationKey] = { ...card, skillApproaches: approaches };
+      } else if (parts[2] === "rollFeedback") {
+        const card = entry.stationCards[stationKey] ?? {};
+        entry.stationCards[stationKey] = { ...card, rollFeedback: { ...(card.rollFeedback ?? {}), [parts[3]]: value } };
+      }
     }
     entries.set(roundNumber, entry);
   }
@@ -1264,6 +1317,7 @@ export function prepareTravelEventBuilderRoundEditorState(draft, options = {}) {
     rounds: normalizedDraft.rounds.map((round) => {
       const uniqueActiveStationKeys = getRoundActiveStationKeys(round, allowedStations);
       const promptsByStation = getRoundStationPromptsByStation(round, allowedStations);
+      const cardsByStation = new Map((Array.isArray(round.stationCards) ? round.stationCards : []).filter(isPlainObject).map((card) => [card.stationKey, card]));
 
       return {
         round: round.round,
@@ -1277,6 +1331,17 @@ export function prepareTravelEventBuilderRoundEditorState(draft, options = {}) {
             stationKey,
             stationName: prompt.stationName ?? labelForStation(stationKey),
             playerAction: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
+          };
+        }),
+        stationCards: uniqueActiveStationKeys.map((stationKey) => {
+          const card = normalizeStationCard(stationKey, cardsByStation.get(stationKey), promptsByStation.get(stationKey));
+          return {
+            stationKey,
+            stationName: card.stationName ?? labelForStation(stationKey),
+            problem: typeof card.problem === "string" ? card.problem : "",
+            skillApproaches: card.skillApproaches,
+            rollFeedback: card.rollFeedback,
+            hooksSummary: summarizeStationCardHooks(card.hooks)
           };
         }),
         outcomeBranches: ROUND_OUTCOME_KEYS.map((key) => {
@@ -1485,14 +1550,18 @@ export function applyTravelEventBuilderRoundFormDataToDraft(draft, formData = {}
       ? uniqueKnownValues(coerceFormStringArray(entry.activeStations), allowedStations, [])
       : getRoundActiveStationKeys(round, allowedStations);
     const stationPromptFormData = entry.stationPrompts && typeof entry.stationPrompts === "object" && !Array.isArray(entry.stationPrompts) ? entry.stationPrompts : {};
+    const stationCardFormData = entry.stationCards && typeof entry.stationCards === "object" && !Array.isArray(entry.stationCards) ? entry.stationCards : {};
+    const existingCards = new Map((Array.isArray(round.stationCards) ? round.stationCards : []).filter(isPlainObject).map((card) => [card.stationKey, card]));
 
     const nextPrompts = requestedActiveStations.map((stationKey) => createRoundStationPromptForEditor(stationKey, existingPrompts.get(stationKey), stationPromptFormData[stationKey] ?? {}));
+    const nextCards = requestedActiveStations.map((stationKey) => createStationCardEditorEntry(stationKey, existingCards.get(stationKey), stationCardFormData[stationKey] ?? {}));
 
     return {
       ...round,
       openingVignette: Object.hasOwn(entry, "openingVignette") ? coerceFormString(entry.openingVignette, round.openingVignette ?? "") : round.openingVignette,
       activeStations: requestedActiveStations,
-      stationPrompts: { ...(isPlainObject(round.stationPrompts) ? cloneData(round.stationPrompts) : {}), ...Object.fromEntries(nextPrompts.map((prompt) => [prompt.stationKey, prompt])) }
+      stationPrompts: { ...(isPlainObject(round.stationPrompts) ? cloneData(round.stationPrompts) : {}), ...Object.fromEntries(nextPrompts.map((prompt) => [prompt.stationKey, prompt])) },
+      stationCards: nextCards
     };
   });
 
@@ -1711,6 +1780,27 @@ export function analyzeTravelEventBuilderQuality(draft, options = {}) {
         actionCounts.set(normalizedAction, [...(actionCounts.get(normalizedAction) ?? []), `${round.round}:${prompt.stationKey}`]);
       }
     });
+
+    const stationCards = Array.isArray(round.stationCards) ? round.stationCards : [];
+    const cardsByStation = new Map(stationCards.filter(isPlainObject).map((card) => [card.stationKey, card]));
+    for (const stationKey of getRoundActiveStationKeys(round, normalizedDraft.travelStations)) {
+      const cardPath = `${roundPath}.stationCards.${stationKey}`;
+      const card = cardsByStation.get(stationKey);
+      if (!isPlainObject(card)) {
+        addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card is missing.`, cardPath);
+        continue;
+      }
+      const problem = trimmedText(card.problem);
+      if (problem.length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card problem is missing.`, `${cardPath}.problem`);
+      else if (countWords(problem) < 6) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card problem is short.`, `${cardPath}.problem`);
+      const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
+      if (approaches.length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card has no skill approaches.`, `${cardPath}.skillApproaches`);
+      else if (approaches.length > 3) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card has more than 3 skill approaches; prefer 2–3.`, `${cardPath}.skillApproaches`);
+      const feedback = isPlainObject(card.rollFeedback) ? card.rollFeedback : {};
+      for (const key of ROLL_FEEDBACK_KEYS) {
+        if (trimmedText(feedback[key]).length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card is missing rollFeedback.${key}.`, `${cardPath}.rollFeedback.${key}`);
+      }
+    }
 
     if (!isPlainObject(round.outcomeBranches)) addQualityIssue(warnings, "rounds", `Round ${round.round} outcomeBranches is missing or malformed.`, `${roundPath}.outcomeBranches`);
     else {

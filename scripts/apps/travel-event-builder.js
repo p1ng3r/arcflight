@@ -438,12 +438,34 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
         input.dataset.arcflightBuilderStationPlayerAction,
         { playerAction: input.value ?? "" }
       ]));
+      const stationCards = {};
+      for (const input of Array.from(roundElement.querySelectorAll("[data-arcflight-builder-station-card-problem]"))) {
+        const stationKey = input.dataset.arcflightBuilderStationCardProblem;
+        stationCards[stationKey] = { ...(stationCards[stationKey] ?? {}), problem: input.value ?? "" };
+      }
+      for (const input of Array.from(roundElement.querySelectorAll("[data-arcflight-builder-station-card-approach]"))) {
+        const stationKey = input.dataset.arcflightBuilderStationCardApproach;
+        const index = Number(input.dataset.arcflightBuilderStationCardApproachIndex);
+        const field = input.dataset.arcflightBuilderStationCardApproachField;
+        if (!stationKey || !Number.isInteger(index) || index < 0 || !field) continue;
+        const card = stationCards[stationKey] ?? {};
+        const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
+        approaches[index] = { ...(approaches[index] ?? {}), [field]: input.value ?? "" };
+        stationCards[stationKey] = { ...card, skillApproaches: approaches };
+      }
+      for (const input of Array.from(roundElement.querySelectorAll("[data-arcflight-builder-station-card-feedback]"))) {
+        const stationKey = input.dataset.arcflightBuilderStationCardFeedback;
+        const field = input.dataset.arcflightBuilderStationCardFeedbackField;
+        const card = stationCards[stationKey] ?? {};
+        stationCards[stationKey] = { ...card, rollFeedback: { ...(card.rollFeedback ?? {}), [field]: input.value ?? "" } };
+      }
 
       return {
         round,
         openingVignette: readTextareaValue(roundElement, "[data-arcflight-builder-round-opening-vignette]"),
         activeStations: readCheckedValues(roundElement, "[data-arcflight-builder-round-active-stations]"),
-        stationPrompts
+        stationPrompts,
+        stationCards
       };
     });
 

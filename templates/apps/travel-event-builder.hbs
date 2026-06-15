@@ -336,6 +336,46 @@
             <p class="arcflight-sheet__hint">No active station prompts are selected for this round.</p>
           {{/if}}
 
+          <h3>Station Cards</h3>
+          {{#if stationCards}}
+            <div class="arcflight-travel-builder__station-prompts">
+              {{#each stationCards}}
+                <article class="arcflight-travel-builder__card arcflight-travel-builder__station-card-editor">
+                  <h4>{{stationName}}</h4>
+                  <p class="arcflight-sheet__hint">{{hooksSummary.label}}</p>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Problem</span>
+                    <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-problem="{{stationKey}}" data-arcflight-builder-round-field>{{problem}}</textarea>
+                  </label>
+                  <h5>Skill Approaches</h5>
+                  {{#each skillApproaches}}
+                    <div class="arcflight-travel-builder__station-prompt">
+                      <label class="arcflight-travel-builder__field">
+                        <span>Skill</span>
+                        <input type="text" value="{{skill}}" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="skill" data-arcflight-builder-round-field>
+                      </label>
+                      <label class="arcflight-travel-builder__field">
+                        <span>Label</span>
+                        <input type="text" value="{{label}}" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="label" data-arcflight-builder-round-field>
+                      </label>
+                      <label class="arcflight-travel-builder__field">
+                        <span>Help Text</span>
+                        <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="helpText" data-arcflight-builder-round-field>{{helpText}}</textarea>
+                      </label>
+                    </div>
+                  {{/each}}
+                  <h5>Roll Feedback</h5>
+                  <label class="arcflight-travel-builder__field"><span>Critical Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="criticalSuccess" data-arcflight-builder-round-field>{{rollFeedback.criticalSuccess}}</textarea></label>
+                  <label class="arcflight-travel-builder__field"><span>Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="success" data-arcflight-builder-round-field>{{rollFeedback.success}}</textarea></label>
+                  <label class="arcflight-travel-builder__field"><span>Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="failure" data-arcflight-builder-round-field>{{rollFeedback.failure}}</textarea></label>
+                  <label class="arcflight-travel-builder__field"><span>Critical Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="criticalFailure" data-arcflight-builder-round-field>{{rollFeedback.criticalFailure}}</textarea></label>
+                </article>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No active station cards are selected for this round.</p>
+          {{/if}}
+
           <h3>Outcome Branch Summary</h3>
           <div class="arcflight-travel-builder__cards arcflight-travel-builder__outcomes">
             {{#each outcomeBranches}}

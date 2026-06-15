@@ -153,11 +153,13 @@ function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
   if (approaches.length > 0) return approaches;
   const suggestedSkills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
-  return suggestedSkills.slice(0, 3).map((skill) => ({
+  const fallback = suggestedSkills.slice(0, 3).map((skill) => ({
     skill,
     label: humanizeIdentifier(skill),
     helpText: typeof prompt.playerAction === "string" ? prompt.playerAction : ""
   }));
+  if (fallback.length > 0) return fallback;
+  return [{ skill: "", label: "Approach", helpText: "" }];
 }
 
 function normalizeStationCardForRunner(stationKey, card = null, prompt = {}) {
@@ -605,6 +607,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
   return round.activeStations.map((stationKey) => {
     const station = getStation(stationKey) ?? {};
     const prompt = round.stationPrompts[stationKey] ?? { stationKey };
+    const card = (Array.isArray(round.stationCards) ? round.stationCards : []).find((entry) => entry?.stationKey === stationKey) ?? normalizeStationCardForRunner(stationKey, null, prompt);
     const suggestedSkills = Array.isArray(prompt.suggestedSkills) && prompt.suggestedSkills.length > 0
       ? prompt.suggestedSkills
       : (Array.isArray(station.primarySkills) ? station.primarySkills : []);
@@ -614,9 +617,13 @@ function prepareStationRows(session, round, roundResult, options = {}) {
     const assigned = Boolean(assignment.actorId || assignment.actorUuid || assignment.actorName);
     return {
       stationKey,
-      stationName: prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey),
+      stationName: card.stationName || prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey),
       prompt: prompt.playerAction || prompt.vignette || "No station prompt provided.",
       vignette: prompt.vignette || "",
+      stationCard: card,
+      problem: card.problem || prompt.playerAction || prompt.vignette || "No station card problem provided.",
+      skillApproaches: Array.isArray(card.skillApproaches) ? card.skillApproaches : [],
+      rollFeedback: card.rollFeedback ?? {},
       suggestedSkills,
       suggestedSkillsLabel: suggestedSkills.map(humanizeIdentifier).join(", "),
       assignment,
