@@ -134,6 +134,10 @@ import {
   recordShipTravelStationResult,
   startShipTravelEvent
 } from "../helpers/ship-travel-event-state.js";
+import { CORE_HULL_PLATFORM_KEYS } from "../../data/hulls/core-hulls.js";
+import { CORE_ARKENGINE_KEYS } from "../../data/arkengines/core-arkengines.js";
+import { CORE_ROOM_KEYS } from "../../data/rooms/core-rooms.js";
+import { CORE_SHIP_UPGRADE_KEYS } from "../../data/ship-upgrades/core-ship-upgrades.js";
 import { CORE_WEAPON_KEYS, getCoreWeapon, getCoreWeaponKeys } from "../../data/weapons/core-weapons.js";
 import { CORE_TRAVEL_EVENTS, CORE_TRAVEL_EVENT_KEYS, getCoreTravelEvent, getCoreTravelEventKeys, getCoreTravelEvents, getCoreTravelEventsByCategory } from "../../data/travel-events/core-travel-events.js";
 import {
@@ -146,8 +150,8 @@ import {
   getStationActionOutcome,
   previewStationActionOutcome
 } from "../../data/station-actions/core-station-actions.js";
-import { createCoreWeapon, createWeapon } from "../documents/creation.js";
-import { canSpendShipActionPoints, getShipActionEconomy, getShipTravelResources, getTravelStationKeys, installWeapon, isTravelStationKey, previewShipTravelResourceChange, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints, updateShipTravelResources } from "../documents/ships.js";
+import { createCoreArkengine, createCoreHull, createCoreRoom, createCoreShipUpgrade, createCoreWeapon, createWeapon } from "../documents/creation.js";
+import { assignStation, canSpendShipActionPoints, getArcflightShipData, getShipActionEconomy, getShipTravelResources, getTravelStationKeys, installArkengine, installHull, installWeapon, isTravelStationKey, previewShipTravelResourceChange, removeInstalledWeapon, resetShipActionEconomy, spendShipActionPoints, updateShipTravelResources } from "../documents/ships.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "../helpers/install-validation-preview.js";
 import { clearStationActionHistory, executeStationAction, getStationActionRollOptions, getStationActionState, previewStationAction, previewStationActionRoll, resolveAssignedActorStatistic, rollStationAction } from "../helpers/station-action-execution.js";
 import { getPf2eRollTotal, getPf2eStatisticCandidateKeys, isRollablePf2eStatistic, normalizePf2eStatisticKey, resolvePf2eActorStatistic, rollPf2eStatistic } from "../helpers/pf2e-statistics.js";
