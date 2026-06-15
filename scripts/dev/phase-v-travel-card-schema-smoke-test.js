@@ -230,8 +230,13 @@ assert(feedbackState.roundSummaryCard.hasResolvedStations, "round summary card a
 assert(feedbackState.roundSummaryCard.resolvedStationCount === 2, "round summary includes both resolved stations");
 assert(feedbackState.roundSummaryCard.unresolvedStationCount === 1, "round summary counts unresolved stations");
 assert(feedbackState.roundSummaryCard.successCount === 1 && feedbackState.roundSummaryCard.failureCount === 1, "round summary counts success-side and failure-side results");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Naria at Navigator used Recall Past Crossings and scored Failure"), "round summary includes actor, station, result, and selected navigator approach");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Bramble at Engineer used Tune the Harmonic and scored Success"), "round summary includes actor, station, result, and selected engineer approach");
+assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Naria at Navigator used Recall Past Crossings and scored Failure")), "round summary lines include actor, station, result, and selected navigator approach");
+assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Bramble at Engineer used Tune the Harmonic and scored Success")), "round summary lines include actor, station, result, and selected engineer approach");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Naria") && feedbackState.roundSummaryCard.summaryText.includes("Bramble"), "round summary prose includes both actor names");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Naria remembers the warning, but not the safe bearing."), "round summary prose includes navigator failure feedback");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Bramble syncs the arkengine cleanly against the song's vibration."), "round summary prose includes engineer success feedback");
+assert(feedbackState.roundSummaryCard.summaryText !== feedbackState.roundSummaryCard.summaryLines.join("\n"), "round summary prose is not just raw summary lines joined together");
+assert(!feedbackState.roundSummaryCard.summaryText.includes("used Recall Past Crossings and scored Failure"), "round summary prose avoids report-style used/scored phrasing");
 
 const formApplied = applyTravelEventBuilderFormDataToDraft(legacyEvent, {
   openingVignette: "A form-provided opening survives normalization."

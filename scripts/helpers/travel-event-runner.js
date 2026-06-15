@@ -688,6 +688,40 @@ function prepareStationRows(session, round, roundResult, options = {}) {
   });
 }
 
+function resultTone(row) {
+  if (["success", "criticalSuccess"].includes(row?.result)) return "success";
+  if (["failure", "criticalFailure"].includes(row?.result)) return "failure";
+  return "neutral";
+}
+
+function buildTravelEventRunnerRoundSummaryText(resolvedRows, successCount, failureCount) {
+  if (!Array.isArray(resolvedRows) || resolvedRows.length === 0) return "";
+  const hasMixedResults = successCount > 0 && failureCount > 0;
+  const allSuccesses = successCount > 0 && failureCount === 0;
+  const allFailures = failureCount > 0 && successCount === 0;
+  const connectors = ["Meanwhile", "At the same time", "Before the problem can worsen", "Then"];
+  return resolvedRows.map((row, index) => {
+    const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
+    const approachLabel = row.selectedApproach?.label || row.selectedSkillLabel || "an approach";
+    const stationName = row.stationName || humanizeIdentifier(row.stationKey);
+    const resultLabel = row.resultLabel ? row.resultLabel.toLowerCase() : "unrecorded result";
+    const feedback = row.resultFeedback || `${actorName}'s work at ${stationName} changes the round's momentum.`;
+    const tone = resultTone(row);
+    if (index === 0) {
+      if (allSuccesses) return `The round steadies as ${actorName}'s ${approachLabel} at ${stationName} turns into a ${resultLabel}: ${feedback}`;
+      if (allFailures) return `The round darkens as ${actorName}'s ${approachLabel} at ${stationName} collapses into a ${resultLabel}: ${feedback}`;
+      if (tone === "failure") return `${actorName}'s ${approachLabel} at ${stationName} falters into a ${resultLabel}: ${feedback}`;
+      return `${actorName}'s ${approachLabel} at ${stationName} creates an opening with a ${resultLabel}: ${feedback}`;
+    }
+    if (hasMixedResults && tone === "success" && failureCount > 0) return `Before the problem can worsen, ${actorName}'s ${approachLabel} at ${stationName} answers with a ${resultLabel}: ${feedback}`;
+    if (hasMixedResults && tone === "failure" && successCount > 0) return `Then the pressure shifts to ${stationName}, where ${actorName}'s ${approachLabel} slips into a ${resultLabel}: ${feedback}`;
+    const connector = connectors[(index - 1) % connectors.length];
+    if (tone === "success") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} keeps control with a ${resultLabel}: ${feedback}`;
+    if (tone === "failure") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} lets the danger spread with a ${resultLabel}: ${feedback}`;
+    return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} resolves as ${resultLabel}: ${feedback}`;
+  }).join(" ");
+}
+
 export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundResult, options = {}) {
   if (!session || !round || !roundResult) {
     return {
@@ -711,6 +745,7 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
     const feedback = row.resultFeedback ? ` ${row.resultFeedback}` : "";
     return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}`;
   });
+  const summaryText = buildTravelEventRunnerRoundSummaryText(resolvedRows, successCount, failureCount);
   if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} success-side results, ${failureCount} failure-side results, ${unresolvedStationCount} unresolved stations.`);
   return {
     hasResolvedStations: resolvedRows.length > 0,
@@ -719,7 +754,7 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
     successCount,
     failureCount,
     summaryLines,
-    summaryText: summaryLines.join("\n")
+    summaryText
   };
 }
 
