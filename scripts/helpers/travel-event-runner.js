@@ -407,6 +407,34 @@ function getActorByAssignment(assignment, options = {}) {
   return actorCollectionValues(getActorCollection(options)).find((actor) => actor?.id === assignment.actorId || actorUuid(actor) === assignment.actorUuid) ?? null;
 }
 
+
+function normalizeSelectedStationSkills(roundResult = {}, round = null) {
+  const source = isPlainObject(roundResult?.selectedStationSkills) ? roundResult.selectedStationSkills : {};
+  const activeKeys = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
+  return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, typeof source[stationKey] === "string" ? source[stationKey] : ""]));
+}
+
+function resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills = []) {
+  const approaches = Array.isArray(card?.skillApproaches) ? card.skillApproaches.filter((entry) => isPlainObject(entry) && typeof entry.skill === "string" && entry.skill.length > 0) : [];
+  const storedSkill = typeof roundResult?.selectedStationSkills?.[stationKey] === "string" ? roundResult.selectedStationSkills[stationKey] : "";
+  const selectedApproach = approaches.find((entry) => entry.skill === storedSkill) ?? approaches[0] ?? null;
+  const fallbackSkill = Array.isArray(suggestedSkills) ? suggestedSkills.find(Boolean) : "";
+  const skill = selectedApproach?.skill || fallbackSkill || "";
+  const label = selectedApproach?.label || (skill ? humanizeIdentifier(skill) : "Approach");
+  return {
+    skill,
+    label,
+    helpText: selectedApproach?.helpText ?? "",
+    source: selectedApproach ? "stationCard" : (fallbackSkill ? "suggestedSkills" : "default"),
+    options: approaches.map((entry) => ({
+      skill: entry.skill,
+      label: entry.label || humanizeIdentifier(entry.skill),
+      helpText: entry.helpText || "",
+      selected: entry.skill === skill
+    }))
+  };
+}
+
 function resolveSafeStatisticLabel(actor, suggestedSkills = []) {
   const key = Array.isArray(suggestedSkills) ? suggestedSkills.find(Boolean) : "";
   if (!key) return "No rollable statistic found";
@@ -494,7 +522,8 @@ function createRoundResults(event) {
     roundIndex: index,
     roundNumber: round.round,
     title: round.title,
-    stationResults: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, null]))
+    stationResults: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, null])),
+    selectedStationSkills: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, ""]))
   }));
 }
 
@@ -547,7 +576,8 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     const sourceResults = source?.stationResults && typeof source.stationResults === "object" && !Array.isArray(source.stationResults) ? source.stationResults : {};
     return {
       ...roundResult,
-      stationResults: Object.fromEntries(Object.keys(roundResult.stationResults).map((stationKey) => [stationKey, TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(sourceResults[stationKey]) ? sourceResults[stationKey] : null]))
+      stationResults: Object.fromEntries(Object.keys(roundResult.stationResults).map((stationKey) => [stationKey, TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(sourceResults[stationKey]) ? sourceResults[stationKey] : null])),
+      selectedStationSkills: normalizeSelectedStationSkills(source, event.rounds[index])
     };
   });
   const normalized = {
@@ -615,6 +645,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
     const assignment = assignments[stationKey] ?? emptyStationAssignment();
     const assignedActor = getActorByAssignment(assignment, options);
     const assigned = Boolean(assignment.actorId || assignment.actorUuid || assignment.actorName);
+    const selectedApproach = resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills);
     return {
       stationKey,
       stationName: card.stationName || prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey),
@@ -622,7 +653,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       vignette: prompt.vignette || "",
       stationCard: card,
       problem: card.problem || prompt.playerAction || prompt.vignette || "No station card problem provided.",
-      skillApproaches: Array.isArray(card.skillApproaches) ? card.skillApproaches : [],
+      skillApproaches: selectedApproach.options,
       rollFeedback: card.rollFeedback ?? {},
       suggestedSkills,
       suggestedSkillsLabel: suggestedSkills.map(humanizeIdentifier).join(", "),
@@ -630,7 +661,10 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       assigned,
       assignedActorName: assigned ? (assignment.actorName || "Unknown Actor") : "Unassigned",
       assignmentSourceLabel: assignment.source === "ship" ? "Ship" : (assignment.source === "override" ? "Temporary Override" : (assignment.source === "manual" ? "Manual" : "Empty")),
-      statisticLabel: resolveSafeStatisticLabel(assignedActor, suggestedSkills),
+      selectedApproach,
+      selectedSkill: selectedApproach.skill,
+      selectedSkillLabel: selectedApproach.skill ? humanizeIdentifier(selectedApproach.skill) : "No rollable statistic found",
+      statisticLabel: resolveSafeStatisticLabel(assignedActor, [selectedApproach.skill]),
       result,
       resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",
       resultOptions: TRAVEL_EVENT_RUNNER_RESULT_VALUES.map((value) => ({ value, label: humanizeIdentifier(value), selected: value === result }))
@@ -903,6 +937,25 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   if (!Object.hasOwn(normalized.session.roundResults[index].stationResults, stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number(roundIndex);
+  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const round = normalized.session.event.rounds[index];
+  if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
+  const prompt = round.stationPrompts[stationKey] ?? { stationKey };
+  const card = (Array.isArray(round.stationCards) ? round.stationCards : []).find((entry) => entry?.stationKey === stationKey) ?? normalizeStationCardForRunner(stationKey, null, prompt);
+  const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches.filter((entry) => isPlainObject(entry) && entry.skill) : [];
+  if (approaches.length > 0 && !approaches.some((entry) => entry.skill === skill)) return { ok: false, errors: [`Skill approach "${skill}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundResults[index].selectedStationSkills = normalizeSelectedStationSkills(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].selectedStationSkills[stationKey] = typeof skill === "string" ? skill : "";
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };

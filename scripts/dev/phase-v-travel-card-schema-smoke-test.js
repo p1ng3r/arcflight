@@ -1,6 +1,12 @@
 import { applyTravelEventBuilderFormDataToDraft, applyTravelEventBuilderRoundFormDataToDraft, finalizeTravelEventDraft, normalizeTravelEventDraft } from "../helpers/travel-event-builder.js";
 import { exportTravelEventDraftToJson, importTravelEventDraftFromJson } from "../helpers/travel-event-builder-io.js";
-import { createTravelEventRunnerSession } from "../helpers/travel-event-runner.js";
+import {
+  createTravelEventRunnerSession,
+  exportTravelEventRunnerSessionToJson,
+  importTravelEventRunnerSessionFromJson,
+  prepareTravelEventRunnerState,
+  setTravelEventRunnerStationSkillApproach
+} from "../helpers/travel-event-runner.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -120,6 +126,23 @@ const editedRunner = createTravelEventRunnerSession(finalized.event, {
 });
 assert(editedRunner.ok, `runner session starts from edited event: ${(editedRunner.errors ?? []).join(", ")}`);
 assert(editedRunner.session.event.rounds[0].stationCards[0].problem === editedCard.problem, "runner session exposes edited station cards");
+const runnerState = prepareTravelEventRunnerState(editedRunner.session);
+const stationRow = runnerState.stations.find((row) => row.stationKey === "navigator");
+assert(stationRow.skillApproaches.length === 2, "runner station row exposes both station-card approaches");
+assert(stationRow.skillApproaches.some((approach) => approach.skill === "survival"), "runner station row exposes survival approach");
+assert(stationRow.skillApproaches.some((approach) => approach.skill === "society"), "runner station row exposes society approach");
+const selectedSociety = setTravelEventRunnerStationSkillApproach(editedRunner.session, 0, "navigator", "society", { now: "2026-06-15T00:00:00.000Z" });
+assert(selectedSociety.ok, `station approach updates to society: ${(selectedSociety.errors ?? []).join(", ")}`);
+const selectedState = prepareTravelEventRunnerState(selectedSociety.session);
+const selectedRow = selectedState.stations.find((row) => row.stationKey === "navigator");
+assert(selectedRow.selectedSkill === "society", "prepared station row uses society as selected skill");
+assert(selectedRow.statisticLabel.includes("Society") || selectedRow.selectedSkillLabel === "Society", "prepared station row uses society as selected statistic label");
+const sessionExport = exportTravelEventRunnerSessionToJson(selectedSociety.session, { now: "2026-06-15T00:00:00.000Z" });
+assert(sessionExport.ok, `runner session exports selected approach: ${(sessionExport.errors ?? []).join(", ")}`);
+const sessionImport = importTravelEventRunnerSessionFromJson(sessionExport.json, { now: "2026-06-15T00:00:00.000Z" });
+assert(sessionImport.ok, `runner session imports selected approach: ${(sessionImport.errors ?? []).join(", ")}`);
+assert(sessionImport.session.roundResults[0].selectedStationSkills.navigator === "society", "selected station skill survives runner session export/import");
+
 
 const formApplied = applyTravelEventBuilderFormDataToDraft(legacyEvent, {
   openingVignette: "A form-provided opening survives normalization."
