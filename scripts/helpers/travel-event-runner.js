@@ -1030,16 +1030,33 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       vignette: "",
       stations: [],
       hasStations: false,
-      gmRoundSummaryText: ""
+      gmRoundSummaryText: "",
+      unresolvedStationCount: 0,
+      unassignedStationCount: 0,
+      unselectedApproachCount: 0,
+      unresolvedResultCount: 0,
+      roundCompletionState: "noSession",
+      gmGuidanceTitle: "",
+      gmGuidanceText: "",
+      gmGuidanceSteps: [],
+      guidanceStation: null,
+      guidanceStationName: "",
+      hasGuidanceStation: false,
+      hasGmGuidanceSteps: false,
+      hasGmGuidance: false,
+      currentRoundIndex: -1,
+      isCompleted: false
     };
   }
 
   const roundNumber = runnerState.currentRoundNumber || 0;
   const roundTitle = runnerState.currentRoundTitle || "";
+  const assignmentRowsByStation = new Map((runnerState.stationAssignments?.rows ?? []).map((row) => [row.stationKey, row]));
   const stations = (runnerState.stations ?? []).map((row) => {
     const hasAssignment = row.assigned === true;
     const hasSelectedApproach = row.selectedApproach?.isSelected === true;
     const hasResult = Boolean(row.result);
+    const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
     const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
     const station = {
       stationKey: row.stationKey,
@@ -1056,7 +1073,17 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasAssignment,
       hasSelectedApproach,
       hasResult,
-      result: row.result || ""
+      result: row.result || "",
+      assignmentOptions: assignmentRow?.options ?? [],
+      hasAssignmentOptions: (assignmentRow?.options ?? []).length > 0,
+      selectedAssignmentValue: row.assignment?.actorUuid || row.assignment?.actorId || "",
+      canClearAssignment: assignmentRow?.canClear === true,
+      canResetAssignment: true,
+      approachOptions: row.skillApproaches ?? [],
+      hasApproachOptions: (row.skillApproaches ?? []).length > 0,
+      selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
+      resultOptions: row.resultOptions ?? [],
+      hasResultOptions: (row.resultOptions ?? []).length > 0
     };
     station.classes = [
       "arcflight-travel-scene-overlay__station-card",
@@ -1079,6 +1106,47 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
   const assignedStationCount = stations.filter((station) => station.hasAssignment).length;
   const selectedApproachCount = stations.filter((station) => station.hasSelectedApproach).length;
   const recordedResultCount = stations.filter((station) => station.hasResult).length;
+  const unassignedStationCount = stationCount - assignedStationCount;
+  const unselectedApproachCount = stationCount - selectedApproachCount;
+  const unresolvedResultCount = stationCount - recordedResultCount;
+  const unresolvedStationCount = stations.filter((station) => !station.hasAssignment || !station.hasSelectedApproach || !station.hasResult).length;
+  const roundCompletionState = stationCount <= 0
+    ? "noStations"
+    : (unresolvedStationCount <= 0 ? "resolved" : "unresolved");
+  let guidanceTargetStation = null;
+  let guidanceStationName = "";
+  let gmGuidanceTitle = "GM Round Guidance";
+  let gmGuidanceText = "";
+  let gmGuidanceSteps = [];
+
+  if (stationCount <= 0) {
+    gmGuidanceTitle = "No Active Station Prompts";
+    gmGuidanceText = "No station prompts are active for this round. Review the round vignette and runner state before advancing.";
+    gmGuidanceSteps = ["Review the round summary", "Confirm the runner has the correct round loaded", "Advance only if this round intentionally has no station prompts"];
+  } else if (unassignedStationCount > 0) {
+    guidanceTargetStation = stations.find((station) => !station.hasAssignment) ?? null;
+    guidanceStationName = guidanceTargetStation?.stationName ?? "the first unassigned station";
+    gmGuidanceTitle = "Assign Crew to Stations";
+    gmGuidanceText = `${unassignedStationCount} station${unassignedStationCount === 1 ? " needs" : "s need"} an assigned crew member or actor. Start with ${guidanceStationName}.`;
+    gmGuidanceSteps = ["Review guidance station", "Confirm assignment", "Refresh overlay after runner changes", "Then confirm approaches"];
+  } else if (unselectedApproachCount > 0) {
+    guidanceTargetStation = stations.find((station) => !station.hasSelectedApproach) ?? null;
+    guidanceStationName = guidanceTargetStation?.stationName ?? "the first station without an approach";
+    gmGuidanceTitle = "Confirm Station Approaches";
+    gmGuidanceText = `${unselectedApproachCount} station${unselectedApproachCount === 1 ? " needs" : "s need"} a selected approach. Start with ${guidanceStationName}.`;
+    gmGuidanceSteps = ["Review guidance station", "Confirm approach", "Refresh overlay after runner changes", "Then resolve station results"];
+  } else if (unresolvedResultCount > 0) {
+    guidanceTargetStation = stations.find((station) => !station.hasResult) ?? null;
+    guidanceStationName = guidanceTargetStation?.stationName ?? "the first station without a result";
+    gmGuidanceTitle = "Resolve Station Results";
+    gmGuidanceText = `${unresolvedResultCount} station result${unresolvedResultCount === 1 ? " is" : "s are"} still unrecorded. Start with ${guidanceStationName}.`;
+    gmGuidanceSteps = ["Review guidance station", "Resolve result", "Refresh overlay after runner changes", "Repeat until all station results are recorded"];
+  } else {
+    gmGuidanceTitle = "Round Appears Resolved";
+    gmGuidanceText = "All active stations have assignments, approaches, and recorded results. The GM can advance or apply round consequences in the runner.";
+    gmGuidanceSteps = ["Review final station outcomes", "Apply or narrate round consequences", "Advance the runner when ready", "Refresh overlay after runner changes"];
+  }
+
   const gmRoundSummaryText = runnerState.roundSummaryCard?.summaryText || "";
   const roundStateSummary = gmRoundSummaryText || `${recordedResultCount} of ${stationCount} stations have recorded results.`;
 
@@ -1089,6 +1157,8 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     roundNumber,
     roundTitle,
     roundLabel: roundNumber ? `Round ${roundNumber}` : "No active round",
+    currentRoundIndex: runnerState.session?.currentRoundIndex ?? -1,
+    isCompleted: runnerState.isCompleted === true,
     vignette: runnerState.currentRoundOpeningVignette || "",
     stations,
     hasStations: stationCount > 0,
@@ -1099,6 +1169,19 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     assignedStationCount,
     selectedApproachCount,
     recordedResultCount,
+    unresolvedStationCount,
+    unassignedStationCount,
+    unselectedApproachCount,
+    unresolvedResultCount,
+    roundCompletionState,
+    gmGuidanceTitle,
+    gmGuidanceText,
+    gmGuidanceSteps,
+    guidanceStation: guidanceTargetStation,
+    guidanceStationName,
+    hasGuidanceStation: Boolean(guidanceTargetStation),
+    hasGmGuidanceSteps: gmGuidanceSteps.length > 0,
+    hasGmGuidance: Boolean(gmGuidanceTitle || gmGuidanceText || gmGuidanceSteps.length > 0),
     roundStateSummary,
     gmRoundSummaryText
   };

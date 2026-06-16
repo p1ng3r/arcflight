@@ -1350,6 +1350,7 @@
 
 .arcflight-travel-scene-overlay__header,
 .arcflight-travel-scene-overlay__summary,
+.arcflight-travel-scene-overlay__gm-guidance,
 .arcflight-travel-scene-overlay__focus,
 .arcflight-travel-scene-overlay__panel,
 .arcflight-travel-scene-overlay__station-card {
@@ -1412,6 +1413,64 @@
   margin: 0.1rem 0 0;
   font-size: 1.15rem;
   font-weight: 800;
+}
+
+
+.arcflight-travel-scene-overlay__gm-guidance {
+  display: grid;
+  gap: 0.55rem;
+  border-color: rgba(255, 210, 120, 0.42);
+  border-left: 0.3rem solid rgba(255, 210, 120, 0.76);
+  background: linear-gradient(135deg, rgba(72, 53, 22, 0.36), rgba(0, 0, 0, 0.18));
+}
+
+.arcflight-travel-scene-overlay__gm-guidance h2,
+.arcflight-travel-scene-overlay__gm-guidance p {
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-copy {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts div {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.4rem;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts dd {
+  margin: 0.05rem 0 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-steps {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-steps li {
+  margin: 0;
 }
 
 .arcflight-travel-scene-overlay__focus {
@@ -1528,13 +1587,60 @@
   margin: 0;
 }
 
+.arcflight-travel-scene-overlay__station-controls {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.4rem;
+  padding: 0.55rem;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.arcflight-travel-scene-overlay__station-controls label {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__station-controls label span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  opacity: 0.82;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__station-controls select {
+  width: 100%;
+}
+
+.arcflight-travel-scene-overlay__station-control-actions,
+.arcflight-travel-scene-overlay__result-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.arcflight-travel-scene-overlay__station-control-actions button,
+.arcflight-travel-scene-overlay__result-controls button {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
+.arcflight-travel-scene-overlay__result-button--selected {
+  border-color: rgba(118, 210, 145, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(118, 210, 145, 0.45);
+  font-weight: 800;
+}
+
 @media (max-width: 680px) {
   .arcflight-travel-scene-overlay__station-list {
     grid-template-columns: 1fr;
   }
 
   .arcflight-travel-scene-overlay__station-card-facts,
-  .arcflight-travel-scene-overlay__summary-counts {
+  .arcflight-travel-scene-overlay__summary-counts,
+  .arcflight-travel-scene-overlay__gm-guidance-counts {
     grid-template-columns: 1fr;
   }
 }
