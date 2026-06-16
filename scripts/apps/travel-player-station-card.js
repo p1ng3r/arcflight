@@ -5,6 +5,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const activeTravelPlayerStationCards = new Map();
 const TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION = "openTravelPlayerStationCard";
+const TRAVEL_PLAYER_STATION_CARD_SOCKET_TEST_ACTION = "arcflightSocketDiagnostic";
 
 function sanitizeText(value) {
   return typeof value === "string" ? value : "";
@@ -123,6 +124,70 @@ function emitTravelPlayerStationCard(state, targetUserIds) {
   return { ok: true, errors: [], payload, targetUserIds: payload.targetUserIds, state: payload.state };
 }
 
+export function sendTravelPlayerStationCardSocketDiagnostic(options = {}) {
+  const users = getActiveNonGmUsers();
+  const targetUserIds = users.map((user) => user.id);
+  const payload = {
+    action: TRAVEL_PLAYER_STATION_CARD_SOCKET_TEST_ACTION,
+    targetUserIds,
+    message: "Arcflight socket diagnostic",
+    sentAt: Date.now()
+  };
+
+  console.warn("Arcflight | Sending socket diagnostic.", {
+    targetUserIds,
+    users
+  });
+
+  globalThis.game?.socket?.emit?.("module.arcflight", payload);
+
+  return {
+    ok: targetUserIds.length > 0,
+    sentRecipients: targetUserIds.length,
+    targetUserIds,
+    users,
+    payload,
+    errors: targetUserIds.length > 0 ? [] : ["No active non-GM users found."]
+  };
+}
+
+export function broadcastTravelPlayerStationCardToAllPlayers(session, stationKey, options = {}) {
+  const state = sanitizeTravelPlayerStationCardState(prepareTravelPlayerStationCardState(session, stationKey, options));
+  const users = getActiveNonGmUsers();
+  const targetUserIds = users.map((user) => user.id);
+
+  if (targetUserIds.length === 0) {
+    return {
+      ok: false,
+      errors: ["No active non-GM users found."],
+      sentRecipients: 0,
+      targetUserIds,
+      users,
+      state
+    };
+  }
+
+  console.warn("Arcflight | Force-broadcasting player station card.", {
+    stationKey,
+    targetUserIds,
+    users,
+    state
+  });
+
+  const emitted = emitTravelPlayerStationCard(state, targetUserIds);
+
+  return {
+    ...emitted,
+    ok: emitted.ok,
+    sentRecipients: emitted.ok ? targetUserIds.length : 0,
+    targetUserIds,
+    users,
+    stationKey,
+    state,
+    fallbackBroadcast: true
+  };
+}
+
 export function sendTravelPlayerStationCardToPlayers(session, stationKey, options = {}) {
   const state = sanitizeTravelPlayerStationCardState(prepareTravelPlayerStationCardState(session, stationKey, options));
   const owners = resolveActivePlayerOwnersForStation(session, stationKey, options);
@@ -169,6 +234,21 @@ export function sendAllTravelPlayerStationCardsToPlayers(session, options = {}) 
 
 export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  if (payload.action === TRAVEL_PLAYER_STATION_CARD_SOCKET_TEST_ACTION) {
+    const userId = globalThis.game?.user?.id ?? "";
+    const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
+    const matched = Boolean(userId && targetUserIds.includes(userId));
+
+    console.warn("Arcflight | Socket diagnostic received.", {
+      userId,
+      targetUserIds,
+      matched,
+      payload
+    });
+
+    if (matched) ui.notifications?.info?.("Arcflight socket diagnostic received.");
+    return true;
+  }
   if (payload.action !== TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION) return false;
   const userId = globalThis.game?.user?.id ?? "";
   const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
@@ -180,7 +260,16 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
     matched
   });
   if (!matched) return true;
-  openTravelPlayerStationCard({ state: payload.state });
+  console.warn("Arcflight | Opening player station card from socket.", {
+    userId,
+    stationKey: payload?.state?.stationKey
+  });
+  openTravelPlayerStationCard({ state: payload.state })
+    .then(() => ui.notifications?.info?.("Arcflight player station card opened."))
+    .catch((error) => {
+      console.error("Arcflight | Failed to open player station card from socket.", error);
+      ui.notifications?.error?.("Arcflight failed to open player station card. See console.");
+    });
   return true;
 }
 

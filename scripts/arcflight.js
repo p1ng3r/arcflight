@@ -5,10 +5,12 @@ import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTrave
 import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "./apps/travel-scene-overlay.js";
 import {
   ArcflightTravelPlayerStationCard,
+  broadcastTravelPlayerStationCardToAllPlayers,
   handleTravelPlayerStationCardSocketPayload,
   openTravelPlayerStationCard,
   resolveActivePlayerOwnersForStation,
   sendAllTravelPlayerStationCardsToPlayers,
+  sendTravelPlayerStationCardSocketDiagnostic,
   sendTravelPlayerStationCardToPlayers
 } from "./apps/travel-player-station-card.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
@@ -635,6 +637,8 @@ function buildArcflightApi() {
     openTravelSceneOverlay,
     ArcflightTravelPlayerStationCard,
     openTravelPlayerStationCard,
+    sendTravelPlayerStationCardSocketDiagnostic,
+    broadcastTravelPlayerStationCardToAllPlayers,
     sendTravelPlayerStationCardToPlayers,
     sendAllTravelPlayerStationCardsToPlayers,
     resolveActivePlayerOwnersForStation,
@@ -1036,6 +1040,8 @@ export {
   openTravelSceneOverlay,
   ArcflightTravelPlayerStationCard,
   openTravelPlayerStationCard,
+  sendTravelPlayerStationCardSocketDiagnostic,
+  broadcastTravelPlayerStationCardToAllPlayers,
   sendTravelPlayerStationCardToPlayers,
   sendAllTravelPlayerStationCardsToPlayers,
   resolveActivePlayerOwnersForStation,
