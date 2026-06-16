@@ -3,7 +3,14 @@ import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "./apps/travel-event-runner.js";
 import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "./apps/travel-scene-overlay.js";
-import { ArcflightTravelPlayerStationCard, openTravelPlayerStationCard } from "./apps/travel-player-station-card.js";
+import {
+  ArcflightTravelPlayerStationCard,
+  handleTravelPlayerStationCardSocketPayload,
+  openTravelPlayerStationCard,
+  resolveActivePlayerOwnersForStation,
+  sendAllTravelPlayerStationCardsToPlayers,
+  sendTravelPlayerStationCardToPlayers
+} from "./apps/travel-player-station-card.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
   createArcflightItem,
@@ -628,6 +635,9 @@ function buildArcflightApi() {
     openTravelSceneOverlay,
     ArcflightTravelPlayerStationCard,
     openTravelPlayerStationCard,
+    sendTravelPlayerStationCardToPlayers,
+    sendAllTravelPlayerStationCardsToPlayers,
+    resolveActivePlayerOwnersForStation,
     createTravelEventRunnerSession,
     normalizeTravelEventRunnerSession,
     prepareTravelEventRunnerState,
@@ -792,6 +802,9 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   registerArcflightApi();
+  if (globalThis.game?.socket && typeof game.socket.on === "function") {
+    game.socket.on("module.arcflight", handleTravelPlayerStationCardSocketPayload);
+  }
 });
 
 if (globalThis.CONFIG) registerArcflightApi();
@@ -1020,6 +1033,9 @@ export {
   openTravelSceneOverlay,
   ArcflightTravelPlayerStationCard,
   openTravelPlayerStationCard,
+  sendTravelPlayerStationCardToPlayers,
+  sendAllTravelPlayerStationCardsToPlayers,
+  resolveActivePlayerOwnersForStation,
   createTravelEventRunnerSession,
   normalizeTravelEventRunnerSession,
   prepareTravelEventRunnerState,

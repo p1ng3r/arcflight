@@ -1,5 +1,5 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
-import { openTravelPlayerStationCard } from "./travel-player-station-card.js";
+import { openTravelPlayerStationCard, sendAllTravelPlayerStationCardsToPlayers, sendTravelPlayerStationCardToPlayers } from "./travel-player-station-card.js";
 import {
   clearTravelEventRunnerStationAssignment,
   prepareTravelSceneOverlayState,
@@ -218,13 +218,15 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-preview-player-card], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-preview-player-card], [data-arcflight-overlay-send-player-card], [data-arcflight-overlay-send-all-player-cards], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     this.#captureScrollPosition();
 
     if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
     if (target.hasAttribute("data-arcflight-overlay-preview-player-card")) return this.#previewPlayerStationCard(target);
+    if (target.hasAttribute("data-arcflight-overlay-send-player-card")) return this.#sendPlayerStationCard(target);
+    if (target.hasAttribute("data-arcflight-overlay-send-all-player-cards")) return this.#sendAllPlayerStationCards();
     if (target.hasAttribute("data-arcflight-overlay-roll-station")) return this.#rollStationCheck(target);
     if (target.hasAttribute("data-arcflight-overlay-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-overlay-reset-assignment")) return this.#resetStationAssignment(target);
@@ -233,6 +235,21 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   async #previewPlayerStationCard(target) {
     const stationKey = target.dataset.stationKey ?? "";
     return openTravelPlayerStationCard({ session: this.session, stationKey, actor: this.actor });
+  }
+
+  async #sendPlayerStationCard(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const result = sendTravelPlayerStationCardToPlayers(this.session, stationKey, { actor: this.actor });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active player owner found for this station.");
+    else ui.notifications?.info?.(`Sent player station card to ${result.sent} active player${result.sent === 1 ? "" : "s"}.`);
+    return result;
+  }
+
+  async #sendAllPlayerStationCards() {
+    const result = sendAllTravelPlayerStationCardsToPlayers(this.session, { actor: this.actor });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No player station cards were sent.");
+    else ui.notifications?.info?.(`Sent ${result.sent} player station card${result.sent === 1 ? "" : "s"}. Skipped ${result.skipped} unassigned/no active owner.`);
+    return result;
   }
 
   async #applySessionUpdate(updated, fallbackMessage = "Travel overlay session updated.") {
