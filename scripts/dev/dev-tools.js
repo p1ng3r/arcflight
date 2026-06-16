@@ -111,6 +111,7 @@ import {
   normalizeTravelEventRunnerSession,
   prepareTravelEventRunnerSessionLibraryState,
   prepareTravelEventRunnerState,
+  prepareTravelSceneOverlayState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
