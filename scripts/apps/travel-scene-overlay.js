@@ -144,6 +144,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   #captureScrollPosition() {
+    if (this.#pendingScrollState) return;
     const candidate = this.#findScrollContainer(this.uiState.scrollSelector);
     if (!candidate?.element || !Number.isFinite(Number(candidate.element.scrollTop))) return;
     this.uiState.scrollTop = candidate.element.scrollTop;
@@ -153,8 +154,8 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
 
   #restoreScrollPosition() {
     if (!this.#pendingScrollState) return;
-    const { scrollTop, selector } = this.#pendingScrollState;
-    this.#pendingScrollState = null;
+    const pending = this.#pendingScrollState;
+    const { scrollTop, selector } = pending;
     const restore = () => {
       const candidate = this.#findScrollContainer(selector);
       if (candidate?.element) {
@@ -162,6 +163,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
         this.uiState.scrollTop = scrollTop;
         this.uiState.scrollSelector = candidate.selector;
       }
+      if (this.#pendingScrollState === pending) this.#pendingScrollState = null;
     };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
     else setTimeout(restore, 0);
