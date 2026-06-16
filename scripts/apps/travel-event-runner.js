@@ -422,7 +422,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #openTravelSceneOverlay() {
-    await openTravelSceneOverlay({ session: this.session, actor: this.#getSelectedShipActor() });
+    await openTravelSceneOverlay({
+      session: this.session,
+      actor: this.#getSelectedShipActor(),
+      onSessionUpdate: async (session) => {
+        this.session = session ?? null;
+        this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+        this.statusMessage = "Travel Scene Overlay updated the active runner session.";
+        await this.render(true);
+      }
+    });
     this.uiState.compactRunner = true;
     this.statusMessage = this.session ? "Travel Scene Overlay opened; runner compacted to keep the scene visible." : "Travel Scene Overlay opened with no active runner session; runner compacted.";
     return this.render(true);

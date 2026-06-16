@@ -1043,16 +1043,20 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       guidanceStationName: "",
       hasGuidanceStation: false,
       hasGmGuidanceSteps: false,
-      hasGmGuidance: false
+      hasGmGuidance: false,
+      currentRoundIndex: -1,
+      isCompleted: false
     };
   }
 
   const roundNumber = runnerState.currentRoundNumber || 0;
   const roundTitle = runnerState.currentRoundTitle || "";
+  const assignmentRowsByStation = new Map((runnerState.stationAssignments?.rows ?? []).map((row) => [row.stationKey, row]));
   const stations = (runnerState.stations ?? []).map((row) => {
     const hasAssignment = row.assigned === true;
     const hasSelectedApproach = row.selectedApproach?.isSelected === true;
     const hasResult = Boolean(row.result);
+    const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
     const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
     const station = {
       stationKey: row.stationKey,
@@ -1069,7 +1073,17 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasAssignment,
       hasSelectedApproach,
       hasResult,
-      result: row.result || ""
+      result: row.result || "",
+      assignmentOptions: assignmentRow?.options ?? [],
+      hasAssignmentOptions: (assignmentRow?.options ?? []).length > 0,
+      selectedAssignmentValue: row.assignment?.actorUuid || row.assignment?.actorId || "",
+      canClearAssignment: assignmentRow?.canClear === true,
+      canResetAssignment: true,
+      approachOptions: row.skillApproaches ?? [],
+      hasApproachOptions: (row.skillApproaches ?? []).length > 0,
+      selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
+      resultOptions: row.resultOptions ?? [],
+      hasResultOptions: (row.resultOptions ?? []).length > 0
     };
     station.classes = [
       "arcflight-travel-scene-overlay__station-card",
@@ -1143,6 +1157,8 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     roundNumber,
     roundTitle,
     roundLabel: roundNumber ? `Round ${roundNumber}` : "No active round",
+    currentRoundIndex: runnerState.session?.currentRoundIndex ?? -1,
+    isCompleted: runnerState.isCompleted === true,
     vignette: runnerState.currentRoundOpeningVignette || "",
     stations,
     hasStations: stationCount > 0,

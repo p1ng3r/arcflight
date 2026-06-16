@@ -1,5 +1,12 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
-import { prepareTravelSceneOverlayState } from "../helpers/travel-event-runner.js";
+import {
+  clearTravelEventRunnerStationAssignment,
+  prepareTravelSceneOverlayState,
+  resetTravelEventRunnerStationAssignmentToShip,
+  setTravelEventRunnerStationResult,
+  setTravelEventRunnerStationSkillApproach,
+  updateTravelEventRunnerStationAssignment
+} from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -61,11 +68,13 @@ function bringOverlayToFront(app) {
 
 export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundOverlayClick = this.#onOverlayClick.bind(this);
+  #boundOverlayChange = this.#onOverlayChange.bind(this);
 
   constructor(options = {}) {
     super(options);
     this.session = options.session ?? null;
     this.actor = options.actor ?? null;
+    this.onSessionUpdate = typeof options.onSessionUpdate === "function" ? options.onSessionUpdate : null;
   }
 
   static DEFAULT_OPTIONS = {
@@ -79,9 +88,11 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     overlay: { template: arcflightTemplatePath("apps/travel-scene-overlay.hbs") }
   };
 
-  async setContext({ session = this.session, actor = this.actor } = {}, { render = true } = {}) {
+  async setContext({ session = this.session, actor = this.actor, onSessionUpdate } = {}, { render = true } = {}) {
     this.session = session ?? null;
     this.actor = actor ?? null;
+    if (typeof onSessionUpdate === "function") this.onSessionUpdate = onSessionUpdate;
+    else if (onSessionUpdate === null) this.onSessionUpdate = null;
     if (render) await this.render(true);
     return this;
   }
@@ -92,7 +103,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     return {
       ...context,
       state,
-      hardBoundaryHint: "Read-only scene overlay shell: no rolls, effects, ownership changes, combat integration, or travel automation."
+      hardBoundaryHint: "GM cockpit: manual station controls only; no rolls, automation, combat integration, sockets/player ownership, or actor/resource mutation beyond explicit runner-session updates."
     };
   }
 
@@ -100,6 +111,8 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     super._onRender(context, options);
     this.element?.removeEventListener("click", this.#boundOverlayClick);
     this.element?.addEventListener("click", this.#boundOverlayClick);
+    this.element?.removeEventListener("change", this.#boundOverlayChange);
+    this.element?.addEventListener("change", this.#boundOverlayChange);
   }
 
   async close(options = {}) {
@@ -107,11 +120,83 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     return super.close(options);
   }
 
-  #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay]");
+  async #onOverlayChange(event) {
+    const assignmentSelect = event.target?.closest?.("[data-arcflight-overlay-assignment-select]");
+    if (assignmentSelect && this.element?.contains(assignmentSelect)) return this.#updateStationAssignment(assignmentSelect);
+
+    const approachSelect = event.target?.closest?.("[data-arcflight-overlay-approach-select]");
+    if (approachSelect && this.element?.contains(approachSelect)) return this.#updateStationSkillApproach(approachSelect);
+  }
+
+  async #onOverlayClick(event) {
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-result], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
-    this.render(true);
+
+    if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
+    if (target.hasAttribute("data-arcflight-overlay-result")) return this.#recordStationResult(target);
+    if (target.hasAttribute("data-arcflight-overlay-clear-assignment")) return this.#clearStationAssignment(target);
+    if (target.hasAttribute("data-arcflight-overlay-reset-assignment")) return this.#resetStationAssignment(target);
+  }
+
+  async #applySessionUpdate(updated, fallbackMessage = "Travel overlay session updated.") {
+    if (!updated?.ok || !updated.session) {
+      const message = updated?.errors?.[0] ?? "Travel overlay update failed.";
+      ui.notifications?.warn?.(message);
+      await this.render(true);
+      return false;
+    }
+
+    this.session = updated.session;
+    if (typeof this.onSessionUpdate === "function") {
+      try {
+        await this.onSessionUpdate(updated.session, { source: "travelSceneOverlay" });
+      } catch (error) {
+        console.warn("Arcflight | Travel Scene Overlay session update callback failed.", error);
+      }
+    }
+    ui.notifications?.info?.(fallbackMessage);
+    await this.render(true);
+    return true;
+  }
+
+  async #updateStationAssignment(select) {
+    const stationKey = select.dataset.stationKey ?? "";
+    const actorIdOrUuid = select.value ?? "";
+    const updated = actorIdOrUuid
+      ? updateTravelEventRunnerStationAssignment(this.session, stationKey, actorIdOrUuid, { ship: this.actor })
+      : clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.actor });
+    return this.#applySessionUpdate(updated, actorIdOrUuid ? "Updated travel station assignment." : "Cleared travel station assignment.");
+  }
+
+  async #updateStationSkillApproach(select) {
+    const roundIndex = Number(select.dataset.roundIndex);
+    const stationKey = select.dataset.stationKey ?? "";
+    const skill = select.value ?? "";
+    const updated = setTravelEventRunnerStationSkillApproach(this.session, roundIndex, stationKey, skill);
+    return this.#applySessionUpdate(updated, "Updated travel station approach.");
+  }
+
+  async #recordStationResult(target) {
+    const roundIndex = Number(target.dataset.roundIndex);
+    const stationKey = target.dataset.stationKey ?? "";
+    const result = target.dataset.result ?? "";
+    const updated = setTravelEventRunnerStationResult(this.session, roundIndex, stationKey, result);
+    return this.#applySessionUpdate(updated, "Recorded travel station result.");
+  }
+
+  async #clearStationAssignment(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.actor });
+    return this.#applySessionUpdate(updated, "Cleared travel station assignment.");
+  }
+
+  async #resetStationAssignment(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = resetTravelEventRunnerStationAssignmentToShip(this.session, stationKey, { ship: this.actor });
+    const ok = await this.#applySessionUpdate(updated, updated?.warnings?.[0] ?? "Reset travel station assignment to ship assignment.");
+    if (ok && updated?.warnings?.length) ui.notifications?.warn?.(updated.warnings[0]);
+    return ok;
   }
 }
 

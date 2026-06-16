@@ -105,6 +105,35 @@
                 <div><dt>Result</dt><dd>{{resultLabel}}</dd></div>
               </dl>
 
+              <div class="arcflight-travel-scene-overlay__station-controls" aria-label="{{stationName}} station controls">
+                <label>
+                  <span>Assigned Actor</span>
+                  <select data-arcflight-overlay-assignment-select data-station-key="{{stationKey}}" {{#unless hasAssignmentOptions}}disabled{{/unless}} {{#if ../state.isCompleted}}disabled{{/if}}>
+                    <option value="">Unassigned</option>
+                    {{#each assignmentOptions}}
+                      <option value="{{actorUuid}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <div class="arcflight-travel-scene-overlay__station-control-actions">
+                  {{#if canClearAssignment}}<button type="button" data-arcflight-overlay-clear-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear</button>{{/if}}
+                  {{#if canResetAssignment}}<button type="button" data-arcflight-overlay-reset-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Reset to Ship</button>{{/if}}
+                </div>
+                <label>
+                  <span>Approach / Skill</span>
+                  <select data-arcflight-overlay-approach-select data-round-index="{{../state.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#unless hasApproachOptions}}disabled{{/unless}} {{#if ../state.isCompleted}}disabled{{/if}}>
+                    {{#each approachOptions}}
+                      <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{#if skill}} ({{skill}}){{/if}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <div class="arcflight-travel-scene-overlay__result-controls" role="group" aria-label="Record {{stationName}} result">
+                  {{#each resultOptions}}
+                    <button type="button" data-arcflight-overlay-result data-round-index="{{../../state.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-scene-overlay__result-button--selected{{/if}}">{{label}}</button>
+                  {{/each}}
+                </div>
+              </div>
+
               {{#if hasPromptText}}
                 <p class="arcflight-travel-scene-overlay__station-card-text"><strong>Station Prompt:</strong> {{promptText}}</p>
               {{/if}}
