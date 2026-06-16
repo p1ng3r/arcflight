@@ -93,17 +93,22 @@ function getOwnershipLevel(actor, userId) {
   return Number.isFinite(defaultLevel) ? defaultLevel : 0;
 }
 
-function getOwnerThreshold() {
-  return Number(globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3);
+function getObserverThreshold() {
+  return Number(globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OBSERVER ?? 2);
+}
+
+function getActiveNonGmUsers() {
+  return getUserCollectionValues()
+    .filter((user) => user?.active === true && user?.isGM !== true && typeof user.id === "string")
+    .map((user) => ({ id: user.id, name: user.name ?? user.id }));
 }
 
 export function resolveActivePlayerOwnersForStation(session, stationKey, options = {}) {
   const actor = options.assignedActor ?? getActorByStationAssignment(session, stationKey, options);
   if (!actor) return [];
-  const ownerThreshold = getOwnerThreshold();
-  return getUserCollectionValues()
-    .filter((user) => user?.active === true && user?.isGM !== true && typeof user.id === "string" && getOwnershipLevel(actor, user.id) >= ownerThreshold)
-    .map((user) => ({ id: user.id, name: user.name ?? user.id }));
+  const observerThreshold = getObserverThreshold();
+  return getActiveNonGmUsers()
+    .filter((user) => getOwnershipLevel(actor, user.id) >= observerThreshold);
 }
 
 function emitTravelPlayerStationCard(state, targetUserIds) {
@@ -121,28 +126,45 @@ function emitTravelPlayerStationCard(state, targetUserIds) {
 export function sendTravelPlayerStationCardToPlayers(session, stationKey, options = {}) {
   const state = sanitizeTravelPlayerStationCardState(prepareTravelPlayerStationCardState(session, stationKey, options));
   const owners = resolveActivePlayerOwnersForStation(session, stationKey, options);
-  if (owners.length === 0) {
-    return { ok: false, errors: ["No active player owner found for this station."], warnings: [], sent: 0, skipped: 1, stationKey, state, targetUserIds: [] };
+  const fallbackBroadcast = owners.length === 0;
+  const recipients = fallbackBroadcast ? getActiveNonGmUsers() : owners;
+  if (recipients.length === 0) {
+    return { ok: false, errors: ["No active player users found."], warnings: [], sent: 0, sentRecipients: 0, skipped: 1, stationKey, state, targetUserIds: [], owners: [], fallbackBroadcast };
   }
-  const targetUserIds = owners.map((owner) => owner.id);
+  const targetUserIds = recipients.map((recipient) => recipient.id);
   const emitted = emitTravelPlayerStationCard(state, targetUserIds);
-  return { ...emitted, sent: emitted.ok ? targetUserIds.length : 0, skipped: emitted.ok ? 0 : 1, stationKey, owners };
+  return {
+    ...emitted,
+    sent: emitted.ok ? targetUserIds.length : 0,
+    sentRecipients: emitted.ok ? targetUserIds.length : 0,
+    skipped: emitted.ok ? 0 : 1,
+    stationKey,
+    owners: recipients,
+    fallbackBroadcast
+  };
 }
 
 export function sendAllTravelPlayerStationCardsToPlayers(session, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   const round = normalized.session?.event?.rounds?.[normalized.session?.currentRoundIndex ?? 0] ?? null;
   const stationKeys = Array.isArray(round?.activeStations) ? round.activeStations : [];
-  let sent = 0;
+  let sentCards = 0;
+  let sentRecipients = 0;
   let skipped = 0;
+  let fallbackBroadcasts = 0;
   const results = [];
   for (const stationKey of stationKeys) {
     const result = sendTravelPlayerStationCardToPlayers(normalized.session, stationKey, options);
     results.push(result);
-    if (result.ok) sent += 1;
-    else skipped += 1;
+    if (result.ok) {
+      sentCards += 1;
+      sentRecipients += Number(result.sentRecipients ?? result.sent ?? 0);
+      if (result.fallbackBroadcast === true) fallbackBroadcasts += 1;
+    } else {
+      skipped += 1;
+    }
   }
-  return { ok: sent > 0, errors: sent > 0 ? [] : ["No player station cards were sent."], warnings: [], sent, skipped, results };
+  return { ok: sentCards > 0, errors: sentCards > 0 ? [] : ["No player station cards were sent."], warnings: [], sentCards, sentRecipients, skipped, fallbackBroadcasts, results };
 }
 
 export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
@@ -150,7 +172,14 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
   if (payload.action !== TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION) return false;
   const userId = globalThis.game?.user?.id ?? "";
   const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
-  if (!userId || !targetUserIds.includes(userId)) return true;
+  const matched = Boolean(userId && targetUserIds.includes(userId));
+  console.debug("Arcflight | Player station card socket payload received.", {
+    userId,
+    targetUserIds,
+    stationKey: payload?.state?.stationKey,
+    matched
+  });
+  if (!matched) return true;
   openTravelPlayerStationCard({ state: payload.state });
   return true;
 }

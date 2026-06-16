@@ -240,15 +240,30 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   async #sendPlayerStationCard(target) {
     const stationKey = target.dataset.stationKey ?? "";
     const result = sendTravelPlayerStationCardToPlayers(this.session, stationKey, { actor: this.actor });
-    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active player owner found for this station.");
-    else ui.notifications?.info?.(`Sent player station card to ${result.sent} active player${result.sent === 1 ? "" : "s"}.`);
+    console.debug("Arcflight | Sending player station card.", {
+      stationKey,
+      targetUserIds: result.targetUserIds,
+      owners: result.owners,
+      fallbackBroadcast: result.fallbackBroadcast
+    });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active player users found.");
+    else if (result.fallbackBroadcast) ui.notifications?.warn?.(`No active player observer found for this station; sent fallback broadcast to ${result.sentRecipients} active non-GM player${result.sentRecipients === 1 ? "" : "s"}.`);
+    else ui.notifications?.info?.(`Sent player station card to ${result.sentRecipients} active player recipient${result.sentRecipients === 1 ? "" : "s"}.`);
     return result;
   }
 
   async #sendAllPlayerStationCards() {
     const result = sendAllTravelPlayerStationCardsToPlayers(this.session, { actor: this.actor });
+    console.debug("Arcflight | Sending all player station cards.", {
+      results: result.results?.map((entry) => ({
+        stationKey: entry.stationKey,
+        targetUserIds: entry.targetUserIds,
+        owners: entry.owners,
+        fallbackBroadcast: entry.fallbackBroadcast
+      })) ?? []
+    });
     if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No player station cards were sent.");
-    else ui.notifications?.info?.(`Sent ${result.sent} player station card${result.sent === 1 ? "" : "s"}. Skipped ${result.skipped} unassigned/no active owner.`);
+    else ui.notifications?.info?.(`Sent ${result.sentCards} player station card${result.sentCards === 1 ? "" : "s"} to ${result.sentRecipients} active player recipient(s). ${result.fallbackBroadcasts} used fallback broadcast. Skipped ${result.skipped}.`);
     return result;
   }
 

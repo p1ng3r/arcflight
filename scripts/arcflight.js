@@ -804,6 +804,9 @@ Hooks.once("ready", () => {
   registerArcflightApi();
   if (globalThis.game?.socket && typeof game.socket.on === "function") {
     game.socket.on("module.arcflight", handleTravelPlayerStationCardSocketPayload);
+    console.debug("Arcflight | Registered player station card socket listener.");
+  } else {
+    console.warn("Arcflight | Foundry socket unavailable; player station card handoff disabled.");
   }
 });
 
