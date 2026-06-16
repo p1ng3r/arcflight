@@ -75,7 +75,6 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     this.session = options.session ?? null;
     this.actor = options.actor ?? null;
     this.onSessionUpdate = typeof options.onSessionUpdate === "function" ? options.onSessionUpdate : null;
-    this.stationRolls = new Map();
   }
 
   static DEFAULT_OPTIONS = {
@@ -101,11 +100,6 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const state = prepareTravelSceneOverlayState(this.session, { actor: this.actor });
-    for (const station of state.stations ?? []) {
-      const roll = this.stationRolls.get(this.#stationRollKey(state.currentRoundIndex, station.stationKey));
-      station.lastRoll = roll ?? null;
-      station.hasLastRoll = Boolean(roll);
-    }
     return {
       ...context,
       state,
@@ -135,13 +129,11 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-result], [data-arcflight-overlay-record-roll], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
 
     if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
-    if (target.hasAttribute("data-arcflight-overlay-result")) return this.#recordStationResult(target);
-    if (target.hasAttribute("data-arcflight-overlay-record-roll")) return this.#recordRolledStationResult(target);
     if (target.hasAttribute("data-arcflight-overlay-roll-station")) return this.#rollStationCheck(target);
     if (target.hasAttribute("data-arcflight-overlay-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-overlay-reset-assignment")) return this.#resetStationAssignment(target);
@@ -171,7 +163,6 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   async #updateStationAssignment(select) {
     const stationKey = select.dataset.stationKey ?? "";
     const actorIdOrUuid = select.value ?? "";
-    this.stationRolls.delete(this.#stationRollKey(this.session?.currentRoundIndex, stationKey));
     const updated = actorIdOrUuid
       ? updateTravelEventRunnerStationAssignment(this.session, stationKey, actorIdOrUuid, { ship: this.actor })
       : clearTravelEventRunnerStationAssignment(this.session, stationKey, { ship: this.actor });
@@ -182,29 +173,17 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     const roundIndex = Number(select.dataset.roundIndex);
     const stationKey = select.dataset.stationKey ?? "";
     const skill = select.value ?? "";
-    this.stationRolls.delete(this.#stationRollKey(roundIndex, stationKey));
     const updated = setTravelEventRunnerStationSkillApproach(this.session, roundIndex, stationKey, skill);
     return this.#applySessionUpdate(updated, "Updated travel station approach.");
   }
 
-  async #recordStationResult(target) {
-    const roundIndex = Number(target.dataset.roundIndex);
-    const stationKey = target.dataset.stationKey ?? "";
-    const result = target.dataset.result ?? "";
-    const updated = setTravelEventRunnerStationResult(this.session, roundIndex, stationKey, result);
-    this.stationRolls.delete(this.#stationRollKey(roundIndex, stationKey));
-    return this.#applySessionUpdate(updated, "Recorded travel station result.");
-  }
-
-  #stationRollKey(roundIndex, stationKey) {
-    return `${Number(roundIndex)}:${stationKey}`;
-  }
-
   #calculateDegree(total, dc, d20) {
-    let degree = total >= dc + 10 ? 3 : (total >= dc ? 2 : (total <= dc - 10 ? 0 : 1));
-    if (d20 === 20) degree = Math.min(degree + 1, 3);
-    if (d20 === 1) degree = Math.max(degree - 1, 0);
-    return ["criticalFailure", "failure", "success", "criticalSuccess"][degree];
+    if (d20 === 20) return "criticalSuccess";
+    if (d20 === 1) return "criticalFailure";
+    if (total >= dc + 10) return "criticalSuccess";
+    if (total >= dc) return "success";
+    if (total <= dc - 10) return "criticalFailure";
+    return "failure";
   }
 
   #degreeLabel(result) {
@@ -235,31 +214,8 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
 
     const total = d20 + modifier;
     const result = this.#calculateDegree(total, dc, d20);
-    this.stationRolls.set(this.#stationRollKey(roundIndex, stationKey), {
-      d20,
-      modifier,
-      total,
-      dc,
-      result,
-      resultLabel: this.#degreeLabel(result)
-    });
-    ui.notifications?.info?.(`Travel station roll: ${total} vs DC ${dc} — ${this.#degreeLabel(result)}.`);
-    await this.render(true);
-    return true;
-  }
-
-  async #recordRolledStationResult(target) {
-    const roundIndex = Number(target.dataset.roundIndex);
-    const stationKey = target.dataset.stationKey ?? "";
-    const roll = this.stationRolls.get(this.#stationRollKey(roundIndex, stationKey));
-    if (!roll?.result) {
-      ui.notifications?.warn?.("No travel station roll is ready to record.");
-      await this.render(true);
-      return false;
-    }
-    const updated = setTravelEventRunnerStationResult(this.session, roundIndex, stationKey, roll.result);
-    this.stationRolls.delete(this.#stationRollKey(roundIndex, stationKey));
-    return this.#applySessionUpdate(updated, "Recorded rolled travel station result.");
+    const updated = setTravelEventRunnerStationResult(this.session, roundIndex, stationKey, result);
+    return this.#applySessionUpdate(updated, `Travel station roll: d20 ${d20} ${modifier >= 0 ? "+" : ""}${modifier} = ${total} vs DC ${dc} — ${this.#degreeLabel(result)} recorded.`);
   }
 
   async #clearStationAssignment(target) {

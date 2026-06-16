@@ -1616,8 +1616,7 @@
 
 .arcflight-travel-scene-overlay__station-control-actions,
 .arcflight-travel-scene-overlay__roll-controls,
-.arcflight-travel-scene-overlay__roll-confirmation,
-.arcflight-travel-scene-overlay__result-controls {
+.arcflight-travel-scene-overlay__result-readout {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1625,15 +1624,13 @@
 }
 
 .arcflight-travel-scene-overlay__station-control-actions button,
-.arcflight-travel-scene-overlay__roll-controls button,
-.arcflight-travel-scene-overlay__roll-confirmation button,
-.arcflight-travel-scene-overlay__result-controls button {
+.arcflight-travel-scene-overlay__roll-controls button {
   flex: 1 1 auto;
   min-width: max-content;
 }
 
 .arcflight-travel-scene-overlay__roll-readout,
-.arcflight-travel-scene-overlay__roll-confirmation {
+.arcflight-travel-scene-overlay__result-readout {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.35rem;
   padding: 0.25rem 0.4rem;
@@ -1647,16 +1644,16 @@
 }
 
 .arcflight-travel-scene-overlay__roll-readout span,
-.arcflight-travel-scene-overlay__roll-confirmation span {
+.arcflight-travel-scene-overlay__roll-unavailable,
+.arcflight-travel-scene-overlay__result-readout span {
   font-size: 0.82rem;
   opacity: 0.86;
 }
 
-.arcflight-travel-scene-overlay__result-label {
+.arcflight-travel-scene-overlay__result-readout span {
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.03em;
-  opacity: 0.86;
   text-transform: uppercase;
 }
 

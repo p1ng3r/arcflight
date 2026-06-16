@@ -138,22 +138,12 @@
                     <button type="button" data-arcflight-overlay-roll-station data-round-index="{{../state.currentRoundIndex}}" data-station-key="{{stationKey}}" data-dc="{{dc}}" data-modifier="{{selectedApproachModifier}}" {{#if ../state.isCompleted}}disabled{{/if}}>Roll Check</button>
                   {{else}}
                     <button type="button" disabled title="{{rollUnavailableReason}}">Roll Unavailable</button>
+                    <span class="arcflight-travel-scene-overlay__roll-unavailable">{{rollUnavailableReason}}</span>
                   {{/if}}
                 </div>
-                {{#if hasLastRoll}}
-                  <div class="arcflight-travel-scene-overlay__roll-confirmation" aria-live="polite">
-                    <span>d20 {{lastRoll.d20}}</span>
-                    <span>{{selectedApproachModifierLabel}}</span>
-                    <strong>Total {{lastRoll.total}}</strong>
-                    <span>{{lastRoll.resultLabel}}</span>
-                    <button type="button" data-arcflight-overlay-record-roll data-round-index="{{../state.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Record Result</button>
-                  </div>
-                {{/if}}
-                <div class="arcflight-travel-scene-overlay__result-label">GM Result Controls / Manual Override</div>
-                <div class="arcflight-travel-scene-overlay__result-controls" role="group" aria-label="GM result controls for {{stationName}}">
-                  {{#each resultOptions}}
-                    <button type="button" data-arcflight-overlay-result data-round-index="{{../../state.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-scene-overlay__result-button--selected{{/if}}">{{label}}</button>
-                  {{/each}}
+                <div class="arcflight-travel-scene-overlay__result-readout" aria-label="{{stationName}} current result">
+                  <span>Current Result</span>
+                  <strong>{{resultLabel}}</strong>
                 </div>
               </div>
 
