@@ -28,6 +28,31 @@
       </dl>
     </section>
 
+    {{#if state.hasGmGuidance}}
+      <section class="arcflight-travel-scene-overlay__gm-guidance" aria-label="GM round guidance">
+        <div class="arcflight-travel-scene-overlay__gm-guidance-copy">
+          <div class="arcflight-travel-scene-overlay__focus-kicker">GM Round Guidance</div>
+          <h2>{{state.gmGuidanceTitle}}</h2>
+          {{#if state.gmGuidanceText}}
+            <p>{{state.gmGuidanceText}}</p>
+          {{/if}}
+        </div>
+        <dl class="arcflight-travel-scene-overlay__gm-guidance-counts">
+          <div><dt>Unresolved</dt><dd>{{state.unresolvedStationCount}}</dd></div>
+          <div><dt>Unassigned</dt><dd>{{state.unassignedStationCount}}</dd></div>
+          <div><dt>No Approach</dt><dd>{{state.unselectedApproachCount}}</dd></div>
+          <div><dt>No Result</dt><dd>{{state.unresolvedResultCount}}</dd></div>
+        </dl>
+        {{#if state.hasGmGuidanceSteps}}
+          <ul class="arcflight-travel-scene-overlay__gm-guidance-steps">
+            {{#each state.gmGuidanceSteps}}
+              <li>{{this}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+      </section>
+    {{/if}}
+
     {{#if state.hasFocusedStation}}
       {{#with state.focusedStation}}
         <section class="arcflight-travel-scene-overlay__focus" aria-label="Active station focus">
