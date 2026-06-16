@@ -1041,14 +1041,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const hasSelectedApproach = row.selectedApproach?.isSelected === true;
     const hasResult = Boolean(row.result);
     const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
-    const classes = [
-      "arcflight-travel-scene-overlay__station-card",
-      "arcflight-travel-scene-overlay__station-card--active",
-      hasAssignment ? "" : "arcflight-travel-scene-overlay__station-card--unassigned",
-      hasSelectedApproach ? "" : "arcflight-travel-scene-overlay__station-card--approach-not-selected",
-      resultStateClass
-    ].filter(Boolean).join(" ");
-    return {
+    const station = {
       stationKey: row.stationKey,
       stationName: row.stationName || humanizeIdentifier(row.stationKey),
       assignedActorName: hasAssignment ? (row.assignedActorName || "Unknown Actor") : "Unassigned",
@@ -1063,10 +1056,31 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasAssignment,
       hasSelectedApproach,
       hasResult,
-      result: row.result || "",
-      classes
+      result: row.result || ""
     };
+    station.classes = [
+      "arcflight-travel-scene-overlay__station-card",
+      "arcflight-travel-scene-overlay__station-card--active",
+      hasAssignment ? "" : "arcflight-travel-scene-overlay__station-card--unassigned",
+      hasSelectedApproach ? "" : "arcflight-travel-scene-overlay__station-card--approach-not-selected",
+      resultStateClass
+    ].filter(Boolean).join(" ");
+    return station;
   });
+  const focusedStation = stations.find((station) => !station.hasResult)
+    ?? stations.find((station) => !station.hasSelectedApproach)
+    ?? stations.find((station) => !station.hasAssignment)
+    ?? stations[0]
+    ?? null;
+  if (focusedStation) {
+    focusedStation.classes = `${focusedStation.classes} arcflight-travel-scene-overlay__station-card--focused`;
+  }
+  const stationCount = stations.length;
+  const assignedStationCount = stations.filter((station) => station.hasAssignment).length;
+  const selectedApproachCount = stations.filter((station) => station.hasSelectedApproach).length;
+  const recordedResultCount = stations.filter((station) => station.hasResult).length;
+  const gmRoundSummaryText = runnerState.roundSummaryCard?.summaryText || "";
+  const roundStateSummary = gmRoundSummaryText || `${recordedResultCount} of ${stationCount} stations have recorded results.`;
 
   return {
     hasSession: true,
@@ -1077,8 +1091,16 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     roundLabel: roundNumber ? `Round ${roundNumber}` : "No active round",
     vignette: runnerState.currentRoundOpeningVignette || "",
     stations,
-    hasStations: stations.length > 0,
-    gmRoundSummaryText: runnerState.roundSummaryCard?.summaryText || ""
+    hasStations: stationCount > 0,
+    focusedStation,
+    hasFocusedStation: Boolean(focusedStation),
+    focusedStationLabel: focusedStation ? `Active Station Focus: ${focusedStation.stationName}` : "",
+    stationCount,
+    assignedStationCount,
+    selectedApproachCount,
+    recordedResultCount,
+    roundStateSummary,
+    gmRoundSummaryText
   };
 }
 

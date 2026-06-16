@@ -14,6 +14,46 @@
   </header>
 
   {{#if state.hasSession}}
+    <section class="arcflight-travel-scene-overlay__summary" aria-label="Travel round status summary">
+      <div class="arcflight-travel-scene-overlay__summary-heading">
+        <h2>{{state.eventName}}</h2>
+        <span>{{state.roundLabel}}{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</span>
+      </div>
+      <p>{{state.roundStateSummary}}</p>
+      <dl class="arcflight-travel-scene-overlay__summary-counts">
+        <div><dt>Total Stations</dt><dd>{{state.stationCount}}</dd></div>
+        <div><dt>Assigned</dt><dd>{{state.assignedStationCount}}</dd></div>
+        <div><dt>Approaches</dt><dd>{{state.selectedApproachCount}}</dd></div>
+        <div><dt>Results</dt><dd>{{state.recordedResultCount}}</dd></div>
+      </dl>
+    </section>
+
+    {{#if state.hasFocusedStation}}
+      {{#with state.focusedStation}}
+        <section class="arcflight-travel-scene-overlay__focus" aria-label="Active station focus">
+          <div class="arcflight-travel-scene-overlay__focus-kicker">Active Station Focus</div>
+          <header class="arcflight-travel-scene-overlay__focus-header">
+            <h2>{{stationName}}</h2>
+            <span class="arcflight-travel-scene-overlay__station-card-state">{{resultLabel}}</span>
+          </header>
+          <dl class="arcflight-travel-scene-overlay__station-card-facts arcflight-travel-scene-overlay__focus-facts">
+            <div><dt>Assigned Actor</dt><dd>{{assignedActorName}}</dd></div>
+            <div><dt>Approach</dt><dd>{{approachLabel}}</dd></div>
+            <div><dt>Result</dt><dd>{{resultLabel}}</dd></div>
+          </dl>
+          {{#if hasPromptText}}
+            <p class="arcflight-travel-scene-overlay__station-card-text"><strong>Station Prompt:</strong> {{promptText}}</p>
+          {{/if}}
+          {{#if hasApproachHelpText}}
+            <p class="arcflight-travel-scene-overlay__station-card-text arcflight-sheet__hint"><strong>Approach Help:</strong> {{approachHelpText}}</p>
+          {{/if}}
+          {{#if hasResultFeedback}}
+            <p class="arcflight-travel-scene-overlay__station-card-text arcflight-sheet__hint"><strong>Station Feedback:</strong> {{resultFeedback}}</p>
+          {{/if}}
+        </section>
+      {{/with}}
+    {{/if}}
+
     <section class="arcflight-travel-scene-overlay__panel">
       <h2>Scene Vignette</h2>
       {{#if state.vignette}}
