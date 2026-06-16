@@ -1016,6 +1016,48 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   };
 }
 
+export function prepareTravelSceneOverlayState(session = null, options = {}) {
+  const runnerState = prepareTravelEventRunnerState(session, options);
+  if (!runnerState.hasSession) {
+    return {
+      hasSession: false,
+      emptyMessage: "No Travel Event Runner session is active. Start or load a runner session, then open the overlay again.",
+      eventName: "",
+      roundNumber: 0,
+      roundTitle: "",
+      roundLabel: "No active round",
+      vignette: "",
+      stations: [],
+      hasStations: false,
+      gmRoundSummaryText: ""
+    };
+  }
+
+  const roundNumber = runnerState.currentRoundNumber || 0;
+  const roundTitle = runnerState.currentRoundTitle || "";
+  const stations = (runnerState.stations ?? []).map((row) => ({
+    stationKey: row.stationKey,
+    stationName: row.stationName || humanizeIdentifier(row.stationKey),
+    assignedActorName: row.assignedActorName || "Unassigned",
+    approachLabel: row.selectedApproach?.label || row.selectedSkillLabel || "Not selected",
+    resultLabel: row.resultLabel || "Unrecorded",
+    hasResult: Boolean(row.result)
+  }));
+
+  return {
+    hasSession: true,
+    emptyMessage: "",
+    eventName: runnerState.event?.name ?? "Unnamed Travel Event",
+    roundNumber,
+    roundTitle,
+    roundLabel: roundNumber ? `Round ${roundNumber}` : "No active round",
+    vignette: runnerState.currentRoundOpeningVignette || "",
+    stations,
+    hasStations: stations.length > 0,
+    gmRoundSummaryText: runnerState.roundSummaryCard?.summaryText || ""
+  };
+}
+
 export function setTravelEventRunnerStationResult(session, roundIndex, stationKey, result, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;

@@ -5,6 +5,7 @@ import {
   exportTravelEventRunnerSessionToJson,
   importTravelEventRunnerSessionFromJson,
   prepareTravelEventRunnerState,
+  prepareTravelSceneOverlayState,
   setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach
 } from "../helpers/travel-event-runner.js";
@@ -237,6 +238,17 @@ assert(feedbackState.roundSummaryCard.summaryText.includes("Naria remembers the 
 assert(feedbackState.roundSummaryCard.summaryText.includes("Bramble syncs the arkengine cleanly against the song's vibration."), "round summary prose includes engineer success feedback");
 assert(feedbackState.roundSummaryCard.summaryText !== feedbackState.roundSummaryCard.summaryLines.join("\n"), "round summary prose is not just raw summary lines joined together");
 assert(!feedbackState.roundSummaryCard.summaryText.includes("used Recall Past Crossings and scored Failure"), "round summary prose avoids report-style used/scored phrasing");
+const overlayState = prepareTravelSceneOverlayState(engineerSuccess.session);
+assert(overlayState.hasSession, "travel scene overlay state detects active runner session");
+assert(overlayState.eventName === "Phase V Two Station Feedback Smoke", "travel scene overlay state exposes event name");
+assert(overlayState.roundLabel === "Round 1" && overlayState.roundTitle === "Legacy Round", "travel scene overlay state exposes round number and title");
+assert(overlayState.vignette === "A legacy prompt needs card migration.", "travel scene overlay state exposes current round vignette");
+assert(overlayState.stations.length === 3, "travel scene overlay state exposes active stations");
+assert(overlayState.stations.some((row) => row.stationName === "Navigator" && row.assignedActorName === "Naria" && row.approachLabel === "Recall Past Crossings" && row.resultLabel === "Failure"), "travel scene overlay state exposes station actor, approach, and result labels");
+assert(overlayState.stations.some((row) => row.stationName === "Watchmaster" && row.assignedActorName === "Unassigned" && row.resultLabel === "Unrecorded"), "travel scene overlay state keeps unassigned/unresolved station labels readable");
+assert(overlayState.gmRoundSummaryText === feedbackState.roundSummaryCard.summaryText, "travel scene overlay state reuses GM round summary text");
+const emptyOverlayState = prepareTravelSceneOverlayState(null);
+assert(!emptyOverlayState.hasSession && emptyOverlayState.emptyMessage.includes("No Travel Event Runner session"), "travel scene overlay state has clear empty state");
 
 const formApplied = applyTravelEventBuilderFormDataToDraft(legacyEvent, {
   openingVignette: "A form-provided opening survives normalization."

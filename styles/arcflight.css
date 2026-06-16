@@ -1333,3 +1333,89 @@
   height: 10rem;
   resize: vertical;
 }
+
+.arcflight-travel-scene-overlay .window-content {
+  padding: 0;
+}
+
+.arcflight-travel-scene-overlay__shell {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.arcflight-travel-scene-overlay__header,
+.arcflight-travel-scene-overlay__panel,
+.arcflight-travel-scene-overlay__station-card {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.arcflight-travel-scene-overlay__header h1,
+.arcflight-travel-scene-overlay__panel h2,
+.arcflight-travel-scene-overlay__station-card h3 {
+  margin-top: 0;
+}
+
+.arcflight-travel-scene-overlay__station-list {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.arcflight-travel-scene-overlay__station-card dl {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__station-card dl div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.arcflight-travel-scene-overlay__station-card dt {
+  font-size: 0.8rem;
+  opacity: 0.78;
+}
+
+.arcflight-travel-scene-overlay__station-card dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.arcflight-travel-scene-overlay__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.arcflight-travel-runner-mvp__header-row,
+.arcflight-travel-runner-mvp__compact-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__header-row h1 {
+  margin: 0;
+}
+
+.arcflight-travel-runner-mvp__compact-summary {
+  margin-top: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__compact-summary div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 10rem;
+}
+
+.arcflight-travel-runner-mvp__compact-summary span {
+  font-size: 0.8rem;
+  opacity: 0.78;
+}

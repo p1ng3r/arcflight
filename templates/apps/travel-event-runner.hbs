@@ -1,10 +1,23 @@
 <div class="arcflight-travel-runner-mvp">
   <header class="arcflight-travel-runner-mvp__header">
-    <h1>Travel Event Runner MVP</h1>
-    <p>{{hardBoundaryHint}}</p>
+    <div class="arcflight-travel-runner-mvp__header-row">
+      <h1>Travel Event Runner MVP</h1>
+      <div class="arcflight-travel-runner-mvp__actions">
+        <button type="button" data-arcflight-runner-toggle-compact>{{#if state.compactRunner}}Expand Runner{{else}}Compact Runner{{/if}}</button>
+        <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
+      </div>
+    </div>
+    {{#unless state.compactRunner}}<p>{{hardBoundaryHint}}</p>{{/unless}}
     <p class="arcflight-sheet__hint"><strong>Status:</strong> {{statusMessage}}</p>
+    {{#if state.compactRunner}}
+      <div class="arcflight-travel-runner-mvp__compact-summary">
+        <div><span>Event</span><strong>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</strong></div>
+        <div><span>Round</span><strong>{{state.compactRoundLabel}}</strong></div>
+      </div>
+    {{/if}}
   </header>
 
+  {{#unless state.compactRunner}}
   <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-toolbar">
     <button type="button" class="arcflight-travel-runner-mvp__action-toggle" data-arcflight-runner-toggle-session-actions aria-label="{{#if state.sessionActionsExpanded}}Collapse Session Actions{{else}}Expand Session Actions{{/if}}" aria-expanded="{{#if state.sessionActionsExpanded}}true{{else}}false{{/if}}">
       {{#if state.sessionActionsExpanded}}▼{{else}}▶{{/if}} Session Actions
@@ -16,6 +29,7 @@
       <button type="button" data-arcflight-runner-export {{#unless state.canExportSession}}disabled{{/unless}}>Export Session JSON</button>
       <button type="button" data-arcflight-runner-import-session>Import Session JSON</button>
       <button type="button" data-arcflight-runner-clear {{#unless state.hasSession}}disabled{{/unless}}>Clear Local Session</button>
+      <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
     </div>
     {{/if}}
   </section>
@@ -393,4 +407,5 @@
     {{/if}}
     </details>
   </section>
+  {{/unless}}
 </div>

@@ -1,5 +1,6 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
+import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
@@ -40,6 +41,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-complete]",
   "[data-arcflight-runner-toggle-session-actions]",
   "[data-arcflight-runner-toggle-current-session]",
+  "[data-arcflight-runner-toggle-compact]",
   "[data-arcflight-runner-export]",
   "[data-arcflight-runner-clear]",
   "[data-arcflight-runner-save]",
@@ -61,7 +63,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-apply-effects]",
   "[data-arcflight-runner-undo-effect]",
   "[data-arcflight-runner-clear-assignment]",
-  "[data-arcflight-runner-reset-assignment]"
+  "[data-arcflight-runner-reset-assignment]",
+  "[data-arcflight-open-travel-scene-overlay]"
 ].join(", ");
 
 
@@ -232,6 +235,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.uiState = {
       currentSessionCollapsed: options.currentSessionCollapsed !== false,
       sessionActionsExpanded: options.sessionActionsExpanded === true,
+      compactRunner: options.compactRunner === true,
       scrollTop: 0,
       scrollSelector: ""
     };
@@ -328,6 +332,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     state.effectApplication = prepareTravelEventEffectApplicationState(this.session, targetActor);
     state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
     state.sessionActionsExpanded = this.uiState.sessionActionsExpanded;
+    state.compactRunner = this.uiState.compactRunner;
+    state.compactRoundLabel = state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round";
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
@@ -345,6 +351,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.element?.addEventListener("click", this.#boundRunnerClick);
     this.element?.removeEventListener("change", this.#boundRunnerChange);
     this.element?.addEventListener("change", this.#boundRunnerChange);
+    // Keep any open overlay in sync after the runner has rendered, avoiding render side effects during _prepareContext.
+    updateActiveTravelSceneOverlayContext({ session: this.session, actor: this.#getSelectedShipActor() }, { render: true });
+    this.#applyCompactPosition();
     this.#restoreScrollPosition();
   }
 
@@ -386,6 +395,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-complete")) return this.#completeEvent();
     if (target.hasAttribute("data-arcflight-runner-toggle-session-actions")) return this.#toggleSessionActions();
     if (target.hasAttribute("data-arcflight-runner-toggle-current-session")) return this.#toggleCurrentSession();
+    if (target.hasAttribute("data-arcflight-runner-toggle-compact")) return this.#toggleCompactRunner();
     if (target.hasAttribute("data-arcflight-runner-export")) return this.#exportSummary();
     if (target.hasAttribute("data-arcflight-runner-clear")) return this.#clearSession();
     if (target.hasAttribute("data-arcflight-runner-save")) return this.#saveCurrentSession({ saveAs: false });
@@ -408,6 +418,28 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-undo-effect")) return this.#undoAppliedEffect(target);
     if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
+    if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
+  }
+
+  async #openTravelSceneOverlay() {
+    openTravelSceneOverlay({ session: this.session, actor: this.#getSelectedShipActor() });
+    this.uiState.compactRunner = true;
+    this.statusMessage = this.session ? "Travel Scene Overlay opened; runner compacted to keep the scene visible." : "Travel Scene Overlay opened with no active runner session; runner compacted.";
+    return this.render(true);
+  }
+
+  async #toggleCompactRunner() {
+    this.uiState.compactRunner = !this.uiState.compactRunner;
+    this.statusMessage = this.uiState.compactRunner ? "Runner compacted." : "Runner expanded.";
+    return this.render(true);
+  }
+
+  #applyCompactPosition() {
+    if (typeof this.setPosition !== "function") return;
+    const position = this.uiState.compactRunner
+      ? { width: 420, height: 260 }
+      : { width: 820, height: 720 };
+    this.setPosition(position);
   }
 
   async #toggleSessionActions() {

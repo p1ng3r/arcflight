@@ -2,6 +2,7 @@ import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "./apps/travel-event-runner.js";
+import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "./apps/travel-scene-overlay.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import {
   createArcflightItem,
@@ -166,6 +167,7 @@ import {
   getTravelEventRunnerShipStationAssignments,
   startTravelEventRunnerFromPublishedEvent,
   prepareTravelEventRunnerState,
+  prepareTravelSceneOverlayState,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
@@ -334,37 +336,16 @@ async function setArcflightVehicleEnabled(actor, enabled = true) {
   });
 }
 
-Hooks.once("init", () => {
-  console.log("Arcflight | Initializing module");
 
-  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, {
-    name: "Travel Event Builder Library",
-    hint: "World-local saved drafts for the Arcflight Travel Event Builder authoring shell.",
-    scope: "world",
-    config: false,
-    type: Object,
-    default: { version: TRAVEL_EVENT_BUILDER_LIBRARY_VERSION, drafts: {} }
-  });
+const ARCFLIGHT_API_MARKER = "__arcflightApi";
 
-  game.settings.register(ARCFLIGHT.MODULE_ID, PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, {
-    name: "Published Travel Event Library",
-    hint: "World-local finalized travel event records published from the Arcflight Travel Event Builder.",
-    scope: "world",
-    config: false,
-    type: Object,
-    default: { version: PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION, events: {} }
-  });
+function isArcflightApi(value) {
+  return Boolean(value && value[ARCFLIGHT_API_MARKER] === true);
+}
 
-  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING, {
-    name: "Travel Event Runner Session Library",
-    hint: "World-local manual save/resume snapshots for the Travel Event Runner. Separate from drafts, published events, actors, resources, chat, and combat.",
-    scope: "world",
-    config: false,
-    type: Object,
-    default: { version: TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION, sessions: {} }
-  });
-
-  CONFIG.arcflight = Object.freeze({
+function buildArcflightApi() {
+  if (isArcflightApi(globalThis.CONFIG?.arcflight)) return globalThis.CONFIG.arcflight;
+  return Object.freeze({
     constants: ARCFLIGHT,
     createItem: createArcflightItem,
     createCoreHull,
@@ -641,9 +622,12 @@ Hooks.once("init", () => {
     prepareTravelEventBuilderShellState,
     ArcflightTravelEventRunner,
     openTravelEventRunner,
+    ArcflightTravelSceneOverlay,
+    openTravelSceneOverlay,
     createTravelEventRunnerSession,
     normalizeTravelEventRunnerSession,
     prepareTravelEventRunnerState,
+    prepareTravelSceneOverlayState,
     setTravelEventRunnerStationResult,
     advanceTravelEventRunnerRound,
     retreatTravelEventRunnerRound,
@@ -737,10 +721,60 @@ Hooks.once("init", () => {
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
-    get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; }
+    get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
+    [ARCFLIGHT_API_MARKER]: true
+  });
+}
+
+function registerArcflightApi() {
+  const config = globalThis.CONFIG;
+  if (!config) return null;
+  const foundryGame = globalThis.game;
+  const existingApi = isArcflightApi(config.arcflight)
+    ? config.arcflight
+    : (isArcflightApi(foundryGame?.arcflight) ? foundryGame.arcflight : null);
+  const api = existingApi ?? buildArcflightApi();
+  config.arcflight = api;
+
+  if (foundryGame) {
+    if (foundryGame.arcflight == null || foundryGame.arcflight === api || isArcflightApi(foundryGame.arcflight)) foundryGame.arcflight = api;
+    else console.warn("Arcflight | game.arcflight already exists and is not Arcflight's API; leaving it unchanged.");
+  }
+
+  return api;
+}
+
+Hooks.once("init", () => {
+  console.log("Arcflight | Initializing module");
+
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, {
+    name: "Travel Event Builder Library",
+    hint: "World-local saved drafts for the Arcflight Travel Event Builder authoring shell.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: TRAVEL_EVENT_BUILDER_LIBRARY_VERSION, drafts: {} }
   });
 
-  game.arcflight = CONFIG.arcflight;
+  game.settings.register(ARCFLIGHT.MODULE_ID, PUBLISHED_TRAVEL_EVENT_LIBRARY_SETTING, {
+    name: "Published Travel Event Library",
+    hint: "World-local finalized travel event records published from the Arcflight Travel Event Builder.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: PUBLISHED_TRAVEL_EVENT_LIBRARY_VERSION, events: {} }
+  });
+
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING, {
+    name: "Travel Event Runner Session Library",
+    hint: "World-local manual save/resume snapshots for the Travel Event Runner. Separate from drafts, published events, actors, resources, chat, and combat.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION, sessions: {} }
+  });
+
+  registerArcflightApi();
 
   registerArcflightSheets()
     .then((registeredSheets) => {
@@ -751,8 +785,16 @@ Hooks.once("init", () => {
     });
 });
 
+Hooks.once("ready", () => {
+  registerArcflightApi();
+});
+
+if (globalThis.CONFIG) registerArcflightApi();
+
 export {
   ARCFLIGHT,
+  buildArcflightApi,
+  registerArcflightApi,
   createArcflightItem,
   createCoreHull,
   createHull,
@@ -969,9 +1011,12 @@ export {
   prepareTravelEventBuilderShellState,
   ArcflightTravelEventRunner,
   openTravelEventRunner,
+  ArcflightTravelSceneOverlay,
+  openTravelSceneOverlay,
   createTravelEventRunnerSession,
   normalizeTravelEventRunnerSession,
   prepareTravelEventRunnerState,
+  prepareTravelSceneOverlayState,
   setTravelEventRunnerStationResult,
   advanceTravelEventRunnerRound,
   retreatTravelEventRunnerRound,
