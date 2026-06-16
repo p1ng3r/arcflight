@@ -1,0 +1,41 @@
+<article class="arcflight-travel-player-station-card__shell arcflight-travel-player-station-card__shell--{{state.statusKey}}">
+  <header class="arcflight-travel-player-station-card__header">
+    <div>
+      <p class="arcflight-travel-player-station-card__eyebrow">{{state.roundLabel}}{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</p>
+      <h1>{{state.stationName}}</h1>
+    </div>
+    <span class="arcflight-travel-player-station-card__status">{{state.resultStatusLabel}}</span>
+  </header>
+
+  <dl class="arcflight-travel-player-station-card__facts">
+    <div><dt>Assigned Actor</dt><dd>{{state.assignedActorName}}</dd></div>
+    <div><dt>Current State</dt><dd>{{state.waitingStateText}}</dd></div>
+  </dl>
+
+  <section class="arcflight-travel-player-station-card__section" aria-label="Station prompt">
+    <h2>Station Problem</h2>
+    {{#if state.hasPromptText}}
+      <p>{{state.promptText}}</p>
+    {{else}}
+      <p class="arcflight-sheet__hint">No player-facing station prompt is available yet.</p>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-travel-player-station-card__section" aria-label="Selected approach">
+    <h2>Approach</h2>
+    {{#if state.hasSelectedApproach}}
+      <p><strong>{{state.selectedApproachLabel}}</strong></p>
+      {{#if state.hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint">{{state.selectedApproachHelpText}}</p>{{/if}}
+    {{else}}
+      <p class="arcflight-sheet__hint">Waiting for the GM to confirm the station approach.</p>
+    {{/if}}
+  </section>
+
+  {{#if state.isResolved}}
+    <section class="arcflight-travel-player-station-card__section arcflight-travel-player-station-card__resolution" aria-label="Station resolution">
+      <h2>Resolution</h2>
+      <p><strong>{{state.resultLabel}}</strong></p>
+      {{#if state.hasResultFeedback}}<p>{{state.resultFeedbackText}}</p>{{/if}}
+    </section>
+  {{/if}}
+</article>

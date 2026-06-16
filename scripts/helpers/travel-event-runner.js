@@ -1229,6 +1229,100 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
   };
 }
 
+export function prepareTravelPlayerStationCardState(session = null, stationKey = "", options = {}) {
+  const normalizedStationKey = typeof stationKey === "string" ? stationKey : String(stationKey ?? "");
+  const overlayState = prepareTravelSceneOverlayState(session, options);
+  if (!overlayState.hasSession) {
+    return {
+      hasSession: false,
+      sessionKey: "",
+      roundLabel: "No active round",
+      roundTitle: "",
+      stationKey: normalizedStationKey,
+      stationName: normalizedStationKey ? humanizeIdentifier(normalizedStationKey) : "Travel Station",
+      assignedActorName: "Unassigned",
+      promptText: "",
+      hasPromptText: false,
+      selectedApproachLabel: "",
+      selectedApproachHelpText: "",
+      hasSelectedApproach: false,
+      hasSelectedApproachHelpText: false,
+      resultStatusLabel: "No active session",
+      resultFeedbackText: "",
+      hasResultFeedback: false,
+      waitingStateText: overlayState.emptyMessage,
+      isResolved: false,
+      statusKey: "noSession"
+    };
+  }
+
+  const station = (overlayState.stations ?? []).find((candidate) => candidate.stationKey === normalizedStationKey) ?? null;
+  const activeSession = normalizeTravelEventRunnerSession(session, options).session;
+  if (!station) {
+    return {
+      hasSession: true,
+      sessionKey: activeSession?.key ?? "",
+      roundLabel: overlayState.roundLabel,
+      roundTitle: overlayState.roundTitle,
+      stationKey: normalizedStationKey,
+      stationName: normalizedStationKey ? humanizeIdentifier(normalizedStationKey) : "Travel Station",
+      assignedActorName: "Unassigned",
+      promptText: "",
+      hasPromptText: false,
+      selectedApproachLabel: "",
+      selectedApproachHelpText: "",
+      hasSelectedApproach: false,
+      hasSelectedApproachHelpText: false,
+      resultStatusLabel: "Station unavailable",
+      resultFeedbackText: "",
+      hasResultFeedback: false,
+      waitingStateText: "This station is not active for the current round.",
+      isResolved: false,
+      statusKey: "unavailable"
+    };
+  }
+
+  let statusKey = "waitingForGmRoll";
+  let resultStatusLabel = "Waiting for GM roll";
+  let waitingStateText = "Waiting for GM resolution";
+  if (!station.hasAssignment) {
+    statusKey = "needsAssignment";
+    resultStatusLabel = "Needs assignment";
+    waitingStateText = "Waiting for station assignment";
+  } else if (!station.hasSelectedApproach) {
+    statusKey = "waitingForApproach";
+    resultStatusLabel = "Waiting for approach";
+    waitingStateText = "Waiting for GM to confirm approach";
+  } else if (station.hasResult) {
+    statusKey = "resolved";
+    resultStatusLabel = "Resolved";
+    waitingStateText = station.resultLabel || "Resolved";
+  }
+
+  return {
+    hasSession: true,
+    sessionKey: activeSession?.key ?? "",
+    roundLabel: overlayState.roundLabel,
+    roundTitle: overlayState.roundTitle,
+    stationKey: station.stationKey,
+    stationName: station.stationName,
+    assignedActorName: station.assignedActorName,
+    promptText: station.promptText,
+    hasPromptText: station.hasPromptText === true,
+    selectedApproachLabel: station.hasSelectedApproach ? station.approachLabel : "",
+    selectedApproachHelpText: station.hasSelectedApproach ? station.approachHelpText : "",
+    hasSelectedApproach: station.hasSelectedApproach === true,
+    hasSelectedApproachHelpText: station.hasApproachHelpText === true,
+    resultStatusLabel,
+    resultLabel: station.hasResult ? station.resultLabel : "",
+    resultFeedbackText: station.hasResult ? station.resultFeedback : "",
+    hasResultFeedback: station.hasResult === true && Boolean(station.resultFeedback),
+    waitingStateText,
+    isResolved: station.hasResult === true,
+    statusKey
+  };
+}
+
 export function setTravelEventRunnerStationResult(session, roundIndex, stationKey, result, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;

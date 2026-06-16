@@ -1,4 +1,5 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
+import { openTravelPlayerStationCard } from "./travel-player-station-card.js";
 import {
   clearTravelEventRunnerStationAssignment,
   prepareTravelSceneOverlayState,
@@ -217,15 +218,21 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-preview-player-card], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     this.#captureScrollPosition();
 
     if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
+    if (target.hasAttribute("data-arcflight-overlay-preview-player-card")) return this.#previewPlayerStationCard(target);
     if (target.hasAttribute("data-arcflight-overlay-roll-station")) return this.#rollStationCheck(target);
     if (target.hasAttribute("data-arcflight-overlay-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-overlay-reset-assignment")) return this.#resetStationAssignment(target);
+  }
+
+  async #previewPlayerStationCard(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    return openTravelPlayerStationCard({ session: this.session, stationKey, actor: this.actor });
   }
 
   async #applySessionUpdate(updated, fallbackMessage = "Travel overlay session updated.") {

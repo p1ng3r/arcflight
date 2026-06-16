@@ -1709,3 +1709,106 @@
   font-size: 0.8rem;
   opacity: 0.78;
 }
+
+.arcflight-travel-scene-overlay__player-preview {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.arcflight-travel-scene-overlay__player-preview button {
+  flex: 0 1 auto;
+  font-size: 0.82rem;
+}
+
+.arcflight-travel-player-station-card .window-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.arcflight-travel-player-station-card__shell {
+  display: grid;
+  gap: 0.75rem;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(160deg, rgba(18, 28, 44, 0.96), rgba(8, 12, 20, 0.96));
+}
+
+.arcflight-travel-player-station-card__header,
+.arcflight-travel-player-station-card__facts,
+.arcflight-travel-player-station-card__section {
+  border: 1px solid rgba(160, 200, 255, 0.22);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 0.75rem;
+}
+
+.arcflight-travel-player-station-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-color: rgba(130, 190, 255, 0.38);
+  background: linear-gradient(135deg, rgba(45, 76, 122, 0.42), rgba(255, 255, 255, 0.05));
+}
+
+.arcflight-travel-player-station-card__header h1,
+.arcflight-travel-player-station-card__section h2,
+.arcflight-travel-player-station-card__section p {
+  margin: 0;
+}
+
+.arcflight-travel-player-station-card__eyebrow,
+.arcflight-travel-player-station-card__facts dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-station-card__status {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.arcflight-travel-player-station-card__facts {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-player-station-card__facts dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-player-station-card__section {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.arcflight-travel-player-station-card__resolution {
+  border-color: rgba(125, 220, 160, 0.36);
+  background: rgba(60, 120, 82, 0.18);
+}
+
+@media (max-width: 520px) {
+  .arcflight-travel-player-station-card__header,
+  .arcflight-travel-player-station-card__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .arcflight-travel-player-station-card__header {
+    display: grid;
+  }
+}
