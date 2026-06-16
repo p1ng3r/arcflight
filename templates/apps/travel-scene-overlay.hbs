@@ -28,13 +28,27 @@
       {{#if state.hasStations}}
         <div class="arcflight-travel-scene-overlay__station-list">
           {{#each state.stations}}
-            <article class="arcflight-travel-scene-overlay__station-card">
-              <h3>{{stationName}}</h3>
-              <dl>
+            <article class="{{classes}}">
+              <header class="arcflight-travel-scene-overlay__station-card-header">
+                <h3>{{stationName}}</h3>
+                <span class="arcflight-travel-scene-overlay__station-card-state">{{resultLabel}}</span>
+              </header>
+
+              <dl class="arcflight-travel-scene-overlay__station-card-facts">
                 <div><dt>Assigned Actor</dt><dd>{{assignedActorName}}</dd></div>
                 <div><dt>Approach</dt><dd>{{approachLabel}}</dd></div>
                 <div><dt>Result</dt><dd>{{resultLabel}}</dd></div>
               </dl>
+
+              {{#if hasPromptText}}
+                <p class="arcflight-travel-scene-overlay__station-card-text"><strong>Station Prompt:</strong> {{promptText}}</p>
+              {{/if}}
+              {{#if hasApproachHelpText}}
+                <p class="arcflight-travel-scene-overlay__station-card-text arcflight-sheet__hint"><strong>Approach Help:</strong> {{approachHelpText}}</p>
+              {{/if}}
+              {{#if hasResultFeedback}}
+                <p class="arcflight-travel-scene-overlay__station-card-text arcflight-sheet__hint"><strong>Station Feedback:</strong> {{resultFeedback}}</p>
+              {{/if}}
             </article>
           {{/each}}
         </div>

@@ -439,6 +439,7 @@ function resolveStationApproachSelection(roundResult, stationKey, card, suggeste
     skill,
     label,
     helpText: selectedApproach?.helpText ?? "",
+    isSelected: Boolean(storedSkill),
     source: selectedApproach ? "stationCard" : (fallbackSkill ? "suggestedSkills" : "default"),
     options: approaches.map((entry) => ({
       skill: entry.skill,
@@ -1035,14 +1036,37 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
 
   const roundNumber = runnerState.currentRoundNumber || 0;
   const roundTitle = runnerState.currentRoundTitle || "";
-  const stations = (runnerState.stations ?? []).map((row) => ({
-    stationKey: row.stationKey,
-    stationName: row.stationName || humanizeIdentifier(row.stationKey),
-    assignedActorName: row.assignedActorName || "Unassigned",
-    approachLabel: row.selectedApproach?.label || row.selectedSkillLabel || "Not selected",
-    resultLabel: row.resultLabel || "Unrecorded",
-    hasResult: Boolean(row.result)
-  }));
+  const stations = (runnerState.stations ?? []).map((row) => {
+    const hasAssignment = row.assigned === true;
+    const hasSelectedApproach = row.selectedApproach?.isSelected === true;
+    const hasResult = Boolean(row.result);
+    const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
+    const classes = [
+      "arcflight-travel-scene-overlay__station-card",
+      "arcflight-travel-scene-overlay__station-card--active",
+      hasAssignment ? "" : "arcflight-travel-scene-overlay__station-card--unassigned",
+      hasSelectedApproach ? "" : "arcflight-travel-scene-overlay__station-card--approach-not-selected",
+      resultStateClass
+    ].filter(Boolean).join(" ");
+    return {
+      stationKey: row.stationKey,
+      stationName: row.stationName || humanizeIdentifier(row.stationKey),
+      assignedActorName: hasAssignment ? (row.assignedActorName || "Unknown Actor") : "Unassigned",
+      approachLabel: hasSelectedApproach ? (row.selectedApproach?.label || row.selectedSkillLabel || "Selected") : "Not selected",
+      approachHelpText: hasSelectedApproach ? (row.selectedApproach?.helpText || "") : "",
+      resultLabel: hasResult ? (row.resultLabel || humanizeIdentifier(row.result)) : "Unrecorded",
+      resultFeedback: row.resultFeedback || "",
+      promptText: row.problem || row.prompt || "",
+      hasPromptText: Boolean(row.problem || row.prompt),
+      hasApproachHelpText: Boolean(hasSelectedApproach && row.selectedApproach?.helpText),
+      hasResultFeedback: Boolean(row.resultFeedback),
+      hasAssignment,
+      hasSelectedApproach,
+      hasResult,
+      result: row.result || "",
+      classes
+    };
+  });
 
   return {
     hasSession: true,
