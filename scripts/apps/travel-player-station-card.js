@@ -279,8 +279,8 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
     this.session = options.session ?? null;
     this.stationKey = options.stationKey ?? "";
     this.actor = options.actor ?? null;
-    this.state = options.state ? sanitizeTravelPlayerStationCardState(options.state) : null;
-    this.instanceKey = stationCardInstanceKey({ session: this.session, stationKey: this.stationKey, state: this.state });
+    this.playerCardState = options.state ? sanitizeTravelPlayerStationCardState(options.state) : null;
+    this.instanceKey = stationCardInstanceKey({ session: this.session, stationKey: this.stationKey, state: this.playerCardState });
   }
 
   static DEFAULT_OPTIONS = {
@@ -294,13 +294,13 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
     card: { template: arcflightTemplatePath("apps/travel-player-station-card.hbs") }
   };
 
-  async setContext({ session = this.session, stationKey = this.stationKey, actor = this.actor, state = this.state } = {}, { render = true } = {}) {
+  async setContext({ session = this.session, stationKey = this.stationKey, actor = this.actor, state = this.playerCardState } = {}, { render = true } = {}) {
     const previousKey = this.instanceKey;
-    this.state = state ? sanitizeTravelPlayerStationCardState(state) : null;
-    this.session = this.state ? null : (session ?? null);
-    this.stationKey = this.state ? this.state.stationKey : (stationKey ?? "");
-    this.actor = this.state ? null : (actor ?? null);
-    this.instanceKey = stationCardInstanceKey({ session: this.session, stationKey: this.stationKey, state: this.state });
+    this.playerCardState = state ? sanitizeTravelPlayerStationCardState(state) : null;
+    this.session = this.playerCardState ? null : (session ?? null);
+    this.stationKey = this.playerCardState ? this.playerCardState.stationKey : (stationKey ?? "");
+    this.actor = this.playerCardState ? null : (actor ?? null);
+    this.instanceKey = stationCardInstanceKey({ session: this.session, stationKey: this.stationKey, state: this.playerCardState });
     if (previousKey !== this.instanceKey && activeTravelPlayerStationCards.get(previousKey) === this) activeTravelPlayerStationCards.delete(previousKey);
     activeTravelPlayerStationCards.set(this.instanceKey, this);
     if (render) await this.render(true);
@@ -309,7 +309,7 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
-    const state = this.state ?? prepareTravelPlayerStationCardState(this.session, this.stationKey, { actor: this.actor });
+    const state = this.playerCardState ?? prepareTravelPlayerStationCardState(this.session, this.stationKey, { actor: this.actor });
     return { ...context, state };
   }
 
