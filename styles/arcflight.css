@@ -1558,7 +1558,7 @@
 .arcflight-travel-scene-overlay__station-card-facts {
   display: grid;
   gap: 0.35rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
 }
 
@@ -1615,16 +1615,49 @@
 }
 
 .arcflight-travel-scene-overlay__station-control-actions,
+.arcflight-travel-scene-overlay__roll-controls,
+.arcflight-travel-scene-overlay__roll-confirmation,
 .arcflight-travel-scene-overlay__result-controls {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.35rem;
 }
 
 .arcflight-travel-scene-overlay__station-control-actions button,
+.arcflight-travel-scene-overlay__roll-controls button,
+.arcflight-travel-scene-overlay__roll-confirmation button,
 .arcflight-travel-scene-overlay__result-controls button {
   flex: 1 1 auto;
   min-width: max-content;
+}
+
+.arcflight-travel-scene-overlay__roll-readout,
+.arcflight-travel-scene-overlay__roll-confirmation {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.4rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.arcflight-travel-scene-overlay__roll-readout {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+}
+
+.arcflight-travel-scene-overlay__roll-readout span,
+.arcflight-travel-scene-overlay__roll-confirmation span {
+  font-size: 0.82rem;
+  opacity: 0.86;
+}
+
+.arcflight-travel-scene-overlay__result-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  opacity: 0.86;
+  text-transform: uppercase;
 }
 
 .arcflight-travel-scene-overlay__result-button--selected {

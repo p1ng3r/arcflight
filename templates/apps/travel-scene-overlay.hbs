@@ -102,6 +102,8 @@
               <dl class="arcflight-travel-scene-overlay__station-card-facts">
                 <div><dt>Assigned Actor</dt><dd>{{assignedActorName}}</dd></div>
                 <div><dt>Approach</dt><dd>{{approachLabel}}</dd></div>
+                <div><dt>DC</dt><dd>{{dcLabel}}</dd></div>
+                <div><dt>Modifier</dt><dd>{{selectedApproachModifierLabel}}</dd></div>
                 <div><dt>Result</dt><dd>{{resultLabel}}</dd></div>
               </dl>
 
@@ -127,7 +129,28 @@
                     {{/each}}
                   </select>
                 </label>
-                <div class="arcflight-travel-scene-overlay__result-controls" role="group" aria-label="Record {{stationName}} result">
+                <div class="arcflight-travel-scene-overlay__roll-controls" role="group" aria-label="GM roll {{stationName}} check">
+                  <div class="arcflight-travel-scene-overlay__roll-readout">
+                    <strong>{{dcLabel}}</strong>
+                    <span>{{selectedApproachModifierLabel}}</span>
+                  </div>
+                  {{#if canRollStationCheck}}
+                    <button type="button" data-arcflight-overlay-roll-station data-round-index="{{../state.currentRoundIndex}}" data-station-key="{{stationKey}}" data-dc="{{dc}}" data-modifier="{{selectedApproachModifier}}" {{#if ../state.isCompleted}}disabled{{/if}}>Roll Check</button>
+                  {{else}}
+                    <button type="button" disabled title="{{rollUnavailableReason}}">Roll Unavailable</button>
+                  {{/if}}
+                </div>
+                {{#if hasLastRoll}}
+                  <div class="arcflight-travel-scene-overlay__roll-confirmation" aria-live="polite">
+                    <span>d20 {{lastRoll.d20}}</span>
+                    <span>{{selectedApproachModifierLabel}}</span>
+                    <strong>Total {{lastRoll.total}}</strong>
+                    <span>{{lastRoll.resultLabel}}</span>
+                    <button type="button" data-arcflight-overlay-record-roll data-round-index="{{../state.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Record Result</button>
+                  </div>
+                {{/if}}
+                <div class="arcflight-travel-scene-overlay__result-label">GM Result Controls / Manual Override</div>
+                <div class="arcflight-travel-scene-overlay__result-controls" role="group" aria-label="GM result controls for {{stationName}}">
                   {{#each resultOptions}}
                     <button type="button" data-arcflight-overlay-result data-round-index="{{../../state.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-scene-overlay__result-button--selected{{/if}}">{{label}}</button>
                   {{/each}}

@@ -463,6 +463,28 @@ function resolveSafeStatisticLabel(actor, suggestedSkills = []) {
   return `${label} (unavailable)`;
 }
 
+function resolveActorStatisticModifier(actor, skill) {
+  const key = typeof skill === "string" ? skill.trim() : "";
+  if (!key || !actor) return null;
+  const statistic = key === "perception"
+    ? (actor?.system?.perception ?? actor?.system?.attributes?.perception ?? actor?.perception ?? actor?.system?.proficiencies?.perception ?? actor?.system?.skills?.perception ?? actor?.system?.statistics?.perception ?? actor?.skills?.perception ?? actor?.statistics?.perception ?? null)
+    : (actor?.system?.skills?.[key] ?? actor?.system?.statistics?.[key] ?? actor?.skills?.[key] ?? actor?.statistics?.[key] ?? null);
+  const modifier = Number(statistic?.mod ?? statistic?.check?.mod ?? statistic?.totalModifier ?? statistic?.modifier);
+  return Number.isFinite(modifier) ? modifier : null;
+}
+
+function resolveStationDc(row, baseDC) {
+  const card = isPlainObject(row?.stationCard) ? row.stationCard : {};
+  const prompt = isPlainObject(row?.promptData) ? row.promptData : {};
+  const directDc = Number(card.dc ?? card.DC ?? prompt.dc ?? prompt.DC);
+  if (Number.isFinite(directDc) && directDc > 0) return { dc: directDc, source: "station" };
+  const dcModifier = Number(card.dcModifier ?? prompt.dcModifier);
+  const eventDc = Number(baseDC);
+  if (Number.isFinite(eventDc) && eventDc > 0 && Number.isFinite(dcModifier)) return { dc: eventDc + dcModifier, source: "stationModifier" };
+  if (Number.isFinite(eventDc) && eventDc > 0) return { dc: eventDc, source: "event" };
+  return { dc: null, source: "" };
+}
+
 export function prepareTravelEventRunnerStationAssignmentState(session, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   const assignments = normalizeTravelEventRunnerStationAssignments(normalized.session?.stationAssignments);
@@ -665,6 +687,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       stationKey,
       stationName: card.stationName || prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey),
       prompt: prompt.playerAction || prompt.vignette || "No station prompt provided.",
+      promptData: prompt,
       vignette: prompt.vignette || "",
       stationCard: card,
       problem: card.problem || prompt.playerAction || prompt.vignette || "No station card problem provided.",
@@ -1057,6 +1080,16 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const hasSelectedApproach = row.selectedApproach?.isSelected === true;
     const hasResult = Boolean(row.result);
     const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
+    const resolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
+    const selectedApproachModifier = resolveActorStatisticModifier(row.assignment?.actorId || row.assignment?.actorUuid ? getActorByAssignment(row.assignment, options) : null, row.selectedApproach?.skill);
+    const hasSelectedApproachModifier = Number.isFinite(selectedApproachModifier);
+    const rollUnavailableReason = !hasAssignment
+      ? "Assign an actor before rolling."
+      : (!hasSelectedApproach
+        ? "Select an approach before rolling."
+        : (!resolvedDc.dc
+          ? "DC unavailable."
+          : (!hasSelectedApproachModifier ? "Modifier unavailable." : "")));
     const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
     const station = {
       stationKey: row.stationKey,
@@ -1070,6 +1103,15 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasPromptText: Boolean(row.problem || row.prompt),
       hasApproachHelpText: Boolean(hasSelectedApproach && row.selectedApproach?.helpText),
       hasResultFeedback: Boolean(row.resultFeedback),
+      dc: resolvedDc.dc,
+      hasDc: Number.isFinite(resolvedDc.dc),
+      dcLabel: Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable",
+      dcSource: resolvedDc.source,
+      selectedApproachModifier,
+      hasSelectedApproachModifier,
+      selectedApproachModifierLabel: hasSelectedApproachModifier ? `${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : "Modifier unavailable",
+      canRollStationCheck: Boolean(hasAssignment && hasSelectedApproach && Number.isFinite(resolvedDc.dc) && hasSelectedApproachModifier),
+      rollUnavailableReason,
       hasAssignment,
       hasSelectedApproach,
       hasResult,
