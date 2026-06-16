@@ -7,17 +7,21 @@ let activeTravelSceneOverlay = null;
 
 const DEFAULT_OVERLAY_POSITION = Object.freeze({ left: 880, top: 120, width: 640 });
 
+function getOverlayElement(app) {
+  const element = app?.element;
+  if (!element) return null;
+  if (element instanceof HTMLElement) return element;
+  if (element[0] instanceof HTMLElement) return element[0];
+  return null;
+}
+
 function isOverlayRendered(app) {
-  return Boolean(app && (app.rendered === true || app.element));
+  return Boolean(app && (app.rendered === true || getOverlayElement(app)));
 }
 
 function bringOverlayToFront(app) {
-  if (!app) return;
-  if (typeof app.bringToFront === "function") {
-    app.bringToFront();
-    return;
-  }
-  if (typeof app.setPosition === "function") app.setPosition();
+  if (!isOverlayRendered(app) || !getOverlayElement(app)) return;
+  if (typeof app.bringToFront === "function") app.bringToFront();
 }
 
 export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -40,11 +44,10 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     overlay: { template: arcflightTemplatePath("apps/travel-scene-overlay.hbs") }
   };
 
-  setContext({ session = this.session, actor = this.actor } = {}, { render = true, bringToFront = false } = {}) {
+  async setContext({ session = this.session, actor = this.actor } = {}, { render = true } = {}) {
     this.session = session ?? null;
     this.actor = actor ?? null;
-    if (render) this.render(true);
-    if (bringToFront) bringOverlayToFront(this);
+    if (render) await this.render(true);
     return this;
   }
 
@@ -81,18 +84,29 @@ export function getActiveTravelSceneOverlay() {
   return activeTravelSceneOverlay;
 }
 
-export function updateActiveTravelSceneOverlayContext(options = {}, renderOptions = {}) {
-  if (!isOverlayRendered(activeTravelSceneOverlay)) return null;
-  return activeTravelSceneOverlay.setContext(options, renderOptions);
+export async function updateActiveTravelSceneOverlayContext(options = {}, renderOptions = {}) {
+  const app = activeTravelSceneOverlay;
+  if (!app) return null;
+  try {
+    return await app.setContext(options, renderOptions);
+  } catch (error) {
+    console.warn("Arcflight | Unable to update Travel Scene Overlay context.", error);
+    return null;
+  }
 }
 
-export function openTravelSceneOverlay(options = {}) {
+export async function openTravelSceneOverlay(options = {}) {
   const appOptions = options && typeof options === "object" ? options : {};
-  const app = isOverlayRendered(activeTravelSceneOverlay)
-    ? activeTravelSceneOverlay
-    : new ArcflightTravelSceneOverlay(appOptions);
+  const app = activeTravelSceneOverlay ?? new ArcflightTravelSceneOverlay(appOptions);
   activeTravelSceneOverlay = app;
-  const rendered = app.setContext(appOptions, { render: true, bringToFront: true });
-  if (typeof rendered.setPosition === "function") rendered.setPosition({ ...DEFAULT_OVERLAY_POSITION, ...(appOptions.position ?? {}) });
-  return rendered;
+
+  try {
+    await app.setContext(appOptions, { render: true });
+    if (typeof app.setPosition === "function") app.setPosition({ ...DEFAULT_OVERLAY_POSITION, ...(appOptions.position ?? {}) });
+    bringOverlayToFront(app);
+  } catch (error) {
+    console.warn("Arcflight | Unable to open Travel Scene Overlay.", error);
+  }
+
+  return app;
 }
