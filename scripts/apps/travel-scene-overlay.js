@@ -69,12 +69,17 @@ function bringOverlayToFront(app) {
 export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundOverlayClick = this.#onOverlayClick.bind(this);
   #boundOverlayChange = this.#onOverlayChange.bind(this);
+  #pendingScrollState = null;
 
   constructor(options = {}) {
     super(options);
     this.session = options.session ?? null;
     this.actor = options.actor ?? null;
     this.onSessionUpdate = typeof options.onSessionUpdate === "function" ? options.onSessionUpdate : null;
+    this.uiState = {
+      scrollTop: 0,
+      scrollSelector: ""
+    };
   }
 
   static DEFAULT_OPTIONS = {
@@ -87,6 +92,82 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   static PARTS = {
     overlay: { template: arcflightTemplatePath("apps/travel-scene-overlay.hbs") }
   };
+
+  render(force, options) {
+    if (force === true) this.#captureScrollPosition();
+    return super.render(force, options);
+  }
+
+  #getApplicationRoot() {
+    return this.element?.closest?.(".app, .application, .window-app")
+      ?? this.element
+      ?? null;
+  }
+
+  #getScrollCandidates() {
+    const root = this.#getApplicationRoot();
+    const selectors = [
+      ".arcflight-travel-scene-overlay",
+      ".arcflight-travel-scene-overlay__body",
+      ".window-content",
+      ".application-content",
+      "[data-application-part='overlay']",
+      "[data-application-part]"
+    ];
+    const candidates = [];
+    for (const element of [this.element, root]) {
+      if (element) candidates.push({ element, selector: "" });
+    }
+    for (const selector of selectors) {
+      const scoped = root?.querySelector?.(selector);
+      if (scoped) candidates.push({ element: scoped, selector });
+      const local = this.element?.querySelector?.(selector);
+      if (local) candidates.push({ element: local, selector });
+    }
+    return candidates.filter((candidate, index, array) => candidate.element && array.findIndex((other) => other.element === candidate.element) === index);
+  }
+
+  #findScrollContainer(preferredSelector = "") {
+    const candidates = this.#getScrollCandidates();
+    if (preferredSelector) {
+      const preferred = candidates.find((candidate) => candidate.selector === preferredSelector && this.#isScrollable(candidate.element));
+      if (preferred) return preferred;
+    }
+    return candidates.find((candidate) => this.#isScrollable(candidate.element) && Number(candidate.element.scrollTop) > 0)
+      ?? candidates.find((candidate) => this.#isScrollable(candidate.element))
+      ?? candidates.find((candidate) => candidate.element)
+      ?? null;
+  }
+
+  #isScrollable(element) {
+    return Boolean(element && Number(element.scrollHeight) > Number(element.clientHeight) + 1);
+  }
+
+  #captureScrollPosition() {
+    if (this.#pendingScrollState) return;
+    const candidate = this.#findScrollContainer(this.uiState.scrollSelector);
+    if (!candidate?.element || !Number.isFinite(Number(candidate.element.scrollTop))) return;
+    this.uiState.scrollTop = candidate.element.scrollTop;
+    this.uiState.scrollSelector = candidate.selector;
+    this.#pendingScrollState = { scrollTop: candidate.element.scrollTop, selector: candidate.selector };
+  }
+
+  #restoreScrollPosition() {
+    if (!this.#pendingScrollState) return;
+    const pending = this.#pendingScrollState;
+    const { scrollTop, selector } = pending;
+    const restore = () => {
+      const candidate = this.#findScrollContainer(selector);
+      if (candidate?.element) {
+        candidate.element.scrollTop = scrollTop;
+        this.uiState.scrollTop = scrollTop;
+        this.uiState.scrollSelector = candidate.selector;
+      }
+      if (this.#pendingScrollState === pending) this.#pendingScrollState = null;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
+    else setTimeout(restore, 0);
+  }
 
   async setContext({ session = this.session, actor = this.actor, onSessionUpdate } = {}, { render = true } = {}) {
     this.session = session ?? null;
@@ -103,7 +184,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     return {
       ...context,
       state,
-      hardBoundaryHint: "GM cockpit: manual station controls only; no rolls, automation, combat integration, sockets/player ownership, or actor/resource mutation beyond explicit runner-session updates."
+      hardBoundaryHint: "GM cockpit: manual station roll/result controls only; no combat integration, sockets/player ownership, player prompts, or actor/resource mutation beyond explicit runner-session updates."
     };
   }
 
@@ -113,6 +194,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     this.element?.addEventListener("click", this.#boundOverlayClick);
     this.element?.removeEventListener("change", this.#boundOverlayChange);
     this.element?.addEventListener("change", this.#boundOverlayChange);
+    this.#restoreScrollPosition();
   }
 
   async close(options = {}) {
@@ -122,19 +204,26 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
 
   async #onOverlayChange(event) {
     const assignmentSelect = event.target?.closest?.("[data-arcflight-overlay-assignment-select]");
-    if (assignmentSelect && this.element?.contains(assignmentSelect)) return this.#updateStationAssignment(assignmentSelect);
+    if (assignmentSelect && this.element?.contains(assignmentSelect)) {
+      this.#captureScrollPosition();
+      return this.#updateStationAssignment(assignmentSelect);
+    }
 
     const approachSelect = event.target?.closest?.("[data-arcflight-overlay-approach-select]");
-    if (approachSelect && this.element?.contains(approachSelect)) return this.#updateStationSkillApproach(approachSelect);
+    if (approachSelect && this.element?.contains(approachSelect)) {
+      this.#captureScrollPosition();
+      return this.#updateStationSkillApproach(approachSelect);
+    }
   }
 
   async #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-result], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
+    this.#captureScrollPosition();
 
     if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
-    if (target.hasAttribute("data-arcflight-overlay-result")) return this.#recordStationResult(target);
+    if (target.hasAttribute("data-arcflight-overlay-roll-station")) return this.#rollStationCheck(target);
     if (target.hasAttribute("data-arcflight-overlay-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-overlay-reset-assignment")) return this.#resetStationAssignment(target);
   }
@@ -177,12 +266,45 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     return this.#applySessionUpdate(updated, "Updated travel station approach.");
   }
 
-  async #recordStationResult(target) {
+  #calculateDegree(total, dc, d20) {
+    if (d20 === 20) return "criticalSuccess";
+    if (d20 === 1) return "criticalFailure";
+    if (total >= dc + 10) return "criticalSuccess";
+    if (total >= dc) return "success";
+    if (total <= dc - 10) return "criticalFailure";
+    return "failure";
+  }
+
+  #degreeLabel(result) {
+    return String(result ?? "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  async #rollStationCheck(target) {
     const roundIndex = Number(target.dataset.roundIndex);
     const stationKey = target.dataset.stationKey ?? "";
-    const result = target.dataset.result ?? "";
+    const dc = Number(target.dataset.dc);
+    const modifier = Number(target.dataset.modifier);
+    if (!Number.isFinite(roundIndex) || !stationKey || !Number.isFinite(dc) || !Number.isFinite(modifier)) {
+      ui.notifications?.warn?.("Travel station roll is unavailable.");
+      await this.render(true);
+      return false;
+    }
+
+    let d20 = 0;
+    if (globalThis.Roll) {
+      const roll = await new Roll("1d20").evaluate();
+      d20 = Number(roll.total);
+      if (typeof roll.toMessage === "function") {
+        await roll.toMessage({ flavor: `Arcflight Travel Station Check: ${stationKey}` }, { rollMode: "gmroll" });
+      }
+    } else {
+      d20 = Math.floor(Math.random() * 20) + 1;
+    }
+
+    const total = d20 + modifier;
+    const result = this.#calculateDegree(total, dc, d20);
     const updated = setTravelEventRunnerStationResult(this.session, roundIndex, stationKey, result);
-    return this.#applySessionUpdate(updated, "Recorded travel station result.");
+    return this.#applySessionUpdate(updated, `Travel station roll: d20 ${d20} ${modifier >= 0 ? "+" : ""}${modifier} = ${total} vs DC ${dc} — ${this.#degreeLabel(result)} recorded.`);
   }
 
   async #clearStationAssignment(target) {
