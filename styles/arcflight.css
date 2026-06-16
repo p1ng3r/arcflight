@@ -1335,12 +1335,16 @@
 }
 
 .arcflight-travel-scene-overlay .window-content {
+  overflow: hidden;
   padding: 0;
 }
 
 .arcflight-travel-scene-overlay__shell {
+  box-sizing: border-box;
   display: grid;
   gap: 0.75rem;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
   padding: 1rem;
 }
 
