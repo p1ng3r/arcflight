@@ -262,10 +262,33 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #broadcastPlayerStationCard(target) {
-    const stationKey = target.dataset.stationKey ?? "";
+    const stationKey = target?.dataset?.stationKey ?? "";
+    console.warn("Arcflight | Overlay Broadcast Player Card clicked.", {
+      stationKey,
+      hasSession: Boolean(this.session),
+      sessionKey: this.session?.key
+    });
+
+    if (!stationKey) {
+      ui.notifications?.error?.("Arcflight cannot broadcast player card: missing station key.");
+      return null;
+    }
+
+    if (!this.session) {
+      ui.notifications?.error?.("Arcflight cannot broadcast player card: overlay session is missing.");
+      console.error("Arcflight | Overlay broadcast failed: missing session.", this);
+      return null;
+    }
+
     const result = broadcastTravelPlayerStationCardToAllPlayers(this.session, stationKey, { actor: this.actor });
-    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
-    else ui.notifications?.info?.(`Broadcast player station card to ${result.sentRecipients} active player${result.sentRecipients === 1 ? "" : "s"}.`);
+    console.warn("Arcflight | Overlay Broadcast Player Card result.", result);
+
+    if (!result?.ok) {
+      ui.notifications?.error?.(`Arcflight failed to broadcast player card: ${(result?.errors ?? []).join(", ") || "unknown error"}`);
+      return result;
+    }
+
+    ui.notifications?.info?.(`Broadcast player station card to ${result.sentRecipients ?? result.sent ?? 0} active player recipient(s).`);
     return result;
   }
 
