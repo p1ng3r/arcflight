@@ -1039,6 +1039,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       gmGuidanceTitle: "",
       gmGuidanceText: "",
       gmGuidanceSteps: [],
+      guidanceStation: null,
+      guidanceStationName: "",
+      hasGuidanceStation: false,
       hasGmGuidanceSteps: false,
       hasGmGuidance: false
     };
@@ -1077,9 +1080,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     ].filter(Boolean).join(" ");
     return station;
   });
-  const focusedStation = stations.find((station) => !station.hasAssignment)
+  const focusedStation = stations.find((station) => !station.hasResult)
     ?? stations.find((station) => !station.hasSelectedApproach)
-    ?? stations.find((station) => !station.hasResult)
+    ?? stations.find((station) => !station.hasAssignment)
     ?? stations[0]
     ?? null;
   if (focusedStation) {
@@ -1096,7 +1099,8 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
   const roundCompletionState = stationCount <= 0
     ? "noStations"
     : (unresolvedStationCount <= 0 ? "resolved" : "unresolved");
-  const focusedStationName = focusedStation?.stationName ?? "the focused station";
+  let guidanceTargetStation = null;
+  let guidanceStationName = "";
   let gmGuidanceTitle = "GM Round Guidance";
   let gmGuidanceText = "";
   let gmGuidanceSteps = [];
@@ -1106,17 +1110,23 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     gmGuidanceText = "No station prompts are active for this round. Review the round vignette and runner state before advancing.";
     gmGuidanceSteps = ["Review the round summary", "Confirm the runner has the correct round loaded", "Advance only if this round intentionally has no station prompts"];
   } else if (unassignedStationCount > 0) {
+    guidanceTargetStation = stations.find((station) => !station.hasAssignment) ?? null;
+    guidanceStationName = guidanceTargetStation?.stationName ?? "the first unassigned station";
     gmGuidanceTitle = "Assign Crew to Stations";
-    gmGuidanceText = `${unassignedStationCount} station${unassignedStationCount === 1 ? " needs" : "s need"} an assigned crew member or actor. Start with ${focusedStationName}.`;
-    gmGuidanceSteps = ["Review focused station", "Confirm assignment", "Refresh overlay after runner changes", "Then confirm approaches"];
+    gmGuidanceText = `${unassignedStationCount} station${unassignedStationCount === 1 ? " needs" : "s need"} an assigned crew member or actor. Start with ${guidanceStationName}.`;
+    gmGuidanceSteps = ["Review guidance station", "Confirm assignment", "Refresh overlay after runner changes", "Then confirm approaches"];
   } else if (unselectedApproachCount > 0) {
+    guidanceTargetStation = stations.find((station) => !station.hasSelectedApproach) ?? null;
+    guidanceStationName = guidanceTargetStation?.stationName ?? "the first station without an approach";
     gmGuidanceTitle = "Confirm Station Approaches";
-    gmGuidanceText = `${unselectedApproachCount} station${unselectedApproachCount === 1 ? " needs" : "s need"} a selected approach. Start with ${focusedStationName}.`;
-    gmGuidanceSteps = ["Review focused station", "Confirm approach", "Refresh overlay after runner changes", "Then resolve station results"];
+    gmGuidanceText = `${unselectedApproachCount} station${unselectedApproachCount === 1 ? " needs" : "s need"} a selected approach. Start with ${guidanceStationName}.`;
+    gmGuidanceSteps = ["Review guidance station", "Confirm approach", "Refresh overlay after runner changes", "Then resolve station results"];
   } else if (unresolvedResultCount > 0) {
+    guidanceTargetStation = stations.find((station) => !station.hasResult) ?? null;
+    guidanceStationName = guidanceTargetStation?.stationName ?? "the first station without a result";
     gmGuidanceTitle = "Resolve Station Results";
-    gmGuidanceText = `${unresolvedResultCount} station result${unresolvedResultCount === 1 ? " is" : "s are"} still unrecorded. Start with ${focusedStationName}.`;
-    gmGuidanceSteps = ["Review focused station", "Resolve result", "Refresh overlay after runner changes", "Repeat until all station results are recorded"];
+    gmGuidanceText = `${unresolvedResultCount} station result${unresolvedResultCount === 1 ? " is" : "s are"} still unrecorded. Start with ${guidanceStationName}.`;
+    gmGuidanceSteps = ["Review guidance station", "Resolve result", "Refresh overlay after runner changes", "Repeat until all station results are recorded"];
   } else {
     gmGuidanceTitle = "Round Appears Resolved";
     gmGuidanceText = "All active stations have assignments, approaches, and recorded results. The GM can advance or apply round consequences in the runner.";
@@ -1151,6 +1161,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     gmGuidanceTitle,
     gmGuidanceText,
     gmGuidanceSteps,
+    guidanceStation: guidanceTargetStation,
+    guidanceStationName,
+    hasGuidanceStation: Boolean(guidanceTargetStation),
     hasGmGuidanceSteps: gmGuidanceSteps.length > 0,
     hasGmGuidance: Boolean(gmGuidanceTitle || gmGuidanceText || gmGuidanceSteps.length > 0),
     roundStateSummary,
