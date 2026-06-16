@@ -6,6 +6,9 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const activeTravelPlayerStationCards = new Map();
 const TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION = "openTravelPlayerStationCard";
 const TRAVEL_PLAYER_STATION_CARD_SOCKET_TEST_ACTION = "arcflightSocketDiagnostic";
+const TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION = "submitTravelPlayerStationApproach";
+
+let travelPlayerStationApproachSubmitHandler = null;
 
 function sanitizeText(value) {
   return typeof value === "string" ? value : "";
@@ -13,6 +16,23 @@ function sanitizeText(value) {
 
 function sanitizeBoolean(value) {
   return value === true;
+}
+
+function sanitizeApproachOptions(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      skill: sanitizeText(entry.skill),
+      label: sanitizeText(entry.label),
+      helpText: sanitizeText(entry.helpText),
+      selected: sanitizeBoolean(entry.selected)
+    }))
+    .filter((entry) => entry.skill || entry.label || entry.helpText);
+}
+
+function sanitizeInteger(value, fallback = -1) {
+  const number = Number(value);
+  return Number.isInteger(number) ? number : fallback;
 }
 
 function sanitizeTravelPlayerStationCardState(state = {}) {
@@ -37,7 +57,11 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     hasResultFeedback: sanitizeBoolean(source.hasResultFeedback),
     waitingStateText: sanitizeText(source.waitingStateText) || "Waiting for GM resolution",
     isResolved: sanitizeBoolean(source.isResolved),
-    statusKey: sanitizeText(source.statusKey) || "waitingForGmRoll"
+    statusKey: sanitizeText(source.statusKey) || "waitingForGmRoll",
+    approachOptions: sanitizeApproachOptions(source.approachOptions),
+    hasApproachOptions: sanitizeBoolean(source.hasApproachOptions) || sanitizeApproachOptions(source.approachOptions).length > 0,
+    selectedApproachValue: sanitizeText(source.selectedApproachValue),
+    currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)
   };
 }
 
@@ -249,6 +273,15 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
     if (matched) ui.notifications?.info?.("Arcflight socket diagnostic received.");
     return true;
   }
+  if (payload.action === TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION) {
+    if (globalThis.game?.user?.isGM !== true) return true;
+    if (typeof travelPlayerStationApproachSubmitHandler === "function") {
+      travelPlayerStationApproachSubmitHandler(payload);
+    } else {
+      console.warn("Arcflight | No Travel Player Station approach submit handler registered.", payload);
+    }
+    return true;
+  }
   if (payload.action !== TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION) return false;
   const userId = globalThis.game?.user?.id ?? "";
   const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
@@ -273,7 +306,13 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
   return true;
 }
 
+export function registerTravelPlayerStationApproachSubmitHandler(handler) {
+  travelPlayerStationApproachSubmitHandler = typeof handler === "function" ? handler : null;
+}
+
 export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin(ApplicationV2) {
+  #boundPlayerCardClick = this.#onPlayerCardClick.bind(this);
+
   constructor(options = {}) {
     super(options);
     this.session = options.session ?? null;
@@ -311,6 +350,55 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
     const context = await super._prepareContext(options);
     const state = this.playerCardState ?? prepareTravelPlayerStationCardState(this.session, this.stationKey, { actor: this.actor });
     return { ...context, state };
+  }
+
+  _onRender(context, options) {
+    super._onRender(context, options);
+    this.element?.removeEventListener("click", this.#boundPlayerCardClick);
+    this.element?.addEventListener("click", this.#boundPlayerCardClick);
+  }
+
+  async #onPlayerCardClick(event) {
+    const target = event.target?.closest?.("[data-arcflight-player-card-submit-approach]");
+    if (!target || !this.element?.contains(target) || target.disabled === true) return;
+    event.preventDefault();
+    return this.#submitApproachChoice();
+  }
+
+  async #submitApproachChoice() {
+    const select = this.element?.querySelector?.("[data-arcflight-player-card-approach]");
+    const skill = sanitizeText(select?.value);
+    if (!skill) {
+      ui.notifications?.warn?.("Choose an approach before submitting.");
+      return false;
+    }
+    if (!this.playerCardState) {
+      ui.notifications?.warn?.("This player card cannot submit an approach without socket state.");
+      return false;
+    }
+    globalThis.game?.socket?.emit?.("module.arcflight", {
+      action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION,
+      sessionKey: this.playerCardState.sessionKey,
+      stationKey: this.playerCardState.stationKey,
+      roundIndex: this.playerCardState.currentRoundIndex,
+      skill,
+      userId: globalThis.game?.user?.id ?? ""
+    });
+    const selectedApproach = this.playerCardState.approachOptions.find((entry) => entry.skill === skill) ?? null;
+    this.playerCardState = {
+      ...this.playerCardState,
+      selectedApproachValue: skill,
+      selectedApproachLabel: selectedApproach?.label || skill,
+      selectedApproachHelpText: selectedApproach?.helpText || "",
+      hasSelectedApproachHelpText: Boolean(selectedApproach?.helpText),
+      hasSelectedApproach: true,
+      resultStatusLabel: "Approach submitted",
+      waitingStateText: "Approach submitted. Waiting for GM roll.",
+      statusKey: "waitingForGmRoll"
+    };
+    ui.notifications?.info?.("Approach submitted to the GM.");
+    await this.render(true);
+    return true;
   }
 
   async close(options = {}) {

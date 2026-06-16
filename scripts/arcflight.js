@@ -1,13 +1,14 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
-import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "./apps/travel-event-runner.js";
-import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "./apps/travel-scene-overlay.js";
+import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog, updateActiveTravelEventRunnerSession } from "./apps/travel-event-runner.js";
+import { ArcflightTravelSceneOverlay, getActiveTravelSceneOverlay, openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./apps/travel-scene-overlay.js";
 import {
   ArcflightTravelPlayerStationCard,
   broadcastTravelPlayerStationCardToAllPlayers,
   handleTravelPlayerStationCardSocketPayload,
   openTravelPlayerStationCard,
+  registerTravelPlayerStationApproachSubmitHandler,
   resolveActivePlayerOwnersForStation,
   sendAllTravelPlayerStationCardsToPlayers,
   sendTravelPlayerStationCardSocketDiagnostic,
@@ -182,6 +183,7 @@ import {
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
+  setTravelEventRunnerStationSkillApproach,
   summarizeTravelEventRunnerSession
 } from "./helpers/travel-event-runner.js";
 import {
@@ -648,6 +650,7 @@ function buildArcflightApi() {
     prepareTravelSceneOverlayState,
     prepareTravelPlayerStationCardState,
     setTravelEventRunnerStationResult,
+  setTravelEventRunnerStationSkillApproach,
     advanceTravelEventRunnerRound,
     retreatTravelEventRunnerRound,
     completeTravelEventRunnerSession,
@@ -763,6 +766,34 @@ function registerArcflightApi() {
   return api;
 }
 
+async function handleTravelPlayerStationApproachSubmit(payload = {}) {
+  const activeOverlay = getActiveTravelSceneOverlay();
+  const activeRunner = getActiveTravelEventRunner();
+  const session = activeOverlay?.session ?? activeRunner?.session ?? null;
+  const roundIndex = Number(payload.roundIndex);
+  const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
+  const skill = typeof payload.skill === "string" ? payload.skill : "";
+  if (!session || !Number.isInteger(roundIndex) || !stationKey || !skill) {
+    console.warn("Arcflight | Player station approach submission could not be applied.", { payload, hasSession: Boolean(session) });
+    ui.notifications?.warn?.("Player approach submission could not be applied to the active travel session.");
+    return false;
+  }
+
+  const updated = setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill);
+  if (!updated?.ok || !updated.session) {
+    console.warn("Arcflight | Player station approach update failed.", { payload, updated });
+    ui.notifications?.warn?.(updated?.errors?.[0] ?? "Player approach submission failed.");
+    return false;
+  }
+
+  if (activeOverlay) activeOverlay.session = updated.session;
+  await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });
+  await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player submitted a station approach." });
+  const userName = globalThis.game?.users?.get?.(payload.userId)?.name ?? "Player";
+  ui.notifications?.info?.(`${userName} chose ${skill} for ${stationKey}.`);
+  return true;
+}
+
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
 
@@ -806,6 +837,7 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   registerArcflightApi();
+  registerTravelPlayerStationApproachSubmitHandler(handleTravelPlayerStationApproachSubmit);
   if (globalThis.game?.socket && typeof game.socket.on === "function") {
     game.socket.on("module.arcflight", handleTravelPlayerStationCardSocketPayload);
     console.debug("Arcflight | Registered player station card socket listener.");
@@ -1051,6 +1083,7 @@ export {
   prepareTravelSceneOverlayState,
   prepareTravelPlayerStationCardState,
   setTravelEventRunnerStationResult,
+  setTravelEventRunnerStationSkillApproach,
   advanceTravelEventRunnerRound,
   retreatTravelEventRunnerRound,
   completeTravelEventRunnerSession,

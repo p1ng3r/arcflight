@@ -1252,7 +1252,11 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       hasResultFeedback: false,
       waitingStateText: overlayState.emptyMessage,
       isResolved: false,
-      statusKey: "noSession"
+      statusKey: "noSession",
+      approachOptions: [],
+      hasApproachOptions: false,
+      selectedApproachValue: "",
+      currentRoundIndex: -1
     };
   }
 
@@ -1278,7 +1282,11 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       hasResultFeedback: false,
       waitingStateText: "This station is not active for the current round.",
       isResolved: false,
-      statusKey: "unavailable"
+      statusKey: "unavailable",
+      approachOptions: [],
+      hasApproachOptions: false,
+      selectedApproachValue: "",
+      currentRoundIndex: activeSession?.currentRoundIndex ?? -1
     };
   }
 
@@ -1319,7 +1327,11 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     hasResultFeedback: station.hasResult === true && Boolean(station.resultFeedback),
     waitingStateText,
     isResolved: station.hasResult === true,
-    statusKey
+    statusKey,
+    approachOptions: station.approachOptions ?? [],
+    hasApproachOptions: (station.approachOptions ?? []).length > 0,
+    selectedApproachValue: station.hasSelectedApproach ? (station.selectedApproachValue || "") : "",
+    currentRoundIndex: activeSession?.currentRoundIndex ?? -1
   };
 }
 

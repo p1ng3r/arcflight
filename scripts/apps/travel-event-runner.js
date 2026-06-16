@@ -33,6 +33,8 @@ import {
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
+let activeTravelEventRunner = null;
+
 const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-start-travel-event-runner]",
   "[data-arcflight-runner-result]",
@@ -226,6 +228,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   constructor(options = {}) {
     super(options);
+    activeTravelEventRunner = this;
     this.selectedEventId = typeof options.selectedEventId === "string" ? options.selectedEventId : defaultSelectedEventId(options);
     this.session = options.session ?? null;
     this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
@@ -1089,6 +1092,20 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.statusMessage = "Local runner session cleared. Published events were not modified.";
     return this.render(true);
   }
+}
+
+export function getActiveTravelEventRunner() {
+  return activeTravelEventRunner;
+}
+
+export async function updateActiveTravelEventRunnerSession(session, options = {}) {
+  const app = activeTravelEventRunner;
+  if (!app) return null;
+  app.session = session ?? null;
+  app.selectedSessionKey = app.session?.key ?? app.selectedSessionKey;
+  if (typeof options.statusMessage === "string") app.statusMessage = options.statusMessage;
+  await app.render(true);
+  return app;
 }
 
 export function openTravelEventRunner(options = {}, maybeOptions = {}) {

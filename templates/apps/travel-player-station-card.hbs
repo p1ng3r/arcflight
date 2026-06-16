@@ -27,7 +27,19 @@
       <p><strong>{{state.selectedApproachLabel}}</strong></p>
       {{#if state.hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint">{{state.selectedApproachHelpText}}</p>{{/if}}
     {{else}}
-      <p class="arcflight-sheet__hint">Waiting for the GM to confirm the station approach.</p>
+      {{#if state.hasApproachOptions}}
+        <label class="arcflight-travel-player-station-card__approach-picker">
+          <span>Choose your approach</span>
+          <select data-arcflight-player-card-approach>
+            {{#each state.approachOptions}}
+              <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <button type="button" data-arcflight-player-card-submit-approach>Submit Approach</button>
+      {{else}}
+        <p class="arcflight-sheet__hint">No approaches are available for this station.</p>
+      {{/if}}
     {{/if}}
   </section>
 
