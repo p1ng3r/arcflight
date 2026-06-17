@@ -29,8 +29,15 @@ function sanitizeApproachOptions(value = []) {
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
     .map((entry) => ({
       skill: sanitizeText(entry.skill),
+      skillLabel: sanitizeText(entry.skillLabel),
+      statisticLabel: sanitizeText(entry.statisticLabel),
+      modifier: Number.isFinite(Number(entry.modifier)) ? Number(entry.modifier) : null,
+      modifierLabel: sanitizeText(entry.modifierLabel),
       label: sanitizeText(entry.label),
+      displayLabel: sanitizeText(entry.displayLabel),
       helpText: sanitizeText(entry.helpText),
+      dc: Number.isFinite(Number(entry.dc)) ? Number(entry.dc) : null,
+      dcLabel: sanitizeText(entry.dcLabel),
       selected: sanitizeBoolean(entry.selected)
     }))
     .filter((entry) => entry.skill || entry.label || entry.helpText);
@@ -469,6 +476,10 @@ function sanitizeMissionBoardStation(station = {}) {
     selectedApproachValue: sanitizeText(source.selectedApproachValue),
     selectedApproachLabel: sanitizeText(source.selectedApproachLabel),
     selectedApproachHelpText: sanitizeText(source.selectedApproachHelpText),
+    selectedApproachSkillLabel: sanitizeText(source.selectedApproachSkillLabel),
+    selectedApproachStatisticLabel: sanitizeText(source.selectedApproachStatisticLabel),
+    selectedApproachModifier: Number.isFinite(Number(source.selectedApproachModifier)) ? Number(source.selectedApproachModifier) : null,
+    selectedApproachModifierLabel: sanitizeText(source.selectedApproachModifierLabel),
     hasSelectedApproachHelpText: sanitizeBoolean(source.hasSelectedApproachHelpText),
     dcLabel: sanitizeText(source.dcLabel),
     resultLabel: sanitizeText(source.resultLabel) || "Unrecorded",
@@ -485,6 +496,7 @@ function sanitizeMissionBoardStation(station = {}) {
     npcControllerName: sanitizeText(source.npcControllerName),
     permittedUserIds: Array.isArray(source.permittedUserIds) ? source.permittedUserIds.filter((id) => typeof id === "string") : [],
     canChooseApproach: sanitizeBoolean(source.canChooseApproach),
+    rollUnavailableReason: sanitizeText(source.rollUnavailableReason),
     canRollStation: sanitizeBoolean(source.canRollStation),
     permissionReason: sanitizeText(source.permissionReason) || "Not assigned to your actor."
   };
@@ -496,10 +508,16 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
   const stations = (Array.isArray(source.stations) ? source.stations : []).map((station) => {
     const safe = sanitizeMissionBoardStation(station);
     const allowed = Boolean(userId && safe.permittedUserIds.includes(userId));
+    const localApproach = safe.approachOptions.find((approach) => approach.skill === safe.selectedApproachValue) ?? null;
+    const hasLocalOrSubmittedApproach = safe.hasSelectedApproach || Boolean(localApproach);
+    const localRollReady = localApproach ? Number.isFinite(localApproach.modifier) && Number.isFinite(localApproach.dc) : safe.canRollStation;
+    const localRollReason = localApproach
+      ? (!Number.isFinite(localApproach.modifier) ? `Cannot roll: ${localApproach.modifierLabel || `${localApproach.skillLabel || localApproach.skill} was not found on ${safe.assignedActorName}`}.` : (!Number.isFinite(localApproach.dc) ? "Cannot roll: DC unavailable." : ""))
+      : "Choose an approach first.";
     const canChooseApproach = allowed && !safe.hasSelectedApproach && safe.hasApproachOptions && !safe.isRolling;
-    const canRollStation = allowed && safe.hasSelectedApproach && !safe.hasResult && !safe.isRolling;
-    const stateLabel = safe.isRolling ? "Rolling..." : (safe.hasResult ? "Resolved" : (safe.hasSelectedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player")));
-    const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : "Choose an approach before rolling.") : safe.permissionReason));
+    const canRollStation = allowed && hasLocalOrSubmittedApproach && !safe.hasResult && !safe.isRolling && localRollReady;
+    const stateLabel = safe.isRolling ? "Rolling..." : (safe.hasResult ? "Resolved" : (hasLocalOrSubmittedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player")));
+    const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : (safe.rollUnavailableReason || localRollReason)) : safe.permissionReason));
     return {
       ...safe,
       canChooseApproach,
@@ -627,13 +645,32 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     board: { template: arcflightTemplatePath("apps/travel-player-mission-board.hbs") }
   };
 
+  #captureScrollState() {
+    const root = this.element?.querySelector?.(".arcflight-travel-player-mission-board__shell") ?? this.element;
+    return { windowY: globalThis.window?.scrollY ?? 0, rootTop: root?.scrollTop ?? 0 };
+  }
+
+  #restoreScrollState(scrollState = null) {
+    if (!scrollState) return;
+    const root = this.element?.querySelector?.(".arcflight-travel-player-mission-board__shell") ?? this.element;
+    if (root && Number.isFinite(scrollState.rootTop)) root.scrollTop = scrollState.rootTop;
+    if (globalThis.window?.scrollTo && Number.isFinite(scrollState.windowY)) globalThis.window.scrollTo({ top: scrollState.windowY, behavior: "instant" });
+  }
+
+  async #renderPreservingScroll(force = true) {
+    const scrollState = this.#captureScrollState();
+    await this.render(force);
+    (globalThis.requestAnimationFrame ?? ((callback) => setTimeout(callback, 0)))(() => this.#restoreScrollState(scrollState));
+    return this;
+  }
+
   async setContext({ state = this.boardState } = {}, { render = true } = {}) {
     const previousKey = this.instanceKey;
     this.boardState = sanitizeTravelPlayerMissionBoardState(state ?? {});
     this.instanceKey = missionBoardInstanceKey(this.boardState);
     if (previousKey !== this.instanceKey && activeTravelPlayerMissionBoards.get(previousKey) === this) activeTravelPlayerMissionBoards.delete(previousKey);
     activeTravelPlayerMissionBoards.set(this.instanceKey, this);
-    if (render) await this.render(true);
+    if (render) await this.#renderPreservingScroll(true);
     return this;
   }
 
@@ -673,7 +710,28 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
   }
 
   #setLocalStationApproach(stationKey, skill) {
-    this.boardState = { ...this.boardState, stations: this.boardState.stations.map((station) => station.stationKey === stationKey ? { ...station, selectedApproachValue: skill } : station) };
+    const scrollState = this.#captureScrollState();
+    this.boardState = sanitizeTravelPlayerMissionBoardState({
+      ...this.boardState,
+      stations: this.boardState.stations.map((station) => {
+        if (station.stationKey !== stationKey) return station;
+        const approach = station.approachOptions.find((entry) => entry.skill === skill) ?? null;
+        return {
+          ...station,
+          selectedApproachValue: skill,
+          selectedApproachLabel: approach?.label || station.selectedApproachLabel,
+          selectedApproachHelpText: approach?.helpText || station.selectedApproachHelpText,
+          selectedApproachSkillLabel: approach?.skillLabel || station.selectedApproachSkillLabel,
+          selectedApproachStatisticLabel: approach?.statisticLabel || station.selectedApproachStatisticLabel,
+          selectedApproachModifier: Number.isFinite(approach?.modifier) ? approach.modifier : station.selectedApproachModifier,
+          selectedApproachModifierLabel: approach?.modifierLabel || station.selectedApproachModifierLabel,
+          dcLabel: approach?.dcLabel || station.dcLabel,
+          dc: Number.isFinite(approach?.dc) ? approach.dc : station.dc,
+          rollUnavailableReason: approach && !Number.isFinite(approach.modifier) ? `Cannot roll: ${approach.modifierLabel || `${approach.skillLabel || approach.skill} was not found on ${station.assignedActorName}`}.` : (approach && !Number.isFinite(approach.dc) ? "Cannot roll: DC unavailable." : "")
+        };
+      })
+    });
+    this.#renderPreservingScroll(true).then(() => this.#restoreScrollState(scrollState));
   }
 
   async #submitApproach(stationKey) {
@@ -693,7 +751,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
       ...this.boardState,
       stations: this.boardState.stations.map((entry) => entry.stationKey === safe.stationKey ? { ...entry, ...safe } : entry)
     });
-    if (render) return this.render(true);
+    if (render) return this.#renderPreservingScroll(true);
     return this;
   }
 
@@ -716,8 +774,10 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     const station = this.#getStation(stationKey);
     if (!station?.canRollStation) return ui.notifications?.warn?.(station?.permissionReason || "You cannot roll this station.");
     this.#markStationRolling(stationKey);
-    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
-    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
+    const select = this.element?.querySelector?.(`[data-arcflight-mission-board-approach][data-station-key="${stationKey}"]`);
+    const skill = sanitizeText(select?.value || station.selectedApproachValue);
+    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     ui.notifications?.info?.("Station roll requested.");
     return true;
   }

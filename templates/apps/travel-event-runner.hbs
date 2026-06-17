@@ -147,6 +147,7 @@
                   </label>
                   <p><strong>Selected Approach:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}</p>
                   {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
+                  {{#if qualityWarnings.length}}<p class="arcflight-travel-builder__warning"><strong>Quality Warning:</strong> {{#each qualityWarnings}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
                 </div>
               {{/if}}
 
@@ -159,6 +160,7 @@
                   <button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>
                 {{/each}}
               </div>
+              {{#if rollDetailText}}<p class="arcflight-sheet__hint"><strong>Roll Detail:</strong> {{rollDetailText}}</p>{{/if}}
               {{#if hasResultFeedback}}<p class="arcflight-sheet__hint"><strong>Station Vignette:</strong> {{resultFeedback}}</p>{{/if}}
             </article>
           {{/each}}
@@ -167,7 +169,10 @@
           <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
             <h2>GM Round Summary</h2>
             <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
-            <p>{{state.roundSummaryCard.summaryText}}</p>
+            <p><strong>{{state.roundSummaryCard.roundOutcomeLabel}}</strong> (weighted score {{state.roundSummaryCard.roundScore}})</p>
+            <p>{{state.roundSummaryCard.cinematicSummaryText}}</p>
+            {{#if state.roundSummaryCard.unresolvedStationText}}<p class="arcflight-sheet__hint"><strong>GM Status:</strong> {{state.roundSummaryCard.unresolvedStationText}}</p>{{/if}}
+            {{#if state.roundSummaryCard.gmOnlyComplicationText}}<p class="arcflight-travel-builder__warning"><strong>GM-only complications:</strong> {{state.roundSummaryCard.gmOnlyComplicationText}}</p>{{/if}}
             <details>
               <summary>Summary details</summary>
               {{#each state.roundSummaryCard.summaryLines}}
