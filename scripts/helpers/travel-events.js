@@ -235,7 +235,7 @@ export function validateTravelEventDefinition(event, options = {}) {
       if (!Array.isArray(round.stationCards)) errors.push(`Round ${round.round ?? "?"} stationCards must be an array when present.`);
       else {
         const activeStationKeys = Array.isArray(round.activeStations) ? round.activeStations.map((station) => getActiveStationKey(station)).filter((stationKey) => isTravelStationKey(stationKey)) : [];
-        const structuredStationCards = activeStationKeys.length > 0 && round.activeStations.every((station) => typeof station === "string") && round.stationCards.some((card) => (Array.isArray(card?.skillApproaches) ? card.skillApproaches : []).some((approach) => hasAnyResultFeedbackText(approach?.boardResultFeedback) || hasAnyResultFeedbackText(approach?.gmNarrationFeedback) || (typeof approach?.gmOnlyConsequence === "string" && approach.gmOnlyConsequence.trim().length > 0)));
+        const structuredStationCards = round.stationCards.some((card) => Array.isArray(card?.skillApproaches));
         const seenCards = new Set();
         for (const card of round.stationCards) {
           validateStationCard(card, round.round, errors, warnings, { requireStructuredApproachFeedback: structuredStationCards });

@@ -129,19 +129,6 @@ const fallbackFailure = setTravelEventRunnerStationResult(selectedFallbackApproa
 const fallbackState = prepareTravelEventRunnerState(fallbackFailure.session);
 const fallbackRow = fallbackState.stations.find((row) => row.stationKey === "navigator");
 assert(fallbackRow.resultFeedback === "Survival board failure.", "approach boardResultFeedback takes precedence over visibleResultFeedback");
-const noApproachFeedbackEvent = JSON.parse(JSON.stringify(schemaEvent));
-for (const approach of noApproachFeedbackEvent.rounds[0].stationCards[0].approaches) {
-  delete approach.boardResultFeedback;
-  delete approach.gmNarrationFeedback;
-  delete approach.gmOnlyConsequence;
-}
-const noApproachRunner = createTravelEventRunnerSession(noApproachFeedbackEvent, { ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" }, now: "2026-06-15T00:00:00.000Z" });
-assert(noApproachRunner.ok, `no approach runner starts: ${(noApproachRunner.errors ?? []).join(", ")}`);
-const noApproachSelected = setTravelEventRunnerStationSkillApproach(noApproachRunner.session, 0, "navigator", "survival", { now: "2026-06-15T00:00:00.000Z" });
-const noApproachFailure = setTravelEventRunnerStationResult(noApproachSelected.session, 0, "navigator", "failure", { now: "2026-06-15T00:00:00.000Z" });
-const noApproachRow = prepareTravelEventRunnerState(noApproachFailure.session).stations.find((row) => row.stationKey === "navigator");
-assert(noApproachRow.resultFeedback === "Visible station failure.", "visibleResultFeedback works as station-level fallback before rollFeedback");
-
 
 function validationMessages(event) {
   const validation = validateTravelEventDefinition(event);
@@ -168,6 +155,16 @@ function structuredValidationEvent() {
 
 assertValidTravelEvent(structuredValidationEvent(), "valid structured stationCards pass schema validation");
 assertValidTravelEvent(await import("../../data/travel-events/core-travel-events.js").then(({ getCoreTravelEvent }) => getCoreTravelEvent("travel-runner-qa-crossing")), "canonical Travel Runner QA Crossing fixture passes schema validation");
+
+{
+  const event = structuredValidationEvent();
+  for (const approach of event.rounds[0].stationCards[0].skillApproaches) {
+    delete approach.boardResultFeedback;
+    delete approach.gmNarrationFeedback;
+  }
+  assertValidationMessage(event, "skillApproaches[0].boardResultFeedback must be an object", "structured stationCards with all boardResultFeedback maps missing are reported");
+  assertValidationMessage(event, "skillApproaches[0].gmNarrationFeedback must be an object", "structured stationCards with all gmNarrationFeedback maps missing are reported");
+}
 
 {
   const event = structuredValidationEvent();
@@ -422,7 +419,7 @@ twoStationEvent.rounds[0].stationCards = [
     stationName: "Navigator",
     problem: "The void-current is pulling the ship off its charted path.",
     skillApproaches: [
-      { skill: "society", label: "Recall Past Crossings", helpText: "Remember route marks, port records, warning songs, and reports from crews who survived this passage." }
+      { skill: "society", label: "Recall Past Crossings", helpText: "Remember route marks, port records, warning songs, and reports from crews who survived this passage.", boardResultFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." }, gmNarrationFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." } }
     ],
     rollFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." }
   },
@@ -431,7 +428,7 @@ twoStationEvent.rounds[0].stationCards = [
     stationName: "Engineer",
     problem: "The arkengine is humming in sympathy with the false current.",
     skillApproaches: [
-      { skill: "arcana", label: "Tune the Harmonic", helpText: "Adjust the arkengine resonance to reveal and counter the current dragging the ship off course." }
+      { skill: "arcana", label: "Tune the Harmonic", helpText: "Adjust the arkengine resonance to reveal and counter the current dragging the ship off course.", boardResultFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." }, gmNarrationFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." } }
     ],
     rollFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." }
   },
@@ -440,7 +437,7 @@ twoStationEvent.rounds[0].stationCards = [
     stationName: "Watchmaster",
     problem: "False silhouettes pace the ship without choosing a side.",
     skillApproaches: [
-      { skill: "perception", label: "Track the True Shadow", helpText: "Compare reflections and movement to separate real threats from tricks of the crossing." }
+      { skill: "perception", label: "Track the True Shadow", helpText: "Compare reflections and movement to separate real threats from tricks of the crossing.", boardResultFeedback: feedback, gmNarrationFeedback: feedback }
     ],
     rollFeedback: feedback
   }

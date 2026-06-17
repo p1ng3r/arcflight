@@ -189,7 +189,12 @@ function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
   if (approaches.length > 0) return approaches;
   const suggestedSkills = Array.isArray(prompt.suggestedSkills) ? prompt.suggestedSkills : [];
-  const fallback = suggestedSkills.slice(0, 3).map((skill) => fallbackSkillApproachCopy(skill));
+  const fallbackFeedback = normalizeDegreeTextMap(prompt.rollFeedback);
+  const fallback = suggestedSkills.slice(0, 3).map((skill) => ({
+    ...fallbackSkillApproachCopy(skill),
+    boardResultFeedback: fallbackFeedback,
+    gmNarrationFeedback: fallbackFeedback
+  }));
   if (fallback.length > 0) return fallback;
   return [{ skill: "", label: "Approach", helpText: "" }];
 }
