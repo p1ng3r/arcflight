@@ -834,14 +834,24 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   } else {
     d20 = Math.floor(Math.random() * 20) + 1;
   }
-  const modifier = Number(station.selectedApproachModifier ?? 0);
+  const modifier = Number(station.selectedApproachModifier);
   const dc = Number(station.dc);
+  if (!Number.isFinite(modifier) || !Number.isFinite(dc)) {
+    ui.notifications?.warn?.(station.rollUnavailableReason || "Selected station approach is missing a modifier or DC.");
+    return false;
+  }
   const total = d20 + modifier;
-  const result = d20 === 20 ? "criticalSuccess" : (d20 === 1 ? "criticalFailure" : (total >= dc + 10 ? "criticalSuccess" : (total >= dc ? "success" : (total <= dc - 10 ? "criticalFailure" : "failure"))));
+  const degreeOrder = ["criticalFailure", "failure", "success", "criticalSuccess"];
+  let degreeIndex = total >= dc + 10 ? 3 : (total >= dc ? 2 : (total <= dc - 10 ? 0 : 1));
+  if (d20 === 20) degreeIndex = Math.min(3, degreeIndex + 1);
+  if (d20 === 1) degreeIndex = Math.max(0, degreeIndex - 1);
+  const result = degreeOrder[degreeIndex];
   const updated = setTravelEventRunnerStationResult(session, roundIndex, stationKey, result);
   if (!updated?.ok || !updated.session) return false;
   const resultLabel = result === "criticalSuccess" ? "Critical Success" : (result === "criticalFailure" ? "Critical Failure" : (result === "success" ? "Success" : "Failure"));
-  const detail = `d20 ${d20} + ${station.approachLabel || "Approach"} ${modifier} = ${total} vs ${station.dcLabel} — ${resultLabel}`;
+  const skillLabel = station.selectedApproachSkillLabel || station.approachLabel || "Approach";
+  const modifierLabel = `${modifier >= 0 ? "" : "-"}${Math.abs(modifier)}`;
+  const detail = `d20 ${d20} + ${skillLabel} ${modifierLabel} = ${total} vs DC ${dc}: ${resultLabel}`;
   updated.session.playerMissionBoardRollDetails = { ...(session.playerMissionBoardRollDetails ?? {}), [stationKey]: detail };
   if (activeOverlay) activeOverlay.session = updated.session;
   await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });

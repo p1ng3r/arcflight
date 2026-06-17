@@ -207,6 +207,7 @@ const playerBoardState = prepareTravelPlayerMissionBoardState(selectedSociety.se
 const playerNavigator = playerBoardState.stations.find((row) => row.stationKey === "navigator");
 assert(playerNavigator.selectedApproachLabel === "Recall Past Crossings", "player mission board state includes selected approach label");
 assert(playerNavigator.selectedApproachHelpText === selectedRow.selectedApproach.helpText, "player mission board state includes selected approach How This Helps text");
+assert(playerNavigator.approachOptions.every((approach) => approach.skill && approach.skillLabel && approach.dcLabel), "player mission board approach options include skill labels and DC labels");
 assert(JSON.stringify(playerNavigator).includes("Hidden society consequence.") === false, "player mission board state does not expose hidden consequence text");
 
 
@@ -288,11 +289,12 @@ assert(feedbackState.roundSummaryCard.successCount === 1 && feedbackState.roundS
 assert(feedbackState.roundSummaryCard.roundScore === 0 && feedbackState.roundSummaryCard.roundOutcomeKey === "narrowRoundSuccess", "weighted round scoring treats 0 as narrow success");
 assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Naria at Navigator used Recall Past Crossings and scored Failure")), "round summary lines include actor, station, result, and selected navigator approach");
 assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Bramble at Engineer used Tune the Harmonic and scored Success")), "round summary lines include actor, station, result, and selected engineer approach");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Scripted narrow success frame."), "round summary prose includes scripted weighted narration frame");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Naria") && feedbackState.roundSummaryCard.summaryText.includes("Bramble"), "round summary prose keeps actual station outcomes after scripted narration");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Naria remembers the warning, but not the safe bearing."), "round summary prose includes navigator failure feedback");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Bramble syncs the arkengine cleanly against the song's vibration."), "round summary prose includes engineer success feedback");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Watchmaster remains active and unresolved"), "round summary prose mentions every active station including unresolved stations");
+assert(feedbackState.roundSummaryCard.cinematicSummaryText.includes("Scripted narrow success frame."), "round summary prose includes scripted weighted narration frame");
+assert(feedbackState.roundSummaryCard.cinematicSummaryText.includes("Naria") && feedbackState.roundSummaryCard.cinematicSummaryText.includes("Bramble"), "round summary prose keeps actual station outcomes after scripted narration");
+assert(feedbackState.roundSummaryCard.cinematicSummaryText.includes("remembers the warning, but not the safe bearing."), "round summary prose includes navigator failure feedback without duplicating actor names");
+assert(feedbackState.roundSummaryCard.cinematicSummaryText.includes("syncs the arkengine cleanly against the song's vibration."), "round summary prose includes engineer success feedback without duplicating actor names");
+assert(feedbackState.roundSummaryCard.unresolvedStationText.includes("Watchmaster"), "round summary lists unresolved active stations separately");
+assert(!feedbackState.roundSummaryCard.cinematicSummaryText.includes("unresolved pressure"), "round read-aloud avoids unresolved pressure wording");
 assert(feedbackState.roundSummaryCard.summaryText !== feedbackState.roundSummaryCard.summaryLines.join("\n"), "round summary prose is not just raw summary lines joined together");
 assert(!feedbackState.roundSummaryCard.summaryText.includes("used Recall Past Crossings and scored Failure"), "round summary prose avoids report-style used/scored phrasing");
 const overlayState = prepareTravelSceneOverlayState(engineerSuccess.session);

@@ -169,7 +169,9 @@
             <h2>GM Round Summary</h2>
             <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
             <p><strong>{{state.roundSummaryCard.roundOutcomeLabel}}</strong> (weighted score {{state.roundSummaryCard.roundScore}})</p>
-            <p>{{state.roundSummaryCard.summaryText}}</p>
+            <p>{{state.roundSummaryCard.cinematicSummaryText}}</p>
+            {{#if state.roundSummaryCard.unresolvedStationText}}<p class="arcflight-sheet__hint"><strong>GM Status:</strong> {{state.roundSummaryCard.unresolvedStationText}}</p>{{/if}}
+            {{#if state.roundSummaryCard.gmOnlyComplicationText}}<p class="arcflight-travel-builder__warning"><strong>GM-only complications:</strong> {{state.roundSummaryCard.gmOnlyComplicationText}}</p>{{/if}}
             <details>
               <summary>Summary details</summary>
               {{#each state.roundSummaryCard.summaryLines}}

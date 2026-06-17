@@ -29,9 +29,15 @@ function sanitizeApproachOptions(value = []) {
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
     .map((entry) => ({
       skill: sanitizeText(entry.skill),
+      skillLabel: sanitizeText(entry.skillLabel),
+      statisticLabel: sanitizeText(entry.statisticLabel),
+      modifier: Number.isFinite(Number(entry.modifier)) ? Number(entry.modifier) : null,
+      modifierLabel: sanitizeText(entry.modifierLabel),
       label: sanitizeText(entry.label),
+      displayLabel: sanitizeText(entry.displayLabel),
       helpText: sanitizeText(entry.helpText),
       dc: Number.isFinite(Number(entry.dc)) ? Number(entry.dc) : null,
+      dcLabel: sanitizeText(entry.dcLabel),
       selected: sanitizeBoolean(entry.selected)
     }))
     .filter((entry) => entry.skill || entry.label || entry.helpText);
@@ -470,6 +476,10 @@ function sanitizeMissionBoardStation(station = {}) {
     selectedApproachValue: sanitizeText(source.selectedApproachValue),
     selectedApproachLabel: sanitizeText(source.selectedApproachLabel),
     selectedApproachHelpText: sanitizeText(source.selectedApproachHelpText),
+    selectedApproachSkillLabel: sanitizeText(source.selectedApproachSkillLabel),
+    selectedApproachStatisticLabel: sanitizeText(source.selectedApproachStatisticLabel),
+    selectedApproachModifier: Number.isFinite(Number(source.selectedApproachModifier)) ? Number(source.selectedApproachModifier) : null,
+    selectedApproachModifierLabel: sanitizeText(source.selectedApproachModifierLabel),
     hasSelectedApproachHelpText: sanitizeBoolean(source.hasSelectedApproachHelpText),
     dcLabel: sanitizeText(source.dcLabel),
     resultLabel: sanitizeText(source.resultLabel) || "Unrecorded",
@@ -486,6 +496,7 @@ function sanitizeMissionBoardStation(station = {}) {
     npcControllerName: sanitizeText(source.npcControllerName),
     permittedUserIds: Array.isArray(source.permittedUserIds) ? source.permittedUserIds.filter((id) => typeof id === "string") : [],
     canChooseApproach: sanitizeBoolean(source.canChooseApproach),
+    rollUnavailableReason: sanitizeText(source.rollUnavailableReason),
     canRollStation: sanitizeBoolean(source.canRollStation),
     permissionReason: sanitizeText(source.permissionReason) || "Not assigned to your actor."
   };
@@ -498,9 +509,9 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
     const safe = sanitizeMissionBoardStation(station);
     const allowed = Boolean(userId && safe.permittedUserIds.includes(userId));
     const canChooseApproach = allowed && !safe.hasSelectedApproach && safe.hasApproachOptions && !safe.isRolling;
-    const canRollStation = allowed && safe.hasSelectedApproach && !safe.hasResult && !safe.isRolling;
+    const canRollStation = allowed && safe.hasSelectedApproach && !safe.hasResult && !safe.isRolling && safe.canRollStation;
     const stateLabel = safe.isRolling ? "Rolling..." : (safe.hasResult ? "Resolved" : (safe.hasSelectedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player")));
-    const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : "Choose an approach before rolling.") : safe.permissionReason));
+    const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : (safe.rollUnavailableReason || "Choose an approach before rolling.")) : safe.permissionReason));
     return {
       ...safe,
       canChooseApproach,

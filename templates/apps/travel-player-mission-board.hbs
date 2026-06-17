@@ -32,6 +32,7 @@
           {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
 
           {{#if hasSelectedApproach}}
+            {{#if selectedApproachStatisticLabel}}<p class="arcflight-sheet__hint"><strong>Statistic:</strong> {{selectedApproachStatisticLabel}}{{#if dcLabel}} — {{dcLabel}}{{/if}}</p>{{/if}}
             {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint"><strong>How This Helps:</strong> {{selectedApproachHelpText}}</p>{{/if}}
           {{else}}
             {{#if hasApproachOptions}}
@@ -39,14 +40,14 @@
                 <span>Choose approach</span>
                 <select data-arcflight-mission-board-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled{{/unless}}>
                   {{#each approachOptions}}
-                    <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</option>
+                    <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{/if}}</option>
                   {{/each}}
                 </select>
               </label>
               <details class="arcflight-travel-player-mission-board__approach-help">
                 <summary>How This Helps</summary>
                 {{#each approachOptions}}
-                  <p><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if dc}} (DC {{dc}}){{/if}}{{#if helpText}} — {{helpText}}{{/if}}</p>
+                  <p><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if statisticLabel}} — {{statisticLabel}}{{/if}}{{#if dcLabel}} — {{dcLabel}}{{/if}}{{#if helpText}}<br>{{helpText}}{{/if}}</p>
                 {{/each}}
               </details>
               <button type="button" data-arcflight-mission-board-submit-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Submit Approach</button>
