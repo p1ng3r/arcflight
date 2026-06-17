@@ -466,6 +466,11 @@ function sanitizeMissionBoardStation(station = {}) {
     hasResult: sanitizeBoolean(source.hasResult),
     result: sanitizeText(source.result),
     rollDetailText: sanitizeText(source.rollDetailText),
+    stateLabel: sanitizeText(source.stateLabel) || "Waiting for player",
+    isCurrentUserRollable: sanitizeBoolean(source.isCurrentUserRollable),
+    disabledReason: sanitizeText(source.disabledReason),
+    npcControllerUserId: sanitizeText(source.npcControllerUserId),
+    npcControllerName: sanitizeText(source.npcControllerName),
     permittedUserIds: Array.isArray(source.permittedUserIds) ? source.permittedUserIds.filter((id) => typeof id === "string") : [],
     canChooseApproach: sanitizeBoolean(source.canChooseApproach),
     canRollStation: sanitizeBoolean(source.canRollStation),
@@ -479,11 +484,18 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
   const stations = (Array.isArray(source.stations) ? source.stations : []).map((station) => {
     const safe = sanitizeMissionBoardStation(station);
     const allowed = Boolean(userId && safe.permittedUserIds.includes(userId));
+    const canChooseApproach = allowed && !safe.hasSelectedApproach && safe.hasApproachOptions;
+    const canRollStation = allowed && safe.hasSelectedApproach && !safe.hasResult;
+    const stateLabel = safe.hasResult ? "Resolved" : (safe.hasSelectedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player"));
+    const disabledReason = canRollStation || canChooseApproach ? "" : (allowed ? (safe.hasResult ? "This station has already been rolled." : "Choose an approach before rolling.") : safe.permissionReason);
     return {
       ...safe,
-      canChooseApproach: allowed && !safe.hasSelectedApproach && safe.hasApproachOptions,
-      canRollStation: allowed && safe.hasSelectedApproach && !safe.hasResult,
-      permissionReason: allowed ? (safe.hasSelectedApproach ? "Ready to roll." : "Choose an approach before rolling.") : safe.permissionReason
+      canChooseApproach,
+      canRollStation,
+      isCurrentUserRollable: canRollStation || canChooseApproach,
+      stateLabel,
+      disabledReason,
+      permissionReason: disabledReason || (canRollStation ? "Ready to roll." : "Choose an approach before rolling.")
     };
   });
   return {
@@ -500,6 +512,10 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
 }
 
 function getPermittedUsersForStation(session, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session);
+  const assignment = normalized.session?.stationAssignments?.[stationKey] ?? null;
+  const controller = normalized.session?.npcStationControllers?.[stationKey] ?? null;
+  if (assignment?.actorType === "npc" && controller?.userId) return getActiveNonGmUsers().filter((user) => user.id === controller.userId);
   const actor = getActorByStationAssignment(session, stationKey, options);
   if (!actor) return [];
   const observerThreshold = getObserverThreshold();
@@ -515,7 +531,9 @@ export function prepareTravelPlayerMissionBoardStateForPlayers(session = null, o
       return {
         ...station,
         permittedUserIds: permittedUsers.map((user) => user.id),
-        permissionReason: permittedUsers.length ? "Waiting for assigned player." : "No active player observer is assigned."
+        permissionReason: permittedUsers.length ? "Waiting for assigned player." : "No active player observer is assigned.",
+        npcControllerUserId: session?.npcStationControllers?.[station.stationKey]?.userId ?? "",
+        npcControllerName: session?.npcStationControllers?.[station.stationKey]?.userName ?? ""
       };
     })
   });
@@ -556,7 +574,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
   static DEFAULT_OPTIONS = {
     id: "arcflight-travel-player-mission-board",
     classes: ["arcflight", "arcflight-travel-player-mission-board"],
-    position: { width: 980, height: 760 },
+    position: { width: 1280, height: 900 },
     window: { title: "Travel Mission Board", resizable: true }
   };
 
@@ -618,6 +636,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     const select = this.element?.querySelector?.(`[data-arcflight-mission-board-approach][data-station-key="${stationKey}"]`);
     const skill = sanitizeText(select?.value || station?.selectedApproachValue);
     if (!station?.canChooseApproach || !skill) return ui.notifications?.warn?.(station?.permissionReason || "You cannot choose this station approach.");
+    console.debug("Arcflight | Player approach submit.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     ui.notifications?.info?.("Approach submitted to the GM.");
     return true;
@@ -626,6 +645,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
   async #rollStation(stationKey) {
     const station = this.#getStation(stationKey);
     if (!station?.canRollStation) return ui.notifications?.warn?.(station?.permissionReason || "You cannot roll this station.");
+    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
     globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
     ui.notifications?.info?.("Station roll requested.");
     return true;

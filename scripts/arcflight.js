@@ -14,6 +14,7 @@ import {
   registerTravelPlayerStationRollHandler,
   resolveActivePlayerOwnersForStation,
   sendAllTravelPlayerStationCardsToPlayers,
+  prepareTravelPlayerMissionBoardStateForPlayers,
   sendTravelPlayerMissionBoardToPlayers,
   sendTravelPlayerStationCardSocketDiagnostic,
   sendTravelPlayerStationCardToPlayers
@@ -780,6 +781,7 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
   const skill = typeof payload.skill === "string" ? payload.skill : "";
+  console.debug("Arcflight | Player approach submit received by GM.", { payload });
   if (!session || !Number.isInteger(roundIndex) || !stationKey || !skill) {
     console.warn("Arcflight | Player station approach submission could not be applied.", { payload, hasSession: Boolean(session) });
     ui.notifications?.warn?.("Player approach submission could not be applied to the active travel session.");
@@ -798,7 +800,8 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
   await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player submitted a station approach." });
   const userName = globalThis.game?.users?.get?.(payload.userId)?.name ?? "Player";
   ui.notifications?.info?.(`${userName} chose ${skill} for ${stationKey}.`);
-  sendTravelPlayerMissionBoardToPlayers(updated.session, { actor: activeOverlay?.actor, refresh: true });
+  const broadcastResult = sendTravelPlayerMissionBoardToPlayers(updated.session, { actor: activeOverlay?.actor, refresh: true });
+  console.debug("Arcflight | Board broadcast result.", broadcastResult);
   return true;
 }
 
@@ -808,7 +811,16 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   const session = activeOverlay?.session ?? activeRunner?.session ?? null;
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
+  console.debug("Arcflight | Player roll request received by GM.", { payload });
   if (!session || !Number.isInteger(roundIndex) || !stationKey) return false;
+  const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  const permissionStation = (permissionState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
+  const permitted = Boolean(permissionStation?.permittedUserIds?.includes(payload.userId));
+  console.debug("Arcflight | GM validation of roll permission.", { stationKey, userId: payload.userId, permitted, permittedUserIds: permissionStation?.permittedUserIds ?? [] });
+  if (!permitted) {
+    ui.notifications?.warn?.("Player is not authorized to roll that travel station.");
+    return false;
+  }
   const boardState = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
   const station = (boardState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
   if (!station?.hasSelectedApproach || station.hasResult) return false;
@@ -826,12 +838,14 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   const result = d20 === 20 ? "criticalSuccess" : (d20 === 1 ? "criticalFailure" : (total >= dc + 10 ? "criticalSuccess" : (total >= dc ? "success" : (total <= dc - 10 ? "criticalFailure" : "failure"))));
   const updated = setTravelEventRunnerStationResult(session, roundIndex, stationKey, result);
   if (!updated?.ok || !updated.session) return false;
-  const detail = `d20 ${d20} ${modifier >= 0 ? "+" : ""}${modifier} = ${total} vs ${station.dcLabel} — ${station.resultLabel || result}`;
+  const resultLabel = result === "criticalSuccess" ? "Critical Success" : (result === "criticalFailure" ? "Critical Failure" : (result === "success" ? "Success" : "Failure"));
+  const detail = `d20 ${d20} + ${station.approachLabel || "Approach"} ${modifier} = ${total} vs ${station.dcLabel} — ${resultLabel}`;
   updated.session.playerMissionBoardRollDetails = { ...(session.playerMissionBoardRollDetails ?? {}), [stationKey]: detail };
   if (activeOverlay) activeOverlay.session = updated.session;
   await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });
   await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player rolled a travel station." });
-  sendTravelPlayerMissionBoardToPlayers(updated.session, { actor: activeOverlay?.actor, refresh: true });
+  const broadcastResult = sendTravelPlayerMissionBoardToPlayers(updated.session, { actor: activeOverlay?.actor, refresh: true });
+  console.debug("Arcflight | Board broadcast result.", broadcastResult);
   ui.notifications?.info?.(`Player rolled ${stationKey}: ${result}.`);
   return true;
 }

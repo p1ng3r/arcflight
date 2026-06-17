@@ -6,6 +6,7 @@ import {
   resetTravelEventRunnerStationAssignmentToShip,
   setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach,
+  setTravelEventRunnerNpcStationController,
   updateTravelEventRunnerStationAssignment
 } from "../helpers/travel-event-runner.js";
 
@@ -210,6 +211,12 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
       return this.#updateStationAssignment(assignmentSelect);
     }
 
+    const controllerSelect = event.target?.closest?.("[data-arcflight-overlay-npc-controller-select]");
+    if (controllerSelect && this.element?.contains(controllerSelect)) {
+      this.#captureScrollPosition();
+      return this.#updateNpcStationController(controllerSelect);
+    }
+
     const approachSelect = event.target?.closest?.("[data-arcflight-overlay-approach-select]");
     if (approachSelect && this.element?.contains(approachSelect)) {
       this.#captureScrollPosition();
@@ -241,6 +248,7 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #sendPlayerMissionBoard() {
+    console.debug("Arcflight | GM send/refreshed mission board from overlay.", { sessionKey: this.session?.key, roundIndex: this.session?.currentRoundIndex });
     const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.actor, refresh: true });
     if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
     else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
@@ -392,6 +400,12 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
     const result = this.#calculateDegree(total, dc, d20);
     const updated = setTravelEventRunnerStationResult(this.session, roundIndex, stationKey, result);
     return this.#applySessionUpdate(updated, `Travel station roll: d20 ${d20} ${modifier >= 0 ? "+" : ""}${modifier} = ${total} vs DC ${dc} — ${this.#degreeLabel(result)} recorded.`);
+  }
+
+  async #updateNpcStationController(select) {
+    const stationKey = select.dataset.stationKey ?? "";
+    const updated = setTravelEventRunnerNpcStationController(this.session, stationKey, select.value ?? "");
+    return this.#applySessionUpdate(updated, updated?.controller?.userName ? `Assigned ${updated.controller.userName} to control ${stationKey}.` : `Cleared ${stationKey} NPC controller.`);
   }
 
   async #clearStationAssignment(target) {

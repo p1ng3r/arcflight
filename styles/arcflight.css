@@ -1913,3 +1913,43 @@
   border-left: 0.2rem solid rgba(125, 220, 160, 0.58);
   padding-left: 0.55rem;
 }
+
+.arcflight-travel-player-mission-board {
+  min-width: min(96vw, 1280px);
+  min-height: min(92vh, 900px);
+}
+
+.arcflight-travel-player-mission-board__station--rollable {
+  border-color: rgba(125, 220, 160, 0.82);
+  box-shadow: 0 0 0 2px rgba(125, 220, 160, 0.18), 0 0 28px rgba(125, 220, 160, 0.12);
+}
+
+.arcflight-travel-player-mission-board__status-stack {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: end;
+}
+
+.arcflight-travel-player-mission-board__state {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0.84;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-mission-board__roll-detail {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.arcflight-travel-player-mission-board__roll-detail summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.arcflight-travel-player-mission-board__roll-detail p {
+  margin: 0.35rem 0 0;
+}

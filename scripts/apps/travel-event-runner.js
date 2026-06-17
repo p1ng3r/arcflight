@@ -29,7 +29,8 @@ import {
   setTravelEventRunnerStationSkillApproach,
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
-  resetTravelEventRunnerStationAssignmentToShip
+  resetTravelEventRunnerStationAssignmentToShip,
+  setTravelEventRunnerNpcStationController
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -375,6 +376,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.#updateStationAssignment(assignmentSelect);
     }
 
+    const controllerSelect = event.target?.closest?.("[data-arcflight-runner-npc-controller-select]");
+    if (controllerSelect && this.element?.contains(controllerSelect)) {
+      return this.#updateNpcStationController(controllerSelect);
+    }
+
     const approachSelect = event.target?.closest?.("[data-arcflight-runner-approach-select]");
     if (approachSelect && this.element?.contains(approachSelect)) {
       return this.#updateStationSkillApproach(approachSelect);
@@ -428,6 +434,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #sendPlayerMissionBoard() {
+    console.debug("Arcflight | GM send/refreshed mission board from runner.", { sessionKey: this.session?.key, roundIndex: this.session?.currentRoundIndex });
     const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.#getSelectedShipActor(), refresh: true });
     if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
     else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
@@ -616,6 +623,20 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = updated.session;
       this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
       this.statusMessage = actorIdOrUuid ? `Assigned ${updated.assignment?.actorName ?? "actor"} to ${humanizeIdentifier(stationKey)}.` : `Cleared ${humanizeIdentifier(stationKey)} assignment.`;
+    }
+    return this.render(true);
+  }
+
+  async #updateNpcStationController(select) {
+    const stationKey = select.dataset.stationKey ?? "";
+    const updated = setTravelEventRunnerNpcStationController(this.session, stationKey, select.value ?? "");
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "NPC station controller was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = updated.controller?.userName ? `Assigned ${updated.controller.userName} to control ${humanizeIdentifier(stationKey)}.` : `Cleared ${humanizeIdentifier(stationKey)} NPC controller.`;
     }
     return this.render(true);
   }
