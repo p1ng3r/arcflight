@@ -25,3 +25,7 @@ Arkengines are PF2E `equipment` items with Arcflight flags:
 Arkengines install onto Arcflight ship actors and contribute voyage speed, Lifeveil, strain, hard burn, overcharge, resistance tendency, and mod-slot derived values. Voyage speed uses inverse scaling: lower `travelHexDays` values are faster and more powerful. Combat speed remains hull-owned.
 
 Phase 3 does not implement travel or combat gameplay automation.
+
+## Tier / Refit Metadata
+
+Core arkengines now include data-only `minimumTier`, `recommendedTier`, `tierImpact`, `refitPressure`, `refitTags`, `refitCategory`, `specialistRequirements`, and `rareMaterialRequirements` fields. Arkengine pressure primarily contributes to `enginePressure`, scaling from frontier/local engines through mythic/impossible drives. This metadata is advisory for future install validation and does not block installation or resolve travel, hard burn, overcharge, or combat gameplay.

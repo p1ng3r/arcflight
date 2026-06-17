@@ -1,0 +1,628 @@
+<div class="arcflight-travel-builder__body">
+  <header class="arcflight-travel-builder__header">
+    <div>
+      <h1>Travel Event Builder</h1>
+      <p class="arcflight-sheet__hint">GM-facing authoring shell for data-only travel event drafts.</p>
+    </div>
+    <p class="arcflight-sheet__hint arcflight-travel-builder__boundary">{{hardBoundaryHint}}</p>
+  </header>
+
+  {{#if hasStatus}}
+    <p class="arcflight-travel-builder__status arcflight-travel-builder__status--{{status.kind}}">{{status.message}}</p>
+  {{/if}}
+
+
+  <section class="arcflight-travel-builder__panel arcflight-travel-builder__library" data-arcflight-builder-library>
+    <div class="arcflight-travel-builder__panel-heading">
+      <div>
+        <h2>Saved Drafts Library</h2>
+        <p class="arcflight-sheet__hint">World-local builder drafts for GM authoring only. Saving here does not publish to a compendium, start an event, or apply any ship changes.</p>
+      </div>
+      <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+        <button type="button" data-arcflight-builder-library-save>Save Current Draft</button>
+        <button type="button" data-arcflight-builder-library-save-as>Save As New Draft</button>
+        <button type="button" data-arcflight-builder-library-refresh>Refresh Library</button>
+      </div>
+    </div>
+
+    <p class="arcflight-sheet__hint">Setting: <code>{{library.settingKey}}</code>. Entries: {{library.count}}.</p>
+    {{#if library.hasDrafts}}
+      <div class="arcflight-travel-builder__library-list">
+        {{#each library.entries}}
+          <article class="arcflight-travel-builder__library-row {{#if isCurrent}}arcflight-travel-builder__library-row--current{{/if}} {{#if isMalformed}}arcflight-travel-builder__library-row--malformed{{/if}}">
+            <div>
+              <strong>{{name}}</strong>
+              {{#if isCurrent}}<span class="arcflight-travel-builder__badge">Current</span>{{/if}}
+              {{#if isMalformed}}<span class="arcflight-travel-builder__badge arcflight-travel-builder__badge--warning">Malformed</span>{{/if}}
+              <div class="arcflight-sheet__hint">Saved id: <code>{{id}}</code> · Draft key: <code>{{key}}</code> · Category: {{category}} · Updated: {{updatedAt}}</div>
+            </div>
+            <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-library-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load</button>
+              <button type="button" data-arcflight-builder-library-duplicate="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate</button>
+              <button type="button" class="arcflight-button--danger" data-arcflight-builder-library-delete="{{id}}">Delete</button>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No saved custom travel event drafts yet. Click <strong>Save Current Draft</strong> to create one.</p>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-travel-builder__panel arcflight-travel-builder__library" data-arcflight-builder-published-library>
+    <div class="arcflight-travel-builder__panel-heading">
+      <div>
+        <h2>Published Events Library</h2>
+        <p class="arcflight-sheet__hint">Finalized travel event records for future runner/registry use. Publishing strips builder metadata, stores the final event separately from editable drafts, and never starts or runs an event.</p>
+      </div>
+      <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+        <button type="button" data-arcflight-builder-published-publish>Publish Current Draft</button>
+        <button type="button" data-arcflight-builder-published-export-pack {{#unless publishedLibrary.hasEvents}}disabled{{/unless}}>Export Published Event Pack JSON</button>
+        <button type="button" data-arcflight-builder-published-import>Import Published Event / Pack JSON</button>
+        <button type="button" data-arcflight-builder-published-refresh>Refresh Published Library</button>
+      </div>
+    </div>
+
+    <p class="arcflight-sheet__hint">Setting: <code>{{publishedLibrary.settingKey}}</code>. Entries: {{publishedLibrary.count}}. Showing: {{publishedLibrary.visibleCount}}.</p>
+    {{#if publishedLibrary.hasEvents}}
+      <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline arcflight-travel-builder__published-views">
+        {{#each publishedLibrary.view.categoryViews.views}}
+          <button type="button" data-arcflight-builder-published-category-view="{{key}}" {{#if selected}}disabled{{/if}}>{{label}} ({{count}})</button>
+        {{/each}}
+      </div>
+      <div class="arcflight-travel-builder__form-grid arcflight-travel-builder__published-filters">
+        <label class="arcflight-travel-builder__field">
+          <span>Search published events</span>
+          <input type="search" name="arcflight-builder-published-search" value="{{publishedLibrary.view.searchText}}" placeholder="Name, key, category, tag, or description" data-arcflight-builder-published-filter="librarySearchText">
+        </label>
+        <label class="arcflight-travel-builder__field">
+          <span>View</span>
+          <select name="arcflight-builder-published-favorites" data-arcflight-builder-published-filter="libraryFavoritesOnly">
+            <option value="" {{#unless publishedLibrary.view.favoritesOnly}}selected{{/unless}}>All</option>
+            <option value="favorites" {{#if publishedLibrary.view.favoritesOnly}}selected{{/if}}>Favorites</option>
+          </select>
+        </label>
+        <label class="arcflight-travel-builder__field">
+          <span>Category</span>
+          <select name="arcflight-builder-published-category" data-arcflight-builder-published-filter="libraryCategoryFilter">
+            {{#each publishedLibrary.view.categoryOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        {{#if publishedLibrary.view.hasTags}}
+          <label class="arcflight-travel-builder__field">
+            <span>Tag</span>
+            <select name="arcflight-builder-published-tag" data-arcflight-builder-published-filter="libraryTagFilter">
+              {{#each publishedLibrary.view.tagOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+        {{/if}}
+        <label class="arcflight-travel-builder__field">
+          <span>Round count</span>
+          <select name="arcflight-builder-published-round-count" data-arcflight-builder-published-filter="libraryRoundCountFilter">
+            {{#each publishedLibrary.view.roundCountOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <label class="arcflight-travel-builder__field">
+          <span>Sort</span>
+          <select name="arcflight-builder-published-sort" data-arcflight-builder-published-filter="librarySortMode">
+            {{#each publishedLibrary.view.sortOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+          <button type="button" data-arcflight-builder-published-clear-filters {{#unless publishedLibrary.view.filtersActive}}disabled{{/unless}}>Clear Filters</button>
+        </div>
+      </div>
+      {{#unless publishedLibrary.hasVisibleEvents}}
+        <p class="arcflight-sheet__hint">No published travel events match the current filters.</p>
+      {{/unless}}
+      <div class="arcflight-travel-builder__library-list">
+        {{#each publishedLibrary.entries}}
+          <article class="arcflight-travel-builder__library-row {{#if isMalformed}}arcflight-travel-builder__library-row--malformed{{/if}}">
+            <div>
+              <button type="button" title="Toggle favorite" data-arcflight-builder-published-favorite="{{id}}">{{#if favorite}}★{{else}}☆{{/if}}</button>
+              <strong>{{name}}</strong>
+              <span class="arcflight-travel-builder__badge">{{favoriteLabel}}</span>
+              {{#if isMalformed}}<span class="arcflight-travel-builder__badge arcflight-travel-builder__badge--warning">Malformed</span>{{/if}}
+              <div class="arcflight-sheet__hint">Published id: <code>{{id}}</code> · Event key: <code>{{key}}</code> · Category: {{category}} · Rounds: {{roundCount}} · Published: {{publishedAt}} · Updated: {{updatedAt}}</div>
+              {{#if tagText}}<div class="arcflight-sheet__hint">Tags: {{tagText}}</div>{{else}}<div class="arcflight-sheet__hint">No tags</div>{{/if}}
+              {{#if libraryTagText}}<div class="arcflight-sheet__hint">Library tags: {{libraryTagText}}</div>{{/if}}
+              {{#if sourceDraftId}}<div class="arcflight-sheet__hint">Source draft id: <code>{{sourceDraftId}}</code></div>{{/if}}
+            </div>
+            <div class="arcflight-travel-builder__controls arcflight-travel-builder__controls--inline">
+              <button type="button" data-arcflight-builder-published-run="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Start Run</button>
+              <button type="button" data-arcflight-builder-published-edit-tags="{{id}}">Edit Library Tags</button>
+              <button type="button" data-arcflight-builder-published-export="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Export Published Event JSON</button>
+              <button type="button" data-arcflight-builder-published-load="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Load as Draft</button>
+              <button type="button" data-arcflight-builder-published-duplicate="{{id}}" {{#unless canLoad}}disabled{{/unless}}>Duplicate as Draft</button>
+              <button type="button" class="arcflight-button--danger" data-arcflight-builder-published-delete="{{id}}">Delete</button>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No published travel events yet. Click <strong>Publish Current Draft</strong> after the draft passes validation and has no quality errors.</p>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-travel-builder__panel arcflight-travel-builder__quality" data-arcflight-builder-quality>
+    <div class="arcflight-travel-builder__panel-heading">
+      <div>
+        <h2>Quality / Polish Gate</h2>
+        <p class="arcflight-sheet__hint">Authoring-quality checks for table readiness. This is advisory only and does not block export beyond the existing validation rules.</p>
+      </div>
+      <button type="button" data-arcflight-builder-refresh-quality>Refresh Quality Check</button>
+    </div>
+
+    <div class="arcflight-travel-builder__summary">
+      <div class="arcflight-travel-builder__stat arcflight-travel-builder__stat--quality-{{qualityReadinessClass}}"><span>Readiness</span><strong>{{qualityReadiness}}</strong></div>
+      <div class="arcflight-travel-builder__stat"><span>Score</span><strong>{{qualityScore}}</strong></div>
+      <div class="arcflight-travel-builder__stat"><span>Errors</span><strong>{{qualityReport.errorCount}}</strong></div>
+      <div class="arcflight-travel-builder__stat"><span>Warnings</span><strong>{{qualityReport.warningCount}}</strong></div>
+      <div class="arcflight-travel-builder__stat"><span>Suggestions</span><strong>{{qualityReport.suggestionCount}}</strong></div>
+    </div>
+
+    {{#if qualityBlocked}}
+      <p class="arcflight-travel-builder__warning"><strong>Blocked:</strong> fix quality errors and validation blockers before considering this table-ready.</p>
+    {{else}}
+      {{#if qualityNeedsAttention}}
+        <p class="arcflight-travel-builder__warning"><strong>Needs Attention:</strong> export remains available when validation allows it, but warnings should be reviewed.</p>
+      {{else}}
+        <p class="arcflight-travel-builder__ok"><strong>Ready to Export:</strong> no quality errors or warnings were found.</p>
+      {{/if}}
+    {{/if}}
+
+    <div class="arcflight-travel-builder__quality-areas">
+      {{#each qualityReport.areas}}
+        <details class="arcflight-travel-builder__quality-area" open>
+          <summary>
+            <strong>{{label}}</strong>
+            <span>{{errorCount}} errors / {{warningCount}} warnings / {{suggestionCount}} suggestions</span>
+          </summary>
+
+          {{#if errors}}
+            <h3>Errors</h3>
+            <ul class="arcflight-travel-builder__quality-list arcflight-travel-builder__quality-list--errors">
+              {{#each errors}}<li><strong>{{path}}</strong> — {{message}}</li>{{/each}}
+            </ul>
+          {{/if}}
+          {{#if warnings}}
+            <h3>Warnings</h3>
+            <ul class="arcflight-travel-builder__quality-list arcflight-travel-builder__quality-list--warnings">
+              {{#each warnings}}<li><strong>{{path}}</strong> — {{message}}</li>{{/each}}
+            </ul>
+          {{/if}}
+          {{#if suggestions}}
+            <h3>Suggestions</h3>
+            <ul class="arcflight-travel-builder__quality-list arcflight-travel-builder__quality-list--suggestions">
+              {{#each suggestions}}<li><strong>{{path}}</strong> — {{message}}</li>{{/each}}
+            </ul>
+          {{/if}}
+
+          <h3>Checklist</h3>
+          <ul class="arcflight-travel-builder__checklist">
+            {{#each items}}
+              <li class="arcflight-travel-builder__checklist-item {{#if passed}}arcflight-travel-builder__checklist-item--passed{{else}}arcflight-travel-builder__checklist-item--open{{/if}}">
+                <span>{{#if passed}}✓{{else}}•{{/if}}</span>
+                <div><strong>{{label}}</strong>{{#unless passed}}<small>{{message}}</small>{{/unless}}</div>
+              </li>
+            {{/each}}
+          </ul>
+        </details>
+      {{/each}}
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-form>
+    <h2>Basic Form Editor</h2>
+    <p class="arcflight-sheet__hint">Edit top-level draft fields here. Changes stay local to this builder window and re-normalize the draft; round structure can be edited below, while advanced branch details remain available through raw JSON.</p>
+
+    <div class="arcflight-travel-builder__form-grid">
+      <label class="arcflight-travel-builder__field">
+        <span>Key</span>
+        <input type="text" name="arcflight-builder-key" value="{{draft.key}}" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Name</span>
+        <input type="text" name="arcflight-builder-name" value="{{draft.name}}" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Category</span>
+        <select name="arcflight-builder-category" data-arcflight-builder-form-field>
+          {{#each formOptions.categories}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Base DC</span>
+        <input type="number" name="arcflight-builder-baseDC" value="{{draft.baseDC}}" step="1" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field">
+        <span>Round Count</span>
+        <input type="number" name="arcflight-builder-roundCount" value="{{draft.roundCount}}" min="1" step="1" data-arcflight-builder-form-field>
+      </label>
+      <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+        <span>Tags</span>
+        <input type="text" name="arcflight-builder-tags" value="{{formOptions.tagsText}}" placeholder="comma-separated tags" data-arcflight-builder-form-field>
+      </label>
+    </div>
+
+    {{#if formOptions.hasDescription}}
+      <label class="arcflight-travel-builder__field">
+        <span>Description</span>
+        <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" name="arcflight-builder-description" data-arcflight-builder-form-field>{{draft.description}}</textarea>
+      </label>
+    {{/if}}
+
+    {{#if formOptions.hasGmSummary}}
+      <label class="arcflight-travel-builder__field">
+        <span>GM Summary</span>
+        <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" name="arcflight-builder-gmSummary" data-arcflight-builder-form-field>{{draft.gmSummary}}</textarea>
+      </label>
+    {{/if}}
+
+    <div class="arcflight-travel-builder__check-groups">
+      <fieldset class="arcflight-travel-builder__check-group">
+        <legend>Active Resources</legend>
+        {{#each formOptions.activeResources}}
+          <label>
+            <input type="checkbox" name="arcflight-builder-activeResources" value="{{value}}" {{#if checked}}checked{{/if}} data-arcflight-builder-form-field>
+            <span>{{label}}</span>
+          </label>
+        {{/each}}
+      </fieldset>
+      <fieldset class="arcflight-travel-builder__check-group">
+        <legend>Travel Stations</legend>
+        {{#each formOptions.travelStations}}
+          <label>
+            <input type="checkbox" name="arcflight-builder-travelStations" value="{{value}}" {{#if checked}}checked{{/if}} data-arcflight-builder-form-field>
+            <span>{{label}}</span>
+          </label>
+        {{/each}}
+      </fieldset>
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-form>Apply Form Edits</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-round-editor>
+    <h2>Round Editor MVP</h2>
+    <p class="arcflight-sheet__hint">Edit local round structure without touching the advanced JSON fallback. Active station choices use the top-level Travel Stations list; outcome branches are shown as read-only summaries for this phase.</p>
+
+    <div class="arcflight-travel-builder__rounds">
+      {{#each roundEditor.rounds}}
+        <details class="arcflight-travel-builder__round" data-arcflight-builder-round="{{round}}" open>
+          <summary>
+            <strong>Round {{round}}: {{title}}</strong>
+            <span>{{activeStationsLabel}}</span>
+          </summary>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Opening Vignette</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-round-opening-vignette data-arcflight-builder-round-field>{{openingVignette}}</textarea>
+          </label>
+
+          <fieldset class="arcflight-travel-builder__check-group arcflight-travel-builder__check-group--wide">
+            <legend>Active Stations for this Round</legend>
+            {{#each stationOptions}}
+              <label>
+                <input type="checkbox" value="{{value}}" {{#if checked}}checked{{/if}} data-arcflight-builder-round-active-stations data-arcflight-builder-round-field>
+                <span>{{label}}</span>
+              </label>
+            {{/each}}
+          </fieldset>
+
+          <h3>Active Station Player Actions</h3>
+          {{#if stationPrompts}}
+            <div class="arcflight-travel-builder__station-prompts">
+              {{#each stationPrompts}}
+                <label class="arcflight-travel-builder__field arcflight-travel-builder__station-prompt">
+                  <span>{{stationName}} Player Action</span>
+                  <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-player-action="{{stationKey}}" data-arcflight-builder-round-field>{{playerAction}}</textarea>
+                </label>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No active station prompts are selected for this round.</p>
+          {{/if}}
+
+          <h3>Station Cards</h3>
+          {{#if stationCards}}
+            <div class="arcflight-travel-builder__station-prompts">
+              {{#each stationCards}}
+                <article class="arcflight-travel-builder__card arcflight-travel-builder__station-card-editor">
+                  <h4>{{stationName}}</h4>
+                  <p class="arcflight-sheet__hint">{{hooksSummary.label}}</p>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Problem</span>
+                    <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-problem="{{stationKey}}" data-arcflight-builder-round-field>{{problem}}</textarea>
+                  </label>
+                  <h5>Skill Approaches</h5>
+                  {{#each skillApproaches}}
+                    <div class="arcflight-travel-builder__station-prompt">
+                      <label class="arcflight-travel-builder__field">
+                        <span>Skill</span>
+                        <input type="text" value="{{skill}}" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="skill" data-arcflight-builder-round-field>
+                      </label>
+                      <label class="arcflight-travel-builder__field">
+                        <span>Approach / Plan</span>
+                        <input type="text" value="{{label}}" placeholder="Example: Tune the harmonic wake, Hold the course, Chart the old tide." title="Examples: Tune the harmonic wake; Hold the course; Chart the old tide" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="label" data-arcflight-builder-round-field>
+                      </label>
+                      <label class="arcflight-travel-builder__field">
+                        <span>How This Helps</span>
+                        <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" placeholder="Explain how this skill helps solve or bypass the station problem." data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="helpText" data-arcflight-builder-round-field>{{helpText}}</textarea>
+                      </label>
+                      <details class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+                        <summary>Structured approach feedback</summary>
+                        <label class="arcflight-travel-builder__field"><span>Approach DC</span><input type="number" value="{{dc}}" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="dc" data-arcflight-builder-round-field></label>
+                        <label class="arcflight-travel-builder__field"><span>Board Critical Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="boardResultFeedback.criticalSuccess" data-arcflight-builder-round-field>{{boardResultFeedback.criticalSuccess}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>Board Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="boardResultFeedback.success" data-arcflight-builder-round-field>{{boardResultFeedback.success}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>Board Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="boardResultFeedback.failure" data-arcflight-builder-round-field>{{boardResultFeedback.failure}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>Board Critical Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="boardResultFeedback.criticalFailure" data-arcflight-builder-round-field>{{boardResultFeedback.criticalFailure}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>GM Critical Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="gmNarrationFeedback.criticalSuccess" data-arcflight-builder-round-field>{{gmNarrationFeedback.criticalSuccess}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>GM Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="gmNarrationFeedback.success" data-arcflight-builder-round-field>{{gmNarrationFeedback.success}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>GM Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="gmNarrationFeedback.failure" data-arcflight-builder-round-field>{{gmNarrationFeedback.failure}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>GM Critical Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="gmNarrationFeedback.criticalFailure" data-arcflight-builder-round-field>{{gmNarrationFeedback.criticalFailure}}</textarea></label>
+                        <label class="arcflight-travel-builder__field"><span>GM-Only Consequence</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-approach="{{../stationKey}}" data-arcflight-builder-station-card-approach-index="{{@index}}" data-arcflight-builder-station-card-approach-field="gmOnlyConsequence" data-arcflight-builder-round-field>{{gmOnlyConsequence}}</textarea></label>
+                      </details>
+                    </div>
+                  {{/each}}
+                  <h5>Roll Feedback</h5>
+                  <label class="arcflight-travel-builder__field"><span>Critical Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="criticalSuccess" data-arcflight-builder-round-field>{{rollFeedback.criticalSuccess}}</textarea></label>
+                  <label class="arcflight-travel-builder__field"><span>Success</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="success" data-arcflight-builder-round-field>{{rollFeedback.success}}</textarea></label>
+                  <label class="arcflight-travel-builder__field"><span>Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="failure" data-arcflight-builder-round-field>{{rollFeedback.failure}}</textarea></label>
+                  <label class="arcflight-travel-builder__field"><span>Critical Failure</span><textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-station-card-feedback="{{stationKey}}" data-arcflight-builder-station-card-feedback-field="criticalFailure" data-arcflight-builder-round-field>{{rollFeedback.criticalFailure}}</textarea></label>
+                </article>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No active station cards are selected for this round.</p>
+          {{/if}}
+
+          <h3>Outcome Branch Summary</h3>
+          <div class="arcflight-travel-builder__cards arcflight-travel-builder__outcomes">
+            {{#each outcomeBranches}}
+              <div class="arcflight-travel-builder__card">
+                <strong>{{label}}</strong>
+                <span>{{proposedEffectCount}} proposed effects{{#if hasCombatHandoff}} — combat handoff metadata{{/if}}</span>
+                {{#if vignette}}<p>{{vignette}}</p>{{/if}}
+                {{#if nextRoundNotes}}<span>Next round notes: {{nextRoundNotes}}</span>{{/if}}
+                {{#if handoffNotes}}<span>Handoff notes: {{handoffNotes}}</span>{{/if}}
+              </div>
+            {{/each}}
+          </div>
+        </details>
+      {{/each}}
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-rounds>Apply Round Edits</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel" data-arcflight-builder-final-outcome-editor>
+    <h2>Final Outcomes Text + Resource Effects Editor MVP</h2>
+    <p class="arcflight-sheet__hint">Edit the five canonical final result blocks and local-only staged resource effects in this draft. Effects remain proposed/staged data only; this editor never applies them.</p>
+
+    <div class="arcflight-travel-builder__final-outcomes">
+      {{#each finalOutcomeEditor.outcomes}}
+        <details class="arcflight-travel-builder__final-outcome" data-arcflight-builder-final-outcome="{{key}}" open>
+          <summary>
+            <strong>{{label}}</strong>
+            <span>{{proposedEffectCount}} proposed effects</span>
+          </summary>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Label / Title</span>
+            <input type="text" value="{{title}}" data-arcflight-builder-final-outcome-label data-arcflight-builder-final-outcome-field>
+          </label>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Narrative / Result Text</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form" data-arcflight-builder-final-outcome-narrative data-arcflight-builder-final-outcome-field>{{narrative}}</textarea>
+          </label>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Reward Text</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form arcflight-travel-builder__textarea--compact" placeholder="One reward per line" data-arcflight-builder-final-outcome-rewards data-arcflight-builder-final-outcome-field>{{rewardsText}}</textarea>
+          </label>
+
+          <label class="arcflight-travel-builder__field">
+            <span>Consequence Text</span>
+            <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--form arcflight-travel-builder__textarea--compact" placeholder="One consequence per line" data-arcflight-builder-final-outcome-consequences data-arcflight-builder-final-outcome-field>{{consequencesText}}</textarea>
+          </label>
+
+          <h3>Resource Effects</h3>
+          <p class="arcflight-sheet__hint">These rows edit proposed resource effects in the draft only. They do not apply effects to a ship.</p>
+          {{#if hasResourceEffects}}
+            <div class="arcflight-travel-builder__resource-effects">
+              {{#each resourceEffects}}
+                <fieldset class="arcflight-travel-builder__resource-effect" data-arcflight-builder-final-outcome-effect="{{index}}">
+                  <legend>Resource Effect {{displayIndex}}</legend>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Resource</span>
+                    <select data-arcflight-builder-final-outcome-effect-resource data-arcflight-builder-final-outcome-effect-field>
+                      {{#each resourceOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Mode</span>
+                    <select data-arcflight-builder-final-outcome-effect-mode data-arcflight-builder-final-outcome-effect-field>
+                      {{#each modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                  <label class="arcflight-travel-builder__field">
+                    <span>Value</span>
+                    <input type="number" step="1" value="{{valueText}}" data-arcflight-builder-final-outcome-effect-value data-arcflight-builder-final-outcome-effect-field>
+                  </label>
+                  <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+                    <span>Label</span>
+                    <input type="text" value="{{label}}" data-arcflight-builder-final-outcome-effect-label data-arcflight-builder-final-outcome-effect-field>
+                  </label>
+                  <label class="arcflight-travel-builder__inline-check arcflight-travel-builder__field--wide">
+                    <input type="checkbox" data-arcflight-builder-final-outcome-effect-remove data-arcflight-builder-final-outcome-effect-field>
+                    <span>Remove this resource effect from the draft</span>
+                  </label>
+                </fieldset>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No editable resource effects are present for this final outcome.</p>
+          {{/if}}
+
+          <fieldset class="arcflight-travel-builder__resource-effect arcflight-travel-builder__resource-effect--add" data-arcflight-builder-final-outcome-add-effect>
+            <legend>Add One Resource Effect</legend>
+            <p class="arcflight-sheet__hint arcflight-travel-builder__resource-effect-hint">Choose values, then check the add box to stage the new draft effect.</p>
+            <label class="arcflight-travel-builder__inline-check arcflight-travel-builder__field--wide">
+              <input type="checkbox" data-arcflight-builder-final-outcome-add-effect-enabled data-arcflight-builder-final-outcome-effect-field>
+              <span>Add this resource effect to the draft</span>
+            </label>
+            <label class="arcflight-travel-builder__field">
+              <span>Resource</span>
+              <select data-arcflight-builder-final-outcome-add-effect-resource data-arcflight-builder-final-outcome-effect-field>
+                {{#each addEffect.resourceOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            <label class="arcflight-travel-builder__field">
+              <span>Mode</span>
+              <select data-arcflight-builder-final-outcome-add-effect-mode data-arcflight-builder-final-outcome-effect-field>
+                {{#each addEffect.modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            <label class="arcflight-travel-builder__field">
+              <span>Value</span>
+              <input type="number" step="1" value="{{addEffect.valueText}}" data-arcflight-builder-final-outcome-add-effect-value data-arcflight-builder-final-outcome-effect-field>
+            </label>
+            <label class="arcflight-travel-builder__field arcflight-travel-builder__field--wide">
+              <span>Label</span>
+              <input type="text" value="{{addEffect.label}}" placeholder="Optional table-facing label" data-arcflight-builder-final-outcome-add-effect-label data-arcflight-builder-final-outcome-effect-field>
+            </label>
+          </fieldset>
+
+          <h3>Read-only Unsupported / Non-resource Effect Summary</h3>
+          {{#if hasReadOnlyEffects}}
+            <div class="arcflight-travel-builder__cards arcflight-travel-builder__effect-summaries">
+              {{#each readOnlyEffectSummaries}}
+                <div class="arcflight-travel-builder__card">
+                  <strong>{{label}}</strong>
+                  <span>Type: {{type}}</span>
+                  <code>{{summary}}</code>
+                </div>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="arcflight-sheet__hint">No unsupported or non-resource effects are present for this final outcome.</p>
+          {{/if}}
+          {{#if hasCombatHandoff}}<p class="arcflight-sheet__hint">Combat handoff metadata is present and read-only.</p>{{/if}}
+          {{#if handoffNotes}}<p class="arcflight-sheet__hint">Handoff notes: {{handoffNotes}}</p>{{/if}}
+        </details>
+      {{/each}}
+    </div>
+
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-apply-final-outcomes>Apply Final Outcome Text + Effect Edits</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel">
+    <h2>Advanced / Raw Draft JSON</h2>
+    <p class="arcflight-sheet__hint">Edit or paste raw draft JSON here as an advanced fallback, then refresh the preview or export JSON. This shell keeps data in memory only.</p>
+    <textarea class="arcflight-travel-builder__textarea" data-arcflight-builder-draft-json>{{draftJson}}</textarea>
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-preview>Refresh Preview</button>
+      <button type="button" data-arcflight-builder-export-draft>Export Draft JSON</button>
+      <button type="button" data-arcflight-builder-export-final {{#unless canExportFinal}}disabled{{/unless}}>Export Final Event JSON</button>
+      <button type="button" class="arcflight-button--danger" data-arcflight-builder-reset>New Default Draft</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__grid">
+    <article class="arcflight-travel-builder__panel">
+      <h2>Preview</h2>
+      <div class="arcflight-travel-builder__summary">
+        <div class="arcflight-travel-builder__stat"><span>Key</span><strong>{{preview.key}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Name</span><strong>{{preview.name}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Category</span><strong>{{preview.categoryLabel}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Base DC</span><strong>{{preview.baseDC}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Rounds</span><strong>{{preview.roundCount}}</strong></div>
+      </div>
+      <p><strong>Resources:</strong> {{preview.activeResourcesLabel}}</p>
+      <p><strong>Stations:</strong> {{preview.travelStationsLabel}}</p>
+
+      <h3>Validation</h3>
+      {{#if validationOk}}
+        <p class="arcflight-travel-builder__ok">Draft currently validates.</p>
+      {{else}}
+        <p class="arcflight-travel-builder__warning">Draft has validation errors.</p>
+      {{/if}}
+      {{#if hasValidationErrors}}
+        <ul>
+          {{#each validationErrors}}<li>{{this}}</li>{{/each}}
+        </ul>
+      {{/if}}
+      {{#if hasValidationWarnings}}
+        <ul>
+          {{#each validationWarnings}}<li>{{this}}</li>{{/each}}
+        </ul>
+      {{/if}}
+    </article>
+
+    <article class="arcflight-travel-builder__panel">
+      <h2>Export Readiness</h2>
+      <div class="arcflight-travel-builder__summary">
+        <div class="arcflight-travel-builder__stat"><span>Draft Export</span><strong>{{#if exportPreview.exportDraftAvailable}}Ready{{else}}Blocked{{/if}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Final Export</span><strong>{{#if exportPreview.exportFinalAvailable}}Ready{{else}}Blocked{{/if}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Errors</span><strong>{{exportPreview.errorCount}}</strong></div>
+        <div class="arcflight-travel-builder__stat"><span>Warnings</span><strong>{{exportPreview.warningCount}}</strong></div>
+      </div>
+
+      <h3>Round Summary</h3>
+      <div class="arcflight-travel-builder__cards">
+        {{#each preview.rounds}}
+          <div class="arcflight-travel-builder__card">
+            <strong>Round {{round}}: {{title}}</strong>
+            <span>{{activeStationCount}} station prompts — {{activeStationsLabel}}</span>
+          </div>
+        {{/each}}
+      </div>
+
+      <h3>Final Outcomes</h3>
+      <div class="arcflight-travel-builder__cards">
+        {{#each preview.finalOutcomes}}
+          <div class="arcflight-travel-builder__card">
+            <strong>{{label}}</strong>
+            <span>{{proposedEffectCount}} proposed effects, {{rewardCount}} rewards, {{lossCount}} losses</span>
+          </div>
+        {{/each}}
+      </div>
+    </article>
+  </section>
+
+  <section class="arcflight-travel-builder__panel">
+    <h2>Import Pasted Draft JSON</h2>
+    <p class="arcflight-sheet__hint">Paste exported draft JSON here and click Import. No drag/drop or file import is wired in this MVP.</p>
+    <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--short" data-arcflight-builder-import-json placeholder="Paste draft JSON here"></textarea>
+    <div class="arcflight-travel-builder__controls">
+      <button type="button" data-arcflight-builder-import>Import Pasted JSON</button>
+    </div>
+  </section>
+
+  <section class="arcflight-travel-builder__panel">
+    <h2>Export Output</h2>
+    {{#if hasOutputJson}}
+      <textarea class="arcflight-travel-builder__textarea arcflight-travel-builder__textarea--output" readonly>{{outputJson}}</textarea>
+    {{else}}
+      <p class="arcflight-sheet__hint">Exported draft or final event JSON will appear here for manual copy.</p>
+    {{/if}}
+  </section>
+</div>

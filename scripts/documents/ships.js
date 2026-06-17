@@ -1,5 +1,5 @@
-import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID } from "../config/constants.js";
-import { getComponentData, getComponentType } from "./components.js";
+import { ARCFLIGHT_ITEM_TYPES, ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_WEAPON_ARCS } from "../config/constants.js";
+import { getComponentData, getComponentRefitPressure, getComponentTierMetadata, getComponentType } from "./components.js";
 import { getLockedCoreRoom, getLockedCoreRoomKeys } from "../../data/rooms/core-rooms.js";
 import { getHullPattern } from "../../data/hulls/hull-patterns.js";
 import { getArkenginePattern } from "../../data/arkengines/arkengine-patterns.js";
@@ -32,6 +32,7 @@ const emptyInstalledState = Object.freeze({
     available: 0
   }),
   shipUpgrades: Object.freeze([]),
+  weapons: Object.freeze([]),
   shipUpgradeSlots: Object.freeze({
     capacity: 3,
     used: 0,
@@ -44,7 +45,62 @@ const emptyCurrentShipState = Object.freeze({
   lifeveil: 0,
   strain: 0,
   morale: 0,
+  supplies: 0,
   storedSpellRanks: 0
+});
+
+const emptyActionEconomyState = Object.freeze({
+  ap: 0,
+  maxAP: 0,
+  rap: 0,
+  maxRAP: 0,
+  lastUpdatedAt: 0,
+  lastReason: ""
+});
+
+const REFIT_PRESSURE_KEYS = Object.freeze([
+  "weaponPressure",
+  "enginePressure",
+  "infrastructurePressure",
+  "lifeveilPressure",
+  "crewCommandPressure",
+  "occultPressure"
+]);
+
+const REFIT_STATUSES = Object.freeze({
+  NATIVE: "native",
+  PRESSURED: "pressured",
+  MAJOR_REFIT_REQUIRED: "major-refit-required",
+  REFIT_COMPLETE: "refit-complete"
+});
+
+const emptyTierState = Object.freeze({
+  baseTier: 0,
+  currentTier: 0,
+  refitStatus: REFIT_STATUSES.NATIVE,
+  majorRefitsCompleted: 0
+});
+
+const emptyRefitPressureState = Object.freeze({
+  weaponPressure: 0,
+  enginePressure: 0,
+  infrastructurePressure: 0,
+  lifeveilPressure: 0,
+  crewCommandPressure: 0,
+  occultPressure: 0,
+  total: 0
+});
+
+const emptyRefitFlagsState = Object.freeze({
+  qualifiesForMajorRefit: false,
+  requiresDrydock: false,
+  requiresSpecialistLabor: false,
+  requiresRareMaterials: false
+});
+
+const emptyInstallState = Object.freeze({
+  version: 1,
+  installs: Object.freeze([])
 });
 
 const emptyCrewState = Object.freeze({
@@ -127,9 +183,13 @@ export const arcflightShipDefaults = Object.freeze({
     origin: ""
   }),
   installed: emptyInstalledState,
+  installState: emptyInstallState,
   base: emptyBaseShipState,
   derived: emptyDerivedShipState,
   current: emptyCurrentShipState,
+  tier: emptyTierState,
+  refitPressure: emptyRefitPressureState,
+  refitFlags: emptyRefitFlagsState,
   installedSystems: Object.freeze({
     hull: "",
     arkengine: "",
@@ -178,6 +238,10 @@ export const arcflightShipDefaults = Object.freeze({
     definitions: CORE_STATIONS,
     assignments: Object.freeze(Object.fromEntries(STATION_KEYS.map((stationKey) => [stationKey, null])))
   }),
+  stationActions: Object.freeze({
+    history: Object.freeze([])
+  }),
+  actionEconomy: emptyActionEconomyState,
   conditions: Object.freeze({
     active: "",
     damage: "",
@@ -324,6 +388,69 @@ function numericValue(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
+function nonNegativeNumericValue(value, fallback = 0) {
+  return Math.max(0, numericValue(value, fallback));
+}
+
+function getActionEconomyMaxima(systemData = {}) {
+  const derived = systemData.derived ?? {};
+  const hull = systemData.base?.hull ?? {};
+  const existing = systemData.actionEconomy ?? {};
+  const maxAP = nonNegativeNumericValue(
+    derived.baseAP,
+    nonNegativeNumericValue(hull.baseAP, nonNegativeNumericValue(existing.maxAP))
+  );
+  const maxRAP = nonNegativeNumericValue(
+    derived.baseRAP,
+    nonNegativeNumericValue(hull.baseRAP, nonNegativeNumericValue(existing.maxRAP))
+  );
+
+  return { maxAP, maxRAP };
+}
+
+function normalizeActionEconomyState(systemData = {}, options = {}) {
+  const existing = systemData.actionEconomy ?? {};
+  const maxima = getActionEconomyMaxima(systemData);
+  const maxAP = options.maxAP !== undefined ? nonNegativeNumericValue(options.maxAP, maxima.maxAP) : maxima.maxAP;
+  const maxRAP = options.maxRAP !== undefined ? nonNegativeNumericValue(options.maxRAP, maxima.maxRAP) : maxima.maxRAP;
+  const existingAp = existing.ap ?? existing.currentAP;
+  const existingRap = existing.rap ?? existing.currentRAP;
+  const existingMaxAP = nonNegativeNumericValue(existing.maxAP);
+  const existingMaxRAP = nonNegativeNumericValue(existing.maxRAP);
+  const ap = existingAp === undefined || existingAp === null || existingAp === ""
+    ? maxAP
+    : (nonNegativeNumericValue(existingAp) === existingMaxAP && maxAP > existingMaxAP)
+      ? maxAP
+      : Math.min(nonNegativeNumericValue(existingAp), maxAP);
+  const rap = existingRap === undefined || existingRap === null || existingRap === ""
+    ? maxRAP
+    : (nonNegativeNumericValue(existingRap) === existingMaxRAP && maxRAP > existingMaxRAP)
+      ? maxRAP
+      : Math.min(nonNegativeNumericValue(existingRap), maxRAP);
+
+  return {
+    ...cloneData(emptyActionEconomyState),
+    ...cloneData(existing),
+    ap,
+    maxAP,
+    rap,
+    maxRAP,
+    lastUpdatedAt: nonNegativeNumericValue(existing.lastUpdatedAt),
+    lastReason: existing.lastReason ?? ""
+  };
+}
+
+function normalizeSpendRequest(costs = {}) {
+  const ap = numericValue(costs.ap);
+  const rap = numericValue(costs.rap);
+
+  if (ap < 0 || rap < 0) {
+    throw new Error("Arcflight | AP/RAP spends cannot be negative.");
+  }
+
+  return { ap, rap };
+}
+
 function normalizeArkengineFueling(arkengine = {}) {
   const existingFueling = cloneData(arkengine.fueling ?? {});
   const requiredSpellRank = numericValue(
@@ -402,6 +529,72 @@ function getInstalledShipUpgrades(installed = {}) {
   return Array.isArray(installed.shipUpgrades) ? cloneData(installed.shipUpgrades) : [];
 }
 
+function getInstalledWeapons(installed = {}) {
+  return Array.isArray(installed.weapons) ? cloneData(installed.weapons) : [];
+}
+
+
+function installedEntryMatchesIdentifier(entry = {}, identifier = "") {
+  const normalizedIdentifier = String(identifier ?? "").trim();
+  if (!normalizedIdentifier) return false;
+
+  return [
+    entry.id,
+    entry.itemId,
+    entry.itemUuid,
+    entry.uuid,
+    entry.key,
+    entry.identity?.id,
+    entry.mountedWeaponId,
+    entry.mountId
+  ].filter(Boolean).includes(normalizedIdentifier);
+}
+
+function installRecordMatchesInstalledEntry(record = {}, entry = {}, componentType = "") {
+  if (record.active !== true || record.componentType !== componentType) return false;
+
+  if (componentType === ARCFLIGHT_ITEM_TYPES.WEAPON && (entry.mountedWeaponId || entry.mountId)) {
+    return Boolean(
+      (entry.mountedWeaponId && record.hullSlot === entry.mountedWeaponId)
+      || (entry.mountId && record.roomSlot === entry.mountId && entry.arc && record.weaponArc === entry.arc)
+    );
+  }
+
+  return Boolean(
+    (entry.itemUuid && record.itemUuid === entry.itemUuid)
+    || (entry.uuid && record.itemUuid === entry.uuid)
+    || (entry.itemId && record.itemId === entry.itemId)
+    || (entry.id && record.itemId === entry.id)
+    || (entry.key && record.componentKey === entry.key)
+    || (entry.identity?.id && record.componentKey === entry.identity.id)
+  );
+}
+
+function buildInstallStateWithDeactivatedEntry(systemData = {}, entry = {}, componentType = "", reason = "removed") {
+  const installState = normalizeBasicInstallState(systemData.installState);
+  const removalMetadata = {
+    removedAt: Date.now(),
+    removedBy: globalThis.game?.user?.id ?? "",
+    removalReason: reason
+  };
+  let deactivatedCount = 0;
+
+  const installs = installState.installs.map((record) => {
+    if (!installRecordMatchesInstalledEntry(record, entry, componentType)) return record;
+    deactivatedCount += 1;
+    return {
+      ...record,
+      active: false,
+      ...removalMetadata
+    };
+  });
+
+  return {
+    installState: normalizeBasicInstallState({ version: installState.version, installs }),
+    deactivatedCount
+  };
+}
+
 function hasInstalledEntry(entries = [], entry = {}) {
   const identifiers = [entry.key, entry.itemId, entry.uuid].filter(Boolean);
   if (identifiers.length === 0) return false;
@@ -409,6 +602,37 @@ function hasInstalledEntry(entries = [], entry = {}) {
   return entries.some((existing) => (
     [existing.key, existing.itemId, existing.uuid].filter(Boolean).some((identifier) => identifiers.includes(identifier))
   ));
+}
+
+function activeSingleInstallMatches(systemData = {}, item, componentType) {
+  const componentData = getComponentData(item) ?? {};
+  const itemId = item?.id ?? "";
+  const uuid = item?.uuid ?? "";
+  const key = componentData.identity?.id ?? componentData.platform ?? componentData.engineClass ?? item?.slug ?? "";
+
+  if (componentType === ARCFLIGHT_ITEM_TYPES.HULL) {
+    const installed = systemData.installed ?? {};
+    return Boolean(
+      (itemId && installed.hullItemId === itemId)
+      || (uuid && installed.hullUuid === uuid)
+      || (key && installed.hullPlatform === key)
+    );
+  }
+
+  if (componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE) {
+    const installed = systemData.installed ?? {};
+    return Boolean(
+      (itemId && installed.arkengineItemId === itemId)
+      || (uuid && installed.arkengineUuid === uuid)
+      || (key && installed.arkengineKey === key)
+    );
+  }
+
+  return false;
+}
+
+function duplicateInstallError(componentName, placementName) {
+  return new Error(`Arcflight | ${componentName || "This component"} is already installed or rostered on this ship as ${placementName}; duplicate installs are blocked.`);
 }
 
 function getShipUpgradeSlotState(installed = {}) {
@@ -436,6 +660,8 @@ function buildInstalledArkengineModEntry(modItem) {
     modSlotsRequired: numericValue(modData.installation?.modSlotsRequired, 1),
     systemState: modData.state?.systemState ?? "Functional",
     effects: cloneData(modData.effects ?? {}),
+    refitPressure: getComponentRefitPressure(modItem),
+    tierMetadata: getComponentTierMetadata(modItem),
     restrictions: cloneData(modData.restrictions ?? {}),
     traits: cloneData(modData.traits ?? []),
     notes: cloneData(modData.notes ?? {})
@@ -502,6 +728,8 @@ function buildInstalledShipUpgradeEntry(upgradeItem) {
     systemState: upgradeData.state?.systemState ?? "Functional",
     slotCost: numericValue(upgradeData.installation?.slotCost, 1),
     effects: cloneData(upgradeData.effects ?? {}),
+    refitPressure: getComponentRefitPressure(upgradeItem),
+    tierMetadata: getComponentTierMetadata(upgradeItem),
     restrictions: cloneData(upgradeData.restrictions ?? {}),
     traits: cloneData(upgradeData.traits ?? [])
   };
@@ -732,6 +960,8 @@ function buildInstalledRoomEntry(roomItem) {
     expansionSlotsRequired: numericValue(roomData.installation?.expansionSlotsRequired, 1),
     systemState: roomData.state?.systemState ?? "Functional",
     utility: cloneData(roomData.utility ?? {}),
+    refitPressure: getComponentRefitPressure(roomItem),
+    tierMetadata: getComponentTierMetadata(roomItem),
     mechanicalEffects: cloneData(roomData.mechanicalEffects ?? {}),
     traits: cloneData(roomData.traits ?? [])
   };
@@ -806,6 +1036,355 @@ function hasInstalledArkengine(systemData = {}) {
   return Boolean(systemData.installed?.arkengineItemId || systemData.installed?.arkengineUuid || systemData.installed?.arkengineKey);
 }
 
+
+function normalizeBasicInstallState(installState = {}) {
+  const source = installState && typeof installState === "object" && !Array.isArray(installState) ? installState : {};
+  return {
+    version: 1,
+    installs: Array.isArray(source.installs) ? cloneData(source.installs) : []
+  };
+}
+
+const INSTALL_STATE_PRESSURE_KEY_MAP = Object.freeze({
+  weaponPressure: "weapon",
+  enginePressure: "engine",
+  infrastructurePressure: "infrastructure",
+  lifeveilPressure: "lifeveil",
+  crewCommandPressure: "crewCommand",
+  occultPressure: "occult"
+});
+
+function normalizeInstallStatePressureContribution(refitPressure = {}) {
+  const pressure = {};
+  let total = 0;
+
+  for (const [sourceKey, targetKey] of Object.entries(INSTALL_STATE_PRESSURE_KEY_MAP)) {
+    pressure[targetKey] = Math.max(0, numericValue(refitPressure?.[sourceKey]));
+    total += pressure[targetKey];
+  }
+
+  pressure.total = total;
+  return pressure;
+}
+
+function getInstallStateComponentIdentity(item, componentType) {
+  const componentData = getComponentData(item) ?? {};
+  return {
+    itemId: item?.id ?? "",
+    itemUuid: item?.uuid ?? "",
+    componentType,
+    key: componentData.identity?.id
+      ?? componentData.platform
+      ?? componentData.engineClass
+      ?? item?.slug
+      ?? item?.id
+      ?? ""
+  };
+}
+
+function installStateRecordMatchesComponent(record = {}, identity = {}) {
+  if (record.componentType !== identity.componentType) return false;
+
+  return Boolean(
+    (identity.itemUuid && record.itemUuid === identity.itemUuid)
+    || (identity.itemId && record.itemId === identity.itemId)
+    || (identity.key && record.componentKey === identity.key)
+  );
+}
+
+function createInstallStateRecord(shipActor, item, componentType, installCategory, tierState = {}) {
+  const identity = getInstallStateComponentIdentity(item, componentType);
+  const pressureContribution = normalizeInstallStatePressureContribution(getComponentRefitPressure(item));
+  const installIdKey = identity.key || identity.itemId || componentType || "component";
+  const randomId = globalThis.foundry?.utils?.randomID?.(10)
+    ?? Math.random().toString(36).slice(2, 12).padEnd(10, "0");
+
+  return {
+    installId: `${componentType || "component"}-${installIdKey}-${Date.now().toString(36)}-${randomId}`.replace(/[^a-zA-Z0-9_-]+/g, "-"),
+    itemId: identity.itemId,
+    itemUuid: identity.itemUuid,
+    componentKey: identity.key,
+    componentType,
+    installedAt: Date.now(),
+    installedBy: globalThis.game?.user?.id ?? "",
+    installCategory,
+    nativeInstall: installCategory === "native",
+    refitInstall: installCategory === "refit",
+    temporaryInstall: false,
+    pressureContribution,
+    tierAtInstall: numericValue(tierState.currentTier),
+    active: true
+  };
+}
+
+function shouldDeactivateReplacedInstallRecord(record = {}, componentType) {
+  return record.active === true
+    && (componentType === ARCFLIGHT_ITEM_TYPES.HULL || componentType === ARCFLIGHT_ITEM_TYPES.ARKENGINE)
+    && record.componentType === componentType;
+}
+
+function buildReplacementRemovalMetadata(replacedByInstallId) {
+  const metadata = {
+    removedAt: Date.now(),
+    removedBy: globalThis.game?.user?.id ?? "",
+    removalReason: "replaced"
+  };
+
+  if (replacedByInstallId) metadata.replacedByInstallId = replacedByInstallId;
+  return metadata;
+}
+
+function buildInstallStateWithComponent(systemData, shipActor, item, componentType, installCategory, tierState = {}) {
+  const installState = normalizeBasicInstallState(systemData.installState);
+  const identity = getInstallStateComponentIdentity(item, componentType);
+
+  if (installState.installs.some((record) => record.active === true && installStateRecordMatchesComponent(record, identity))) {
+    return installState;
+  }
+
+  const installRecord = createInstallStateRecord(shipActor, item, componentType, installCategory, tierState);
+  const replacementRemovalMetadata = buildReplacementRemovalMetadata(installRecord.installId);
+  const installs = installState.installs.map((record) => {
+    if (!shouldDeactivateReplacedInstallRecord(record, componentType)) return record;
+    return {
+      ...record,
+      active: false,
+      ...replacementRemovalMetadata
+    };
+  });
+
+  return normalizeBasicInstallState({
+    version: installState.version,
+    installs: [
+      ...installs,
+      installRecord
+    ]
+  });
+}
+
+function normalizeRefitPressure(refitPressure = {}) {
+  const pressure = {};
+  let total = 0;
+
+  for (const key of REFIT_PRESSURE_KEYS) {
+    pressure[key] = Math.max(0, numericValue(refitPressure?.[key]));
+    total += pressure[key];
+  }
+
+  pressure.total = total;
+  return pressure;
+}
+
+function hasRefitPressure(component = {}) {
+  return getComponentRefitPressure(component).total > 0;
+}
+
+function getInstalledRefitPressureComponents(systemData = {}) {
+  return [
+    systemData.base?.arkengine,
+    ...(Array.isArray(systemData.installed?.weapons) ? systemData.installed.weapons : []),
+    ...(Array.isArray(systemData.installed?.arkengineMods) ? systemData.installed.arkengineMods : []),
+    ...(Array.isArray(systemData.installed?.rooms) ? systemData.installed.rooms : []),
+    ...(Array.isArray(systemData.installed?.shipUpgrades) ? systemData.installed.shipUpgrades : []),
+    ...(Array.isArray(systemData.crew?.namedCrew) ? systemData.crew.namedCrew : [])
+  ].filter(hasRefitPressure);
+}
+
+function getShipSystemData(shipOrSystem = {}) {
+  if (shipOrSystem?.getFlag) return getArcflightShipData(shipOrSystem);
+  if (shipOrSystem?.flags?.[ARCFLIGHT_MODULE_ID]?.system) {
+    return foundry.utils.mergeObject(
+      getDefaultArcflightShipData(),
+      cloneData(shipOrSystem.flags[ARCFLIGHT_MODULE_ID].system),
+      { inplace: false }
+    );
+  }
+
+  return foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(shipOrSystem ?? {}), { inplace: false });
+}
+
+function getHullClassification(systemData = {}) {
+  return systemData.base?.hull?.classification ?? {};
+}
+
+function getHullRefitTolerance(systemData = {}) {
+  return systemData.base?.hull?.refitTolerance ?? {};
+}
+
+function clampTier(value, minimum = 0, maximum = value) {
+  return Math.min(Math.max(numericValue(value), numericValue(minimum)), numericValue(maximum, value));
+}
+
+export function calculateRefitPressure(shipOrSystem = {}) {
+  const systemData = getShipSystemData(shipOrSystem);
+  const pressure = normalizeRefitPressure();
+
+  for (const component of getInstalledRefitPressureComponents(systemData)) {
+    const componentPressure = getComponentRefitPressure(component);
+    for (const key of REFIT_PRESSURE_KEYS) {
+      pressure[key] += componentPressure[key];
+    }
+  }
+
+  pressure.total = REFIT_PRESSURE_KEYS.reduce((total, key) => total + pressure[key], 0);
+  return pressure;
+}
+
+function calculateShipTierFrameworkState(shipOrSystem = {}) {
+  const systemData = getShipSystemData(shipOrSystem);
+  const classification = getHullClassification(systemData);
+  const tolerance = getHullRefitTolerance(systemData);
+  const pressure = calculateRefitPressure(systemData);
+  const existingTier = systemData.tier ?? {};
+  const baseTier = numericValue(classification.baseTier, numericValue(existingTier.baseTier));
+  const maximumRefitTier = numericValue(classification.maximumRefitTier, baseTier);
+  const majorRefitsCompleted = Math.max(0, numericValue(existingTier.majorRefitsCompleted));
+  const currentTier = clampTier(baseTier + majorRefitsCompleted, baseTier, maximumRefitTier);
+  const majorRefitThreshold = numericValue(tolerance.totalBeforeMajorRefitRequired);
+  const qualifiesForMajorRefit = majorRefitThreshold > 0 && pressure.total >= majorRefitThreshold;
+  const refitStatus = qualifiesForMajorRefit
+    ? REFIT_STATUSES.MAJOR_REFIT_REQUIRED
+    : pressure.total > 0
+      ? REFIT_STATUSES.PRESSURED
+      : REFIT_STATUSES.NATIVE;
+  const refitFlags = {
+    qualifiesForMajorRefit,
+    requiresDrydock: qualifiesForMajorRefit,
+    requiresSpecialistLabor: qualifiesForMajorRefit,
+    requiresRareMaterials: qualifiesForMajorRefit
+  };
+
+  return {
+    tier: {
+      baseTier,
+      currentTier,
+      refitStatus,
+      majorRefitsCompleted
+    },
+    refitPressure: pressure,
+    refitFlags
+  };
+}
+
+function getTierFrameworkUpdatePaths(systemData = {}) {
+  const frameworkState = calculateShipTierFrameworkState(systemData);
+
+  return {
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]: frameworkState.tier,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitPressure`]: frameworkState.refitPressure,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitFlags`]: frameworkState.refitFlags
+  };
+}
+
+export function getShipTierState(shipOrSystem = {}) {
+  return calculateShipTierFrameworkState(shipOrSystem).tier;
+}
+
+export function getShipRefitPressure(shipOrSystem = {}) {
+  return calculateShipTierFrameworkState(shipOrSystem).refitPressure;
+}
+
+export function getShipRefitStatus(shipOrSystem = {}) {
+  return getShipTierState(shipOrSystem).refitStatus;
+}
+
+export async function updateShipTierState(shipActor) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | updateShipTierState requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  return shipActor.update(getTierFrameworkUpdatePaths(getArcflightShipData(shipActor)));
+}
+
+
+export function getShipActionEconomy(shipActor) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | getShipActionEconomy requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  return normalizeActionEconomyState(getArcflightShipData(shipActor));
+}
+
+export function canSpendShipActionPoints(shipActor, costs = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | canSpendShipActionPoints requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const { ap, rap } = normalizeSpendRequest(costs);
+  const state = getShipActionEconomy(shipActor);
+  const messages = [];
+  if (ap > state.ap) messages.push(`Insufficient AP: requires ${ap}, available ${state.ap}.`);
+  if (rap > state.rap) messages.push(`Insufficient RAP: requires ${rap}, available ${state.rap}.`);
+  const canSpend = messages.length === 0;
+
+  return {
+    ok: canSpend,
+    canSpend,
+    blocked: !canSpend,
+    ap,
+    rap,
+    state,
+    messages
+  };
+}
+
+export async function resetShipActionEconomy(shipActor, options = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | resetShipActionEconomy requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const maxima = getActionEconomyMaxima(systemData);
+  const maxAP = options.maxAP !== undefined ? nonNegativeNumericValue(options.maxAP, maxima.maxAP) : maxima.maxAP;
+  const maxRAP = options.maxRAP !== undefined ? nonNegativeNumericValue(options.maxRAP, maxima.maxRAP) : maxima.maxRAP;
+  const resetState = {
+    ...normalizeActionEconomyState(systemData, { maxAP, maxRAP }),
+    maxAP,
+    maxRAP,
+    ap: options.ap !== undefined || options.currentAP !== undefined
+      ? Math.min(nonNegativeNumericValue(options.ap ?? options.currentAP), maxAP)
+      : maxAP,
+    rap: options.rap !== undefined || options.currentRAP !== undefined
+      ? Math.min(nonNegativeNumericValue(options.rap ?? options.currentRAP), maxRAP)
+      : maxRAP,
+    lastUpdatedAt: Date.now(),
+    lastReason: options.reason ?? "reset"
+  };
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: resetState
+  });
+
+  return resetState;
+}
+
+export async function spendShipActionPoints(shipActor, { ap = 0, rap = 0, reason = "" } = {}) {
+  if (!isArcflightShipActor(shipActor)) {
+    throw new Error("Arcflight | spendShipActionPoints requires an Arcflight-enabled PF2E vehicle actor.");
+  }
+
+  const spend = normalizeSpendRequest({ ap, rap });
+  const affordability = canSpendShipActionPoints(shipActor, spend);
+  if (!affordability.canSpend) {
+    throw new Error(`Arcflight | Cannot spend AP/RAP. ${affordability.messages.join(" ")}`.trim());
+  }
+
+  const state = affordability.state;
+  const nextState = {
+    ...state,
+    ap: state.ap - spend.ap,
+    rap: state.rap - spend.rap,
+    lastUpdatedAt: Date.now(),
+    lastReason: reason ?? ""
+  };
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: nextState
+  });
+
+  return nextState;
+}
+
 function buildLegacyResources(systemData, current, derived) {
   return foundry.utils.mergeObject(systemData.resources ?? {}, {
     hull: {
@@ -820,7 +1399,8 @@ function buildLegacyResources(systemData, current, derived) {
       value: current.strain,
       max: derived.strainCapacity ?? 0
     },
-    morale: current.morale
+    morale: current.morale,
+    supplies: current.supplies
   }, { inplace: false });
 }
 
@@ -835,6 +1415,7 @@ function getCurrentFallback(systemData = {}, key) {
   if (key === "lifeveil") return systemData.resources?.lifeveil?.value;
   if (key === "strain") return systemData.resources?.strain?.value;
   if (key === "morale") return systemData.resources?.morale;
+  if (key === "supplies") return systemData.resources?.supplies;
 
   return undefined;
 }
@@ -850,6 +1431,7 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
     lifeveil: getCurrentFallback(systemData, "lifeveil"),
     strain: getCurrentFallback(systemData, "strain"),
     morale: getCurrentFallback(systemData, "morale"),
+    supplies: getCurrentFallback(systemData, "supplies"),
     storedSpellRanks: getCurrentFallback(systemData, "storedSpellRanks")
   };
   const current = foundry.utils.mergeObject(cloneData(emptyCurrentShipState), cloneData(fallbackCurrent), { inplace: false });
@@ -858,12 +1440,14 @@ function buildCurrentShipState(systemData = {}, derived = {}, initialize = {}) {
   if (shouldInitializeRuntimeValue(current, "lifeveil", initialize.lifeveil)) current.lifeveil = derived.lifeveilCapacity ?? 0;
   if (shouldInitializeRuntimeValue(current, "strain", initialize.strain)) current.strain = 0;
   if (shouldInitializeRuntimeValue(current, "morale", initialize.morale)) current.morale = 0;
+  if (shouldInitializeRuntimeValue(current, "supplies", initialize.supplies)) current.supplies = 0;
   if (shouldInitializeRuntimeValue(current, "storedSpellRanks", initialize.storedSpellRanks)) current.storedSpellRanks = derived.maxStoredSpellRanks ?? 0;
 
   current.hull = numericValue(current.hull);
   current.lifeveil = numericValue(current.lifeveil);
   current.strain = numericValue(current.strain);
   current.morale = numericValue(current.morale);
+  current.supplies = numericValue(current.supplies);
   current.storedSpellRanks = numericValue(current.storedSpellRanks);
 
   return current;
@@ -874,6 +1458,7 @@ function alignInstalledSlotStates(installed = {}, base = {}, derived = {}) {
   nextInstalled.arkengineModSlots = getArkengineModSlotState(base.arkengine, nextInstalled, derived);
   nextInstalled.roomSlots = getRoomSlotState(base.hull, nextInstalled);
   nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
+  nextInstalled.weapons = getInstalledWeapons(nextInstalled);
 
   return nextInstalled;
 }
@@ -893,7 +1478,20 @@ export function getArcflightShipData(actor) {
   const systemData = foundry.utils.mergeObject(getDefaultArcflightShipData(), cloneData(flagData), { inplace: false });
 
   systemData.stations = getDefaultStationState(systemData.stations);
+  systemData.stationActions = {
+    history: Array.isArray(systemData.stationActions?.history) ? cloneData(systemData.stationActions.history) : []
+  };
   systemData.crew = getDefaultCrewState(systemData.crew);
+  systemData.tier = foundry.utils.mergeObject(cloneData(emptyTierState), cloneData(systemData.tier ?? {}), { inplace: false });
+  systemData.tier.baseTier = numericValue(systemData.tier.baseTier);
+  systemData.tier.currentTier = numericValue(systemData.tier.currentTier);
+  systemData.tier.majorRefitsCompleted = Math.max(0, numericValue(systemData.tier.majorRefitsCompleted));
+  if (!Object.values(REFIT_STATUSES).includes(systemData.tier.refitStatus)) systemData.tier.refitStatus = REFIT_STATUSES.NATIVE;
+  systemData.refitPressure = normalizeRefitPressure(systemData.refitPressure);
+  systemData.refitFlags = foundry.utils.mergeObject(cloneData(emptyRefitFlagsState), cloneData(systemData.refitFlags ?? {}), { inplace: false });
+  systemData.installState = normalizeBasicInstallState(systemData.installState);
+  systemData.current = buildCurrentShipState(systemData, systemData.derived ?? emptyDerivedShipState);
+  systemData.actionEconomy = normalizeActionEconomyState(systemData);
 
   return systemData;
 }
@@ -901,7 +1499,13 @@ export function getArcflightShipData(actor) {
 export function getDefaultArcflightShipFlags(data = {}) {
   const system = foundry.utils.mergeObject(getDefaultArcflightShipData(), data, { inplace: false });
   system.stations = getDefaultStationState(system.stations);
+  system.stationActions = {
+    history: Array.isArray(system.stationActions?.history) ? cloneData(system.stationActions.history) : []
+  };
   system.crew = getDefaultCrewState(system.crew);
+  system.installState = normalizeBasicInstallState(system.installState);
+  system.current = buildCurrentShipState(system, system.derived ?? emptyDerivedShipState);
+  system.actionEconomy = normalizeActionEconomyState(system);
 
   return {
     enabled: true,
@@ -933,25 +1537,145 @@ export async function recalculateShipStats(shipActor) {
 
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
 
   const stations = getDefaultStationState(systemData.stations);
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base, installed: nextInstalled }, { inplace: false });
 
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.stations`]: stations,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: nextInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
   });
 }
 
-
 function assertArcflightShipActor(shipActor, helperName) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error(`Arcflight | ${helperName} requires an Arcflight-enabled PF2E vehicle actor.`);
   }
+}
+
+const TRAVEL_RESOURCE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_RESOURCES));
+const TRAVEL_STATION_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_STATIONS));
+const MIN_ZERO_TRAVEL_RESOURCES = Object.freeze([
+  ARCFLIGHT_TRAVEL_RESOURCES.HULL,
+  ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL,
+  ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES,
+  ARCFLIGHT_TRAVEL_RESOURCES.MORALE,
+  ARCFLIGHT_TRAVEL_RESOURCES.STORED_SPELL_RANKS
+]);
+
+function getTravelResourceMaxima(systemData = {}) {
+  return {
+    maxHull: nonNegativeNumericValue(systemData.derived?.hullIntegrity, nonNegativeNumericValue(systemData.resources?.hull?.max)),
+    maxLifeveil: nonNegativeNumericValue(systemData.derived?.lifeveilCapacity, nonNegativeNumericValue(systemData.resources?.lifeveil?.max)),
+    maxStrain: nonNegativeNumericValue(systemData.derived?.strainCapacity, nonNegativeNumericValue(systemData.resources?.strain?.max))
+  };
+}
+
+function getTravelResourceValue(systemData = {}, key) {
+  const fallback = getCurrentFallback(systemData, key);
+  return numericValue(fallback);
+}
+
+export function getShipTravelResources(shipActor) {
+  assertArcflightShipActor(shipActor, "getShipTravelResources");
+
+  const systemData = getArcflightShipData(shipActor);
+  const maxima = getTravelResourceMaxima(systemData);
+
+  return {
+    hull: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.HULL),
+    lifeveil: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL),
+    strain: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.STRAIN),
+    morale: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.MORALE),
+    supplies: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES),
+    storedSpellRanks: getTravelResourceValue(systemData, ARCFLIGHT_TRAVEL_RESOURCES.STORED_SPELL_RANKS),
+    ...maxima
+  };
+}
+
+function clampTravelResource(key, requestedValue, before = {}) {
+  let value = numericValue(requestedValue);
+  const warnings = [];
+  const unclamped = value;
+
+  if (MIN_ZERO_TRAVEL_RESOURCES.includes(key) || key === ARCFLIGHT_TRAVEL_RESOURCES.STRAIN) {
+    value = Math.max(0, value);
+  }
+
+  if (key === ARCFLIGHT_TRAVEL_RESOURCES.HULL && before.maxHull > 0) value = Math.min(value, before.maxHull);
+  if (key === ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL && before.maxLifeveil > 0) value = Math.min(value, before.maxLifeveil);
+  if (key === ARCFLIGHT_TRAVEL_RESOURCES.STRAIN && before.maxStrain > 0) value = Math.min(value, before.maxStrain);
+
+  if (value !== unclamped) warnings.push(`${key} was clamped from ${unclamped} to ${value}.`);
+  return { value, warnings };
+}
+
+export function previewShipTravelResourceChange(shipActor, changes = {}) {
+  assertArcflightShipActor(shipActor, "previewShipTravelResourceChange");
+
+  const before = getShipTravelResources(shipActor);
+  const after = cloneData(before);
+  const normalizedChanges = {};
+  const warnings = [];
+
+  for (const key of TRAVEL_RESOURCE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(changes ?? {}, key)) continue;
+
+    const delta = numericValue(changes[key]);
+    normalizedChanges[key] = delta;
+    const clamped = clampTravelResource(key, before[key] + delta, before);
+    after[key] = clamped.value;
+    warnings.push(...clamped.warnings);
+  }
+
+  return {
+    ok: warnings.length === 0,
+    before,
+    after,
+    changes: normalizedChanges,
+    warnings,
+    messages: warnings.length > 0 ? cloneData(warnings) : []
+  };
+}
+
+export async function updateShipTravelResources(shipActor, changes = {}, options = {}) {
+  assertArcflightShipActor(shipActor, "updateShipTravelResources");
+
+  const preview = previewShipTravelResourceChange(shipActor, changes);
+  const mirrorResources = options.mirrorResources !== false;
+  const updateData = {};
+
+  for (const key of TRAVEL_RESOURCE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(preview.changes, key)) continue;
+    updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.current.${key}`] = preview.after[key];
+  }
+
+  if (mirrorResources) {
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.HULL)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.hull.value`] = preview.after.hull;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.lifeveil.value`] = preview.after.lifeveil;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.STRAIN)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.strain.value`] = preview.after.strain;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.supplies`] = preview.after.supplies;
+    if (Object.prototype.hasOwnProperty.call(preview.changes, ARCFLIGHT_TRAVEL_RESOURCES.MORALE)) updateData[`flags.${ARCFLIGHT_MODULE_ID}.system.resources.morale`] = preview.after.morale;
+  }
+
+  if (Object.keys(updateData).length > 0) await shipActor.update(updateData);
+  return getShipTravelResources(shipActor);
+}
+
+export function getTravelStationKeys() {
+  return [...TRAVEL_STATION_KEYS];
+}
+
+export function isTravelStationKey(stationKey) {
+  return TRAVEL_STATION_KEYS.includes(stationKey);
 }
 
 function buildCleanCurrentShipState(systemData = {}, preserveCurrentResources = false) {
@@ -1002,6 +1726,10 @@ export async function clearShipBuild(shipActor, options = {}) {
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base`]: buildEmptyBaseShipState(),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: cloneData(emptyDerivedShipState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: normalizeActionEconomyState({ ...systemData, derived: emptyDerivedShipState, actionEconomy: {} }),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]: cloneData(emptyTierState),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitPressure`]: cloneData(emptyRefitPressureState),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.refitFlags`]: cloneData(emptyRefitFlagsState),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: resources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: cloneData(arcflightShipDefaults.derivedStats),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems`]: buildEmptyInstalledSystemsState(),
@@ -1086,7 +1814,10 @@ export async function clearCrewRoster(shipActor, options = {}) {
   crew.namedCrew = [];
   if (!options.preserveCurrentGenericCrew) crew.currentGenericCrew = 0;
 
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew }, { inplace: false });
+
   return shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew`]: crew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: ""
   });
@@ -1181,6 +1912,62 @@ export async function setArkenginePattern(shipActor, patternKey) {
   return recalculateShipStats(shipActor);
 }
 
+
+async function removeInstalledArrayEntry(shipActor, componentId, options = {}) {
+  assertArcflightShipActor(shipActor, options.helperName ?? "removeInstalledArrayEntry");
+
+  const componentType = options.componentType;
+  const installedPath = options.installedPath;
+  const installedSystemsPath = options.installedSystemsPath;
+  const entries = options.getEntries?.(getArcflightShipData(shipActor).installed) ?? [];
+  const removedEntry = entries.find((entry) => installedEntryMatchesIdentifier(entry, componentId));
+
+  if (!removedEntry) return shipActor;
+
+  const systemData = getArcflightShipData(shipActor);
+  const currentEntries = options.getEntries?.(systemData.installed) ?? entries;
+  const nextEntries = currentEntries.filter((entry) => !installedEntryMatchesIdentifier(entry, componentId));
+  const { installState } = buildInstallStateWithDeactivatedEntry(systemData, removedEntry, componentType, "removed");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.${installedPath}`]: nextEntries,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.${installedSystemsPath}`]: nextEntries.map((entry) => entry.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: installState
+  });
+
+  return recalculateShipStats(shipActor);
+}
+
+export async function removeInstalledArkengineMod(shipActor, componentId) {
+  return removeInstalledArrayEntry(shipActor, componentId, {
+    helperName: "removeInstalledArkengineMod",
+    componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
+    installedPath: "arkengineMods",
+    installedSystemsPath: "arkengineMods",
+    getEntries: getInstalledArkengineMods
+  });
+}
+
+export async function removeInstalledRoom(shipActor, componentId) {
+  return removeInstalledArrayEntry(shipActor, componentId, {
+    helperName: "removeInstalledRoom",
+    componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
+    installedPath: "rooms",
+    installedSystemsPath: "rooms",
+    getEntries: getInstalledRooms
+  });
+}
+
+export async function removeInstalledShipUpgrade(shipActor, componentId) {
+  return removeInstalledArrayEntry(shipActor, componentId, {
+    helperName: "removeInstalledShipUpgrade",
+    componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
+    installedPath: "shipUpgrades",
+    installedSystemsPath: "shipUpgrades",
+    getEntries: getInstalledShipUpgrades
+  });
+}
+
 export async function installHull(shipActor, hullItem) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | installHull requires an Arcflight-enabled PF2E vehicle actor.");
@@ -1192,6 +1979,10 @@ export async function installHull(shipActor, hullItem) {
 
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
+  if (activeSingleInstallMatches(systemData, hullItem, ARCFLIGHT_ITEM_TYPES.HULL)) {
+    throw duplicateInstallError(hullItem.name, "the active hull slot");
+  }
+
   const baseHull = cloneData(getComponentData(hullItem));
   const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
   const coreRooms = getCoreRoomsFromHull(baseHull);
@@ -1219,20 +2010,27 @@ export async function installHull(shipActor, hullItem) {
     { inplace: false }
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, hullItem, ARCFLIGHT_ITEM_TYPES.HULL, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: baseHull,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.hull`]: hullItem.name ?? baseHull.displayName ?? baseHull.platform ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.minimum`]: derived.crew?.minimum ?? 0,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.recommended`]: derived.crew?.recommended ?? 0,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.maximum`]: derived.crew?.maximum ?? 0,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1247,6 +2045,10 @@ export async function installArkengine(shipActor, arkengineItem) {
 
   const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
+  if (activeSingleInstallMatches(systemData, arkengineItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE)) {
+    throw duplicateInstallError(arkengineItem.name, "the active arkengine slot");
+  }
+
   const baseHull = cloneData(systemData.base?.hull ?? {});
   const baseArkengine = normalizeArkengineData(getComponentData(arkengineItem));
   const installedArkengineMods = [];
@@ -1279,16 +2081,23 @@ export async function installArkengine(shipActor, arkengineItem) {
     { inplace: false }
   );
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, arkengineItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.arkengine`]: baseArkengine,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengine`]: arkengineItem.name ?? baseArkengine.displayName ?? baseArkengine.engineClass ?? "",
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1312,8 +2121,7 @@ export async function installArkengineMod(shipActor, modItem) {
   const installedArkengineMods = getInstalledArkengineMods(systemData.installed);
   const modEntry = buildInstalledArkengineModEntry(modItem);
   if (hasInstalledEntry(installedArkengineMods, modEntry)) {
-    console.warn(`Arcflight | ${modEntry.name} is already installed as an arkengine mod on this ship; skipping duplicate install.`);
-    return shipActor;
+    throw duplicateInstallError(modEntry.name, "an arkengine mod slot");
   }
 
   validateArkengineModEntryForEngine(modEntry, baseArkengine, systemData.installed);
@@ -1340,15 +2148,22 @@ export async function installArkengineMod(shipActor, modItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, modItem, ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD, "refit", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: alignedInstalled.arkengineMods.map((mod) => mod.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.arkengineMods`]: alignedInstalled.arkengineMods.map((mod) => mod.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1372,8 +2187,7 @@ export async function installRoom(shipActor, roomItem) {
 
   const installedRooms = getInstalledRooms(systemData.installed);
   if (hasInstalledEntry(installedRooms, roomEntry)) {
-    console.warn(`Arcflight | ${roomEntry.name} is already installed as a room on this ship; skipping duplicate install.`);
-    return shipActor;
+    throw duplicateInstallError(roomEntry.name, "a room slot");
   }
 
   const coreRooms = getCoreRoomsFromHull(baseHull);
@@ -1398,16 +2212,255 @@ export async function installRoom(shipActor, roomItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const roomInstallCategory = getComponentRefitPressure(roomItem).total > 0 ? "refit" : "native";
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, roomItem, ARCFLIGHT_ITEM_TYPES.ROOM, roomInstallCategory, tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: alignedInstalled.rooms.map((room) => room.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.rooms`]: alignedInstalled.rooms.map((room) => room.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
+}
+
+function normalizeWeaponArc(arc) {
+  const normalizedArc = String(arc ?? "").trim().toLowerCase();
+  return Object.values(ARCFLIGHT_WEAPON_ARCS).includes(normalizedArc) ? normalizedArc : "";
+}
+
+function normalizeWeaponTraits(traits) {
+  if (Array.isArray(traits)) return cloneData(traits).filter(Boolean);
+  if (typeof traits === "string") return traits.split(",").map((trait) => trait.trim()).filter(Boolean);
+  return [];
+}
+
+function getHullWeaponMountsForArc(hull = {}, arc = "") {
+  const mounts = hull.weaponMounts?.[arc];
+  return Array.isArray(mounts) ? mounts : null;
+}
+
+function getHullWeaponMount(hull = {}, arc = "", mountId = "") {
+  const mounts = getHullWeaponMountsForArc(hull, arc);
+  if (!mounts) return null;
+  return mounts.find((mount) => mount?.id === mountId) ?? null;
+}
+
+function isWeaponMountOccupied(mount = {}, installedWeapons = []) {
+  return mount.occupied === true
+    || Boolean(mount.mountedWeaponId)
+    || installedWeapons.some((weapon) => weapon.arc === mount.arc && weapon.mountId === mount.id);
+}
+
+function weaponSizeAllowedByMount(weaponSize = "", mount = {}) {
+  const allowedSizes = Array.isArray(mount.allowedSizes) ? mount.allowedSizes : [];
+  if (allowedSizes.length > 0) return allowedSizes.includes(weaponSize);
+  if (!mount.maxSize) return true;
+  const sizeRank = { small: 1, medium: 2, large: 3 };
+  return numericValue(sizeRank[weaponSize]) <= numericValue(sizeRank[mount.maxSize]);
+}
+
+function weaponCompatibleWithArc(weaponData = {}, arc = "") {
+  const compatibleArcs = Array.isArray(weaponData.compatibleArcs)
+    ? weaponData.compatibleArcs
+    : Array.isArray(weaponData.mounting?.compatibleArcs)
+      ? weaponData.mounting.compatibleArcs
+      : [];
+  return compatibleArcs.length === 0 || compatibleArcs.includes(arc);
+}
+
+function validateWeaponInstall(shipActor, weaponItem, options = {}) {
+  assertArcflightShipActor(shipActor, "installWeapon");
+
+  if (getComponentType(weaponItem) !== ARCFLIGHT_ITEM_TYPES.WEAPON) {
+    throw new Error("Arcflight | installWeapon requires an Arcflight weapon component item.");
+  }
+
+  const systemData = getArcflightShipData(shipActor);
+  const arc = normalizeWeaponArc(options.arc);
+  if (!arc) throw new Error(`Arcflight | installWeapon requires a valid weapon arc (${Object.values(ARCFLIGHT_WEAPON_ARCS).join(", ")}).`);
+
+  const mountId = String(options.mountId ?? "").trim();
+  if (!mountId) throw new Error("Arcflight | installWeapon requires a hull weapon mount id.");
+
+  const baseHull = cloneData(systemData.base?.hull ?? {});
+  const mounts = getHullWeaponMountsForArc(baseHull, arc);
+  if (!mounts) throw new Error(`Arcflight | Weapon arc ${arc} does not exist on this hull.`);
+
+  const mount = getHullWeaponMount(baseHull, arc, mountId);
+  if (!mount) throw new Error(`Arcflight | Hull weapon mount ${mountId} does not exist on the ${arc} arc.`);
+
+  const weaponData = cloneData(getComponentData(weaponItem));
+  const weaponSize = weaponData.size ?? weaponData.identity?.size ?? "";
+  if (!weaponSizeAllowedByMount(weaponSize, mount)) {
+    throw new Error(`Arcflight | ${weaponItem?.name ?? weaponData.name ?? "Weapon"} size ${weaponSize} is not allowed by mount ${mountId}.`);
+  }
+
+  const installedWeapons = getInstalledWeapons(systemData.installed);
+  if (isWeaponMountOccupied(mount, installedWeapons)) {
+    throw new Error(`Arcflight | Hull weapon mount ${mountId} on the ${arc} arc is already occupied.`);
+  }
+
+  if (!weaponCompatibleWithArc(weaponData, arc)) {
+    throw new Error(`Arcflight | ${weaponItem?.name ?? weaponData.name ?? "Weapon"} is not compatible with the ${arc} arc.`);
+  }
+
+  return { systemData, baseHull, arc, mountId, mount, weaponData, installedWeapons };
+}
+
+function createMountedWeaponId(arc, mountId, weaponItem, weaponData = {}) {
+  const key = weaponData.key ?? weaponData.identity?.id ?? weaponItem?.slug ?? weaponItem?.id ?? "weapon";
+  const randomId = globalThis.foundry?.utils?.randomID?.(8)
+    ?? Math.random().toString(36).slice(2, 10).padEnd(8, "0");
+  return `weapon-${arc}-${mountId}-${key}-${Date.now().toString(36)}-${randomId}`.replace(/[^a-zA-Z0-9_-]+/g, "-");
+}
+
+function buildInstalledWeaponEntry(weaponItem, weaponData, options = {}) {
+  const key = weaponData.key ?? weaponData.identity?.id ?? weaponItem?.slug ?? weaponItem?.id ?? "";
+  const systemState = weaponData.state?.systemState
+    ?? (weaponData.state?.disabled === true ? "Disabled" : "Functional");
+
+  return {
+    mountedWeaponId: options.mountedWeaponId,
+    itemId: weaponItem?.id ?? "",
+    itemUuid: weaponItem?.uuid ?? "",
+    uuid: weaponItem?.uuid ?? "",
+    key,
+    name: weaponItem?.name ?? weaponData.name ?? weaponData.identity?.displayName ?? key,
+    componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
+    size: weaponData.size ?? weaponData.identity?.size ?? "",
+    family: weaponData.family ?? "",
+    category: weaponData.category ?? weaponData.family ?? "",
+    arc: options.arc,
+    mountId: options.mountId,
+    crewRequired: numericValue(weaponData.crewRequired ?? weaponData.crew?.required),
+    reload: cloneData(weaponData.reload ?? {}),
+    traits: normalizeWeaponTraits(weaponData.traits),
+    damageProfile: cloneData(weaponData.damageProfile ?? {}),
+    systemState,
+    refitPressure: getComponentRefitPressure(weaponItem),
+    tierMetadata: getComponentTierMetadata(weaponItem)
+  };
+}
+
+function setHullWeaponMountOccupied(hull = {}, arc = "", mountId = "", weaponEntry = {}, occupied = true) {
+  const nextHull = cloneData(hull ?? {});
+  const mounts = getHullWeaponMountsForArc(nextHull, arc);
+  if (!mounts) return nextHull;
+
+  nextHull.weaponMounts[arc] = mounts.map((mount) => {
+    if (mount.id !== mountId) return mount;
+    if (!occupied) {
+      const freedMount = { ...mount, occupied: false };
+      delete freedMount.mountedWeaponId;
+      delete freedMount.itemId;
+      delete freedMount.itemUuid;
+      delete freedMount.weaponName;
+      return freedMount;
+    }
+
+    return {
+      ...mount,
+      occupied: true,
+      mountedWeaponId: weaponEntry.mountedWeaponId,
+      itemId: weaponEntry.itemId,
+      itemUuid: weaponEntry.itemUuid,
+      weaponName: weaponEntry.name
+    };
+  });
+
+  return nextHull;
+}
+
+function createWeaponInstallStateRecord(shipActor, weaponEntry, weaponItem, installCategory, tierState = {}) {
+  const installRecord = createInstallStateRecord(shipActor, weaponItem, ARCFLIGHT_ITEM_TYPES.WEAPON, installCategory, tierState);
+  return {
+    ...installRecord,
+    hullSlot: weaponEntry.mountedWeaponId,
+    roomSlot: weaponEntry.mountId,
+    weaponArc: weaponEntry.arc,
+    name: weaponEntry.name
+  };
+}
+
+function buildInstallStateWithWeapon(systemData, shipActor, weaponItem, weaponEntry, installCategory, tierState = {}) {
+  const installState = normalizeBasicInstallState(systemData.installState);
+  const installRecord = createWeaponInstallStateRecord(shipActor, weaponEntry, weaponItem, installCategory, tierState);
+  return normalizeBasicInstallState({
+    version: installState.version,
+    installs: [...installState.installs, installRecord]
+  });
+}
+
+export async function installWeapon(shipActor, weaponItem, options = {}) {
+  const { systemData, baseHull, arc, mountId, weaponData, installedWeapons } = validateWeaponInstall(shipActor, weaponItem, options);
+  const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
+  const coreRooms = getCoreRoomsFromHull(baseHull);
+  const mountedWeaponId = createMountedWeaponId(arc, mountId, weaponItem, weaponData);
+  const weaponEntry = buildInstalledWeaponEntry(weaponItem, weaponData, { mountedWeaponId, arc, mountId });
+  const nextBaseHull = setHullWeaponMountOccupied(baseHull, arc, mountId, weaponEntry, true);
+  const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
+    coreRooms,
+    weapons: [...installedWeapons, weaponEntry]
+  }, { inplace: false });
+  const derived = calculateDerivedShipStats({ hull: nextBaseHull, arkengine: baseArkengine, coreRooms }, nextInstalled);
+  const alignedInstalled = alignInstalledSlotStates(nextInstalled, { hull: nextBaseHull, arkengine: baseArkengine }, derived);
+  const current = buildCurrentShipState(systemData, derived);
+  const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
+  const legacyDerivedStats = foundry.utils.mergeObject(
+    systemData.derivedStats ?? {},
+    getLegacyDerivedStatsFromDerived(derived),
+    { inplace: false }
+  );
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: nextBaseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const installCategory = getComponentRefitPressure(weaponItem).total > 0 ? "refit" : "native";
+  const nextInstallState = buildInstallStateWithWeapon(systemData, shipActor, weaponItem, weaponEntry, installCategory, tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
+
+  return shipActor.update({
+    ...tierUpdatePaths,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: nextBaseHull,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.weapons`]: alignedInstalled.weapons.map((weapon) => weapon.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
+  });
+}
+
+export async function removeInstalledWeapon(shipActor, mountedWeaponId) {
+  assertArcflightShipActor(shipActor, "removeInstalledWeapon");
+
+  const systemData = getArcflightShipData(shipActor);
+  const installedWeapons = getInstalledWeapons(systemData.installed);
+  const removedWeapon = installedWeapons.find((entry) => entry.mountedWeaponId === mountedWeaponId);
+  if (!removedWeapon) return shipActor;
+
+  const nextWeapons = installedWeapons.filter((entry) => entry.mountedWeaponId !== mountedWeaponId);
+  const nextBaseHull = setHullWeaponMountOccupied(systemData.base?.hull ?? {}, removedWeapon.arc, removedWeapon.mountId, removedWeapon, false);
+  const { installState } = buildInstallStateWithDeactivatedEntry(systemData, removedWeapon, ARCFLIGHT_ITEM_TYPES.WEAPON, "removed");
+
+  await shipActor.update({
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.base.hull`]: nextBaseHull,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installed.weapons`]: nextWeapons,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.weapons`]: nextWeapons.map((weapon) => weapon.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: installState
+  });
+
+  return recalculateShipStats(shipActor);
 }
 
 export async function installShipUpgrade(shipActor, upgradeItem) {
@@ -1419,15 +2472,16 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
     throw new Error("Arcflight | installShipUpgrade requires an Arcflight ship upgrade component item.");
   }
 
+  const rawSystemData = shipActor.getFlag(ARCFLIGHT_MODULE_ID, "system") ?? {};
   const systemData = getArcflightShipData(shipActor);
+  const hasShipUpgradeSlotSystem = Object.prototype.hasOwnProperty.call(rawSystemData.installed ?? {}, "shipUpgradeSlots");
   const baseHull = cloneData(systemData.base?.hull ?? {});
   const baseArkengine = cloneData(systemData.base?.arkengine ?? {});
   const coreRooms = getCoreRoomsFromHull(baseHull);
   const installedShipUpgrades = getInstalledShipUpgrades(systemData.installed);
   const upgradeEntry = buildInstalledShipUpgradeEntry(upgradeItem);
   if (hasInstalledEntry(installedShipUpgrades, upgradeEntry)) {
-    console.warn(`Arcflight | ${upgradeEntry.name} is already installed as a ship upgrade on this ship; skipping duplicate install.`);
-    return shipActor;
+    throw duplicateInstallError(upgradeEntry.name, "a ship upgrade slot");
   }
 
   const nextInstalled = foundry.utils.mergeObject(cloneData(systemData.installed ?? {}), {
@@ -1438,7 +2492,7 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   nextInstalled.roomSlots = getRoomSlotState(baseHull, nextInstalled);
   nextInstalled.shipUpgradeSlots = getShipUpgradeSlotState(nextInstalled);
 
-  if (nextInstalled.shipUpgradeSlots.available < 0) {
+  if (hasShipUpgradeSlotSystem && nextInstalled.shipUpgradeSlots.available < 0) {
     throw new Error("Arcflight | installShipUpgrade would exceed this ship's upgrade slot capacity.");
   }
 
@@ -1451,16 +2505,23 @@ export async function installShipUpgrade(shipActor, upgradeItem) {
   );
   const current = buildCurrentShipState(systemData, derived);
   const legacyResources = buildLegacyResources(systemData, current, derived);
+  const actionEconomy = normalizeActionEconomyState({ ...systemData, derived });
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { base: { hull: baseHull, arkengine: baseArkengine, coreRooms }, installed: alignedInstalled }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, upgradeItem, ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE, "refit", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
 
   return shipActor.update({
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installed`]: alignedInstalled,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.base.coreRooms`]: coreRooms,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derived`]: derived,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.current`]: current,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.actionEconomy`]: actionEconomy,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.resources`]: legacyResources,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.derivedStats`]: legacyDerivedStats,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.shipUpgrades`]: alignedInstalled.shipUpgrades.map((upgrade) => upgrade.name).join(", "),
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.cargo.capacity`]: derived.cargoCapacity ?? 0,
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
@@ -1490,6 +2551,8 @@ function buildCrewAssetRosterEntry(crewItem) {
     crew: cloneData(crewData.crew ?? {}),
     stationAssignment: cloneData(crewData.stationAssignment ?? {}),
     capabilities: cloneData(crewData.capabilities ?? {}),
+    refitPressure: getComponentRefitPressure(crewItem),
+    tierMetadata: getComponentTierMetadata(crewItem),
     effects: cloneData(crewData.effects ?? {}),
     state: cloneData(crewData.state ?? {}),
     restrictions: cloneData(crewData.restrictions ?? {}),
@@ -1522,22 +2585,27 @@ export async function addCrewAsset(shipActor, crewItem) {
   const crewState = getDefaultCrewState(systemData.crew);
   const crewEntry = buildCrewAssetRosterEntry(crewItem);
   if (hasInstalledEntry(crewState.namedCrew, crewEntry)) {
-    console.warn(`Arcflight | ${crewEntry.name} is already rostered on this ship; skipping duplicate crew asset.`);
-    return shipActor;
+    throw duplicateInstallError(crewEntry.name, crewEntry.restrictions?.unique === true ? "a unique crew roster entry" : "the crew roster");
   }
 
   const namedCrew = [...crewState.namedCrew, crewEntry];
   const currentGenericCrew = crewEntry.crew?.countsTowardCrewTotal === false
     ? crewState.currentGenericCrew
     : crewState.currentGenericCrew + getCrewAssetCountValue(crewEntry);
+  const nextCrew = { ...crewState, namedCrew, currentGenericCrew };
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew }, { inplace: false });
+  const tierUpdatePaths = getTierFrameworkUpdatePaths(tierSystemData);
+  const nextInstallState = buildInstallStateWithComponent(systemData, shipActor, crewItem, ARCFLIGHT_ITEM_TYPES.CREW_ASSET, "native", tierUpdatePaths[`flags.${ARCFLIGHT_MODULE_ID}.system.tier`]);
   return shipActor.update({
+    ...tierUpdatePaths,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: nextInstallState
   });
 }
 
-export async function removeCrewAsset(shipActor, crewIdOrUuid) {
+export async function removeInstalledCrewAsset(shipActor, crewIdOrUuid) {
   if (!isArcflightShipActor(shipActor)) {
     throw new Error("Arcflight | removeCrewAsset requires an Arcflight-enabled PF2E vehicle actor.");
   }
@@ -1552,12 +2620,21 @@ export async function removeCrewAsset(shipActor, crewIdOrUuid) {
   const currentGenericCrew = removed.crew?.countsTowardCrewTotal === false
     ? crewState.currentGenericCrew
     : Math.max(0, crewState.currentGenericCrew - getCrewAssetCountValue(removed));
-  return shipActor.update({
+  const nextCrew = { ...crewState, namedCrew, currentGenericCrew };
+  const { installState } = buildInstallStateWithDeactivatedEntry(systemData, removed, ARCFLIGHT_ITEM_TYPES.CREW_ASSET, "removed");
+  const tierSystemData = foundry.utils.mergeObject(cloneData(systemData), { crew: nextCrew, installState }, { inplace: false });
+  await shipActor.update({
+    ...getTierFrameworkUpdatePaths(tierSystemData),
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.namedCrew`]: namedCrew,
     [`flags.${ARCFLIGHT_MODULE_ID}.system.crew.currentGenericCrew`]: currentGenericCrew,
-    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", ")
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installedSystems.crewAssets`]: namedCrew.map((crewAsset) => crewAsset.name).join(", "),
+    [`flags.${ARCFLIGHT_MODULE_ID}.system.installState`]: installState
   });
+
+  return recalculateShipStats(shipActor);
 }
+
+export const removeCrewAsset = removeInstalledCrewAsset;
 
 export async function assignStation(shipActor, stationKey, assignee = null, options = {}) {
   if (!isArcflightShipActor(shipActor)) {
@@ -1602,3 +2679,4 @@ export const installArkengineOnShip = installArkengine;
 export const installArkengineModOnShip = installArkengineMod;
 export const installRoomOnShip = installRoom;
 export const installShipUpgradeOnShip = installShipUpgrade;
+export const installWeaponOnShip = installWeapon;

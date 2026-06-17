@@ -100,7 +100,7 @@ export async function applyExampleShipBuild(shipActor, buildKey) {
   await setArkenginePattern(shipActor, build.arkenginePatternKey);
 
   await createAndInstallMany(shipActor, build.arkengineMods, createCoreArkengineMod, installArkengineMod);
-  await createAndInstallMany(shipActor, build.rooms, createCoreRoom, installRoom);
+  await createAndInstallMany(shipActor, build.expansionRooms ?? build.rooms, createCoreRoom, installRoom);
   await createAndInstallMany(shipActor, build.shipUpgrades, createCoreShipUpgrade, installShipUpgrade);
   await createAndInstallMany(shipActor, build.crewAssets, createCoreCrewAsset, addCrewAsset);
   await assignSuggestedStations(shipActor, build.stationAssignmentSuggestions);

@@ -142,6 +142,16 @@
   white-space: pre-wrap;
 }
 
+
+.arcflight-remove-component {
+  width: auto;
+  min-height: 1.5rem;
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  font-size: var(--font-size-11);
+  line-height: 1.4;
+}
+
 .arcflight-room-lists {
   display: grid;
   gap: 0.5rem;
@@ -210,4 +220,1760 @@
 
 .arcflight-example-builds__details p:last-child {
   margin-bottom: 0;
+}
+
+.arcflight-validation {
+  border-left: 0.25rem solid var(--color-border-light-tertiary);
+}
+
+.arcflight-validation__summary {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-validation__summary h3,
+.arcflight-validation__summary p {
+  margin: 0 0 0.25rem;
+}
+
+.arcflight-validation__summary p:last-child {
+  margin-bottom: 0;
+}
+
+.arcflight-validation-ok {
+  border-left-color: var(--color-level-success, #2e7d32);
+}
+
+.arcflight-validation-info {
+  border-left-color: var(--color-level-info, #1976d2);
+}
+
+.arcflight-validation-warning {
+  border-left-color: var(--color-level-warning, #b26a00);
+}
+
+.arcflight-validation-danger {
+  border-left-color: var(--color-level-error, #b71c1c);
+}
+
+.arcflight-install-state__chips,
+.arcflight-install-state__records {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-install-state__chips {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-install-state__chip,
+.arcflight-install-state__record {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-install-state__record header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-install-state__record header span {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12);
+}
+
+.arcflight-install-state__record dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.arcflight-install-state__record dt {
+  font-weight: bold;
+}
+
+.arcflight-install-state__record dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-install-ui {
+  border-left: 0.25rem solid var(--color-border-light-tertiary);
+}
+
+.arcflight-install-ui__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.arcflight-install-ui__controls button {
+  flex: 0 0 auto;
+}
+
+.arcflight-install-ui__preview {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-install-ui__preview header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-install-ui__preview header span,
+.arcflight-install-ui__disabled-reason {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12);
+}
+
+.arcflight-install-ui__badge {
+  padding: 0.125rem 0.5rem;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-size: var(--font-size-12);
+  font-weight: bold;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.arcflight-install-ui__badge--ok {
+  color: var(--color-level-success, #2e7d32);
+}
+
+.arcflight-install-ui__badge--info {
+  color: var(--color-level-info, #1976d2);
+}
+
+.arcflight-install-ui__badge--warning {
+  color: var(--color-level-warning, #b26a00);
+}
+
+.arcflight-install-ui__badge--danger {
+  color: var(--color-level-error, #b71c1c);
+}
+
+.arcflight-install-ui__status {
+  margin: 0;
+  font-weight: bold;
+}
+
+.arcflight-install-ui__status--allowed {
+  color: var(--color-level-success, #2e7d32);
+}
+
+.arcflight-install-ui__status--blocked {
+  color: var(--color-level-error, #b71c1c);
+}
+
+.arcflight-install-ui__identity {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+}
+
+.arcflight-install-ui__identity dt {
+  font-weight: bold;
+}
+
+.arcflight-install-ui__identity dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-install-ui__empty-hint {
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-install-ui__preview h3 {
+  margin-top: 0.5rem;
+}
+
+.arcflight-install-ui__preview ul {
+  margin: 0.25rem 0 0;
+}
+
+.arcflight-install-ui__slots {
+  display: grid;
+  gap: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .arcflight-install-ui__controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .arcflight-install-ui__controls button {
+    width: 100%;
+  }
+
+  .arcflight-install-ui__identity {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arcflight-installed-weapons__groups {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-installed-weapons__group {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-installed-weapons__group ul,
+.arcflight-installed-weapons__group p {
+  margin-bottom: 0;
+}
+
+.arcflight-installed-weapons__group li {
+  margin-bottom: 0.35rem;
+}
+
+.arcflight-installed-weapons__group li:last-child {
+  margin-bottom: 0;
+}
+
+.arcflight-station-actions__groups,
+.arcflight-station-actions__actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-station-actions__groups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcflight-station-actions__station,
+.arcflight-station-actions__action,
+.arcflight-station-actions__history {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary);
+  border-radius: 4px;
+}
+
+.arcflight-station-actions__station > header,
+.arcflight-station-actions__action > header,
+.arcflight-station-actions__history > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-station-actions__action {
+  border-left: 0.25rem solid var(--color-border-light-tertiary);
+}
+
+.arcflight-station-actions__action--ok {
+  border-left-color: var(--color-level-success, #2e7d32);
+}
+
+.arcflight-station-actions__action--warning {
+  border-left-color: var(--color-level-warning, #b26a00);
+}
+
+.arcflight-station-actions__action--danger {
+  border-left-color: var(--color-level-error, #b71c1c);
+}
+
+.arcflight-station-actions__action h4,
+.arcflight-station-actions__action p,
+.arcflight-station-actions__history h3,
+.arcflight-station-actions__history-list {
+  margin: 0;
+}
+
+.arcflight-station-actions__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.arcflight-station-actions__details dt {
+  font-weight: bold;
+}
+
+.arcflight-station-actions__details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-station-actions__history {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-station-actions__history-list {
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .arcflight-station-actions__groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arcflight-ship-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--color-border-light-tertiary);
+}
+
+.arcflight-ship-tabs__tab {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 1.75rem;
+  margin: 0;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border-light-tertiary);
+  border-radius: 999px;
+  line-height: 1.3;
+}
+
+.arcflight-ship-tabs__tab.active {
+  border-color: var(--color-border-highlight, var(--color-border-highlight-alt));
+  background: var(--color-bg-option, rgb(0 0 0 / 8%));
+  font-weight: bold;
+}
+
+.arcflight-sheet__section[hidden] {
+  display: none;
+}
+
+.arcflight-station-list__controls {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.arcflight-station-list__buttons {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.arcflight-station-actions__roll-controls {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.arcflight-station-actions__roll-select {
+  flex: 1 1 12rem;
+  margin: 0;
+}
+
+.arcflight-travel-sheet-panel__status,
+.arcflight-travel-runner__panel {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.arcflight-travel-runner {
+  max-height: calc(100vh - 96px);
+}
+
+.arcflight-travel-runner .window-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.arcflight-travel-runner__body {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 0.75rem;
+  padding-right: 1.25rem;
+}
+
+.arcflight-travel-runner__header,
+.arcflight-travel-runner__summary,
+.arcflight-travel-runner__totals,
+.arcflight-travel-runner__manual-entry,
+.arcflight-travel-runner__roll-entry,
+.arcflight-travel-runner__controls {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.arcflight-travel-runner__header {
+  justify-content: space-between;
+}
+
+.arcflight-travel-runner__boundary {
+  max-width: 26rem;
+}
+
+.arcflight-travel-runner__stat,
+.arcflight-travel-runner__totals article,
+.arcflight-travel-runner__station,
+.arcflight-travel-runner__effects-group,
+.arcflight-travel-runner__event-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arcflight-travel-runner__stat {
+  min-width: 8rem;
+}
+
+.arcflight-travel-runner__stat span,
+.arcflight-travel-runner__effects span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-runner__stat--warning,
+.arcflight-travel-runner__handoff {
+  border-color: var(--color-border-highlight, #a66a00);
+}
+
+.arcflight-travel-runner__vignette {
+  font-style: italic;
+}
+
+.arcflight-travel-runner__stations,
+.arcflight-travel-runner__effects {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner__station header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner__existing-result {
+  border-left: 3px solid var(--color-border-highlight, #a66a00);
+  padding-left: 0.5rem;
+}
+
+.arcflight-travel-runner__manual-entry .arcflight-sheet__field,
+.arcflight-travel-runner__roll-entry .arcflight-sheet__field {
+  min-width: min(10rem, 100%);
+}
+
+.arcflight-travel-runner__manual-entry input,
+.arcflight-travel-runner__manual-entry select,
+.arcflight-travel-runner__roll-entry select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.arcflight-travel-runner__roll-entry {
+  align-items: flex-end;
+  margin-top: 0.5rem;
+}
+
+.arcflight-travel-runner__event-select {
+  display: block;
+  max-width: 28rem;
+}
+
+.arcflight-travel-runner__event-select select {
+  width: 100%;
+}
+
+.arcflight-travel-runner__event-details {
+  margin: 0.75rem 0;
+}
+
+.arcflight-travel-runner__dc-readout {
+  min-width: 6rem;
+}
+
+.arcflight-travel-runner__dc-readout span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-runner__controls {
+  justify-content: flex-end;
+}
+
+.arcflight-button--danger {
+  border-color: var(--color-border-highlight-alt, #8a1f11);
+}
+
+.arcflight-travel-runner__narrative-log {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner__log-entries {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner__log-entry {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-left: 3px solid var(--color-border-highlight, #a66a00);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-runner__log-entry header,
+.arcflight-travel-runner__log-meta {
+  display: flex;
+  gap: 0.5rem 0.75rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.arcflight-travel-runner__log-entry h3,
+.arcflight-travel-runner__log-entry h4,
+.arcflight-travel-runner__log-entry p {
+  margin: 0 0 0.35rem;
+}
+
+.arcflight-travel-runner__log-entry header span,
+.arcflight-travel-runner__log-meta span {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.arcflight-travel-runner__log-entries--compact .arcflight-travel-runner__log-entry {
+  padding: 0.45rem;
+}
+
+.arcflight-travel-builder {
+  max-height: calc(100vh - 96px);
+}
+
+.arcflight-travel-builder .window-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.arcflight-travel-builder__body {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 0.75rem;
+  padding-right: 1.25rem;
+}
+
+.arcflight-travel-builder__header,
+.arcflight-travel-builder__controls,
+.arcflight-travel-builder__summary {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.arcflight-travel-builder__header {
+  justify-content: space-between;
+}
+
+.arcflight-travel-builder__boundary {
+  max-width: 30rem;
+}
+
+.arcflight-travel-builder__panel {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.arcflight-travel-builder__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-builder__textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 18rem;
+  resize: vertical;
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.85rem;
+}
+
+.arcflight-travel-builder__textarea--short {
+  min-height: 8rem;
+}
+
+.arcflight-travel-builder__textarea--output {
+  min-height: 12rem;
+}
+
+.arcflight-travel-builder__stat,
+.arcflight-travel-builder__card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arcflight-travel-builder__stat {
+  min-width: 7rem;
+}
+
+.arcflight-travel-builder__stat span,
+.arcflight-travel-builder__card span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__cards {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-builder__status {
+  border-left: 3px solid var(--color-border-highlight, #a66a00);
+  margin: 0;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arcflight-travel-builder__status--success,
+.arcflight-travel-builder__ok {
+  color: var(--color-level-success, #1f7a1f);
+}
+
+.arcflight-travel-builder__status--warning,
+.arcflight-travel-builder__warning {
+  color: var(--color-level-warning, #8a5a00);
+}
+
+.arcflight-travel-builder__form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__field > span,
+.arcflight-travel-builder__check-group legend {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12, 0.75rem);
+  font-weight: bold;
+}
+
+.arcflight-travel-builder__field--wide {
+  grid-column: 1 / -1;
+}
+
+.arcflight-travel-builder__textarea--form {
+  min-height: 5rem;
+  font-family: inherit;
+}
+
+.arcflight-travel-builder__check-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__check-group {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 4px;
+}
+
+.arcflight-travel-builder__check-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.arcflight-travel-builder__rounds,
+.arcflight-travel-builder__station-prompts,
+.arcflight-travel-builder__outcomes {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.arcflight-travel-builder__round {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.arcflight-travel-builder__round summary {
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin: -0.15rem 0 0.5rem;
+}
+
+.arcflight-travel-builder__round summary span {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__check-group--wide {
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__station-prompt {
+  margin-bottom: 0;
+}
+
+.arcflight-travel-builder__final-outcomes,
+.arcflight-travel-builder__effect-summaries {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.arcflight-travel-builder__final-outcome {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.arcflight-travel-builder__final-outcome summary {
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin: -0.15rem 0 0.5rem;
+}
+
+.arcflight-travel-builder__final-outcome summary span,
+.arcflight-travel-builder__effect-summaries code {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__textarea--compact {
+  min-height: 3.5rem;
+}
+
+.arcflight-travel-builder__panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.arcflight-travel-builder__quality {
+  border-left: 4px solid var(--color-border-highlight, #a66a00);
+}
+
+.arcflight-travel-builder__quality-areas {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.arcflight-travel-builder__quality-area {
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.arcflight-travel-builder__quality-area summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-builder__quality-list,
+.arcflight-travel-builder__checklist {
+  margin: 0.35rem 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.arcflight-travel-builder__quality-list--errors {
+  color: var(--color-level-error, #9b1c1c);
+}
+
+.arcflight-travel-builder__quality-list--warnings {
+  color: var(--color-level-warning, #8a5a00);
+}
+
+.arcflight-travel-builder__quality-list--suggestions {
+  color: var(--color-text-dark-secondary, #4b4b4b);
+}
+
+.arcflight-travel-builder__checklist {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  padding-left: 0;
+}
+
+.arcflight-travel-builder__checklist-item {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.arcflight-travel-builder__checklist-item small {
+  display: block;
+  opacity: 0.8;
+}
+
+.arcflight-travel-builder__checklist-item--passed {
+  color: var(--color-level-success, #1f7a1f);
+}
+
+.arcflight-travel-builder__checklist-item--open {
+  color: var(--color-level-warning, #8a5a00);
+}
+
+.arcflight-travel-builder__resource-effects {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.arcflight-travel-builder__resource-effect {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem;
+  border: 1px dashed var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.arcflight-travel-builder__resource-effect legend {
+  color: var(--color-text-light-6);
+  font-size: var(--font-size-12, 0.75rem);
+  font-weight: bold;
+  padding: 0 0.25rem;
+}
+
+.arcflight-travel-builder__resource-effect .arcflight-travel-builder__field {
+  margin-bottom: 0;
+}
+
+.arcflight-travel-builder__resource-effect--add {
+  background: rgba(166, 106, 0, 0.06);
+}
+
+.arcflight-travel-builder__inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.arcflight-travel-builder__resource-effect-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.arcflight-travel-builder__library {
+  border-left: 4px solid var(--color-border-highlight-alt, #365f91);
+}
+
+.arcflight-travel-builder__controls--inline {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.arcflight-travel-builder__library-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.arcflight-travel-builder__library-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--color-border-light-tertiary, #c9c2b8);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.arcflight-travel-builder__library-row--current {
+  border-color: var(--color-border-highlight, #a66a00);
+  background: rgba(166, 106, 0, 0.08);
+}
+
+.arcflight-travel-builder__library-row--malformed {
+  border-color: var(--color-level-warning, #8a5a00);
+}
+
+.arcflight-travel-builder__badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--color-border-highlight, #a66a00);
+  color: white;
+  font-size: var(--font-size-11, 0.7rem);
+  line-height: 1.4;
+}
+
+.arcflight-travel-builder__badge--warning {
+  background: var(--color-level-warning, #8a5a00);
+}
+
+.arcflight-travel-event-runner {
+  max-height: calc(100vh - 96px);
+}
+
+.arcflight-travel-event-runner .window-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.arcflight-travel-runner-mvp {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 0.75rem;
+  padding-right: 1.25rem;
+}
+
+.arcflight-travel-runner-mvp__header,
+.arcflight-travel-runner-mvp__panel,
+.arcflight-travel-runner-mvp__station-card,
+.arcflight-travel-runner-mvp__summary-round {
+  border: 1px solid rgba(120, 104, 80, 0.45);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(20, 18, 16, 0.08);
+}
+
+.arcflight-travel-runner-mvp__session-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__action-toggle {
+  align-self: flex-start;
+}
+
+.arcflight-travel-runner-mvp__session-controls-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.arcflight-travel-runner-mvp__session-controls-header h2 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.arcflight-travel-runner-mvp__collapse-toggle {
+  min-width: 2rem;
+}
+
+.arcflight-travel-runner-mvp__session-controls--collapsed {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+.arcflight-travel-runner-mvp__session-library summary {
+  cursor: pointer;
+}
+
+.arcflight-travel-runner-mvp__header h1,
+.arcflight-travel-runner-mvp__panel h2,
+.arcflight-travel-runner-mvp__station-card h3 {
+  margin-top: 0;
+}
+
+.arcflight-travel-runner-mvp__stats,
+.arcflight-travel-runner-mvp__actions,
+.arcflight-travel-runner-mvp__result-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.arcflight-travel-runner-mvp__stats > div {
+  min-width: 8rem;
+  border: 1px solid rgba(120, 104, 80, 0.28);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.arcflight-travel-runner-mvp__stats span {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-runner-mvp__vignette {
+  border-left: 3px solid rgba(120, 104, 80, 0.7);
+  padding-left: 0.75rem;
+  font-style: italic;
+}
+
+.arcflight-travel-runner-mvp__stations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__station-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__result-button--selected {
+  outline: 2px solid var(--color-shadow-primary, #f0b35a);
+}
+
+.arcflight-travel-runner-mvp__summary-round dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__effects pre,
+.arcflight-travel-runner-mvp__json {
+  width: 100%;
+  min-height: 6rem;
+  max-height: 14rem;
+  white-space: pre-wrap;
+  font-family: var(--font-mono, monospace);
+}
+
+.arcflight-travel-runner-mvp__effects pre {
+  overflow-y: auto;
+}
+
+.arcflight-travel-runner-mvp__json {
+  height: 10rem;
+  resize: vertical;
+}
+
+.arcflight-travel-scene-overlay .window-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.arcflight-travel-scene-overlay__shell {
+  box-sizing: border-box;
+  display: grid;
+  gap: 0.75rem;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.arcflight-travel-scene-overlay__header,
+.arcflight-travel-scene-overlay__summary,
+.arcflight-travel-scene-overlay__gm-guidance,
+.arcflight-travel-scene-overlay__focus,
+.arcflight-travel-scene-overlay__panel,
+.arcflight-travel-scene-overlay__station-card {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.arcflight-travel-scene-overlay__header,
+.arcflight-travel-scene-overlay__panel {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.arcflight-travel-scene-overlay__summary {
+  display: grid;
+  gap: 0.45rem;
+  background: rgba(28, 50, 82, 0.34);
+}
+
+.arcflight-travel-scene-overlay__summary-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-scene-overlay__summary-heading span {
+  font-weight: 700;
+}
+
+.arcflight-travel-scene-overlay__summary p {
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__summary-counts {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__summary-counts div {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.45rem;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.arcflight-travel-scene-overlay__summary-counts dt,
+.arcflight-travel-scene-overlay__focus-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  opacity: 0.82;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__summary-counts dd {
+  margin: 0.1rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+
+.arcflight-travel-scene-overlay__gm-guidance {
+  display: grid;
+  gap: 0.55rem;
+  border-color: rgba(255, 210, 120, 0.42);
+  border-left: 0.3rem solid rgba(255, 210, 120, 0.76);
+  background: linear-gradient(135deg, rgba(72, 53, 22, 0.36), rgba(0, 0, 0, 0.18));
+}
+
+.arcflight-travel-scene-overlay__gm-guidance h2,
+.arcflight-travel-scene-overlay__gm-guidance p {
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-copy {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts div {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.4rem;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-counts dd {
+  margin: 0.05rem 0 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-steps {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.arcflight-travel-scene-overlay__gm-guidance-steps li {
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__focus {
+  display: grid;
+  gap: 0.55rem;
+  border-color: rgba(146, 192, 255, 0.58);
+  border-left: 0.3rem solid rgba(146, 192, 255, 0.82);
+  background: linear-gradient(135deg, rgba(28, 50, 82, 0.42), rgba(0, 0, 0, 0.2));
+}
+
+.arcflight-travel-scene-overlay__focus-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-scene-overlay__focus-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.arcflight-travel-scene-overlay__station-card--focused {
+  box-shadow: inset 0 0 0 1px rgba(146, 192, 255, 0.45);
+}
+
+.arcflight-travel-scene-overlay__header h1,
+.arcflight-travel-scene-overlay__summary h2,
+.arcflight-travel-scene-overlay__focus h2,
+.arcflight-travel-scene-overlay__panel h2,
+.arcflight-travel-scene-overlay__station-card h3 {
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__station-list {
+  display: grid;
+  gap: 0.625rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.arcflight-travel-scene-overlay__station-card {
+  display: grid;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.045);
+  border-left-width: 0.25rem;
+}
+
+.arcflight-travel-scene-overlay__station-card--active {
+  border-color: rgba(130, 180, 255, 0.5);
+}
+
+.arcflight-travel-scene-overlay__station-card--unassigned,
+.arcflight-travel-scene-overlay__station-card--approach-not-selected,
+.arcflight-travel-scene-overlay__station-card--result-unrecorded {
+  border-left-color: rgba(255, 210, 120, 0.78);
+}
+
+.arcflight-travel-scene-overlay__station-card--success,
+.arcflight-travel-scene-overlay__station-card--critical-success {
+  border-left-color: rgba(118, 210, 145, 0.82);
+}
+
+.arcflight-travel-scene-overlay__station-card--failure,
+.arcflight-travel-scene-overlay__station-card--critical-failure {
+  border-left-color: rgba(230, 120, 120, 0.86);
+}
+
+.arcflight-travel-scene-overlay__station-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-scene-overlay__station-card-state {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.arcflight-travel-scene-overlay__station-card-facts {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__station-card-facts div {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.arcflight-travel-scene-overlay__station-card-facts dt,
+.arcflight-travel-scene-overlay__station-card dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__station-card-facts dd,
+.arcflight-travel-scene-overlay__station-card dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-scene-overlay__station-card-text {
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__station-controls {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.4rem;
+  padding: 0.55rem;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.arcflight-travel-scene-overlay__station-controls label {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.arcflight-travel-scene-overlay__station-controls label span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  opacity: 0.82;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__station-controls select {
+  width: 100%;
+}
+
+.arcflight-travel-scene-overlay__station-control-actions,
+.arcflight-travel-scene-overlay__roll-controls,
+.arcflight-travel-scene-overlay__result-readout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.arcflight-travel-scene-overlay__station-control-actions button,
+.arcflight-travel-scene-overlay__roll-controls button {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
+.arcflight-travel-scene-overlay__roll-readout,
+.arcflight-travel-scene-overlay__result-readout {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.4rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.arcflight-travel-scene-overlay__roll-readout {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+}
+
+.arcflight-travel-scene-overlay__roll-readout span,
+.arcflight-travel-scene-overlay__roll-unavailable,
+.arcflight-travel-scene-overlay__result-readout span {
+  font-size: 0.82rem;
+  opacity: 0.86;
+}
+
+.arcflight-travel-scene-overlay__result-readout span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-scene-overlay__result-button--selected {
+  border-color: rgba(118, 210, 145, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(118, 210, 145, 0.45);
+  font-weight: 800;
+}
+
+@media (max-width: 680px) {
+  .arcflight-travel-scene-overlay__station-list {
+    grid-template-columns: 1fr;
+  }
+
+  .arcflight-travel-scene-overlay__station-card-facts,
+  .arcflight-travel-scene-overlay__summary-counts,
+  .arcflight-travel-scene-overlay__gm-guidance-counts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arcflight-travel-scene-overlay__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+}
+
+.arcflight-travel-runner-mvp__header-row,
+.arcflight-travel-runner-mvp__compact-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__header-row h1 {
+  margin: 0;
+}
+
+.arcflight-travel-runner-mvp__compact-summary {
+  margin-top: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__compact-summary div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 10rem;
+}
+
+.arcflight-travel-runner-mvp__compact-summary span {
+  font-size: 0.8rem;
+  opacity: 0.78;
+}
+
+.arcflight-travel-scene-overlay__player-preview {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.arcflight-travel-scene-overlay__player-preview button {
+  flex: 0 1 auto;
+  font-size: 0.82rem;
+}
+
+.arcflight-travel-player-station-card .window-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.arcflight-travel-player-station-card__shell {
+  display: grid;
+  gap: 0.75rem;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(160deg, rgba(18, 28, 44, 0.96), rgba(8, 12, 20, 0.96));
+}
+
+.arcflight-travel-player-station-card__header,
+.arcflight-travel-player-station-card__facts,
+.arcflight-travel-player-station-card__section {
+  border: 1px solid rgba(160, 200, 255, 0.22);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 0.75rem;
+}
+
+.arcflight-travel-player-station-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-color: rgba(130, 190, 255, 0.38);
+  background: linear-gradient(135deg, rgba(45, 76, 122, 0.42), rgba(255, 255, 255, 0.05));
+}
+
+.arcflight-travel-player-station-card__header h1,
+.arcflight-travel-player-station-card__section h2,
+.arcflight-travel-player-station-card__section p {
+  margin: 0;
+}
+
+.arcflight-travel-player-station-card__eyebrow,
+.arcflight-travel-player-station-card__facts dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-station-card__status {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.arcflight-travel-player-station-card__facts {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-player-station-card__facts dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-player-station-card__section {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.arcflight-travel-player-station-card__resolution {
+  border-color: rgba(125, 220, 160, 0.36);
+  background: rgba(60, 120, 82, 0.18);
+}
+
+@media (max-width: 520px) {
+  .arcflight-travel-player-station-card__header,
+  .arcflight-travel-player-station-card__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .arcflight-travel-player-station-card__header {
+    display: grid;
+  }
+}
+
+.arcflight-travel-player-mission-board .window-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.arcflight-travel-player-mission-board__shell {
+  display: grid;
+  gap: 1rem;
+  min-height: 100%;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(160deg, rgba(13, 20, 34, 0.98), rgba(28, 42, 68, 0.96));
+}
+
+.arcflight-travel-player-mission-board__header,
+.arcflight-travel-player-mission-board__vignette,
+.arcflight-travel-player-mission-board__station {
+  border: 1px solid rgba(160, 200, 255, 0.22);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 1rem;
+}
+
+.arcflight-travel-player-mission-board__header h1,
+.arcflight-travel-player-mission-board__vignette h2,
+.arcflight-travel-player-mission-board__station h2,
+.arcflight-travel-player-mission-board__vignette p,
+.arcflight-travel-player-mission-board__prompt,
+.arcflight-travel-player-mission-board__feedback {
+  margin: 0;
+}
+
+.arcflight-travel-player-mission-board__eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-mission-board__grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.arcflight-travel-player-mission-board__station {
+  display: grid;
+  gap: 0.65rem;
+  border-left: 0.25rem solid rgba(130, 190, 255, 0.7);
+}
+
+.arcflight-travel-player-mission-board__station-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-player-mission-board__badge {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  background: rgba(0, 0, 0, 0.24);
+  font-weight: 800;
+}
+
+.arcflight-travel-player-mission-board__facts {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-player-mission-board__facts dt,
+.arcflight-travel-player-mission-board__control span {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-mission-board__facts dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-player-mission-board__control {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.arcflight-travel-player-mission-board__feedback {
+  border-left: 0.2rem solid rgba(125, 220, 160, 0.58);
+  padding-left: 0.55rem;
+}
+
+.arcflight-travel-player-mission-board {
+  min-width: min(96vw, 1280px);
+  min-height: min(92vh, 900px);
+}
+
+.arcflight-travel-player-mission-board__station--rollable {
+  border-color: rgba(125, 220, 160, 0.82);
+  box-shadow: 0 0 0 2px rgba(125, 220, 160, 0.18), 0 0 28px rgba(125, 220, 160, 0.12);
+}
+
+.arcflight-travel-player-mission-board__status-stack {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: end;
+}
+
+.arcflight-travel-player-mission-board__state {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0.84;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-mission-board__roll-detail {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.arcflight-travel-player-mission-board__roll-detail summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.arcflight-travel-player-mission-board__roll-detail p {
+  margin: 0.35rem 0 0;
+}
+
+.arcflight-travel-player-mission-board.window-app,
+.application.arcflight-travel-player-mission-board {
+  z-index: 80 !important;
+}
+
+.arcflight-travel-player-mission-board__station--rolling {
+  border-color: rgba(255, 215, 120, 0.86);
+  box-shadow: 0 0 0 2px rgba(255, 215, 120, 0.2), 0 0 28px rgba(255, 215, 120, 0.14);
+}
+
+.arcflight-travel-player-mission-board__station--rolling .arcflight-travel-player-mission-board__badge {
+  background: rgba(255, 215, 120, 0.18);
+}
+
+#dice-box-canvas,
+#dice-so-nice-canvas,
+.dice-box-canvas,
+.dice-so-nice,
+.dice-tray,
+.dice-tooltip,
+.roll-overlay {
+  z-index: 100000 !important;
 }

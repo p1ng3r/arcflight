@@ -1,0 +1,425 @@
+<div class="arcflight-travel-runner-mvp">
+  <header class="arcflight-travel-runner-mvp__header">
+    <div class="arcflight-travel-runner-mvp__header-row">
+      <h1>Travel Event Runner MVP</h1>
+      <div class="arcflight-travel-runner-mvp__actions">
+        <button type="button" data-arcflight-runner-toggle-compact>{{#if state.compactRunner}}Expand Runner{{else}}Compact Runner{{/if}}</button>
+        <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
+        {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
+      </div>
+    </div>
+    {{#unless state.compactRunner}}<p>{{hardBoundaryHint}}</p>{{/unless}}
+    <p class="arcflight-sheet__hint"><strong>Status:</strong> {{statusMessage}}</p>
+    {{#if state.compactRunner}}
+      <div class="arcflight-travel-runner-mvp__compact-summary">
+        <div><span>Event</span><strong>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</strong></div>
+        <div><span>Round</span><strong>{{state.compactRoundLabel}}</strong></div>
+      </div>
+    {{/if}}
+  </header>
+
+  {{#unless state.compactRunner}}
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-toolbar">
+    <button type="button" class="arcflight-travel-runner-mvp__action-toggle" data-arcflight-runner-toggle-session-actions aria-label="{{#if state.sessionActionsExpanded}}Collapse Session Actions{{else}}Expand Session Actions{{/if}}" aria-expanded="{{#if state.sessionActionsExpanded}}true{{else}}false{{/if}}">
+      {{#if state.sessionActionsExpanded}}▼{{else}}▶{{/if}} Session Actions
+    </button>
+    {{#if state.sessionActionsExpanded}}
+    <div class="arcflight-travel-runner-mvp__actions">
+      <button type="button" data-arcflight-runner-save {{#unless state.canSaveSession}}disabled{{/unless}}>Save Current Session</button>
+      <button type="button" data-arcflight-runner-save-as {{#unless state.canSaveSessionAs}}disabled{{/unless}}>Save Current Session As</button>
+      <button type="button" data-arcflight-runner-export {{#unless state.canExportSession}}disabled{{/unless}}>Export Session JSON</button>
+      <button type="button" data-arcflight-runner-import-session>Import Session JSON</button>
+      <button type="button" data-arcflight-runner-clear {{#unless state.hasSession}}disabled{{/unless}}>Clear Local Session</button>
+      <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
+    </div>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-controls {{#if state.currentSessionCollapsed}}arcflight-travel-runner-mvp__session-controls--collapsed{{/if}}">
+    <div class="arcflight-travel-runner-mvp__session-controls-header">
+      <button type="button" class="arcflight-travel-runner-mvp__collapse-toggle" data-arcflight-runner-toggle-current-session aria-label="{{#if state.currentSessionCollapsed}}Expand Current Runner Session{{else}}Collapse Current Runner Session{{/if}}" aria-expanded="{{#unless state.currentSessionCollapsed}}true{{else}}false{{/unless}}">
+        {{#if state.currentSessionCollapsed}}▶{{else}}▼{{/if}}
+      </button>
+      <h2>Current Runner Session</h2>
+    </div>
+    {{#unless state.currentSessionCollapsed}}
+      <div class="arcflight-travel-runner-mvp__stats">
+        <div><span>Session</span><strong>{{state.currentSessionName}}</strong></div>
+        <div><span>Status</span><strong>{{state.currentSessionStatusLabel}}</strong></div>
+        <div><span>Event</span><strong>{{#if state.hasSession}}{{state.event.name}}{{else}}No active event{{/if}}</strong></div>
+        <div><span>Progress</span><strong>{{#if state.isCompleted}}Completed{{else}}Round {{state.currentRoundNumber}}{{/if}}</strong></div>
+      </div>
+      <p class="arcflight-sheet__hint">Session import/export only reads or writes Runner Session Library data after explicit confirmation; it never applies effects or mutates actors, AP/RAP, chat, journals, combat, drafts, or published events.</p>
+    {{/unless}}
+  </section>
+
+
+  <section class="arcflight-travel-runner-mvp__panel">
+    <h2>Published Travel Event Library</h2>
+    {{#if state.hasPublishedEvents}}
+      <label class="arcflight-sheet__field">
+        <span>Published Event</span>
+        <select data-arcflight-runner-event-select {{#if state.hasSession}}disabled{{/if}}>
+          {{#each state.library.entries}}
+            <option value="{{id}}" {{#if selected}}selected{{/if}} {{#if isMalformed}}disabled{{/if}}>{{name}} — {{categoryLabel}}{{#if isMalformed}} (malformed){{/if}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <div class="arcflight-travel-runner-mvp__actions">
+        <button type="button" data-arcflight-start-travel-event-runner {{#if state.hasSession}}disabled{{/if}}>Start Local Runner Session</button>
+      </div>
+      {{#unless state.hasLoadableEvents}}<p class="arcflight-sheet__hint">Published library entries exist, but none are valid finalized travel events.</p>{{/unless}}
+    {{else}}
+      <p class="arcflight-sheet__hint">No published travel events are available. Publish a finalized event from the Published Travel Event Library before starting the runner.</p>
+      <button type="button" data-arcflight-start-travel-event-runner disabled>Start Local Runner Session</button>
+    {{/if}}
+  </section>
+
+
+
+
+  {{#if state.hasSession}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__event">
+      <h2>{{state.event.name}}</h2>
+      <div class="arcflight-travel-runner-mvp__stats">
+        <div><span>Category</span><strong>{{state.event.categoryLabel}}</strong></div>
+        <div><span>Base DC</span><strong>{{state.event.baseDC}}</strong></div>
+        <div><span>Status</span><strong>{{state.session.status}}</strong></div>
+      </div>
+      {{#if state.session.ship.actorName}}<p class="arcflight-sheet__hint"><strong>Selected ship / vehicle:</strong> {{state.session.ship.actorName}}</p>{{/if}}
+      {{#if state.session.notes}}<p class="arcflight-sheet__hint"><strong>Session notes:</strong> {{state.session.notes}}</p>{{/if}}
+    </section>
+
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__assignments">
+      <h2>Station Assignments</h2>
+      <p class="arcflight-sheet__hint">Assignments are local runner-session metadata only. They never mutate actors, ship data, resources, AP/RAP, chat, journals, combat, drafts, or published events.</p>
+      <div class="arcflight-travel-runner-mvp__assignment-rows">
+        {{#each state.stationAssignments.rows}}
+          <div class="arcflight-travel-runner-mvp__assignment-row">
+            <strong>{{stationName}}</strong>
+            <span>{{assignedActorName}} — {{sourceLabel}}</span>
+            <select data-arcflight-runner-assignment-select data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>
+              <option value="">Unassigned</option>
+              {{#each options}}
+                <option value="{{actorUuid}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+            {{#if isNpcAssignment}}
+              <label>NPC Controller
+                <select data-arcflight-runner-npc-controller-select data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>
+                  <option value="">Unassigned player controller</option>
+                  {{#each npcControllerOptions}}<option value="{{userId}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+              </label>
+            {{/if}}
+            {{#if canClear}}<button type="button" data-arcflight-runner-clear-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear Override</button>{{/if}}
+            <button type="button" data-arcflight-runner-reset-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Reset to Ship Assignment</button>
+          </div>
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="arcflight-travel-runner-mvp__panel">
+      <h2>Current Round / Run Event</h2>
+      <h3>Round {{state.currentRoundNumber}}: {{state.currentRoundTitle}}</h3>
+      {{#if state.currentRoundOpeningVignette}}<p class="arcflight-travel-runner-mvp__vignette">{{state.currentRoundOpeningVignette}}</p>{{/if}}
+
+      {{#if state.hasStations}}
+        <div class="arcflight-travel-runner-mvp__stations">
+          {{#each state.stations}}
+            <article class="arcflight-travel-runner-mvp__station-card">
+              <header>
+                <h3>{{stationName}}</h3>
+                <span>{{resultLabel}}</span>
+              </header>
+              <p>{{prompt}}</p>
+              {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
+              {{#if skillApproaches.length}}
+                <div class="arcflight-sheet__hint">
+                  <label>
+                    <strong>Roll Approach:</strong>
+                    <select data-arcflight-runner-approach-select data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
+                      {{#each skillApproaches}}
+                        <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{#if skill}} ({{skill}}){{/if}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <p><strong>Selected Approach:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}</p>
+                  {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
+                  {{#if qualityWarnings.length}}<p class="arcflight-travel-builder__warning"><strong>Quality Warning:</strong> {{#each qualityWarnings}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
+                </div>
+              {{/if}}
+
+              {{#if vignette}}<p class="arcflight-sheet__hint"><strong>Legacy Vignette:</strong> {{vignette}}</p>{{/if}}
+              <p class="arcflight-sheet__hint"><strong>Assigned:</strong> {{assignedActorName}} <strong>Source:</strong> {{assignmentSourceLabel}}</p>
+              {{#if suggestedSkillsLabel}}<p><strong>Suggested Skills:</strong> {{suggestedSkillsLabel}}</p>{{/if}}
+              <p class="arcflight-sheet__hint"><strong>Statistic:</strong> {{statisticLabel}} <strong>Selected Skill:</strong> {{selectedSkillLabel}}</p>
+              <div class="arcflight-travel-runner-mvp__result-buttons">
+                {{#each resultOptions}}
+                  <button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>
+                {{/each}}
+              </div>
+              {{#if rollDetailText}}<p class="arcflight-sheet__hint"><strong>Roll Detail:</strong> {{rollDetailText}}</p>{{/if}}
+              {{#if hasResultFeedback}}<p class="arcflight-sheet__hint"><strong>Station Vignette:</strong> {{resultFeedback}}</p>{{/if}}
+            </article>
+          {{/each}}
+        </div>
+        {{#if state.roundSummaryCard.hasResolvedStations}}
+          <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
+            <h2>GM Round Summary</h2>
+            <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
+            <p><strong>{{state.roundSummaryCard.roundOutcomeLabel}}</strong> (weighted score {{state.roundSummaryCard.roundScore}})</p>
+            <p>{{state.roundSummaryCard.cinematicSummaryText}}</p>
+            {{#if state.roundSummaryCard.unresolvedStationText}}<p class="arcflight-sheet__hint"><strong>GM Status:</strong> {{state.roundSummaryCard.unresolvedStationText}}</p>{{/if}}
+            {{#if state.roundSummaryCard.gmOnlyComplicationText}}<p class="arcflight-travel-builder__warning"><strong>GM-only complications:</strong> {{state.roundSummaryCard.gmOnlyComplicationText}}</p>{{/if}}
+            <details>
+              <summary>Summary details</summary>
+              {{#each state.roundSummaryCard.summaryLines}}
+                <p>{{this}}</p>
+              {{/each}}
+            </details>
+          </section>
+        {{/if}}
+      {{else}}
+        <p class="arcflight-sheet__hint">This round has no active station prompts.</p>
+      {{/if}}
+
+      <footer class="arcflight-travel-runner-mvp__actions">
+        <button type="button" data-arcflight-runner-previous {{#unless state.canRetreat}}disabled{{/unless}}>Previous Round</button>
+        <button type="button" data-arcflight-runner-next {{#unless state.canAdvance}}disabled{{/unless}}>Next Round</button>
+        <button type="button" data-arcflight-runner-complete {{#unless state.canComplete}}disabled{{/unless}}>Complete Event</button>
+      </footer>
+    </section>
+
+    {{#if state.summary}}
+      <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__summary">
+        <h2>Final Summary</h2>
+        <div class="arcflight-travel-runner-mvp__stats">
+          <div><span>Total Score</span><strong>{{state.summary.totalScore}}</strong></div>
+          <div><span>Suggested Outcome</span><strong>{{state.summary.suggestedFinalOutcomeLabel}}</strong></div>
+        </div>
+        {{#if state.summary.finalOutcomeText}}<p>{{state.summary.finalOutcomeText}}</p>{{/if}}
+
+        <h3>Station Results by Round</h3>
+        {{#each state.summary.rounds}}
+          <article class="arcflight-travel-runner-mvp__summary-round">
+            <h4>Round {{roundNumber}}: {{title}}</h4>
+            <dl>
+              {{#each stationResults}}
+                <dt>{{@key}}</dt><dd>{{this}}</dd>
+              {{/each}}
+            </dl>
+          </article>
+        {{/each}}
+
+        <h3>Staged Proposed Effects (Read-only)</h3>
+        {{#if state.summary.stagedProposedEffects.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.summary.stagedProposedEffectRows}}
+              <pre>{{json}}</pre>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No proposed effects are attached to the suggested final outcome.</p>
+        {{/if}}
+
+        <textarea readonly class="arcflight-travel-runner-mvp__json">{{state.summaryJson}}</textarea>
+      </section>
+    {{/if}}
+
+
+
+    {{#if state.effectApplication.available}}
+      <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__effect-application">
+        <h2>Manual Apply Proposed Effects</h2>
+        {{#if state.effectApplication.hasTarget}}
+          <p class="arcflight-sheet__hint"><strong>Target Ship:</strong> {{state.effectApplication.targetActorName}}</p>
+        {{else}}
+          <p class="arcflight-sheet__hint"><strong>Warning:</strong> {{state.effectApplication.noTargetReason}}</p>
+        {{/if}}
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-refresh-application>Refresh Application Preview</button>
+          <button type="button" data-arcflight-runner-apply-effects {{#unless state.effectApplication.canApply}}disabled{{/unless}}>Apply Selected Effects</button>
+        </div>
+        {{#if state.effectApplication.rows.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.effectApplication.rows}}
+              <article class="arcflight-travel-runner-mvp__effect-row">
+                <h3>{{#if selectable}}<input type="checkbox" data-arcflight-runner-apply-effect value="{{index}}" checked>{{else}}<input type="checkbox" disabled>{{/if}} {{displayIndex}}. {{label}}</h3>
+                <dl>
+                  <dt>Type</dt><dd>{{type}}</dd>
+                  <dt>Status</dt><dd>{{status}}</dd>
+                  <dt>Resource</dt><dd>{{resource}}</dd>
+                  <dt>Mode</dt><dd>{{mode}}</dd>
+                  <dt>Value</dt><dd>{{value}}</dd>
+                  <dt>Current Value</dt><dd>{{currentValue}}</dd>
+                  <dt>Preview Value</dt><dd>{{previewValue}}</dd>
+                </dl>
+                {{#if warnings.length}}<p class="arcflight-sheet__hint"><strong>Warnings:</strong> {{warnings}}</p>{{/if}}
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No proposed effects are attached to the final outcome.</p>
+        {{/if}}
+
+        <h3>Applied Effects History</h3>
+        {{#if state.effectApplication.records.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.effectApplication.records}}
+              <article class="arcflight-travel-runner-mvp__effect-row">
+                <strong>{{effectLabel}}</strong>
+                <dl>
+                  <dt>Resource</dt><dd>{{resource}}</dd>
+                  <dt>Mode</dt><dd>{{mode}}</dd>
+                  <dt>Value</dt><dd>{{value}}</dd>
+                  <dt>Actor</dt><dd>{{actorName}}</dd>
+                  <dt>Before</dt><dd>{{beforeValue}}</dd>
+                  <dt>After</dt><dd>{{afterValue}}</dd>
+                  <dt>Applied At</dt><dd>{{appliedAt}}</dd>
+                  <dt>Status</dt><dd>{{status}}</dd>
+                  {{#if currentValue}}<dt>Current Value</dt><dd>{{currentValue}}</dd>{{/if}}
+                </dl>
+                {{#if undoable}}
+                  <button type="button" data-arcflight-runner-undo-effect data-application-id="{{applicationId}}">Undo Applied Effect</button>
+                {{else}}
+                  {{#if undone}}<p class="arcflight-sheet__hint"><strong>Undone:</strong> {{undoneAt}}</p>{{/if}}
+                  {{#if undoWarning}}<p class="arcflight-sheet__hint"><strong>Undo Warning:</strong> {{undoWarning}}</p>{{/if}}
+                {{/if}}
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No effects from this runner session have been applied yet.</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__staged-review">
+      <h2>Staged Consequence Review</h2>
+      {{#if state.stagedEffectReview.available}}
+        <p class="arcflight-sheet__hint"><strong>{{state.stagedEffectReview.review.notAppliedWarning}}</strong></p>
+        <div class="arcflight-travel-runner-mvp__stats">
+          <div><span>Event</span><strong>{{state.stagedEffectReview.review.eventName}}</strong></div>
+          <div><span>Final Outcome</span><strong>{{state.stagedEffectReview.review.finalOutcomeLabel}}</strong></div>
+          <div><span>Effects</span><strong>{{state.stagedEffectReview.review.effectCount}}</strong></div>
+          <div><span>Supported</span><strong>{{state.stagedEffectReview.review.supportedEffectCount}}</strong></div>
+          <div><span>Unsupported</span><strong>{{state.stagedEffectReview.review.unsupportedEffectCount}}</strong></div>
+        </div>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-refresh-review>Refresh Review</button>
+          <button type="button" data-arcflight-runner-copy-review-markdown>Copy Review Markdown</button>
+          <button type="button" data-arcflight-runner-copy-review-html>Copy Review HTML</button>
+        </div>
+        {{#if state.stagedEffectReview.review.rows.length}}
+          <div class="arcflight-travel-runner-mvp__effects">
+            {{#each state.stagedEffectReview.review.rows}}
+              <article class="arcflight-travel-runner-mvp__effect-row">
+                <h3>{{displayIndex}}. {{label}}</h3>
+                <dl>
+                  <dt>Type</dt><dd>{{type}}</dd>
+                  <dt>Status</dt><dd>{{status}}</dd>
+                  <dt>Resource</dt><dd>{{resource}}</dd>
+                  <dt>Mode</dt><dd>{{mode}}</dd>
+                  <dt>Value</dt><dd>{{value}}</dd>
+                  <dt>Current Value</dt><dd>{{currentValue}}</dd>
+                  <dt>Preview Value</dt><dd>{{previewValue}}</dd>
+                </dl>
+                {{#if warnings.length}}<p class="arcflight-sheet__hint"><strong>Warnings:</strong> {{warnings}}</p>{{/if}}
+                <pre>{{rawJson}}</pre>
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">No proposed effects are attached to the final outcome.</p>
+        {{/if}}
+      {{else}}
+        <p class="arcflight-sheet__hint">{{state.stagedEffectReview.reason}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-refresh-review>Refresh Review</button>
+          <button type="button" data-arcflight-runner-copy-review-markdown disabled>Copy Review Markdown</button>
+          <button type="button" data-arcflight-runner-copy-review-html disabled>Copy Review HTML</button>
+        </div>
+      {{/if}}
+    </section>
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__summary-output">
+      <h2>Completed Summary Output</h2>
+      {{#if state.summaryOutput.available}}
+        <p class="arcflight-sheet__hint"><strong>Read-only:</strong> {{state.summaryOutput.report.proposedEffectsNotice}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-copy-markdown>Copy Markdown Summary</button>
+          <button type="button" data-arcflight-runner-copy-html>Copy HTML Summary</button>
+          <button type="button" data-arcflight-runner-post-chat>Post Summary to Chat</button>
+          <button type="button" data-arcflight-runner-create-journal>Create Journal Entry</button>
+          <button type="button" data-arcflight-runner-refresh-summary>Refresh Summary</button>
+        </div>
+        <label class="arcflight-sheet__field">
+          <span>Markdown Summary Output</span>
+          <textarea readonly class="arcflight-travel-runner-mvp__json">{{state.summaryOutput.markdown}}</textarea>
+        </label>
+      {{else}}
+        <p class="arcflight-sheet__hint">{{state.summaryOutput.reason}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-runner-copy-markdown disabled>Copy Markdown Summary</button>
+          <button type="button" data-arcflight-runner-copy-html disabled>Copy HTML Summary</button>
+          <button type="button" data-arcflight-runner-post-chat disabled>Post Summary to Chat</button>
+          <button type="button" data-arcflight-runner-create-journal disabled>Create Journal Entry</button>
+          <button type="button" data-arcflight-runner-refresh-summary>Refresh Summary</button>
+        </div>
+      {{/if}}
+    </section>
+  {{/if}}
+
+  <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-library">
+    <details>
+      <summary><strong>Runner Session Library</strong></summary>
+    <p class="arcflight-sheet__hint">World-local manual save/resume snapshots. Saved runner sessions are separate from drafts and published events, and never mutate actors, resources, chat, combat, or proposed effects.</p>
+    <div class="arcflight-travel-runner-mvp__actions">
+      <button type="button" data-arcflight-runner-refresh-sessions>Refresh Sessions</button>
+    </div>
+
+    {{#if state.hasSavedSessions}}
+      <label class="arcflight-sheet__field">
+        <span>Saved Session</span>
+        <select data-arcflight-runner-session-select>
+          <option value="">Select a saved session…</option>
+          {{#each state.sessionLibrary.entries}}
+            <option value="{{key}}" {{#if selected}}selected{{/if}} {{#unless canLoad}}disabled{{/unless}}>{{name}} — {{statusLabel}}{{#if missingPublishedEvent}} (missing published event){{/if}}{{#if isMalformed}} (malformed){{/if}}</option>
+          {{/each}}
+        </select>
+      </label>
+
+      <div class="arcflight-travel-runner-mvp__sessions">
+        {{#each state.sessionLibrary.entries}}
+          <article class="arcflight-travel-runner-mvp__session-row">
+            <header>
+              <strong>{{name}}</strong>
+              <span>{{statusLabel}}</span>
+            </header>
+            <p>{{eventName}}{{#if eventCategoryLabel}} — {{eventCategoryLabel}}{{/if}}</p>
+            <p class="arcflight-sheet__hint">Round {{currentRoundNumber}} • Updated {{updatedAtLabel}}</p>
+            {{#if missingPublishedEvent}}<p class="arcflight-sheet__hint"><strong>Warning:</strong> The source published event is not currently available. Loading uses the saved snapshot only.</p>{{/if}}
+            {{#if validationErrors.length}}<p class="arcflight-sheet__hint"><strong>Malformed:</strong> {{validationErrors}}</p>{{/if}}
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canLoad}}disabled{{/unless}}>Load Session</button>
+              <button type="button" data-arcflight-runner-duplicate-session="{{key}}" {{#unless canDuplicate}}disabled{{/unless}}>Duplicate Session</button>
+              <button type="button" data-arcflight-runner-delete-session="{{key}}" data-session-name="{{name}}" {{#unless canDelete}}disabled{{/unless}}>Delete Session</button>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No runner sessions have been saved yet. Start or load a published event, record manual results, then choose Save Current Session.</p>
+      <div class="arcflight-travel-runner-mvp__actions">
+        <button type="button" data-arcflight-runner-load-session disabled>Load Session</button>
+        <button type="button" data-arcflight-runner-duplicate-session disabled>Duplicate Session</button>
+        <button type="button" data-arcflight-runner-delete-session disabled>Delete Session</button>
+      </div>
+    {{/if}}
+    </details>
+  </section>
+  {{/unless}}
+</div>

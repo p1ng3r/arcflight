@@ -11,11 +11,34 @@ import {
 
 export const ARCFLIGHT_COMPONENT_ITEM_TYPE = "equipment";
 
+const REFIT_PRESSURE_KEYS = Object.freeze([
+  "weaponPressure",
+  "enginePressure",
+  "infrastructurePressure",
+  "lifeveilPressure",
+  "crewCommandPressure",
+  "occultPressure"
+]);
+
+const emptyRefitPressure = Object.freeze(Object.fromEntries(REFIT_PRESSURE_KEYS.map((key) => [key, 0])));
+
+const commonTierRefitData = Object.freeze({
+  minimumTier: 0,
+  recommendedTier: 0,
+  tierImpact: "",
+  refitPressure: emptyRefitPressure,
+  refitTags: [],
+  refitCategory: "",
+  specialistRequirements: [],
+  rareMaterialRequirements: []
+});
+
 const commonComponentData = Object.freeze({
   tags: "",
   traits: "",
   source: "",
-  notes: ""
+  notes: "",
+  ...commonTierRefitData
 });
 
 export const arcflightComponentTypeLabels = Object.freeze({
@@ -110,6 +133,7 @@ export const arcflightComponentDefaults = Object.freeze({
     overchargeProfile: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.ARKENGINE_MOD,
     identity: {
       id: "",
@@ -159,16 +183,29 @@ export const arcflightComponentDefaults = Object.freeze({
   }),
   [ARCFLIGHT_ITEM_TYPES.WEAPON]: Object.freeze({
     ...commonComponentData,
+    componentType: ARCFLIGHT_ITEM_TYPES.WEAPON,
+    key: "",
+    name: "",
+    size: ARCFLIGHT_WEAPON_SIZES.SMALL,
+    family: "",
+    category: "",
+    crewRequired: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].crewRequired,
+    compatibleArcs: [],
+    damageProfile: {
+      dice: "",
+      type: "",
+      notes: ""
+    },
     identity: {
       weaponType: ARCFLIGHT_SUGGESTED_WEAPON_TYPES.BALLISTA,
-      size: ARCFLIGHT_WEAPON_SIZES.LIGHT,
+      size: ARCFLIGHT_WEAPON_SIZES.SMALL,
       model: "",
       manufacturer: "",
       grade: ""
     },
     mounting: {
       arc: ARCFLIGHT_WEAPON_ARCS.FORE,
-      mountSlots: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].mountSlots,
+      mountSlots: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].mountSlots,
       mountType: "",
       notes: ""
     },
@@ -188,17 +225,19 @@ export const arcflightComponentDefaults = Object.freeze({
     },
     reload: {
       state: ARCFLIGHT_RELOAD_STATES.READY,
+      type: "",
       actions: 0,
+      crewRequired: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].crewRequired,
       value: "",
       notes: ""
     },
     crew: {
-      required: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].crewRequired,
+      required: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].crewRequired,
       station: "",
       notes: ""
     },
     strain: {
-      cost: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.LIGHT].strainCost,
+      cost: ARCFLIGHT_WEAPON_SIZE_DEFAULTS[ARCFLIGHT_WEAPON_SIZES.SMALL].strainCost,
       generated: 0,
       notes: ""
     },
@@ -225,6 +264,7 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.ROOM]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.ROOM,
     identity: {
       id: "",
@@ -281,6 +321,7 @@ export const arcflightComponentDefaults = Object.freeze({
     }
   }),
   [ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.SHIP_UPGRADE,
     identity: {
       id: "",
@@ -324,6 +365,7 @@ export const arcflightComponentDefaults = Object.freeze({
     }
   }),
   [ARCFLIGHT_ITEM_TYPES.CARGO]: Object.freeze({
+    ...commonTierRefitData,
     identity: {
       cargoType: "",
       origin: "",
@@ -370,6 +412,7 @@ export const arcflightComponentDefaults = Object.freeze({
     notes: ""
   }),
   [ARCFLIGHT_ITEM_TYPES.CREW_ASSET]: Object.freeze({
+    ...commonTierRefitData,
     componentType: ARCFLIGHT_ITEM_TYPES.CREW_ASSET,
     identity: {
       id: "",
@@ -483,4 +526,49 @@ export function getComponentData(item) {
 
   const flagData = getArcflightFlag(item, "system") ?? {};
   return foundry.utils.mergeObject(getDefaultArcflightComponentData(componentType), flagData, { inplace: false });
+}
+
+function numericValue(value, fallback = 0) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function normalizeRefitPressure(refitPressure = {}) {
+  const pressure = {};
+  let total = 0;
+
+  for (const key of REFIT_PRESSURE_KEYS) {
+    pressure[key] = Math.max(0, numericValue(refitPressure?.[key]));
+    total += pressure[key];
+  }
+
+  pressure.total = total;
+  return pressure;
+}
+
+function getComponentSystemLikeData(component = {}) {
+  if (isArcflightItem(component)) return getComponentData(component) ?? {};
+
+  return component?.system
+    ?? component?.flags?.[ARCFLIGHT_MODULE_ID]?.system
+    ?? component
+    ?? {};
+}
+
+export function getComponentRefitPressure(component = {}) {
+  return normalizeRefitPressure(getComponentSystemLikeData(component)?.refitPressure ?? {});
+}
+
+export function getComponentTierMetadata(component = {}) {
+  const data = getComponentSystemLikeData(component);
+
+  return {
+    minimumTier: Math.max(0, numericValue(data?.minimumTier)),
+    recommendedTier: Math.max(0, numericValue(data?.recommendedTier)),
+    tierImpact: data?.tierImpact ?? "",
+    refitPressure: getComponentRefitPressure(component),
+    refitTags: Array.isArray(data?.refitTags) ? foundry.utils.deepClone(data.refitTags) : [],
+    refitCategory: data?.refitCategory ?? "",
+    specialistRequirements: Array.isArray(data?.specialistRequirements) ? foundry.utils.deepClone(data.specialistRequirements) : [],
+    rareMaterialRequirements: Array.isArray(data?.rareMaterialRequirements) ? foundry.utils.deepClone(data.rareMaterialRequirements) : []
+  };
 }

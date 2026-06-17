@@ -16,9 +16,15 @@
     {{/if}}
   </header>
 
-  <div class="arcflight-sheet__body">
+  <div class="arcflight-sheet__body" data-arcflight-sheet-scroll>
   {{#if arcflight.enabled}}
-  <section class="arcflight-sheet__section">
+  <nav class="arcflight-ship-tabs" aria-label="Arcflight ship sheet sections">
+    {{#each shipTabs}}
+      <button type="button" class="arcflight-ship-tabs__tab {{cssClass}}" data-arcflight-ship-tab="{{id}}" aria-selected="{{#if active}}true{{else}}false{{/if}}">{{label}}</button>
+    {{/each}}
+  </nav>
+
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Ship Builder</h2>
     <p class="arcflight-sheet__hint">Drop Arcflight component items onto this sheet to route them to the matching install helper. Ship state is stored on this PF2E vehicle actor under <code>flags.arcflight.system</code>. Installed source references, copied Base data, recalculated Derived values, and editable Current runtime values are intentionally separate.</p>
     <label class="arcflight-sheet__field">
@@ -27,8 +33,117 @@
     </label>
   </section>
 
+  <section class="arcflight-sheet__section arcflight-install-ui {{installUi.preview.cssClass}}" data-arcflight-ship-tab-panel="components" {{#unless tabState.components}}hidden{{/unless}}>
+    <h2>Install Component</h2>
+    <p class="arcflight-sheet__hint">Controlled install MVP: select an Arcflight world Item, preview validation, then install through the existing helper. Weapon installs require an available hull weapon mount. This does not drag/drop or mutate source items.</p>
+    <div class="arcflight-install-ui__controls">
+      <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+        <span>Component Type</span>
+        <select data-arcflight-install-component-type {{#unless editable}}disabled{{/unless}}>
+          {{#each installUi.componentTypeOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+      <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+        <span>World Item</span>
+        <select data-arcflight-install-item {{#unless editable}}disabled{{/unless}}>
+          <option value="" {{#unless installUi.selectedItemId}}selected{{/unless}}>Select a world item</option>
+          {{#each installUi.itemOptions}}
+            <option value="{{id}}" data-uuid="{{uuid}}" data-component-key="{{componentKey}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+      {{#if installUi.isWeaponInstall}}
+        <label class="arcflight-sheet__field arcflight-sheet__field--grow">
+          <span>Weapon Mount</span>
+          <select data-arcflight-install-weapon-mount {{#unless installUi.hasWeaponMountOptions}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>
+            <option value="" {{#unless installUi.selectedWeaponMountValue}}selected{{/unless}}>Select an available hull weapon mount</option>
+            {{#each installUi.weaponMountOptions}}
+              <option value="{{value}}" data-arc="{{arc}}" data-mount-id="{{mountId}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+      {{/if}}
+      <button type="button" data-arcflight-install-component {{#unless installUi.canInstall}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>Install</button>
+    </div>
 
-  <section class="arcflight-sheet__section">
+    {{#unless installUi.hasItemOptions}}
+      <p class="arcflight-sheet__hint arcflight-install-ui__empty-hint">{{installUi.noItemsHint}}</p>
+    {{/unless}}
+
+    {{#if installUi.isWeaponInstall}}
+      {{#unless installUi.hasWeaponMountOptions}}
+        <p class="arcflight-sheet__hint arcflight-install-ui__empty-hint">No hull weapon mounts are available on the installed hull. Install a hull with weapon mounts before installing weapons.</p>
+      {{/unless}}
+    {{/if}}
+
+    {{#if installUi.hasPreview}}
+      <article class="arcflight-install-ui__preview">
+        <header>
+          <strong>Validation Preview</strong>
+          <span class="arcflight-install-ui__badge {{installUi.preview.badgeClass}}">{{installUi.preview.severityLabel}}</span>
+        </header>
+
+        <p class="arcflight-install-ui__status {{installUi.preview.statusClass}}">{{installUi.preview.statusLabel}}</p>
+
+        <dl class="arcflight-install-ui__identity">
+          <dt>Selected Item</dt>
+          <dd>{{installUi.preview.name}}</dd>
+          <dt>Component Type</dt>
+          <dd>{{installUi.preview.componentTypeLabel}}</dd>
+          <dt>UUID</dt>
+          <dd>{{installUi.preview.uuid}}</dd>
+          {{#if installUi.preview.componentKey}}
+            <dt>Component Key</dt>
+            <dd>{{installUi.preview.componentKey}}</dd>
+          {{/if}}
+          {{#if installUi.isWeaponInstall}}
+            <dt>Selected Mount</dt>
+            <dd>{{installUi.selectedWeaponMountArc}} / {{installUi.selectedWeaponMountId}}</dd>
+          {{/if}}
+          <dt>Projected Refit</dt>
+          <dd>{{installUi.preview.projectedRefitStatusLabel}} · Pressure {{installUi.preview.projectedRefitPressureTotal}}</dd>
+        </dl>
+
+        {{#if installUi.preview.hasMessages}}
+          <h3>Messages</h3>
+          <ul>
+            {{#each installUi.preview.messages}}
+              <li>{{this}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+
+        {{#if installUi.preview.hasWarnings}}
+          <h3>Warnings</h3>
+          <ul>
+            {{#each installUi.preview.warnings}}
+              <li>{{this}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+
+        {{#if installUi.preview.hasSlotRows}}
+          <h3>Slot Preview</h3>
+          <div class="arcflight-install-ui__slots">
+            {{#each installUi.preview.slotRows}}
+              <span><strong>{{label}}</strong>: {{currentUsed}}/{{currentCapacity}} → {{projectedUsed}}/{{projectedCapacity}} ({{projectedAvailable}} available)</span>
+            {{/each}}
+          </div>
+        {{/if}}
+      </article>
+    {{else}}
+      <p class="arcflight-sheet__hint">Select a world item to preview severity, messages, warnings, refit pressure, and slot status before installing.</p>
+    {{/if}}
+
+    {{#if installUi.hasDisabledReason}}
+      <p class="arcflight-sheet__hint arcflight-install-ui__disabled-reason">{{installUi.disabledReason}}</p>
+    {{/if}}
+  </section>
+
+
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Example Builds</h2>
     <p class="arcflight-sheet__hint">Apply a complete example build through the existing clean build helper. This clears the current ship build first, then installs the selected example hull, arkengine, rooms, upgrades, crew, and patterns.</p>
     <div class="arcflight-example-builds">
@@ -51,7 +166,34 @@
     </article>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section arcflight-travel-sheet-panel" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
+    <h2>Travel</h2>
+    <p class="arcflight-sheet__hint">GM-facing Travel Event Runner for ship-attached travel events. Manual result entry only; no PF2E rolls, AP/RAP spending, staged-effect application, or combat auto-start.</p>
+    <div class="arcflight-travel-sheet-panel__status">
+      <p><strong>Status:</strong> {{arcflight.system.travelRunnerReadout.message}}</p>
+      {{#if arcflight.system.travelRunnerReadout.hasActiveEvent}}
+        <p><strong>Active Event:</strong> {{arcflight.system.travelRunnerReadout.activeEventName}} (round {{arcflight.system.travelRunnerReadout.activeEventRoundLabel}}, {{arcflight.system.travelRunnerReadout.activeEventStatus}})</p>
+      {{else}}
+        <p>No active travel event.</p>
+      {{/if}}
+      {{#if arcflight.system.travelRunnerReadout.hasLastCompletedEvent}}
+        <p><strong>Last Completed:</strong> {{arcflight.system.travelRunnerReadout.lastCompletedEventName}} ({{arcflight.system.travelRunnerReadout.lastCompletedOutcome}})</p>
+      {{/if}}
+    </div>
+    <button type="button" data-arcflight-open-travel-runner {{#unless arcflight.system.travelRunnerReadout.canOpen}}disabled{{/unless}}>Open Travel Runner</button>
+  </section>
+
+  <section class="arcflight-sheet__section arcflight-action-economy" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
+    <h2>AP/RAP Economy</h2>
+    <p class="arcflight-sheet__hint">Ship-level AP/RAP resource accounting for future tactical scenes. Reset only restores current AP/RAP to the derived maximums; station action Record and Roll do not spend by default.</p>
+    <div class="arcflight-grid arcflight-grid--ship-values">
+      <label class="arcflight-sheet__field"><span>Action Points</span><input type="text" value="{{arcflight.system.actionEconomyReadout.apLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Reaction Action Points</span><input type="text" value="{{arcflight.system.actionEconomyReadout.rapLabel}}" disabled></label>
+    </div>
+    <button type="button" data-arcflight-reset-action-economy {{#unless editable}}disabled{{/unless}}>Reset AP/RAP</button>
+  </section>
+
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>Hull</h2>
     {{#if arcflight.system.installed.hasHull}}
     <div class="arcflight-grid arcflight-grid--ship-values">
@@ -79,7 +221,7 @@
 
 
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>Arkengine</h2>
     {{#if arcflight.system.installed.hasArkengine}}
     <div class="arcflight-grid arcflight-grid--ship-values">
@@ -116,7 +258,7 @@
     <p class="arcflight-sheet__hint">Install arkengines with <code>game.arcflight.installArkengine(shipActor, arkengineItem)</code>. Variant family and mod slot values are tracked separately from source arkengine item data.</p>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>Fueling / Spell-Rank Energy</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Fuel Slots</span><input type="number" value="{{arcflight.system.fuelingDisplay.fuelSlots}}" disabled></label>
@@ -130,7 +272,116 @@
     <p class="arcflight-sheet__hint">Read-only arkengine fueling values from the ship's derived stats and current stored spell-rank energy. Values show as 0 until an arkengine provides fueling data.</p>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section arcflight-validation {{arcflight.system.installValidationReadout.summary.cssClass}}" data-arcflight-ship-tab-panel="validation-history" {{#unless tabState.validationHistory}}hidden{{/unless}}>
+    <h2>Tier / Refit / Validation</h2>
+    <article class="arcflight-validation__summary">
+      <h3>{{arcflight.system.installValidationReadout.summary.label}}</h3>
+      <p>{{arcflight.system.installValidationReadout.summary.message}}</p>
+    </article>
+
+    <h3>Tier State</h3>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Base Tier</span><input type="number" value="{{arcflight.system.installValidationReadout.tier.baseTier}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Current Tier</span><input type="number" value="{{arcflight.system.installValidationReadout.tier.currentTier}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Refit Status</span><input type="text" value="{{arcflight.system.installValidationReadout.tier.refitStatusLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Major Refits Completed</span><input type="number" value="{{arcflight.system.installValidationReadout.tier.majorRefitsCompleted}}" disabled></label>
+    </div>
+
+    <h3>Refit Pressure</h3>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Total Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.total}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Weapon Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.weaponPressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Engine Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.enginePressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Infrastructure Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.infrastructurePressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Lifeveil Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.lifeveilPressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Crew Command Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.crewCommandPressure}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Occult Pressure</span><input type="number" value="{{arcflight.system.installValidationReadout.pressure.occultPressure}}" disabled></label>
+    </div>
+
+    <h3>Major Refit Flags</h3>
+    <div class="arcflight-grid arcflight-grid--resources">
+      <label class="arcflight-sheet__field"><span>Qualifies For Major Refit</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.qualifiesForMajorRefitLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Requires Drydock</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.requiresDrydockLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Requires Specialist Labor</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.requiresSpecialistLaborLabel}}" disabled></label>
+      <label class="arcflight-sheet__field"><span>Requires Rare Materials</span><input type="text" value="{{arcflight.system.installValidationReadout.flags.requiresRareMaterialsLabel}}" disabled></label>
+    </div>
+    <p class="arcflight-sheet__hint">Read-only status from <code>flags.arcflight.system.tier</code>, <code>refitPressure</code>, and <code>refitFlags</code>. This section does not block installs or change install behavior.</p>
+  </section>
+
+  <section class="arcflight-sheet__section arcflight-install-state" data-arcflight-ship-tab-panel="validation-history" {{#unless tabState.validationHistory}}hidden{{/unless}}>
+    <h2>Install State</h2>
+    <p class="arcflight-sheet__hint">Read-only persistent install lifecycle records from <code>flags.arcflight.system.installState</code>. This section does not add, remove, drag, drop, enforce slots, or mutate install records.</p>
+
+    {{#if arcflight.system.installStateReadout.hasRecords}}
+      <h3>Summary</h3>
+      <div class="arcflight-grid arcflight-grid--resources">
+        <label class="arcflight-sheet__field"><span>Active Installs</span><input type="number" value="{{arcflight.system.installStateReadout.summary.activeInstalls}}" disabled></label>
+        <label class="arcflight-sheet__field"><span>Inactive Installs</span><input type="number" value="{{arcflight.system.installStateReadout.summary.inactiveInstalls}}" disabled></label>
+        <label class="arcflight-sheet__field"><span>Total Installs</span><input type="number" value="{{arcflight.system.installStateReadout.summary.totalInstalls}}" disabled></label>
+        <label class="arcflight-sheet__field"><span>Install Categories Present</span><input type="text" value="{{arcflight.system.installStateReadout.summary.installCategoriesLabel}}" disabled></label>
+      </div>
+
+      <h3>Component Counts by Type</h3>
+      {{#if arcflight.system.installStateReadout.summary.hasComponentTypeCounts}}
+        <div class="arcflight-install-state__chips">
+          {{#each arcflight.system.installStateReadout.summary.componentTypeCounts}}
+            <span class="arcflight-install-state__chip"><strong>{{this.label}}</strong>: {{this.count}}</span>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">No active component type counts.</p>
+      {{/if}}
+
+      <h3>Pressure from Install Records</h3>
+      <div class="arcflight-grid arcflight-grid--resources">
+        {{#each arcflight.system.installStateReadout.pressure.rows}}
+          <label class="arcflight-sheet__field"><span>{{this.label}}</span><input type="number" value="{{this.value}}" disabled></label>
+        {{/each}}
+      </div>
+
+      <h3>Active Install Records</h3>
+      {{#if arcflight.system.installStateReadout.hasActiveRecords}}
+        <div class="arcflight-install-state__records">
+          {{#each arcflight.system.installStateReadout.activeRecords}}
+            <article class="arcflight-install-state__record">
+              <header>
+                <strong>{{this.componentTypeLabel}}</strong>
+                <span>{{this.installCategoryLabel}}</span>
+              </header>
+              <dl>
+                <dt>Item</dt>
+                <dd>{{this.itemReference}}</dd>
+                <dt>Flags</dt>
+                <dd>{{this.flagsLabel}}</dd>
+                {{#if this.hasPlacements}}
+                  <dt>Placement</dt>
+                  <dd>
+                    {{#each this.placements}}
+                      <span>{{this.label}}: {{this.value}}</span>{{#unless @last}}; {{/unless}}
+                    {{/each}}
+                  </dd>
+                {{/if}}
+                {{#if this.hasTierAtInstall}}
+                  <dt>Tier at Install</dt>
+                  <dd>{{this.tierAtInstall}}</dd>
+                {{/if}}
+                {{#if this.hasNotes}}
+                  <dt>Notes</dt>
+                  <dd>{{this.notes}}</dd>
+                {{/if}}
+              </dl>
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="arcflight-sheet__hint">No active install records.</p>
+      {{/if}}
+    {{else}}
+      <p class="arcflight-sheet__hint">No persistent install records yet.</p>
+    {{/if}}
+  </section>
+
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="components" {{#unless tabState.components}}hidden{{/unless}}>
     <h2>Arkengine Mods</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Arkengine Mod Slots Capacity</span><input type="number" value="{{arcflight.system.installed.arkengineModSlots.capacity}}" disabled></label>
@@ -143,6 +394,7 @@
         {{#each arcflight.system.installed.arkengineMods}}
           <li>
             <strong>{{this.displayName}}</strong> — {{this.modType}}; {{this.rarity}}; {{this.modSlotsRequired}} slot(s); <em>{{this.systemState}}</em>
+            <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
             {{#if this.effects.derivedStatModifiers.length}}
               <ul>
                 {{#each this.effects.derivedStatModifiers}}
@@ -160,7 +412,7 @@
     {{/if}}
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="components" {{#unless tabState.components}}hidden{{/unless}}>
     <h2>Rooms</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Room Slots Capacity</span><input type="number" value="{{arcflight.system.installed.roomSlots.capacity}}" disabled></label>
@@ -186,7 +438,10 @@
         {{#if arcflight.system.installed.rooms.length}}
           <ul>
             {{#each arcflight.system.installed.rooms}}
-              <li><strong>{{this.displayName}}</strong> — {{this.roomType}}; {{this.expansionSlotsRequired}} slot(s); <em>{{this.systemState}}</em></li>
+              <li>
+                <strong>{{this.displayName}}</strong> — {{this.roomType}}; {{this.expansionSlotsRequired}} slot(s); <em>{{this.systemState}}</em>
+                <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
+              </li>
             {{/each}}
           </ul>
         {{else}}
@@ -197,12 +452,40 @@
   </section>
 
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section arcflight-installed-weapons" data-arcflight-ship-tab-panel="weapons" {{#unless tabState.weapons}}hidden{{/unless}}>
+    <h2>Installed Weapons</h2>
+    <p class="arcflight-sheet__hint">Ship-owned weapon snapshots grouped by arc. Remove frees the occupied hull mount and does not mutate source weapon items or add firing/combat controls.</p>
+    {{#if arcflight.system.installed.hasWeapons}}
+      <div class="arcflight-installed-weapons__groups">
+        {{#each arcflight.system.installed.weaponGroups}}
+          <article class="arcflight-installed-weapons__group">
+            <h3>{{this.arcLabel}}</h3>
+            <ul>
+              {{#each this.weapons}}
+                <li>
+                  <strong>{{this.displayName}}</strong> — {{this.mountId}}; {{this.sizeLabel}} {{this.familyLabel}}; <em>{{this.systemState}}</em>
+                  <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
+                  {{#if this.hasTraits}}
+                    <span class="arcflight-sheet__hint">Traits: {{this.traitsLabel}}</span>
+                  {{/if}}
+                </li>
+              {{/each}}
+            </ul>
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No weapons installed. Use Install Component → Weapon and choose an available hull weapon mount.</p>
+    {{/if}}
+  </section>
+
+
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="crew-stations" {{#unless tabState.crewStations}}hidden{{/unless}}>
     <h2>Stations</h2>
-    <p class="arcflight-sheet__hint">Stations are crew duty roles and operating positions stored on this ship actor. They are separate from Rooms, do not require Room installation, and do not add station actions or AP/RAP controls in this phase.</p>
+    <p class="arcflight-sheet__hint">Stations are crew duty roles and operating positions stored on this ship actor. They are separate from Rooms and do not require Room installation. Station actions below only preview and record history; they do not spend AP/RAP or automate gameplay effects.</p>
     <div class="arcflight-station-list">
       {{#each stations}}
-        <article class="arcflight-station-list__station">
+        <article class="arcflight-station-list__station" data-arcflight-station-row data-station-key="{{this.key}}">
           <header>
             <h3>{{this.displayName}}</h3>
             <span class="arcflight-station-list__assignment">{{this.assigneeName}}</span>
@@ -214,12 +497,112 @@
           {{else}}
             <p class="arcflight-sheet__hint">Unassigned</p>
           {{/if}}
+          <div class="arcflight-station-list__controls">
+            <label class="arcflight-sheet__field">
+              <span>Assign PF2E Character</span>
+              <select data-arcflight-station-actor-select data-station-key="{{this.key}}" {{#unless @root.editable}}disabled{{/unless}}>
+                <option value="">Select world character</option>
+                {{#each this.actorOptions}}
+                  <option value="{{this.id}}" data-actor-uuid="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <div class="arcflight-station-list__buttons">
+              <button type="button" data-arcflight-assign-station data-station-key="{{this.key}}" {{#unless this.canAssign}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Assign</button>
+              <button type="button" data-arcflight-clear-station data-station-key="{{this.key}}" {{#unless this.hasAssignment}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Clear</button>
+            </div>
+          </div>
         </article>
       {{/each}}
     </div>
   </section>
 
-  <section class="arcflight-sheet__section">
+
+  <section class="arcflight-sheet__section arcflight-station-actions" data-arcflight-ship-tab-panel="station-actions" {{#unless tabState.stationActions}}hidden{{/unless}}>
+    <h2>Station Actions</h2>
+    <p class="arcflight-sheet__hint">Minimal station-action MVP. Actions are grouped by station, previewed through the station-action backend, and recorded to this ship actor. Roll uses the assigned PF2E actor statistic when available. Execute/Record and Roll do not spend AP/RAP, fire weapons, create combat rounds, automate travel, or apply effects.</p>
+    {{#if stationActionUi.hasGroups}}
+      <div class="arcflight-station-actions__groups">
+        {{#each stationActionUi.groups}}
+          <article class="arcflight-station-actions__station">
+            <header>
+              <h3>{{this.displayName}}</h3>
+              <span class="arcflight-station-list__assignment">{{this.assigneeName}}</span>
+            </header>
+            {{#if this.hasActions}}
+              <div class="arcflight-station-actions__actions">
+                {{#each this.actions}}
+                  <article class="arcflight-station-actions__action {{this.preview.cssClass}}" data-station-action-key="{{this.key}}">
+                    <header>
+                      <h4>{{this.name}}</h4>
+                      <span class="arcflight-install-ui__badge {{this.preview.badgeClass}}">{{this.preview.statusLabel}}</span>
+                    </header>
+                    <dl class="arcflight-station-actions__details">
+                      <dt>Phase</dt>
+                      <dd>{{this.phaseLabel}}</dd>
+                      <dt>Cost</dt>
+                      <dd>{{this.costLabel}}</dd>
+                      <dt>Affordability</dt>
+                      <dd>{{this.preview.affordabilityLabel}} (ship: {{this.preview.actionEconomy.ap}}/{{this.preview.actionEconomy.maxAP}} AP, {{this.preview.actionEconomy.rap}}/{{this.preview.actionEconomy.maxRAP}} RAP)</dd>
+                      <dt>Crew</dt>
+                      <dd>{{this.assignedCrewStatus}}</dd>
+                      <dt>Preview</dt>
+                      <dd>{{this.preview.statusText}}</dd>
+                    </dl>
+                    <p>{{this.description}}</p>
+                    {{#if this.hasRollOptions}}
+                      <div class="arcflight-station-actions__roll-controls">
+                        <label class="arcflight-sheet__field arcflight-station-actions__roll-select">
+                          <span>Roll Option</span>
+                          <select data-arcflight-station-action-roll-option {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>
+                            {{#each this.rollOptions}}
+                              <option value="{{this.key}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                            {{/each}}
+                          </select>
+                        </label>
+                        <button type="button" data-arcflight-roll-station-action data-action-key="{{this.key}}" data-phase="{{this.phase}}" {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Roll</button>
+                      </div>
+                    {{/if}}
+                    <button type="button" data-arcflight-execute-station-action data-action-key="{{this.key}}" data-phase="{{this.phase}}" {{#unless this.preview.canExecute}}disabled{{/unless}} {{#unless @root.editable}}disabled{{/unless}}>Execute/Record</button>
+                  </article>
+                {{/each}}
+              </div>
+            {{else}}
+              <p class="arcflight-sheet__hint">No station actions are registered for this station in the current data set.</p>
+            {{/if}}
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="arcflight-sheet__hint">No station actions are registered.</p>
+    {{/if}}
+
+    <section class="arcflight-station-actions__history">
+      <header>
+        <h3>Station Action History</h3>
+        <button type="button" data-arcflight-clear-station-action-history {{#unless stationActionUi.canClearHistory}}disabled{{/unless}} {{#unless editable}}disabled{{/unless}}>Clear History</button>
+      </header>
+      {{#if stationActionUi.history.hasRecords}}
+        <ol class="arcflight-station-actions__history-list">
+          {{#each stationActionUi.history.records}}
+            <li>
+              <strong>{{this.actionName}}</strong> — {{this.stationLabel}} · {{this.phaseLabel}} · {{this.assignedCrewName}} · {{this.timestampLabel}}
+              {{#if this.isRoll}}<br><span class="arcflight-sheet__hint">Roll: {{this.rollLabel}}{{#if this.hasRollResult}} · {{this.rollTotalLabel}} · {{this.rollResultLabel}}{{/if}}</span>{{/if}}
+              {{#if this.hasOutcomeText}}<br><span class="arcflight-sheet__hint">Outcome: {{this.outcomeText}}</span>{{/if}}
+              {{#if this.hasNotes}}<br><span class="arcflight-sheet__hint">Notes: {{this.notes}}</span>{{/if}}
+            </li>
+          {{/each}}
+        </ol>
+        {{#if stationActionUi.history.hiddenRecords}}
+          <p class="arcflight-sheet__hint">{{stationActionUi.history.hiddenRecords}} older station action record(s) hidden.</p>
+        {{/if}}
+      {{else}}
+        <p class="arcflight-sheet__hint">No station actions recorded yet.</p>
+      {{/if}}
+    </section>
+  </section>
+
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="components" {{#unless tabState.components}}hidden{{/unless}}>
     <h2>Ship Upgrades</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Ship Upgrade Slots Capacity</span><input type="number" value="{{arcflight.system.installed.shipUpgradeSlots.capacity}}" disabled></label>
@@ -232,6 +615,7 @@
         {{#each arcflight.system.installed.shipUpgrades}}
           <li>
             <strong>{{this.displayName}}</strong> — {{this.upgradeType}}; {{this.rarity}}; <em>{{this.systemState}}</em>
+            <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
             {{#if this.effects.derivedStatModifiers.length}}
               <ul>
                 {{#each this.effects.derivedStatModifiers}}
@@ -247,7 +631,7 @@
     {{/if}}
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>Derived Summary</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Base Hull</span><input type="number" value="{{arcflight.system.base.hull.hullIntegrity}}" disabled></label>
@@ -259,7 +643,7 @@
     </div>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Identity</h2>
     <label class="arcflight-sheet__field"><span>Vessel Class</span><input type="text" name="{{arcflightSystemPath}}.identity.vesselClass" value="{{arcflight.system.identity.vesselClass}}" {{#unless editable}}disabled{{/unless}}></label>
     <label class="arcflight-sheet__field"><span>Registry</span><input type="text" name="{{arcflightSystemPath}}.identity.registry" value="{{arcflight.system.identity.registry}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -268,7 +652,7 @@
     <label class="arcflight-sheet__field"><span>Origin</span><input type="text" name="{{arcflightSystemPath}}.identity.origin" value="{{arcflight.system.identity.origin}}" {{#unless editable}}disabled{{/unless}}></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Installed Systems</h2>
     <label class="arcflight-sheet__field"><span>Hull</span><input type="text" name="{{arcflightSystemPath}}.installedSystems.hull" value="{{arcflight.system.installedSystems.hull}}" {{#unless editable}}disabled{{/unless}}></label>
     <label class="arcflight-sheet__field"><span>Arkengine</span><input type="text" name="{{arcflightSystemPath}}.installedSystems.arkengine" value="{{arcflight.system.installedSystems.arkengine}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -281,7 +665,7 @@
     <label class="arcflight-sheet__field"><span>Installed Notes</span><textarea name="{{arcflightSystemPath}}.installedSystems.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.installedSystems.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="overview" {{#unless tabState.overview}}hidden{{/unless}}>
     <h2>Current Resources Summary</h2>
     <div class="arcflight-grid arcflight-grid--resources">
       <label class="arcflight-sheet__field"><span>Current Hull</span><input type="number" name="{{arcflightSystemPath}}.current.hull" value="{{arcflight.system.current.hull}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -300,7 +684,7 @@
     <label class="arcflight-sheet__field"><span>Resource Notes</span><textarea name="{{arcflightSystemPath}}.resources.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.resources.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Derived Stats</h2>
     <div class="arcflight-grid arcflight-grid--ship-values">
       <label class="arcflight-sheet__field"><span>Speed</span><input type="number" name="{{arcflightSystemPath}}.derivedStats.speed" value="{{arcflight.system.derivedStats.speed}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -313,7 +697,7 @@
     <label class="arcflight-sheet__field"><span>Derived Notes</span><textarea name="{{arcflightSystemPath}}.derivedStats.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.derivedStats.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="crew-stations" {{#unless tabState.crewStations}}hidden{{/unless}}>
     <h2>Crew</h2>
     <p class="arcflight-sheet__hint">Generic crew is a simple number. Named Crew Assets are meaningful specialists copied into this ship roster by <code>game.arcflight.addCrewAsset(shipActor, crewItem)</code>; source Crew Asset items remain immutable.</p>
     <div class="arcflight-grid arcflight-grid--ship-values">
@@ -326,7 +710,10 @@
     {{#if arcflight.system.crew.namedCrew.length}}
       <ul>
         {{#each arcflight.system.crew.namedCrew}}
-          <li><strong>{{this.displayName}}</strong> — {{this.identity.role}}; {{this.crew.quality}}; preferred Station: {{this.stationAssignment.preferredStation}}</li>
+          <li>
+            <strong>{{this.displayName}}</strong> — {{this.identity.role}}; {{this.crew.quality}}; preferred Station: {{this.stationAssignment.preferredStation}}
+            <button type="button" class="arcflight-remove-component" data-arcflight-remove-component data-component-type="{{this.componentType}}" data-component-id="{{this.removeId}}" data-component-name="{{this.displayName}}">Remove</button>
+          </li>
         {{/each}}
       </ul>
     {{else}}
@@ -336,7 +723,7 @@
     <label class="arcflight-sheet__field"><span>Crew Notes</span><textarea name="{{arcflightSystemPath}}.crew.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.crew.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Cargo</h2>
     <label class="arcflight-sheet__field"><span>Capacity</span><input type="number" name="{{arcflightSystemPath}}.cargo.capacity" value="{{arcflight.system.cargo.capacity}}" {{#unless editable}}disabled{{/unless}}></label>
     <label class="arcflight-sheet__field"><span>Used</span><input type="number" name="{{arcflightSystemPath}}.cargo.used" value="{{arcflight.system.cargo.used}}" {{#unless editable}}disabled{{/unless}}></label>
@@ -344,14 +731,14 @@
     <label class="arcflight-sheet__field"><span>Cargo Notes</span><textarea name="{{arcflightSystemPath}}.cargo.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.cargo.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Conditions</h2>
     <label class="arcflight-sheet__field"><span>Active Conditions</span><textarea name="{{arcflightSystemPath}}.conditions.active" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.conditions.active}}</textarea></label>
     <label class="arcflight-sheet__field"><span>Damage</span><textarea name="{{arcflightSystemPath}}.conditions.damage" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.conditions.damage}}</textarea></label>
     <label class="arcflight-sheet__field"><span>Condition Notes</span><textarea name="{{arcflightSystemPath}}.conditions.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.conditions.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>State</h2>
     <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightSystemPath}}.state.active" {{#if arcflight.system.state.active}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Active</span></label>
     <label class="arcflight-sheet__field arcflight-sheet__field--checkbox"><input type="checkbox" name="{{arcflightSystemPath}}.state.docked" {{#if arcflight.system.state.docked}}checked{{/if}} {{#unless editable}}disabled{{/unless}}> <span>Docked</span></label>
@@ -361,7 +748,7 @@
     <label class="arcflight-sheet__field"><span>State Notes</span><textarea name="{{arcflightSystemPath}}.state.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.state.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="validation-history" {{#unless tabState.validationHistory}}hidden{{/unless}}>
     <h2>History</h2>
     <label class="arcflight-sheet__field"><span>Commissioned</span><input type="text" name="{{arcflightSystemPath}}.history.commissioned" value="{{arcflight.system.history.commissioned}}" {{#unless editable}}disabled{{/unless}}></label>
     <label class="arcflight-sheet__field"><span>Previous Owners</span><textarea name="{{arcflightSystemPath}}.history.previousOwners" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.history.previousOwners}}</textarea></label>
@@ -369,12 +756,12 @@
     <label class="arcflight-sheet__field"><span>History Notes</span><textarea name="{{arcflightSystemPath}}.history.notes" rows="2" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.history.notes}}</textarea></label>
   </section>
 
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>Notes</h2>
     <label class="arcflight-sheet__field"><span>Ship Notes</span><textarea name="{{arcflightSystemPath}}.notes" rows="4" {{#unless editable}}disabled{{/unless}}>{{arcflight.system.notes}}</textarea></label>
   </section>
   {{else}}
-  <section class="arcflight-sheet__section">
+  <section class="arcflight-sheet__section" data-arcflight-ship-tab-panel="developer" {{#unless tabState.developer}}hidden{{/unless}}>
     <h2>PF2E Vehicle</h2>
     <p class="arcflight-sheet__hint">This vehicle is not marked as an Arcflight ship. Use the button above to add Arcflight ship flags without changing PF2E vehicle system data.</p>
   </section>
