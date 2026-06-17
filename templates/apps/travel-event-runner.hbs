@@ -170,11 +170,20 @@
             <h2>GM Round Summary</h2>
             <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
             <p><strong>{{state.roundSummaryCard.roundOutcomeLabel}}</strong> (weighted score {{state.roundSummaryCard.roundScore}})</p>
-            <p>{{state.roundSummaryCard.cinematicSummaryText}}</p>
-            {{#if state.roundSummaryCard.unresolvedStationText}}<p class="arcflight-sheet__hint"><strong>GM Status:</strong> {{state.roundSummaryCard.unresolvedStationText}}</p>{{/if}}
-            {{#if state.roundSummaryCard.gmOnlyComplicationText}}<p class="arcflight-travel-builder__warning"><strong>GM-only complications:</strong> {{state.roundSummaryCard.gmOnlyComplicationText}}</p>{{/if}}
+            <section class="arcflight-travel-runner-mvp__round-summary-section">
+              <h3>Cinematic Summary</h3>
+              <p>{{state.roundSummaryCard.cinematicSummaryText}}</p>
+            </section>
+            <section class="arcflight-travel-runner-mvp__round-summary-section">
+              <h3>Unresolved Stations</h3>
+              {{#if state.roundSummaryCard.unresolvedStationText}}<p class="arcflight-sheet__hint">{{state.roundSummaryCard.unresolvedStationText}}</p>{{else}}<p class="arcflight-sheet__hint">All active stations have a recorded result.</p>{{/if}}
+            </section>
+            <section class="arcflight-travel-runner-mvp__round-summary-section">
+              <h3>GM-Only Complications</h3>
+              {{#if state.roundSummaryCard.gmOnlyComplicationText}}<p class="arcflight-travel-builder__warning">{{state.roundSummaryCard.gmOnlyComplicationText}}</p>{{else}}<p class="arcflight-sheet__hint">No GM-only complications are currently recorded.</p>{{/if}}
+            </section>
             <details>
-              <summary>Summary details</summary>
+              <summary>Roll Details</summary>
               {{#each state.roundSummaryCard.summaryLines}}
                 <p>{{this}}</p>
               {{/each}}
