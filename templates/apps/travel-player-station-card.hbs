@@ -24,7 +24,8 @@
   <section class="arcflight-travel-player-station-card__section" aria-label="Selected approach">
     <h2>Approach</h2>
     {{#if state.hasSelectedApproach}}
-      <p><strong>{{state.selectedApproachLabel}}</strong></p>
+      <p><strong>Selected:</strong> {{state.selectedApproachLabel}}</p>
+      {{#if state.selectedApproachRollLabel}}<p class="arcflight-sheet__hint"><strong>Roll:</strong> {{state.selectedApproachRollLabel}}</p>{{/if}}
       {{#if state.hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint">{{state.selectedApproachHelpText}}</p>{{/if}}
     {{else}}
       {{#if state.hasApproachOptions}}
@@ -32,7 +33,7 @@
           <span>Choose your approach</span>
           <select data-arcflight-player-card-approach>
             {{#each state.approachOptions}}
-              <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</option>
+              <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skillLabel}}{{/if}}{{/if}}</option>
             {{/each}}
           </select>
         </label>

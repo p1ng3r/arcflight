@@ -62,6 +62,7 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     hasPromptText: sanitizeBoolean(source.hasPromptText),
     selectedApproachLabel: sanitizeText(source.selectedApproachLabel),
     selectedApproachHelpText: sanitizeText(source.selectedApproachHelpText),
+    selectedApproachRollLabel: sanitizeText(source.selectedApproachRollLabel),
     hasSelectedApproach: sanitizeBoolean(source.hasSelectedApproach),
     hasSelectedApproachHelpText: sanitizeBoolean(source.hasSelectedApproachHelpText),
     resultStatusLabel: sanitizeText(source.resultStatusLabel) || "Waiting for GM resolution",
@@ -427,6 +428,7 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       selectedApproachValue: skill,
       selectedApproachLabel: selectedApproach?.label || skill,
       selectedApproachHelpText: selectedApproach?.helpText || "",
+      selectedApproachRollLabel: selectedApproach ? `${selectedApproach.statisticLabel || "Statistic unavailable"} vs ${selectedApproach.dcLabel || "DC unavailable"}` : "",
       hasSelectedApproachHelpText: Boolean(selectedApproach?.helpText),
       hasSelectedApproach: true,
       resultStatusLabel: "Approach submitted",
@@ -480,6 +482,7 @@ function sanitizeMissionBoardStation(station = {}) {
     selectedApproachStatisticLabel: sanitizeText(source.selectedApproachStatisticLabel),
     selectedApproachModifier: Number.isFinite(Number(source.selectedApproachModifier)) ? Number(source.selectedApproachModifier) : null,
     selectedApproachModifierLabel: sanitizeText(source.selectedApproachModifierLabel),
+    selectedApproachRollLabel: sanitizeText(source.selectedApproachRollLabel),
     hasSelectedApproachHelpText: sanitizeBoolean(source.hasSelectedApproachHelpText),
     dcLabel: sanitizeText(source.dcLabel),
     resultLabel: sanitizeText(source.resultLabel) || "Unrecorded",
@@ -723,6 +726,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
           selectedApproachHelpText: approach?.helpText || station.selectedApproachHelpText,
           selectedApproachSkillLabel: approach?.skillLabel || station.selectedApproachSkillLabel,
           selectedApproachStatisticLabel: approach?.statisticLabel || station.selectedApproachStatisticLabel,
+          selectedApproachRollLabel: `${approach?.statisticLabel || station.selectedApproachStatisticLabel || "Statistic unavailable"} vs ${approach?.dcLabel || station.dcLabel || "DC unavailable"}`,
           selectedApproachModifier: Number.isFinite(approach?.modifier) ? approach.modifier : station.selectedApproachModifier,
           selectedApproachModifierLabel: approach?.modifierLabel || station.selectedApproachModifierLabel,
           dcLabel: approach?.dcLabel || station.dcLabel,
@@ -731,7 +735,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
         };
       })
     });
-    this.#renderPreservingScroll(true).then(() => this.#restoreScrollState(scrollState));
+    return this.#renderPreservingScroll(true).then(() => this.#restoreScrollState(scrollState));
   }
 
   async #submitApproach(stationKey) {
@@ -741,6 +745,23 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     if (!station?.canChooseApproach || !skill) return ui.notifications?.warn?.(station?.permissionReason || "You cannot choose this station approach.");
     console.debug("Arcflight | Player approach submit.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    const approach = station.approachOptions.find((entry) => entry.skill === skill) ?? null;
+    if (approach) {
+      await this.#setLocalStationApproach(stationKey, skill);
+      this.boardState = sanitizeTravelPlayerMissionBoardState({
+        ...this.boardState,
+        stations: this.boardState.stations.map((entry) => entry.stationKey === stationKey ? {
+          ...entry,
+          hasSelectedApproach: true,
+          selectedApproachLabel: approach.label || approach.skillLabel || skill,
+          selectedApproachHelpText: approach.helpText || "",
+          hasSelectedApproachHelpText: Boolean(approach.helpText),
+          stateLabel: "Approach submitted",
+          disabledReason: entry.canRollStation ? "" : entry.disabledReason
+        } : entry)
+      });
+      await this.#renderPreservingScroll(true);
+    }
     ui.notifications?.info?.("Approach submitted to the GM.");
     return true;
   }

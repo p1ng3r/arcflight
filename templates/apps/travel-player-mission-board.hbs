@@ -26,13 +26,13 @@
           <dl class="arcflight-travel-player-mission-board__facts">
             <div><dt>Assigned</dt><dd>{{assignedActorName}}</dd></div>
             <div><dt>DC</dt><dd>{{dcLabel}}</dd></div>
-            <div><dt>Approach</dt><dd>{{#if hasSelectedApproach}}{{selectedApproachLabel}}{{else}}Not selected{{/if}}</dd></div>
+            <div><dt>Selected</dt><dd>{{#if hasSelectedApproach}}{{selectedApproachLabel}}{{else}}Not selected{{/if}}</dd></div>
             {{#if npcControllerName}}<div><dt>NPC Controller</dt><dd>{{npcControllerName}}</dd></div>{{/if}}
           </dl>
           {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
 
           {{#if hasSelectedApproach}}
-            {{#if selectedApproachStatisticLabel}}<p class="arcflight-sheet__hint"><strong>Statistic:</strong> {{selectedApproachStatisticLabel}}{{#if dcLabel}} — {{dcLabel}}{{/if}}</p>{{/if}}
+            {{#if selectedApproachRollLabel}}<p class="arcflight-sheet__hint"><strong>Selected:</strong> {{selectedApproachLabel}}</p><p class="arcflight-sheet__hint"><strong>Roll:</strong> {{selectedApproachRollLabel}}</p>{{else}}{{#if selectedApproachStatisticLabel}}<p class="arcflight-sheet__hint"><strong>Roll:</strong> {{selectedApproachStatisticLabel}}{{#if dcLabel}} vs {{dcLabel}}{{/if}}</p>{{/if}}{{/if}}
             {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint"><strong>How This Helps:</strong> {{selectedApproachHelpText}}</p>{{/if}}
           {{else}}
             {{#if hasApproachOptions}}
