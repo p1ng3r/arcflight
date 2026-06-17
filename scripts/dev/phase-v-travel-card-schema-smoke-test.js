@@ -5,6 +5,7 @@ import {
   exportTravelEventRunnerSessionToJson,
   importTravelEventRunnerSessionFromJson,
   prepareTravelEventRunnerState,
+  prepareTravelPlayerMissionBoardState,
   prepareTravelSceneOverlayState,
   setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach
@@ -99,8 +100,9 @@ const editedDraft = applyTravelEventBuilderRoundFormDataToDraft(legacyEvent, {
       navigator: {
         problem: "Edited station card problem survives the full authoring pipeline.",
         skillApproaches: [
-          { skill: "survival", label: "Hold the Original Course", helpText: "Use terrain signs, vessel motion, and pressure changes to find a safer lane through the hazard." },
-          { skill: "society", label: "Recall Past Crossings", helpText: "Use old routes, port records, and crew reports to identify a proven way around the problem." }
+          { skill: "survival", label: "Hold the Original Course", helpText: "Use terrain signs, vessel motion, and pressure changes to find a safer lane through the hazard.", boardResultFeedback: { criticalSuccess: "Board survival crit.", success: "Board survival success.", failure: "Board survival failure.", criticalFailure: "Board survival crit fail." }, gmNarrationFeedback: { criticalSuccess: "GM survival crit.", success: "GM survival success.", failure: "GM survival failure.", criticalFailure: "GM survival crit fail." }, gmOnlyConsequence: "Hidden survival consequence." },
+          { skill: "society", label: "Recall Past Crossings", helpText: "Use old routes, port records, and crew reports to identify a proven way around the problem.", boardResultFeedback: { criticalSuccess: "Board society crit.", success: "Board society success.", failure: "Board society failure.", criticalFailure: "Board society crit fail." }, gmNarrationFeedback: { criticalSuccess: "GM society crit.", success: "GM society success.", failure: "GM society failure.", criticalFailure: "GM society crit fail." }, gmOnlyConsequence: "Hidden society consequence." },
+          { skill: "arcana", label: "Tune the Harmonic Wake", helpText: "You tune the Arkengine harmonic wake until the false current becomes visible in the aether.", boardResultFeedback: { criticalSuccess: "Board arcana crit.", success: "Board arcana success.", failure: "Board arcana failure.", criticalFailure: "Board arcana crit fail." }, gmNarrationFeedback: { criticalSuccess: "GM arcana crit.", success: "GM arcana success.", failure: "GM arcana failure.", criticalFailure: "GM arcana crit fail." }, gmOnlyConsequence: "Hidden arcana consequence." }
         ],
         rollFeedback: {
           criticalSuccess: "Edited critical success.",
@@ -114,6 +116,7 @@ const editedDraft = applyTravelEventBuilderRoundFormDataToDraft(legacyEvent, {
 }, { now: "2026-06-15T00:00:00.000Z" });
 const editedCard = editedDraft.rounds[0].stationCards[0];
 assert(editedCard.problem === "Edited station card problem survives the full authoring pipeline.", "station card problem survives round form application");
+assert(editedCard.skillApproaches.length === 3, "station card supports three structured approaches");
 assert(editedCard.skillApproaches[1].label === "Recall Past Crossings", "station card skill approaches survive round form application");
 assert(editedCard.skillApproaches[1].label !== "Society" && editedCard.skillApproaches[1].label.toLowerCase() !== editedCard.skillApproaches[1].skill, "station card approach label is a plan instead of a raw skill name");
 assert(editedCard.rollFeedback.failure === "Edited failure.", "station card roll feedback survives round form application");
@@ -123,7 +126,8 @@ const imported = importTravelEventDraftFromJson(exported.json, { now: "2026-06-1
 assert(imported.ok, `edited draft imports: ${(imported.errors ?? []).join(", ")}`);
 const importedCard = imported.draft.rounds[0].stationCards[0];
 assert(importedCard.problem === editedCard.problem, "edited problem survives export/import");
-assert(importedCard.skillApproaches[0].helpText === "Use terrain signs, vessel motion, and pressure changes to find a safer lane through the hazard.", "edited skill approach survives export/import");
+assert(importedCard.skillApproaches[0].helpText === "Use terrain signs, vessel motion, and pressure changes to find a safer lane through the hazard.", "edited skill approach helpText survives export/import");
+assert(importedCard.skillApproaches[1].label === "Recall Past Crossings" && importedCard.skillApproaches[1].gmOnlyConsequence === "Hidden society consequence.", "edited skill approach label and hidden consequence survive export/import");
 assert(importedCard.rollFeedback.criticalFailure === "Edited critical failure.", "edited roll feedback survives export/import");
 const finalized = finalizeTravelEventDraft(imported.draft, { now: "2026-06-15T00:00:00.000Z" });
 assert(finalized.ok, `edited draft finalizes: ${(finalized.errors ?? []).join(", ")}`);
@@ -135,7 +139,7 @@ assert(editedRunner.ok, `runner session starts from edited event: ${(editedRunne
 assert(editedRunner.session.event.rounds[0].stationCards[0].problem === editedCard.problem, "runner session exposes edited station cards");
 const runnerState = prepareTravelEventRunnerState(editedRunner.session);
 const stationRow = runnerState.stations.find((row) => row.stationKey === "navigator");
-assert(stationRow.skillApproaches.length === 2, "runner station row exposes both station-card approaches");
+assert(stationRow.skillApproaches.length === 3, "runner station row exposes all three station-card approaches");
 assert(stationRow.skillApproaches.some((approach) => approach.skill === "survival"), "runner station row exposes survival approach");
 assert(stationRow.skillApproaches.some((approach) => approach.skill === "society"), "runner station row exposes society approach");
 const selectedSociety = setTravelEventRunnerStationSkillApproach(editedRunner.session, 0, "navigator", "society", { now: "2026-06-15T00:00:00.000Z" });
@@ -155,6 +159,11 @@ assert(sessionImport.session.roundResults[0].selectedStationSkills.navigator ===
 const importedRunnerCard = sessionImport.session.event.rounds[0].stationCards[0];
 assert(importedRunnerCard.skillApproaches[1].label === "Recall Past Crossings", "selected approach label survives runner session export/import");
 assert(importedRunnerCard.skillApproaches[1].helpText === selectedRow.selectedApproach.helpText, "selected approach How This Helps text survives runner session export/import");
+const playerBoardState = prepareTravelPlayerMissionBoardState(selectedSociety.session);
+const playerNavigator = playerBoardState.stations.find((row) => row.stationKey === "navigator");
+assert(playerNavigator.selectedApproachLabel === "Recall Past Crossings", "player mission board state includes selected approach label");
+assert(playerNavigator.selectedApproachHelpText === selectedRow.selectedApproach.helpText, "player mission board state includes selected approach How This Helps text");
+assert(JSON.stringify(playerNavigator).includes("Hidden society consequence.") === false, "player mission board state does not expose hidden consequence text");
 
 
 
@@ -231,6 +240,7 @@ assert(feedbackState.roundSummaryCard.hasResolvedStations, "round summary card a
 assert(feedbackState.roundSummaryCard.resolvedStationCount === 2, "round summary includes both resolved stations");
 assert(feedbackState.roundSummaryCard.unresolvedStationCount === 1, "round summary counts unresolved stations");
 assert(feedbackState.roundSummaryCard.successCount === 1 && feedbackState.roundSummaryCard.failureCount === 1, "round summary counts success-side and failure-side results");
+assert(feedbackState.roundSummaryCard.roundScore === 0 && feedbackState.roundSummaryCard.roundOutcomeKey === "narrowRoundSuccess", "weighted round scoring treats 0 as narrow success");
 assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Naria at Navigator used Recall Past Crossings and scored Failure")), "round summary lines include actor, station, result, and selected navigator approach");
 assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Bramble at Engineer used Tune the Harmonic and scored Success")), "round summary lines include actor, station, result, and selected engineer approach");
 assert(feedbackState.roundSummaryCard.summaryText.includes("Naria") && feedbackState.roundSummaryCard.summaryText.includes("Bramble"), "round summary prose includes both actor names");

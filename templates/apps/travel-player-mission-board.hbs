@@ -32,7 +32,7 @@
           {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
 
           {{#if hasSelectedApproach}}
-            {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint">{{selectedApproachHelpText}}</p>{{/if}}
+            {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint"><strong>How This Helps:</strong> {{selectedApproachHelpText}}</p>{{/if}}
           {{else}}
             {{#if hasApproachOptions}}
               <label class="arcflight-travel-player-mission-board__control">

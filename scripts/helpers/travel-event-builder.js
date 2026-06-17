@@ -435,6 +435,12 @@ function fallbackSkillApproachCopy(skill) {
   };
 }
 
+function normalizeDegreeTextMap(value = {}, fallback = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const fallbackSource = isPlainObject(fallback) ? fallback : {};
+  return Object.fromEntries(ROLL_FEEDBACK_KEYS.map((key) => [key, typeof source[key] === "string" ? source[key] : (typeof fallbackSource[key] === "string" ? fallbackSource[key] : "")]));
+}
+
 function normalizeSkillApproaches(card = {}, prompt = {}) {
   const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
   const approaches = explicit
@@ -442,7 +448,11 @@ function normalizeSkillApproaches(card = {}, prompt = {}) {
     .map((entry) => ({
       skill: typeof entry.skill === "string" ? entry.skill : "",
       label: typeof entry.label === "string" ? entry.label : (typeof entry.skill === "string" ? entry.skill : ""),
-      helpText: typeof entry.helpText === "string" ? entry.helpText : ""
+      helpText: typeof entry.helpText === "string" ? entry.helpText : "",
+      dc: Number.isFinite(Number(entry.dc)) ? Number(entry.dc) : null,
+      boardResultFeedback: normalizeDegreeTextMap(entry.boardResultFeedback, entry.rollFeedback),
+      gmNarrationFeedback: normalizeDegreeTextMap(entry.gmNarrationFeedback, entry.boardResultFeedback ?? entry.rollFeedback),
+      gmOnlyConsequence: typeof entry.gmOnlyConsequence === "string" ? entry.gmOnlyConsequence : ""
     }))
     .filter((entry) => entry.skill || entry.label || entry.helpText);
   if (approaches.length > 0) return approaches;
@@ -504,12 +514,18 @@ function createStationCardEditorEntry(stationKey, existingCard = {}, cardFormDat
   const baseCard = normalizeStationCard(stationKey, existingCard, {});
   const source = isPlainObject(cardFormData) ? cardFormData : {};
   const skillApproachForms = Array.isArray(source.skillApproaches) ? source.skillApproaches : [];
-  const nextApproaches = baseCard.skillApproaches.map((approach, index) => {
+  const approachCount = Math.max(baseCard.skillApproaches.length, skillApproachForms.length);
+  const nextApproaches = Array.from({ length: approachCount }, (_, index) => {
+    const approach = baseCard.skillApproaches[index] ?? {};
     const approachForm = isPlainObject(skillApproachForms[index]) ? skillApproachForms[index] : {};
     return {
       skill: Object.hasOwn(approachForm, "skill") ? coerceFormString(approachForm.skill, approach.skill ?? "") : approach.skill,
       label: Object.hasOwn(approachForm, "label") ? coerceFormString(approachForm.label, approach.label ?? "") : approach.label,
-      helpText: Object.hasOwn(approachForm, "helpText") ? coerceFormString(approachForm.helpText, approach.helpText ?? "") : approach.helpText
+      helpText: Object.hasOwn(approachForm, "helpText") ? coerceFormString(approachForm.helpText, approach.helpText ?? "") : approach.helpText,
+      dc: Object.hasOwn(approachForm, "dc") ? normalizeBaseDC(approachForm.dc) : approach.dc,
+      boardResultFeedback: normalizeDegreeTextMap(approachForm.boardResultFeedback, approach.boardResultFeedback),
+      gmNarrationFeedback: normalizeDegreeTextMap(approachForm.gmNarrationFeedback, approach.gmNarrationFeedback),
+      gmOnlyConsequence: Object.hasOwn(approachForm, "gmOnlyConsequence") ? coerceFormString(approachForm.gmOnlyConsequence, approach.gmOnlyConsequence ?? "") : (approach.gmOnlyConsequence ?? "")
     };
   });
   if (nextApproaches.length === 0) nextApproaches.push({ skill: "", label: "Approach", helpText: "" });
@@ -1818,7 +1834,7 @@ export function analyzeTravelEventBuilderQuality(draft, options = {}) {
         const helpText = trimmedText(approach?.helpText);
         if (!label) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing an Approach / Plan label.`, `${approachPath}.label`);
         else if (skill && label.toLowerCase() === skill.toLowerCase()) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} label should be a plan, not just the skill name.`, `${approachPath}.label`);
-        if (!helpText) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing How This Helps text.`, `${approachPath}.helpText`);
+        if (!helpText) addQualityIssue(warnings, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing structured How This Helps text and should be upgraded.`, `${approachPath}.helpText`);
         else {
           if (countWords(helpText) < 8) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} How This Helps text is short.`, `${approachPath}.helpText`);
           const duplicateIndex = seenHelpText.get(helpText.toLowerCase());
@@ -1833,6 +1849,13 @@ export function analyzeTravelEventBuilderQuality(draft, options = {}) {
       for (const key of ROLL_FEEDBACK_KEYS) {
         if (trimmedText(feedback[key]).length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} station card is missing rollFeedback.${key}.`, `${cardPath}.rollFeedback.${key}`);
       }
+      approaches.forEach((approach, approachIndex) => {
+        const approachPath = `${cardPath}.skillApproaches.${approachIndex}`;
+        for (const key of ROLL_FEEDBACK_KEYS) {
+          if (trimmedText(approach?.boardResultFeedback?.[key]).length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing boardResultFeedback.${key}.`, `${approachPath}.boardResultFeedback.${key}`);
+          if (trimmedText(approach?.gmNarrationFeedback?.[key]).length === 0) addQualityIssue(suggestions, "rounds", `Round ${round.round} ${labelForStation(stationKey)} approach ${approachIndex + 1} is missing gmNarrationFeedback.${key}.`, `${approachPath}.gmNarrationFeedback.${key}`);
+        }
+      });
     }
 
     if (!isPlainObject(round.outcomeBranches)) addQualityIssue(warnings, "rounds", `Round ${round.round} outcomeBranches is missing or malformed.`, `${roundPath}.outcomeBranches`);

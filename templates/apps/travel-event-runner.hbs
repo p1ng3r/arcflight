@@ -147,6 +147,7 @@
                   </label>
                   <p><strong>Selected Approach:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}</p>
                   {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
+                  {{#if qualityWarnings.length}}<p class="arcflight-travel-builder__warning"><strong>Quality Warning:</strong> {{#each qualityWarnings}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
                 </div>
               {{/if}}
 
@@ -167,6 +168,7 @@
           <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
             <h2>GM Round Summary</h2>
             <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
+            <p><strong>{{state.roundSummaryCard.roundOutcomeLabel}}</strong> (weighted score {{state.roundSummaryCard.roundScore}})</p>
             <p>{{state.roundSummaryCard.summaryText}}</p>
             <details>
               <summary>Summary details</summary>
