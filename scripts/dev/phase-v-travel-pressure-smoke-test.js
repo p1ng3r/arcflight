@@ -147,6 +147,9 @@ const normalizedRunner = normalizeTravelEventRunnerSession({
 });
 assert(normalizedRunner.session.pressure.strain === 4 && normalizedRunner.session.pressure.lifeveil === 2 && normalizedRunner.session.pressure.morale === 1, "normalized runner sessions preserve pressure");
 assert(normalizedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "normalized runner sessions preserve roundPhase");
+assert(normalizedRunner.session.event.rounds[0].primaryPressure === "strain", "normalized runner round preserves primaryPressure");
+assert(normalizedRunner.session.event.rounds[0].secondaryPressure === "morale", "normalized runner round preserves secondaryPressure");
+assert(normalizedRunner.session.event.rounds[0].progressTarget === 2, "normalized runner round preserves progressTarget");
 
 const exportedRunner = exportTravelEventRunnerSessionToJson(normalizedRunner.session, { now: "2026-06-17T00:00:00.000Z" });
 assert(exportedRunner.ok && exportedRunner.json.includes("\"pressure\"") && exportedRunner.json.includes("\"roundPhase\""), "exported runner sessions retain pressure and roundPhase");
@@ -157,5 +160,8 @@ assert(importedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRE
 const runnerState = prepareTravelEventRunnerState(importedRunner.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
 assert(runnerState.roundSegmentState?.phase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "runner state exposes roundSegmentState");
 assert(runnerState.roundSegmentState.pressure.strain === 4, "runner roundSegmentState uses active session pressure");
+assert(runnerState.roundSegmentState.primaryPressure === "strain", "runner state exposes primary pressure");
+assert(runnerState.roundSegmentState.secondaryPressure === "morale", "runner state exposes secondary pressure");
+assert(runnerState.roundSegmentState.progressTarget === 2, "runner state exposes progress target");
 
 console.log("Phase V travel pressure smoke test passed.");

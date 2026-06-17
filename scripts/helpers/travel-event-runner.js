@@ -3,7 +3,7 @@ import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATI
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
-import { createEmptyTravelPressureState, normalizeTravelPressureState } from "./travel-pressure.js";
+import { createEmptyTravelPressureState, normalizeTravelPressureState, normalizeTravelRoundPressureProfile } from "./travel-pressure.js";
 import { normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -241,10 +241,14 @@ function normalizeRoundDefinition(round, index) {
   const activeStationKeys = Array.isArray(round?.activeStations)
     ? round.activeStations.map(normalizeStationKey).filter((stationKey) => TRAVEL_FIVE_STATION_KEYS.includes(stationKey))
     : [];
+  const pressureProfile = normalizeTravelRoundPressureProfile(round);
   return {
     round: Number.isInteger(Number(round?.round)) ? Number(round.round) : index + 1,
     title: typeof round?.title === "string" ? round.title : `Round ${index + 1}`,
     openingVignette: typeof round?.openingVignette === "string" ? round.openingVignette : "",
+    primaryPressure: pressureProfile.primaryPressure,
+    secondaryPressure: pressureProfile.secondaryPressure,
+    progressTarget: pressureProfile.progressTarget,
     activeStations: Array.from(new Set(activeStationKeys)),
     stationPrompts: Object.fromEntries(Array.from(new Set(activeStationKeys)).map((stationKey) => [stationKey, cloneData(getPromptFromRound(round, stationKey))])),
     stationCards: Array.from(new Set(activeStationKeys)).map((stationKey) => {
