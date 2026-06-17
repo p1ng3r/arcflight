@@ -3,6 +3,8 @@ import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATI
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
+import { createEmptyTravelPressureState, normalizeTravelPressureState } from "./travel-pressure.js";
+import { normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -767,6 +769,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     status: "active",
     event: normalizedEvent,
     currentRoundIndex: 0,
+    pressure: createEmptyTravelPressureState(),
+    roundPhase: normalizeTravelRunnerRoundPhase(),
     roundResults: createRoundResults(normalizedEvent),
     startedAt: timestamp,
     updatedAt: timestamp,
@@ -803,6 +807,8 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     status: ["active", "completed"].includes(session.status) ? session.status : "active",
     event,
     currentRoundIndex,
+    pressure: normalizeTravelPressureState(session.pressure ?? session.travelPressure),
+    roundPhase: normalizeTravelRunnerRoundPhase(session.roundPhase ?? session.currentRoundPhase),
     roundResults,
     startedAt: typeof session.startedAt === "string" ? session.startedAt : nowIso(options),
     updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowIso(options),
@@ -1245,6 +1251,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     currentRoundNumber: currentRound ? activeSession.currentRoundIndex + 1 : 0,
     currentRoundTitle: currentRound?.title ?? "",
     currentRoundOpeningVignette: currentRound?.openingVignette ?? "",
+    roundSegmentState: activeSession ? prepareTravelRoundSegmentState(activeSession) : prepareTravelRoundSegmentState(null),
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
     stations,
     roundSummaryCard,
