@@ -10,6 +10,7 @@ import {
   setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach
 } from "../helpers/travel-event-runner.js";
+import { validateTravelEventDefinition } from "../helpers/travel-events.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -128,13 +129,104 @@ const fallbackFailure = setTravelEventRunnerStationResult(selectedFallbackApproa
 const fallbackState = prepareTravelEventRunnerState(fallbackFailure.session);
 const fallbackRow = fallbackState.stations.find((row) => row.stationKey === "navigator");
 assert(fallbackRow.resultFeedback === "Survival board failure.", "approach boardResultFeedback takes precedence over visibleResultFeedback");
-const noApproachFeedbackEvent = JSON.parse(JSON.stringify(schemaEvent));
-delete noApproachFeedbackEvent.rounds[0].stationCards[0].approaches[1].boardResultFeedback;
-const noApproachRunner = createTravelEventRunnerSession(noApproachFeedbackEvent, { ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" }, now: "2026-06-15T00:00:00.000Z" });
-const noApproachSelected = setTravelEventRunnerStationSkillApproach(noApproachRunner.session, 0, "navigator", "survival", { now: "2026-06-15T00:00:00.000Z" });
-const noApproachFailure = setTravelEventRunnerStationResult(noApproachSelected.session, 0, "navigator", "failure", { now: "2026-06-15T00:00:00.000Z" });
-const noApproachRow = prepareTravelEventRunnerState(noApproachFailure.session).stations.find((row) => row.stationKey === "navigator");
-assert(noApproachRow.resultFeedback === "Visible station failure.", "visibleResultFeedback works as station-level fallback before rollFeedback");
+
+function validationMessages(event) {
+  const validation = validateTravelEventDefinition(event);
+  return [...validation.errors, ...validation.warnings];
+}
+
+function assertValidTravelEvent(event, message) {
+  const validation = validateTravelEventDefinition(event);
+  assert(validation.ok, `${message}: ${(validation.errors ?? []).join(" | ")}`);
+}
+
+function assertValidationMessage(event, expectedText, message) {
+  const messages = validationMessages(event);
+  assert(messages.some((entry) => entry.includes(expectedText)), `${message}: expected ${expectedText}; got ${(messages ?? []).join(" | ")}`);
+}
+
+function structuredValidationEvent() {
+  const event = JSON.parse(JSON.stringify(schemaEvent));
+  delete event.rounds[0].stationCards[0].approaches;
+  event.rounds[0].stationCards[0].skillApproaches = JSON.parse(JSON.stringify(schemaEvent.rounds[0].stationCards[0].approaches));
+  event.rounds[0].stationCards[0].rollFeedback = JSON.parse(JSON.stringify(schemaEvent.rounds[0].stationCards[0].visibleResultFeedback));
+  return event;
+}
+
+assertValidTravelEvent(structuredValidationEvent(), "valid structured stationCards pass schema validation");
+assertValidTravelEvent(await import("../../data/travel-events/core-travel-events.js").then(({ getCoreTravelEvent }) => getCoreTravelEvent("travel-runner-qa-crossing")), "canonical Travel Runner QA Crossing fixture passes schema validation");
+
+{
+  const event = structuredValidationEvent();
+  for (const approach of event.rounds[0].stationCards[0].skillApproaches) {
+    delete approach.boardResultFeedback;
+    delete approach.gmNarrationFeedback;
+  }
+  assertValidationMessage(event, "skillApproaches[0].boardResultFeedback must be an object", "structured stationCards with all boardResultFeedback maps missing are reported");
+  assertValidationMessage(event, "skillApproaches[0].gmNarrationFeedback must be an object", "structured stationCards with all gmNarrationFeedback maps missing are reported");
+}
+
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].label;
+  assertValidationMessage(event, "skillApproaches[0].label must be a non-empty string", "missing approach label is reported");
+}
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].helpText;
+  assertValidationMessage(event, "skillApproaches[0].helpText must be a non-empty string", "missing approach helpText is reported");
+}
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].boardResultFeedback;
+  assertValidationMessage(event, "skillApproaches[0].boardResultFeedback must be an object", "missing boardResultFeedback is reported");
+}
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].gmNarrationFeedback;
+  assertValidationMessage(event, "skillApproaches[0].gmNarrationFeedback must be an object", "missing gmNarrationFeedback is reported");
+}
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].boardResultFeedback.failure;
+  assertValidationMessage(event, "skillApproaches[0].boardResultFeedback.failure must be a non-empty string", "missing boardResultFeedback tier is reported");
+}
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].gmNarrationFeedback.criticalFailure;
+  assertValidationMessage(event, "skillApproaches[0].gmNarrationFeedback.criticalFailure must be a non-empty string", "missing gmNarrationFeedback tier is reported");
+}
+{
+  const event = structuredValidationEvent();
+  delete event.rounds[0].stationCards[0].skillApproaches[0].boardResultFeedback;
+  event.rounds[0].stationCards[0].skillApproaches[0].gmOnlyConsequence = "Hidden consequence still needs player-facing text.";
+  assertValidationMessage(event, "skillApproaches[0].boardResultFeedback must be an object", "gmOnlyConsequence without player-facing board feedback is reported");
+}
+{
+  const event = structuredValidationEvent();
+  event.rounds[0].stationCards.push(JSON.parse(JSON.stringify(event.rounds[0].stationCards[0])));
+  assertValidationMessage(event, "duplicate stationCards for navigator", "duplicate stationCards are reported");
+}
+{
+  const event = structuredValidationEvent();
+  event.rounds[0].activeStations.push("engineer");
+  assertValidationMessage(event, "active station engineer but no matching stationCard", "active station without stationCard is reported");
+}
+{
+  const event = structuredValidationEvent();
+  event.rounds[0].stationCards[0].stationKey = "engineer";
+  assertValidationMessage(event, "stationCards engineer is not listed in activeStations", "stationCard for inactive station is reported");
+}
+{
+  const event = structuredValidationEvent();
+  event.rounds[0].stationCards[0].skillApproaches[1].skill = event.rounds[0].stationCards[0].skillApproaches[0].skill;
+  assertValidationMessage(event, "duplicate skillApproaches for skill", "duplicate skillApproaches by skill are reported");
+}
+{
+  const event = structuredValidationEvent();
+  event.category = "not-canonical";
+  assertValidationMessage(event, "not a canonical travel event category", "invalid category is reported");
+}
 
 const shortSkillActor = {
   id: "shorty",
@@ -327,7 +419,7 @@ twoStationEvent.rounds[0].stationCards = [
     stationName: "Navigator",
     problem: "The void-current is pulling the ship off its charted path.",
     skillApproaches: [
-      { skill: "society", label: "Recall Past Crossings", helpText: "Remember route marks, port records, warning songs, and reports from crews who survived this passage." }
+      { skill: "society", label: "Recall Past Crossings", helpText: "Remember route marks, port records, warning songs, and reports from crews who survived this passage.", boardResultFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." }, gmNarrationFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." } }
     ],
     rollFeedback: { ...feedback, failure: "Naria remembers the warning, but not the safe bearing." }
   },
@@ -336,7 +428,7 @@ twoStationEvent.rounds[0].stationCards = [
     stationName: "Engineer",
     problem: "The arkengine is humming in sympathy with the false current.",
     skillApproaches: [
-      { skill: "arcana", label: "Tune the Harmonic", helpText: "Adjust the arkengine resonance to reveal and counter the current dragging the ship off course." }
+      { skill: "arcana", label: "Tune the Harmonic", helpText: "Adjust the arkengine resonance to reveal and counter the current dragging the ship off course.", boardResultFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." }, gmNarrationFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." } }
     ],
     rollFeedback: { ...feedback, success: "Bramble syncs the arkengine cleanly against the song's vibration." }
   },
@@ -345,7 +437,7 @@ twoStationEvent.rounds[0].stationCards = [
     stationName: "Watchmaster",
     problem: "False silhouettes pace the ship without choosing a side.",
     skillApproaches: [
-      { skill: "perception", label: "Track the True Shadow", helpText: "Compare reflections and movement to separate real threats from tricks of the crossing." }
+      { skill: "perception", label: "Track the True Shadow", helpText: "Compare reflections and movement to separate real threats from tricks of the crossing.", boardResultFeedback: feedback, gmNarrationFeedback: feedback }
     ],
     rollFeedback: feedback
   }

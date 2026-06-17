@@ -64,7 +64,29 @@ function validateStrictAuthoringStationPrompt(prompt, roundNumber, errors) {
   }
 }
 
-function validateStationCard(card, roundNumber, errors) {
+function hasAnyResultFeedbackText(source) {
+  return source && typeof source === "object" && !Array.isArray(source) && Object.values(ARCFLIGHT_TRAVEL_RESULT_TIERS).some((degree) => typeof source[degree] === "string" && source[degree].trim().length > 0);
+}
+
+function validateResultFeedbackMap(source, path, errors) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    errors.push(`${path} must be an object.`);
+    return false;
+  }
+
+  let ok = true;
+  for (const degree of Object.values(ARCFLIGHT_TRAVEL_RESULT_TIERS)) {
+    if (typeof source[degree] !== "string" || source[degree].trim().length === 0) {
+      errors.push(`${path}.${degree} must be a non-empty string.`);
+      ok = false;
+    }
+  }
+
+  return ok;
+}
+
+function validateStationCard(card, roundNumber, errors, warnings, options = {}) {
+  const { requireStructuredApproachFeedback = false } = options;
   const stationLabel = `Round ${roundNumber ?? "?"} stationCards ${card?.stationKey ?? "<missing station>"}`;
   if (!card || typeof card !== "object" || Array.isArray(card)) {
     errors.push(`${stationLabel} must be an object.`);
@@ -72,11 +94,25 @@ function validateStationCard(card, roundNumber, errors) {
   }
   if (!isTravelStationKey(card.stationKey)) errors.push(`${stationLabel} has an invalid stationKey.`);
   if (typeof card.problem !== "string" || card.problem.trim().length === 0) errors.push(`${stationLabel} is missing problem.`);
-  if (!Array.isArray(card.skillApproaches)) errors.push(`${stationLabel} skillApproaches must be an array.`);
+  if (!Array.isArray(card.skillApproaches) || card.skillApproaches.length === 0) errors.push(`${stationLabel} skillApproaches must be a non-empty array.`);
   else {
     for (const [index, approach] of card.skillApproaches.entries()) {
-      if (!approach || typeof approach !== "object" || Array.isArray(approach)) errors.push(`${stationLabel} skillApproaches[${index}] must be an object.`);
-      else if (typeof approach.skill !== "string" || approach.skill.trim().length === 0) errors.push(`${stationLabel} skillApproaches[${index}].skill must be a non-empty string.`);
+      if (!approach || typeof approach !== "object" || Array.isArray(approach)) {
+        errors.push(`${stationLabel} skillApproaches[${index}] must be an object.`);
+        continue;
+      }
+
+      if (typeof approach.skill !== "string" || approach.skill.trim().length === 0) errors.push(`${stationLabel} skillApproaches[${index}].skill must be a non-empty string.`);
+      if (typeof approach.label !== "string" || approach.label.trim().length === 0) errors.push(`${stationLabel} skillApproaches[${index}].label must be a non-empty string.`);
+      if (typeof approach.helpText !== "string" || approach.helpText.trim().length === 0) errors.push(`${stationLabel} skillApproaches[${index}].helpText must be a non-empty string.`);
+      if (approach.gmOnlyConsequence != null && typeof approach.gmOnlyConsequence !== "string") errors.push(`${stationLabel} skillApproaches[${index}].gmOnlyConsequence must be a string when present.`);
+
+      if (requireStructuredApproachFeedback || hasAnyResultFeedbackText(approach.boardResultFeedback) || (typeof approach.gmOnlyConsequence === "string" && approach.gmOnlyConsequence.trim().length > 0)) {
+        validateResultFeedbackMap(approach.boardResultFeedback, `${stationLabel} skillApproaches[${index}].boardResultFeedback`, errors);
+      }
+      if (requireStructuredApproachFeedback || hasAnyResultFeedbackText(approach.gmNarrationFeedback) || (typeof approach.gmOnlyConsequence === "string" && approach.gmOnlyConsequence.trim().length > 0)) {
+        validateResultFeedbackMap(approach.gmNarrationFeedback, `${stationLabel} skillApproaches[${index}].gmNarrationFeedback`, errors);
+      }
     }
   }
   if (!card.rollFeedback || typeof card.rollFeedback !== "object" || Array.isArray(card.rollFeedback)) errors.push(`${stationLabel} is missing rollFeedback.`);
@@ -86,6 +122,7 @@ function validateStationCard(card, roundNumber, errors) {
     }
   }
   if (card.hooks != null && (typeof card.hooks !== "object" || Array.isArray(card.hooks))) errors.push(`${stationLabel} hooks must be an object when present.`);
+  if (containsFunctionValue(card.hooks)) errors.push(`${stationLabel} hooks must be data only and cannot contain functions.`);
 }
 
 function validateProposedEffectsDataOnly(source, label, errors) {
@@ -163,10 +200,10 @@ export function validateTravelEventDefinition(event, options = {}) {
     return { ok: false, errors: ["Travel event definition is missing or not an object."], warnings };
   }
 
-  if (!TRAVEL_EVENT_CATEGORIES.includes(event.category)) errors.push(`Unknown travel event category: ${event.category ?? "<missing>"}.`);
+  if (!TRAVEL_EVENT_CATEGORIES.includes(event.category)) errors.push(`category ${event.category ?? "<missing>"} is not a canonical travel event category (${TRAVEL_EVENT_CATEGORIES.join(", ")}).`);
   if (!Number.isInteger(event.roundCount) || event.roundCount <= 0) errors.push("roundCount must be a positive integer.");
   if (!Array.isArray(event.rounds)) errors.push("rounds must be an array.");
-  else if (event.rounds.length !== event.roundCount) errors.push(`rounds length (${event.rounds.length}) must equal roundCount (${event.roundCount}).`);
+  else if (event.rounds.length !== event.roundCount) errors.push(`roundCount mismatch: roundCount is ${event.roundCount}, but rounds contains ${event.rounds.length} entries.`);
 
   if (!Array.isArray(event.tags)) errors.push("tags must be an array of strings.");
   else if (!event.tags.every((tag) => typeof tag === "string")) errors.push("Every tag must be a string.");
@@ -174,12 +211,12 @@ export function validateTravelEventDefinition(event, options = {}) {
   if (!Array.isArray(event.activeResources)) errors.push("activeResources must be an array.");
   else {
     const unknownResources = event.activeResources.filter((resource) => !TRAVEL_RESOURCE_KEYS.includes(resource));
-    if (unknownResources.length > 0) errors.push(`Unknown activeResources: ${unknownResources.join(", ")}.`);
+    if (unknownResources.length > 0) errors.push(`activeResources contains unknown travel resource keys: ${unknownResources.join(", ")} (canonical: ${TRAVEL_RESOURCE_KEYS.join(", ")}).`);
   }
 
   if (Array.isArray(event.travelStations)) {
     const unknownTravelStations = event.travelStations.filter((stationKey) => !isTravelStationKey(stationKey));
-    if (unknownTravelStations.length > 0) errors.push(`travelStations contains non-Travel Five keys: ${unknownTravelStations.join(", ")}.`);
+    if (unknownTravelStations.length > 0) errors.push(`travelStations contains unknown Travel Five station keys: ${unknownTravelStations.join(", ")} (canonical: ${TRAVEL_FIVE_STATION_KEYS.join(", ")}).`);
   } else {
     warnings.push("travelStations should list the Travel Five used by this event.");
   }
@@ -189,14 +226,38 @@ export function validateTravelEventDefinition(event, options = {}) {
     if (!Array.isArray(round.activeStations)) errors.push(`Round ${round.round ?? "?"} activeStations must be an array.`);
     else {
       const invalidStations = round.activeStations.map((station) => getActiveStationKey(station)).filter((stationKey) => !isTravelStationKey(stationKey));
-      if (invalidStations.length > 0) errors.push(`Round ${round.round} contains non-Travel Five station keys: ${invalidStations.join(", ")}.`);
+      if (invalidStations.length > 0) errors.push(`Round ${round.round ?? "?"} activeStations contains unknown Travel Five station keys: ${invalidStations.join(", ")} (canonical: ${TRAVEL_FIVE_STATION_KEYS.join(", ")}).`);
       if (strictAuthoring) {
         for (const activeStation of round.activeStations) validateStrictAuthoringStationPrompt(getStrictAuthoringPrompt(round, activeStation), round.round, errors);
       }
     }
     if (round.stationCards != null) {
       if (!Array.isArray(round.stationCards)) errors.push(`Round ${round.round ?? "?"} stationCards must be an array when present.`);
-      else for (const card of round.stationCards) validateStationCard(card, round.round, errors);
+      else {
+        const activeStationKeys = Array.isArray(round.activeStations) ? round.activeStations.map((station) => getActiveStationKey(station)).filter((stationKey) => isTravelStationKey(stationKey)) : [];
+        const structuredStationCards = round.stationCards.some((card) => Array.isArray(card?.skillApproaches));
+        const seenCards = new Set();
+        for (const card of round.stationCards) {
+          validateStationCard(card, round.round, errors, warnings, { requireStructuredApproachFeedback: structuredStationCards });
+          if (!card || typeof card !== "object" || Array.isArray(card)) continue;
+          if (seenCards.has(card.stationKey)) errors.push(`Round ${round.round ?? "?"} has duplicate stationCards for ${card.stationKey}.`);
+          seenCards.add(card.stationKey);
+          if (structuredStationCards && isTravelStationKey(card.stationKey) && !activeStationKeys.includes(card.stationKey)) errors.push(`Round ${round.round ?? "?"} stationCards ${card.stationKey} is not listed in activeStations.`);
+          const seenSkills = new Set();
+          for (const [index, approach] of (Array.isArray(card.skillApproaches) ? card.skillApproaches : []).entries()) {
+            const skill = typeof approach?.skill === "string" ? approach.skill.trim() : "";
+            if (!skill) continue;
+            if (seenSkills.has(skill)) warnings.push(`Round ${round.round ?? "?"} stationCards ${card.stationKey ?? "<missing station>"} has duplicate skillApproaches for skill ${skill} at index ${index}.`);
+            seenSkills.add(skill);
+          }
+        }
+        if (structuredStationCards) {
+          const cardStationKeys = round.stationCards.map((card) => card?.stationKey).filter((stationKey) => isTravelStationKey(stationKey));
+          for (const stationKey of activeStationKeys) {
+            if (!cardStationKeys.includes(stationKey)) errors.push(`Round ${round.round ?? "?"} has active station ${stationKey} but no matching stationCard.`);
+          }
+        }
+      }
     }
     const branchKeys = Object.keys(round.outcomeBranches ?? {});
     for (const outcome of Object.values(ARCFLIGHT_TRAVEL_ROUND_OUTCOMES)) {
@@ -210,7 +271,7 @@ export function validateTravelEventDefinition(event, options = {}) {
     const hasCanonicalFinalOutcomes = CANONICAL_TRAVEL_EVENT_OUTCOME_KEYS.every((outcome) => Boolean(event.finalOutcomes[outcome]));
     const expectedFinalOutcomes = hasCanonicalFinalOutcomes ? CANONICAL_TRAVEL_EVENT_OUTCOME_KEYS : TRAVEL_EVENT_OUTCOME_KEYS;
     for (const outcome of expectedFinalOutcomes) {
-      if (!event.finalOutcomes[outcome]) errors.push(`Missing final outcome ${outcome}.`);
+      if (!event.finalOutcomes[outcome]) errors.push(`finalOutcomes is missing required outcome key ${outcome}.`);
       validateProposedEffectsDataOnly(event.finalOutcomes[outcome], `Final outcome ${outcome}`, errors);
     }
   }
