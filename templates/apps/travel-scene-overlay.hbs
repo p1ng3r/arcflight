@@ -3,6 +3,7 @@
     <p class="arcflight-sheet__hint">{{hardBoundaryHint}}</p>
     <div class="arcflight-travel-scene-overlay__actions">
       <button type="button" data-arcflight-refresh-travel-scene-overlay>Refresh Overlay</button>
+      {{#if state.hasSession}}<button type="button" data-arcflight-overlay-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
       <button type="button" data-arcflight-overlay-socket-test>Socket Test</button>
       {{#if state.hasSession}}<button type="button" data-arcflight-overlay-send-all-player-cards>Send All Player Cards</button>{{/if}}
     </div>

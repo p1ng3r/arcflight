@@ -5,6 +5,7 @@
       <div class="arcflight-travel-runner-mvp__actions">
         <button type="button" data-arcflight-runner-toggle-compact>{{#if state.compactRunner}}Expand Runner{{else}}Compact Runner{{/if}}</button>
         <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
+        {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
       </div>
     </div>
     {{#unless state.compactRunner}}<p>{{hardBoundaryHint}}</p>{{/unless}}

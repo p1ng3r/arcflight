@@ -1,0 +1,56 @@
+<section class="arcflight-travel-player-mission-board__shell">
+  <header class="arcflight-travel-player-mission-board__header">
+    <div>
+      <p class="arcflight-travel-player-mission-board__eyebrow">{{state.roundLabel}}{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</p>
+      <h1>{{state.eventName}}</h1>
+    </div>
+  </header>
+
+  <section class="arcflight-travel-player-mission-board__vignette" aria-label="Current round vignette">
+    <h2>Current Mission</h2>
+    {{#if state.vignette}}<p>{{state.vignette}}</p>{{else}}<p class="arcflight-sheet__hint">No round vignette is available.</p>{{/if}}
+  </section>
+
+  {{#if state.hasStations}}
+    <section class="arcflight-travel-player-mission-board__grid" aria-label="Active travel stations">
+      {{#each state.stations}}
+        <article class="arcflight-travel-player-mission-board__station">
+          <header class="arcflight-travel-player-mission-board__station-header">
+            <h2>{{stationName}}</h2>
+            <span class="arcflight-travel-player-mission-board__badge" title="{{rollDetailText}}">{{resultLabel}}</span>
+          </header>
+          <dl class="arcflight-travel-player-mission-board__facts">
+            <div><dt>Assigned</dt><dd>{{assignedActorName}}</dd></div>
+            <div><dt>DC</dt><dd>{{dcLabel}}</dd></div>
+            <div><dt>Approach</dt><dd>{{#if hasSelectedApproach}}{{selectedApproachLabel}}{{else}}Not selected{{/if}}</dd></div>
+          </dl>
+          {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
+
+          {{#if hasSelectedApproach}}
+            {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint">{{selectedApproachHelpText}}</p>{{/if}}
+          {{else}}
+            {{#if hasApproachOptions}}
+              <label class="arcflight-travel-player-mission-board__control">
+                <span>Choose approach</span>
+                <select data-arcflight-mission-board-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled{{/unless}}>
+                  {{#each approachOptions}}
+                    <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <button type="button" data-arcflight-mission-board-submit-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Submit Approach</button>
+            {{else}}
+              <p class="arcflight-sheet__hint">No approaches are available for this station.</p>
+            {{/if}}
+          {{/if}}
+
+          <button type="button" data-arcflight-mission-board-roll data-station-key="{{stationKey}}" {{#unless canRollStation}}disabled title="{{permissionReason}}"{{/unless}}>Roll Station</button>
+          {{#if rollDetailText}}<p class="arcflight-sheet__hint" title="{{rollDetailText}}">{{rollDetailText}}</p>{{/if}}
+          {{#if hasResultFeedback}}<p class="arcflight-travel-player-mission-board__feedback">{{resultFeedbackText}}</p>{{/if}}
+        </article>
+      {{/each}}
+    </section>
+  {{else}}
+    <p class="arcflight-sheet__hint">No active stations are available for this round.</p>
+  {{/if}}
+</section>

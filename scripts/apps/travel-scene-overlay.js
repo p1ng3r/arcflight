@@ -1,5 +1,5 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
-import { broadcastTravelPlayerStationCardToAllPlayers, openTravelPlayerStationCard, sendAllTravelPlayerStationCardsToPlayers, sendTravelPlayerStationCardSocketDiagnostic, sendTravelPlayerStationCardToPlayers } from "./travel-player-station-card.js";
+import { broadcastTravelPlayerStationCardToAllPlayers, openTravelPlayerStationCard, sendAllTravelPlayerStationCardsToPlayers, sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerStationCardSocketDiagnostic, sendTravelPlayerStationCardToPlayers } from "./travel-player-station-card.js";
 import {
   clearTravelEventRunnerStationAssignment,
   prepareTravelSceneOverlayState,
@@ -218,12 +218,13 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-socket-test], [data-arcflight-overlay-preview-player-card], [data-arcflight-overlay-send-player-card], [data-arcflight-overlay-broadcast-player-card], [data-arcflight-overlay-send-all-player-cards], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-send-mission-board], [data-arcflight-overlay-socket-test], [data-arcflight-overlay-preview-player-card], [data-arcflight-overlay-send-player-card], [data-arcflight-overlay-broadcast-player-card], [data-arcflight-overlay-send-all-player-cards], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     this.#captureScrollPosition();
 
     if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
+    if (target.hasAttribute("data-arcflight-overlay-send-mission-board")) return this.#sendPlayerMissionBoard();
     if (target.hasAttribute("data-arcflight-overlay-socket-test")) return this.#sendSocketDiagnostic();
     if (target.hasAttribute("data-arcflight-overlay-preview-player-card")) return this.#previewPlayerStationCard(target);
     if (target.hasAttribute("data-arcflight-overlay-send-player-card")) return this.#sendPlayerStationCard(target);
@@ -237,6 +238,13 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   async #previewPlayerStationCard(target) {
     const stationKey = target.dataset.stationKey ?? "";
     return openTravelPlayerStationCard({ session: this.session, stationKey, actor: this.actor });
+  }
+
+  async #sendPlayerMissionBoard() {
+    const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.actor, refresh: true });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
+    else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
+    return result;
   }
 
   async #sendSocketDiagnostic() {

@@ -1812,3 +1812,104 @@
     display: grid;
   }
 }
+
+.arcflight-travel-player-mission-board .window-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.arcflight-travel-player-mission-board__shell {
+  display: grid;
+  gap: 1rem;
+  min-height: 100%;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(160deg, rgba(13, 20, 34, 0.98), rgba(28, 42, 68, 0.96));
+}
+
+.arcflight-travel-player-mission-board__header,
+.arcflight-travel-player-mission-board__vignette,
+.arcflight-travel-player-mission-board__station {
+  border: 1px solid rgba(160, 200, 255, 0.22);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 1rem;
+}
+
+.arcflight-travel-player-mission-board__header h1,
+.arcflight-travel-player-mission-board__vignette h2,
+.arcflight-travel-player-mission-board__station h2,
+.arcflight-travel-player-mission-board__vignette p,
+.arcflight-travel-player-mission-board__prompt,
+.arcflight-travel-player-mission-board__feedback {
+  margin: 0;
+}
+
+.arcflight-travel-player-mission-board__eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-mission-board__grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.arcflight-travel-player-mission-board__station {
+  display: grid;
+  gap: 0.65rem;
+  border-left: 0.25rem solid rgba(130, 190, 255, 0.7);
+}
+
+.arcflight-travel-player-mission-board__station-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-player-mission-board__badge {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  background: rgba(0, 0, 0, 0.24);
+  font-weight: 800;
+}
+
+.arcflight-travel-player-mission-board__facts {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.arcflight-travel-player-mission-board__facts dt,
+.arcflight-travel-player-mission-board__control span {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.arcflight-travel-player-mission-board__facts dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.arcflight-travel-player-mission-board__control {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.arcflight-travel-player-mission-board__feedback {
+  border-left: 0.2rem solid rgba(125, 220, 160, 0.58);
+  padding-left: 0.55rem;
+}

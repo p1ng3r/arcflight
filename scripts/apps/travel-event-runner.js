@@ -1,6 +1,7 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
+import { sendTravelPlayerMissionBoardToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
@@ -66,7 +67,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-undo-effect]",
   "[data-arcflight-runner-clear-assignment]",
   "[data-arcflight-runner-reset-assignment]",
-  "[data-arcflight-open-travel-scene-overlay]"
+  "[data-arcflight-open-travel-scene-overlay]",
+  "[data-arcflight-runner-send-mission-board]"
 ].join(", ");
 
 
@@ -422,6 +424,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
     if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
+    if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
+  }
+
+  async #sendPlayerMissionBoard() {
+    const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.#getSelectedShipActor(), refresh: true });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
+    else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
+    return result;
   }
 
   async #openTravelSceneOverlay() {

@@ -1,5 +1,5 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
-import { normalizeTravelEventRunnerSession, prepareTravelPlayerStationCardState } from "../helpers/travel-event-runner.js";
+import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, prepareTravelPlayerStationCardState } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -7,8 +7,12 @@ const activeTravelPlayerStationCards = new Map();
 const TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION = "openTravelPlayerStationCard";
 const TRAVEL_PLAYER_STATION_CARD_SOCKET_TEST_ACTION = "arcflightSocketDiagnostic";
 const TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION = "submitTravelPlayerStationApproach";
+const TRAVEL_PLAYER_MISSION_BOARD_SOCKET_ACTION = "openTravelPlayerMissionBoard";
+const TRAVEL_PLAYER_MISSION_BOARD_REFRESH_ACTION = "refreshTravelPlayerMissionBoard";
+const TRAVEL_PLAYER_STATION_ROLL_ACTION = "rollTravelPlayerStation";
 
 let travelPlayerStationApproachSubmitHandler = null;
+let travelPlayerStationRollHandler = null;
 
 function sanitizeText(value) {
   return typeof value === "string" ? value : "";
@@ -282,6 +286,21 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
     }
     return true;
   }
+  if (payload.action === TRAVEL_PLAYER_STATION_ROLL_ACTION) {
+    if (globalThis.game?.user?.isGM !== true) return true;
+    if (typeof travelPlayerStationRollHandler === "function") travelPlayerStationRollHandler(payload);
+    else console.warn("Arcflight | No Travel Player Station roll handler registered.", payload);
+    return true;
+  }
+  if (payload.action === TRAVEL_PLAYER_MISSION_BOARD_SOCKET_ACTION || payload.action === TRAVEL_PLAYER_MISSION_BOARD_REFRESH_ACTION) {
+    const userId = globalThis.game?.user?.id ?? "";
+    const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
+    if (!userId || !targetUserIds.includes(userId)) return true;
+    openTravelPlayerMissionBoard({ state: payload.state })
+      .then(() => ui.notifications?.info?.("Arcflight travel mission board updated."))
+      .catch((error) => console.error("Arcflight | Failed to open player mission board from socket.", error));
+    return true;
+  }
   if (payload.action !== TRAVEL_PLAYER_STATION_CARD_SOCKET_ACTION) return false;
   const userId = globalThis.game?.user?.id ?? "";
   const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
@@ -421,4 +440,213 @@ export async function openTravelPlayerStationCard(options = {}) {
   }
 
   return app;
+}
+
+const activeTravelPlayerMissionBoards = new Map();
+
+function sanitizeMissionBoardStation(station = {}) {
+  const source = station && typeof station === "object" && !Array.isArray(station) ? station : {};
+  return {
+    stationKey: sanitizeText(source.stationKey),
+    stationName: sanitizeText(source.stationName) || "Travel Station",
+    assignedActorName: sanitizeText(source.assignedActorName) || "Unassigned",
+    promptText: sanitizeText(source.promptText),
+    hasPromptText: sanitizeBoolean(source.hasPromptText),
+    approachOptions: sanitizeApproachOptions(source.approachOptions),
+    hasApproachOptions: sanitizeBoolean(source.hasApproachOptions) || sanitizeApproachOptions(source.approachOptions).length > 0,
+    hasSelectedApproach: sanitizeBoolean(source.hasSelectedApproach),
+    selectedApproachValue: sanitizeText(source.selectedApproachValue),
+    selectedApproachLabel: sanitizeText(source.selectedApproachLabel),
+    selectedApproachHelpText: sanitizeText(source.selectedApproachHelpText),
+    hasSelectedApproachHelpText: sanitizeBoolean(source.hasSelectedApproachHelpText),
+    dcLabel: sanitizeText(source.dcLabel),
+    resultLabel: sanitizeText(source.resultLabel) || "Unrecorded",
+    resultFeedbackText: sanitizeText(source.resultFeedbackText),
+    hasResultFeedback: sanitizeBoolean(source.hasResultFeedback),
+    hasResult: sanitizeBoolean(source.hasResult),
+    result: sanitizeText(source.result),
+    rollDetailText: sanitizeText(source.rollDetailText),
+    permittedUserIds: Array.isArray(source.permittedUserIds) ? source.permittedUserIds.filter((id) => typeof id === "string") : [],
+    canChooseApproach: sanitizeBoolean(source.canChooseApproach),
+    canRollStation: sanitizeBoolean(source.canRollStation),
+    permissionReason: sanitizeText(source.permissionReason) || "Not assigned to your actor."
+  };
+}
+
+function sanitizeTravelPlayerMissionBoardState(state = {}) {
+  const source = state && typeof state === "object" && !Array.isArray(state) ? state : {};
+  const userId = globalThis.game?.user?.id ?? "";
+  const stations = (Array.isArray(source.stations) ? source.stations : []).map((station) => {
+    const safe = sanitizeMissionBoardStation(station);
+    const allowed = Boolean(userId && safe.permittedUserIds.includes(userId));
+    return {
+      ...safe,
+      canChooseApproach: allowed && !safe.hasSelectedApproach && safe.hasApproachOptions,
+      canRollStation: allowed && safe.hasSelectedApproach && !safe.hasResult,
+      permissionReason: allowed ? (safe.hasSelectedApproach ? "Ready to roll." : "Choose an approach before rolling.") : safe.permissionReason
+    };
+  });
+  return {
+    hasSession: sanitizeBoolean(source.hasSession),
+    sessionKey: sanitizeText(source.sessionKey),
+    eventName: sanitizeText(source.eventName) || "Travel Mission",
+    roundLabel: sanitizeText(source.roundLabel),
+    roundTitle: sanitizeText(source.roundTitle),
+    currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1),
+    vignette: sanitizeText(source.vignette),
+    stations,
+    hasStations: stations.length > 0
+  };
+}
+
+function getPermittedUsersForStation(session, stationKey, options = {}) {
+  const actor = getActorByStationAssignment(session, stationKey, options);
+  if (!actor) return [];
+  const observerThreshold = getObserverThreshold();
+  return getActiveNonGmUsers().filter((user) => getOwnershipLevel(actor, user.id) >= observerThreshold);
+}
+
+export function prepareTravelPlayerMissionBoardStateForPlayers(session = null, options = {}) {
+  const base = prepareTravelPlayerMissionBoardState(session, options);
+  return sanitizeTravelPlayerMissionBoardState({
+    ...base,
+    stations: (base.stations ?? []).map((station) => {
+      const permittedUsers = getPermittedUsersForStation(session, station.stationKey, options);
+      return {
+        ...station,
+        permittedUserIds: permittedUsers.map((user) => user.id),
+        permissionReason: permittedUsers.length ? "Waiting for assigned player." : "No active player observer is assigned."
+      };
+    })
+  });
+}
+
+function emitTravelPlayerMissionBoard(state, targetUserIds, action = TRAVEL_PLAYER_MISSION_BOARD_SOCKET_ACTION) {
+  const socket = globalThis.game?.socket;
+  if (!socket || typeof socket.emit !== "function") return { ok: false, errors: ["Foundry socket is not available."], targetUserIds, state };
+  const payload = { action, state: sanitizeTravelPlayerMissionBoardState(state), targetUserIds: Array.isArray(targetUserIds) ? targetUserIds.filter(Boolean) : [] };
+  socket.emit("module.arcflight", payload);
+  return { ok: true, errors: [], payload, targetUserIds: payload.targetUserIds, state: payload.state };
+}
+
+export function sendTravelPlayerMissionBoardToPlayers(session, options = {}) {
+  const users = getActiveNonGmUsers();
+  const targetUserIds = users.map((user) => user.id);
+  if (targetUserIds.length === 0) return { ok: false, errors: ["No active non-GM users found."], sentRecipients: 0, users, targetUserIds };
+  const state = prepareTravelPlayerMissionBoardStateForPlayers(session, options);
+  const emitted = emitTravelPlayerMissionBoard(state, targetUserIds, options.refresh === true ? TRAVEL_PLAYER_MISSION_BOARD_REFRESH_ACTION : TRAVEL_PLAYER_MISSION_BOARD_SOCKET_ACTION);
+  return { ...emitted, sentRecipients: emitted.ok ? targetUserIds.length : 0, users };
+}
+
+function missionBoardInstanceKey(state = {}) {
+  const safe = sanitizeTravelPlayerMissionBoardState(state);
+  return safe.sessionKey || "travel-player-mission-board";
+}
+
+export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixin(ApplicationV2) {
+  #boundMissionBoardClick = this.#onMissionBoardClick.bind(this);
+  #boundMissionBoardChange = this.#onMissionBoardChange.bind(this);
+
+  constructor(options = {}) {
+    super(options);
+    this.boardState = sanitizeTravelPlayerMissionBoardState(options.state ?? {});
+    this.instanceKey = missionBoardInstanceKey(this.boardState);
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: "arcflight-travel-player-mission-board",
+    classes: ["arcflight", "arcflight-travel-player-mission-board"],
+    position: { width: 980, height: 760 },
+    window: { title: "Travel Mission Board", resizable: true }
+  };
+
+  static PARTS = {
+    board: { template: arcflightTemplatePath("apps/travel-player-mission-board.hbs") }
+  };
+
+  async setContext({ state = this.boardState } = {}, { render = true } = {}) {
+    const previousKey = this.instanceKey;
+    this.boardState = sanitizeTravelPlayerMissionBoardState(state ?? {});
+    this.instanceKey = missionBoardInstanceKey(this.boardState);
+    if (previousKey !== this.instanceKey && activeTravelPlayerMissionBoards.get(previousKey) === this) activeTravelPlayerMissionBoards.delete(previousKey);
+    activeTravelPlayerMissionBoards.set(this.instanceKey, this);
+    if (render) await this.render(true);
+    return this;
+  }
+
+  async _prepareContext(options) {
+    const context = await super._prepareContext(options);
+    return { ...context, state: this.boardState };
+  }
+
+  _onRender(context, options) {
+    super._onRender(context, options);
+    this.element?.removeEventListener("click", this.#boundMissionBoardClick);
+    this.element?.addEventListener("click", this.#boundMissionBoardClick);
+    this.element?.removeEventListener("change", this.#boundMissionBoardChange);
+    this.element?.addEventListener("change", this.#boundMissionBoardChange);
+  }
+
+  async #onMissionBoardChange(event) {
+    const select = event.target?.closest?.("[data-arcflight-mission-board-approach]");
+    if (!select || !this.element?.contains(select)) return;
+    const stationKey = select.dataset.stationKey ?? "";
+    this.#setLocalStationApproach(stationKey, select.value ?? "");
+  }
+
+  async #onMissionBoardClick(event) {
+    const submit = event.target?.closest?.("[data-arcflight-mission-board-submit-approach]");
+    const roll = event.target?.closest?.("[data-arcflight-mission-board-roll]");
+    const target = submit ?? roll;
+    if (!target || !this.element?.contains(target) || target.disabled === true) return;
+    event.preventDefault();
+    const stationKey = target.dataset.stationKey ?? "";
+    if (submit) return this.#submitApproach(stationKey);
+    return this.#rollStation(stationKey);
+  }
+
+  #getStation(stationKey) {
+    return this.boardState.stations.find((station) => station.stationKey === stationKey) ?? null;
+  }
+
+  #setLocalStationApproach(stationKey, skill) {
+    this.boardState = { ...this.boardState, stations: this.boardState.stations.map((station) => station.stationKey === stationKey ? { ...station, selectedApproachValue: skill } : station) };
+  }
+
+  async #submitApproach(stationKey) {
+    const station = this.#getStation(stationKey);
+    const select = this.element?.querySelector?.(`[data-arcflight-mission-board-approach][data-station-key="${stationKey}"]`);
+    const skill = sanitizeText(select?.value || station?.selectedApproachValue);
+    if (!station?.canChooseApproach || !skill) return ui.notifications?.warn?.(station?.permissionReason || "You cannot choose this station approach.");
+    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    ui.notifications?.info?.("Approach submitted to the GM.");
+    return true;
+  }
+
+  async #rollStation(stationKey) {
+    const station = this.#getStation(stationKey);
+    if (!station?.canRollStation) return ui.notifications?.warn?.(station?.permissionReason || "You cannot roll this station.");
+    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
+    ui.notifications?.info?.("Station roll requested.");
+    return true;
+  }
+
+  async close(options = {}) {
+    if (activeTravelPlayerMissionBoards.get(this.instanceKey) === this) activeTravelPlayerMissionBoards.delete(this.instanceKey);
+    return super.close(options);
+  }
+}
+
+export async function openTravelPlayerMissionBoard(options = {}) {
+  const appOptions = options && typeof options === "object" ? options : {};
+  const key = missionBoardInstanceKey(appOptions.state ?? {});
+  const app = activeTravelPlayerMissionBoards.get(key) ?? new ArcflightTravelPlayerMissionBoard(appOptions);
+  activeTravelPlayerMissionBoards.set(key, app);
+  await app.setContext(appOptions, { render: true });
+  bringCardToFront(app);
+  return app;
+}
+
+export function registerTravelPlayerStationRollHandler(handler) {
+  travelPlayerStationRollHandler = typeof handler === "function" ? handler : null;
 }

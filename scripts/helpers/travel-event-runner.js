@@ -1335,6 +1335,59 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   };
 }
 
+export function prepareTravelPlayerMissionBoardState(session = null, options = {}) {
+  const overlayState = prepareTravelSceneOverlayState(session, options);
+  const normalized = session ? normalizeTravelEventRunnerSession(session, options) : { session: null };
+  if (!overlayState.hasSession) {
+    return {
+      hasSession: false,
+      sessionKey: "",
+      eventName: "",
+      roundLabel: "No active round",
+      roundTitle: "",
+      currentRoundIndex: -1,
+      vignette: "",
+      stations: [],
+      hasStations: false
+    };
+  }
+  return {
+    hasSession: true,
+    sessionKey: normalized.session?.key ?? "",
+    eventName: overlayState.eventName,
+    roundLabel: overlayState.roundLabel,
+    roundTitle: overlayState.roundTitle,
+    currentRoundIndex: overlayState.currentRoundIndex,
+    vignette: overlayState.vignette,
+    stations: (overlayState.stations ?? []).map((station) => ({
+      stationKey: station.stationKey,
+      stationName: station.stationName,
+      assignedActorName: station.assignedActorName,
+      promptText: station.promptText,
+      hasPromptText: station.hasPromptText === true,
+      approachOptions: station.approachOptions ?? [],
+      hasApproachOptions: (station.approachOptions ?? []).length > 0,
+      hasSelectedApproach: station.hasSelectedApproach === true,
+      selectedApproachValue: station.selectedApproachValue || "",
+      selectedApproachLabel: station.hasSelectedApproach ? station.approachLabel : "",
+      selectedApproachHelpText: station.hasSelectedApproach ? station.approachHelpText : "",
+      hasSelectedApproachHelpText: station.hasApproachHelpText === true,
+      dcLabel: station.dcLabel,
+      dc: station.dc,
+      resultLabel: station.resultLabel,
+      resultFeedbackText: station.hasResult ? station.resultFeedback : "",
+      hasResultFeedback: station.hasResultFeedback === true,
+      hasResult: station.hasResult === true,
+      result: station.result || "",
+      rollDetailText: session?.playerMissionBoardRollDetails?.[station.stationKey] || station.rollDetailText || "",
+      canRollStation: false,
+      canChooseApproach: false,
+      permissionReason: "Waiting for board permissions."
+    })),
+    hasStations: (overlayState.stations ?? []).length > 0
+  };
+}
+
 export function setTravelEventRunnerStationResult(session, roundIndex, stationKey, result, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
