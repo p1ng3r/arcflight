@@ -92,6 +92,50 @@ assert(runnerCard.rollFeedback.criticalFailure === feedback.criticalFailure, "ru
 assert(Array.isArray(runnerCard.hooks.rooms) && Array.isArray(runnerCard.hooks.factions), "runner fallback card has full hook shape");
 assert(!Object.hasOwn(runnerCard, "playerAction"), "runner stationCards are not raw legacy prompt objects");
 
+const schemaEvent = JSON.parse(JSON.stringify(legacyEvent));
+schemaEvent.key = "phase-v-approaches-visible-feedback-smoke";
+schemaEvent.name = "Phase V Approaches Visible Feedback Smoke";
+schemaEvent.rounds[0].stationCards = [{
+  stationKey: "navigator",
+  stationName: "Navigator",
+  problem: "The void-current pulls the ship away from its charted line.",
+  visibleResultFeedback: {
+    criticalSuccess: "Visible station critical success.",
+    success: "Visible station success.",
+    failure: "Visible station failure.",
+    criticalFailure: "Visible station critical failure."
+  },
+  approaches: [
+    { skill: "arcana", label: "Tune the Harmonic Wake", helpText: "You tune the Arkengine harmonic wake until the false current becomes visible in the aether.", dc: 20, boardResultFeedback: { criticalSuccess: "Arcana board critical success.", success: "Arcana board success.", failure: "Arcana board failure.", criticalFailure: "Arcana board critical failure." }, gmNarrationFeedback: { criticalSuccess: "Arcana GM critical success.", success: "Arcana GM success.", failure: "Arcana GM failure.", criticalFailure: "Arcana GM critical failure." }, gmOnlyConsequence: "Hidden arcana complication." },
+    { skill: "survival", label: "Hold the Course", helpText: "You read pressure, drift, and deck vibration until the route becomes survivable instead of safe.", boardResultFeedback: { criticalSuccess: "Survival board critical success.", success: "Survival board success.", failure: "Survival board failure.", criticalFailure: "Survival board critical failure." }, gmNarrationFeedback: { criticalSuccess: "Survival GM critical success.", success: "Survival GM success.", failure: "Survival GM failure.", criticalFailure: "Survival GM critical failure." }, gmOnlyConsequence: "Hidden survival complication." },
+    { skill: "society", label: "Chart the Old Tide", helpText: "You compare old route songs and port warnings to find the forgotten line through the current.", boardResultFeedback: { criticalSuccess: "Society board critical success.", success: "Society board success.", failure: "Society board failure.", criticalFailure: "Society board critical failure." }, gmNarrationFeedback: { criticalSuccess: "Society GM critical success.", success: "Society GM success.", failure: "Society GM failure.", criticalFailure: "Society GM critical failure." }, gmOnlyConsequence: "Hidden society complication." }
+  ]
+}];
+const schemaDraft = normalizeTravelEventDraft(schemaEvent, { now: "2026-06-15T00:00:00.000Z" });
+const schemaCard = schemaDraft.rounds[0].stationCards[0];
+assert(schemaCard.skillApproaches.length === 3, "builder normalizes approaches into skillApproaches");
+assert(schemaCard.skillApproaches[0].label === "Tune the Harmonic Wake" && schemaCard.skillApproaches[0].dc === 20, "builder preserves approach label, helpText, and dc from approaches");
+assert(schemaCard.rollFeedback.success === "Visible station success.", "builder normalizes visibleResultFeedback into rollFeedback fallback");
+const schemaRunner = createTravelEventRunnerSession(schemaEvent, {
+  ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" },
+  stationAssignments: { navigator: { stationKey: "navigator", actorId: "naria", actorUuid: "Actor.naria", actorName: "Naria", source: "manual" } },
+  now: "2026-06-15T00:00:00.000Z"
+});
+assert(schemaRunner.ok, `runner starts from approaches/visibleResultFeedback schema: ${(schemaRunner.errors ?? []).join(", ")}`);
+assert(schemaRunner.session.event.rounds[0].stationCards[0].skillApproaches.length === 3, "runner normalizes approaches into skillApproaches");
+const selectedFallbackApproach = setTravelEventRunnerStationSkillApproach(schemaRunner.session, 0, "navigator", "survival", { now: "2026-06-15T00:00:00.000Z" });
+const fallbackFailure = setTravelEventRunnerStationResult(selectedFallbackApproach.session, 0, "navigator", "failure", { now: "2026-06-15T00:00:00.000Z" });
+const fallbackState = prepareTravelEventRunnerState(fallbackFailure.session);
+const fallbackRow = fallbackState.stations.find((row) => row.stationKey === "navigator");
+assert(fallbackRow.resultFeedback === "Survival board failure.", "approach boardResultFeedback takes precedence over visibleResultFeedback");
+const noApproachFeedbackEvent = JSON.parse(JSON.stringify(schemaEvent));
+delete noApproachFeedbackEvent.rounds[0].stationCards[0].approaches[1].boardResultFeedback;
+const noApproachRunner = createTravelEventRunnerSession(noApproachFeedbackEvent, { ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" }, now: "2026-06-15T00:00:00.000Z" });
+const noApproachSelected = setTravelEventRunnerStationSkillApproach(noApproachRunner.session, 0, "navigator", "survival", { now: "2026-06-15T00:00:00.000Z" });
+const noApproachFailure = setTravelEventRunnerStationResult(noApproachSelected.session, 0, "navigator", "failure", { now: "2026-06-15T00:00:00.000Z" });
+const noApproachRow = prepareTravelEventRunnerState(noApproachFailure.session).stations.find((row) => row.stationKey === "navigator");
+assert(noApproachRow.resultFeedback === "Visible station failure.", "visibleResultFeedback works as station-level fallback before rollFeedback");
+
 const editedDraft = applyTravelEventBuilderRoundFormDataToDraft(legacyEvent, {
   rounds: [{
     round: 1,
@@ -172,6 +216,7 @@ twoStationEvent.key = "phase-v-two-station-feedback-smoke";
 twoStationEvent.name = "Phase V Two Station Feedback Smoke";
 twoStationEvent.travelStations = ["navigator", "engineer", "watchmaster"];
 twoStationEvent.rounds[0].activeStations = ["navigator", "engineer", "watchmaster"];
+twoStationEvent.rounds[0].roundEndNarration = { narrowRoundSuccess: "Scripted narrow success frame." };
 twoStationEvent.rounds[0].stationPrompts.engineer = {
   stationKey: "engineer",
   stationName: "Engineer",
@@ -243,9 +288,11 @@ assert(feedbackState.roundSummaryCard.successCount === 1 && feedbackState.roundS
 assert(feedbackState.roundSummaryCard.roundScore === 0 && feedbackState.roundSummaryCard.roundOutcomeKey === "narrowRoundSuccess", "weighted round scoring treats 0 as narrow success");
 assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Naria at Navigator used Recall Past Crossings and scored Failure")), "round summary lines include actor, station, result, and selected navigator approach");
 assert(feedbackState.roundSummaryCard.summaryLines.some((line) => line.includes("Bramble at Engineer used Tune the Harmonic and scored Success")), "round summary lines include actor, station, result, and selected engineer approach");
-assert(feedbackState.roundSummaryCard.summaryText.includes("Naria") && feedbackState.roundSummaryCard.summaryText.includes("Bramble"), "round summary prose includes both actor names");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Scripted narrow success frame."), "round summary prose includes scripted weighted narration frame");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Naria") && feedbackState.roundSummaryCard.summaryText.includes("Bramble"), "round summary prose keeps actual station outcomes after scripted narration");
 assert(feedbackState.roundSummaryCard.summaryText.includes("Naria remembers the warning, but not the safe bearing."), "round summary prose includes navigator failure feedback");
 assert(feedbackState.roundSummaryCard.summaryText.includes("Bramble syncs the arkengine cleanly against the song's vibration."), "round summary prose includes engineer success feedback");
+assert(feedbackState.roundSummaryCard.summaryText.includes("Watchmaster remains active and unresolved"), "round summary prose mentions every active station including unresolved stations");
 assert(feedbackState.roundSummaryCard.summaryText !== feedbackState.roundSummaryCard.summaryLines.join("\n"), "round summary prose is not just raw summary lines joined together");
 assert(!feedbackState.roundSummaryCard.summaryText.includes("used Recall Past Crossings and scored Failure"), "round summary prose avoids report-style used/scored phrasing");
 const overlayState = prepareTravelSceneOverlayState(engineerSuccess.session);

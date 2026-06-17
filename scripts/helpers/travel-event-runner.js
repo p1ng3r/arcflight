@@ -173,7 +173,7 @@ function fallbackSkillApproachCopy(skill) {
 }
 
 function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
-  const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : (Array.isArray(prompt.skillApproaches) ? prompt.skillApproaches : []);
+  const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : (Array.isArray(card.approaches) ? card.approaches : (Array.isArray(prompt.skillApproaches) ? prompt.skillApproaches : (Array.isArray(prompt.approaches) ? prompt.approaches : [])));
   const approaches = explicit
     .filter(isPlainObject)
     .map((entry) => ({
@@ -220,8 +220,10 @@ function normalizeStationCardForRunner(stationKey, card = null, prompt = {}) {
     rollFeedback: {
       ...createBlankRollFeedback(),
       ...(isPlainObject(sourcePrompt.rollFeedback) ? cloneData(sourcePrompt.rollFeedback) : {}),
+      ...(isPlainObject(sourceCard.visibleResultFeedback) ? cloneData(sourceCard.visibleResultFeedback) : {}),
       ...(isPlainObject(sourceCard.rollFeedback) ? cloneData(sourceCard.rollFeedback) : {})
     },
+    visibleResultFeedback: normalizeDegreeTextMap(sourceCard.visibleResultFeedback),
     gmOnlyConsequence: typeof sourceCard.gmOnlyConsequence === "string" ? sourceCard.gmOnlyConsequence : "",
     hooks: sourceCard.hooks == null ? createEmptyStationCardHooks() : normalizeStationCardHooks(sourceCard.hooks),
     qualityWarnings: normalizeStationCardSkillApproaches(sourceCard, sourcePrompt).some((entry) => !entry.helpText?.trim?.()) ? ["Station card has legacy or incomplete approaches missing How This Helps text."] : []
@@ -243,6 +245,7 @@ function normalizeRoundDefinition(round, index) {
       const card = getStationCardFromRound(round, stationKey);
       return normalizeStationCardForRunner(stationKey, card, prompt);
     }),
+    outcomeBranches: isPlainObject(round?.outcomeBranches) ? cloneData(round.outcomeBranches) : {},
     roundEndNarration: normalizeRoundEndNarration(round?.roundEndNarration ?? round?.gmRoundEndNarration)
   };
 }
@@ -503,6 +506,8 @@ function resolveActorStatisticModifier(actor, skill) {
 }
 
 function resolveStationDc(row, baseDC) {
+  const approachDc = Number(row?.selectedApproach?.dc);
+  if (Number.isFinite(approachDc) && approachDc > 0) return { dc: approachDc, source: "approach" };
   const card = isPlainObject(row?.stationCard) ? row.stationCard : {};
   const prompt = isPlainObject(row?.promptData) ? row.promptData : {};
   const directDc = Number(card.dc ?? card.DC ?? prompt.dc ?? prompt.DC);
@@ -617,7 +622,8 @@ function validateRunnerEvent(event, options = {}) {
   if (!event || typeof event !== "object" || Array.isArray(event)) errors.push("Travel Event Runner requires a finalized published event object.");
   if (event?.builder !== undefined) errors.push("Travel Event Runner cannot start from a draft containing builder metadata.");
   if (!Array.isArray(event?.rounds) || event.rounds.length === 0) errors.push("Travel Event Runner requires at least one round.");
-  const validation = event && typeof event === "object" && !Array.isArray(event) ? validateTravelEventDefinition(event, { ...options, strictAuthoring: true }) : { ok: false, errors: [], warnings: [] };
+  const validationEvent = event && typeof event === "object" && !Array.isArray(event) ? { ...event, rounds: normalizeEventForRunner(event).rounds } : event;
+  const validation = validationEvent && typeof validationEvent === "object" && !Array.isArray(validationEvent) ? validateTravelEventDefinition(validationEvent, { ...options, strictAuthoring: true }) : { ok: false, errors: [], warnings: [] };
   errors.push(...(validation.errors ?? []));
   return { ok: errors.length === 0, errors, warnings: validation.warnings ?? [], validation };
 }
@@ -776,10 +782,10 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       statisticLabel: resolveSafeStatisticLabel(assignedActor, [selectedApproach.skill]),
       result,
       resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",
-      resultFeedback: result ? (selectedApproach.selected?.boardResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
-      gmNarrationFeedback: result ? (selectedApproach.selected?.gmNarrationFeedback?.[result] || selectedApproach.selected?.boardResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
+      resultFeedback: result ? (selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
+      gmNarrationFeedback: result ? (selectedApproach.selected?.gmNarrationFeedback?.[result] || selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
       gmOnlyConsequence: result ? (selectedApproach.selected?.gmOnlyConsequence || card.gmOnlyConsequence || "") : "",
-      hasResultFeedback: Boolean(result && (selectedApproach.selected?.boardResultFeedback?.[result] || card.rollFeedback?.[result])),
+      hasResultFeedback: Boolean(result && (selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result])),
       hasGmOnlyConsequence: Boolean(result && (selectedApproach.selected?.gmOnlyConsequence || card.gmOnlyConsequence)),
       qualityWarnings: [...(card.qualityWarnings ?? []), ...(selectedApproach.selected?.qualityWarnings ?? [])],
       resultOptions: TRAVEL_EVENT_RUNNER_RESULT_VALUES.map((value) => ({ value, label: humanizeIdentifier(value), selected: value === result }))
@@ -801,33 +807,38 @@ function roundOutcomeKeyFromScore(score) {
   return "roundFailure";
 }
 
-function buildTravelEventRunnerRoundSummaryText(resolvedRows, successCount, failureCount, roundOutcomeKey = "narrowRoundSuccess", scriptedNarration = "") {
-  if (scriptedNarration) return scriptedNarration;
-  if (!Array.isArray(resolvedRows) || resolvedRows.length === 0) return "";
+function buildTravelEventRunnerRoundSummaryText(stationRows, successCount, failureCount, roundOutcomeKey = "narrowRoundSuccess", scriptedNarration = "") {
+  if (!Array.isArray(stationRows) || stationRows.length === 0) return scriptedNarration || "";
   const hasMixedResults = successCount > 0 && failureCount > 0;
   const allSuccesses = successCount > 0 && failureCount === 0;
   const allFailures = failureCount > 0 && successCount === 0;
   const connectors = ["Meanwhile", "At the same time", "Before the problem can worsen", "Then"];
-  return resolvedRows.map((row, index) => {
+  const orderedRows = [...stationRows].sort((a, b) => {
+    const toneRank = { criticalFailure: 0, failure: 1, skipped: 2, success: 3, criticalSuccess: 4 };
+    return (toneRank[a.result] ?? 2) - (toneRank[b.result] ?? 2);
+  });
+  const outcomeText = orderedRows.map((row, index) => {
     const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
     const approachLabel = row.selectedApproach?.label || row.selectedSkillLabel || "an approach";
     const stationName = row.stationName || humanizeIdentifier(row.stationKey);
-    const resultLabel = row.resultLabel ? row.resultLabel.toLowerCase() : "unrecorded result";
-    const feedback = row.gmNarrationFeedback || row.resultFeedback || `${actorName}'s work at ${stationName} changes the round's momentum.`;
+    const resultLabel = row.result ? (row.resultLabel ? row.resultLabel.toLowerCase() : "recorded result") : "unresolved pressure";
+    const feedback = row.result ? (row.gmNarrationFeedback || row.resultFeedback || `${actorName}'s work at ${stationName} changes the round's momentum.`) : `${stationName} remains active and unresolved as the round closes.`;
+    const complication = row.hasGmOnlyConsequence ? ` GM complication: ${row.gmOnlyConsequence}` : "";
     const tone = resultTone(row);
     if (index === 0) {
-      if (allSuccesses) return `The round steadies as ${actorName}'s ${approachLabel} at ${stationName} turns into a ${resultLabel}: ${feedback}`;
-      if (allFailures) return `The round darkens as ${actorName}'s ${approachLabel} at ${stationName} collapses into a ${resultLabel}: ${feedback}`;
-      if (tone === "failure") return `${actorName}'s ${approachLabel} at ${stationName} falters into a ${resultLabel}: ${feedback}`;
-      return `${actorName}'s ${approachLabel} at ${stationName} creates an opening with a ${resultLabel}: ${feedback}`;
+      if (allSuccesses) return `The round steadies as ${actorName}'s ${approachLabel} at ${stationName} turns into a ${resultLabel}: ${feedback}${complication}`;
+      if (allFailures) return `The round darkens as ${actorName}'s ${approachLabel} at ${stationName} collapses into a ${resultLabel}: ${feedback}${complication}`;
+      if (tone === "failure") return `${actorName}'s ${approachLabel} at ${stationName} falters into a ${resultLabel}: ${feedback}${complication}`;
+      return `${actorName}'s ${approachLabel} at ${stationName} creates an opening with a ${resultLabel}: ${feedback}${complication}`;
     }
-    if (hasMixedResults && tone === "success" && failureCount > 0) return `Before the problem can worsen, ${actorName}'s ${approachLabel} at ${stationName} answers with a ${resultLabel}: ${feedback}`;
-    if (hasMixedResults && tone === "failure" && successCount > 0) return `Then the pressure shifts to ${stationName}, where ${actorName}'s ${approachLabel} slips into a ${resultLabel}: ${feedback}`;
+    if (hasMixedResults && tone === "success" && failureCount > 0) return `Before the problem can worsen, ${actorName}'s ${approachLabel} at ${stationName} answers with a ${resultLabel}: ${feedback}${complication}`;
+    if (hasMixedResults && tone === "failure" && successCount > 0) return `Then the pressure shifts to ${stationName}, where ${actorName}'s ${approachLabel} slips into a ${resultLabel}: ${feedback}${complication}`;
     const connector = connectors[(index - 1) % connectors.length];
-    if (tone === "success") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} keeps control with a ${resultLabel}: ${feedback}`;
-    if (tone === "failure") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} lets the danger spread with a ${resultLabel}: ${feedback}`;
-    return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} resolves as ${resultLabel}: ${feedback}`;
+    if (tone === "success") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} keeps control with a ${resultLabel}: ${feedback}${complication}`;
+    if (tone === "failure") return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} lets the danger spread with a ${resultLabel}: ${feedback}${complication}`;
+    return `${connector}, ${actorName}'s ${approachLabel} at ${stationName} resolves as ${resultLabel}: ${feedback}${complication}`;
   }).join(" ");
+  return [scriptedNarration, outcomeText].filter((entry) => typeof entry === "string" && entry.trim().length > 0).join(" ");
 }
 
 export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundResult, options = {}) {
@@ -851,11 +862,12 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
     const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
     const approachLabel = row.selectedApproach?.label || row.selectedSkillLabel || "an approach";
     const feedback = row.resultFeedback ? ` ${row.resultFeedback}` : "";
-    return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}`;
+    const complication = row.hasGmOnlyConsequence ? ` GM complication: ${row.gmOnlyConsequence}` : "";
+    return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}${complication}`;
   });
   const roundScore = resolvedRows.reduce((sum, row) => sum + (RESULT_SCORES[row.result] ?? 0), 0);
   const roundOutcomeKey = roundOutcomeKeyFromScore(roundScore);
-  const summaryText = buildTravelEventRunnerRoundSummaryText(resolvedRows, successCount, failureCount, roundOutcomeKey, round?.roundEndNarration?.[roundOutcomeKey] || "");
+  const summaryText = buildTravelEventRunnerRoundSummaryText(stationRows, successCount, failureCount, roundOutcomeKey, round?.roundEndNarration?.[roundOutcomeKey] || "");
   if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} success-side results, ${failureCount} failure-side results, ${unresolvedStationCount} unresolved stations. Weighted score ${roundScore}: ${ROUND_RESULT_LABELS[roundOutcomeKey]}.`);
   return {
     hasResolvedStations: resolvedRows.length > 0,

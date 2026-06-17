@@ -442,7 +442,7 @@ function normalizeDegreeTextMap(value = {}, fallback = {}) {
 }
 
 function normalizeSkillApproaches(card = {}, prompt = {}) {
-  const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
+  const explicit = Array.isArray(card.skillApproaches) ? card.skillApproaches : (Array.isArray(card.approaches) ? card.approaches : []);
   const approaches = explicit
     .filter((entry) => isPlainObject(entry))
     .map((entry) => ({
@@ -477,8 +477,10 @@ function normalizeStationCard(stationKey, card = {}, prompt = {}) {
     rollFeedback: {
       ...template.rollFeedback,
       ...(isPlainObject(sourcePrompt.rollFeedback) ? sourcePrompt.rollFeedback : {}),
+      ...(isPlainObject(source.visibleResultFeedback) ? source.visibleResultFeedback : {}),
       ...(isPlainObject(source.rollFeedback) ? source.rollFeedback : {})
     },
+    visibleResultFeedback: normalizeDegreeTextMap(source.visibleResultFeedback),
     hooks: normalizeStationCardHooks(source.hooks)
   };
 }

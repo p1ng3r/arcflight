@@ -450,7 +450,14 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
         if (!stationKey || !Number.isInteger(index) || index < 0 || !field) continue;
         const card = stationCards[stationKey] ?? {};
         const approaches = Array.isArray(card.skillApproaches) ? card.skillApproaches : [];
-        approaches[index] = { ...(approaches[index] ?? {}), [field]: input.value ?? "" };
+        const nextApproach = { ...(approaches[index] ?? {}) };
+        if (field.includes(".")) {
+          const [group, key] = field.split(".");
+          nextApproach[group] = { ...(nextApproach[group] ?? {}), [key]: input.value ?? "" };
+        } else {
+          nextApproach[field] = input.value ?? "";
+        }
+        approaches[index] = nextApproach;
         stationCards[stationKey] = { ...card, skillApproaches: approaches };
       }
       for (const input of Array.from(roundElement.querySelectorAll("[data-arcflight-builder-station-card-feedback]"))) {

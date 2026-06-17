@@ -31,6 +31,7 @@ function sanitizeApproachOptions(value = []) {
       skill: sanitizeText(entry.skill),
       label: sanitizeText(entry.label),
       helpText: sanitizeText(entry.helpText),
+      dc: Number.isFinite(Number(entry.dc)) ? Number(entry.dc) : null,
       selected: sanitizeBoolean(entry.selected)
     }))
     .filter((entry) => entry.skill || entry.label || entry.helpText);

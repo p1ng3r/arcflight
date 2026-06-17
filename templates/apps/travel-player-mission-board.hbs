@@ -43,6 +43,12 @@
                   {{/each}}
                 </select>
               </label>
+              <details class="arcflight-travel-player-mission-board__approach-help">
+                <summary>How This Helps</summary>
+                {{#each approachOptions}}
+                  <p><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if dc}} (DC {{dc}}){{/if}}{{#if helpText}} — {{helpText}}{{/if}}</p>
+                {{/each}}
+              </details>
               <button type="button" data-arcflight-mission-board-submit-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Submit Approach</button>
             {{else}}
               <p class="arcflight-sheet__hint">No approaches are available for this station.</p>
