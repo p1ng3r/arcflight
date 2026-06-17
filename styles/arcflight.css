@@ -1953,3 +1953,27 @@
 .arcflight-travel-player-mission-board__roll-detail p {
   margin: 0.35rem 0 0;
 }
+
+.arcflight-travel-player-mission-board.window-app,
+.application.arcflight-travel-player-mission-board {
+  z-index: 80 !important;
+}
+
+.arcflight-travel-player-mission-board__station--rolling {
+  border-color: rgba(255, 215, 120, 0.86);
+  box-shadow: 0 0 0 2px rgba(255, 215, 120, 0.2), 0 0 28px rgba(255, 215, 120, 0.14);
+}
+
+.arcflight-travel-player-mission-board__station--rolling .arcflight-travel-player-mission-board__badge {
+  background: rgba(255, 215, 120, 0.18);
+}
+
+#dice-box-canvas,
+#dice-so-nice-canvas,
+.dice-box-canvas,
+.dice-so-nice,
+.dice-tray,
+.dice-tooltip,
+.roll-overlay {
+  z-index: 100000 !important;
+}

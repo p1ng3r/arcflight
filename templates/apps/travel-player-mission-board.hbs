@@ -15,12 +15,12 @@
   {{#if state.hasStations}}
     <section class="arcflight-travel-player-mission-board__grid" aria-label="Active travel stations">
       {{#each state.stations}}
-        <article class="arcflight-travel-player-mission-board__station {{#if isCurrentUserRollable}}arcflight-travel-player-mission-board__station--rollable{{/if}}">
+        <article class="arcflight-travel-player-mission-board__station {{#if isCurrentUserRollable}}arcflight-travel-player-mission-board__station--rollable{{/if}} {{#if isRolling}}arcflight-travel-player-mission-board__station--rolling{{/if}}" data-arcflight-mission-board-station data-station-key="{{stationKey}}">
           <header class="arcflight-travel-player-mission-board__station-header">
             <h2>{{stationName}}</h2>
             <div class="arcflight-travel-player-mission-board__status-stack">
               <span class="arcflight-travel-player-mission-board__badge" title="{{rollDetailText}}">{{resultLabel}}</span>
-              <span class="arcflight-travel-player-mission-board__state">{{stateLabel}}</span>
+              <span class="arcflight-travel-player-mission-board__state" data-arcflight-mission-board-state>{{stateLabel}}</span>
             </div>
           </header>
           <dl class="arcflight-travel-player-mission-board__facts">
