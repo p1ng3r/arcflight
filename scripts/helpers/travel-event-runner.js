@@ -489,6 +489,8 @@ export function prepareTravelEventRunnerStationAssignmentState(session, options 
   const normalized = normalizeTravelEventRunnerSession(session, options);
   const assignments = normalizeTravelEventRunnerStationAssignments(normalized.session?.stationAssignments);
   const actorOptions = getTravelEventRunnerStationActorOptions({ ...options, ship: normalized.session?.ship });
+  const playerUserOptions = getActivePlayerUserOptions();
+  const npcControllers = normalizeNpcStationControllers(normalized.session?.npcStationControllers);
   const rows = TRAVEL_FIVE_STATION_KEYS.map((stationKey) => {
     const assignment = assignments[stationKey];
     const assigned = Boolean(assignment.actorId || assignment.actorUuid || assignment.actorName);
@@ -502,10 +504,47 @@ export function prepareTravelEventRunnerStationAssignmentState(session, options 
       hasShipSource: assignment.source === "ship",
       hasOverride: assignment.overridden === true,
       options: actorOptions.map((actor) => ({ ...actor, selected: Boolean((assignment.actorUuid && actor.actorUuid === assignment.actorUuid) || (assignment.actorId && actor.actorId === assignment.actorId)) })),
-      canClear: assigned
+      canClear: assigned,
+      isNpcAssignment: assignment.actorType === "npc",
+      npcController: npcControllers[stationKey],
+      npcControllerName: npcControllers[stationKey]?.userName || "Unassigned",
+      npcControllerOptions: playerUserOptions.map((user) => ({ ...user, selected: npcControllers[stationKey]?.userId === user.userId }))
     };
   });
   return { ok: normalized.ok, errors: normalized.errors ?? [], warnings: normalized.warnings ?? [], session: normalized.session, rows, actorOptions };
+}
+
+function getActivePlayerUserOptions() {
+  const users = globalThis.game?.users;
+  const values = users?.filter ? users.filter(() => true) : (users?.values ? Array.from(users.values()) : (Array.isArray(users) ? users : []));
+  return values
+    .filter((user) => user?.isGM !== true && typeof user.id === "string")
+    .map((user) => ({ userId: user.id, userName: user.name ?? user.id, label: user.name ?? user.id }));
+}
+
+function normalizeNpcStationControllers(value = {}) {
+  const source = isPlainObject(value) ? value : {};
+  return Object.fromEntries(TRAVEL_FIVE_STATION_KEYS.map((stationKey) => {
+    const entry = isPlainObject(source[stationKey]) ? source[stationKey] : {};
+    return [stationKey, {
+      userId: typeof entry.userId === "string" ? entry.userId : "",
+      userName: typeof entry.userName === "string" ? entry.userName : ""
+    }];
+  }));
+}
+
+export function setTravelEventRunnerNpcStationController(session, stationKey, userId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return normalized;
+  if (!TRAVEL_FIVE_STATION_KEYS.includes(stationKey)) return { ok: false, errors: [`Invalid travel runner station key "${stationKey}".`], warnings: [], session: cloneData(normalized.session) };
+  const userOptions = getActivePlayerUserOptions();
+  const selected = userId ? userOptions.find((user) => user.userId === userId) : null;
+  if (userId && !selected) return { ok: false, errors: ["No active non-GM player user found for this NPC controller."], warnings: [], session: cloneData(normalized.session) };
+  const nextSession = cloneData(normalized.session);
+  nextSession.npcStationControllers = normalizeNpcStationControllers(nextSession.npcStationControllers);
+  nextSession.npcStationControllers[stationKey] = selected ? { userId: selected.userId, userName: selected.userName } : { userId: "", userName: "" };
+  nextSession.updatedAt = nowIso(options);
+  return { ok: true, errors: [], warnings: [], session: nextSession, controller: cloneData(nextSession.npcStationControllers[stationKey]) };
 }
 
 function normalizeTravelEventRunnerShipSelection(selection = null) {
@@ -596,7 +635,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     summary: null,
     ship: shipSelection,
     notes: typeof options.notes === "string" ? options.notes.trim() : "",
-    stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(shipActor ?? options.ship ?? options.actor))
+    stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(shipActor ?? options.ship ?? options.actor)),
+    npcStationControllers: normalizeNpcStationControllers(options.npcStationControllers)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -632,7 +672,9 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     appliedEffects: normalizeTravelEventAppliedEffects(session.appliedEffects),
     ship: normalizeTravelEventRunnerShipSelection(session.ship ?? session.shipSelection ?? session.actor ?? null),
     notes: typeof session.notes === "string" ? session.notes : "",
-    stationAssignments: normalizeTravelEventRunnerStationAssignments(session.stationAssignments)
+    stationAssignments: normalizeTravelEventRunnerStationAssignments(session.stationAssignments),
+    npcStationControllers: normalizeNpcStationControllers(session.npcStationControllers),
+    playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
 }
@@ -1121,6 +1163,10 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       selectedAssignmentValue: row.assignment?.actorUuid || row.assignment?.actorId || "",
       canClearAssignment: assignmentRow?.canClear === true,
       canResetAssignment: true,
+      isNpcAssignment: assignmentRow?.isNpcAssignment === true,
+      npcController: assignmentRow?.npcController ?? { userId: "", userName: "" },
+      npcControllerName: assignmentRow?.npcControllerName || "Unassigned",
+      npcControllerOptions: assignmentRow?.npcControllerOptions ?? [],
       approachOptions: row.skillApproaches ?? [],
       hasApproachOptions: (row.skillApproaches ?? []).length > 0,
       selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
@@ -1379,6 +1425,9 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       hasResultFeedback: station.hasResultFeedback === true,
       hasResult: station.hasResult === true,
       result: station.result || "",
+      isNpcAssignment: station.isNpcAssignment === true,
+      npcControllerUserId: station.npcController?.userId || "",
+      npcControllerName: station.npcControllerName || "",
       rollDetailText: session?.playerMissionBoardRollDetails?.[station.stationKey] || station.rollDetailText || "",
       canRollStation: false,
       canChooseApproach: false,

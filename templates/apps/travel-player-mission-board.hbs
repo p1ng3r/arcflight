@@ -3,6 +3,7 @@
     <div>
       <p class="arcflight-travel-player-mission-board__eyebrow">{{state.roundLabel}}{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</p>
       <h1>{{state.eventName}}</h1>
+      <p class="arcflight-sheet__hint">Shared player mission board. Updates appear when the GM sends or refreshes the board.</p>
     </div>
   </header>
 
@@ -14,15 +15,19 @@
   {{#if state.hasStations}}
     <section class="arcflight-travel-player-mission-board__grid" aria-label="Active travel stations">
       {{#each state.stations}}
-        <article class="arcflight-travel-player-mission-board__station">
+        <article class="arcflight-travel-player-mission-board__station {{#if isCurrentUserRollable}}arcflight-travel-player-mission-board__station--rollable{{/if}} {{#if isRolling}}arcflight-travel-player-mission-board__station--rolling{{/if}}" data-arcflight-mission-board-station data-station-key="{{stationKey}}">
           <header class="arcflight-travel-player-mission-board__station-header">
             <h2>{{stationName}}</h2>
-            <span class="arcflight-travel-player-mission-board__badge" title="{{rollDetailText}}">{{resultLabel}}</span>
+            <div class="arcflight-travel-player-mission-board__status-stack">
+              <span class="arcflight-travel-player-mission-board__badge" title="{{rollDetailText}}">{{resultLabel}}</span>
+              <span class="arcflight-travel-player-mission-board__state" data-arcflight-mission-board-state>{{stateLabel}}</span>
+            </div>
           </header>
           <dl class="arcflight-travel-player-mission-board__facts">
             <div><dt>Assigned</dt><dd>{{assignedActorName}}</dd></div>
             <div><dt>DC</dt><dd>{{dcLabel}}</dd></div>
             <div><dt>Approach</dt><dd>{{#if hasSelectedApproach}}{{selectedApproachLabel}}{{else}}Not selected{{/if}}</dd></div>
+            {{#if npcControllerName}}<div><dt>NPC Controller</dt><dd>{{npcControllerName}}</dd></div>{{/if}}
           </dl>
           {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
 
@@ -45,7 +50,8 @@
           {{/if}}
 
           <button type="button" data-arcflight-mission-board-roll data-station-key="{{stationKey}}" {{#unless canRollStation}}disabled title="{{permissionReason}}"{{/unless}}>Roll Station</button>
-          {{#if rollDetailText}}<p class="arcflight-sheet__hint" title="{{rollDetailText}}">{{rollDetailText}}</p>{{/if}}
+          {{#if disabledReason}}<p class="arcflight-sheet__hint">{{disabledReason}}</p>{{/if}}
+          {{#if rollDetailText}}<details class="arcflight-travel-player-mission-board__roll-detail"><summary>Roll detail</summary><p>{{rollDetailText}}</p></details>{{/if}}
           {{#if hasResultFeedback}}<p class="arcflight-travel-player-mission-board__feedback">{{resultFeedbackText}}</p>{{/if}}
         </article>
       {{/each}}

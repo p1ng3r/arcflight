@@ -105,6 +105,14 @@
                 <option value="{{actorUuid}}" {{#if selected}}selected{{/if}}>{{label}}</option>
               {{/each}}
             </select>
+            {{#if isNpcAssignment}}
+              <label>NPC Controller
+                <select data-arcflight-runner-npc-controller-select data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>
+                  <option value="">Unassigned player controller</option>
+                  {{#each npcControllerOptions}}<option value="{{userId}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+              </label>
+            {{/if}}
             {{#if canClear}}<button type="button" data-arcflight-runner-clear-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear Override</button>{{/if}}
             <button type="button" data-arcflight-runner-reset-assignment data-station-key="{{stationKey}}" {{#if ../state.isCompleted}}disabled{{/if}}>Reset to Ship Assignment</button>
           </div>

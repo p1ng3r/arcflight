@@ -114,8 +114,18 @@
                 <div><dt>DC</dt><dd>{{dcLabel}}</dd></div>
                 <div><dt>Modifier</dt><dd>{{selectedApproachModifierLabel}}</dd></div>
                 <div><dt>Result</dt><dd>{{resultLabel}}</dd></div>
+                {{#if isNpcAssignment}}<div><dt>NPC Controller</dt><dd>{{npcControllerName}}</dd></div>{{/if}}
               </dl>
 
+              {{#if isNpcAssignment}}
+              <label class="arcflight-travel-scene-overlay__station-control">
+                <span>NPC Controller</span>
+                <select data-arcflight-overlay-npc-controller-select data-station-key="{{stationKey}}">
+                  <option value="">Unassigned player controller</option>
+                  {{#each npcControllerOptions}}<option value="{{userId}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+              </label>
+              {{/if}}
               <div class="arcflight-travel-scene-overlay__station-controls" aria-label="{{stationName}} station controls">
                 <label>
                   <span>Assigned Actor</span>
