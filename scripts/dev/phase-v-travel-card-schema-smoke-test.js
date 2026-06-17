@@ -173,6 +173,19 @@ assert(aliasStation.canRollStation === true, "mission board enables roll when se
 assert(aliasStation.approachOptions.some((approach) => approach.skill === "arcana" && approach.modifier === 10 && approach.resolvedStatisticKey === "arc"), "approach skill arcana resolves to short PF2E arc skill");
 assert(aliasStation.approachOptions.some((approach) => approach.displayLabel.includes("Hold the original course") && approach.displayLabel.includes("Survival +9") && approach.displayLabel.includes("DC 20")), "mission board dropdown display includes approach label, skill modifier, and DC");
 
+const missingSkillActor = { id: "missing", uuid: "Actor.missing", name: "No Skill Actor", type: "character", system: { skills: {} }, getStatistic() { return null; } };
+const missingRunner = createTravelEventRunnerSession(aliasEvent, {
+  ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" },
+  actors: [missingSkillActor],
+  stationAssignments: { navigator: { stationKey: "navigator", actorId: "missing", actorUuid: "Actor.missing", actorName: "No Skill Actor", actorType: "character", source: "manual" } },
+  now: "2026-06-15T00:00:00.000Z"
+});
+const missingSelected = setTravelEventRunnerStationSkillApproach(missingRunner.session, 0, "navigator", "survival", { now: "2026-06-15T00:00:00.000Z" });
+const missingBoard = prepareTravelPlayerMissionBoardState(missingSelected.session, { actors: [missingSkillActor] });
+const missingStation = missingBoard.stations.find((row) => row.stationKey === "navigator");
+assert(missingStation.canRollStation === false, "mission board keeps roll disabled when selected statistic modifier cannot resolve");
+assert(missingStation.rollUnavailableReason.includes("Survival") && missingStation.rollUnavailableReason.includes("No Skill Actor"), "missing modifier reason names the statistic and actor checked");
+
 const editedDraft = applyTravelEventBuilderRoundFormDataToDraft(legacyEvent, {
   rounds: [{
     round: 1,

@@ -823,9 +823,23 @@ async function handleTravelPlayerStationRoll(payload = {}) {
     ui.notifications?.warn?.("Player is not authorized to roll that travel station.");
     return false;
   }
-  const boardState = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
+  let workingSession = session;
+  const requestedSkill = typeof payload.skill === "string" ? payload.skill : "";
+  if (requestedSkill) {
+    const approachUpdate = setTravelEventRunnerStationSkillApproach(workingSession, roundIndex, stationKey, requestedSkill);
+    if (!approachUpdate?.ok || !approachUpdate.session) {
+      ui.notifications?.warn?.(approachUpdate?.errors?.[0] ?? "Selected travel approach is not available.");
+      sendTravelPlayerMissionBoardStationUpdateToPlayers(workingSession, stationKey, { actor: activeOverlay?.actor });
+      return false;
+    }
+    workingSession = approachUpdate.session;
+  }
+  const boardState = prepareTravelSceneOverlayState(workingSession, { actor: activeOverlay?.actor });
   const station = (boardState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
-  if (!station?.hasSelectedApproach || station.hasResult) return false;
+  if (!station?.hasSelectedApproach || station.hasResult) {
+    sendTravelPlayerMissionBoardStationUpdateToPlayers(workingSession, stationKey, { actor: activeOverlay?.actor });
+    return false;
+  }
   let d20 = 0;
   if (globalThis.Roll) {
     const roll = await new Roll("1d20").evaluate();
@@ -838,6 +852,10 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   const dc = Number(station.dc);
   if (!Number.isFinite(modifier) || !Number.isFinite(dc)) {
     ui.notifications?.warn?.(station.rollUnavailableReason || "Selected station approach is missing a modifier or DC.");
+    if (activeOverlay) activeOverlay.session = workingSession;
+    await updateActiveTravelSceneOverlayContext({ session: workingSession }, { render: true });
+    await updateActiveTravelEventRunnerSession(workingSession, { statusMessage: station.rollUnavailableReason || "Player roll could not resolve modifier or DC." });
+    sendTravelPlayerMissionBoardStationUpdateToPlayers(workingSession, stationKey, { actor: activeOverlay?.actor });
     return false;
   }
   const total = d20 + modifier;
@@ -846,13 +864,13 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   if (d20 === 20) degreeIndex = Math.min(3, degreeIndex + 1);
   if (d20 === 1) degreeIndex = Math.max(0, degreeIndex - 1);
   const result = degreeOrder[degreeIndex];
-  const updated = setTravelEventRunnerStationResult(session, roundIndex, stationKey, result);
+  const updated = setTravelEventRunnerStationResult(workingSession, roundIndex, stationKey, result);
   if (!updated?.ok || !updated.session) return false;
   const resultLabel = result === "criticalSuccess" ? "Critical Success" : (result === "criticalFailure" ? "Critical Failure" : (result === "success" ? "Success" : "Failure"));
   const skillLabel = station.selectedApproachSkillLabel || station.approachLabel || "Approach";
   const modifierLabel = `${modifier >= 0 ? "" : "-"}${Math.abs(modifier)}`;
   const detail = `d20 ${d20} + ${skillLabel} ${modifierLabel} = ${total} vs DC ${dc}: ${resultLabel}`;
-  updated.session.playerMissionBoardRollDetails = { ...(session.playerMissionBoardRollDetails ?? {}), [stationKey]: detail };
+  updated.session.playerMissionBoardRollDetails = { ...(workingSession.playerMissionBoardRollDetails ?? {}), [stationKey]: detail };
   if (activeOverlay) activeOverlay.session = updated.session;
   await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });
   await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player rolled a travel station." });

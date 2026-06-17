@@ -508,10 +508,16 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
   const stations = (Array.isArray(source.stations) ? source.stations : []).map((station) => {
     const safe = sanitizeMissionBoardStation(station);
     const allowed = Boolean(userId && safe.permittedUserIds.includes(userId));
+    const localApproach = safe.approachOptions.find((approach) => approach.skill === safe.selectedApproachValue) ?? null;
+    const hasLocalOrSubmittedApproach = safe.hasSelectedApproach || Boolean(localApproach);
+    const localRollReady = localApproach ? Number.isFinite(localApproach.modifier) && Number.isFinite(localApproach.dc) : safe.canRollStation;
+    const localRollReason = localApproach
+      ? (!Number.isFinite(localApproach.modifier) ? `Cannot roll: ${localApproach.modifierLabel || `${localApproach.skillLabel || localApproach.skill} was not found on ${safe.assignedActorName}`}.` : (!Number.isFinite(localApproach.dc) ? "Cannot roll: DC unavailable." : ""))
+      : "Choose an approach first.";
     const canChooseApproach = allowed && !safe.hasSelectedApproach && safe.hasApproachOptions && !safe.isRolling;
-    const canRollStation = allowed && safe.hasSelectedApproach && !safe.hasResult && !safe.isRolling && safe.canRollStation;
-    const stateLabel = safe.isRolling ? "Rolling..." : (safe.hasResult ? "Resolved" : (safe.hasSelectedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player")));
-    const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : (safe.rollUnavailableReason || "Choose an approach before rolling.")) : safe.permissionReason));
+    const canRollStation = allowed && hasLocalOrSubmittedApproach && !safe.hasResult && !safe.isRolling && localRollReady;
+    const stateLabel = safe.isRolling ? "Rolling..." : (safe.hasResult ? "Resolved" : (hasLocalOrSubmittedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player")));
+    const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : (safe.rollUnavailableReason || localRollReason)) : safe.permissionReason));
     return {
       ...safe,
       canChooseApproach,
@@ -705,8 +711,27 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
 
   #setLocalStationApproach(stationKey, skill) {
     const scrollState = this.#captureScrollState();
-    this.boardState = { ...this.boardState, stations: this.boardState.stations.map((station) => station.stationKey === stationKey ? { ...station, selectedApproachValue: skill } : station) };
-    (globalThis.requestAnimationFrame ?? ((callback) => setTimeout(callback, 0)))(() => this.#restoreScrollState(scrollState));
+    this.boardState = sanitizeTravelPlayerMissionBoardState({
+      ...this.boardState,
+      stations: this.boardState.stations.map((station) => {
+        if (station.stationKey !== stationKey) return station;
+        const approach = station.approachOptions.find((entry) => entry.skill === skill) ?? null;
+        return {
+          ...station,
+          selectedApproachValue: skill,
+          selectedApproachLabel: approach?.label || station.selectedApproachLabel,
+          selectedApproachHelpText: approach?.helpText || station.selectedApproachHelpText,
+          selectedApproachSkillLabel: approach?.skillLabel || station.selectedApproachSkillLabel,
+          selectedApproachStatisticLabel: approach?.statisticLabel || station.selectedApproachStatisticLabel,
+          selectedApproachModifier: Number.isFinite(approach?.modifier) ? approach.modifier : station.selectedApproachModifier,
+          selectedApproachModifierLabel: approach?.modifierLabel || station.selectedApproachModifierLabel,
+          dcLabel: approach?.dcLabel || station.dcLabel,
+          dc: Number.isFinite(approach?.dc) ? approach.dc : station.dc,
+          rollUnavailableReason: approach && !Number.isFinite(approach.modifier) ? `Cannot roll: ${approach.modifierLabel || `${approach.skillLabel || approach.skill} was not found on ${station.assignedActorName}`}.` : (approach && !Number.isFinite(approach.dc) ? "Cannot roll: DC unavailable." : "")
+        };
+      })
+    });
+    this.#renderPreservingScroll(true).then(() => this.#restoreScrollState(scrollState));
   }
 
   async #submitApproach(stationKey) {
@@ -749,8 +774,10 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     const station = this.#getStation(stationKey);
     if (!station?.canRollStation) return ui.notifications?.warn?.(station?.permissionReason || "You cannot roll this station.");
     this.#markStationRolling(stationKey);
-    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
-    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, userId: globalThis.game?.user?.id ?? "" });
+    const select = this.element?.querySelector?.(`[data-arcflight-mission-board-approach][data-station-key="${stationKey}"]`);
+    const skill = sanitizeText(select?.value || station.selectedApproachValue);
+    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     ui.notifications?.info?.("Station roll requested.");
     return true;
   }
