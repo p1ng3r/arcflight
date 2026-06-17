@@ -1304,7 +1304,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       ? "Assign an actor before rolling."
       : (!hasSelectedApproach
         ? "Select an approach before rolling."
-        : (!resolvedDc.dc
+        : (!Number.isFinite(resolvedDc.dc)
           ? "DC unavailable."
           : (!hasSelectedApproachModifier ? (selectedStatistic.message || `Modifier unavailable: could not find ${row.selectedSkillLabel} on ${row.assignedActorName}`) : "")));
     const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
@@ -1366,6 +1366,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
       selectedApproachSkillLabel: row.selectedApproach?.skill ? humanizeIdentifier(row.selectedApproach.skill) : "",
       selectedApproachStatisticLabel: row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "",
+      selectedApproachRollLabel: hasSelectedApproach ? `${row.selectedApproach?.label || row.selectedSkillLabel || "Selected"}: ${row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "Statistic unavailable"} vs ${Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable"}` : "",
       resultOptions: row.resultOptions ?? [],
       hasResultOptions: (row.resultOptions ?? []).length > 0
     };
@@ -1487,6 +1488,7 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       hasPromptText: false,
       selectedApproachLabel: "",
       selectedApproachHelpText: "",
+      selectedApproachRollLabel: "",
       hasSelectedApproach: false,
       hasSelectedApproachHelpText: false,
       resultStatusLabel: "No active session",
@@ -1517,6 +1519,7 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       hasPromptText: false,
       selectedApproachLabel: "",
       selectedApproachHelpText: "",
+      selectedApproachRollLabel: "",
       hasSelectedApproach: false,
       hasSelectedApproachHelpText: false,
       resultStatusLabel: "Station unavailable",
@@ -1561,6 +1564,7 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     hasPromptText: station.hasPromptText === true,
     selectedApproachLabel: station.hasSelectedApproach ? station.approachLabel : "",
     selectedApproachHelpText: station.hasSelectedApproach ? station.approachHelpText : "",
+    selectedApproachRollLabel: station.hasSelectedApproach ? (station.selectedApproachRollLabel || "") : "",
     hasSelectedApproach: station.hasSelectedApproach === true,
     hasSelectedApproachHelpText: station.hasApproachHelpText === true,
     resultStatusLabel,
@@ -1617,6 +1621,7 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       selectedApproachStatisticLabel: station.selectedApproachStatisticLabel || "",
       selectedApproachModifier: Number.isFinite(station.selectedApproachModifier) ? station.selectedApproachModifier : null,
       selectedApproachModifierLabel: station.selectedApproachModifierLabel || "modifier unavailable",
+      selectedApproachRollLabel: station.selectedApproachRollLabel || "",
       hasSelectedApproachHelpText: station.hasApproachHelpText === true,
       dcLabel: station.dcLabel,
       dc: station.dc,

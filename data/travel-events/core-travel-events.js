@@ -7,7 +7,93 @@ function deepFreeze(value) {
   return value;
 }
 
+
+const QA_STATIONS = Object.freeze([
+  ["captain", "Captain", "Hold crew focus while contradictory portents spread across the decks.", [["diplomacy", "Rally the Deck Crews"], ["intimidation", "Demand Battle-Ready Silence"]]],
+  ["navigator", "Navigator", "Plot a bearing through a current that keeps rewriting the visible stars.", [["survival", "Read the Living Current"], ["society", "Recall Proven Crossings"], ["sailing-lore", "Name the Old Starlane"]]],
+  ["engineer", "Engineer", "Keep the arkengine stable while the starlane pulls against its rhythm.", [["crafting", "Rebalance the Engine Housing"], ["arcana", "Tune the Harmonic Wake"]]],
+  ["veilwarden", "Veilwarden", "Hold the Lifeveil steady as cold sparks gather along the ward-lines.", [["occultism", "Bind the Hungry Echoes"], ["arcana", "Thicken the Lifeveil Pattern"]]],
+  ["watchmaster", "Watchmaster", "Separate real threats from false silhouettes pacing the ship.", [["perception", "Track the True Shadow"], ["survival", "Read Predator Drift"]]]
+]);
+
+function qaFeedback(stationName, label) {
+  return {
+    criticalSuccess: `${stationName} turns ${label} into a clean advantage for the crew.`,
+    success: `${stationName} makes ${label} hold well enough for the ship to keep moving.`,
+    failure: `${stationName} gets only part of ${label} before pressure returns.`,
+    criticalFailure: `${stationName} misreads ${label}, giving the voyage a sharp complication.`
+  };
+}
+
+function qaApproach(stationName, problem, skill, label, index) {
+  return {
+    skill,
+    label,
+    helpText: `${label} addresses the station problem by giving the ${stationName} a concrete, player-facing way to respond: ${problem}`,
+    boardResultFeedback: qaFeedback(stationName, label),
+    gmNarrationFeedback: qaFeedback(stationName, label),
+    gmOnlyConsequence: index === 0 ? `${stationName} hidden QA complication for ${label}.` : ""
+  };
+}
+
+function qaStationCard([stationKey, stationName, problem, approaches]) {
+  return {
+    stationKey,
+    stationName,
+    problem,
+    skillApproaches: approaches.map(([skill, label], index) => qaApproach(stationName, problem, skill, label, index)),
+    rollFeedback: qaFeedback(stationName, "the fallback station response")
+  };
+}
+
+function qaRound(round, title, openingVignette) {
+  return {
+    round,
+    title,
+    openingVignette,
+    activeStations: QA_STATIONS.map(([stationKey]) => stationKey),
+    stationCards: QA_STATIONS.map(qaStationCard),
+    roundEndNarration: {
+      criticalRoundSuccess: `${title}: the crew seizes the starlane cleanly.`,
+      roundSuccess: `${title}: the ship pushes through with confidence.`,
+      narrowRoundSuccess: `${title}: the line holds, but only just.`,
+      roundFailure: `${title}: the voyage leaves bruises and unfinished threats.`,
+      criticalRoundFailure: `${title}: the starlane punishes every mistake at once.`
+    },
+    outcomeBranches: {
+      dominantSuccess: { vignette: `${title} ends in clear control.`, proposedEffects: [] },
+      mixed: { vignette: `${title} ends with a manageable cost.`, proposedEffects: [] },
+      dominantFailure: { vignette: `${title} ends under pressure.`, proposedEffects: [] },
+      catastrophicFailure: { vignette: `${title} ends in dangerous disorder.`, proposedEffects: [] }
+    }
+  };
+}
+
 export const CORE_TRAVEL_EVENTS = deepFreeze({
+  "travel-runner-qa-crossing": {
+    key: "travel-runner-qa-crossing",
+    name: "Travel Runner QA Crossing",
+    category: "testing",
+    tags: ["travel", "qa", "missionBoard", "structuredStations"],
+    roundCount: 2,
+    baseDC: 20,
+    activeResources: ["hull", "strain", "lifeveil", "morale", "supplies"],
+    travelStations: QA_STATIONS.map(([stationKey]) => stationKey),
+    openingVignette: "A compact structured crossing for Travel Player Mission Board and runner QA.",
+    description: "A focused fixture with all five Travel Five stations, structured approaches, player-facing feedback, GM narration, and GM-only consequences for leakage checks.",
+    gmSummary: "Use this fixture to smoke-test mission board approach display, roll readiness, round summaries, and GM/player text separation.",
+    rounds: [
+      qaRound(1, "QA Current Opens", "The first QA current bends the route and asks every station to show its chosen method."),
+      qaRound(2, "QA Current Tightens", "The second QA current changes pressure so stale station text is easy to notice.")
+    ],
+    finalOutcomes: {
+      criticalSuccess: { label: "Critical Success", vignette: "The QA crossing proves clean and decisive.", proposedEffects: [], rewards: [], losses: [] },
+      success: { label: "Success", vignette: "The QA crossing validates the travel runner flow.", proposedEffects: [], rewards: [], losses: [] },
+      mixed: { label: "Mixed", vignette: "The QA crossing passes with visible costs to review.", proposedEffects: [], rewards: [], losses: [] },
+      failure: { label: "Failure", vignette: "The QA crossing exposes problems the GM can inspect.", proposedEffects: [], rewards: [], losses: [] },
+      criticalFailure: { label: "Critical Failure", vignette: "The QA crossing collapses into clear failure signals.", proposedEffects: [], rewards: [], losses: [] }
+    }
+  },
   "black-tide-crossing": {
     "key": "black-tide-crossing",
     "name": "Black Tide Crossing",
