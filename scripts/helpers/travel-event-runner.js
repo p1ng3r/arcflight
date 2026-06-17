@@ -501,45 +501,107 @@ function getCollectionValue(collection, key) {
   return collection[key] ?? null;
 }
 
-function statisticCandidateKeys(skill, actor = null) {
-  const key = String(skill ?? "").trim().toLowerCase();
-  if (!key) return [];
-  const candidates = [key];
-  if (key.endsWith("-lore")) {
-    const base = key.replace(/-lore$/, "");
-    candidates.push(base);
-    const sourceKeys = [
-      ...Object.keys(actor?.system?.skills ?? {}),
-      ...Object.keys(actor?.skills ?? {}),
-      ...Object.keys(actor?.statistics ?? {})
-    ];
-    for (const sourceKey of sourceKeys) {
-      const normalized = String(sourceKey).toLowerCase();
-      if (normalized.endsWith("lore") && normalized.includes(base)) candidates.push(sourceKey);
+function collectionEntries(collection) {
+  if (!collection) return [];
+  if (collection instanceof Map) return Array.from(collection.entries());
+  if (typeof collection.entries === "function") {
+    try {
+      return Array.from(collection.entries());
+    } catch (_error) {
+      // Fall back to object entries for Foundry data wrappers.
     }
   }
-  return Array.from(new Set(candidates.filter(Boolean)));
+  return Object.entries(collection);
 }
 
-function resolveActorStatistic(actor, skill) {
-  if (!actor) return null;
-  for (const key of statisticCandidateKeys(skill, actor)) {
-    const statistic = key === "perception"
-      ? (actor?.system?.perception ?? actor?.system?.attributes?.perception ?? actor?.perception ?? actor?.system?.proficiencies?.perception ?? getCollectionValue(actor?.system?.skills, key) ?? getCollectionValue(actor?.system?.statistics, key) ?? getCollectionValue(actor?.skills, key) ?? getCollectionValue(actor?.statistics, key) ?? null)
-      : (getCollectionValue(actor?.system?.skills, key) ?? getCollectionValue(actor?.system?.statistics, key) ?? getCollectionValue(actor?.skills, key) ?? getCollectionValue(actor?.statistics, key) ?? actor?.getStatistic?.(key) ?? null);
-    if (statistic) return { key, statistic };
+function normalizeStatisticAlias(value = "") {
+  return String(value ?? "").trim().toLowerCase().replace(/[ _]+/g, "-");
+}
+
+const PF2E_TRAVEL_SKILL_ALIASES = Object.freeze({
+  survival: ["survival", "sur"],
+  arcana: ["arcana", "arc"],
+  occultism: ["occultism", "occ"],
+  society: ["society", "soc"],
+  crafting: ["crafting", "cra"],
+  diplomacy: ["diplomacy", "dip"],
+  intimidation: ["intimidation", "itm"],
+  perception: ["perception"],
+  "piloting-lore": ["piloting-lore", "piloting", "lore:piloting"],
+  "sailing-lore": ["sailing-lore", "sailing", "lore:sailing"]
+});
+
+function loreBaseFromSkill(skill = "") {
+  const key = normalizeStatisticAlias(skill);
+  if (key.endsWith("-lore")) return key.replace(/-lore$/, "");
+  if (key.startsWith("lore:")) return key.replace(/^lore:/, "");
+  return "";
+}
+
+function statisticAliasCandidates(skill, actor = null) {
+  const key = normalizeStatisticAlias(skill);
+  if (!key) return [];
+  const aliases = [...(PF2E_TRAVEL_SKILL_ALIASES[key] ?? [key])];
+  const base = loreBaseFromSkill(key);
+  if (base) aliases.push(base, `${base}-lore`, `lore:${base}`);
+  const normalizedBase = base || (key.includes("lore") ? key.replace(/-?lore|lore:/g, "") : "");
+  if (normalizedBase) {
+    const entries = [
+      ...collectionEntries(actor?.statistics),
+      ...collectionEntries(actor?.skills),
+      ...collectionEntries(actor?.system?.skills),
+      ...collectionEntries(actor?.system?.statistics)
+    ];
+    for (const [entryKey, statistic] of entries) {
+      const labels = [entryKey, statistic?.slug, statistic?.label, statistic?.name, statistic?.system?.slug, statistic?.system?.label, statistic?.system?.name].map(normalizeStatisticAlias);
+      if (labels.some((label) => label.includes(normalizedBase) && label.includes("lore"))) aliases.push(String(entryKey), statistic?.slug, statistic?.label, statistic?.name);
+    }
   }
-  return null;
+  return Array.from(new Set(aliases.map((alias) => String(alias ?? "").trim()).filter(Boolean)));
 }
 
-function statisticModifier(statistic) {
+function getStatisticModifierValue(statistic) {
   const modifier = Number(statistic?.mod ?? statistic?.check?.mod ?? statistic?.totalModifier ?? statistic?.modifier ?? statistic?.value);
   return Number.isFinite(modifier) ? modifier : null;
 }
 
+function resolveActorStatisticDetails(actor, skill) {
+  const aliasesTried = statisticAliasCandidates(skill, actor);
+  if (!actor || aliasesTried.length === 0) return { statistic: null, statisticKey: "", modifier: null, aliasesTried, label: humanizeIdentifier(skill), actorName: actor?.name ?? "", message: `Modifier unavailable: could not find ${humanizeIdentifier(skill)} on ${actor?.name ?? "assigned actor"}` };
+
+  for (const alias of aliasesTried) {
+    let statistic = null;
+    if (typeof actor.getStatistic === "function") {
+      try {
+        statistic = actor.getStatistic(alias) ?? null;
+      } catch (_error) {
+        statistic = null;
+      }
+    }
+    statistic = statistic
+      ?? (normalizeStatisticAlias(alias) === "perception" ? (actor?.system?.perception ?? actor?.system?.attributes?.perception ?? actor?.perception ?? actor?.system?.proficiencies?.perception ?? null) : null)
+      ?? getCollectionValue(actor?.statistics, alias)
+      ?? getCollectionValue(actor?.skills, alias)
+      ?? getCollectionValue(actor?.system?.skills, alias)
+      ?? getCollectionValue(actor?.system?.statistics, alias);
+    const modifier = getStatisticModifierValue(statistic);
+    if (statistic && Number.isFinite(modifier)) {
+      return {
+        statistic,
+        statisticKey: alias,
+        modifier,
+        aliasesTried,
+        label: statistic?.label ?? statistic?.name ?? statistic?.slug ?? humanizeIdentifier(skill),
+        actorName: actor.name ?? ""
+      };
+    }
+  }
+
+  return { statistic: null, statisticKey: "", modifier: null, aliasesTried, label: humanizeIdentifier(skill), actorName: actor.name ?? "", message: `Modifier unavailable: could not find ${humanizeIdentifier(skill)} on ${actor.name ?? "assigned actor"}` };
+}
+
 function resolveActorStatisticModifier(actor, skill) {
-  const resolved = resolveActorStatistic(actor, skill);
-  return statisticModifier(resolved?.statistic);
+  return resolveActorStatisticDetails(actor, skill).modifier;
 }
 
 function resolveStationDc(row, baseDC) {
@@ -1234,15 +1296,17 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
     const resolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
     const assignedActor = row.assignment?.actorId || row.assignment?.actorUuid ? getActorByAssignment(row.assignment, options) : null;
-    const selectedApproachModifier = resolveActorStatisticModifier(assignedActor, row.selectedApproach?.skill);
+    const selectedStatistic = resolveActorStatisticDetails(assignedActor, row.selectedApproach?.skill);
+    const selectedApproachModifier = selectedStatistic.modifier;
     const hasSelectedApproachModifier = Number.isFinite(selectedApproachModifier);
+    if (row.selectedApproach?.skill) console.debug?.("Arcflight | Travel approach statistic resolution", { stationKey: row.stationKey, actorName: assignedActor?.name ?? row.assignedActorName, skill: row.selectedApproach.skill, aliasesTried: selectedStatistic.aliasesTried, resolvedStatisticKey: selectedStatistic.statisticKey, modifier: selectedStatistic.modifier });
     const rollUnavailableReason = !hasAssignment
       ? "Assign an actor before rolling."
       : (!hasSelectedApproach
         ? "Select an approach before rolling."
         : (!resolvedDc.dc
           ? "DC unavailable."
-          : (!hasSelectedApproachModifier ? "Modifier unavailable." : "")));
+          : (!hasSelectedApproachModifier ? (selectedStatistic.message || `Modifier unavailable: could not find ${row.selectedSkillLabel} on ${row.assignedActorName}`) : "")));
     const resultStateClass = hasResult ? `arcflight-travel-scene-overlay__station-card--${String(row.result).replaceAll("_", "-")}` : "arcflight-travel-scene-overlay__station-card--result-unrecorded";
     const station = {
       stationKey: row.stationKey,
@@ -1280,14 +1344,17 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       npcControllerOptions: assignmentRow?.npcControllerOptions ?? [],
       approachOptions: (row.skillApproaches ?? []).map((approach) => {
         const optionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
-        const modifier = resolveActorStatisticModifier(assignedActor, approach.skill);
+        const statistic = resolveActorStatisticDetails(assignedActor, approach.skill);
+        const modifier = statistic.modifier;
         const skillLabel = approach.skill ? humanizeIdentifier(approach.skill) : "No statistic";
-        const modifierLabel = Number.isFinite(modifier) ? `${modifier >= 0 ? "+" : ""}${modifier}` : "modifier unavailable";
+        const modifierLabel = Number.isFinite(modifier) ? `${modifier >= 0 ? "+" : ""}${modifier}` : (statistic.message || "modifier unavailable");
         const dcLabel = Number.isFinite(optionDc.dc) ? `DC ${optionDc.dc}` : "DC unavailable";
         return {
           ...approach,
           skillLabel,
-          statisticLabel: Number.isFinite(modifier) ? `${skillLabel} ${modifierLabel}` : `${skillLabel} modifier unavailable`,
+          statisticLabel: Number.isFinite(modifier) ? `${skillLabel} ${modifierLabel}` : modifierLabel,
+          aliasesTried: statistic.aliasesTried,
+          resolvedStatisticKey: statistic.statisticKey,
           modifier,
           modifierLabel,
           dc: optionDc.dc,
@@ -1298,7 +1365,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasApproachOptions: (row.skillApproaches ?? []).length > 0,
       selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
       selectedApproachSkillLabel: row.selectedApproach?.skill ? humanizeIdentifier(row.selectedApproach.skill) : "",
-      selectedApproachStatisticLabel: row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`) : "",
+      selectedApproachStatisticLabel: row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "",
       resultOptions: row.resultOptions ?? [],
       hasResultOptions: (row.resultOptions ?? []).length > 0
     };

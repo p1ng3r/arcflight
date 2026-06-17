@@ -136,6 +136,43 @@ const noApproachFailure = setTravelEventRunnerStationResult(noApproachSelected.s
 const noApproachRow = prepareTravelEventRunnerState(noApproachFailure.session).stations.find((row) => row.stationKey === "navigator");
 assert(noApproachRow.resultFeedback === "Visible station failure.", "visibleResultFeedback works as station-level fallback before rollFeedback");
 
+const shortSkillActor = {
+  id: "shorty",
+  uuid: "Actor.shorty",
+  name: "Nariah Starwin",
+  type: "character",
+  system: {
+    skills: {
+      sur: { label: "Survival", mod: 9 },
+      arc: { label: "Arcana", mod: 10 },
+      occ: { label: "Occultism", mod: 8 },
+      soc: { label: "Society", mod: 7 }
+    }
+  },
+  getStatistic(key) { return this.system.skills[key] ?? null; }
+};
+const aliasEvent = JSON.parse(JSON.stringify(schemaEvent));
+aliasEvent.key = "phase-v-short-skill-alias-smoke";
+aliasEvent.rounds[0].stationCards[0].approaches[0].skill = "survival";
+aliasEvent.rounds[0].stationCards[0].approaches[0].label = "Hold the original course";
+aliasEvent.rounds[0].stationCards[0].approaches[0].dc = 20;
+aliasEvent.rounds[0].stationCards[0].approaches[1].skill = "arcana";
+aliasEvent.rounds[0].stationCards[0].approaches[1].dc = 20;
+const aliasRunner = createTravelEventRunnerSession(aliasEvent, {
+  ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" },
+  actors: [shortSkillActor],
+  stationAssignments: { navigator: { stationKey: "navigator", actorId: "shorty", actorUuid: "Actor.shorty", actorName: "Nariah Starwin", actorType: "character", source: "manual" } },
+  now: "2026-06-15T00:00:00.000Z"
+});
+assert(aliasRunner.ok, `alias runner starts: ${(aliasRunner.errors ?? []).join(", ")}`);
+const aliasSelected = setTravelEventRunnerStationSkillApproach(aliasRunner.session, 0, "navigator", "survival", { now: "2026-06-15T00:00:00.000Z" });
+const aliasBoard = prepareTravelPlayerMissionBoardState(aliasSelected.session, { actors: [shortSkillActor] });
+const aliasStation = aliasBoard.stations.find((row) => row.stationKey === "navigator");
+assert(aliasStation.selectedApproachModifier === 9 && aliasStation.selectedApproachStatisticLabel === "Survival +9", "approach skill survival resolves to short PF2E sur skill");
+assert(aliasStation.canRollStation === true, "mission board enables roll when selected approach modifier and DC resolve");
+assert(aliasStation.approachOptions.some((approach) => approach.skill === "arcana" && approach.modifier === 10 && approach.resolvedStatisticKey === "arc"), "approach skill arcana resolves to short PF2E arc skill");
+assert(aliasStation.approachOptions.some((approach) => approach.displayLabel.includes("Hold the original course") && approach.displayLabel.includes("Survival +9") && approach.displayLabel.includes("DC 20")), "mission board dropdown display includes approach label, skill modifier, and DC");
+
 const editedDraft = applyTravelEventBuilderRoundFormDataToDraft(legacyEvent, {
   rounds: [{
     round: 1,
