@@ -10,6 +10,14 @@ import {
   normalizeTravelRoundPressureProfile,
   resolveTravelPressureFallout
 } from "../helpers/travel-pressure.js";
+import {
+  createTravelEventRunnerSession,
+  exportTravelEventRunnerSessionToJson,
+  importTravelEventRunnerSessionFromJson,
+  normalizeTravelEventRunnerSession,
+  prepareTravelEventRunnerState
+} from "../helpers/travel-event-runner.js";
+import { ARCFLIGHT_TRAVEL_ROUND_SEGMENTS } from "../helpers/travel-round-segments.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -72,5 +80,88 @@ assert(fallout.pressure.strain === ARCFLIGHT_TRAVEL_PRESSURE_FALLOUT_RESET, "fal
 
 const noFallout = resolveTravelPressureFallout({ strain: 4, lifeveil: 0, morale: 0 }, "strain");
 assert(noFallout.fallout === null, "fallout resolution does nothing below crisis threshold");
+
+const runnerEvent = {
+  key: "phase-v-travel-pressure-runner-smoke",
+  name: "Phase V Travel Pressure Runner Smoke",
+  category: "discovery",
+  tags: [],
+  roundCount: 1,
+  baseDC: 18,
+  activeResources: ["hull"],
+  travelStations: ["navigator"],
+  description: "Smoke-test event only.",
+  gmSummary: "Smoke-test event only.",
+  rounds: [
+    {
+      round: 1,
+      title: "Pressure Opening",
+      openingVignette: "Pressure gathers at the edge of the route.",
+      primaryPressure: "strain",
+      secondaryPressure: "morale",
+      progressTarget: 2,
+      activeStations: ["navigator"],
+      stationPrompts: {
+        navigator: {
+          stationKey: "navigator",
+          stationName: "Navigator",
+          playerAction: "Plot a safe course.",
+          suggestedSkills: ["survival"],
+          rollFeedback: {
+            criticalSuccess: "Cleanly solved.",
+            success: "Solved.",
+            failure: "Complicated.",
+            criticalFailure: "Worsened."
+          }
+        }
+      },
+      outcomeBranches: {
+        dominantSuccess: { vignette: "Better.", proposedEffects: [] },
+        mixed: { vignette: "Mixed.", proposedEffects: [] },
+        dominantFailure: { vignette: "Worse.", proposedEffects: [] },
+        catastrophicFailure: { vignette: "Worst.", proposedEffects: [] }
+      }
+    }
+  ],
+  finalOutcomes: {
+    criticalSuccess: { label: "Critical Success", vignette: "Best.", proposedEffects: [], rewards: [], losses: [] },
+    success: { label: "Success", vignette: "Good.", proposedEffects: [], rewards: [], losses: [] },
+    mixed: { label: "Mixed", vignette: "Costly.", proposedEffects: [], rewards: [], losses: [] },
+    failure: { label: "Failure", vignette: "Bad.", proposedEffects: [], rewards: [], losses: [] },
+    criticalFailure: { label: "Critical Failure", vignette: "Terrible.", proposedEffects: [], rewards: [], losses: [] }
+  }
+};
+
+const runner = createTravelEventRunnerSession(runnerEvent, {
+  ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" },
+  now: "2026-06-17T00:00:00.000Z"
+});
+assert(runner.ok, `runner session starts from pressure smoke event: ${(runner.errors ?? []).join(", ")}`);
+assert(runner.session.pressure.strain === 0 && runner.session.pressure.lifeveil === 0 && runner.session.pressure.morale === 0, "new runner sessions start with pressure 0/0/0");
+assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "new runner sessions start at roundReveal");
+
+const normalizedRunner = normalizeTravelEventRunnerSession({
+  ...runner.session,
+  pressure: { strain: 4, lifeveil: 2, morale: 1 },
+  roundPhase: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION
+});
+assert(normalizedRunner.session.pressure.strain === 4 && normalizedRunner.session.pressure.lifeveil === 2 && normalizedRunner.session.pressure.morale === 1, "normalized runner sessions preserve pressure");
+assert(normalizedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "normalized runner sessions preserve roundPhase");
+assert(normalizedRunner.session.event.rounds[0].primaryPressure === "strain", "normalized runner round preserves primaryPressure");
+assert(normalizedRunner.session.event.rounds[0].secondaryPressure === "morale", "normalized runner round preserves secondaryPressure");
+assert(normalizedRunner.session.event.rounds[0].progressTarget === 2, "normalized runner round preserves progressTarget");
+
+const exportedRunner = exportTravelEventRunnerSessionToJson(normalizedRunner.session, { now: "2026-06-17T00:00:00.000Z" });
+assert(exportedRunner.ok && exportedRunner.json.includes("\"pressure\"") && exportedRunner.json.includes("\"roundPhase\""), "exported runner sessions retain pressure and roundPhase");
+const importedRunner = importTravelEventRunnerSessionFromJson(exportedRunner.json);
+assert(importedRunner.session.pressure.strain === 4 && importedRunner.session.pressure.lifeveil === 2 && importedRunner.session.pressure.morale === 1, "imported runner sessions preserve pressure through normalization");
+assert(importedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "imported runner sessions preserve roundPhase through normalization");
+
+const runnerState = prepareTravelEventRunnerState(importedRunner.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+assert(runnerState.roundSegmentState?.phase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "runner state exposes roundSegmentState");
+assert(runnerState.roundSegmentState.pressure.strain === 4, "runner roundSegmentState uses active session pressure");
+assert(runnerState.roundSegmentState.primaryPressure === "strain", "runner state exposes primary pressure");
+assert(runnerState.roundSegmentState.secondaryPressure === "morale", "runner state exposes secondary pressure");
+assert(runnerState.roundSegmentState.progressTarget === 2, "runner state exposes progress target");
 
 console.log("Phase V travel pressure smoke test passed.");
