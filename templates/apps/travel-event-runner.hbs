@@ -160,6 +160,7 @@
                   <button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>
                 {{/each}}
               </div>
+              {{#if rollDetailText}}<p class="arcflight-sheet__hint"><strong>Roll Detail:</strong> {{rollDetailText}}</p>{{/if}}
               {{#if hasResultFeedback}}<p class="arcflight-sheet__hint"><strong>Station Vignette:</strong> {{resultFeedback}}</p>{{/if}}
             </article>
           {{/each}}

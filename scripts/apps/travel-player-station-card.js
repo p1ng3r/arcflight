@@ -639,13 +639,32 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     board: { template: arcflightTemplatePath("apps/travel-player-mission-board.hbs") }
   };
 
+  #captureScrollState() {
+    const root = this.element?.querySelector?.(".arcflight-travel-player-mission-board__shell") ?? this.element;
+    return { windowY: globalThis.window?.scrollY ?? 0, rootTop: root?.scrollTop ?? 0 };
+  }
+
+  #restoreScrollState(scrollState = null) {
+    if (!scrollState) return;
+    const root = this.element?.querySelector?.(".arcflight-travel-player-mission-board__shell") ?? this.element;
+    if (root && Number.isFinite(scrollState.rootTop)) root.scrollTop = scrollState.rootTop;
+    if (globalThis.window?.scrollTo && Number.isFinite(scrollState.windowY)) globalThis.window.scrollTo({ top: scrollState.windowY, behavior: "instant" });
+  }
+
+  async #renderPreservingScroll(force = true) {
+    const scrollState = this.#captureScrollState();
+    await this.render(force);
+    (globalThis.requestAnimationFrame ?? ((callback) => setTimeout(callback, 0)))(() => this.#restoreScrollState(scrollState));
+    return this;
+  }
+
   async setContext({ state = this.boardState } = {}, { render = true } = {}) {
     const previousKey = this.instanceKey;
     this.boardState = sanitizeTravelPlayerMissionBoardState(state ?? {});
     this.instanceKey = missionBoardInstanceKey(this.boardState);
     if (previousKey !== this.instanceKey && activeTravelPlayerMissionBoards.get(previousKey) === this) activeTravelPlayerMissionBoards.delete(previousKey);
     activeTravelPlayerMissionBoards.set(this.instanceKey, this);
-    if (render) await this.render(true);
+    if (render) await this.#renderPreservingScroll(true);
     return this;
   }
 
@@ -685,7 +704,9 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
   }
 
   #setLocalStationApproach(stationKey, skill) {
+    const scrollState = this.#captureScrollState();
     this.boardState = { ...this.boardState, stations: this.boardState.stations.map((station) => station.stationKey === stationKey ? { ...station, selectedApproachValue: skill } : station) };
+    (globalThis.requestAnimationFrame ?? ((callback) => setTimeout(callback, 0)))(() => this.#restoreScrollState(scrollState));
   }
 
   async #submitApproach(stationKey) {
@@ -705,7 +726,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
       ...this.boardState,
       stations: this.boardState.stations.map((entry) => entry.stationKey === safe.stationKey ? { ...entry, ...safe } : entry)
     });
-    if (render) return this.render(true);
+    if (render) return this.#renderPreservingScroll(true);
     return this;
   }
 

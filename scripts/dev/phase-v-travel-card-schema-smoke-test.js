@@ -210,6 +210,38 @@ assert(playerNavigator.selectedApproachHelpText === selectedRow.selectedApproach
 assert(playerNavigator.approachOptions.every((approach) => approach.skill && approach.skillLabel && approach.dcLabel), "player mission board approach options include skill labels and DC labels");
 assert(JSON.stringify(playerNavigator).includes("Hidden society consequence.") === false, "player mission board state does not expose hidden consequence text");
 
+const distinctRoundEvent = JSON.parse(JSON.stringify(legacyEvent));
+distinctRoundEvent.key = "phase-v-distinct-round-card-smoke";
+distinctRoundEvent.name = "Phase V Distinct Round Card Smoke";
+distinctRoundEvent.roundCount = 2;
+distinctRoundEvent.rounds = [
+  {
+    ...JSON.parse(JSON.stringify(legacyEvent.rounds[0])),
+    round: 1,
+    title: "First Current",
+    openingVignette: "Round one opens under the black bell's first toll.",
+    stationCards: [{ stationKey: "navigator", stationName: "Navigator", problem: "Round one current drags against the port bow.", skillApproaches: [{ skill: "survival", label: "Hold the First Line", helpText: "Read the first current by pressure and spray.", gmNarrationFeedback: { criticalSuccess: "Round one critical GM text.", success: "Round one success GM text.", failure: "Round one failure GM text.", criticalFailure: "Round one critical failure GM text." }, boardResultFeedback: feedback }] }]
+  },
+  {
+    ...JSON.parse(JSON.stringify(legacyEvent.rounds[0])),
+    round: 2,
+    title: "Second Current",
+    openingVignette: "Round two opens under a different black bell echo.",
+    stationCards: [{ stationKey: "navigator", stationName: "Navigator", problem: "Round two current coils beneath the keel instead.", skillApproaches: [{ skill: "survival", label: "Hold the First Line", helpText: "Read the second current by undertow and bell echo.", gmNarrationFeedback: { criticalSuccess: "Round two critical GM text.", success: "Round two success GM text.", failure: "Round two failure GM text.", criticalFailure: "Round two critical failure GM text." }, boardResultFeedback: feedback }] }]
+  }
+];
+const distinctExport = exportTravelEventDraftToJson(normalizeTravelEventDraft(distinctRoundEvent, { now: "2026-06-15T00:00:00.000Z" }), { now: "2026-06-15T00:00:00.000Z" });
+const distinctImport = importTravelEventDraftFromJson(distinctExport.json, { now: "2026-06-15T00:00:00.000Z" });
+const distinctFinalized = finalizeTravelEventDraft(distinctImport.draft, { now: "2026-06-15T00:00:00.000Z" });
+assert(distinctFinalized.ok, `distinct round draft finalizes: ${(distinctFinalized.errors ?? []).join(", ")}`);
+const distinctRunner = createTravelEventRunnerSession(distinctFinalized.event, { ship: { id: "ship", uuid: "Actor.ship", name: "Smoke Ship", type: "vehicle" }, now: "2026-06-15T00:00:00.000Z" });
+assert(distinctRunner.ok, `distinct round runner starts: ${(distinctRunner.errors ?? []).join(", ")}`);
+assert(distinctRunner.session.event.rounds[0].stationCards[0].problem !== distinctRunner.session.event.rounds[1].stationCards[0].problem, "runner keeps round-specific station card problems distinct");
+assert(distinctRunner.session.event.rounds[0].stationCards[0].skillApproaches[0].gmNarrationFeedback.success !== distinctRunner.session.event.rounds[1].stationCards[0].skillApproaches[0].gmNarrationFeedback.success, "runner keeps round-specific GM feedback distinct");
+const distinctBoardRoundOne = prepareTravelPlayerMissionBoardState(distinctRunner.session);
+const distinctRoundTwoSession = { ...distinctRunner.session, currentRoundIndex: 1 };
+const distinctBoardRoundTwo = prepareTravelPlayerMissionBoardState(distinctRoundTwoSession);
+assert(distinctBoardRoundOne.stations[0].promptText !== distinctBoardRoundTwo.stations[0].promptText, "player mission board uses round-specific station card text");
 
 
 const twoStationEvent = JSON.parse(JSON.stringify(legacyEvent));
@@ -276,9 +308,11 @@ const navigatorFailure = setTravelEventRunnerStationResult(selectedTwoStationApp
 assert(navigatorFailure.ok, `navigator failure result records: ${(navigatorFailure.errors ?? []).join(", ")}`);
 const engineerSuccess = setTravelEventRunnerStationResult(navigatorFailure.session, 0, "engineer", "success", { now: "2026-06-15T00:00:00.000Z" });
 assert(engineerSuccess.ok, `engineer success result records: ${(engineerSuccess.errors ?? []).join(", ")}`);
-const feedbackState = prepareTravelEventRunnerState(engineerSuccess.session);
+const rolledDetailSession = { ...engineerSuccess.session, playerMissionBoardRollDetails: { navigator: "d20 14 + Survival 9 = 23 vs DC 20: Success" } };
+const feedbackState = prepareTravelEventRunnerState(rolledDetailSession);
 const navigatorFeedbackRow = feedbackState.stations.find((row) => row.stationKey === "navigator");
 const engineerFeedbackRow = feedbackState.stations.find((row) => row.stationKey === "engineer");
+assert(navigatorFeedbackRow.rollDetailText === "d20 14 + Survival 9 = 23 vs DC 20: Success", "GM runner station row exposes player roll detail text");
 assert(navigatorFeedbackRow.resultFeedback === "Naria remembers the warning, but not the safe bearing.", "station row exposes failure resultFeedback from rollFeedback.failure");
 assert(navigatorFeedbackRow.hasResultFeedback, "station row marks resultFeedback as available");
 assert(engineerFeedbackRow.resultFeedback === "Bramble syncs the arkengine cleanly against the song's vibration.", "station row exposes success resultFeedback from rollFeedback.success");

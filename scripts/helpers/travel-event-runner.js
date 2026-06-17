@@ -820,6 +820,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       result,
       resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",
       resultFeedback: result ? (selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
+      rollDetailText: session?.playerMissionBoardRollDetails?.[stationKey] || "",
       gmNarrationFeedback: result ? (selectedApproach.selected?.gmNarrationFeedback?.[result] || selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
       gmOnlyConsequence: result ? (selectedApproach.selected?.gmOnlyConsequence || card.gmOnlyConsequence || "") : "",
       hasResultFeedback: Boolean(result && (selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result])),

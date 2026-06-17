@@ -802,8 +802,8 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
   await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player submitted a station approach." });
   const userName = globalThis.game?.users?.get?.(payload.userId)?.name ?? "Player";
   ui.notifications?.info?.(`${userName} chose ${skill} for ${stationKey}.`);
-  const broadcastResult = queueTravelPlayerMissionBoardRefreshToPlayers(updated.session, { actor: activeOverlay?.actor, refresh: true });
-  console.debug("Arcflight | Board broadcast result.", broadcastResult);
+  const stationUpdateResult = sendTravelPlayerMissionBoardStationUpdateToPlayers(updated.session, stationKey, { actor: activeOverlay?.actor });
+  console.debug("Arcflight | Board station update broadcast result.", stationUpdateResult);
   return true;
 }
 
@@ -858,8 +858,6 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player rolled a travel station." });
   const stationUpdateResult = sendTravelPlayerMissionBoardStationUpdateToPlayers(updated.session, stationKey, { actor: activeOverlay?.actor });
   console.debug("Arcflight | Board station update broadcast result.", stationUpdateResult);
-  const broadcastResult = queueTravelPlayerMissionBoardRefreshToPlayers(updated.session, { actor: activeOverlay?.actor, refresh: true });
-  console.debug("Arcflight | Board broadcast result.", broadcastResult);
   ui.notifications?.info?.(`Player rolled ${stationKey}: ${result}.`);
   return true;
 }
