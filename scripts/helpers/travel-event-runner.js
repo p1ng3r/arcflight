@@ -4,7 +4,7 @@ import { ARCFLIGHT_SHIP_ACTOR_TYPE, getShipTravelResources, previewShipTravelRes
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
 import { createEmptyTravelPressureState, normalizeTravelPressureState, normalizeTravelRoundPressureProfile } from "./travel-pressure.js";
-import { normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
+import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -1697,7 +1697,9 @@ export function advanceTravelEventRunnerRound(session, options = {}) {
   if (!normalized.ok) return normalized;
   const nextSession = cloneData(normalized.session);
   nextSession.currentRoundIndex = Math.min(nextSession.currentRoundIndex + 1, nextSession.event.rounds.length - 1);
+  nextSession.roundPhase = normalizeTravelRunnerRoundPhase();
   nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
@@ -1706,8 +1708,32 @@ export function retreatTravelEventRunnerRound(session, options = {}) {
   if (!normalized.ok) return normalized;
   const nextSession = cloneData(normalized.session);
   nextSession.currentRoundIndex = Math.max(nextSession.currentRoundIndex - 1, 0);
+  nextSession.roundPhase = normalizeTravelRunnerRoundPhase();
   nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function setTravelEventRunnerRoundPhase(session, roundPhase, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundPhase = normalizeTravelRunnerRoundPhase(roundPhase);
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function advanceTravelEventRunnerRoundPhase(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  return setTravelEventRunnerRoundPhase(normalized.session, getNextTravelRoundSegment(normalized.session.roundPhase), options);
+}
+
+export function retreatTravelEventRunnerRoundPhase(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  return setTravelEventRunnerRoundPhase(normalized.session, getPreviousTravelRoundSegment(normalized.session.roundPhase), options);
 }
 
 function scoreSession(session) {
