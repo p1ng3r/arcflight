@@ -1229,6 +1229,165 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
   };
 }
 
+export function prepareTravelPlayerStationCardState(session = null, stationKey = "", options = {}) {
+  const normalizedStationKey = typeof stationKey === "string" ? stationKey : String(stationKey ?? "");
+  const overlayState = prepareTravelSceneOverlayState(session, options);
+  if (!overlayState.hasSession) {
+    return {
+      hasSession: false,
+      sessionKey: "",
+      roundLabel: "No active round",
+      roundTitle: "",
+      stationKey: normalizedStationKey,
+      stationName: normalizedStationKey ? humanizeIdentifier(normalizedStationKey) : "Travel Station",
+      assignedActorName: "Unassigned",
+      promptText: "",
+      hasPromptText: false,
+      selectedApproachLabel: "",
+      selectedApproachHelpText: "",
+      hasSelectedApproach: false,
+      hasSelectedApproachHelpText: false,
+      resultStatusLabel: "No active session",
+      resultFeedbackText: "",
+      hasResultFeedback: false,
+      waitingStateText: overlayState.emptyMessage,
+      isResolved: false,
+      statusKey: "noSession",
+      approachOptions: [],
+      hasApproachOptions: false,
+      selectedApproachValue: "",
+      currentRoundIndex: -1
+    };
+  }
+
+  const station = (overlayState.stations ?? []).find((candidate) => candidate.stationKey === normalizedStationKey) ?? null;
+  const activeSession = normalizeTravelEventRunnerSession(session, options).session;
+  if (!station) {
+    return {
+      hasSession: true,
+      sessionKey: activeSession?.key ?? "",
+      roundLabel: overlayState.roundLabel,
+      roundTitle: overlayState.roundTitle,
+      stationKey: normalizedStationKey,
+      stationName: normalizedStationKey ? humanizeIdentifier(normalizedStationKey) : "Travel Station",
+      assignedActorName: "Unassigned",
+      promptText: "",
+      hasPromptText: false,
+      selectedApproachLabel: "",
+      selectedApproachHelpText: "",
+      hasSelectedApproach: false,
+      hasSelectedApproachHelpText: false,
+      resultStatusLabel: "Station unavailable",
+      resultFeedbackText: "",
+      hasResultFeedback: false,
+      waitingStateText: "This station is not active for the current round.",
+      isResolved: false,
+      statusKey: "unavailable",
+      approachOptions: [],
+      hasApproachOptions: false,
+      selectedApproachValue: "",
+      currentRoundIndex: activeSession?.currentRoundIndex ?? -1
+    };
+  }
+
+  let statusKey = "waitingForGmRoll";
+  let resultStatusLabel = "Waiting for GM roll";
+  let waitingStateText = "Waiting for GM resolution";
+  if (!station.hasAssignment) {
+    statusKey = "needsAssignment";
+    resultStatusLabel = "Needs assignment";
+    waitingStateText = "Waiting for station assignment";
+  } else if (!station.hasSelectedApproach) {
+    statusKey = "waitingForApproach";
+    resultStatusLabel = "Waiting for approach";
+    waitingStateText = "Waiting for GM to confirm approach";
+  } else if (station.hasResult) {
+    statusKey = "resolved";
+    resultStatusLabel = "Resolved";
+    waitingStateText = station.resultLabel || "Resolved";
+  }
+
+  return {
+    hasSession: true,
+    sessionKey: activeSession?.key ?? "",
+    roundLabel: overlayState.roundLabel,
+    roundTitle: overlayState.roundTitle,
+    stationKey: station.stationKey,
+    stationName: station.stationName,
+    assignedActorName: station.assignedActorName,
+    promptText: station.promptText,
+    hasPromptText: station.hasPromptText === true,
+    selectedApproachLabel: station.hasSelectedApproach ? station.approachLabel : "",
+    selectedApproachHelpText: station.hasSelectedApproach ? station.approachHelpText : "",
+    hasSelectedApproach: station.hasSelectedApproach === true,
+    hasSelectedApproachHelpText: station.hasApproachHelpText === true,
+    resultStatusLabel,
+    resultLabel: station.hasResult ? station.resultLabel : "",
+    resultFeedbackText: station.hasResult ? station.resultFeedback : "",
+    hasResultFeedback: station.hasResult === true && Boolean(station.resultFeedback),
+    waitingStateText,
+    isResolved: station.hasResult === true,
+    statusKey,
+    approachOptions: station.approachOptions ?? [],
+    hasApproachOptions: (station.approachOptions ?? []).length > 0,
+    selectedApproachValue: station.hasSelectedApproach ? (station.selectedApproachValue || "") : "",
+    currentRoundIndex: activeSession?.currentRoundIndex ?? -1
+  };
+}
+
+export function prepareTravelPlayerMissionBoardState(session = null, options = {}) {
+  const overlayState = prepareTravelSceneOverlayState(session, options);
+  const normalized = session ? normalizeTravelEventRunnerSession(session, options) : { session: null };
+  if (!overlayState.hasSession) {
+    return {
+      hasSession: false,
+      sessionKey: "",
+      eventName: "",
+      roundLabel: "No active round",
+      roundTitle: "",
+      currentRoundIndex: -1,
+      vignette: "",
+      stations: [],
+      hasStations: false
+    };
+  }
+  return {
+    hasSession: true,
+    sessionKey: normalized.session?.key ?? "",
+    eventName: overlayState.eventName,
+    roundLabel: overlayState.roundLabel,
+    roundTitle: overlayState.roundTitle,
+    currentRoundIndex: overlayState.currentRoundIndex,
+    vignette: overlayState.vignette,
+    stations: (overlayState.stations ?? []).map((station) => ({
+      stationKey: station.stationKey,
+      stationName: station.stationName,
+      assignedActorName: station.assignedActorName,
+      promptText: station.promptText,
+      hasPromptText: station.hasPromptText === true,
+      approachOptions: station.approachOptions ?? [],
+      hasApproachOptions: (station.approachOptions ?? []).length > 0,
+      hasSelectedApproach: station.hasSelectedApproach === true,
+      selectedApproachValue: station.selectedApproachValue || "",
+      selectedApproachLabel: station.hasSelectedApproach ? station.approachLabel : "",
+      selectedApproachHelpText: station.hasSelectedApproach ? station.approachHelpText : "",
+      hasSelectedApproachHelpText: station.hasApproachHelpText === true,
+      dcLabel: station.dcLabel,
+      dc: station.dc,
+      resultLabel: station.resultLabel,
+      resultFeedbackText: station.hasResult ? station.resultFeedback : "",
+      hasResultFeedback: station.hasResultFeedback === true,
+      hasResult: station.hasResult === true,
+      result: station.result || "",
+      rollDetailText: session?.playerMissionBoardRollDetails?.[station.stationKey] || station.rollDetailText || "",
+      canRollStation: false,
+      canChooseApproach: false,
+      permissionReason: "Waiting for board permissions."
+    })),
+    hasStations: (overlayState.stations ?? []).length > 0
+  };
+}
+
 export function setTravelEventRunnerStationResult(session, roundIndex, stationKey, result, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;

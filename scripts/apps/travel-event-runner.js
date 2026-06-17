@@ -1,6 +1,7 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
+import { sendTravelPlayerMissionBoardToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
@@ -33,6 +34,8 @@ import {
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
+let activeTravelEventRunner = null;
+
 const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-start-travel-event-runner]",
   "[data-arcflight-runner-result]",
@@ -64,7 +67,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-undo-effect]",
   "[data-arcflight-runner-clear-assignment]",
   "[data-arcflight-runner-reset-assignment]",
-  "[data-arcflight-open-travel-scene-overlay]"
+  "[data-arcflight-open-travel-scene-overlay]",
+  "[data-arcflight-runner-send-mission-board]"
 ].join(", ");
 
 
@@ -226,6 +230,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   constructor(options = {}) {
     super(options);
+    activeTravelEventRunner = this;
     this.selectedEventId = typeof options.selectedEventId === "string" ? options.selectedEventId : defaultSelectedEventId(options);
     this.session = options.session ?? null;
     this.selectedSessionKey = typeof options.selectedSessionKey === "string" ? options.selectedSessionKey : (this.session?.key ?? "");
@@ -419,6 +424,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
     if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
+    if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
+  }
+
+  async #sendPlayerMissionBoard() {
+    const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.#getSelectedShipActor(), refresh: true });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
+    else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
+    return result;
   }
 
   async #openTravelSceneOverlay() {
@@ -1089,6 +1102,20 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.statusMessage = "Local runner session cleared. Published events were not modified.";
     return this.render(true);
   }
+}
+
+export function getActiveTravelEventRunner() {
+  return activeTravelEventRunner;
+}
+
+export async function updateActiveTravelEventRunnerSession(session, options = {}) {
+  const app = activeTravelEventRunner;
+  if (!app) return null;
+  app.session = session ?? null;
+  app.selectedSessionKey = app.session?.key ?? app.selectedSessionKey;
+  if (typeof options.statusMessage === "string") app.statusMessage = options.statusMessage;
+  await app.render(true);
+  return app;
 }
 
 export function openTravelEventRunner(options = {}, maybeOptions = {}) {

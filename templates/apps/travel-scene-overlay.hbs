@@ -3,6 +3,9 @@
     <p class="arcflight-sheet__hint">{{hardBoundaryHint}}</p>
     <div class="arcflight-travel-scene-overlay__actions">
       <button type="button" data-arcflight-refresh-travel-scene-overlay>Refresh Overlay</button>
+      {{#if state.hasSession}}<button type="button" data-arcflight-overlay-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
+      <button type="button" data-arcflight-overlay-socket-test>Socket Test</button>
+      {{#if state.hasSession}}<button type="button" data-arcflight-overlay-send-all-player-cards>Send All Player Cards</button>{{/if}}
     </div>
     {{#if state.hasSession}}
       <h1>{{state.eventName}}</h1>
@@ -98,6 +101,12 @@
                 <h3>{{stationName}}</h3>
                 <span class="arcflight-travel-scene-overlay__station-card-state">{{resultLabel}}</span>
               </header>
+
+              <div class="arcflight-travel-scene-overlay__player-preview">
+                <button type="button" data-arcflight-overlay-preview-player-card data-station-key="{{stationKey}}">Preview Player Card</button>
+                <button type="button" data-arcflight-overlay-send-player-card data-station-key="{{stationKey}}">Send Player Card</button>
+                <button type="button" data-arcflight-overlay-broadcast-player-card data-station-key="{{stationKey}}">Broadcast Player Card</button>
+              </div>
 
               <dl class="arcflight-travel-scene-overlay__station-card-facts">
                 <div><dt>Assigned Actor</dt><dd>{{assignedActorName}}</dd></div>

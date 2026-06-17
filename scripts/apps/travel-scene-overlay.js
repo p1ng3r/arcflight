@@ -1,4 +1,5 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
+import { broadcastTravelPlayerStationCardToAllPlayers, openTravelPlayerStationCard, sendAllTravelPlayerStationCardsToPlayers, sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerStationCardSocketDiagnostic, sendTravelPlayerStationCardToPlayers } from "./travel-player-station-card.js";
 import {
   clearTravelEventRunnerStationAssignment,
   prepareTravelSceneOverlayState,
@@ -217,15 +218,101 @@ export class ArcflightTravelSceneOverlay extends HandlebarsApplicationMixin(Appl
   }
 
   async #onOverlayClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
+    const target = event.target?.closest?.("[data-arcflight-refresh-travel-scene-overlay], [data-arcflight-overlay-send-mission-board], [data-arcflight-overlay-socket-test], [data-arcflight-overlay-preview-player-card], [data-arcflight-overlay-send-player-card], [data-arcflight-overlay-broadcast-player-card], [data-arcflight-overlay-send-all-player-cards], [data-arcflight-overlay-roll-station], [data-arcflight-overlay-clear-assignment], [data-arcflight-overlay-reset-assignment]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     this.#captureScrollPosition();
 
     if (target.hasAttribute("data-arcflight-refresh-travel-scene-overlay")) return this.render(true);
+    if (target.hasAttribute("data-arcflight-overlay-send-mission-board")) return this.#sendPlayerMissionBoard();
+    if (target.hasAttribute("data-arcflight-overlay-socket-test")) return this.#sendSocketDiagnostic();
+    if (target.hasAttribute("data-arcflight-overlay-preview-player-card")) return this.#previewPlayerStationCard(target);
+    if (target.hasAttribute("data-arcflight-overlay-send-player-card")) return this.#sendPlayerStationCard(target);
+    if (target.hasAttribute("data-arcflight-overlay-broadcast-player-card")) return this.#broadcastPlayerStationCard(target);
+    if (target.hasAttribute("data-arcflight-overlay-send-all-player-cards")) return this.#sendAllPlayerStationCards();
     if (target.hasAttribute("data-arcflight-overlay-roll-station")) return this.#rollStationCheck(target);
     if (target.hasAttribute("data-arcflight-overlay-clear-assignment")) return this.#clearStationAssignment(target);
     if (target.hasAttribute("data-arcflight-overlay-reset-assignment")) return this.#resetStationAssignment(target);
+  }
+
+  async #previewPlayerStationCard(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    return openTravelPlayerStationCard({ session: this.session, stationKey, actor: this.actor });
+  }
+
+  async #sendPlayerMissionBoard() {
+    const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.actor, refresh: true });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
+    else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
+    return result;
+  }
+
+  async #sendSocketDiagnostic() {
+    const result = sendTravelPlayerStationCardSocketDiagnostic();
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
+    else ui.notifications?.info?.(`Sent socket diagnostic to ${result.sentRecipients} active player${result.sentRecipients === 1 ? "" : "s"}.`);
+    return result;
+  }
+
+  async #sendPlayerStationCard(target) {
+    const stationKey = target.dataset.stationKey ?? "";
+    const result = sendTravelPlayerStationCardToPlayers(this.session, stationKey, { actor: this.actor });
+    console.debug("Arcflight | Sending player station card.", {
+      stationKey,
+      targetUserIds: result.targetUserIds,
+      owners: result.owners,
+      fallbackBroadcast: result.fallbackBroadcast
+    });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active player users found.");
+    else if (result.fallbackBroadcast) ui.notifications?.warn?.(`No active player observer found for this station; sent fallback broadcast to ${result.sentRecipients} active non-GM player${result.sentRecipients === 1 ? "" : "s"}.`);
+    else ui.notifications?.info?.(`Sent player station card to ${result.sentRecipients} active player recipient${result.sentRecipients === 1 ? "" : "s"}.`);
+    return result;
+  }
+
+  async #broadcastPlayerStationCard(target) {
+    const stationKey = target?.dataset?.stationKey ?? "";
+    console.warn("Arcflight | Overlay Broadcast Player Card clicked.", {
+      stationKey,
+      hasSession: Boolean(this.session),
+      sessionKey: this.session?.key
+    });
+
+    if (!stationKey) {
+      ui.notifications?.error?.("Arcflight cannot broadcast player card: missing station key.");
+      return null;
+    }
+
+    if (!this.session) {
+      ui.notifications?.error?.("Arcflight cannot broadcast player card: overlay session is missing.");
+      console.error("Arcflight | Overlay broadcast failed: missing session.", this);
+      return null;
+    }
+
+    const result = broadcastTravelPlayerStationCardToAllPlayers(this.session, stationKey, { actor: this.actor });
+    console.warn("Arcflight | Overlay Broadcast Player Card result.", result);
+
+    if (!result?.ok) {
+      ui.notifications?.error?.(`Arcflight failed to broadcast player card: ${(result?.errors ?? []).join(", ") || "unknown error"}`);
+      return result;
+    }
+
+    ui.notifications?.info?.(`Broadcast player station card to ${result.sentRecipients ?? result.sent ?? 0} active player recipient(s).`);
+    return result;
+  }
+
+  async #sendAllPlayerStationCards() {
+    const result = sendAllTravelPlayerStationCardsToPlayers(this.session, { actor: this.actor });
+    console.debug("Arcflight | Sending all player station cards.", {
+      results: result.results?.map((entry) => ({
+        stationKey: entry.stationKey,
+        targetUserIds: entry.targetUserIds,
+        owners: entry.owners,
+        fallbackBroadcast: entry.fallbackBroadcast
+      })) ?? []
+    });
+    if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No player station cards were sent.");
+    else ui.notifications?.info?.(`Sent ${result.sentCards} player station card${result.sentCards === 1 ? "" : "s"} to ${result.sentRecipients} active player recipient(s). ${result.fallbackBroadcasts} used fallback broadcast. Skipped ${result.skipped}.`);
+    return result;
   }
 
   async #applySessionUpdate(updated, fallbackMessage = "Travel overlay session updated.") {
