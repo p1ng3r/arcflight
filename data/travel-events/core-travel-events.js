@@ -73,7 +73,7 @@ export const CORE_TRAVEL_EVENTS = deepFreeze({
   "travel-runner-qa-crossing": {
     key: "travel-runner-qa-crossing",
     name: "Travel Runner QA Crossing",
-    category: "testing",
+    category: "navigation",
     tags: ["travel", "qa", "missionBoard", "structuredStations"],
     roundCount: 2,
     baseDC: 20,

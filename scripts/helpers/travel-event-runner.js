@@ -1366,7 +1366,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
       selectedApproachSkillLabel: row.selectedApproach?.skill ? humanizeIdentifier(row.selectedApproach.skill) : "",
       selectedApproachStatisticLabel: row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "",
-      selectedApproachRollLabel: hasSelectedApproach ? `${row.selectedApproach?.label || row.selectedSkillLabel || "Selected"}: ${row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "Statistic unavailable"} vs ${Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable"}` : "",
+      selectedApproachRollLabel: hasSelectedApproach ? `${row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "Statistic unavailable"} vs ${Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable"}` : "",
       resultOptions: row.resultOptions ?? [],
       hasResultOptions: (row.resultOptions ?? []).length > 0
     };

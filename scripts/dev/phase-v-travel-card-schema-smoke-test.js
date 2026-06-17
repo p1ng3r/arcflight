@@ -170,7 +170,8 @@ const aliasBoard = prepareTravelPlayerMissionBoardState(aliasSelected.session, {
 const aliasStation = aliasBoard.stations.find((row) => row.stationKey === "navigator");
 assert(aliasStation.selectedApproachModifier === 9 && aliasStation.selectedApproachStatisticLabel === "Survival +9", "approach skill survival resolves to short PF2E sur skill");
 assert(aliasStation.canRollStation === true, "mission board enables roll when selected approach modifier and DC resolve");
-assert(aliasStation.selectedApproachRollLabel.includes("Hold the original course") && aliasStation.selectedApproachRollLabel.includes("Survival +9") && aliasStation.selectedApproachRollLabel.includes("DC 20"), "selected approach panel roll formula includes approach label, statistic modifier, and DC");
+assert(aliasStation.selectedApproachLabel === "Hold the original course", "selected approach label contains the approach label");
+assert(aliasStation.selectedApproachRollLabel === "Survival +9 vs DC 20", "selected approach roll label contains only statistic modifier and DC");
 assert(aliasStation.approachOptions.some((approach) => approach.skill === "arcana" && approach.modifier === 10 && approach.resolvedStatisticKey === "arc"), "approach skill arcana resolves to short PF2E arc skill");
 assert(aliasStation.approachOptions.some((approach) => approach.displayLabel.includes("Hold the original course") && approach.displayLabel.includes("Survival +9") && approach.displayLabel.includes("DC 20")), "mission board dropdown display includes approach label, skill modifier, and DC");
 
@@ -260,7 +261,8 @@ const playerNavigator = playerBoardState.stations.find((row) => row.stationKey =
 assert(playerNavigator.selectedApproachLabel === "Recall Past Crossings", "player mission board state includes selected approach label");
 assert(playerNavigator.selectedApproachHelpText === selectedRow.selectedApproach.helpText, "player mission board state includes selected approach How This Helps text");
 assert(playerNavigator.approachOptions.every((approach) => approach.skill && approach.skillLabel && approach.dcLabel), "player mission board approach options include skill labels and DC labels");
-assert(playerNavigator.selectedApproachRollLabel.includes("Recall Past Crossings") && playerNavigator.selectedApproachRollLabel.includes("Society") && playerNavigator.selectedApproachRollLabel.includes("DC"), "player mission board selected approach panel includes selected label and roll formula");
+assert(playerNavigator.selectedApproachLabel === "Recall Past Crossings", "player mission board selected approach label remains visible separately from the roll formula");
+assert(!playerNavigator.selectedApproachRollLabel.includes("Recall Past Crossings") && playerNavigator.selectedApproachRollLabel.includes("Society") && playerNavigator.selectedApproachRollLabel.includes("DC"), "player mission board selected approach roll label contains only statistic/modifier/DC formula");
 assert(JSON.stringify(playerNavigator).includes("Hidden society consequence.") === false, "player mission board state does not expose hidden consequence text");
 const stationUpdatePayload = { ...playerNavigator, rollDetailText: "Society 17 vs DC 18: Failure" };
 assert(stationUpdatePayload.selectedApproachLabel === playerNavigator.selectedApproachLabel && stationUpdatePayload.selectedApproachRollLabel === playerNavigator.selectedApproachRollLabel && stationUpdatePayload.approachOptions.length === playerNavigator.approachOptions.length, "station-level update payload preserves selected approach and option state for coherent board refreshes");
