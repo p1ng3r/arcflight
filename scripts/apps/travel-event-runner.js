@@ -36,7 +36,10 @@ import {
   setTravelEventRunnerNpcStationController,
   markTravelFocusEffectApplied,
   dismissTravelFocusEffect,
-  updateTravelFocusEffectNote
+  updateTravelFocusEffectNote,
+  markTravelStabilizeResolutionApplied,
+  dismissTravelStabilizeResolution,
+  updateTravelStabilizeResolutionNote
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -80,7 +83,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-open-travel-scene-overlay]",
   "[data-arcflight-runner-send-mission-board]",
   "[data-arcflight-focus-effect-apply]",
-  "[data-arcflight-focus-effect-dismiss]"
+  "[data-arcflight-focus-effect-dismiss]",
+  "[data-arcflight-stabilize-resolution-apply]",
+  "[data-arcflight-stabilize-resolution-dismiss]"
 ].join(", ");
 
 
@@ -399,6 +404,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     const focusNote = event.target?.closest?.("[data-arcflight-focus-effect-note]");
     if (focusNote && this.element?.contains(focusNote)) return this.#updateFocusEffectNote(focusNote);
+    const stabilizeNote = event.target?.closest?.("[data-arcflight-stabilize-resolution-note]");
+    if (stabilizeNote && this.element?.contains(stabilizeNote)) return this.#updateStabilizeResolutionNote(stabilizeNote);
 
     const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
     if (sessionSelect && this.element?.contains(sessionSelect)) {
@@ -450,6 +457,27 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
+    if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
+    if (target.hasAttribute("data-arcflight-stabilize-resolution-dismiss")) return this.#resolveStabilizeResolution(target, "dismissed");
+  }
+
+  async #resolveStabilizeResolution(target, status) {
+    const stabilizeResolutionId = target.dataset.stabilizeResolutionId ?? "";
+    const updated = status === "applied"
+      ? markTravelStabilizeResolutionApplied(this.session, stabilizeResolutionId)
+      : dismissTravelStabilizeResolution(this.session, stabilizeResolutionId);
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok
+      ? (status === "applied" ? "Stabilize pressure resolution applied." : "Stabilize pressure resolution dismissed.")
+      : (updated.errors?.[0] ?? "Could not update Stabilize pressure resolution.");
+    return this.render(true);
+  }
+
+  async #updateStabilizeResolutionNote(input) {
+    const updated = updateTravelStabilizeResolutionNote(this.session, input.dataset.stabilizeResolutionId ?? "", input.value ?? "");
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok ? "Stabilize resolution note updated." : (updated.errors?.[0] ?? "Could not update Stabilize resolution note.");
+    return this.render(true);
   }
 
   async #resolveFocusEffect(target, status) {
