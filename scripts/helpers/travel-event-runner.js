@@ -298,6 +298,15 @@ const HARD_CORRECTION_PROMPT = Object.freeze({
   consequenceAmount: 1
 });
 
+function debugTravelReaction(message, data = {}) {
+  try {
+    if (globalThis.game?.settings?.get?.("arcflight", "debugTravelReactions") !== true) return;
+    console.debug(`Arcflight | Travel Reaction | ${message}`, data);
+  } catch (_error) {
+    // Debug logging must never break travel helper flows.
+  }
+}
+
 export function normalizeTravelReactionPromptRecords(value = {}, options = {}) {
   const source = isPlainObject(value) ? value : {};
   const records = (Array.isArray(source.records) ? source.records : []).filter(isPlainObject).map((record) => ({
@@ -333,6 +342,14 @@ export function buildTravelReactionPromptRecord(session, roundIndex, stationKey,
   if (!normalized.ok) return null;
   const index = Number(roundIndex);
   const result = normalized.session.roundResults[index]?.stationResults?.[stationKey];
+  debugTravelReaction("Build reaction prompt candidate.", {
+    sessionKey: normalized.session?.key ?? "",
+    roundIndex: index,
+    stationKey,
+    abilityKey,
+    trigger,
+    result
+  });
   if (stationKey !== HARD_CORRECTION_PROMPT.stationKey || abilityKey !== HARD_CORRECTION_PROMPT.abilityKey || trigger !== HARD_CORRECTION_PROMPT.trigger || !["failure", "criticalFailure"].includes(result)) return null;
   const ability = getDefaultStationFocusAbilities(stationKey, options).find((entry) => entry.key === abilityKey);
   if (!ability) return null;
@@ -359,9 +376,29 @@ export function syncTravelReactionPromptsForStationResult(session, roundIndex, s
   const records = normalizeTravelReactionPromptRecords(nextSession.reactionPrompts, options).records;
   const id = `round-${index}-${stationKey}-${HARD_CORRECTION_PROMPT.abilityKey}`;
   const existing = records.find((record) => record.reactionPromptId === id);
-  if (existing?.status === "accepted" && !existing.rerollResult) return markTravelReactionPromptRerollResult(nextSession, id, nextSession.roundResults[index]?.stationResults?.[stationKey], options);
+  debugTravelReaction("Station result reaction sync started.", {
+    sessionKey: nextSession?.key ?? "",
+    roundIndex: index,
+    stationKey,
+    existing: existing ? { ...existing } : null,
+    recordsBefore: records.map((record) => ({ ...record }))
+  });
+  if (existing?.status === "accepted" && !existing.rerollResult) {
+    const rerollResult = nextSession.roundResults[index]?.stationResults?.[stationKey];
+    debugTravelReaction("Station result reaction sync marking reroll result.", { reactionPromptId: id, stationKey, rerollResult });
+    return markTravelReactionPromptRerollResult(nextSession, id, rerollResult, options);
+  }
   const focus = prepareTravelStationFocusState(nextSession, stationKey, index, options);
   const result = nextSession.roundResults[index]?.stationResults?.[stationKey];
+  debugTravelReaction("Station result reaction sync eligibility.", {
+    sessionKey: nextSession?.key ?? "",
+    roundIndex: index,
+    stationKey,
+    result,
+    focusRemaining: focus.focusRemaining,
+    spentThisRound: focus.spentThisRound,
+    usedAbilityKeys: focus.usedAbilityKeys ?? []
+  });
   if (existing?.status === "pending" && !["failure", "criticalFailure"].includes(result)) {
     existing.status = "dismissed";
     existing.resolvedAt = nowIso(options);
@@ -369,9 +406,18 @@ export function syncTravelReactionPromptsForStationResult(session, roundIndex, s
   }
   if (!existing && stationKey === "navigator" && ["failure", "criticalFailure"].includes(result) && focus.focusRemaining > 0 && !focus.spentThisRound && !focus.usedAbilityKeys.includes(HARD_CORRECTION_PROMPT.abilityKey)) {
     const record = buildTravelReactionPromptRecord(nextSession, index, stationKey, HARD_CORRECTION_PROMPT.abilityKey, HARD_CORRECTION_PROMPT.trigger, options);
-    if (record) records.push(record);
+    if (record) {
+      debugTravelReaction("Station result reaction prompt created.", { reactionPromptId: record.reactionPromptId, record });
+      records.push(record);
+    }
   }
   nextSession.reactionPrompts = { records };
+  debugTravelReaction("Station result reaction sync completed.", {
+    sessionKey: nextSession?.key ?? "",
+    roundIndex: index,
+    stationKey,
+    recordsAfter: records.map((record) => ({ ...record }))
+  });
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 

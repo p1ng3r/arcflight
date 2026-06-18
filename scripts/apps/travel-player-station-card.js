@@ -20,6 +20,15 @@ let travelPlayerReactionResponseHandler = null;
 const missionBoardRefreshTimers = new Map();
 const activeTravelPlayerReactionPrompts = new Map();
 
+function debugTravelReaction(message, data = {}) {
+  try {
+    if (globalThis.game?.settings?.get?.("arcflight", "debugTravelReactions") !== true) return;
+    console.debug(`Arcflight | Travel Reaction | ${message}`, data);
+  } catch (_error) {
+    // Debug logging must never break player flows.
+  }
+}
+
 function sanitizeText(value) {
   return typeof value === "string" ? value : "";
 }
@@ -225,9 +234,25 @@ export function resolveActivePlayerOwnersForStation(session, stationKey, options
 export function sendTravelPlayerReactionPromptToPlayers(session, reactionPromptId, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   const record = normalized.session?.reactionPrompts?.records?.find((entry) => entry.reactionPromptId === reactionPromptId) ?? null;
+  debugTravelReaction("Preparing player reaction prompt delivery.", {
+    sessionKey: normalized.session?.key ?? "",
+    reactionPromptId,
+    hasRecord: Boolean(record),
+    recordStatus: record?.status ?? "",
+    stationKey: record?.stationKey ?? "",
+    abilityKey: record?.abilityKey ?? ""
+  });
   if (!record || record.status !== "pending") return { ok: false, errors: ["Reaction prompt is not pending."], sentRecipients: 0, targetUserIds: [] };
   const owners = resolveActivePlayerOwnersForStation(normalized.session, record.stationKey, options);
   const targetUserIds = owners.map((owner) => owner.id);
+  debugTravelReaction("Resolved player reaction prompt delivery targets.", {
+    sessionKey: normalized.session?.key ?? "",
+    reactionPromptId,
+    stationKey: record.stationKey,
+    ownerIds: owners.map((owner) => owner.id),
+    ownerNames: owners.map((owner) => owner.name ?? owner.id),
+    targetUserIds
+  });
   if (targetUserIds.length === 0) return { ok: false, errors: ["No active assigned player controls this station."], sentRecipients: 0, targetUserIds };
   if (!globalThis.game?.socket || typeof game.socket.emit !== "function") return { ok: false, errors: ["Foundry socket is not available."], sentRecipients: 0, targetUserIds };
   const state = prepareTravelPlayerReactionPromptState(normalized.session, reactionPromptId, {
@@ -240,6 +265,12 @@ export function sendTravelPlayerReactionPromptToPlayers(session, reactionPromptI
     targetUserIds,
     state: sanitizeTravelPlayerReactionPromptState(state)
   };
+  debugTravelReaction("Emitting player reaction prompt socket payload.", {
+    action: payload.action,
+    reactionPromptId,
+    targetUserIds,
+    state: payload.state
+  });
   globalThis.game?.socket?.emit?.("module.arcflight", payload);
   return { ok: true, errors: [], sentRecipients: targetUserIds.length, targetUserIds, owners, payload, state: payload.state };
 }
@@ -405,6 +436,15 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
   if (payload.action === TRAVEL_PLAYER_REACTION_PROMPT_ACTION) {
     const userId = globalThis.game?.user?.id ?? "";
     const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
+    debugTravelReaction("Player received reaction prompt socket payload.", {
+      userId,
+      targetUserIds,
+      matched: Boolean(userId && targetUserIds.includes(userId)),
+      reactionPromptId: payload?.state?.reactionPromptId ?? "",
+      stationKey: payload?.state?.stationKey ?? "",
+      abilityKey: payload?.state?.abilityKey ?? "",
+      available: payload?.state?.available === true
+    });
     if (!userId || !targetUserIds.includes(userId)) return true;
     openTravelPlayerReactionPrompt({ state: payload.state }).catch((error) => {
       console.error("Arcflight | Failed to open player reaction prompt from socket.", error);
@@ -496,6 +536,14 @@ export class ArcflightTravelPlayerReactionPrompt extends HandlebarsApplicationMi
     event.preventDefault();
     const response = target.dataset.arcflightPlayerReactionResponse ?? "";
     if (!["accept", "dismiss"].includes(response)) return;
+    debugTravelReaction("Player reaction prompt response emitted.", {
+      sessionKey: this.promptState.sessionKey,
+      reactionPromptId: this.promptState.reactionPromptId,
+      stationKey: this.promptState.stationKey,
+      abilityKey: this.promptState.abilityKey,
+      response,
+      userId: globalThis.game?.user?.id ?? ""
+    });
     globalThis.game?.socket?.emit?.("module.arcflight", {
       action: TRAVEL_PLAYER_REACTION_RESPONSE_ACTION,
       sessionKey: this.promptState.sessionKey,
@@ -515,18 +563,35 @@ export class ArcflightTravelPlayerReactionPrompt extends HandlebarsApplicationMi
 
 export async function openTravelPlayerReactionPrompt(options = {}) {
   const state = sanitizeTravelPlayerReactionPromptState(options.state);
-  if (!state.available || !state.reactionPromptId) return null;
+  debugTravelReaction("Player reaction prompt open requested.", {
+    reactionPromptId: state.reactionPromptId,
+    stationKey: state.stationKey,
+    abilityKey: state.abilityKey,
+    available: state.available,
+    permitted: state.permitted,
+    userId: globalThis.game?.user?.id ?? ""
+  });
+  if (!state.available || !state.reactionPromptId) {
+    debugTravelReaction("Player reaction prompt open skipped.", {
+      reactionPromptId: state.reactionPromptId,
+      available: state.available,
+      permitted: state.permitted
+    });
+    return null;
+  }
   const existing = activeTravelPlayerReactionPrompts.get(state.reactionPromptId);
   if (existing) {
     existing.promptState = state;
     await existing.render(true);
     existing.bringToFront?.();
+    debugTravelReaction("Player reaction prompt app refreshed.", { reactionPromptId: state.reactionPromptId });
     return existing;
   }
   const app = new ArcflightTravelPlayerReactionPrompt({ state });
   activeTravelPlayerReactionPrompts.set(state.reactionPromptId, app);
   await app.render(true);
   app.bringToFront?.();
+  debugTravelReaction("Player reaction prompt app opened.", { reactionPromptId: state.reactionPromptId, stationKey: state.stationKey, abilityKey: state.abilityKey });
   return app;
 }
 
@@ -1048,6 +1113,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     const optionKey = sanitizeText(select?.value || station.selectedApproachValue);
     const skill = station.approachOptions.find((entry) => entry.value === optionKey)?.skill || station.selectedApproachSkillLabel || "";
     console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    debugTravelReaction("Player station roll request emitted.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
     ui.notifications?.info?.("Station roll requested.");
     return true;
