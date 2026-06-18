@@ -22,6 +22,9 @@ import {
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
   importTravelEventRunnerSessionFromJson,
+  markTravelFocusEffectApplied,
+  dismissTravelFocusEffect,
+  updateTravelFocusEffectNote,
   normalizeTravelEventRunnerSession,
   prepareTravelPlayerMissionBoardState,
   prepareTravelPlayerStationCardState,
@@ -224,6 +227,7 @@ assert(committedAdvance.ok, "player can commit Advance the Mission");
 assert(committedAdvance.session.roundResults[0].stationActions.navigator.type === "eventApproach", "Advance the Mission preserves Event Approach behavior");
 assert(committedAdvance.session.roundResults[0].selectedStationSkills.navigator === "survival", "Advance the Mission commit preserves selected roll approach");
 assert(committedAdvance.session.stationFocus.navigator.focusRemaining === 1, "committing a station order without Focus does not spend Focus");
+assert(committedAdvance.session.focusEffectRecords.records.length === 0, "committing a station order without Focus creates no Focus effect record");
 const advanceRunnerState = prepareTravelEventRunnerState(committedAdvance.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
 assert(advanceRunnerState.stations[0].stationOrderCommitted && advanceRunnerState.stations[0].selectedActionLabel === "Push Forward", "GM runner sees the player-committed Push Forward option");
 const advanceIndividualCard = prepareTravelPlayerStationCardState(committedAdvance.session, "navigator");
@@ -265,10 +269,22 @@ assert(focusedCommit.ok, "player can commit a Station Order with a valid Focus a
 assert(focusedCommit.session.stationFocus.navigator.focusRemaining === 0, "valid Focus spend reduces Focus remaining by one");
 assert(focusedCommit.session.stationFocus.navigator.usedAbilityKeys.includes("hard-correction"), "valid Focus spend marks the ability used for the event");
 assert(focusedCommit.session.stationFocus.navigator.roundSpent["0"] === "hard-correction", "valid Focus spend records the station's round spend");
+assert(focusedCommit.session.focusEffectRecords.records.length === 1 && focusedCommit.session.focusEffectRecords.records[0].status === "pending", "committing with Focus creates exactly one pending Focus effect record");
+const focusRecord = focusedCommit.session.focusEffectRecords.records[0];
+assert(focusRecord.roundIndex === 0 && focusRecord.stationKey === "navigator" && focusRecord.abilityLabel === "Hard Correction" && focusRecord.timing && focusRecord.effectText && focusRecord.stationName, "Focus effect record includes round, station, ability, timing, effect text, and station info");
+const recommittedFocus = commitTravelEventRunnerStationOrder(focusedCommit.session, 0, "navigator", "eventApproach:survival", { source: "player", selectedFocusAbility: "hard-correction" });
+assert(recommittedFocus.ok && recommittedFocus.session.focusEffectRecords.records.length === 1, "re-committing the same Focus order does not duplicate its effect record");
+const notedFocus = updateTravelFocusEffectNote(recommittedFocus.session, focusRecord.focusEffectId, "Reroll confirmed.", { now: "2026-06-17T00:00:43.000Z" });
+assert(notedFocus.session.focusEffectRecords.records[0].resolutionNote === "Reroll confirmed.", "updating a Focus effect note stores resolutionNote");
+const appliedFocus = markTravelFocusEffectApplied(notedFocus.session, focusRecord.focusEffectId, { now: "2026-06-17T00:00:44.000Z", userId: "gm-1", userName: "GM" });
+assert(appliedFocus.session.focusEffectRecords.records[0].status === "applied" && appliedFocus.session.focusEffectRecords.records[0].resolvedAt && appliedFocus.session.focusEffectRecords.records[0].resolvedByUserId === "gm-1", "mark applied records status and resolver metadata");
+const dismissedFocus = dismissTravelFocusEffect(recommittedFocus.session, focusRecord.focusEffectId, { now: "2026-06-17T00:00:44.000Z", userId: "gm-1", userName: "GM" });
+assert(dismissedFocus.session.focusEffectRecords.records[0].status === "dismissed" && dismissedFocus.session.focusEffectRecords.records[0].resolvedByUserName === "GM", "dismiss records status and resolver metadata");
 const focusedRunnerState = prepareTravelEventRunnerState(focusedCommit.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
 assert(focusedRunnerState.stations[0].selectedFocusAbility === "Hard Correction" && focusedRunnerState.stations[0].focusRemaining === 0, "GM runner exposes committed Focus ability and remaining Focus");
 const focusedAdvance = advanceTravelEventRunnerRound(focusedCommit.session);
 assert(focusedAdvance.session.stationFocus.navigator.focusRemaining === 0, "Focus does not refresh when advancing rounds");
+assert(focusedAdvance.session.focusEffectRecords.records.length === 1, "advancing rounds preserves Focus effect records");
 const reusedAbility = commitTravelEventRunnerStationOrder({ ...focusedAdvance.session, stationFocus: { navigator: { ...focusedAdvance.session.stationFocus.navigator, focusRemaining: 1, focusCapacity: 2 } } }, 1, "navigator", "eventApproach:survival", { selectedFocusAbility: "hard-correction" });
 assert(!reusedAbility.ok && reusedAbility.errors.some((error) => error.includes("already used")), "a Focus ability cannot be spent again in the same event");
 
@@ -288,6 +304,7 @@ assert(committedImport.session.roundResults[0].stationOrderCommitments.navigator
 const focusedExport = exportTravelEventRunnerSessionToJson(focusedCommit.session);
 const focusedImport = importTravelEventRunnerSessionFromJson(focusedExport.json);
 assert(focusedImport.session.stationFocus.navigator.focusRemaining === 0 && focusedImport.session.stationFocus.navigator.usedAbilityKeys.includes("hard-correction"), "Focus data survives session export/import");
+assert(focusedImport.session.focusEffectRecords.records.length === 1 && focusedImport.session.focusEffectRecords.records[0].abilityKey === "hard-correction", "Focus effect records survive session export/import");
 
 const advancedPhase = advanceTravelEventRunnerRoundPhase(runner.session, { now: "2026-06-17T00:01:00.000Z" });
 assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY, "advance phase moves roundReveal to crewStrategy");

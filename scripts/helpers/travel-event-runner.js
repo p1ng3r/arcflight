@@ -167,6 +167,123 @@ export function clearTravelEventRunnerStationFocusSelection(session, roundIndex,
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
+export function normalizeTravelFocusEffectRecords(value = {}, options = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const records = (Array.isArray(source.records) ? source.records : []).filter(isPlainObject).map((record) => ({
+    focusEffectId: typeof record.focusEffectId === "string" ? record.focusEffectId : "",
+    roundIndex: Math.max(0, Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : 0),
+    stationKey: typeof record.stationKey === "string" ? record.stationKey : "",
+    stationName: typeof record.stationName === "string" ? record.stationName : "",
+    abilityKey: typeof record.abilityKey === "string" ? record.abilityKey : "",
+    abilityLabel: typeof record.abilityLabel === "string" ? record.abilityLabel : "",
+    timing: typeof record.timing === "string" ? record.timing : "",
+    effectText: typeof record.effectText === "string" ? record.effectText : "",
+    selectedActionLabel: typeof record.selectedActionLabel === "string" ? record.selectedActionLabel : "",
+    assignedActorName: typeof record.assignedActorName === "string" ? record.assignedActorName : "",
+    status: ["pending", "applied", "dismissed"].includes(record.status) ? record.status : "pending",
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+    resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+    resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+    resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : ""
+  })).filter((record) => record.focusEffectId && record.stationKey && record.abilityKey);
+  return { records: Array.from(new Map(records.map((record) => [record.focusEffectId, record])).values()) };
+}
+
+export function buildTravelFocusEffectRecord(session, roundIndex, stationKey, abilityKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return null;
+  const index = Number(roundIndex);
+  const ability = getDefaultStationFocusAbilities(stationKey, options).find((entry) => entry.key === abilityKey);
+  const round = normalized.session.event.rounds[index];
+  const roundResult = normalized.session.roundResults[index];
+  if (!ability || !round || !roundResult) return null;
+  const station = prepareStationRows(normalized.session, round, roundResult, options).find((row) => row.stationKey === stationKey);
+  return {
+    focusEffectId: `round-${index}-${stationKey}-${abilityKey}`,
+    roundIndex: index,
+    stationKey,
+    stationName: station?.stationName || humanizeIdentifier(stationKey),
+    abilityKey,
+    abilityLabel: ability.label,
+    timing: ability.timing,
+    effectText: ability.effectText,
+    selectedActionLabel: station?.selectedActionLabel || "Station Order",
+    assignedActorName: station?.assignedActorName || "",
+    status: "pending",
+    createdAt: nowIso(options),
+    resolvedAt: "",
+    resolvedByUserId: "",
+    resolvedByUserName: "",
+    resolutionNote: ""
+  };
+}
+
+export function syncTravelFocusEffectRecordsForStationOrder(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const commitment = nextSession.roundResults[Number(roundIndex)]?.stationOrderCommitments?.[stationKey];
+  const records = normalizeTravelFocusEffectRecords(nextSession.focusEffectRecords, options).records;
+  for (const record of records.filter((entry) => entry.roundIndex === Number(roundIndex) && entry.stationKey === stationKey && entry.status === "pending")) {
+    if (!commitment?.committed || record.abilityKey !== commitment.selectedFocusAbility) {
+      record.status = "dismissed";
+      record.resolvedAt = nowIso(options);
+    }
+  }
+  if (commitment?.committed && commitment.selectedFocusAbility) {
+    const record = buildTravelFocusEffectRecord(nextSession, roundIndex, stationKey, commitment.selectedFocusAbility, options);
+    if (record && !records.some((entry) => entry.focusEffectId === record.focusEffectId)) records.push(record);
+  }
+  nextSession.focusEffectRecords = { records };
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function prepareTravelFocusEffectReviewState(session, options = {}) {
+  const records = normalizeTravelFocusEffectRecords(session?.focusEffectRecords, options).records.map((record) => ({
+    ...record,
+    statusLabel: humanizeIdentifier(record.status),
+    isPending: record.status === "pending",
+    hasResolutionNote: Boolean(record.resolutionNote)
+  }));
+  return { records, hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending").length };
+}
+
+function resolveTravelFocusEffect(session, focusEffectId, status, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.focusEffectRecords.records.find((entry) => entry.focusEffectId === focusEffectId);
+  if (!record) return { ok: false, errors: [`Focus effect "${focusEffectId}" was not found.`], warnings: [], session: nextSession };
+  record.status = status;
+  record.resolvedAt = nowIso(options);
+  record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+  record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function markTravelFocusEffectApplied(session, focusEffectId, options = {}) {
+  return resolveTravelFocusEffect(session, focusEffectId, "applied", options);
+}
+
+export function dismissTravelFocusEffect(session, focusEffectId, options = {}) {
+  return resolveTravelFocusEffect(session, focusEffectId, "dismissed", options);
+}
+
+export function updateTravelFocusEffectNote(session, focusEffectId, note, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.focusEffectRecords.records.find((entry) => entry.focusEffectId === focusEffectId);
+  if (!record) return { ok: false, errors: [`Focus effect "${focusEffectId}" was not found.`], warnings: [], session: nextSession };
+  record.resolutionNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
 function getResourceMaxKey(resource) {
   if (resource === ARCFLIGHT_TRAVEL_RESOURCES.HULL) return "maxHull";
   if (resource === ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL) return "maxLifeveil";
@@ -969,7 +1086,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     notes: typeof options.notes === "string" ? options.notes.trim() : "",
     stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(shipActor ?? options.ship ?? options.actor)),
     npcStationControllers: normalizeNpcStationControllers(options.npcStationControllers),
-    stationFocus: normalizeTravelEventRunnerStationFocus(options.stationFocus, normalizedEvent, options)
+    stationFocus: normalizeTravelEventRunnerStationFocus(options.stationFocus, normalizedEvent, options),
+    focusEffectRecords: normalizeTravelFocusEffectRecords(options.focusEffectRecords, options)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1013,6 +1131,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     stationAssignments: normalizeTravelEventRunnerStationAssignments(session.stationAssignments),
     npcStationControllers: normalizeNpcStationControllers(session.npcStationControllers),
     stationFocus: normalizeTravelEventRunnerStationFocus(session.stationFocus, event, options),
+    focusEffectRecords: normalizeTravelFocusEffectRecords(session.focusEffectRecords, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -1520,6 +1639,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
       totalReduction: pendingStabilizeRows.reduce((total, row) => total + row.reduction, 0),
       hasComplications: pendingStabilizeRows.some((row) => row.complication)
     },
+    focusEffectReview: prepareTravelFocusEffectReviewState(activeSession, options),
     roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
@@ -2041,6 +2161,7 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
     .find((row) => row.stationKey === stationKey)?.stationOptions
     ?.find((option) => option.optionKey === optionKey);
   if (!stationOption) return { ok: false, errors: [`Station option "${optionKey}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
+  const previousCommitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
   const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, options);
   if (!actionUpdate.ok) return actionUpdate;
   let nextSession = cloneData(actionUpdate.session);
@@ -2053,7 +2174,9 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   }
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   const requestedFocusAbility = typeof options.selectedFocusAbility === "string" ? options.selectedFocusAbility : "";
-  if (requestedFocusAbility) {
+  if (requestedFocusAbility && previousCommitment?.committed && previousCommitment.selectedFocusAbility === requestedFocusAbility) {
+    // Preserve the original spend when the same committed order is submitted again.
+  } else if (requestedFocusAbility) {
     const focusUpdate = commitTravelEventRunnerStationFocus(nextSession, index, stationKey, requestedFocusAbility, options);
     if (!focusUpdate.ok) return focusUpdate;
     nextSession = cloneData(focusUpdate.session);
@@ -2068,6 +2191,9 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
     source: options.source === "player" ? "player" : "",
     selectedFocusAbility: requestedFocusAbility
   };
+  const focusEffectUpdate = syncTravelFocusEffectRecordsForStationOrder(nextSession, index, stationKey, options);
+  if (!focusEffectUpdate.ok) return focusEffectUpdate;
+  nextSession = cloneData(focusEffectUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -2159,6 +2285,7 @@ export function summarizeTravelEventRunnerSession(session, options = {}) {
     finalOutcomeText: finalOutcome.text || "",
     stagedProposedEffects: cloneData(finalOutcome.proposedEffects ?? []),
     stagedProposedEffectRows: (finalOutcome.proposedEffects ?? []).map((effect, index) => ({ index, json: JSON.stringify(effect, null, 2) })),
+    focusEffectRecords: cloneData(activeSession.focusEffectRecords.records),
     rounds: activeSession.roundResults.map((roundResult, index) => ({
       roundIndex: index,
       roundNumber: roundResult.roundNumber,

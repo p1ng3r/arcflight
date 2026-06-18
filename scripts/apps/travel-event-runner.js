@@ -33,7 +33,10 @@ import {
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
   resetTravelEventRunnerStationAssignmentToShip,
-  setTravelEventRunnerNpcStationController
+  setTravelEventRunnerNpcStationController,
+  markTravelFocusEffectApplied,
+  dismissTravelFocusEffect,
+  updateTravelFocusEffectNote
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -75,7 +78,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-clear-assignment]",
   "[data-arcflight-runner-reset-assignment]",
   "[data-arcflight-open-travel-scene-overlay]",
-  "[data-arcflight-runner-send-mission-board]"
+  "[data-arcflight-runner-send-mission-board]",
+  "[data-arcflight-focus-effect-apply]",
+  "[data-arcflight-focus-effect-dismiss]"
 ].join(", ");
 
 
@@ -392,6 +397,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.#updateStationSkillApproach(approachSelect);
     }
 
+    const focusNote = event.target?.closest?.("[data-arcflight-focus-effect-note]");
+    if (focusNote && this.element?.contains(focusNote)) return this.#updateFocusEffectNote(focusNote);
+
     const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
     if (sessionSelect && this.element?.contains(sessionSelect)) {
       this.selectedSessionKey = sessionSelect.value ?? "";
@@ -440,6 +448,27 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
     if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
+    if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
+    if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
+  }
+
+  async #resolveFocusEffect(target, status) {
+    const focusEffectId = target.dataset.focusEffectId ?? "";
+    const updated = status === "applied"
+      ? markTravelFocusEffectApplied(this.session, focusEffectId)
+      : dismissTravelFocusEffect(this.session, focusEffectId);
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok
+      ? (status === "applied" ? "Focus effect marked applied." : "Focus effect dismissed.")
+      : (updated.errors?.[0] ?? "Could not update Focus effect.");
+    return this.render(true);
+  }
+
+  async #updateFocusEffectNote(input) {
+    const updated = updateTravelFocusEffectNote(this.session, input.dataset.focusEffectId ?? "", input.value ?? "");
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok ? "Focus note updated." : (updated.errors?.[0] ?? "Could not update Focus note.");
+    return this.render(true);
   }
 
   async #sendPlayerMissionBoard() {
