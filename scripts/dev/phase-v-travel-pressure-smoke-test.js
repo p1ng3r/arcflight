@@ -175,11 +175,13 @@ assert(runner.session.pressure.strain === 0 && runner.session.pressure.lifeveil 
 assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "new runner sessions start at roundReveal");
 
 const advancedPhase = advanceTravelEventRunnerRoundPhase(runner.session, { now: "2026-06-17T00:01:00.000Z" });
-assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.TABLE_STRATEGY, "advance phase moves roundReveal to tableStrategy");
+assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY, "advance phase moves roundReveal to crewStrategy");
 const retreatedPhase = retreatTravelEventRunnerRoundPhase(advancedPhase.session, { now: "2026-06-17T00:02:00.000Z" });
-assert(retreatedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "retreat phase moves tableStrategy to roundReveal");
-const setPhase = setTravelEventRunnerRoundPhase(retreatedPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, { now: "2026-06-17T00:03:00.000Z" });
-assert(setPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "set phase can set pressureApplication");
+assert(retreatedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "retreat phase moves crewStrategy to roundReveal");
+const setPhase = setTravelEventRunnerRoundPhase(retreatedPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, { now: "2026-06-17T00:03:00.000Z" });
+assert(setPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "set phase can set outcomePressure");
+const legacyPhase = setTravelEventRunnerRoundPhase(setPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, { now: "2026-06-17T00:03:30.000Z" });
+assert(legacyPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "legacy pressureApplication normalizes to outcomePressure");
 const invalidPhase = setTravelEventRunnerRoundPhase(setPhase.session, "not-a-round-phase", { now: "2026-06-17T00:04:00.000Z" });
 assert(invalidPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "invalid set phase falls back to roundReveal");
 
@@ -191,7 +193,7 @@ const advancedRound = advanceTravelEventRunnerRound(roundChangeSource, { now: "2
 assert(advancedRound.session.currentRoundIndex === 1, "advance round moves to the next round");
 assert(advancedRound.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "advancing a travel round resets phase to roundReveal");
 assert(advancedRound.session.pressure.strain === 4 && advancedRound.session.pressure.lifeveil === 2 && advancedRound.session.pressure.morale === 1, "pressure survives advancing a travel round");
-const retreatSource = setTravelEventRunnerRoundPhase(advancedRound.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK).session;
+const retreatSource = setTravelEventRunnerRoundPhase(advancedRound.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION).session;
 const retreatedRound = retreatTravelEventRunnerRound(retreatSource, { now: "2026-06-17T00:06:00.000Z" });
 assert(retreatedRound.session.currentRoundIndex === 0, "retreat round moves to the previous round");
 assert(retreatedRound.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "retreating a travel round resets phase to roundReveal");
@@ -200,10 +202,10 @@ assert(retreatedRound.session.pressure.strain === 4 && retreatedRound.session.pr
 const normalizedRunner = normalizeTravelEventRunnerSession({
   ...runner.session,
   pressure: { strain: 4, lifeveil: 2, morale: 1 },
-  roundPhase: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION
+  roundPhase: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE
 });
 assert(normalizedRunner.session.pressure.strain === 4 && normalizedRunner.session.pressure.lifeveil === 2 && normalizedRunner.session.pressure.morale === 1, "normalized runner sessions preserve pressure");
-assert(normalizedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "normalized runner sessions preserve roundPhase");
+assert(normalizedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "normalized runner sessions preserve roundPhase");
 assert(normalizedRunner.session.event.rounds[0].primaryPressure === "strain", "normalized runner round preserves primaryPressure");
 assert(normalizedRunner.session.event.rounds[0].secondaryPressure === "morale", "normalized runner round preserves secondaryPressure");
 assert(normalizedRunner.session.event.rounds[0].progressTarget === 2, "normalized runner round preserves progressTarget");
@@ -212,10 +214,10 @@ const exportedRunner = exportTravelEventRunnerSessionToJson(normalizedRunner.ses
 assert(exportedRunner.ok && exportedRunner.json.includes("\"pressure\"") && exportedRunner.json.includes("\"roundPhase\""), "exported runner sessions retain pressure and roundPhase");
 const importedRunner = importTravelEventRunnerSessionFromJson(exportedRunner.json);
 assert(importedRunner.session.pressure.strain === 4 && importedRunner.session.pressure.lifeveil === 2 && importedRunner.session.pressure.morale === 1, "imported runner sessions preserve pressure through normalization");
-assert(importedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "imported runner sessions preserve roundPhase through normalization");
+assert(importedRunner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "imported runner sessions preserve roundPhase through normalization");
 
 const runnerState = prepareTravelEventRunnerState(importedRunner.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
-assert(runnerState.roundSegmentState?.phase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "runner state exposes roundSegmentState");
+assert(runnerState.roundSegmentState?.phase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "runner state exposes roundSegmentState");
 assert(runnerState.roundSegmentState.pressure.strain === 4, "runner roundSegmentState uses active session pressure");
 assert(runnerState.roundSegmentState.primaryPressure === "strain", "runner state exposes primary pressure");
 assert(runnerState.roundSegmentState.secondaryPressure === "morale", "runner state exposes secondary pressure");
