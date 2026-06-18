@@ -285,18 +285,32 @@ export function updateTravelFocusEffectNote(session, focusEffectId, note, option
 }
 
 
-const HARD_CORRECTION_PROMPT = Object.freeze({
-  stationKey: "navigator",
-  abilityKey: "hard-correction",
-  trigger: "navigatorFailure",
-  promptTitle: "Hard Correction Available",
-  promptText: "The route slips wrong beneath your hands — a false star, a bad angle, a current in the void that should not be there. You can burn your station Focus to wrench the ship back into line.",
-  choiceText: "Spend 1 Focus to attempt Hard Correction?",
-  effectText: "You may reroll the Navigator check. If the reroll also fails, the ship gains +1 Strain.",
-  consequencePressureKey: "strain",
-  consequencePressureLabel: "Strain",
-  consequenceAmount: 1
+export const TRAVEL_REACTION_DEFINITIONS = Object.freeze({
+  "navigator.hard-correction": Object.freeze({
+    stationKey: "navigator",
+    abilityKey: "hard-correction",
+    trigger: "navigatorFailure",
+    promptTitle: "Hard Correction Available",
+    promptText: "The route slips wrong beneath your hands — a false star, a bad angle, a current in the void that should not be there. You can burn your station Focus to wrench the ship back into line.",
+    choiceText: "Spend 1 Focus to attempt Hard Correction?",
+    effectText: "You may reroll the Navigator check. If the reroll also fails, the ship gains +1 Strain.",
+    consequencePressureKey: "strain",
+    consequencePressureLabel: "Strain",
+    consequenceAmount: 1
+  })
 });
+
+function travelReactionDefinitionKey(stationKey, abilityKey) {
+  return `${stationKey}.${abilityKey}`;
+}
+
+export function getTravelReactionDefinition(stationKey, abilityKey) {
+  return TRAVEL_REACTION_DEFINITIONS[travelReactionDefinitionKey(stationKey, abilityKey)] ?? null;
+}
+
+function getTravelReactionDefinitionsForStation(stationKey) {
+  return Object.values(TRAVEL_REACTION_DEFINITIONS).filter((definition) => definition.stationKey === stationKey);
+}
 
 function debugTravelReaction(message, data = {}) {
   try {
@@ -342,28 +356,36 @@ export function buildTravelReactionPromptRecord(session, roundIndex, stationKey,
   if (!normalized.ok) return null;
   const index = Number(roundIndex);
   const result = normalized.session.roundResults[index]?.stationResults?.[stationKey];
+  const definition = getTravelReactionDefinition(stationKey, abilityKey);
   debugTravelReaction("Build reaction prompt candidate.", {
     sessionKey: normalized.session?.key ?? "",
     roundIndex: index,
     stationKey,
     abilityKey,
     trigger,
-    result
+    result,
+    hasDefinition: Boolean(definition)
   });
-  if (stationKey !== HARD_CORRECTION_PROMPT.stationKey || abilityKey !== HARD_CORRECTION_PROMPT.abilityKey || trigger !== HARD_CORRECTION_PROMPT.trigger || !["failure", "criticalFailure"].includes(result)) return null;
+  if (!definition || trigger !== definition.trigger || !["failure", "criticalFailure"].includes(result)) return null;
   const ability = getDefaultStationFocusAbilities(stationKey, options).find((entry) => entry.key === abilityKey);
   if (!ability) return null;
   return {
-    reactionPromptId: `round-${index}-${stationKey}-${abilityKey}`,
+    reactionPromptId: `round-${index}-${definition.stationKey}-${definition.abilityKey}`,
     roundIndex: index,
-    stationKey,
-    stationName: getStation(stationKey)?.displayName || getStation(stationKey)?.name || humanizeIdentifier(stationKey),
-    abilityKey,
+    stationKey: definition.stationKey,
+    stationName: getStation(definition.stationKey)?.displayName || getStation(definition.stationKey)?.name || humanizeIdentifier(definition.stationKey),
+    abilityKey: definition.abilityKey,
     abilityLabel: ability.label,
-    trigger,
+    trigger: definition.trigger,
     triggerResult: result,
     status: "pending",
-    ...HARD_CORRECTION_PROMPT,
+    promptTitle: definition.promptTitle,
+    promptText: definition.promptText,
+    choiceText: definition.choiceText,
+    effectText: definition.effectText,
+    consequencePressureKey: definition.consequencePressureKey,
+    consequencePressureLabel: definition.consequencePressureLabel,
+    consequenceAmount: definition.consequenceAmount,
     createdAt: nowIso(options), resolvedAt: "", resolvedByUserId: "", resolvedByUserName: "", resolutionNote: "", rerollResult: "", backlashStatus: "none"
   };
 }
@@ -374,16 +396,19 @@ export function syncTravelReactionPromptsForStationResult(session, roundIndex, s
   const nextSession = cloneData(normalized.session);
   const index = Number(roundIndex);
   const records = normalizeTravelReactionPromptRecords(nextSession.reactionPrompts, options).records;
-  const id = `round-${index}-${stationKey}-${HARD_CORRECTION_PROMPT.abilityKey}`;
-  const existing = records.find((record) => record.reactionPromptId === id);
+  const definitions = getTravelReactionDefinitionsForStation(stationKey);
+  const hardCorrection = getTravelReactionDefinition("navigator", "hard-correction");
+  const id = hardCorrection ? `round-${index}-${stationKey}-${hardCorrection.abilityKey}` : "";
+  const existing = id ? records.find((record) => record.reactionPromptId === id) : null;
   debugTravelReaction("Station result reaction sync started.", {
     sessionKey: nextSession?.key ?? "",
     roundIndex: index,
     stationKey,
+    definitions: definitions.map((definition) => ({ stationKey: definition.stationKey, abilityKey: definition.abilityKey, trigger: definition.trigger })),
     existing: existing ? { ...existing } : null,
     recordsBefore: records.map((record) => ({ ...record }))
   });
-  if (existing?.status === "accepted" && !existing.rerollResult) {
+  if (hardCorrection && existing?.status === "accepted" && !existing.rerollResult) {
     const rerollResult = nextSession.roundResults[index]?.stationResults?.[stationKey];
     debugTravelReaction("Station result reaction sync marking reroll result.", { reactionPromptId: id, stationKey, rerollResult });
     return markTravelReactionPromptRerollResult(nextSession, id, rerollResult, options);
@@ -404,8 +429,13 @@ export function syncTravelReactionPromptsForStationResult(session, roundIndex, s
     existing.resolvedAt = nowIso(options);
     existing.resolutionNote = existing.resolutionNote || "Original trigger result changed before the reaction was resolved.";
   }
-  if (!existing && stationKey === "navigator" && ["failure", "criticalFailure"].includes(result) && focus.focusRemaining > 0 && !focus.spentThisRound && !focus.usedAbilityKeys.includes(HARD_CORRECTION_PROMPT.abilityKey)) {
-    const record = buildTravelReactionPromptRecord(nextSession, index, stationKey, HARD_CORRECTION_PROMPT.abilityKey, HARD_CORRECTION_PROMPT.trigger, options);
+  for (const definition of definitions) {
+    const definitionId = `round-${index}-${definition.stationKey}-${definition.abilityKey}`;
+    const definitionExisting = records.find((record) => record.reactionPromptId === definitionId);
+    if (definitionExisting) continue;
+    if (!["failure", "criticalFailure"].includes(result)) continue;
+    if (focus.focusRemaining <= 0 || focus.spentThisRound || focus.usedAbilityKeys.includes(definition.abilityKey)) continue;
+    const record = buildTravelReactionPromptRecord(nextSession, index, stationKey, definition.abilityKey, definition.trigger, options);
     if (record) {
       debugTravelReaction("Station result reaction prompt created.", { reactionPromptId: record.reactionPromptId, record });
       records.push(record);
