@@ -160,6 +160,7 @@
               <p>{{prompt}}</p>
               {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
               {{#if stationOrderCommitted}}<p class="arcflight-sheet__hint"><strong>Player Committed:</strong> {{selectedActionLabel}}{{#if selectedFocusAbility}} — Station Focus: {{selectedFocusAbility}}{{/if}}</p>{{/if}}
+              <p class="arcflight-sheet__hint"><strong>Focus Remaining:</strong> {{focusRemaining}} / {{focusCapacity}}</p>
               {{#if isStabilize}}
                 <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
                 {{#if result}}

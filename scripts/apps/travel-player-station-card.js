@@ -54,7 +54,9 @@ function sanitizeFocusOptions(value = []) {
     .map((entry) => ({
       value: sanitizeText(entry.value ?? entry.key),
       label: sanitizeText(entry.label ?? entry.name),
-      description: sanitizeText(entry.description)
+      description: sanitizeText(entry.description),
+      used: sanitizeBoolean(entry.used),
+      unavailable: sanitizeBoolean(entry.unavailable)
     }))
     .filter((entry) => entry.value && entry.label);
 }
@@ -102,6 +104,7 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     focusOptions: sanitizeFocusOptions(source.focusOptions),
     hasFocusOptions: sanitizeFocusOptions(source.focusOptions).length > 0,
     selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
+    noFocusRemaining: sanitizeBoolean(source.noFocusRemaining),
     canSpendFocus: sanitizeBoolean(source.canSpendFocus),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)
   };
@@ -571,6 +574,7 @@ function sanitizeMissionBoardStation(station = {}) {
     focusOptions: sanitizeFocusOptions(source.focusOptions),
     hasFocusOptions: sanitizeFocusOptions(source.focusOptions).length > 0,
     selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
+    noFocusRemaining: sanitizeBoolean(source.noFocusRemaining),
     canSpendFocus: sanitizeBoolean(source.canSpendFocus),
     rollUnavailableReason: sanitizeText(source.rollUnavailableReason),
     canRollStation: sanitizeBoolean(source.canRollStation),

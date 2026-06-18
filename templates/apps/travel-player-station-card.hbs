@@ -48,13 +48,16 @@
         {{#if state.hasFocusOptions}}
           <section class="arcflight-travel-player-station-card__focus">
             <h3>Station Focus</h3>
+            <p><strong>Focus Remaining:</strong> {{state.focusRemaining}} / {{state.focusCapacity}}</p>
+            {{#if state.noFocusRemaining}}<p class="arcflight-sheet__hint">No Focus remaining.</p>{{/if}}
             <label>
               <span>Spend Focus</span>
               <select data-arcflight-player-card-focus {{#unless state.canSpendFocus}}disabled{{/unless}}>
                 <option value="">Do not spend Focus</option>
-                {{#each state.focusOptions}}<option value="{{value}}">{{label}}</option>{{/each}}
+                {{#each state.focusOptions}}<option value="{{value}}" {{#if unavailable}}disabled{{/if}}>{{label}}{{#if used}} — Used this event.{{/if}}</option>{{/each}}
               </select>
             </label>
+            <details><summary>Focus abilities</summary>{{#each state.focusOptions}}<p><strong>{{label}}</strong> — {{description}}{{#if used}} <em>Used this event.</em>{{/if}}</p>{{/each}}</details>
           </section>
         {{/if}}
         <button type="button" data-arcflight-player-card-submit-approach>Commit Station Order</button>
