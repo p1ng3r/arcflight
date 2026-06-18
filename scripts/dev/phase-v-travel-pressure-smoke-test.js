@@ -17,6 +17,7 @@ import {
 import {
   advanceTravelEventRunnerRound,
   advanceTravelEventRunnerRoundPhase,
+  buildTravelPlayerStationOrderCommitData,
   commitTravelEventRunnerStationOrder,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
@@ -212,6 +213,10 @@ assert(initialPlayerStation.selectedFocusAbility === "" && initialPlayerStation.
 const initialIndividualCard = prepareTravelPlayerStationCardState(runner.session, "navigator");
 assert(initialIndividualCard.approachOptions.some((option) => option.value === "eventApproach:survival"), "individual station card exposes Push Forward by combined option value");
 assert(initialIndividualCard.approachOptions.some((option) => option.value === "stabilize:strain:survival"), "individual station card exposes Stabilize by combined option value rather than raw skill");
+const individualStabilizePayload = buildTravelPlayerStationOrderCommitData({ ...initialIndividualCard, selectedFocusAbility: "steady-hands" }, "stabilize:strain:survival");
+assert(individualStabilizePayload.optionKey === "stabilize:strain:survival" && !Object.hasOwn(individualStabilizePayload, "skill"), "individual station card commit data submits a Stabilize option key instead of only a raw skill");
+assert(individualStabilizePayload.selectedFocusAbility === "steady-hands", "individual station card commit data preserves selected Focus ability");
+assert(initialIndividualCard.focusOptions.length === 0 && !initialIndividualCard.hasFocusOptions && initialIndividualCard.focusCapacity === 0, "Focus placeholder data does not crash or require abilities on the individual station card");
 
 const committedAdvance = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "eventApproach:survival", { source: "player", now: "2026-06-17T00:00:20.000Z" });
 assert(committedAdvance.ok, "player can commit Advance the Mission");

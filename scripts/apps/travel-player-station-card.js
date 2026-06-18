@@ -1,5 +1,5 @@
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
-import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, prepareTravelPlayerStationCardState } from "../helpers/travel-event-runner.js";
+import { buildTravelPlayerStationOrderCommitData, normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, prepareTravelPlayerStationCardState } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -104,6 +104,15 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
     canSpendFocus: sanitizeBoolean(source.canSpendFocus),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)
+  };
+}
+
+function buildTravelPlayerStationOrderPayload(state = {}, optionKey = "", options = {}) {
+  const commit = buildTravelPlayerStationOrderCommitData(sanitizeTravelPlayerStationCardState(state), optionKey);
+  return {
+    action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION,
+    ...commit,
+    userId: sanitizeText(options.userId ?? globalThis.game?.user?.id)
   };
 }
 
@@ -433,6 +442,7 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       const selectedOption = this.playerCardState.approachOptions.find((entry) => entry.value === optionSelect.value) ?? null;
       this.playerCardState = sanitizeTravelPlayerStationCardState({
         ...this.playerCardState,
+        approachOptions: this.playerCardState.approachOptions.map((entry) => ({ ...entry, selected: entry.value === optionSelect.value })),
         selectedApproachValue: optionSelect.value,
         selectedStationOrder: selectedOption?.actionType || "eventApproach",
         selectedStationOrderLabel: selectedOption?.actionType === "stabilize" ? "Stabilize" : "Push Forward",
@@ -466,15 +476,7 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       ui.notifications?.warn?.("This player card cannot submit an approach without socket state.");
       return false;
     }
-    globalThis.game?.socket?.emit?.("module.arcflight", {
-      action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION,
-      sessionKey: this.playerCardState.sessionKey,
-      stationKey: this.playerCardState.stationKey,
-      roundIndex: this.playerCardState.currentRoundIndex,
-      optionKey,
-      selectedFocusAbility: this.playerCardState.selectedFocusAbility || "",
-      userId: globalThis.game?.user?.id ?? ""
-    });
+    globalThis.game?.socket?.emit?.("module.arcflight", buildTravelPlayerStationOrderPayload(this.playerCardState, optionKey));
     const selectedApproach = this.playerCardState.approachOptions.find((entry) => entry.value === optionKey) ?? null;
     this.playerCardState = sanitizeTravelPlayerStationCardState({
       ...this.playerCardState,

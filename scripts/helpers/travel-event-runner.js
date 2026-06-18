@@ -1768,6 +1768,16 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   };
 }
 
+export function buildTravelPlayerStationOrderCommitData(state = {}, optionKey = "") {
+  return {
+    sessionKey: typeof state?.sessionKey === "string" ? state.sessionKey : "",
+    stationKey: typeof state?.stationKey === "string" ? state.stationKey : "",
+    roundIndex: Number.isInteger(Number(state?.currentRoundIndex)) ? Number(state.currentRoundIndex) : -1,
+    optionKey: typeof optionKey === "string" && optionKey ? optionKey : (typeof state?.selectedApproachValue === "string" ? state.selectedApproachValue : ""),
+    selectedFocusAbility: typeof state?.selectedFocusAbility === "string" ? state.selectedFocusAbility : ""
+  };
+}
+
 export function prepareTravelPlayerMissionBoardState(session = null, options = {}) {
   const overlayState = prepareTravelSceneOverlayState(session, options);
   const normalized = session ? normalizeTravelEventRunnerSession(session, options) : { session: null };
