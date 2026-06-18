@@ -342,6 +342,17 @@ import {
   saveImportedPublishedTravelEventPackToLibrary
 } from "./helpers/travel-event-builder-io.js";
 
+const TRAVEL_REACTION_DEBUG_SETTING = "debugTravelReactions";
+
+function debugTravelReaction(message, data = {}) {
+  try {
+    if (globalThis.game?.settings?.get?.(ARCFLIGHT.MODULE_ID, TRAVEL_REACTION_DEBUG_SETTING) !== true) return;
+    console.debug(`Arcflight | Travel Reaction | ${message}`, data);
+  } catch (_error) {
+    // Debug logging must never break travel flows.
+  }
+}
+
 function isArcflightVehicle(actor) {
   return actor?.type === "vehicle"
     && actor.getFlag?.(ARCFLIGHT.MODULE_ID, "enabled") === true
@@ -832,11 +843,26 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
   console.debug("Arcflight | Player roll request received by GM.", { payload });
+  debugTravelReaction("GM received player station roll request.", {
+    hasSession: Boolean(session),
+    sessionKey: session?.key ?? "",
+    roundIndex,
+    stationKey,
+    userId: payload.userId ?? "",
+    skill: payload.skill ?? "",
+    payload
+  });
   if (!session || !Number.isInteger(roundIndex) || !stationKey) return false;
   const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
   const permissionStation = (permissionState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
   const permitted = Boolean(permissionStation?.permittedUserIds?.includes(payload.userId));
   console.debug("Arcflight | GM validation of roll permission.", { stationKey, userId: payload.userId, permitted, permittedUserIds: permissionStation?.permittedUserIds ?? [] });
+  debugTravelReaction("GM validated player station roll permission.", {
+    stationKey,
+    userId: payload.userId,
+    permitted,
+    permittedUserIds: permissionStation?.permittedUserIds ?? []
+  });
   if (!permitted) {
     ui.notifications?.warn?.("Player is not authorized to roll that travel station.");
     return false;
@@ -882,7 +908,32 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   if (d20 === 20) degreeIndex = Math.min(3, degreeIndex + 1);
   if (d20 === 1) degreeIndex = Math.max(0, degreeIndex - 1);
   const result = degreeOrder[degreeIndex];
+  debugTravelReaction("GM resolved player station roll result.", {
+    sessionKey: workingSession?.key ?? "",
+    roundIndex,
+    stationKey,
+    d20,
+    modifier,
+    total,
+    dc,
+    result
+  });
+  const beforeReactionPrompts = workingSession?.reactionPrompts?.records?.map((record) => ({ ...record })) ?? [];
+  debugTravelReaction("Reaction prompt records before station result sync.", {
+    sessionKey: workingSession?.key ?? "",
+    roundIndex,
+    stationKey,
+    records: beforeReactionPrompts
+  });
   const updated = setTravelEventRunnerStationResult(workingSession, roundIndex, stationKey, result);
+  debugTravelReaction("Reaction prompt records after station result sync.", {
+    ok: updated?.ok === true,
+    errors: updated?.errors ?? [],
+    sessionKey: updated?.session?.key ?? "",
+    roundIndex,
+    stationKey,
+    records: updated?.session?.reactionPrompts?.records ?? []
+  });
   if (!updated?.ok || !updated.session) return false;
   const resultLabel = result === "criticalSuccess" ? "Critical Success" : (result === "criticalFailure" ? "Critical Failure" : (result === "success" ? "Success" : "Failure"));
   const skillLabel = station.selectedApproachSkillLabel || station.approachLabel || "Approach";
@@ -899,9 +950,22 @@ async function handleTravelPlayerStationRoll(payload = {}) {
     && record.stationKey === stationKey
     && record.status === "pending"
   );
+  debugTravelReaction("GM checked for pending player reaction prompt.", {
+    sessionKey: updated.session?.key ?? "",
+    roundIndex,
+    stationKey,
+    pendingReaction: pendingReaction ? { ...pendingReaction } : null
+  });
   if (pendingReaction) {
+    debugTravelReaction("GM sending pending player reaction prompt.", {
+      sessionKey: updated.session?.key ?? "",
+      reactionPromptId: pendingReaction.reactionPromptId,
+      stationKey: pendingReaction.stationKey,
+      abilityKey: pendingReaction.abilityKey
+    });
     const promptResult = sendTravelPlayerReactionPromptToPlayers(updated.session, pendingReaction.reactionPromptId, { actor: activeOverlay?.actor });
     console.debug("Arcflight | Player reaction prompt delivery result.", promptResult);
+    debugTravelReaction("Player reaction prompt delivery result.", promptResult);
   }
   ui.notifications?.info?.(`Player rolled ${stationKey}: ${result}.`);
   return true;
@@ -914,11 +978,27 @@ async function handleTravelPlayerReactionResponse(payload = {}) {
   const reactionPromptId = typeof payload.reactionPromptId === "string" ? payload.reactionPromptId : "";
   const response = typeof payload.response === "string" ? payload.response : "";
   const record = session?.reactionPrompts?.records?.find((entry) => entry.reactionPromptId === reactionPromptId) ?? null;
+  debugTravelReaction("GM received player reaction response.", {
+    hasSession: Boolean(session),
+    sessionKey: session?.key ?? "",
+    reactionPromptId,
+    response,
+    userId: payload.userId ?? "",
+    hasRecord: Boolean(record),
+    record: record ? { ...record } : null,
+    payload
+  });
   if (!session || !record) return false;
   if (payload.sessionKey && payload.sessionKey !== session.key) return false;
   if (!["accept", "dismiss", "reopen"].includes(response)) return false;
   const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
   const permissionStation = permissionState.stations?.find((station) => station.stationKey === record.stationKey);
+  debugTravelReaction("GM validated player reaction response permission.", {
+    stationKey: record.stationKey,
+    userId: payload.userId,
+    permittedUserIds: permissionStation?.permittedUserIds ?? [],
+    permitted: Boolean(permissionStation?.permittedUserIds?.includes(payload.userId))
+  });
   if (!permissionStation?.permittedUserIds?.includes(payload.userId)) {
     ui.notifications?.warn?.("Player is not authorized to resolve that reaction.");
     return false;
@@ -930,6 +1010,13 @@ async function handleTravelPlayerReactionResponse(payload = {}) {
   const updated = response === "accept"
     ? acceptTravelReactionPrompt(session, reactionPromptId, { userId: payload.userId, userName: globalThis.game?.users?.get?.(payload.userId)?.name ?? "" })
     : dismissTravelReactionPrompt(session, reactionPromptId, { userId: payload.userId, userName: globalThis.game?.users?.get?.(payload.userId)?.name ?? "" });
+  debugTravelReaction("GM applied player reaction response.", {
+    ok: updated?.ok === true,
+    errors: updated?.errors ?? [],
+    response,
+    reactionPromptId,
+    records: updated?.session?.reactionPrompts?.records ?? []
+  });
   if (!updated?.ok || !updated.session) {
     ui.notifications?.warn?.(updated?.errors?.[0] ?? "Reaction could not be resolved.");
     return false;
@@ -950,6 +1037,15 @@ async function handleTravelPlayerReactionResponse(payload = {}) {
 
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
+
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_REACTION_DEBUG_SETTING, {
+    name: "Debug Travel Reactions",
+    hint: "Log the live Travel Reaction prompt pipeline to the browser console. Disable during normal play.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false
+  });
 
   game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, {
     name: "Travel Event Builder Library",
