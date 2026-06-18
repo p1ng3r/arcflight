@@ -29,6 +29,7 @@ import {
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
+  setTravelEventRunnerStationAction,
   setTravelEventRunnerStationSkillApproach,
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
@@ -392,6 +393,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.#updateStationSkillApproach(approachSelect);
     }
 
+    const actionSelect = event.target?.closest?.("[data-arcflight-runner-action-select]");
+    if (actionSelect && this.element?.contains(actionSelect)) {
+      return this.#updateStationAction(actionSelect);
+    }
+
     const sessionSelect = event.target?.closest?.("[data-arcflight-runner-session-select]");
     if (sessionSelect && this.element?.contains(sessionSelect)) {
       this.selectedSessionKey = sessionSelect.value ?? "";
@@ -615,6 +621,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = updated.session;
       this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
       this.statusMessage = `Selected ${humanizeIdentifier(skill)} for ${humanizeIdentifier(stationKey)}.`;
+    }
+    return this.render(true);
+  }
+
+  async #updateStationAction(select) {
+    const roundIndex = Number(select.dataset.roundIndex);
+    const stationKey = select.dataset.stationKey ?? "";
+    const actionType = select.value ?? "";
+    const updated = setTravelEventRunnerStationAction(this.session, roundIndex, stationKey, actionType);
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Station action was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = `Selected ${humanizeIdentifier(actionType)} for ${humanizeIdentifier(stationKey)}.`;
     }
     return this.render(true);
   }

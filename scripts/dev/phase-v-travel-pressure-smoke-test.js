@@ -5,10 +5,14 @@ import {
   applyTravelPressureChanges,
   applyTravelRoundOutcomePressure,
   createEmptyTravelPressureState,
+  eventApproach,
+  getPendingTravelStabilizeEffect,
+  getTravelStationStabilizePressureKey,
   getTravelPressureState,
   normalizeTravelPressureState,
   normalizeTravelRoundPressureProfile,
-  resolveTravelPressureFallout
+  resolveTravelPressureFallout,
+  stabilize
 } from "../helpers/travel-pressure.js";
 import {
   advanceTravelEventRunnerRound,
@@ -20,7 +24,10 @@ import {
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
   retreatTravelEventRunnerRoundPhase,
-  setTravelEventRunnerRoundPhase
+  setTravelEventRunnerRoundPhase,
+  setTravelEventRunnerStationAction,
+  setTravelEventRunnerStationResult,
+  summarizeTravelEventRunnerSession
 } from "../helpers/travel-event-runner.js";
 import { ARCFLIGHT_TRAVEL_ROUND_SEGMENTS } from "../helpers/travel-round-segments.js";
 
@@ -85,6 +92,20 @@ assert(fallout.pressure.strain === ARCFLIGHT_TRAVEL_PRESSURE_FALLOUT_RESET, "fal
 
 const noFallout = resolveTravelPressureFallout({ strain: 4, lifeveil: 0, morale: 0 }, "strain");
 assert(noFallout.fallout === null, "fallout resolution does nothing below crisis threshold");
+
+assert(eventApproach().type === "eventApproach", "eventApproach helper creates an event approach station choice");
+assert(stabilize("morale").type === "stabilize" && stabilize("morale").stabilizePressureKey === "morale", "stabilize helper creates a pressure-targeted station choice");
+assert(getTravelStationStabilizePressureKey("captain", { primaryPressure: "strain" }) === "morale", "captain Stabilize targets morale");
+assert(getTravelStationStabilizePressureKey("navigator", { primaryPressure: "morale" }) === "strain", "navigator Stabilize targets strain");
+assert(getTravelStationStabilizePressureKey("engineer", { primaryPressure: "morale" }) === "strain", "engineer Stabilize targets strain");
+assert(getTravelStationStabilizePressureKey("veilwarden", { primaryPressure: "strain" }) === "lifeveil", "veilwarden Stabilize targets lifeveil");
+assert(getTravelStationStabilizePressureKey("watchmaster", { primaryPressure: "strain" }) === "morale", "watchmaster Stabilize targets morale");
+assert(getTravelStationStabilizePressureKey("future-station", { primaryPressure: "lifeveil" }) === "lifeveil", "unmapped stations Stabilize against round primary pressure");
+assert(getPendingTravelStabilizeEffect("criticalSuccess", "strain").reduction === 2, "critical success creates pending Stabilize reduction 2");
+assert(getPendingTravelStabilizeEffect("success", "strain").reduction === 1, "success creates pending Stabilize reduction 1");
+assert(getPendingTravelStabilizeEffect("failure", "strain").reduction === 0, "failure creates pending Stabilize reduction 0");
+const criticalFailureStabilize = getPendingTravelStabilizeEffect("criticalFailure", "strain");
+assert(criticalFailureStabilize.reduction === 0 && criticalFailureStabilize.complication && criticalFailureStabilize.pressureIncrease === 1, "critical failure creates no Stabilize reduction and marks a +1 pressure complication");
 
 const runnerEvent = {
   key: "phase-v-travel-pressure-runner-smoke",
@@ -173,6 +194,23 @@ const runner = createTravelEventRunnerSession(runnerEvent, {
 assert(runner.ok, `runner session starts from pressure smoke event: ${(runner.errors ?? []).join(", ")}`);
 assert(runner.session.pressure.strain === 0 && runner.session.pressure.lifeveil === 0 && runner.session.pressure.morale === 0, "new runner sessions start with pressure 0/0/0");
 assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "new runner sessions start at roundReveal");
+
+const stabilizeChoice = setTravelEventRunnerStationAction(runner.session, 0, "navigator", "stabilize", { now: "2026-06-17T00:00:30.000Z" });
+assert(stabilizeChoice.ok, "Stabilize choice can be selected");
+assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.type === "stabilize", "selected Stabilize action is stored per station");
+assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.stabilizePressureKey === "strain", "selected Stabilize action stores its station-flavored pressure key");
+const stabilizeSuccess = setTravelEventRunnerStationResult(stabilizeChoice.session, 0, "navigator", "criticalSuccess");
+const stabilizeSummary = summarizeTravelEventRunnerSession(stabilizeSuccess.session);
+assert(stabilizeSummary.summary.totalScore === 0, "Stabilize does not count as event progress or session scoring");
+const stabilizeState = prepareTravelEventRunnerState(stabilizeSuccess.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+assert(stabilizeState.stations[0].isStabilize, "runner state exposes selected Stabilize choice");
+assert(stabilizeState.stations[0].stabilizePressureKey === "strain", "runner state exposes selected Stabilize pressure target");
+assert(stabilizeState.pendingStabilize.totalReduction === 2, "runner state summarizes pending critical-success Stabilize reduction");
+
+const stabilizeExport = exportTravelEventRunnerSessionToJson(stabilizeSuccess.session, { now: "2026-06-17T00:00:45.000Z" });
+const stabilizeImport = importTravelEventRunnerSessionFromJson(stabilizeExport.json);
+assert(stabilizeImport.session.roundResults[0].stationActions.navigator.type === "stabilize", "session export/import preserves Stabilize action choice");
+assert(stabilizeImport.session.roundResults[0].stationActions.navigator.stabilizePressureKey === "strain", "session export/import preserves Stabilize pressure target");
 
 const advancedPhase = advanceTravelEventRunnerRoundPhase(runner.session, { now: "2026-06-17T00:01:00.000Z" });
 assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY, "advance phase moves roundReveal to crewStrategy");
