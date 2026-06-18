@@ -57,6 +57,115 @@ const DEFAULT_STABILIZE_SKILLS = Object.freeze({
   [ARCFLIGHT_TRAVEL_STATIONS.VEILWARDEN]: "occultism",
   [ARCFLIGHT_TRAVEL_STATIONS.WATCHMASTER]: "perception"
 });
+const DEFAULT_STATION_FOCUS_ABILITIES = Object.freeze({
+  captain: Object.freeze([
+    { key: "command-the-momentum", label: "Command the Momentum", timing: "End of Round / before next station roll.", effectText: "Choose one active station. That station gains advantage on its next station roll." },
+    { key: "hold-the-line", label: "Hold the Line", timing: "End of Round / after consequence is revealed.", effectText: "Reduce one pressure gain, resource loss, or consequence by 1 step." },
+    { key: "call-for-everything", label: "Call for Everything", timing: "Reaction after any active station fails.", effectText: "That station rerolls. If the reroll fails, add 1 Morale pressure." }
+  ]),
+  navigator: Object.freeze([
+    { key: "hard-correction", label: "Hard Correction", timing: "Reaction after Navigator fails.", effectText: "Reroll the Navigator check. If the reroll fails, add 1 Strain pressure." },
+    { key: "read-the-route", label: "Read the Route", timing: "End of Round.", effectText: "Reveal the next round’s primary pressure or most threatened station." },
+    { key: "plot-the-impossible-angle", label: "Plot the Impossible Angle", timing: "End of Round / before next round.", effectText: "Choose one station next round. It gains +1 circumstance bonus to its station roll." }
+  ]),
+  engineer: Object.freeze([
+    { key: "blow-the-safety-valves", label: "Blow the Safety Valves", timing: "Reaction after Engineer fails.", effectText: "Improve the Engineer result by one degree, then add 1 Strain pressure." },
+    { key: "patch-the-strain", label: "Patch the Strain", timing: "End of Round.", effectText: "Reduce Strain by 1." },
+    { key: "overdrive-the-arkengine", label: "Overdrive the Arkengine", timing: "End of Round / before next round.", effectText: "Choose one station next round. It gains +1 circumstance bonus, but if it fails add 1 Strain." }
+  ]),
+  veilwarden: Object.freeze([
+    { key: "seal-the-breach", label: "Seal the Breach", timing: "Reaction when Lifeveil loss or occult/environmental consequence is revealed.", effectText: "Reduce the Lifeveil loss or occult consequence by 1. If the round still fails, add 1 Lifeveil." },
+    { key: "steady-the-lifeveil", label: "Steady the Lifeveil", timing: "End of Round.", effectText: "Reduce Lifeveil by 1." },
+    { key: "ward-against-the-churn", label: "Ward Against the Churn", timing: "Reaction to occult, mental, void, or Churn-tagged complication.", effectText: "Downgrade the complication by one step or grant one reroll against it." }
+  ]),
+  watchmaster: Object.freeze([
+    { key: "shout-the-warning", label: "Shout the Warning", timing: "Reaction after a hidden hazard, ambush, threat, or false signal causes a station failure.", effectText: "That station rerolls. If the reroll fails, add 1 Morale pressure but reveal one hidden danger." },
+    { key: "read-the-enemy", label: "Read the Enemy", timing: "End of Round.", effectText: "Reveal one hidden threat, next-round danger, or enemy intent." },
+    { key: "rally-the-deck", label: "Rally the Deck", timing: "End of Round.", effectText: "Reduce Morale by 1." }
+  ])
+});
+
+export function getDefaultStationFocusAbilities(stationKey, options = {}) {
+  const configured = options.stationFocusAbilities?.[stationKey];
+  return cloneData(Array.isArray(configured) ? configured : (DEFAULT_STATION_FOCUS_ABILITIES[stationKey] ?? []));
+}
+
+export function createTravelStationFocusState(stationKey, options = {}) {
+  const configured = isPlainObject(options.stationFocus?.[stationKey]) ? options.stationFocus[stationKey] : {};
+  const capacity = Math.max(0, Number.isFinite(Number(configured.focusCapacity ?? options.focusCapacity)) ? Number(configured.focusCapacity ?? options.focusCapacity) : 1);
+  return {
+    focusCapacity: capacity,
+    focusRemaining: Math.min(capacity, Math.max(0, Number.isFinite(Number(configured.focusRemaining)) ? Number(configured.focusRemaining) : capacity)),
+    usedAbilityKeys: [],
+    roundSpent: {},
+    selectedFocusAbility: ""
+  };
+}
+
+export function normalizeTravelStationFocusState(value, stationKey, options = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const fallback = createTravelStationFocusState(stationKey, options);
+  const capacity = Math.max(0, Number.isFinite(Number(source.focusCapacity)) ? Number(source.focusCapacity) : fallback.focusCapacity);
+  return {
+    focusCapacity: capacity,
+    focusRemaining: Math.min(capacity, Math.max(0, Number.isFinite(Number(source.focusRemaining)) ? Number(source.focusRemaining) : capacity)),
+    usedAbilityKeys: Array.from(new Set((Array.isArray(source.usedAbilityKeys) ? source.usedAbilityKeys : []).filter((key) => typeof key === "string" && getDefaultStationFocusAbilities(stationKey, options).some((ability) => ability.key === key)))),
+    roundSpent: Object.fromEntries(Object.entries(isPlainObject(source.roundSpent) ? source.roundSpent : {}).filter(([roundIndex, abilityKey]) => /^\d+$/.test(roundIndex) && typeof abilityKey === "string")),
+    selectedFocusAbility: typeof source.selectedFocusAbility === "string" ? source.selectedFocusAbility : ""
+  };
+}
+
+export function normalizeTravelEventRunnerStationFocus(value, roundOrSession = null, options = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const rounds = Array.isArray(roundOrSession?.event?.rounds) ? roundOrSession.event.rounds : (Array.isArray(roundOrSession?.rounds) ? roundOrSession.rounds : [roundOrSession]);
+  const stationKeys = Array.from(new Set(rounds.flatMap((round) => Array.isArray(round?.activeStations) ? round.activeStations : []).filter((key) => TRAVEL_FIVE_STATION_KEYS.includes(key))));
+  return Object.fromEntries(stationKeys.map((stationKey) => [stationKey, normalizeTravelStationFocusState(source[stationKey], stationKey, options)]));
+}
+
+export function prepareTravelStationFocusState(session, stationKey, roundIndex, options = {}) {
+  const state = normalizeTravelStationFocusState(session?.stationFocus?.[stationKey], stationKey, options);
+  const abilities = getDefaultStationFocusAbilities(stationKey, options);
+  const spentThisRound = typeof state.roundSpent[String(roundIndex)] === "string";
+  return {
+    ...state,
+    spentThisRound,
+    focusOptions: abilities.map((ability) => {
+      const used = state.usedAbilityKeys.includes(ability.key);
+      return { ...ability, value: ability.key, description: `${ability.timing} ${ability.effectText}`, used, unavailable: used || spentThisRound || state.focusRemaining <= 0, availabilityLabel: used ? "Used this event." : "" };
+    })
+  };
+}
+
+export function commitTravelEventRunnerStationFocus(session, roundIndex, stationKey, abilityKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number(roundIndex);
+  if (!normalized.session.event.rounds[index]?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
+  const ability = getDefaultStationFocusAbilities(stationKey, options).find((entry) => entry.key === abilityKey);
+  const focus = prepareTravelStationFocusState(normalized.session, stationKey, index, options);
+  if (!ability) return { ok: false, errors: [`Focus ability "${abilityKey}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
+  if (focus.focusRemaining <= 0) return { ok: false, errors: [`${stationKey} has no Focus remaining.`], warnings: [], session: normalized.session };
+  if (focus.usedAbilityKeys.includes(abilityKey)) return { ok: false, errors: [`${ability.label} was already used this event.`], warnings: [], session: normalized.session };
+  if (focus.spentThisRound) return { ok: false, errors: [`${stationKey} already spent Focus in round ${index + 1}.`], warnings: [], session: normalized.session };
+  const nextSession = cloneData(normalized.session);
+  nextSession.stationFocus[stationKey] = {
+    focusCapacity: focus.focusCapacity,
+    focusRemaining: focus.focusRemaining - 1,
+    usedAbilityKeys: [...focus.usedAbilityKeys, abilityKey],
+    roundSpent: { ...focus.roundSpent, [String(index)]: abilityKey },
+    selectedFocusAbility: abilityKey
+  };
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function clearTravelEventRunnerStationFocusSelection(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  nextSession.stationFocus[stationKey] = normalizeTravelStationFocusState(nextSession.stationFocus[stationKey], stationKey, options);
+  nextSession.stationFocus[stationKey].selectedFocusAbility = "";
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
 
 function getResourceMaxKey(resource) {
   if (resource === ARCFLIGHT_TRAVEL_RESOURCES.HULL) return "maxHull";
@@ -859,7 +968,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     ship: shipSelection,
     notes: typeof options.notes === "string" ? options.notes.trim() : "",
     stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(shipActor ?? options.ship ?? options.actor)),
-    npcStationControllers: normalizeNpcStationControllers(options.npcStationControllers)
+    npcStationControllers: normalizeNpcStationControllers(options.npcStationControllers),
+    stationFocus: normalizeTravelEventRunnerStationFocus(options.stationFocus, normalizedEvent, options)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -902,7 +1012,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     notes: typeof session.notes === "string" ? session.notes : "",
     stationAssignments: normalizeTravelEventRunnerStationAssignments(session.stationAssignments),
     npcStationControllers: normalizeNpcStationControllers(session.npcStationControllers),
-    stationFocus: isPlainObject(session.stationFocus) ? cloneData(session.stationFocus) : {},
+    stationFocus: normalizeTravelEventRunnerStationFocus(session.stationFocus, event, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -962,6 +1072,8 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       ? getPendingTravelStabilizeEffect(result, stabilizePressureKey)
       : null;
     const stationOrderCommitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
+    const stationFocus = prepareTravelStationFocusState(session, stationKey, roundResult?.roundIndex ?? session?.currentRoundIndex ?? 0, options);
+    const committedFocusAbility = getDefaultStationFocusAbilities(stationKey, options).find((ability) => ability.key === stationOrderCommitment.selectedFocusAbility);
     const eventOptions = eventApproachSelection.options.map((approach) => ({
       ...approach,
       optionKey: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, approach.skill),
@@ -1013,7 +1125,10 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       stationOptions,
       stationOrderCommitted: stationOrderCommitment.committed,
       stationOrderCommitmentSource: stationOrderCommitment.source,
-      selectedFocusAbility: stationOrderCommitment.selectedFocusAbility,
+      selectedFocusAbility: committedFocusAbility?.label ?? "",
+      selectedFocusAbilityKey: stationOrderCommitment.selectedFocusAbility,
+      focusRemaining: stationFocus.focusRemaining,
+      focusCapacity: stationFocus.focusCapacity,
       isEventApproach: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
       isStabilize: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
       stabilizePressureKey,
@@ -1705,10 +1820,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       currentRoundIndex: activeSession?.currentRoundIndex ?? -1
     };
   }
-  const focusSource = isPlainObject(activeSession?.stationFocus?.[station.stationKey]) ? activeSession.stationFocus[station.stationKey] : {};
-  const focusOptions = Array.isArray(focusSource.focusOptions) ? cloneData(focusSource.focusOptions) : [];
-  const focusCapacity = Number.isFinite(Number(focusSource.focusCapacity)) ? Math.max(0, Number(focusSource.focusCapacity)) : 0;
-  const focusRemaining = Number.isFinite(Number(focusSource.focusRemaining)) ? Math.max(0, Number(focusSource.focusRemaining)) : 0;
+  const focusSource = prepareTravelStationFocusState(activeSession, station.stationKey, activeSession?.currentRoundIndex ?? 0, options);
+  const { focusOptions, focusCapacity, focusRemaining } = focusSource;
 
   let statusKey = "waitingForGmRoll";
   let resultStatusLabel = "Waiting for GM roll";
@@ -1763,7 +1876,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     focusOptions,
     hasFocusOptions: focusOptions.length > 0,
     selectedFocusAbility: station.selectedFocusAbility || "",
-    canSpendFocus: focusRemaining > 0 && focusOptions.length > 0,
+    noFocusRemaining: focusRemaining <= 0,
+    canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound,
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
   };
 }
@@ -1803,10 +1917,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     currentRoundIndex: overlayState.currentRoundIndex,
     vignette: overlayState.vignette,
     stations: (overlayState.stations ?? []).map((station) => {
-      const focusSource = isPlainObject(normalized.session?.stationFocus?.[station.stationKey]) ? normalized.session.stationFocus[station.stationKey] : {};
-      const focusOptions = Array.isArray(focusSource.focusOptions) ? cloneData(focusSource.focusOptions) : [];
-      const focusCapacity = Number.isFinite(Number(focusSource.focusCapacity)) ? Math.max(0, Number(focusSource.focusCapacity)) : 0;
-      const focusRemaining = Number.isFinite(Number(focusSource.focusRemaining)) ? Math.max(0, Number(focusSource.focusRemaining)) : 0;
+      const focusSource = prepareTravelStationFocusState(normalized.session, station.stationKey, normalized.session?.currentRoundIndex ?? 0, options);
+      const { focusOptions, focusCapacity, focusRemaining } = focusSource;
       return {
       stationKey: station.stationKey,
       stationName: station.stationName,
@@ -1849,7 +1961,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       focusOptions,
       hasFocusOptions: focusOptions.length > 0,
       selectedFocusAbility: station.selectedFocusAbility || "",
-      canSpendFocus: focusRemaining > 0 && focusOptions.length > 0,
+      noFocusRemaining: focusRemaining <= 0,
+      canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound,
       canChooseApproach: false,
       permissionReason: "Waiting for board permissions."
       };
@@ -1930,7 +2043,7 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   if (!stationOption) return { ok: false, errors: [`Station option "${optionKey}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
   const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, options);
   if (!actionUpdate.ok) return actionUpdate;
-  const nextSession = cloneData(actionUpdate.session);
+  let nextSession = cloneData(actionUpdate.session);
   nextSession.roundResults[index].selectedStationSkills = normalizeSelectedStationSkills(nextSession.roundResults[index], round);
   nextSession.roundResults[index].selectedStationSkills[stationKey] = stationOption.skill;
   nextSession.roundResults[index].selectedStationOptionLabels = normalizeSelectedStationOptionLabels(nextSession.roundResults[index], round);
@@ -1939,10 +2052,21 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
     nextSession.roundResults[index].stationActions[stationKey] = stabilize(stationOption.stabilizePressureKey);
   }
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
+  const requestedFocusAbility = typeof options.selectedFocusAbility === "string" ? options.selectedFocusAbility : "";
+  if (requestedFocusAbility) {
+    const focusUpdate = commitTravelEventRunnerStationFocus(nextSession, index, stationKey, requestedFocusAbility, options);
+    if (!focusUpdate.ok) return focusUpdate;
+    nextSession = cloneData(focusUpdate.session);
+  } else {
+    const clearFocus = clearTravelEventRunnerStationFocusSelection(nextSession, index, stationKey, options);
+    if (!clearFocus.ok) return clearFocus;
+    nextSession = cloneData(clearFocus.session);
+  }
+  nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = {
     committed: true,
     source: options.source === "player" ? "player" : "",
-    selectedFocusAbility: typeof options.selectedFocusAbility === "string" ? options.selectedFocusAbility : ""
+    selectedFocusAbility: requestedFocusAbility
   };
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;

@@ -62,13 +62,16 @@
               {{#if hasFocusOptions}}
                 <section class="arcflight-travel-player-mission-board__focus">
                   <h3>Station Focus</h3>
+                  <p><strong>Focus Remaining:</strong> {{focusRemaining}} / {{focusCapacity}}</p>
+                  {{#if noFocusRemaining}}<p class="arcflight-sheet__hint">No Focus remaining.</p>{{/if}}
                   <label class="arcflight-travel-player-mission-board__control">
                     <span>Spend Focus</span>
                     <select data-arcflight-mission-board-focus data-station-key="{{stationKey}}" {{#unless canSpendFocus}}disabled{{/unless}}>
                       <option value="">Do not spend Focus</option>
-                      {{#each focusOptions}}<option value="{{value}}">{{label}}</option>{{/each}}
+                      {{#each focusOptions}}<option value="{{value}}" {{#if unavailable}}disabled{{/if}}>{{label}}{{#if used}} — Used this event.{{/if}}</option>{{/each}}
                     </select>
                   </label>
+                  <details><summary>Focus abilities</summary>{{#each focusOptions}}<p><strong>{{label}}</strong> — {{description}}{{#if used}} <em>Used this event.</em>{{/if}}</p>{{/each}}</details>
                 </section>
               {{/if}}
               <button type="button" data-arcflight-mission-board-commit-order data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Commit Station Order</button>
