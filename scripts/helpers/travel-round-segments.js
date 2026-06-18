@@ -2,10 +2,15 @@ import { getTravelPressureIdentity, getTravelPressureState, normalizeTravelPress
 
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENTS = Object.freeze({
   ROUND_REVEAL: "roundReveal",
-  TABLE_STRATEGY: "tableStrategy",
-  STATION_COMMITMENT: "stationCommitment",
+  CREW_STRATEGY: "crewStrategy",
   STATION_ROLLS: "stationRolls",
   REACTION_WINDOW: "reactionWindow",
+  OUTCOME_PRESSURE: "outcomePressure",
+  CRISIS_TRANSITION: "crisisTransition",
+
+  // Legacy aliases kept so old saved sessions and older helper callers normalize cleanly.
+  TABLE_STRATEGY: "tableStrategy",
+  STATION_COMMITMENT: "stationCommitment",
   ROUND_OUTCOME_TALLY: "roundOutcomeTally",
   PRESSURE_APPLICATION: "pressureApplication",
   STABILIZE_RESOLUTION: "stabilizeResolution",
@@ -14,34 +19,42 @@ export const ARCFLIGHT_TRAVEL_ROUND_SEGMENTS = Object.freeze({
   ROUND_TRANSITION: "roundTransition"
 });
 
-export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_ORDER = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_ROUND_SEGMENTS));
+export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_ORDER = Object.freeze([
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL,
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY,
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS,
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW,
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION
+]);
+
+const LEGACY_ROUND_SEGMENT_ALIASES = Object.freeze({
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.TABLE_STRATEGY]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_COMMITMENT]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_OUTCOME_TALLY]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STABILIZE_RESOLUTION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.END_OF_ROUND_FOCUS]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_TRANSITION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION
+});
 
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_LABELS = Object.freeze({
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL]: "Round Reveal",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.TABLE_STRATEGY]: "Table Strategy",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_COMMITMENT]: "Station Commitment",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY]: "Crew Strategy",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS]: "Station Rolls",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW]: "Reaction Window",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_OUTCOME_TALLY]: "Round Outcome Tally",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION]: "Pressure Application",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STABILIZE_RESOLUTION]: "Stabilize Resolution",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.END_OF_ROUND_FOCUS]: "End-of-Round Focus",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK]: "Crisis Check",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_TRANSITION]: "Round Transition"
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE]: "Outcome & Pressure",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION]: "Crisis & Transition"
 });
 
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_GUIDANCE = Object.freeze({
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL]: "Reveal the round vignette, active stations, current pressure, primary/secondary pressure, Focus, exhausted actions, and progress target.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.TABLE_STRATEGY]: "Let the table discuss whether to push progress, stabilize pressure, save Focus, or risk Overpower.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_COMMITMENT]: "Each active station commits to an Event Approach or Stabilize choice.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY]: "Let the table choose priorities, then each active station commits to an Event Approach, Stabilize, Focus use, or Overpower risk.",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS]: "Resolve station checks. Event approaches create progress; Stabilize rolls create pending pressure reduction.",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW]: "Trigger once-per-event reaction actions after failures or revealed consequences.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_OUTCOME_TALLY]: "Tally station progress and determine the whole-round outcome.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION]: "Apply primary and secondary pressure from the whole-round outcome.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STABILIZE_RESOLUTION]: "Apply successful Stabilize reductions after pressure is added.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.END_OF_ROUND_FOCUS]: "Resolve end-of-round Focus actions and flexible pressure decisions after the pressure result is visible.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK]: "Check pressure tracks at 5 after all reductions and end-round actions; draw Fallout if needed.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_TRANSITION]: "Narrate what changed, mark exhausted actions, preview the next round, and advance when ready."
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE]: "Tally progress, determine the whole-round outcome, apply pressure, apply Stabilize reductions, and resolve end-of-round Focus decisions.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION]: "Check pressure tracks at 5, draw Fallout if needed, narrate what changed, preview the next round, and advance when ready."
 });
 
 function isPlainObject(value) {
@@ -58,7 +71,8 @@ function humanizeIdentifier(value) {
 }
 
 export function normalizeTravelRoundSegmentKey(value) {
-  return ARCFLIGHT_TRAVEL_ROUND_SEGMENT_ORDER.includes(value) ? value : ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL;
+  if (ARCFLIGHT_TRAVEL_ROUND_SEGMENT_ORDER.includes(value)) return value;
+  return LEGACY_ROUND_SEGMENT_ALIASES[value] ?? ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL;
 }
 
 export function getTravelRoundSegmentIndex(segmentKey) {
