@@ -36,6 +36,7 @@ import {
   updateTravelStabilizeResolutionNote,
   normalizeTravelEventRunnerSession,
   prepareTravelPlayerMissionBoardState,
+  prepareTravelPlayerReactionPromptState,
   prepareTravelPlayerStationCardState,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
@@ -402,6 +403,8 @@ let reaction = prepareTravelReactionPromptReviewState(navigatorFailure.session);
 assert(reaction.records.length === 1 && reaction.records[0].isPending, "Navigator failure creates one pending Hard Correction prompt");
 const duplicateFailure = setTravelEventRunnerStationResult(navigatorFailure.session, 0, "navigator", "failure");
 assert(prepareTravelReactionPromptReviewState(duplicateFailure.session).records.length === 1, "re-recording failure does not duplicate Hard Correction");
+const correctedOriginalResult = setTravelEventRunnerStationResult(navigatorFailure.session, 0, "navigator", "success");
+assert(prepareTravelReactionPromptReviewState(correctedOriginalResult.session).records[0].status === "dismissed", "changing the original failure to success invalidates the pending reaction");
 const criticalReaction = setTravelEventRunnerStationResult(reactionBase.session, 0, "navigator", "criticalFailure");
 assert(prepareTravelReactionPromptReviewState(criticalReaction.session).records.length === 1, "Navigator critical failure creates Hard Correction prompt");
 const noFocusBase = createTravelEventRunnerSession(runnerEvent, { stationFocus: { navigator: { focusCapacity: 1, focusRemaining: 0 } } });
@@ -411,6 +414,10 @@ assert(prepareTravelReactionPromptReviewState(setTravelEventRunnerStationResult(
 const spentBase = createTravelEventRunnerSession(runnerEvent, { stationFocus: { navigator: { focusCapacity: 1, focusRemaining: 1, roundSpent: { "0": "read-the-route" } } } });
 assert(prepareTravelReactionPromptReviewState(setTravelEventRunnerStationResult(spentBase.session, 0, "navigator", "failure").session).records.length === 0, "no prompt when Navigator spent Focus this round");
 const reactionId = reaction.records[0].reactionPromptId;
+const assignedPlayerPrompt = prepareTravelPlayerReactionPromptState(navigatorFailure.session, reactionId, { userId: "navigator-player", permittedUserIds: ["navigator-player"] });
+const otherPlayerPrompt = prepareTravelPlayerReactionPromptState(navigatorFailure.session, reactionId, { userId: "other-player", permittedUserIds: ["navigator-player"] });
+assert(assignedPlayerPrompt.available && assignedPlayerPrompt.canAccept, "assigned player receives an actionable reaction prompt state");
+assert(!otherPlayerPrompt.available && !otherPlayerPrompt.canAccept, "unassigned player cannot receive an actionable reaction prompt state");
 const acceptedReaction = acceptTravelReactionPrompt(navigatorFailure.session, reactionId);
 assert(acceptedReaction.ok && acceptedReaction.session.stationFocus.navigator.focusRemaining === 0 && acceptedReaction.session.stationFocus.navigator.usedAbilityKeys.includes("hard-correction"), "accepting Hard Correction spends Focus and marks it used");
 assert(acceptedReaction.session.focusEffectRecords.records.some((record) => record.abilityKey === "hard-correction"), "accepting Hard Correction creates a Focus effect record");

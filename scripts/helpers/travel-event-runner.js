@@ -290,9 +290,9 @@ const HARD_CORRECTION_PROMPT = Object.freeze({
   abilityKey: "hard-correction",
   trigger: "navigatorFailure",
   promptTitle: "Hard Correction Available",
-  promptText: "The Navigator sees the route sliding out from under the ship — a bad angle, a false star, a current in the void that should not be there. They can burn Focus to wrench the course back into line.",
+  promptText: "The route slips wrong beneath your hands — a false star, a bad angle, a current in the void that should not be there. You can burn your station Focus to wrench the ship back into line.",
   choiceText: "Spend 1 Focus to attempt Hard Correction?",
-  effectText: "Reroll the Navigator check. If the reroll fails, add 1 Strain pressure.",
+  effectText: "You may reroll the Navigator check. If the reroll also fails, the ship gains +1 Strain.",
   consequencePressureKey: "strain",
   consequencePressureLabel: "Strain",
   consequenceAmount: 1
@@ -362,6 +362,11 @@ export function syncTravelReactionPromptsForStationResult(session, roundIndex, s
   if (existing?.status === "accepted" && !existing.rerollResult) return markTravelReactionPromptRerollResult(nextSession, id, nextSession.roundResults[index]?.stationResults?.[stationKey], options);
   const focus = prepareTravelStationFocusState(nextSession, stationKey, index, options);
   const result = nextSession.roundResults[index]?.stationResults?.[stationKey];
+  if (existing?.status === "pending" && !["failure", "criticalFailure"].includes(result)) {
+    existing.status = "dismissed";
+    existing.resolvedAt = nowIso(options);
+    existing.resolutionNote = existing.resolutionNote || "Original trigger result changed before the reaction was resolved.";
+  }
   if (!existing && stationKey === "navigator" && ["failure", "criticalFailure"].includes(result) && focus.focusRemaining > 0 && !focus.spentThisRound && !focus.usedAbilityKeys.includes(HARD_CORRECTION_PROMPT.abilityKey)) {
     const record = buildTravelReactionPromptRecord(nextSession, index, stationKey, HARD_CORRECTION_PROMPT.abilityKey, HARD_CORRECTION_PROMPT.trigger, options);
     if (record) records.push(record);
@@ -377,6 +382,39 @@ export function prepareTravelReactionPromptReviewState(session, options = {}) {
     hasRerollResult: Boolean(record.rerollResult), rerollResultLabel: humanizeIdentifier(record.rerollResult), backlashPending: record.backlashStatus === "pending"
   }));
   return { records, hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending" || record.backlashStatus === "pending").length };
+}
+
+export function prepareTravelPlayerReactionPromptState(session, reactionPromptId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  const record = normalized.session?.reactionPrompts?.records?.find((entry) => entry.reactionPromptId === reactionPromptId) ?? null;
+  const permittedUserIds = Array.isArray(options.permittedUserIds) ? options.permittedUserIds.filter((userId) => typeof userId === "string" && userId) : [];
+  const userId = typeof options.userId === "string" ? options.userId : "";
+  const permitted = Boolean(record && userId && permittedUserIds.includes(userId));
+  const available = Boolean(permitted && record.status === "pending");
+  return {
+    hasPrompt: Boolean(record),
+    available,
+    permitted,
+    userId,
+    permittedUserIds,
+    sessionKey: normalized.session?.key ?? "",
+    reactionPromptId: record?.reactionPromptId ?? "",
+    roundIndex: record?.roundIndex ?? -1,
+    stationKey: record?.stationKey ?? "",
+    stationName: record?.stationName ?? "",
+    abilityKey: record?.abilityKey ?? "",
+    abilityLabel: record?.abilityLabel ?? "",
+    status: record?.status ?? "",
+    promptTitle: record?.promptTitle ?? "",
+    promptText: record?.promptText ?? "",
+    choiceText: record?.choiceText ?? "",
+    effectText: record?.effectText ?? "",
+    rerollResult: record?.rerollResult ?? "",
+    backlashStatus: record?.backlashStatus ?? "",
+    canAccept: available,
+    canDismiss: available,
+    canReopen: available
+  };
 }
 
 function resolveReactionPrompt(session, reactionPromptId, mutate, options = {}) {
@@ -2230,6 +2268,16 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   }
   const focusSource = prepareTravelStationFocusState(activeSession, station.stationKey, activeSession?.currentRoundIndex ?? 0, options);
   const { focusOptions, focusCapacity, focusRemaining } = focusSource;
+  const pendingReactionPrompt = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
+    record.stationKey === station.stationKey
+    && record.roundIndex === activeSession?.currentRoundIndex
+    && record.status === "pending"
+  ) ?? null;
+  const reactionBacklash = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
+    record.stationKey === station.stationKey
+    && record.roundIndex === activeSession?.currentRoundIndex
+    && record.backlashStatus === "pending"
+  ) ?? null;
 
   let statusKey = "waitingForGmRoll";
   let resultStatusLabel = "Waiting for GM roll";
@@ -2286,6 +2334,12 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     selectedFocusAbility: station.selectedFocusAbility || "",
     noFocusRemaining: focusRemaining <= 0,
     canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound,
+    hasPendingReactionPrompt: Boolean(pendingReactionPrompt),
+    pendingReactionPromptId: pendingReactionPrompt?.reactionPromptId ?? "",
+    pendingReactionPromptTitle: pendingReactionPrompt?.promptTitle ?? "",
+    pendingReactionPromptAbilityLabel: pendingReactionPrompt?.abilityLabel ?? "",
+    hasPendingReactionBacklash: Boolean(reactionBacklash),
+    pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
   };
 }

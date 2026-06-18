@@ -211,8 +211,9 @@
         </div>
         {{#if state.reactionPromptReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
-            <h2>Triggered Reactions</h2>
-            <p class="arcflight-sheet__hint">Resolve event-triggered Focus reactions here. Nothing spends Focus or applies backlash without GM confirmation.</p>
+            <details>
+            <summary><strong>Reaction History</strong> — {{state.reactionPromptReview.pendingCount}} pending</summary>
+            <p class="arcflight-sheet__hint">Players receive eligible reactions automatically. These controls remain as GM fallback/history; backlash still requires explicit confirmation.</p>
             {{#each state.reactionPromptReview.records}}
               <article>
                 <h3>{{promptTitle}}</h3>
@@ -242,6 +243,7 @@
                 </div>{{/if}}
               </article>
             {{/each}}
+            </details>
           </section>
         {{/if}}
         {{#if state.stabilizeResolutionReview.hasRecords}}

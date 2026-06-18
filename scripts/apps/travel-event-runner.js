@@ -1,7 +1,7 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
-import { sendTravelPlayerMissionBoardToPlayers } from "./travel-player-station-card.js";
+import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
   advanceTravelEventRunnerRound,
@@ -775,6 +775,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = updated.session;
       this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
       this.statusMessage = `Recorded ${result} for ${stationKey}.`;
+      const pendingReaction = updated.session.reactionPrompts?.records?.find((record) =>
+        record.roundIndex === roundIndex
+        && record.stationKey === stationKey
+        && record.status === "pending"
+      );
+      if (pendingReaction) sendTravelPlayerReactionPromptToPlayers(updated.session, pendingReaction.reactionPromptId, { actor: this.#getSessionShipActor() });
     }
     return this.render(true);
   }
