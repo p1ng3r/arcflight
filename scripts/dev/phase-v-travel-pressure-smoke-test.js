@@ -199,24 +199,29 @@ assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEA
 
 const initialPlayerBoard = prepareTravelPlayerMissionBoardState(runner.session);
 const initialPlayerStation = initialPlayerBoard.stations[0];
-assert(initialPlayerStation.stationOrderOptions.some((option) => option.value === "eventApproach" && option.label === "Advance the Mission"), "player mission board exposes Advance the Mission Station Order");
-assert(initialPlayerStation.stationOrderOptions.some((option) => option.value === "stabilize" && option.label === "Stabilize the Ship"), "player mission board exposes Stabilize the Ship Station Order");
+assert(!Object.hasOwn(initialPlayerStation, "stationOrderOptions"), "player mission board does not expose a separate Station Order option list");
+assert(initialPlayerStation.approachOptions.some((option) => option.actionType === "eventApproach" && option.skill === "survival"), "player mission board combined list exposes normal event approaches");
+const playerStabilizeOption = initialPlayerStation.approachOptions.find((option) => option.actionType === "stabilize");
+assert(playerStabilizeOption?.label === "Stabilize Strain — Survival", "player mission board combined list exposes the synthetic Stabilize option");
+assert(playerStabilizeOption?.stabilizePressureKey === "strain", "synthetic Stabilize option stores its pressure target");
+assert(playerStabilizeOption?.skill === "survival", "navigator Stabilize falls back to Survival when Piloting Lore is unavailable");
 assert(initialPlayerStation.focusCapacity === 0 && initialPlayerStation.focusRemaining === 0, "Station Focus capacity defaults safely to zero");
 assert(Array.isArray(initialPlayerStation.focusOptions) && initialPlayerStation.focusOptions.length === 0, "Station Focus options default safely to an empty list");
 assert(initialPlayerStation.selectedFocusAbility === "" && initialPlayerStation.canSpendFocus === false, "Station Focus selection and spending default safely when no abilities exist");
 
-const committedAdvance = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "eventApproach", "survival", { source: "player", now: "2026-06-17T00:00:20.000Z" });
+const committedAdvance = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "eventApproach:survival", { source: "player", now: "2026-06-17T00:00:20.000Z" });
 assert(committedAdvance.ok, "player can commit Advance the Mission");
 assert(committedAdvance.session.roundResults[0].stationActions.navigator.type === "eventApproach", "Advance the Mission preserves Event Approach behavior");
 assert(committedAdvance.session.roundResults[0].selectedStationSkills.navigator === "survival", "Advance the Mission commit preserves selected roll approach");
 const advanceRunnerState = prepareTravelEventRunnerState(committedAdvance.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
-assert(advanceRunnerState.stations[0].stationOrderCommitted && advanceRunnerState.stations[0].selectedActionLabel === "Advance the Mission", "GM runner sees the player-committed Advance the Mission order");
+assert(advanceRunnerState.stations[0].stationOrderCommitted && advanceRunnerState.stations[0].selectedActionLabel === "Push Forward", "GM runner sees the player-committed Push Forward option");
 
 const stabilizeChoice = setTravelEventRunnerStationAction(runner.session, 0, "navigator", "stabilize", { now: "2026-06-17T00:00:30.000Z" });
 assert(stabilizeChoice.ok, "Stabilize choice can be selected");
 assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.type === "stabilize", "selected Stabilize action is stored per station");
 assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.stabilizePressureKey === "strain", "selected Stabilize action stores its station-flavored pressure key");
 const stabilizeSuccess = setTravelEventRunnerStationResult(stabilizeChoice.session, 0, "navigator", "criticalSuccess");
+assert(stabilizeSuccess.session.roundResults[0].stationResults.navigator === "criticalSuccess", "a Stabilize station is resolved normally after its roll");
 const stabilizeSummary = summarizeTravelEventRunnerSession(stabilizeSuccess.session);
 assert(stabilizeSummary.summary.totalScore === 0, "Stabilize does not count as event progress or session scoring");
 const stabilizeState = prepareTravelEventRunnerState(stabilizeSuccess.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
@@ -224,17 +229,18 @@ assert(stabilizeState.stations[0].isStabilize, "runner state exposes selected St
 assert(stabilizeState.stations[0].stabilizePressureKey === "strain", "runner state exposes selected Stabilize pressure target");
 assert(stabilizeState.pendingStabilize.totalReduction === 2, "runner state summarizes pending critical-success Stabilize reduction");
 
-const committedStabilize = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "stabilize", "survival", { source: "player", now: "2026-06-17T00:00:40.000Z" });
+const committedStabilize = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "stabilize:strain:survival", { source: "player", now: "2026-06-17T00:00:40.000Z" });
 assert(committedStabilize.ok, "player can commit Stabilize the Ship");
 assert(committedStabilize.session.roundResults[0].stationActions.navigator.type === "stabilize", "Stabilize commit preserves action type");
 assert(committedStabilize.session.roundResults[0].selectedStationSkills.navigator === "survival", "Commit Station Order preserves Stabilize and selected roll approach together");
+assert(committedStabilize.session.roundResults[0].selectedStationOptionLabels.navigator === "Stabilize Strain — Survival", "selected Stabilize option label is stored");
 const stabilizePlayerBoard = prepareTravelPlayerMissionBoardState(committedStabilize.session);
 const stabilizePlayerStation = stabilizePlayerBoard.stations[0];
 assert(stabilizePlayerStation.isStabilize && stabilizePlayerStation.stabilizePressureLabel === "Strain", "Stabilize exposes its pressure label on the player mission board");
 assert(stabilizePlayerStation.approachOptions.some((option) => option.skill === "survival"), "Stabilize still exposes roll approach and skill information");
 assert(stabilizePlayerStation.focusOptions.length === 0 && !stabilizePlayerStation.hasFocusOptions, "mission board prepares safely when no Station Focus abilities exist");
 const committedRunnerState = prepareTravelEventRunnerState(committedStabilize.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
-assert(committedRunnerState.stations[0].stationOrderCommitted && committedRunnerState.stations[0].selectedActionLabel === "Stabilize the Ship", "GM runner sees the player-committed Stabilize the Ship order");
+assert(committedRunnerState.stations[0].stationOrderCommitted && committedRunnerState.stations[0].selectedStationOptionLabel === "Stabilize Strain — Survival", "GM runner sees the selected combined Stabilize option");
 
 const stabilizeExport = exportTravelEventRunnerSessionToJson(stabilizeSuccess.session, { now: "2026-06-17T00:00:45.000Z" });
 const stabilizeImport = importTravelEventRunnerSessionFromJson(stabilizeExport.json);

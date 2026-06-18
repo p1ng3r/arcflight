@@ -159,12 +159,6 @@
               </header>
               <p>{{prompt}}</p>
               {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
-              <label class="arcflight-sheet__field">
-                <span>Station Order</span>
-                <select data-arcflight-runner-action-select data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
-                  {{#each actionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-                </select>
-              </label>
               {{#if stationOrderCommitted}}<p class="arcflight-sheet__hint"><strong>Player Committed:</strong> {{selectedActionLabel}}{{#if selectedFocusAbility}} — Station Focus: {{selectedFocusAbility}}{{/if}}</p>{{/if}}
               {{#if isStabilize}}
                 <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
@@ -175,17 +169,18 @@
                   </p>
                 {{/if}}
               {{/if}}
-              {{#if skillApproaches.length}}
+              {{#if stationOptions.length}}
                 <div class="arcflight-sheet__hint">
                   <label>
-                    <strong>Roll Approach:</strong>
+                    <strong>How do you handle this station?</strong>
                     <select data-arcflight-runner-approach-select data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
-                      {{#each skillApproaches}}
-                        <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{#if skill}} ({{skill}}){{/if}}</option>
+                      {{#each stationOptions}}
+                        <option value="{{optionKey}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                       {{/each}}
                     </select>
                   </label>
-                  <p><strong>Selected Approach:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}</p>
+                  <p><strong>Selected Option:</strong> {{selectedStationOptionLabel}}</p>
+                  <p><strong>Station Order:</strong> {{selectedActionLabel}}</p>
                   {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
                   {{#if qualityWarnings.length}}<p class="arcflight-travel-builder__warning"><strong>Quality Warning:</strong> {{#each qualityWarnings}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
                 </div>
