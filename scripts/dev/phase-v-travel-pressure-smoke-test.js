@@ -440,4 +440,80 @@ assert(advancedReaction.session.reactionPrompts.records[0].reactionPromptId === 
 const reactionState = prepareTravelEventRunnerState(failedReroll.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
 assert(reactionState.roundSegmentState.reactionPromptsPending === 1, "round segment state exposes pending reaction count");
 
+// Generic Focus reaction trigger registry.
+const generalizedEvent = structuredClone(runnerEvent);
+generalizedEvent.key = "phase-v-generalized-focus-reactions";
+generalizedEvent.travelStations = ["captain", "navigator", "engineer"];
+for (const round of generalizedEvent.rounds) {
+  const navigatorPrompt = round.stationPrompts.navigator;
+  round.activeStations = ["captain", "navigator", "engineer"];
+  round.stationPrompts.captain = { ...structuredClone(navigatorPrompt), stationKey: "captain", stationName: "Captain" };
+  round.stationPrompts.engineer = { ...structuredClone(navigatorPrompt), stationKey: "engineer", stationName: "Engineer" };
+}
+
+const generalizedRunner = createTravelEventRunnerSession(generalizedEvent, {
+  stationFocus: {
+    captain: { focusCapacity: 1, focusRemaining: 1 },
+    navigator: { focusCapacity: 1, focusRemaining: 1 },
+    engineer: { focusCapacity: 1, focusRemaining: 1 }
+  }
+});
+const captainTrigger = setTravelEventRunnerStationResult(generalizedRunner.session, 0, "navigator", "failure");
+const callForEverything = captainTrigger.session.reactionPrompts.records.find((record) => record.abilityKey === "call-for-everything");
+assert(callForEverything?.status === "pending" && callForEverything.stationKey === "captain" && callForEverything.targetStationKey === "navigator", "Call for Everything triggers for the Captain after any active station failure");
+const acceptedCaptain = acceptTravelReactionPrompt(captainTrigger.session, callForEverything.reactionPromptId);
+assert(acceptedCaptain.session.stationFocus.captain.focusRemaining === 0 && acceptedCaptain.session.roundResults[0].stationResults.navigator === null, "Call for Everything spends Captain Focus and requests the failed station reroll");
+const failedCaptainReroll = setTravelEventRunnerStationResult(acceptedCaptain.session, 0, "navigator", "failure");
+assert(failedCaptainReroll.session.reactionPrompts.records.find((record) => record.reactionPromptId === callForEverything.reactionPromptId)?.backlashStatus === "pending", "failed Call for Everything reroll queues Morale backlash");
+
+for (const focusOverride of [
+  { focusRemaining: 0 },
+  { focusRemaining: 1, roundSpent: { "0": "hold-the-line" } },
+  { focusRemaining: 1, usedAbilityKeys: ["call-for-everything"] }
+]) {
+  const ineligible = createTravelEventRunnerSession(generalizedEvent, { stationFocus: { captain: { focusCapacity: 1, ...focusOverride } } });
+  const failed = setTravelEventRunnerStationResult(ineligible.session, 0, "navigator", "failure");
+  assert(!failed.session.reactionPrompts.records.some((record) => record.abilityKey === "call-for-everything"), "Call for Everything respects Captain Focus eligibility");
+}
+
+const engineerTrigger = setTravelEventRunnerStationResult(generalizedRunner.session, 0, "engineer", "criticalFailure");
+const safetyValves = engineerTrigger.session.reactionPrompts.records.find((record) => record.abilityKey === "blow-the-safety-valves");
+assert(safetyValves?.status === "pending", "Blow the Safety Valves triggers after Engineer failure");
+const acceptedSafetyValves = acceptTravelReactionPrompt(engineerTrigger.session, safetyValves.reactionPromptId);
+assert(acceptedSafetyValves.session.stationFocus.engineer.focusRemaining === 0, "Blow the Safety Valves spends Engineer Focus");
+assert(acceptedSafetyValves.session.roundResults[0].stationResults.engineer === "failure", "Blow the Safety Valves improves critical failure to failure");
+assert(acceptedSafetyValves.session.reactionPrompts.records.find((record) => record.reactionPromptId === safetyValves.reactionPromptId)?.backlashStatus === "pending", "Blow the Safety Valves queues visible Strain pressure");
+
+const endRoundBase = createTravelEventRunnerSession(generalizedEvent, {
+  stationFocus: {
+    captain: { focusCapacity: 1, focusRemaining: 1 },
+    engineer: { focusCapacity: 1, focusRemaining: 1 }
+  }
+});
+endRoundBase.session.pressure.strain = 2;
+for (const stationKey of generalizedEvent.rounds[0].activeStations) endRoundBase.session.roundResults[0].stationResults[stationKey] = stationKey === "navigator" ? "failure" : "success";
+const outcomePhase = setTravelEventRunnerRoundPhase(endRoundBase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE);
+const patchStrain = outcomePhase.session.reactionPrompts.records.find((record) => record.abilityKey === "patch-the-strain");
+const holdLine = outcomePhase.session.reactionPrompts.records.find((record) => record.abilityKey === "hold-the-line");
+assert(patchStrain?.status === "pending", "Patch the Strain triggers at Outcome & Pressure when Strain is above zero");
+assert(holdLine?.status === "pending", "Hold the Line triggers at Outcome & Pressure when a consequence is pending");
+const successfulOutcomeSource = structuredClone(endRoundBase.session);
+for (const stationKey of generalizedEvent.rounds[0].activeStations) successfulOutcomeSource.roundResults[0].stationResults[stationKey] = "success";
+successfulOutcomeSource.reactionPrompts.records = [];
+const successfulOutcome = setTravelEventRunnerRoundPhase(successfulOutcomeSource, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE);
+assert(!successfulOutcome.session.reactionPrompts.records.some((record) => record.abilityKey === "hold-the-line"), "Hold the Line does not trigger from a configured pressure profile without an actual pending consequence");
+const acceptedPatch = acceptTravelReactionPrompt(outcomePhase.session, patchStrain.reactionPromptId);
+assert(acceptedPatch.session.stationFocus.engineer.focusRemaining === 0 && acceptedPatch.session.pressure.strain === 1, "Patch the Strain spends Focus and reduces Strain by 1");
+const zeroPatchSource = structuredClone(outcomePhase.session);
+zeroPatchSource.pressure.strain = 0;
+zeroPatchSource.stationFocus.engineer.focusRemaining = 1;
+zeroPatchSource.stationFocus.engineer.usedAbilityKeys = [];
+zeroPatchSource.stationFocus.engineer.roundSpent = {};
+zeroPatchSource.reactionPrompts.records = zeroPatchSource.reactionPrompts.records.filter((record) => record.abilityKey !== "patch-the-strain");
+const zeroPatchOutcome = setTravelEventRunnerRoundPhase(zeroPatchSource, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE);
+assert(!zeroPatchOutcome.session.reactionPrompts.records.some((record) => record.abilityKey === "patch-the-strain"), "Patch the Strain does not trigger or reduce below zero");
+const acceptedHold = acceptTravelReactionPrompt(outcomePhase.session, holdLine.reactionPromptId);
+const acceptedHoldRecord = acceptedHold.session.reactionPrompts.records.find((record) => record.reactionPromptId === holdLine.reactionPromptId);
+assert(acceptedHold.session.stationFocus.captain.focusRemaining === 0 && acceptedHoldRecord.effectStatus === "pending", "Hold the Line spends Captain Focus and creates a GM-confirmable reduction record");
+
 console.log("Phase V travel pressure smoke test passed.");
