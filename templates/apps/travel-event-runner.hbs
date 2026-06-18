@@ -201,15 +201,27 @@
             </article>
           {{/each}}
         </div>
-        {{#if state.pendingStabilize.hasPending}}
+        {{#if state.stabilizeResolutionReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
-            <h3>Pending Stabilize Resolution</h3>
-            <p class="arcflight-sheet__hint">Resolve these during Outcome &amp; Pressure. Stabilize results do not add round progress.</p>
-            <ul>
-              {{#each state.pendingStabilize.rows}}
-                <li><strong>{{stationName}}:</strong> {{pressureLabel}} — {{#if result}}{{#if reduction}}reduce by {{reduction}}{{else}}no reduction{{/if}}{{#if complication}}; add 1 pressure complication{{/if}}{{else}}awaiting result{{/if}}</li>
-              {{/each}}
-            </ul>
+            <h2>Stabilize Pressure Resolution</h2>
+            <p class="arcflight-sheet__hint">Apply or dismiss each result explicitly. Stabilize results do not add round progress.</p>
+            {{#each state.stabilizeResolutionReview.records}}
+              <article>
+                <h3>{{stationName}}{{#if assignedActorName}} — {{assignedActorName}}{{/if}}</h3>
+                <p><strong>Result:</strong> {{resultLabel}} · <strong>Pressure target:</strong> {{pressureLabel}}</p>
+                <p><strong>Pending effect:</strong> {{pendingEffectText}}</p>
+                <p><strong>Status:</strong> {{statusLabel}}</p>
+                <label>Resolution note
+                  <input type="text" maxlength="500" value="{{resolutionNote}}" data-arcflight-stabilize-resolution-note data-stabilize-resolution-id="{{stabilizeResolutionId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
+                </label>
+                {{#if isPending}}
+                  <div class="arcflight-travel-runner-mvp__result-buttons">
+                    <button type="button" data-arcflight-stabilize-resolution-apply data-stabilize-resolution-id="{{stabilizeResolutionId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Apply Pressure</button>
+                    <button type="button" data-arcflight-stabilize-resolution-dismiss data-stabilize-resolution-id="{{stabilizeResolutionId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Dismiss</button>
+                  </div>
+                {{/if}}
+              </article>
+            {{/each}}
           </section>
         {{/if}}
         {{#if state.focusEffectReview.hasRecords}}

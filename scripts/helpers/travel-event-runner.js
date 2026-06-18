@@ -284,6 +284,164 @@ export function updateTravelFocusEffectNote(session, focusEffectId, note, option
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
+export function normalizeTravelStabilizeResolutionRecords(value = {}, options = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const records = (Array.isArray(source.records) ? source.records : []).filter(isPlainObject).map((record) => ({
+    stabilizeResolutionId: typeof record.stabilizeResolutionId === "string" ? record.stabilizeResolutionId : "",
+    roundIndex: Math.max(0, Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : 0),
+    stationKey: typeof record.stationKey === "string" ? record.stationKey : "",
+    stationName: typeof record.stationName === "string" ? record.stationName : "",
+    assignedActorName: typeof record.assignedActorName === "string" ? record.assignedActorName : "",
+    result: TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(record.result) ? record.result : "",
+    resultLabel: typeof record.resultLabel === "string" ? record.resultLabel : "",
+    pressureKey: typeof record.pressureKey === "string" ? record.pressureKey : "",
+    pressureLabel: typeof record.pressureLabel === "string" ? record.pressureLabel : "",
+    reduction: Math.max(0, Math.trunc(Number(record.reduction) || 0)),
+    pressureIncrease: Math.max(0, Math.trunc(Number(record.pressureIncrease) || 0)),
+    complication: record.complication === true,
+    status: ["pending", "applied", "dismissed"].includes(record.status) ? record.status : "pending",
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+    resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+    resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+    resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : "",
+    pressureBefore: Number.isFinite(Number(record.pressureBefore)) ? Number(record.pressureBefore) : null,
+    pressureAfter: Number.isFinite(Number(record.pressureAfter)) ? Number(record.pressureAfter) : null
+  })).filter((record) => record.stabilizeResolutionId && record.stationKey && record.pressureKey && record.result);
+  return { records: Array.from(new Map(records.map((record) => [record.stabilizeResolutionId, record])).values()) };
+}
+
+export function buildTravelStabilizeResolutionRecord(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return null;
+  const index = Number(roundIndex);
+  const round = normalized.session.event.rounds[index];
+  const roundResult = normalized.session.roundResults[index];
+  const action = roundResult?.stationActions?.[stationKey];
+  const result = roundResult?.stationResults?.[stationKey];
+  if (!round || !roundResult || action?.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE || !result) return null;
+  const pressureKey = action.stabilizePressureKey || getTravelStationStabilizePressureKey(stationKey, round);
+  const effect = getPendingTravelStabilizeEffect(result, pressureKey);
+  const pressure = getTravelPressureIdentity(pressureKey);
+  const station = prepareStationRows(normalized.session, round, roundResult, options).find((row) => row.stationKey === stationKey);
+  return {
+    stabilizeResolutionId: `round-${index}-${stationKey}-${pressureKey}`,
+    roundIndex: index,
+    stationKey,
+    stationName: station?.stationName || humanizeIdentifier(stationKey),
+    assignedActorName: station?.assignedActorName || "",
+    result,
+    resultLabel: humanizeIdentifier(result),
+    pressureKey,
+    pressureLabel: pressure?.label || humanizeIdentifier(pressureKey),
+    reduction: effect?.reduction ?? 0,
+    pressureIncrease: effect?.pressureIncrease ?? 0,
+    complication: effect?.complication === true,
+    status: "pending",
+    createdAt: nowIso(options),
+    resolvedAt: "",
+    resolvedByUserId: "",
+    resolvedByUserName: "",
+    resolutionNote: "",
+    pressureBefore: null,
+    pressureAfter: null
+  };
+}
+
+export function syncTravelStabilizeResolutionRecordsForStationResult(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const index = Number(roundIndex);
+  const candidate = buildTravelStabilizeResolutionRecord(nextSession, index, stationKey, options);
+  const records = normalizeTravelStabilizeResolutionRecords(nextSession.stabilizeResolutionRecords, options).records;
+  const pending = records.find((record) => record.roundIndex === index && record.stationKey === stationKey && record.status === "pending");
+  if (!candidate) {
+    if (pending) {
+      pending.status = "dismissed";
+      pending.resolvedAt = nowIso(options);
+    }
+  } else if (pending) {
+    Object.assign(pending, candidate, {
+      stabilizeResolutionId: pending.stabilizeResolutionId,
+      createdAt: pending.createdAt,
+      resolutionNote: pending.resolutionNote
+    });
+  } else {
+    const duplicate = records.find((record) => record.stabilizeResolutionId === candidate.stabilizeResolutionId);
+    if (!duplicate) records.push(candidate);
+    else if (duplicate.status !== "pending" && duplicate.result !== candidate.result) {
+      candidate.stabilizeResolutionId = `${candidate.stabilizeResolutionId}-${candidate.result}-${records.length}`;
+      records.push(candidate);
+    }
+  }
+  nextSession.stabilizeResolutionRecords = { records };
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function prepareTravelStabilizeResolutionReviewState(session, options = {}) {
+  const records = normalizeTravelStabilizeResolutionRecords(session?.stabilizeResolutionRecords, options).records.map((record) => ({
+    ...record,
+    statusLabel: humanizeIdentifier(record.status),
+    isPending: record.status === "pending",
+    pendingEffectText: record.reduction > 0
+      ? `Reduce ${record.pressureLabel} by ${record.reduction}.`
+      : (record.pressureIncrease > 0 ? `Add ${record.pressureIncrease} ${record.pressureLabel} pressure complication.` : "No pressure reduction.")
+  }));
+  return { records, hasRecords: records.length > 0, pendingCount: records.filter((record) => record.isPending).length };
+}
+
+export function markTravelStabilizeResolutionApplied(session, stabilizeResolutionId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.stabilizeResolutionRecords.records.find((entry) => entry.stabilizeResolutionId === stabilizeResolutionId);
+  if (!record) return { ok: false, errors: [`Stabilize resolution "${stabilizeResolutionId}" was not found.`], warnings: [], session: nextSession };
+  if (record.status !== "pending") return { ok: false, errors: [`Stabilize resolution "${stabilizeResolutionId}" is already ${record.status}.`], warnings: [], session: nextSession };
+  const before = Number(nextSession.pressure[record.pressureKey] ?? 0);
+  nextSession.pressure = normalizeTravelPressureState({
+    ...nextSession.pressure,
+    [record.pressureKey]: before - record.reduction + record.pressureIncrease
+  });
+  record.status = "applied";
+  record.pressureBefore = before;
+  record.pressureAfter = nextSession.pressure[record.pressureKey];
+  record.resolvedAt = nowIso(options);
+  record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+  record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function dismissTravelStabilizeResolution(session, stabilizeResolutionId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.stabilizeResolutionRecords.records.find((entry) => entry.stabilizeResolutionId === stabilizeResolutionId);
+  if (!record) return { ok: false, errors: [`Stabilize resolution "${stabilizeResolutionId}" was not found.`], warnings: [], session: nextSession };
+  if (record.status !== "pending") return { ok: false, errors: [`Stabilize resolution "${stabilizeResolutionId}" is already ${record.status}.`], warnings: [], session: nextSession };
+  record.status = "dismissed";
+  record.resolvedAt = nowIso(options);
+  record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+  record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function updateTravelStabilizeResolutionNote(session, stabilizeResolutionId, note, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.stabilizeResolutionRecords.records.find((entry) => entry.stabilizeResolutionId === stabilizeResolutionId);
+  if (!record) return { ok: false, errors: [`Stabilize resolution "${stabilizeResolutionId}" was not found.`], warnings: [], session: nextSession };
+  record.resolutionNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
 function getResourceMaxKey(resource) {
   if (resource === ARCFLIGHT_TRAVEL_RESOURCES.HULL) return "maxHull";
   if (resource === ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL) return "maxLifeveil";
@@ -1087,7 +1245,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     stationAssignments: normalizeTravelEventRunnerStationAssignments(Object.hasOwn(options, "stationAssignments") ? options.stationAssignments : getTravelEventRunnerShipStationAssignments(shipActor ?? options.ship ?? options.actor)),
     npcStationControllers: normalizeNpcStationControllers(options.npcStationControllers),
     stationFocus: normalizeTravelEventRunnerStationFocus(options.stationFocus, normalizedEvent, options),
-    focusEffectRecords: normalizeTravelFocusEffectRecords(options.focusEffectRecords, options)
+    focusEffectRecords: normalizeTravelFocusEffectRecords(options.focusEffectRecords, options),
+    stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(options.stabilizeResolutionRecords, options)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1132,6 +1291,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     npcStationControllers: normalizeNpcStationControllers(session.npcStationControllers),
     stationFocus: normalizeTravelEventRunnerStationFocus(session.stationFocus, event, options),
     focusEffectRecords: normalizeTravelFocusEffectRecords(session.focusEffectRecords, options),
+    stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(session.stabilizeResolutionRecords, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -1595,18 +1755,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const summary = activeSession?.status === "completed" ? summarizeTravelEventRunnerSession(activeSession, options).summary : null;
   const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
-  const pendingStabilizeRows = stations.filter((station) => station.isStabilize).map((station) => ({
-    stationKey: station.stationKey,
-    stationName: station.stationName,
-    pressureKey: station.stabilizePressureKey,
-    pressureLabel: station.stabilizePressureLabel,
-    result: station.result,
-    resultLabel: station.resultLabel,
-    reduction: station.pendingStabilizeReduction,
-    pressureIncrease: station.pendingStabilize?.pressureIncrease ?? 0,
-    complication: station.hasStabilizeComplication
-  }));
-
+  const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
+  const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   return {
     ok: normalized.ok,
     errors: normalized.errors,
@@ -1633,6 +1783,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     roundSegmentState: activeSession ? prepareTravelRoundSegmentState(activeSession) : prepareTravelRoundSegmentState(null),
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
     stations,
+    stabilizeResolutionReview,
     pendingStabilize: {
       rows: pendingStabilizeRows,
       hasPending: pendingStabilizeRows.length > 0,
@@ -2100,6 +2251,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   if (!Object.hasOwn(normalized.session.roundResults[index].stationResults, stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
+  const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!stabilizeUpdate.ok) return stabilizeUpdate;
+  Object.assign(nextSession, stabilizeUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -2145,6 +2299,9 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
     : eventApproach();
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
+  const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!stabilizeUpdate.ok) return stabilizeUpdate;
+  Object.assign(nextSession, stabilizeUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -2194,6 +2351,9 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   const focusEffectUpdate = syncTravelFocusEffectRecordsForStationOrder(nextSession, index, stationKey, options);
   if (!focusEffectUpdate.ok) return focusEffectUpdate;
   nextSession = cloneData(focusEffectUpdate.session);
+  const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!stabilizeUpdate.ok) return stabilizeUpdate;
+  nextSession = cloneData(stabilizeUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };

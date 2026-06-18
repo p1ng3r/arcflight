@@ -23,8 +23,11 @@ import {
   exportTravelEventRunnerSessionToJson,
   importTravelEventRunnerSessionFromJson,
   markTravelFocusEffectApplied,
+  markTravelStabilizeResolutionApplied,
   dismissTravelFocusEffect,
+  dismissTravelStabilizeResolution,
   updateTravelFocusEffectNote,
+  updateTravelStabilizeResolutionNote,
   normalizeTravelEventRunnerSession,
   prepareTravelPlayerMissionBoardState,
   prepareTravelPlayerStationCardState,
@@ -232,9 +235,12 @@ const advanceRunnerState = prepareTravelEventRunnerState(committedAdvance.sessio
 assert(advanceRunnerState.stations[0].stationOrderCommitted && advanceRunnerState.stations[0].selectedActionLabel === "Push Forward", "GM runner sees the player-committed Push Forward option");
 const advanceIndividualCard = prepareTravelPlayerStationCardState(committedAdvance.session, "navigator");
 assert(advanceIndividualCard.selectedStationOrder === "eventApproach" && advanceIndividualCard.selectedApproachValue === "eventApproach:survival", "individual station card can preserve a committed Push Forward option");
+const pushForwardResult = setTravelEventRunnerStationResult(committedAdvance.session, 0, "navigator", "success");
+assert(pushForwardResult.session.stabilizeResolutionRecords.records.length === 0, "Push Forward station result creates no Stabilize resolution record");
 
 const stabilizeChoice = setTravelEventRunnerStationAction(runner.session, 0, "navigator", "stabilize", { now: "2026-06-17T00:00:30.000Z" });
 assert(stabilizeChoice.ok, "Stabilize choice can be selected");
+assert(stabilizeChoice.session.stabilizeResolutionRecords.records.length === 0, "Stabilize without a result creates no resolution record");
 assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.type === "stabilize", "selected Stabilize action is stored per station");
 assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.stabilizePressureKey === "strain", "selected Stabilize action stores its station-flavored pressure key");
 const stabilizeSuccess = setTravelEventRunnerStationResult(stabilizeChoice.session, 0, "navigator", "criticalSuccess");
@@ -245,6 +251,31 @@ const stabilizeState = prepareTravelEventRunnerState(stabilizeSuccess.session, {
 assert(stabilizeState.stations[0].isStabilize, "runner state exposes selected Stabilize choice");
 assert(stabilizeState.stations[0].stabilizePressureKey === "strain", "runner state exposes selected Stabilize pressure target");
 assert(stabilizeState.pendingStabilize.totalReduction === 2, "runner state summarizes pending critical-success Stabilize reduction");
+const stabilizeRecord = stabilizeSuccess.session.stabilizeResolutionRecords.records[0];
+assert(stabilizeRecord.status === "pending" && stabilizeRecord.reduction === 2, "Stabilize critical success creates one pending reduction-2 record");
+const repeatedStabilize = setTravelEventRunnerStationResult(stabilizeSuccess.session, 0, "navigator", "criticalSuccess");
+assert(repeatedStabilize.session.stabilizeResolutionRecords.records.length === 1, "re-recording a Stabilize result does not duplicate its record");
+const stabilizeSuccessResult = setTravelEventRunnerStationResult(stabilizeChoice.session, 0, "navigator", "success");
+assert(stabilizeSuccessResult.session.stabilizeResolutionRecords.records[0].reduction === 1, "Stabilize success records reduction 1");
+const stabilizeFailureResult = setTravelEventRunnerStationResult(stabilizeChoice.session, 0, "navigator", "failure");
+assert(stabilizeFailureResult.session.stabilizeResolutionRecords.records[0].reduction === 0, "Stabilize failure records no reduction");
+const stabilizeCriticalFailure = setTravelEventRunnerStationResult(stabilizeChoice.session, 0, "navigator", "criticalFailure");
+assert(stabilizeCriticalFailure.session.stabilizeResolutionRecords.records[0].pressureIncrease === 1 && stabilizeCriticalFailure.session.stabilizeResolutionRecords.records[0].complication, "Stabilize critical failure records a +1 pressure complication");
+const notedStabilize = updateTravelStabilizeResolutionNote(stabilizeSuccess.session, stabilizeRecord.stabilizeResolutionId, "Pressure valve opened.");
+assert(notedStabilize.session.stabilizeResolutionRecords.records[0].resolutionNote === "Pressure valve opened.", "Stabilize resolution note persists");
+const appliedReduction = markTravelStabilizeResolutionApplied({
+  ...notedStabilize.session,
+  pressure: { ...notedStabilize.session.pressure, strain: 1 }
+}, stabilizeRecord.stabilizeResolutionId, { userId: "gm-1", userName: "GM" });
+assert(appliedReduction.session.pressure.strain === 0, "applying Stabilize reduction lowers pressure without going below 0");
+assert(appliedReduction.session.stabilizeResolutionRecords.records[0].status === "applied" && appliedReduction.session.stabilizeResolutionRecords.records[0].pressureBefore === 1, "applied Stabilize records remain in history with pressure history");
+const criticalFailureRecord = stabilizeCriticalFailure.session.stabilizeResolutionRecords.records[0];
+const appliedIncrease = markTravelStabilizeResolutionApplied(stabilizeCriticalFailure.session, criticalFailureRecord.stabilizeResolutionId);
+assert(appliedIncrease.session.pressure.strain === stabilizeCriticalFailure.session.pressure.strain + 1, "applying critical-failure Stabilize raises pressure by 1");
+const dismissedStabilize = dismissTravelStabilizeResolution({ ...stabilizeFailureResult.session, pressure: { ...stabilizeFailureResult.session.pressure, strain: 3 } }, stabilizeFailureResult.session.stabilizeResolutionRecords.records[0].stabilizeResolutionId);
+assert(dismissedStabilize.session.pressure.strain === 3 && dismissedStabilize.session.stabilizeResolutionRecords.records[0].status === "dismissed", "dismissing Stabilize preserves pressure and keeps history");
+const advancedStabilize = advanceTravelEventRunnerRound(appliedReduction.session);
+assert(advancedStabilize.session.stabilizeResolutionRecords.records[0].status === "applied", "advancing rounds preserves Stabilize resolution history");
 
 const committedStabilize = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "stabilize:strain:survival", { source: "player", now: "2026-06-17T00:00:40.000Z" });
 assert(committedStabilize.ok, "player can commit Stabilize the Ship");
@@ -297,6 +328,7 @@ const stabilizeExport = exportTravelEventRunnerSessionToJson(stabilizeSuccess.se
 const stabilizeImport = importTravelEventRunnerSessionFromJson(stabilizeExport.json);
 assert(stabilizeImport.session.roundResults[0].stationActions.navigator.type === "stabilize", "session export/import preserves Stabilize action choice");
 assert(stabilizeImport.session.roundResults[0].stationActions.navigator.stabilizePressureKey === "strain", "session export/import preserves Stabilize pressure target");
+assert(stabilizeImport.session.stabilizeResolutionRecords.records.length === 1 && stabilizeImport.session.stabilizeResolutionRecords.records[0].reduction === 2, "session export/import preserves Stabilize resolution records");
 const committedExport = exportTravelEventRunnerSessionToJson(committedStabilize.session, { now: "2026-06-17T00:00:50.000Z" });
 const committedImport = importTravelEventRunnerSessionFromJson(committedExport.json);
 assert(committedImport.session.roundResults[0].stationActions.navigator.type === "stabilize", "export/import preserves player-selected Station Order");
