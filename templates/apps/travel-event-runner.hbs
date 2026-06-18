@@ -212,6 +212,30 @@
             </ul>
           </section>
         {{/if}}
+        {{#if state.focusEffectReview.hasRecords}}
+          <section class="arcflight-travel-runner-mvp__panel">
+            <h2>Station Focus Effects</h2>
+            <p class="arcflight-sheet__hint">Review-only history. Applying or dismissing a record does not refund Focus or automate its described mechanics.</p>
+            {{#each state.focusEffectReview.records}}
+              <article>
+                <h3>{{stationName}}{{#if assignedActorName}} — {{assignedActorName}}{{/if}}</h3>
+                <p><strong>{{abilityLabel}}</strong> · {{selectedActionLabel}} · Round {{roundIndex}}</p>
+                <p><strong>Timing:</strong> {{timing}}</p>
+                <p>{{effectText}}</p>
+                <p><strong>Status:</strong> {{statusLabel}}</p>
+                <label>Resolution note
+                  <input type="text" maxlength="500" value="{{resolutionNote}}" data-arcflight-focus-effect-note data-focus-effect-id="{{focusEffectId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
+                </label>
+                {{#if isPending}}
+                  <div class="arcflight-travel-runner-mvp__result-buttons">
+                    <button type="button" data-arcflight-focus-effect-apply data-focus-effect-id="{{focusEffectId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Mark Applied</button>
+                    <button type="button" data-arcflight-focus-effect-dismiss data-focus-effect-id="{{focusEffectId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Dismiss</button>
+                  </div>
+                {{/if}}
+              </article>
+            {{/each}}
+          </section>
+        {{/if}}
         {{#if state.roundSummaryCard.hasResolvedStations}}
           <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
             <h2>GM Round Summary</h2>
