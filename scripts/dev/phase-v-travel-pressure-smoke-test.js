@@ -15,6 +15,12 @@ import {
   stabilize
 } from "../helpers/travel-pressure.js";
 import {
+  acceptTravelReactionPrompt,
+  applyTravelReactionPromptBacklash,
+  dismissTravelReactionPrompt,
+  dismissTravelReactionPromptBacklash,
+  markTravelReactionPromptRerollResult,
+  prepareTravelReactionPromptReviewState,
   advanceTravelEventRunnerRound,
   advanceTravelEventRunnerRoundPhase,
   buildTravelPlayerStationOrderCommitData,
@@ -386,5 +392,45 @@ assert(runnerState.roundSegmentState.pressure.strain === 4, "runner roundSegment
 assert(runnerState.roundSegmentState.primaryPressure === "strain", "runner state exposes primary pressure");
 assert(runnerState.roundSegmentState.secondaryPressure === "morale", "runner state exposes secondary pressure");
 assert(runnerState.roundSegmentState.progressTarget === 2, "runner state exposes progress target");
+
+// Hard Correction reaction lifecycle.
+const reactionBase = createTravelEventRunnerSession(runnerEvent, { stationFocus: { navigator: { focusCapacity: 1, focusRemaining: 1 } } });
+const navigatorSuccess = setTravelEventRunnerStationResult(reactionBase.session, 0, "navigator", "success");
+assert(prepareTravelReactionPromptReviewState(navigatorSuccess.session).records.length === 0, "Navigator success creates no Hard Correction prompt");
+const navigatorFailure = setTravelEventRunnerStationResult(reactionBase.session, 0, "navigator", "failure");
+let reaction = prepareTravelReactionPromptReviewState(navigatorFailure.session);
+assert(reaction.records.length === 1 && reaction.records[0].isPending, "Navigator failure creates one pending Hard Correction prompt");
+const duplicateFailure = setTravelEventRunnerStationResult(navigatorFailure.session, 0, "navigator", "failure");
+assert(prepareTravelReactionPromptReviewState(duplicateFailure.session).records.length === 1, "re-recording failure does not duplicate Hard Correction");
+const criticalReaction = setTravelEventRunnerStationResult(reactionBase.session, 0, "navigator", "criticalFailure");
+assert(prepareTravelReactionPromptReviewState(criticalReaction.session).records.length === 1, "Navigator critical failure creates Hard Correction prompt");
+const noFocusBase = createTravelEventRunnerSession(runnerEvent, { stationFocus: { navigator: { focusCapacity: 1, focusRemaining: 0 } } });
+assert(prepareTravelReactionPromptReviewState(setTravelEventRunnerStationResult(noFocusBase.session, 0, "navigator", "failure").session).records.length === 0, "no prompt without Navigator Focus");
+const usedBase = createTravelEventRunnerSession(runnerEvent, { stationFocus: { navigator: { focusCapacity: 1, focusRemaining: 1, usedAbilityKeys: ["hard-correction"] } } });
+assert(prepareTravelReactionPromptReviewState(setTravelEventRunnerStationResult(usedBase.session, 0, "navigator", "failure").session).records.length === 0, "no prompt when Hard Correction was already used");
+const spentBase = createTravelEventRunnerSession(runnerEvent, { stationFocus: { navigator: { focusCapacity: 1, focusRemaining: 1, roundSpent: { "0": "read-the-route" } } } });
+assert(prepareTravelReactionPromptReviewState(setTravelEventRunnerStationResult(spentBase.session, 0, "navigator", "failure").session).records.length === 0, "no prompt when Navigator spent Focus this round");
+const reactionId = reaction.records[0].reactionPromptId;
+const acceptedReaction = acceptTravelReactionPrompt(navigatorFailure.session, reactionId);
+assert(acceptedReaction.ok && acceptedReaction.session.stationFocus.navigator.focusRemaining === 0 && acceptedReaction.session.stationFocus.navigator.usedAbilityKeys.includes("hard-correction"), "accepting Hard Correction spends Focus and marks it used");
+assert(acceptedReaction.session.focusEffectRecords.records.some((record) => record.abilityKey === "hard-correction"), "accepting Hard Correction creates a Focus effect record");
+assert(acceptedReaction.session.roundResults[0].stationResults.navigator === null, "accepting Hard Correction requests a reroll by clearing the station result");
+const successfulReroll = markTravelReactionPromptRerollResult(acceptedReaction.session, reactionId, "success");
+assert(successfulReroll.session.reactionPrompts.records[0].status === "resolved" && successfulReroll.session.reactionPrompts.records[0].backlashStatus === "none", "successful reroll resolves without backlash");
+const failedReroll = markTravelReactionPromptRerollResult(acceptedReaction.session, reactionId, "failure");
+assert(failedReroll.session.reactionPrompts.records[0].backlashStatus === "pending", "failed reroll creates pending Strain backlash");
+const appliedBacklash = applyTravelReactionPromptBacklash(failedReroll.session, reactionId);
+assert(appliedBacklash.session.pressure.strain === 1 && appliedBacklash.session.reactionPrompts.records[0].backlashStatus === "applied", "applying backlash increases Strain by 1");
+const dismissedBacklash = dismissTravelReactionPromptBacklash(failedReroll.session, reactionId);
+assert(dismissedBacklash.session.pressure.strain === 0 && dismissedBacklash.session.reactionPrompts.records[0].backlashStatus === "dismissed", "dismissing backlash does not increase Strain");
+const dismissedPrompt = dismissTravelReactionPrompt(navigatorFailure.session, reactionId);
+assert(dismissedPrompt.session.stationFocus.navigator.focusRemaining === 1 && dismissedPrompt.session.reactionPrompts.records[0].status === "dismissed", "dismissing prompt does not spend Focus");
+const reactionExport = exportTravelEventRunnerSessionToJson(failedReroll.session);
+const reactionImport = importTravelEventRunnerSessionFromJson(reactionExport.json);
+assert(reactionImport.session.reactionPrompts.records[0].backlashStatus === "pending", "reaction prompts survive export/import");
+const advancedReaction = advanceTravelEventRunnerRound(failedReroll.session);
+assert(advancedReaction.session.reactionPrompts.records[0].reactionPromptId === reactionId, "reaction prompts survive round advancement");
+const reactionState = prepareTravelEventRunnerState(failedReroll.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+assert(reactionState.roundSegmentState.reactionPromptsPending === 1, "round segment state exposes pending reaction count");
 
 console.log("Phase V travel pressure smoke test passed.");

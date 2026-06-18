@@ -3,6 +3,7 @@ import { getTravelPressureIdentity, getTravelPressureState, normalizeTravelPress
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENTS = Object.freeze({
   ROUND_REVEAL: "roundReveal",
   CREW_STRATEGY: "crewStrategy",
+  STATION_ORDERS: "stationOrders",
   STATION_ROLLS: "stationRolls",
   REACTION_WINDOW: "reactionWindow",
   OUTCOME_PRESSURE: "outcomePressure",
@@ -22,38 +23,41 @@ export const ARCFLIGHT_TRAVEL_ROUND_SEGMENTS = Object.freeze({
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_ORDER = Object.freeze([
   ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL,
   ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY,
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS,
   ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS,
   ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW,
-  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
-  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION
+  ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE
 ]);
 
 const LEGACY_ROUND_SEGMENT_ALIASES = Object.freeze({
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.TABLE_STRATEGY]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY,
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_COMMITMENT]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY,
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_OUTCOME_TALLY]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STABILIZE_RESOLUTION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.END_OF_ROUND_FOCUS]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION,
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_TRANSITION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE,
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_TRANSITION]: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE
 });
 
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_LABELS = Object.freeze({
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL]: "Round Reveal",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY]: "Crew Strategy",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS]: "Station Orders",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS]: "Station Rolls",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW]: "Reaction Window",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW]: "Reactions",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE]: "Outcome & Pressure",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION]: "Crisis & Transition"
 });
 
 export const ARCFLIGHT_TRAVEL_ROUND_SEGMENT_GUIDANCE = Object.freeze({
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL]: "Reveal the round vignette, active stations, current pressure, primary/secondary pressure, Focus, exhausted actions, and progress target.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY]: "Let the table choose priorities, then each active station commits to an Event Approach, Stabilize, Focus use, or Overpower risk.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS]: "Resolve station checks. Event approaches create progress; Stabilize rolls create pending pressure reduction.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW]: "Trigger once-per-event reaction actions after failures or revealed consequences.",
-  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE]: "Tally progress, determine the whole-round outcome, apply pressure, apply Stabilize reductions, and resolve end-of-round Focus decisions.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL]: "GM reads the round vignette and reveals the active stations.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY]: "Players discuss assignments, resources, and who is handling each station.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS]: "Players choose Push Forward, Stabilize, and optional Focus.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS]: "Resolve station checks and record results.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.REACTION_WINDOW]: "Resolve triggered reaction abilities such as Hard Correction.",
+  [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE]: "Apply Stabilize pressure, backlash, pressure changes, and round consequences.",
   [ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION]: "Check pressure tracks at 5, draw Fallout if needed, narrate what changed, preview the next round, and advance when ready."
 });
 
@@ -154,6 +158,12 @@ export function prepareTravelRoundSegmentState(session = {}, options = {}) {
   const pressureProfile = normalizeTravelRoundPressureProfile(round ?? {});
   const labels = pressureProfileLabels(pressureProfile);
   const activeStations = Array.isArray(round?.activeStations) ? round.activeStations.map((station) => typeof station === "string" ? station : station?.stationKey).filter(Boolean) : [];
+  const roundResult = Array.isArray(session?.roundResults) ? session.roundResults[index] : null;
+  const stationOrdersPending = activeStations.filter((key) => !roundResult?.stationOrderCommitments?.[key]?.committed).length;
+  const stationRollsPending = activeStations.filter((key) => !roundResult?.stationResults?.[key]).length;
+  const reactionPromptsPending = Number(options.reactionPromptReview?.pendingCount ?? 0);
+  const stabilizeResolutionsPending = Number(options.stabilizeResolutionReview?.pendingCount ?? 0);
+  const focusEffectsPending = Number(options.focusEffectReview?.pendingCount ?? 0);
 
   return {
     hasSession: isPlainObject(session),
@@ -189,6 +199,8 @@ export function prepareTravelRoundSegmentState(session = {}, options = {}) {
     hasProgressTarget: Number.isInteger(pressureProfile.progressTarget),
     ...labels,
     activeStations,
-    activeStationCount: activeStations.length
+    activeStationCount: activeStations.length,
+    stationOrdersPending, stationRollsPending, reactionPromptsPending, stabilizeResolutionsPending, focusEffectsPending,
+    hasPendingReactions: reactionPromptsPending > 0
   };
 }

@@ -39,7 +39,9 @@ import {
   updateTravelFocusEffectNote,
   markTravelStabilizeResolutionApplied,
   dismissTravelStabilizeResolution,
-  updateTravelStabilizeResolutionNote
+  updateTravelStabilizeResolutionNote,
+  acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -85,7 +87,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
-  "[data-arcflight-stabilize-resolution-dismiss]"
+  "[data-arcflight-stabilize-resolution-dismiss]",
+  "[data-arcflight-reaction-accept]", "[data-arcflight-reaction-dismiss]",
+  "[data-arcflight-reaction-reroll-result]", "[data-arcflight-reaction-backlash-apply]", "[data-arcflight-reaction-backlash-dismiss]"
 ].join(", ");
 
 
@@ -402,6 +406,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.#updateStationSkillApproach(approachSelect);
     }
 
+    const reactionNote = event.target?.closest?.("[data-arcflight-reaction-note]");
+    if (reactionNote && this.element?.contains(reactionNote)) return this.#updateReactionNote(reactionNote);
     const focusNote = event.target?.closest?.("[data-arcflight-focus-effect-note]");
     if (focusNote && this.element?.contains(focusNote)) return this.#updateFocusEffectNote(focusNote);
     const stabilizeNote = event.target?.closest?.("[data-arcflight-stabilize-resolution-note]");
@@ -459,6 +465,27 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-dismiss")) return this.#resolveStabilizeResolution(target, "dismissed");
+    if (target.hasAttribute("data-arcflight-reaction-accept")) return this.#resolveReaction(target, "accept");
+    if (target.hasAttribute("data-arcflight-reaction-dismiss")) return this.#resolveReaction(target, "dismiss");
+    if (target.hasAttribute("data-arcflight-reaction-reroll-result")) return this.#resolveReaction(target, "reroll");
+    if (target.hasAttribute("data-arcflight-reaction-backlash-apply")) return this.#resolveReaction(target, "applyBacklash");
+    if (target.hasAttribute("data-arcflight-reaction-backlash-dismiss")) return this.#resolveReaction(target, "dismissBacklash");
+  }
+
+  async #resolveReaction(target, action) {
+    const id = target.dataset.reactionPromptId ?? "";
+    const actions = { accept: () => acceptTravelReactionPrompt(this.session, id), dismiss: () => dismissTravelReactionPrompt(this.session, id), reroll: () => markTravelReactionPromptRerollResult(this.session, id, target.dataset.result ?? ""), applyBacklash: () => applyTravelReactionPromptBacklash(this.session, id), dismissBacklash: () => dismissTravelReactionPromptBacklash(this.session, id) };
+    const updated = actions[action]?.() ?? { ok: false, errors: ["Unknown reaction action."] };
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok ? "Reaction prompt updated." : (updated.errors?.[0] ?? "Could not update reaction prompt.");
+    return this.render(true);
+  }
+
+  async #updateReactionNote(input) {
+    const updated = updateTravelReactionPromptNote(this.session, input.dataset.reactionPromptId ?? "", input.value ?? "");
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok ? "Reaction note updated." : (updated.errors?.[0] ?? "Could not update reaction note.");
+    return this.render(true);
   }
 
   async #resolveStabilizeResolution(target, status) {
