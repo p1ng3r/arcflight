@@ -159,17 +159,28 @@
               </header>
               <p>{{prompt}}</p>
               {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
-              {{#if skillApproaches.length}}
+              {{#if stationOrderCommitted}}<p class="arcflight-sheet__hint"><strong>Player Committed:</strong> {{selectedActionLabel}}{{#if selectedFocusAbility}} — Station Focus: {{selectedFocusAbility}}{{/if}}</p>{{/if}}
+              {{#if isStabilize}}
+                <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
+                {{#if result}}
+                  <p class="arcflight-sheet__hint"><strong>Pending Outcome & Pressure:</strong>
+                    {{#if pendingStabilizeReduction}}Reduce {{stabilizePressureLabel}} by {{pendingStabilizeReduction}}.{{else}}No pressure reduction.{{/if}}
+                    {{#if hasStabilizeComplication}} Add 1 {{stabilizePressureLabel}} pressure complication.{{/if}}
+                  </p>
+                {{/if}}
+              {{/if}}
+              {{#if stationOptions.length}}
                 <div class="arcflight-sheet__hint">
                   <label>
-                    <strong>Roll Approach:</strong>
+                    <strong>How do you handle this station?</strong>
                     <select data-arcflight-runner-approach-select data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
-                      {{#each skillApproaches}}
-                        <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{#if skill}} ({{skill}}){{/if}}</option>
+                      {{#each stationOptions}}
+                        <option value="{{optionKey}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                       {{/each}}
                     </select>
                   </label>
-                  <p><strong>Selected Approach:</strong> {{selectedApproach.label}}{{#if selectedApproach.skill}} ({{selectedApproach.skill}}){{/if}}</p>
+                  <p><strong>Selected Option:</strong> {{selectedStationOptionLabel}}</p>
+                  <p><strong>Station Order:</strong> {{selectedActionLabel}}</p>
                   {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
                   {{#if qualityWarnings.length}}<p class="arcflight-travel-builder__warning"><strong>Quality Warning:</strong> {{#each qualityWarnings}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
                 </div>
@@ -189,6 +200,17 @@
             </article>
           {{/each}}
         </div>
+        {{#if state.pendingStabilize.hasPending}}
+          <section class="arcflight-travel-runner-mvp__panel">
+            <h3>Pending Stabilize Resolution</h3>
+            <p class="arcflight-sheet__hint">Resolve these during Outcome &amp; Pressure. Stabilize results do not add round progress.</p>
+            <ul>
+              {{#each state.pendingStabilize.rows}}
+                <li><strong>{{stationName}}:</strong> {{pressureLabel}} — {{#if result}}{{#if reduction}}reduce by {{reduction}}{{else}}no reduction{{/if}}{{#if complication}}; add 1 pressure complication{{/if}}{{else}}awaiting result{{/if}}</li>
+              {{/each}}
+            </ul>
+          </section>
+        {{/if}}
         {{#if state.roundSummaryCard.hasResolvedStations}}
           <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__round-summary">
             <h2>GM Round Summary</h2>

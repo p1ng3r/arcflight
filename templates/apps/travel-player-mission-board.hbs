@@ -31,16 +31,25 @@
           </dl>
           {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
 
+          {{#if isStabilize}}
+            <p class="arcflight-sheet__hint"><strong>Station Order:</strong> Stabilize</p>
+            <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
+            <p class="arcflight-sheet__hint">This roll reduces pressure and does not add round progress.</p>
+          {{else}}
+            <p class="arcflight-sheet__hint"><strong>Station Order:</strong> Push Forward</p>
+            <p class="arcflight-sheet__hint">This roll contributes to round progress.</p>
+          {{/if}}
+
           {{#if hasSelectedApproach}}
             {{#if selectedApproachRollLabel}}<p class="arcflight-sheet__hint"><strong>Selected:</strong> {{selectedApproachLabel}}</p><p class="arcflight-sheet__hint"><strong>Roll:</strong> {{selectedApproachRollLabel}}</p>{{else}}{{#if selectedApproachStatisticLabel}}<p class="arcflight-sheet__hint"><strong>Roll:</strong> {{selectedApproachStatisticLabel}}{{#if dcLabel}} vs {{dcLabel}}{{/if}}</p>{{/if}}{{/if}}
             {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint"><strong>How This Helps:</strong> {{selectedApproachHelpText}}</p>{{/if}}
           {{else}}
             {{#if hasApproachOptions}}
               <label class="arcflight-travel-player-mission-board__control">
-                <span>Choose approach</span>
+                <span>How do you handle your station?</span>
                 <select data-arcflight-mission-board-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled{{/unless}}>
                   {{#each approachOptions}}
-                    <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{/if}}</option>
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{/if}}</option>
                   {{/each}}
                 </select>
               </label>
@@ -50,7 +59,19 @@
                   <p><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if statisticLabel}} — {{statisticLabel}}{{/if}}{{#if dcLabel}} — {{dcLabel}}{{/if}}{{#if helpText}}<br>{{helpText}}{{/if}}</p>
                 {{/each}}
               </details>
-              <button type="button" data-arcflight-mission-board-submit-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Submit Approach</button>
+              {{#if hasFocusOptions}}
+                <section class="arcflight-travel-player-mission-board__focus">
+                  <h3>Station Focus</h3>
+                  <label class="arcflight-travel-player-mission-board__control">
+                    <span>Spend Focus</span>
+                    <select data-arcflight-mission-board-focus data-station-key="{{stationKey}}" {{#unless canSpendFocus}}disabled{{/unless}}>
+                      <option value="">Do not spend Focus</option>
+                      {{#each focusOptions}}<option value="{{value}}">{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                </section>
+              {{/if}}
+              <button type="button" data-arcflight-mission-board-commit-order data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Commit Station Order</button>
             {{else}}
               <p class="arcflight-sheet__hint">No approaches are available for this station.</p>
             {{/if}}

@@ -1,4 +1,4 @@
-import { ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES } from "../config/constants.js";
+import { ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
 
 export const ARCFLIGHT_TRAVEL_PRESSURE_TRACKS = Object.freeze({
   STRAIN: ARCFLIGHT_TRAVEL_RESOURCES.STRAIN,
@@ -7,6 +7,18 @@ export const ARCFLIGHT_TRAVEL_PRESSURE_TRACKS = Object.freeze({
 });
 
 export const ARCFLIGHT_TRAVEL_PRESSURE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_PRESSURE_TRACKS));
+export const ARCFLIGHT_TRAVEL_STATION_ACTIONS = Object.freeze({
+  EVENT_APPROACH: "eventApproach",
+  STABILIZE: "stabilize"
+});
+
+const STATION_STABILIZE_PRESSURE = Object.freeze({
+  [ARCFLIGHT_TRAVEL_STATIONS.CAPTAIN]: ARCFLIGHT_TRAVEL_PRESSURE_TRACKS.MORALE,
+  [ARCFLIGHT_TRAVEL_STATIONS.NAVIGATOR]: ARCFLIGHT_TRAVEL_PRESSURE_TRACKS.STRAIN,
+  [ARCFLIGHT_TRAVEL_STATIONS.ENGINEER]: ARCFLIGHT_TRAVEL_PRESSURE_TRACKS.STRAIN,
+  [ARCFLIGHT_TRAVEL_STATIONS.VEILWARDEN]: ARCFLIGHT_TRAVEL_PRESSURE_TRACKS.LIFEVEIL,
+  [ARCFLIGHT_TRAVEL_STATIONS.WATCHMASTER]: ARCFLIGHT_TRAVEL_PRESSURE_TRACKS.MORALE
+});
 
 export const ARCFLIGHT_TRAVEL_PRESSURE_MIN = 0;
 export const ARCFLIGHT_TRAVEL_PRESSURE_MAX = 5;
@@ -95,6 +107,44 @@ function isPlainObject(value) {
 
 export function isTravelPressureKey(key) {
   return ARCFLIGHT_TRAVEL_PRESSURE_KEYS.includes(key);
+}
+
+export function eventApproach() {
+  return { type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, stabilizePressureKey: "" };
+}
+
+export function stabilize(pressureKey = "") {
+  return {
+    type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
+    stabilizePressureKey: isTravelPressureKey(pressureKey) ? pressureKey : ""
+  };
+}
+
+export function getTravelStationStabilizePressureKey(stationKey, round = {}) {
+  return STATION_STABILIZE_PRESSURE[stationKey]
+    ?? (isTravelPressureKey(round?.primaryPressure) ? round.primaryPressure : "");
+}
+
+export function normalizeTravelStationAction(value = {}, stationKey = "", round = {}) {
+  const source = isPlainObject(value) ? value : {};
+  if (source.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE) return eventApproach();
+  const pressureKey = isTravelPressureKey(source.stabilizePressureKey)
+    ? source.stabilizePressureKey
+    : getTravelStationStabilizePressureKey(stationKey, round);
+  return stabilize(pressureKey);
+}
+
+export function getPendingTravelStabilizeEffect(result, pressureKey) {
+  const validPressureKey = isTravelPressureKey(pressureKey) ? pressureKey : "";
+  const reduction = result === "criticalSuccess" ? 2 : (result === "success" ? 1 : 0);
+  const pressureIncrease = result === "criticalFailure" ? 1 : 0;
+  return {
+    pressureKey: validPressureKey,
+    reduction,
+    pressureIncrease,
+    complication: result === "criticalFailure",
+    pendingDelta: pressureIncrease - reduction
+  };
 }
 
 export function getTravelPressureIdentity(key) {

@@ -187,6 +187,7 @@ import {
   prepareTravelEventRunnerState,
   prepareTravelSceneOverlayState,
   prepareTravelPlayerStationCardState,
+  commitTravelEventRunnerStationOrder,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   setTravelEventRunnerStationResult,
@@ -782,15 +783,21 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
   const session = activeOverlay?.session ?? activeRunner?.session ?? null;
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
-  const skill = typeof payload.skill === "string" ? payload.skill : "";
-  console.debug("Arcflight | Player approach submit received by GM.", { payload });
-  if (!session || !Number.isInteger(roundIndex) || !stationKey || !skill) {
+  const legacySkill = typeof payload.skill === "string" ? payload.skill : "";
+  const optionKey = typeof payload.optionKey === "string" && payload.optionKey
+    ? payload.optionKey
+    : (legacySkill ? `eventApproach:${legacySkill}` : "");
+  console.debug("Arcflight | Player Station Order commit received by GM.", { payload });
+  if (!session || !Number.isInteger(roundIndex) || !stationKey || !optionKey) {
     console.warn("Arcflight | Player station approach submission could not be applied.", { payload, hasSession: Boolean(session) });
     ui.notifications?.warn?.("Player approach submission could not be applied to the active travel session.");
     return false;
   }
 
-  const updated = setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill);
+  const updated = commitTravelEventRunnerStationOrder(session, roundIndex, stationKey, optionKey, {
+    source: "player",
+    selectedFocusAbility: typeof payload.selectedFocusAbility === "string" ? payload.selectedFocusAbility : ""
+  });
   if (!updated?.ok || !updated.session) {
     console.warn("Arcflight | Player station approach update failed.", { payload, updated });
     ui.notifications?.warn?.(updated?.errors?.[0] ?? "Player approach submission failed.");
@@ -799,9 +806,9 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
 
   if (activeOverlay) activeOverlay.session = updated.session;
   await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });
-  await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player submitted a station approach." });
+  await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player committed a Station Order." });
   const userName = globalThis.game?.users?.get?.(payload.userId)?.name ?? "Player";
-  ui.notifications?.info?.(`${userName} chose ${skill} for ${stationKey}.`);
+  ui.notifications?.info?.(`${userName} committed an option for ${stationKey}.`);
   const stationUpdateResult = sendTravelPlayerMissionBoardStationUpdateToPlayers(updated.session, stationKey, { actor: activeOverlay?.actor });
   console.debug("Arcflight | Board station update broadcast result.", stationUpdateResult);
   return true;

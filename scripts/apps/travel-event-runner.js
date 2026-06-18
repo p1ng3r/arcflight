@@ -27,9 +27,9 @@ import {
   retreatTravelEventRunnerRoundPhase,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
+  commitTravelEventRunnerStationOrder,
   setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
-  setTravelEventRunnerStationSkillApproach,
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
   resetTravelEventRunnerStationAssignmentToShip,
@@ -606,15 +606,15 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #updateStationSkillApproach(select) {
     const roundIndex = Number(select.dataset.roundIndex);
     const stationKey = select.dataset.stationKey ?? "";
-    const skill = select.value ?? "";
-    const updated = setTravelEventRunnerStationSkillApproach(this.session, roundIndex, stationKey, skill);
+    const optionKey = select.value ?? "";
+    const updated = commitTravelEventRunnerStationOrder(this.session, roundIndex, stationKey, optionKey);
     if (!updated.ok) {
       this.statusMessage = updated.errors?.[0] ?? "Station skill approach was not updated.";
       ui.notifications?.warn?.(this.statusMessage);
     } else {
       this.session = updated.session;
       this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
-      this.statusMessage = `Selected ${humanizeIdentifier(skill)} for ${humanizeIdentifier(stationKey)}.`;
+      this.statusMessage = `Selected station option for ${humanizeIdentifier(stationKey)}.`;
     }
     return this.render(true);
   }

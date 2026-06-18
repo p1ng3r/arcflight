@@ -21,8 +21,16 @@
     {{/if}}
   </section>
 
-  <section class="arcflight-travel-player-station-card__section" aria-label="Selected approach">
-    <h2>Approach</h2>
+  <section class="arcflight-travel-player-station-card__section" aria-label="Station Order">
+    <h2>How do you handle your station?</h2>
+    {{#if state.isStabilize}}
+      <p><strong>Station Order:</strong> Stabilize</p>
+      <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{state.stabilizePressureLabel}}</p>
+      <p class="arcflight-sheet__hint">This roll reduces pressure and does not add round progress.</p>
+    {{else}}
+      <p><strong>Station Order:</strong> Push Forward</p>
+      <p class="arcflight-sheet__hint">This roll contributes to round progress.</p>
+    {{/if}}
     {{#if state.hasSelectedApproach}}
       <p><strong>Selected:</strong> {{state.selectedApproachLabel}}</p>
       {{#if state.selectedApproachRollLabel}}<p class="arcflight-sheet__hint"><strong>Roll:</strong> {{state.selectedApproachRollLabel}}</p>{{/if}}
@@ -30,14 +38,26 @@
     {{else}}
       {{#if state.hasApproachOptions}}
         <label class="arcflight-travel-player-station-card__approach-picker">
-          <span>Choose your approach</span>
+          <span>How do you handle your station?</span>
           <select data-arcflight-player-card-approach>
             {{#each state.approachOptions}}
-              <option value="{{skill}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skillLabel}}{{/if}}{{/if}}</option>
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skillLabel}}{{/if}}{{/if}}</option>
             {{/each}}
           </select>
         </label>
-        <button type="button" data-arcflight-player-card-submit-approach>Submit Approach</button>
+        {{#if state.hasFocusOptions}}
+          <section class="arcflight-travel-player-station-card__focus">
+            <h3>Station Focus</h3>
+            <label>
+              <span>Spend Focus</span>
+              <select data-arcflight-player-card-focus {{#unless state.canSpendFocus}}disabled{{/unless}}>
+                <option value="">Do not spend Focus</option>
+                {{#each state.focusOptions}}<option value="{{value}}">{{label}}</option>{{/each}}
+              </select>
+            </label>
+          </section>
+        {{/if}}
+        <button type="button" data-arcflight-player-card-submit-approach>Commit Station Order</button>
       {{else}}
         <p class="arcflight-sheet__hint">No approaches are available for this station.</p>
       {{/if}}

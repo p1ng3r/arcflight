@@ -3,7 +3,18 @@ import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_STATI
 import { ARCFLIGHT_SHIP_ACTOR_TYPE, getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, preparePublishedTravelEventLibraryState } from "./travel-event-builder.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
-import { createEmptyTravelPressureState, normalizeTravelPressureState, normalizeTravelRoundPressureProfile } from "./travel-pressure.js";
+import {
+  ARCFLIGHT_TRAVEL_STATION_ACTIONS,
+  createEmptyTravelPressureState,
+  eventApproach,
+  getPendingTravelStabilizeEffect,
+  getTravelPressureIdentity,
+  getTravelStationStabilizePressureKey,
+  normalizeTravelPressureState,
+  normalizeTravelRoundPressureProfile,
+  normalizeTravelStationAction,
+  stabilize
+} from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -39,6 +50,13 @@ const REVIEW_RESOURCE_KEYS = Object.freeze([
 ]);
 const REVIEW_RESOURCE_MODES = Object.freeze(["add", "set"]);
 const REVIEW_NOT_APPLIED_WARNING = "Review only. Effects have not been applied.";
+const DEFAULT_STABILIZE_SKILLS = Object.freeze({
+  [ARCFLIGHT_TRAVEL_STATIONS.CAPTAIN]: "diplomacy",
+  [ARCFLIGHT_TRAVEL_STATIONS.NAVIGATOR]: "piloting-lore",
+  [ARCFLIGHT_TRAVEL_STATIONS.ENGINEER]: "crafting",
+  [ARCFLIGHT_TRAVEL_STATIONS.VEILWARDEN]: "occultism",
+  [ARCFLIGHT_TRAVEL_STATIONS.WATCHMASTER]: "perception"
+});
 
 function getResourceMaxKey(resource) {
   if (resource === ARCFLIGHT_TRAVEL_RESOURCES.HULL) return "maxHull";
@@ -468,6 +486,61 @@ function normalizeSelectedStationSkills(roundResult = {}, round = null) {
   return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, typeof source[stationKey] === "string" ? source[stationKey] : ""]));
 }
 
+function normalizeStationActions(roundResult = {}, round = null) {
+  const source = isPlainObject(roundResult?.stationActions) ? roundResult.stationActions : {};
+  const activeKeys = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
+  return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, normalizeTravelStationAction(source[stationKey], stationKey, round)]));
+}
+
+function normalizeStationOrderCommitments(roundResult = {}, round = null) {
+  const source = isPlainObject(roundResult?.stationOrderCommitments) ? roundResult.stationOrderCommitments : {};
+  const activeKeys = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
+  return Object.fromEntries(activeKeys.map((stationKey) => {
+    const commitment = isPlainObject(source[stationKey]) ? source[stationKey] : {};
+    return [stationKey, {
+      committed: commitment.committed === true,
+      source: commitment.source === "player" ? "player" : "",
+      selectedFocusAbility: typeof commitment.selectedFocusAbility === "string" ? commitment.selectedFocusAbility : ""
+    }];
+  }));
+}
+
+function normalizeSelectedStationOptionLabels(roundResult = {}, round = null) {
+  const source = isPlainObject(roundResult?.selectedStationOptionLabels) ? roundResult.selectedStationOptionLabels : {};
+  const activeKeys = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
+  return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, typeof source[stationKey] === "string" ? source[stationKey] : ""]));
+}
+
+function stationOptionKey(actionType, skill, pressureKey = "") {
+  return [actionType, pressureKey, skill].filter(Boolean).join(":");
+}
+
+function defaultStabilizeSkill(stationKey, assignedActor) {
+  const defaultSkill = DEFAULT_STABILIZE_SKILLS[stationKey] ?? "";
+  if (stationKey !== ARCFLIGHT_TRAVEL_STATIONS.NAVIGATOR) return defaultSkill;
+  return Number.isFinite(resolveActorStatisticDetails(assignedActor, defaultSkill).modifier) ? defaultSkill : "survival";
+}
+
+function normalizeCustomStabilizeOptions(card = {}, stationKey, round, assignedActor) {
+  const explicit = Array.isArray(card?.stabilizeOptions) ? card.stabilizeOptions : [];
+  const pressureKey = getTravelStationStabilizePressureKey(stationKey, round);
+  const defaults = explicit.length > 0 ? explicit : [{ skill: defaultStabilizeSkill(stationKey, assignedActor), pressureKey }];
+  return defaults.filter(isPlainObject).map((entry) => {
+    const skill = typeof entry.skill === "string" && entry.skill ? entry.skill : defaultStabilizeSkill(stationKey, assignedActor);
+    const target = getTravelPressureIdentity(entry.pressureKey)?.key ?? pressureKey;
+    const pressureLabel = getTravelPressureIdentity(target)?.label ?? humanizeIdentifier(target);
+    return {
+      optionKey: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE, skill, target),
+      actionType: ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
+      skill,
+      label: typeof entry.label === "string" && entry.label ? entry.label : `Stabilize ${pressureLabel} — ${humanizeIdentifier(skill)}`,
+      helpText: typeof entry.helpText === "string" ? entry.helpText : "Reduce pressure instead of adding round progress.",
+      stabilizePressureKey: target,
+      pressureLabel
+    };
+  });
+}
+
 function resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills = []) {
   const approaches = Array.isArray(card?.skillApproaches) ? card.skillApproaches.filter((entry) => isPlainObject(entry) && typeof entry.skill === "string" && entry.skill.length > 0) : [];
   const storedSkill = typeof roundResult?.selectedStationSkills?.[stationKey] === "string" ? roundResult.selectedStationSkills[stationKey] : "";
@@ -744,7 +817,10 @@ function createRoundResults(event) {
     roundNumber: round.round,
     title: round.title,
     stationResults: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, null])),
-    selectedStationSkills: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, ""]))
+    selectedStationSkills: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, ""])),
+    selectedStationOptionLabels: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, ""])),
+    stationActions: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, eventApproach()])),
+    stationOrderCommitments: Object.fromEntries(round.activeStations.map((stationKey) => [stationKey, { committed: false, source: "", selectedFocusAbility: "" }]))
   }));
 }
 
@@ -801,7 +877,10 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     return {
       ...roundResult,
       stationResults: Object.fromEntries(Object.keys(roundResult.stationResults).map((stationKey) => [stationKey, TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(sourceResults[stationKey]) ? sourceResults[stationKey] : null])),
-      selectedStationSkills: normalizeSelectedStationSkills(source, event.rounds[index])
+      selectedStationSkills: normalizeSelectedStationSkills(source, event.rounds[index]),
+      selectedStationOptionLabels: normalizeSelectedStationOptionLabels(source, event.rounds[index]),
+      stationActions: normalizeStationActions(source, event.rounds[index]),
+      stationOrderCommitments: normalizeStationOrderCommitments(source, event.rounds[index])
     };
   });
   const normalized = {
@@ -823,6 +902,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     notes: typeof session.notes === "string" ? session.notes : "",
     stationAssignments: normalizeTravelEventRunnerStationAssignments(session.stationAssignments),
     npcStationControllers: normalizeNpcStationControllers(session.npcStationControllers),
+    stationFocus: isPlainObject(session.stationFocus) ? cloneData(session.stationFocus) : {},
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -873,7 +953,40 @@ function prepareStationRows(session, round, roundResult, options = {}) {
     const assignment = assignments[stationKey] ?? emptyStationAssignment();
     const assignedActor = getActorByAssignment(assignment, options);
     const assigned = Boolean(assignment.actorId || assignment.actorUuid || assignment.actorName);
-    const selectedApproach = resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills);
+    const eventApproachSelection = resolveStationApproachSelection(roundResult, stationKey, card, suggestedSkills);
+    const storedSkill = typeof roundResult?.selectedStationSkills?.[stationKey] === "string" ? roundResult.selectedStationSkills[stationKey] : "";
+    const selectedAction = normalizeTravelStationAction(roundResult?.stationActions?.[stationKey], stationKey, round);
+    const stabilizePressureKey = selectedAction.stabilizePressureKey || getTravelStationStabilizePressureKey(stationKey, round);
+    const stabilizePressure = getTravelPressureIdentity(stabilizePressureKey);
+    const pendingStabilize = selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
+      ? getPendingTravelStabilizeEffect(result, stabilizePressureKey)
+      : null;
+    const stationOrderCommitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
+    const eventOptions = eventApproachSelection.options.map((approach) => ({
+      ...approach,
+      optionKey: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, approach.skill),
+      actionType: ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
+      stabilizePressureKey: ""
+    }));
+    const stabilizeOptions = normalizeCustomStabilizeOptions(card, stationKey, round, assignedActor);
+    const stationOptions = [...eventOptions, ...stabilizeOptions].map((option) => ({
+      ...option,
+      selected: option.actionType === selectedAction.type
+        && option.skill === (storedSkill || eventApproachSelection.skill)
+        && (option.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE || option.stabilizePressureKey === stabilizePressureKey)
+    }));
+    const selectedStationOption = stationOptions.find((option) => option.selected) ?? stationOptions.find((option) => option.actionType === selectedAction.type) ?? stationOptions[0] ?? null;
+    const selectedApproach = {
+      ...eventApproachSelection,
+      skill: selectedStationOption?.skill || eventApproachSelection.skill,
+      label: selectedStationOption?.label || eventApproachSelection.label,
+      helpText: selectedStationOption?.helpText || eventApproachSelection.helpText,
+      selected: selectedStationOption?.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
+        ? cloneData(selectedStationOption)
+        : eventApproachSelection.selected,
+      isSelected: Boolean(storedSkill),
+      options: eventApproachSelection.options
+    };
     return {
       stationKey,
       stationName: card.stationName || prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey),
@@ -891,6 +1004,23 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       assignedActorName: assigned ? (assignment.actorName || "Unknown Actor") : "Unassigned",
       assignmentSourceLabel: assignment.source === "ship" ? "Ship" : (assignment.source === "override" ? "Temporary Override" : (assignment.source === "manual" ? "Manual" : "Empty")),
       selectedApproach,
+      selectedAction,
+      selectedActionType: selectedAction.type,
+      selectedActionLabel: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? "Stabilize" : "Push Forward",
+      selectedStationOption,
+      selectedStationOptionKey: selectedStationOption?.optionKey ?? "",
+      selectedStationOptionLabel: roundResult?.selectedStationOptionLabels?.[stationKey] || selectedStationOption?.label || "",
+      stationOptions,
+      stationOrderCommitted: stationOrderCommitment.committed,
+      stationOrderCommitmentSource: stationOrderCommitment.source,
+      selectedFocusAbility: stationOrderCommitment.selectedFocusAbility,
+      isEventApproach: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
+      isStabilize: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
+      stabilizePressureKey,
+      stabilizePressureLabel: stabilizePressure?.label ?? humanizeIdentifier(stabilizePressureKey),
+      pendingStabilize,
+      pendingStabilizeReduction: pendingStabilize?.reduction ?? 0,
+      hasStabilizeComplication: pendingStabilize?.complication === true,
       selectedSkill: selectedApproach.skill,
       selectedSkillLabel: selectedApproach.skill ? humanizeIdentifier(selectedApproach.skill) : "No rollable statistic found",
       statisticLabel: resolveSafeStatisticLabel(assignedActor, [selectedApproach.skill]),
@@ -987,7 +1117,7 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
     const complication = row.hasGmOnlyConsequence ? ` GM complication: ${row.gmOnlyConsequence}` : "";
     return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}${complication}`;
   });
-  const roundScore = resolvedRows.reduce((sum, row) => sum + (RESULT_SCORES[row.result] ?? 0), 0);
+  const roundScore = resolvedRows.reduce((sum, row) => sum + (row.isEventApproach ? (RESULT_SCORES[row.result] ?? 0) : 0), 0);
   const roundOutcomeKey = roundOutcomeKeyFromScore(roundScore);
   const summaryText = buildTravelEventRunnerRoundSummaryText(stationRows, successCount, failureCount, roundOutcomeKey, round?.roundEndNarration?.[roundOutcomeKey] || "");
   const unresolvedStationNames = stationRows.filter((row) => !row.result).map((row) => row.stationName || humanizeIdentifier(row.stationKey));
@@ -1231,6 +1361,17 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const summary = activeSession?.status === "completed" ? summarizeTravelEventRunnerSession(activeSession, options).summary : null;
   const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
+  const pendingStabilizeRows = stations.filter((station) => station.isStabilize).map((station) => ({
+    stationKey: station.stationKey,
+    stationName: station.stationName,
+    pressureKey: station.stabilizePressureKey,
+    pressureLabel: station.stabilizePressureLabel,
+    result: station.result,
+    resultLabel: station.resultLabel,
+    reduction: station.pendingStabilizeReduction,
+    pressureIncrease: station.pendingStabilize?.pressureIncrease ?? 0,
+    complication: station.hasStabilizeComplication
+  }));
 
   return {
     ok: normalized.ok,
@@ -1258,6 +1399,12 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     roundSegmentState: activeSession ? prepareTravelRoundSegmentState(activeSession) : prepareTravelRoundSegmentState(null),
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
     stations,
+    pendingStabilize: {
+      rows: pendingStabilizeRows,
+      hasPending: pendingStabilizeRows.length > 0,
+      totalReduction: pendingStabilizeRows.reduce((total, row) => total + row.reduction, 0),
+      hasComplications: pendingStabilizeRows.some((row) => row.complication)
+    },
     roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
@@ -1349,6 +1496,13 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasSelectedApproach,
       hasResult,
       result: row.result || "",
+      selectedActionType: row.selectedActionType,
+      selectedActionLabel: row.selectedActionLabel,
+      stationOrderCommitted: row.stationOrderCommitted === true,
+      isStabilize: row.isStabilize === true,
+      stabilizePressureKey: row.stabilizePressureKey || "",
+      stabilizePressureLabel: row.stabilizePressureLabel || "",
+      selectedFocusAbility: row.selectedFocusAbility || "",
       assignmentOptions: assignmentRow?.options ?? [],
       hasAssignmentOptions: (assignmentRow?.options ?? []).length > 0,
       selectedAssignmentValue: row.assignment?.actorUuid || row.assignment?.actorId || "",
@@ -1358,7 +1512,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       npcController: assignmentRow?.npcController ?? { userId: "", userName: "" },
       npcControllerName: assignmentRow?.npcControllerName || "Unassigned",
       npcControllerOptions: assignmentRow?.npcControllerOptions ?? [],
-      approachOptions: (row.skillApproaches ?? []).map((approach) => {
+      approachOptions: (row.stationOptions ?? []).map((approach) => {
         const optionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
         const statistic = resolveActorStatisticDetails(assignedActor, approach.skill);
         const modifier = statistic.modifier;
@@ -1367,6 +1521,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
         const dcLabel = Number.isFinite(optionDc.dc) ? `DC ${optionDc.dc}` : "DC unavailable";
         return {
           ...approach,
+          value: approach.optionKey,
           skillLabel,
           statisticLabel: Number.isFinite(modifier) ? `${skillLabel} ${modifierLabel}` : modifierLabel,
           aliasesTried: statistic.aliasesTried,
@@ -1378,8 +1533,8 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
           displayLabel: `${approach.label || skillLabel} — ${skillLabel} ${modifierLabel} — ${dcLabel}`
         };
       }),
-      hasApproachOptions: (row.skillApproaches ?? []).length > 0,
-      selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedApproach?.skill || "") : "",
+      hasApproachOptions: (row.stationOptions ?? []).length > 0,
+      selectedApproachValue: row.selectedApproach?.isSelected === true ? (row.selectedStationOptionKey || "") : "",
       selectedApproachSkillLabel: row.selectedApproach?.skill ? humanizeIdentifier(row.selectedApproach.skill) : "",
       selectedApproachStatisticLabel: row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "",
       selectedApproachRollLabel: hasSelectedApproach ? `${row.selectedApproach?.skill ? (hasSelectedApproachModifier ? `${humanizeIdentifier(row.selectedApproach.skill)} ${selectedApproachModifier >= 0 ? "+" : ""}${selectedApproachModifier}` : (selectedStatistic.message || `${humanizeIdentifier(row.selectedApproach.skill)} modifier unavailable`)) : "Statistic unavailable"} vs ${Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable"}` : "",
@@ -1550,6 +1705,10 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       currentRoundIndex: activeSession?.currentRoundIndex ?? -1
     };
   }
+  const focusSource = isPlainObject(activeSession?.stationFocus?.[station.stationKey]) ? activeSession.stationFocus[station.stationKey] : {};
+  const focusOptions = Array.isArray(focusSource.focusOptions) ? cloneData(focusSource.focusOptions) : [];
+  const focusCapacity = Number.isFinite(Number(focusSource.focusCapacity)) ? Math.max(0, Number(focusSource.focusCapacity)) : 0;
+  const focusRemaining = Number.isFinite(Number(focusSource.focusRemaining)) ? Math.max(0, Number(focusSource.focusRemaining)) : 0;
 
   let statusKey = "waitingForGmRoll";
   let resultStatusLabel = "Waiting for GM roll";
@@ -1593,7 +1752,29 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     approachOptions: station.approachOptions ?? [],
     hasApproachOptions: (station.approachOptions ?? []).length > 0,
     selectedApproachValue: station.hasSelectedApproach ? (station.selectedApproachValue || "") : "",
+    selectedStationOrder: station.selectedActionType || "eventApproach",
+    selectedStationOrderLabel: station.selectedActionLabel || "Push Forward",
+    stationOrderCommitted: station.stationOrderCommitted === true,
+    isStabilize: station.isStabilize === true,
+    stabilizePressureKey: station.stabilizePressureKey || "",
+    stabilizePressureLabel: station.stabilizePressureLabel || "",
+    focusCapacity,
+    focusRemaining,
+    focusOptions,
+    hasFocusOptions: focusOptions.length > 0,
+    selectedFocusAbility: station.selectedFocusAbility || "",
+    canSpendFocus: focusRemaining > 0 && focusOptions.length > 0,
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
+  };
+}
+
+export function buildTravelPlayerStationOrderCommitData(state = {}, optionKey = "") {
+  return {
+    sessionKey: typeof state?.sessionKey === "string" ? state.sessionKey : "",
+    stationKey: typeof state?.stationKey === "string" ? state.stationKey : "",
+    roundIndex: Number.isInteger(Number(state?.currentRoundIndex)) ? Number(state.currentRoundIndex) : -1,
+    optionKey: typeof optionKey === "string" && optionKey ? optionKey : (typeof state?.selectedApproachValue === "string" ? state.selectedApproachValue : ""),
+    selectedFocusAbility: typeof state?.selectedFocusAbility === "string" ? state.selectedFocusAbility : ""
   };
 }
 
@@ -1621,7 +1802,12 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     roundTitle: overlayState.roundTitle,
     currentRoundIndex: overlayState.currentRoundIndex,
     vignette: overlayState.vignette,
-    stations: (overlayState.stations ?? []).map((station) => ({
+    stations: (overlayState.stations ?? []).map((station) => {
+      const focusSource = isPlainObject(normalized.session?.stationFocus?.[station.stationKey]) ? normalized.session.stationFocus[station.stationKey] : {};
+      const focusOptions = Array.isArray(focusSource.focusOptions) ? cloneData(focusSource.focusOptions) : [];
+      const focusCapacity = Number.isFinite(Number(focusSource.focusCapacity)) ? Math.max(0, Number(focusSource.focusCapacity)) : 0;
+      const focusRemaining = Number.isFinite(Number(focusSource.focusRemaining)) ? Math.max(0, Number(focusSource.focusRemaining)) : 0;
+      return {
       stationKey: station.stationKey,
       stationName: station.stationName,
       assignedActorName: station.assignedActorName,
@@ -1652,9 +1838,22 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       rollDetailText: session?.playerMissionBoardRollDetails?.[station.stationKey] || station.rollDetailText || "",
       rollUnavailableReason: station.rollUnavailableReason || "",
       canRollStation: station.canRollStationCheck === true,
+      selectedStationOrder: station.selectedActionType,
+      selectedStationOrderLabel: station.selectedActionLabel,
+      stationOrderCommitted: station.stationOrderCommitted === true,
+      isStabilize: station.isStabilize === true,
+      stabilizePressureKey: station.stabilizePressureKey || "",
+      stabilizePressureLabel: station.stabilizePressureLabel || "",
+      focusCapacity,
+      focusRemaining,
+      focusOptions,
+      hasFocusOptions: focusOptions.length > 0,
+      selectedFocusAbility: station.selectedFocusAbility || "",
+      canSpendFocus: focusRemaining > 0 && focusOptions.length > 0,
       canChooseApproach: false,
       permissionReason: "Waiting for board permissions."
-    })),
+      };
+    }),
     hasStations: (overlayState.stations ?? []).length > 0
   };
 }
@@ -1687,6 +1886,64 @@ export function setTravelEventRunnerStationSkillApproach(session, roundIndex, st
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].selectedStationSkills = normalizeSelectedStationSkills(nextSession.roundResults[index], round);
   nextSession.roundResults[index].selectedStationSkills[stationKey] = typeof skill === "string" ? skill : "";
+  nextSession.roundResults[index].selectedStationOptionLabels = normalizeSelectedStationOptionLabels(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].selectedStationOptionLabels[stationKey] = approaches.find((entry) => entry.skill === skill)?.label ?? "";
+  nextSession.roundResults[index].stationActions = normalizeStationActions(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].stationActions[stationKey] = eventApproach();
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function setTravelEventRunnerStationAction(session, roundIndex, stationKey, actionType, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number(roundIndex);
+  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const round = normalized.session.event.rounds[index];
+  if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
+  if (![ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE].includes(actionType)) {
+    return { ok: false, errors: [`Invalid travel runner station action "${actionType}".`], warnings: [], session: normalized.session };
+  }
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundResults[index].stationActions = normalizeStationActions(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].stationActions[stationKey] = actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
+    ? stabilize(getTravelStationStabilizePressureKey(stationKey, round))
+    : eventApproach();
+  nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function commitTravelEventRunnerStationOrder(session, roundIndex, stationKey, optionKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number(roundIndex);
+  const round = normalized.session.event.rounds[index];
+  const roundResult = normalized.session.roundResults[index];
+  if (!round || !roundResult) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const stationOption = prepareStationRows(normalized.session, round, roundResult, options)
+    .find((row) => row.stationKey === stationKey)?.stationOptions
+    ?.find((option) => option.optionKey === optionKey);
+  if (!stationOption) return { ok: false, errors: [`Station option "${optionKey}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
+  const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, options);
+  if (!actionUpdate.ok) return actionUpdate;
+  const nextSession = cloneData(actionUpdate.session);
+  nextSession.roundResults[index].selectedStationSkills = normalizeSelectedStationSkills(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].selectedStationSkills[stationKey] = stationOption.skill;
+  nextSession.roundResults[index].selectedStationOptionLabels = normalizeSelectedStationOptionLabels(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].selectedStationOptionLabels[stationKey] = stationOption.label;
+  if (stationOption.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE) {
+    nextSession.roundResults[index].stationActions[stationKey] = stabilize(stationOption.stabilizePressureKey);
+  }
+  nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
+  nextSession.roundResults[index].stationOrderCommitments[stationKey] = {
+    committed: true,
+    source: options.source === "player" ? "player" : "",
+    selectedFocusAbility: typeof options.selectedFocusAbility === "string" ? options.selectedFocusAbility : ""
+  };
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -1737,7 +1994,12 @@ export function retreatTravelEventRunnerRoundPhase(session, options = {}) {
 }
 
 function scoreSession(session) {
-  return session.roundResults.reduce((total, round) => total + Object.values(round.stationResults).reduce((subtotal, result) => subtotal + (RESULT_SCORES[result] ?? 0), 0), 0);
+  return session.roundResults.reduce((total, round, roundIndex) => {
+    const actions = normalizeStationActions(round, session.event.rounds[roundIndex]);
+    return total + Object.entries(round.stationResults).reduce((subtotal, [stationKey, result]) => (
+      subtotal + (actions[stationKey]?.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH ? (RESULT_SCORES[result] ?? 0) : 0)
+    ), 0);
+  }, 0);
 }
 
 function mapScoreToFinalOutcome(score) {
@@ -1777,7 +2039,9 @@ export function summarizeTravelEventRunnerSession(session, options = {}) {
       roundIndex: index,
       roundNumber: roundResult.roundNumber,
       title: roundResult.title,
-      stationResults: cloneData(roundResult.stationResults)
+      stationResults: cloneData(roundResult.stationResults),
+      stationActions: cloneData(roundResult.stationActions),
+      stationOrderCommitments: cloneData(roundResult.stationOrderCommitments)
     }))
   };
   return { ok: true, errors: [], warnings: [], session: activeSession, summary };
