@@ -160,11 +160,12 @@
               <p>{{prompt}}</p>
               {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
               <label class="arcflight-sheet__field">
-                <span>Station Action</span>
+                <span>Station Order</span>
                 <select data-arcflight-runner-action-select data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
                   {{#each actionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
                 </select>
               </label>
+              {{#if stationOrderCommitted}}<p class="arcflight-sheet__hint"><strong>Player Committed:</strong> {{selectedActionLabel}}{{#if selectedFocusAbility}} — Station Focus: {{selectedFocusAbility}}{{/if}}</p>{{/if}}
               {{#if isStabilize}}
                 <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
                 {{#if result}}

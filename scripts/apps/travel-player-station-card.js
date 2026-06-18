@@ -43,6 +43,28 @@ function sanitizeApproachOptions(value = []) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
 }
 
+function sanitizeStationOrderOptions(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      value: sanitizeText(entry.value),
+      label: sanitizeText(entry.label),
+      selected: sanitizeBoolean(entry.selected)
+    }))
+    .filter((entry) => entry.value && entry.label);
+}
+
+function sanitizeFocusOptions(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      value: sanitizeText(entry.value ?? entry.key),
+      label: sanitizeText(entry.label ?? entry.name),
+      description: sanitizeText(entry.description)
+    }))
+    .filter((entry) => entry.value && entry.label);
+}
+
 function sanitizeInteger(value, fallback = -1) {
   const number = Number(value);
   return Number.isInteger(number) ? number : fallback;
@@ -499,6 +521,19 @@ function sanitizeMissionBoardStation(station = {}) {
     npcControllerName: sanitizeText(source.npcControllerName),
     permittedUserIds: Array.isArray(source.permittedUserIds) ? source.permittedUserIds.filter((id) => typeof id === "string") : [],
     canChooseApproach: sanitizeBoolean(source.canChooseApproach),
+    stationOrderOptions: sanitizeStationOrderOptions(source.stationOrderOptions),
+    selectedStationOrder: sanitizeText(source.selectedStationOrder) || "eventApproach",
+    selectedStationOrderLabel: sanitizeText(source.selectedStationOrderLabel) || "Advance the Mission",
+    stationOrderCommitted: sanitizeBoolean(source.stationOrderCommitted),
+    isStabilize: sanitizeBoolean(source.isStabilize),
+    stabilizePressureKey: sanitizeText(source.stabilizePressureKey),
+    stabilizePressureLabel: sanitizeText(source.stabilizePressureLabel),
+    focusCapacity: Math.max(0, sanitizeInteger(source.focusCapacity, 0)),
+    focusRemaining: Math.max(0, sanitizeInteger(source.focusRemaining, 0)),
+    focusOptions: sanitizeFocusOptions(source.focusOptions),
+    hasFocusOptions: sanitizeFocusOptions(source.focusOptions).length > 0,
+    selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
+    canSpendFocus: sanitizeBoolean(source.canSpendFocus),
     rollUnavailableReason: sanitizeText(source.rollUnavailableReason),
     canRollStation: sanitizeBoolean(source.canRollStation),
     permissionReason: sanitizeText(source.permissionReason) || "Not assigned to your actor."
@@ -691,14 +726,28 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
   }
 
   async #onMissionBoardChange(event) {
-    const select = event.target?.closest?.("[data-arcflight-mission-board-approach]");
-    if (!select || !this.element?.contains(select)) return;
-    const stationKey = select.dataset.stationKey ?? "";
-    this.#setLocalStationApproach(stationKey, select.value ?? "");
+    const approachSelect = event.target?.closest?.("[data-arcflight-mission-board-approach]");
+    if (approachSelect && this.element?.contains(approachSelect)) {
+      return this.#setLocalStationApproach(approachSelect.dataset.stationKey ?? "", approachSelect.value ?? "");
+    }
+    const orderSelect = event.target?.closest?.("[data-arcflight-mission-board-station-order]");
+    if (orderSelect && this.element?.contains(orderSelect)) {
+      return this.#setLocalStationOrder(orderSelect.dataset.stationKey ?? "", orderSelect.value ?? "");
+    }
+    const focusSelect = event.target?.closest?.("[data-arcflight-mission-board-focus]");
+    if (focusSelect && this.element?.contains(focusSelect)) {
+      this.boardState = sanitizeTravelPlayerMissionBoardState({
+        ...this.boardState,
+        stations: this.boardState.stations.map((station) => station.stationKey === (focusSelect.dataset.stationKey ?? "") ? {
+          ...station,
+          selectedFocusAbility: focusSelect.value ?? ""
+        } : station)
+      });
+    }
   }
 
   async #onMissionBoardClick(event) {
-    const submit = event.target?.closest?.("[data-arcflight-mission-board-submit-approach]");
+    const submit = event.target?.closest?.("[data-arcflight-mission-board-commit-order]");
     const roll = event.target?.closest?.("[data-arcflight-mission-board-roll]");
     const target = submit ?? roll;
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
@@ -721,6 +770,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
         const approach = station.approachOptions.find((entry) => entry.skill === skill) ?? null;
         return {
           ...station,
+          approachOptions: station.approachOptions.map((entry) => ({ ...entry, selected: entry.skill === skill })),
           selectedApproachValue: skill,
           selectedApproachLabel: approach?.label || station.selectedApproachLabel,
           selectedApproachHelpText: approach?.helpText || station.selectedApproachHelpText,
@@ -738,13 +788,29 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     return this.#renderPreservingScroll(true).then(() => this.#restoreScrollState(scrollState));
   }
 
+  #setLocalStationOrder(stationKey, actionType) {
+    this.boardState = sanitizeTravelPlayerMissionBoardState({
+      ...this.boardState,
+      stations: this.boardState.stations.map((station) => station.stationKey === stationKey ? {
+        ...station,
+        stationOrderOptions: station.stationOrderOptions.map((entry) => ({ ...entry, selected: entry.value === actionType })),
+        selectedStationOrder: actionType,
+        selectedStationOrderLabel: actionType === "stabilize" ? "Stabilize the Ship" : "Advance the Mission",
+        isStabilize: actionType === "stabilize"
+      } : station)
+    });
+    return this.#renderPreservingScroll(true);
+  }
+
   async #submitApproach(stationKey) {
     const station = this.#getStation(stationKey);
     const select = this.element?.querySelector?.(`[data-arcflight-mission-board-approach][data-station-key="${stationKey}"]`);
     const skill = sanitizeText(select?.value || station?.selectedApproachValue);
+    const orderSelect = this.element?.querySelector?.(`[data-arcflight-mission-board-station-order][data-station-key="${stationKey}"]`);
+    const actionType = sanitizeText(orderSelect?.value || station?.selectedStationOrder) || "eventApproach";
     if (!station?.canChooseApproach || !skill) return ui.notifications?.warn?.(station?.permissionReason || "You cannot choose this station approach.");
-    console.debug("Arcflight | Player approach submit.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
-    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    console.debug("Arcflight | Player Station Order commit.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, actionType, skill, userId: globalThis.game?.user?.id ?? "" });
+    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_APPROACH_SUBMIT_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, actionType, skill, selectedFocusAbility: station.selectedFocusAbility || "", userId: globalThis.game?.user?.id ?? "" });
     const approach = station.approachOptions.find((entry) => entry.skill === skill) ?? null;
     if (approach) {
       await this.#setLocalStationApproach(stationKey, skill);
@@ -756,13 +822,17 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
           selectedApproachLabel: approach.label || approach.skillLabel || skill,
           selectedApproachHelpText: approach.helpText || "",
           hasSelectedApproachHelpText: Boolean(approach.helpText),
-          stateLabel: "Approach submitted",
+          selectedStationOrder: actionType,
+          selectedStationOrderLabel: actionType === "stabilize" ? "Stabilize the Ship" : "Advance the Mission",
+          stationOrderCommitted: true,
+          isStabilize: actionType === "stabilize",
+          stateLabel: "Station Order committed",
           disabledReason: entry.canRollStation ? "" : entry.disabledReason
         } : entry)
       });
       await this.#renderPreservingScroll(true);
     }
-    ui.notifications?.info?.("Approach submitted to the GM.");
+    ui.notifications?.info?.("Station Order committed to the GM.");
     return true;
   }
 

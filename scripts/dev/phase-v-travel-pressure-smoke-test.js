@@ -17,10 +17,12 @@ import {
 import {
   advanceTravelEventRunnerRound,
   advanceTravelEventRunnerRoundPhase,
+  commitTravelEventRunnerStationOrder,
   createTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
   importTravelEventRunnerSessionFromJson,
   normalizeTravelEventRunnerSession,
+  prepareTravelPlayerMissionBoardState,
   prepareTravelEventRunnerState,
   retreatTravelEventRunnerRound,
   retreatTravelEventRunnerRoundPhase,
@@ -195,6 +197,21 @@ assert(runner.ok, `runner session starts from pressure smoke event: ${(runner.er
 assert(runner.session.pressure.strain === 0 && runner.session.pressure.lifeveil === 0 && runner.session.pressure.morale === 0, "new runner sessions start with pressure 0/0/0");
 assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "new runner sessions start at roundReveal");
 
+const initialPlayerBoard = prepareTravelPlayerMissionBoardState(runner.session);
+const initialPlayerStation = initialPlayerBoard.stations[0];
+assert(initialPlayerStation.stationOrderOptions.some((option) => option.value === "eventApproach" && option.label === "Advance the Mission"), "player mission board exposes Advance the Mission Station Order");
+assert(initialPlayerStation.stationOrderOptions.some((option) => option.value === "stabilize" && option.label === "Stabilize the Ship"), "player mission board exposes Stabilize the Ship Station Order");
+assert(initialPlayerStation.focusCapacity === 0 && initialPlayerStation.focusRemaining === 0, "Station Focus capacity defaults safely to zero");
+assert(Array.isArray(initialPlayerStation.focusOptions) && initialPlayerStation.focusOptions.length === 0, "Station Focus options default safely to an empty list");
+assert(initialPlayerStation.selectedFocusAbility === "" && initialPlayerStation.canSpendFocus === false, "Station Focus selection and spending default safely when no abilities exist");
+
+const committedAdvance = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "eventApproach", "survival", { source: "player", now: "2026-06-17T00:00:20.000Z" });
+assert(committedAdvance.ok, "player can commit Advance the Mission");
+assert(committedAdvance.session.roundResults[0].stationActions.navigator.type === "eventApproach", "Advance the Mission preserves Event Approach behavior");
+assert(committedAdvance.session.roundResults[0].selectedStationSkills.navigator === "survival", "Advance the Mission commit preserves selected roll approach");
+const advanceRunnerState = prepareTravelEventRunnerState(committedAdvance.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+assert(advanceRunnerState.stations[0].stationOrderCommitted && advanceRunnerState.stations[0].selectedActionLabel === "Advance the Mission", "GM runner sees the player-committed Advance the Mission order");
+
 const stabilizeChoice = setTravelEventRunnerStationAction(runner.session, 0, "navigator", "stabilize", { now: "2026-06-17T00:00:30.000Z" });
 assert(stabilizeChoice.ok, "Stabilize choice can be selected");
 assert(stabilizeChoice.session.roundResults[0].stationActions.navigator.type === "stabilize", "selected Stabilize action is stored per station");
@@ -207,10 +224,26 @@ assert(stabilizeState.stations[0].isStabilize, "runner state exposes selected St
 assert(stabilizeState.stations[0].stabilizePressureKey === "strain", "runner state exposes selected Stabilize pressure target");
 assert(stabilizeState.pendingStabilize.totalReduction === 2, "runner state summarizes pending critical-success Stabilize reduction");
 
+const committedStabilize = commitTravelEventRunnerStationOrder(runner.session, 0, "navigator", "stabilize", "survival", { source: "player", now: "2026-06-17T00:00:40.000Z" });
+assert(committedStabilize.ok, "player can commit Stabilize the Ship");
+assert(committedStabilize.session.roundResults[0].stationActions.navigator.type === "stabilize", "Stabilize commit preserves action type");
+assert(committedStabilize.session.roundResults[0].selectedStationSkills.navigator === "survival", "Commit Station Order preserves Stabilize and selected roll approach together");
+const stabilizePlayerBoard = prepareTravelPlayerMissionBoardState(committedStabilize.session);
+const stabilizePlayerStation = stabilizePlayerBoard.stations[0];
+assert(stabilizePlayerStation.isStabilize && stabilizePlayerStation.stabilizePressureLabel === "Strain", "Stabilize exposes its pressure label on the player mission board");
+assert(stabilizePlayerStation.approachOptions.some((option) => option.skill === "survival"), "Stabilize still exposes roll approach and skill information");
+assert(stabilizePlayerStation.focusOptions.length === 0 && !stabilizePlayerStation.hasFocusOptions, "mission board prepares safely when no Station Focus abilities exist");
+const committedRunnerState = prepareTravelEventRunnerState(committedStabilize.session, { library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+assert(committedRunnerState.stations[0].stationOrderCommitted && committedRunnerState.stations[0].selectedActionLabel === "Stabilize the Ship", "GM runner sees the player-committed Stabilize the Ship order");
+
 const stabilizeExport = exportTravelEventRunnerSessionToJson(stabilizeSuccess.session, { now: "2026-06-17T00:00:45.000Z" });
 const stabilizeImport = importTravelEventRunnerSessionFromJson(stabilizeExport.json);
 assert(stabilizeImport.session.roundResults[0].stationActions.navigator.type === "stabilize", "session export/import preserves Stabilize action choice");
 assert(stabilizeImport.session.roundResults[0].stationActions.navigator.stabilizePressureKey === "strain", "session export/import preserves Stabilize pressure target");
+const committedExport = exportTravelEventRunnerSessionToJson(committedStabilize.session, { now: "2026-06-17T00:00:50.000Z" });
+const committedImport = importTravelEventRunnerSessionFromJson(committedExport.json);
+assert(committedImport.session.roundResults[0].stationActions.navigator.type === "stabilize", "export/import preserves player-selected Station Order");
+assert(committedImport.session.roundResults[0].stationOrderCommitments.navigator.source === "player", "export/import preserves player Station Order commitment metadata");
 
 const advancedPhase = advanceTravelEventRunnerRoundPhase(runner.session, { now: "2026-06-17T00:01:00.000Z" });
 assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY, "advance phase moves roundReveal to crewStrategy");
