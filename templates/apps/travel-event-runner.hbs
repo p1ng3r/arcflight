@@ -132,11 +132,19 @@
             <h3>{{state.roundSegmentState.phaseLabel}}</h3>
           </div>
           <div class="arcflight-travel-runner-mvp__actions">
-            <button type="button" data-arcflight-runner-previous-phase {{#unless state.roundSegmentState.canRetreatPhase}}disabled{{/unless}}>Previous Phase</button>
-            <button type="button" data-arcflight-runner-next-phase {{#unless state.roundSegmentState.canAdvancePhase}}disabled{{/unless}}>Next Phase</button>
+            <button type="button" data-arcflight-runner-previous-phase {{#unless state.roundSegmentState.canRetreatPhase}}disabled{{/unless}}>Previous Segment</button>
+            <button type="button" data-arcflight-runner-next-phase {{#unless state.roundSegmentState.canAdvancePhase}}disabled{{/unless}}>Next Segment</button>
           </div>
         </header>
-        <p>{{state.roundSegmentState.phaseGuidance}}</p>
+        <p><strong>What happens now?</strong> {{state.roundSegmentState.phaseGuidance}}</p>
+        <div class="arcflight-travel-runner-mvp__stats">
+          <div><span>Station orders pending</span><strong>{{state.roundSegmentState.stationOrdersPending}}</strong></div>
+          <div><span>Station rolls pending</span><strong>{{state.roundSegmentState.stationRollsPending}}</strong></div>
+          <div><span>Reaction prompts pending</span><strong>{{state.roundSegmentState.reactionPromptsPending}}</strong></div>
+          <div><span>Stabilize resolutions pending</span><strong>{{state.roundSegmentState.stabilizeResolutionsPending}}</strong></div>
+          <div><span>Focus effects pending</span><strong>{{state.roundSegmentState.focusEffectsPending}}</strong></div>
+        </div>
+        {{#if state.roundSegmentState.hasPendingReactions}}<p class="arcflight-travel-builder__warning"><strong>Triggered reactions need attention.</strong> Continue when the table is ready; segment movement is not blocked.</p>{{/if}}
         <ol class="arcflight-travel-runner-mvp__phase-list">
           {{#each state.roundSegmentState.segments}}
             <li class="{{#if active}}arcflight-travel-runner-mvp__phase-step--active{{else}}{{#if complete}}arcflight-travel-runner-mvp__phase-step--complete{{else}}arcflight-travel-runner-mvp__phase-step--pending{{/if}}{{/if}}">
@@ -201,6 +209,43 @@
             </article>
           {{/each}}
         </div>
+        {{#if state.reactionPromptReview.hasRecords}}
+          <section class="arcflight-travel-runner-mvp__panel">
+            <details>
+            <summary><strong>Reaction History</strong> — {{state.reactionPromptReview.pendingCount}} pending</summary>
+            <p class="arcflight-sheet__hint">Players receive eligible reactions automatically. These controls remain as GM fallback/history; backlash still requires explicit confirmation.</p>
+            {{#each state.reactionPromptReview.records}}
+              <article>
+                <h3>{{promptTitle}}</h3>
+                <p>{{promptText}}</p>
+                <p><strong>{{choiceText}}</strong></p>
+                <p><strong>Effect:</strong> {{effectText}}</p>
+                <p><strong>Status:</strong> {{statusLabel}}{{#if rerollRequested}} — Reroll requested. Record the new Navigator result below.{{/if}}</p>
+                {{#if hasRerollResult}}<p><strong>Reroll:</strong> {{rerollResultLabel}} · <strong>Backlash:</strong> {{backlashStatusLabel}}</p>{{/if}}
+                <label>Resolution note
+                  <input type="text" maxlength="500" value="{{resolutionNote}}" data-arcflight-reaction-note data-reaction-prompt-id="{{reactionPromptId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
+                </label>
+                {{#if isPending}}<div class="arcflight-travel-runner-mvp__result-buttons">
+                  <button type="button" data-arcflight-reaction-accept data-reaction-prompt-id="{{reactionPromptId}}">Spend Focus: Hard Correction</button>
+                  <button type="button" data-arcflight-reaction-dismiss data-reaction-prompt-id="{{reactionPromptId}}">Ignore</button>
+                </div>{{/if}}
+                {{#if isAccepted}}<div class="arcflight-travel-runner-mvp__result-buttons">
+                  <strong>Record Reroll Result:</strong>
+                  <button type="button" data-arcflight-reaction-reroll-result data-reaction-prompt-id="{{reactionPromptId}}" data-result="criticalFailure">Critical Failure</button>
+                  <button type="button" data-arcflight-reaction-reroll-result data-reaction-prompt-id="{{reactionPromptId}}" data-result="failure">Failure</button>
+                  <button type="button" data-arcflight-reaction-reroll-result data-reaction-prompt-id="{{reactionPromptId}}" data-result="success">Success</button>
+                  <button type="button" data-arcflight-reaction-reroll-result data-reaction-prompt-id="{{reactionPromptId}}" data-result="criticalSuccess">Critical Success</button>
+                </div>{{/if}}
+                {{#if backlashPending}}<div class="arcflight-travel-runner-mvp__result-buttons">
+                  <p><strong>Hard Correction backlash pending: +{{consequenceAmount}} {{consequencePressureLabel}}.</strong></p>
+                  <button type="button" data-arcflight-reaction-backlash-apply data-reaction-prompt-id="{{reactionPromptId}}">Apply Backlash (+1 Strain)</button>
+                  <button type="button" data-arcflight-reaction-backlash-dismiss data-reaction-prompt-id="{{reactionPromptId}}">Dismiss Backlash</button>
+                </div>{{/if}}
+              </article>
+            {{/each}}
+            </details>
+          </section>
+        {{/if}}
         {{#if state.stabilizeResolutionReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
             <h2>Stabilize Pressure Resolution</h2>

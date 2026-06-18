@@ -284,6 +284,176 @@ export function updateTravelFocusEffectNote(session, focusEffectId, note, option
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
+
+const HARD_CORRECTION_PROMPT = Object.freeze({
+  stationKey: "navigator",
+  abilityKey: "hard-correction",
+  trigger: "navigatorFailure",
+  promptTitle: "Hard Correction Available",
+  promptText: "The route slips wrong beneath your hands — a false star, a bad angle, a current in the void that should not be there. You can burn your station Focus to wrench the ship back into line.",
+  choiceText: "Spend 1 Focus to attempt Hard Correction?",
+  effectText: "You may reroll the Navigator check. If the reroll also fails, the ship gains +1 Strain.",
+  consequencePressureKey: "strain",
+  consequencePressureLabel: "Strain",
+  consequenceAmount: 1
+});
+
+export function normalizeTravelReactionPromptRecords(value = {}, options = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const records = (Array.isArray(source.records) ? source.records : []).filter(isPlainObject).map((record) => ({
+    reactionPromptId: typeof record.reactionPromptId === "string" ? record.reactionPromptId : "",
+    roundIndex: Math.max(0, Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : 0),
+    stationKey: typeof record.stationKey === "string" ? record.stationKey : "",
+    stationName: typeof record.stationName === "string" ? record.stationName : "",
+    abilityKey: typeof record.abilityKey === "string" ? record.abilityKey : "",
+    abilityLabel: typeof record.abilityLabel === "string" ? record.abilityLabel : "",
+    trigger: typeof record.trigger === "string" ? record.trigger : "",
+    triggerResult: TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(record.triggerResult) ? record.triggerResult : "",
+    status: ["pending", "accepted", "dismissed", "resolved"].includes(record.status) ? record.status : "pending",
+    promptTitle: typeof record.promptTitle === "string" ? record.promptTitle : "",
+    promptText: typeof record.promptText === "string" ? record.promptText : "",
+    choiceText: typeof record.choiceText === "string" ? record.choiceText : "",
+    effectText: typeof record.effectText === "string" ? record.effectText : "",
+    consequencePressureKey: typeof record.consequencePressureKey === "string" ? record.consequencePressureKey : "",
+    consequencePressureLabel: typeof record.consequencePressureLabel === "string" ? record.consequencePressureLabel : "",
+    consequenceAmount: Math.max(0, Math.trunc(Number(record.consequenceAmount) || 0)),
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+    resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+    resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+    resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : "",
+    rerollResult: TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(record.rerollResult) ? record.rerollResult : "",
+    backlashStatus: ["none", "pending", "applied", "dismissed"].includes(record.backlashStatus) ? record.backlashStatus : "none"
+  })).filter((record) => record.reactionPromptId && record.stationKey && record.abilityKey);
+  return { records: Array.from(new Map(records.map((record) => [record.reactionPromptId, record])).values()) };
+}
+
+export function buildTravelReactionPromptRecord(session, roundIndex, stationKey, abilityKey, trigger, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return null;
+  const index = Number(roundIndex);
+  const result = normalized.session.roundResults[index]?.stationResults?.[stationKey];
+  if (stationKey !== HARD_CORRECTION_PROMPT.stationKey || abilityKey !== HARD_CORRECTION_PROMPT.abilityKey || trigger !== HARD_CORRECTION_PROMPT.trigger || !["failure", "criticalFailure"].includes(result)) return null;
+  const ability = getDefaultStationFocusAbilities(stationKey, options).find((entry) => entry.key === abilityKey);
+  if (!ability) return null;
+  return {
+    reactionPromptId: `round-${index}-${stationKey}-${abilityKey}`,
+    roundIndex: index,
+    stationKey,
+    stationName: getStation(stationKey)?.displayName || getStation(stationKey)?.name || humanizeIdentifier(stationKey),
+    abilityKey,
+    abilityLabel: ability.label,
+    trigger,
+    triggerResult: result,
+    status: "pending",
+    ...HARD_CORRECTION_PROMPT,
+    createdAt: nowIso(options), resolvedAt: "", resolvedByUserId: "", resolvedByUserName: "", resolutionNote: "", rerollResult: "", backlashStatus: "none"
+  };
+}
+
+export function syncTravelReactionPromptsForStationResult(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const index = Number(roundIndex);
+  const records = normalizeTravelReactionPromptRecords(nextSession.reactionPrompts, options).records;
+  const id = `round-${index}-${stationKey}-${HARD_CORRECTION_PROMPT.abilityKey}`;
+  const existing = records.find((record) => record.reactionPromptId === id);
+  if (existing?.status === "accepted" && !existing.rerollResult) return markTravelReactionPromptRerollResult(nextSession, id, nextSession.roundResults[index]?.stationResults?.[stationKey], options);
+  const focus = prepareTravelStationFocusState(nextSession, stationKey, index, options);
+  const result = nextSession.roundResults[index]?.stationResults?.[stationKey];
+  if (existing?.status === "pending" && !["failure", "criticalFailure"].includes(result)) {
+    existing.status = "dismissed";
+    existing.resolvedAt = nowIso(options);
+    existing.resolutionNote = existing.resolutionNote || "Original trigger result changed before the reaction was resolved.";
+  }
+  if (!existing && stationKey === "navigator" && ["failure", "criticalFailure"].includes(result) && focus.focusRemaining > 0 && !focus.spentThisRound && !focus.usedAbilityKeys.includes(HARD_CORRECTION_PROMPT.abilityKey)) {
+    const record = buildTravelReactionPromptRecord(nextSession, index, stationKey, HARD_CORRECTION_PROMPT.abilityKey, HARD_CORRECTION_PROMPT.trigger, options);
+    if (record) records.push(record);
+  }
+  nextSession.reactionPrompts = { records };
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function prepareTravelReactionPromptReviewState(session, options = {}) {
+  const records = normalizeTravelReactionPromptRecords(session?.reactionPrompts, options).records.map((record) => ({
+    ...record, statusLabel: humanizeIdentifier(record.status), backlashStatusLabel: humanizeIdentifier(record.backlashStatus),
+    isPending: record.status === "pending", isAccepted: record.status === "accepted", rerollRequested: record.status === "accepted" && !record.rerollResult,
+    hasRerollResult: Boolean(record.rerollResult), rerollResultLabel: humanizeIdentifier(record.rerollResult), backlashPending: record.backlashStatus === "pending"
+  }));
+  return { records, hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending" || record.backlashStatus === "pending").length };
+}
+
+export function prepareTravelPlayerReactionPromptState(session, reactionPromptId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  const record = normalized.session?.reactionPrompts?.records?.find((entry) => entry.reactionPromptId === reactionPromptId) ?? null;
+  const permittedUserIds = Array.isArray(options.permittedUserIds) ? options.permittedUserIds.filter((userId) => typeof userId === "string" && userId) : [];
+  const userId = typeof options.userId === "string" ? options.userId : "";
+  const permitted = Boolean(record && userId && permittedUserIds.includes(userId));
+  const available = Boolean(permitted && record.status === "pending");
+  return {
+    hasPrompt: Boolean(record),
+    available,
+    permitted,
+    userId,
+    permittedUserIds,
+    sessionKey: normalized.session?.key ?? "",
+    reactionPromptId: record?.reactionPromptId ?? "",
+    roundIndex: record?.roundIndex ?? -1,
+    stationKey: record?.stationKey ?? "",
+    stationName: record?.stationName ?? "",
+    abilityKey: record?.abilityKey ?? "",
+    abilityLabel: record?.abilityLabel ?? "",
+    status: record?.status ?? "",
+    promptTitle: record?.promptTitle ?? "",
+    promptText: record?.promptText ?? "",
+    choiceText: record?.choiceText ?? "",
+    effectText: record?.effectText ?? "",
+    rerollResult: record?.rerollResult ?? "",
+    backlashStatus: record?.backlashStatus ?? "",
+    canAccept: available,
+    canDismiss: available,
+    canReopen: available
+  };
+}
+
+function resolveReactionPrompt(session, reactionPromptId, mutate, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.reactionPrompts.records.find((entry) => entry.reactionPromptId === reactionPromptId);
+  if (!record) return { ok: false, errors: [`Reaction prompt "${reactionPromptId}" was not found.`], warnings: [], session: nextSession };
+  const error = mutate(record, nextSession);
+  if (error) return { ok: false, errors: [error], warnings: [], session: nextSession };
+  nextSession.updatedAt = nowIso(options); nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function acceptTravelReactionPrompt(session, reactionPromptId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const record = normalized.session.reactionPrompts.records.find((entry) => entry.reactionPromptId === reactionPromptId);
+  if (!record || record.status !== "pending") return { ok: false, errors: [`Reaction prompt "${reactionPromptId}" is not pending.`], warnings: [], session: normalized.session };
+  const spent = commitTravelEventRunnerStationFocus(normalized.session, record.roundIndex, record.stationKey, record.abilityKey, options);
+  if (!spent.ok) return spent;
+  const nextSession = cloneData(spent.session);
+  const target = nextSession.reactionPrompts.records.find((entry) => entry.reactionPromptId === reactionPromptId);
+  target.status = "accepted"; target.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? ""; target.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+  const effect = buildTravelFocusEffectRecord(nextSession, target.roundIndex, target.stationKey, target.abilityKey, options);
+  const effects = normalizeTravelFocusEffectRecords(nextSession.focusEffectRecords, options).records;
+  if (effect && !effects.some((entry) => entry.focusEffectId === effect.focusEffectId)) effects.push(effect);
+  nextSession.focusEffectRecords = { records: effects };
+  nextSession.roundResults[target.roundIndex].stationResults[target.stationKey] = null;
+  nextSession.updatedAt = nowIso(options); nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+export function dismissTravelReactionPrompt(session, reactionPromptId, options = {}) { return resolveReactionPrompt(session, reactionPromptId, (record) => { if (record.status !== "pending") return "Reaction prompt is not pending."; record.status = "dismissed"; record.resolvedAt = nowIso(options); }, options); }
+export function updateTravelReactionPromptNote(session, reactionPromptId, note, options = {}) { return resolveReactionPrompt(session, reactionPromptId, (record) => { record.resolutionNote = typeof note === "string" ? note.trim().slice(0, 500) : ""; }, options); }
+export function markTravelReactionPromptRerollResult(session, reactionPromptId, result, options = {}) { return resolveReactionPrompt(session, reactionPromptId, (record) => { if (record.status !== "accepted") return "Reaction prompt has not been accepted."; if (!["criticalFailure", "failure", "success", "criticalSuccess"].includes(result)) return `Invalid reaction reroll result "${result}".`; record.rerollResult = result; record.status = ["failure", "criticalFailure"].includes(result) ? "accepted" : "resolved"; record.backlashStatus = ["failure", "criticalFailure"].includes(result) ? "pending" : "none"; if (record.status === "resolved") record.resolvedAt = nowIso(options); }, options); }
+export function applyTravelReactionPromptBacklash(session, reactionPromptId, options = {}) { return resolveReactionPrompt(session, reactionPromptId, (record, nextSession) => { if (record.backlashStatus !== "pending") return "Reaction backlash is not pending."; nextSession.pressure = normalizeTravelPressureState(nextSession.pressure); nextSession.pressure[record.consequencePressureKey] = Math.min(5, nextSession.pressure[record.consequencePressureKey] + record.consequenceAmount); record.backlashStatus = "applied"; record.status = "resolved"; record.resolvedAt = nowIso(options); }, options); }
+export function dismissTravelReactionPromptBacklash(session, reactionPromptId, options = {}) { return resolveReactionPrompt(session, reactionPromptId, (record) => { if (record.backlashStatus !== "pending") return "Reaction backlash is not pending."; record.backlashStatus = "dismissed"; record.status = "resolved"; record.resolvedAt = nowIso(options); }, options); }
+
 export function normalizeTravelStabilizeResolutionRecords(value = {}, options = {}) {
   const source = isPlainObject(value) ? value : {};
   const records = (Array.isArray(source.records) ? source.records : []).filter(isPlainObject).map((record) => ({
@@ -1246,7 +1416,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     npcStationControllers: normalizeNpcStationControllers(options.npcStationControllers),
     stationFocus: normalizeTravelEventRunnerStationFocus(options.stationFocus, normalizedEvent, options),
     focusEffectRecords: normalizeTravelFocusEffectRecords(options.focusEffectRecords, options),
-    stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(options.stabilizeResolutionRecords, options)
+    stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(options.stabilizeResolutionRecords, options),
+    reactionPrompts: normalizeTravelReactionPromptRecords(options.reactionPrompts, options)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1292,6 +1463,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     stationFocus: normalizeTravelEventRunnerStationFocus(session.stationFocus, event, options),
     focusEffectRecords: normalizeTravelFocusEffectRecords(session.focusEffectRecords, options),
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(session.stabilizeResolutionRecords, options),
+    reactionPrompts: normalizeTravelReactionPromptRecords(session.reactionPrompts, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
   };
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -1757,6 +1929,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
+  const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
+  const focusEffectReview = prepareTravelFocusEffectReviewState(activeSession, options);
   return {
     ok: normalized.ok,
     errors: normalized.errors,
@@ -1780,9 +1954,10 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     currentRoundNumber: currentRound ? activeSession.currentRoundIndex + 1 : 0,
     currentRoundTitle: currentRound?.title ?? "",
     currentRoundOpeningVignette: currentRound?.openingVignette ?? "",
-    roundSegmentState: activeSession ? prepareTravelRoundSegmentState(activeSession) : prepareTravelRoundSegmentState(null),
+    roundSegmentState: activeSession ? prepareTravelRoundSegmentState(activeSession, { reactionPromptReview, stabilizeResolutionReview, focusEffectReview }) : prepareTravelRoundSegmentState(null),
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
     stations,
+    reactionPromptReview,
     stabilizeResolutionReview,
     pendingStabilize: {
       rows: pendingStabilizeRows,
@@ -1790,7 +1965,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
       totalReduction: pendingStabilizeRows.reduce((total, row) => total + row.reduction, 0),
       hasComplications: pendingStabilizeRows.some((row) => row.complication)
     },
-    focusEffectReview: prepareTravelFocusEffectReviewState(activeSession, options),
+    focusEffectReview,
     roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
@@ -2093,6 +2268,16 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   }
   const focusSource = prepareTravelStationFocusState(activeSession, station.stationKey, activeSession?.currentRoundIndex ?? 0, options);
   const { focusOptions, focusCapacity, focusRemaining } = focusSource;
+  const pendingReactionPrompt = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
+    record.stationKey === station.stationKey
+    && record.roundIndex === activeSession?.currentRoundIndex
+    && record.status === "pending"
+  ) ?? null;
+  const reactionBacklash = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
+    record.stationKey === station.stationKey
+    && record.roundIndex === activeSession?.currentRoundIndex
+    && record.backlashStatus === "pending"
+  ) ?? null;
 
   let statusKey = "waitingForGmRoll";
   let resultStatusLabel = "Waiting for GM roll";
@@ -2149,6 +2334,12 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     selectedFocusAbility: station.selectedFocusAbility || "",
     noFocusRemaining: focusRemaining <= 0,
     canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound,
+    hasPendingReactionPrompt: Boolean(pendingReactionPrompt),
+    pendingReactionPromptId: pendingReactionPrompt?.reactionPromptId ?? "",
+    pendingReactionPromptTitle: pendingReactionPrompt?.promptTitle ?? "",
+    pendingReactionPromptAbilityLabel: pendingReactionPrompt?.abilityLabel ?? "",
+    hasPendingReactionBacklash: Boolean(reactionBacklash),
+    pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
   };
 }
@@ -2254,6 +2445,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);
+  const reactionUpdate = syncTravelReactionPromptsForStationResult(nextSession, index, stationKey, options);
+  if (!reactionUpdate.ok) return reactionUpdate;
+  Object.assign(nextSession, reactionUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };

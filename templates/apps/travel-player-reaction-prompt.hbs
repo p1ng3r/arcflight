@@ -1,0 +1,15 @@
+<article class="arcflight-travel-player-reaction-prompt__shell">
+  <header>
+    <p class="arcflight-travel-player-reaction-prompt__eyebrow">{{state.stationName}} Focus Reaction</p>
+    <h1>{{state.promptTitle}}</h1>
+  </header>
+
+  <p>{{state.promptText}}</p>
+  <p><strong>{{state.choiceText}}</strong></p>
+  <p class="arcflight-sheet__hint"><strong>Effect:</strong> {{state.effectText}}</p>
+
+  <footer class="arcflight-travel-player-reaction-prompt__actions">
+    <button type="button" data-arcflight-player-reaction-response="accept" {{#unless state.canAccept}}disabled{{/unless}}>Spend Focus and Reroll</button>
+    <button type="button" data-arcflight-player-reaction-response="dismiss" {{#unless state.canDismiss}}disabled{{/unless}}>Ignore</button>
+  </footer>
+</article>

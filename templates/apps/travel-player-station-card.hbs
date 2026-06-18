@@ -12,6 +12,20 @@
     <div><dt>Current State</dt><dd>{{state.waitingStateText}}</dd></div>
   </dl>
 
+  {{#if state.hasPendingReactionPrompt}}
+    <section class="arcflight-travel-player-station-card__section" aria-label="Pending reaction">
+      <h2>{{state.pendingReactionPromptTitle}}</h2>
+      <p class="arcflight-sheet__hint">{{state.pendingReactionPromptAbilityLabel}} is waiting for your decision.</p>
+      <button type="button" data-arcflight-player-card-reopen-reaction>Reopen Reaction Prompt</button>
+    </section>
+  {{/if}}
+  {{#if state.hasPendingReactionBacklash}}
+    <section class="arcflight-travel-player-station-card__section" aria-label="Pending reaction backlash">
+      <h2>Hard Correction Backlash</h2>
+      <p>{{state.pendingReactionBacklashText}}</p>
+    </section>
+  {{/if}}
+
   <section class="arcflight-travel-player-station-card__section" aria-label="Station prompt">
     <h2>Station Problem</h2>
     {{#if state.hasPromptText}}

@@ -5,12 +5,15 @@ import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEvent
 import { ArcflightTravelSceneOverlay, getActiveTravelSceneOverlay, openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./apps/travel-scene-overlay.js";
 import {
   ArcflightTravelPlayerMissionBoard,
+  ArcflightTravelPlayerReactionPrompt,
   ArcflightTravelPlayerStationCard,
   broadcastTravelPlayerStationCardToAllPlayers,
   handleTravelPlayerStationCardSocketPayload,
   openTravelPlayerMissionBoard,
+  openTravelPlayerReactionPrompt,
   openTravelPlayerStationCard,
   registerTravelPlayerStationApproachSubmitHandler,
+  registerTravelPlayerReactionResponseHandler,
   registerTravelPlayerStationRollHandler,
   resolveActivePlayerOwnersForStation,
   sendAllTravelPlayerStationCardsToPlayers,
@@ -18,6 +21,7 @@ import {
   queueTravelPlayerMissionBoardRefreshToPlayers,
   sendTravelPlayerMissionBoardStationUpdateToPlayers,
   sendTravelPlayerMissionBoardToPlayers,
+  sendTravelPlayerReactionPromptToPlayers,
   sendTravelPlayerStationCardSocketDiagnostic,
   sendTravelPlayerStationCardToPlayers
 } from "./apps/travel-player-station-card.js";
@@ -168,7 +172,9 @@ import {
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
   cloneTravelEventRunnerSession,
+  acceptTravelReactionPrompt,
   deleteTravelEventRunnerSessionFromLibrary,
+  dismissTravelReactionPrompt,
   duplicateTravelEventRunnerSession,
   getTravelEventRunnerSessionLibrary,
   loadTravelEventRunnerSessionFromLibrary,
@@ -187,6 +193,7 @@ import {
   prepareTravelEventRunnerState,
   prepareTravelSceneOverlayState,
   prepareTravelPlayerStationCardState,
+  prepareTravelPlayerReactionPromptState,
   commitTravelEventRunnerStationOrder,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
@@ -647,9 +654,12 @@ function buildArcflightApi() {
     openTravelSceneOverlay,
     ArcflightTravelPlayerMissionBoard,
     openTravelPlayerMissionBoard,
+    ArcflightTravelPlayerReactionPrompt,
+    openTravelPlayerReactionPrompt,
     ArcflightTravelPlayerStationCard,
     openTravelPlayerStationCard,
     sendTravelPlayerMissionBoardToPlayers,
+    sendTravelPlayerReactionPromptToPlayers,
     sendTravelPlayerStationCardSocketDiagnostic,
     broadcastTravelPlayerStationCardToAllPlayers,
     sendTravelPlayerStationCardToPlayers,
@@ -660,6 +670,7 @@ function buildArcflightApi() {
     prepareTravelEventRunnerState,
     prepareTravelSceneOverlayState,
     prepareTravelPlayerStationCardState,
+    prepareTravelPlayerReactionPromptState,
     setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach,
     advanceTravelEventRunnerRound,
@@ -883,7 +894,57 @@ async function handleTravelPlayerStationRoll(payload = {}) {
   await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: "Player rolled a travel station." });
   const stationUpdateResult = sendTravelPlayerMissionBoardStationUpdateToPlayers(updated.session, stationKey, { actor: activeOverlay?.actor });
   console.debug("Arcflight | Board station update broadcast result.", stationUpdateResult);
+  const pendingReaction = updated.session.reactionPrompts?.records?.find((record) =>
+    record.roundIndex === roundIndex
+    && record.stationKey === stationKey
+    && record.status === "pending"
+  );
+  if (pendingReaction) {
+    const promptResult = sendTravelPlayerReactionPromptToPlayers(updated.session, pendingReaction.reactionPromptId, { actor: activeOverlay?.actor });
+    console.debug("Arcflight | Player reaction prompt delivery result.", promptResult);
+  }
   ui.notifications?.info?.(`Player rolled ${stationKey}: ${result}.`);
+  return true;
+}
+
+async function handleTravelPlayerReactionResponse(payload = {}) {
+  const activeOverlay = getActiveTravelSceneOverlay();
+  const activeRunner = getActiveTravelEventRunner();
+  const session = activeOverlay?.session ?? activeRunner?.session ?? null;
+  const reactionPromptId = typeof payload.reactionPromptId === "string" ? payload.reactionPromptId : "";
+  const response = typeof payload.response === "string" ? payload.response : "";
+  const record = session?.reactionPrompts?.records?.find((entry) => entry.reactionPromptId === reactionPromptId) ?? null;
+  if (!session || !record) return false;
+  if (payload.sessionKey && payload.sessionKey !== session.key) return false;
+  if (!["accept", "dismiss", "reopen"].includes(response)) return false;
+  const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  const permissionStation = permissionState.stations?.find((station) => station.stationKey === record.stationKey);
+  if (!permissionStation?.permittedUserIds?.includes(payload.userId)) {
+    ui.notifications?.warn?.("Player is not authorized to resolve that reaction.");
+    return false;
+  }
+  if (response === "reopen") {
+    sendTravelPlayerReactionPromptToPlayers(session, reactionPromptId, { actor: activeOverlay?.actor });
+    return true;
+  }
+  const updated = response === "accept"
+    ? acceptTravelReactionPrompt(session, reactionPromptId, { userId: payload.userId, userName: globalThis.game?.users?.get?.(payload.userId)?.name ?? "" })
+    : dismissTravelReactionPrompt(session, reactionPromptId, { userId: payload.userId, userName: globalThis.game?.users?.get?.(payload.userId)?.name ?? "" });
+  if (!updated?.ok || !updated.session) {
+    ui.notifications?.warn?.(updated?.errors?.[0] ?? "Reaction could not be resolved.");
+    return false;
+  }
+  if (activeOverlay) activeOverlay.session = updated.session;
+  await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });
+  await updateActiveTravelEventRunnerSession(updated.session, {
+    statusMessage: response === "accept"
+      ? `${record.stationName || "Navigator"} spent Focus on ${record.abilityLabel}; reroll requested.`
+      : `${record.abilityLabel} was ignored.`
+  });
+  sendTravelPlayerMissionBoardStationUpdateToPlayers(updated.session, record.stationKey, { actor: activeOverlay?.actor });
+  ui.notifications?.info?.(response === "accept"
+    ? `${record.stationName || "Navigator"} spent Focus on ${record.abilityLabel} and needs a reroll.`
+    : `${record.abilityLabel} was ignored.`);
   return true;
 }
 
@@ -932,6 +993,7 @@ Hooks.once("ready", () => {
   registerArcflightApi();
   registerTravelPlayerStationApproachSubmitHandler(handleTravelPlayerStationApproachSubmit);
   registerTravelPlayerStationRollHandler(handleTravelPlayerStationRoll);
+  registerTravelPlayerReactionResponseHandler(handleTravelPlayerReactionResponse);
   if (globalThis.game?.socket && typeof game.socket.on === "function") {
     game.socket.on("module.arcflight", handleTravelPlayerStationCardSocketPayload);
     console.debug("Arcflight | Registered player station card socket listener.");
