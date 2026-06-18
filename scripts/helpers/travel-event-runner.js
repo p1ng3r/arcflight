@@ -1705,6 +1705,10 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
       currentRoundIndex: activeSession?.currentRoundIndex ?? -1
     };
   }
+  const focusSource = isPlainObject(activeSession?.stationFocus?.[station.stationKey]) ? activeSession.stationFocus[station.stationKey] : {};
+  const focusOptions = Array.isArray(focusSource.focusOptions) ? cloneData(focusSource.focusOptions) : [];
+  const focusCapacity = Number.isFinite(Number(focusSource.focusCapacity)) ? Math.max(0, Number(focusSource.focusCapacity)) : 0;
+  const focusRemaining = Number.isFinite(Number(focusSource.focusRemaining)) ? Math.max(0, Number(focusSource.focusRemaining)) : 0;
 
   let statusKey = "waitingForGmRoll";
   let resultStatusLabel = "Waiting for GM roll";
@@ -1748,6 +1752,18 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     approachOptions: station.approachOptions ?? [],
     hasApproachOptions: (station.approachOptions ?? []).length > 0,
     selectedApproachValue: station.hasSelectedApproach ? (station.selectedApproachValue || "") : "",
+    selectedStationOrder: station.selectedActionType || "eventApproach",
+    selectedStationOrderLabel: station.selectedActionLabel || "Push Forward",
+    stationOrderCommitted: station.stationOrderCommitted === true,
+    isStabilize: station.isStabilize === true,
+    stabilizePressureKey: station.stabilizePressureKey || "",
+    stabilizePressureLabel: station.stabilizePressureLabel || "",
+    focusCapacity,
+    focusRemaining,
+    focusOptions,
+    hasFocusOptions: focusOptions.length > 0,
+    selectedFocusAbility: station.selectedFocusAbility || "",
+    canSpendFocus: focusRemaining > 0 && focusOptions.length > 0,
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
   };
 }

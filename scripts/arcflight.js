@@ -783,7 +783,10 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
   const session = activeOverlay?.session ?? activeRunner?.session ?? null;
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
-  const optionKey = typeof payload.optionKey === "string" ? payload.optionKey : "";
+  const legacySkill = typeof payload.skill === "string" ? payload.skill : "";
+  const optionKey = typeof payload.optionKey === "string" && payload.optionKey
+    ? payload.optionKey
+    : (legacySkill ? `eventApproach:${legacySkill}` : "");
   console.debug("Arcflight | Player Station Order commit received by GM.", { payload });
   if (!session || !Number.isInteger(roundIndex) || !stationKey || !optionKey) {
     console.warn("Arcflight | Player station approach submission could not be applied.", { payload, hasSession: Boolean(session) });

@@ -91,6 +91,18 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     approachOptions: sanitizeApproachOptions(source.approachOptions),
     hasApproachOptions: sanitizeBoolean(source.hasApproachOptions) || sanitizeApproachOptions(source.approachOptions).length > 0,
     selectedApproachValue: sanitizeText(source.selectedApproachValue),
+    selectedStationOrder: sanitizeText(source.selectedStationOrder) || "eventApproach",
+    selectedStationOrderLabel: sanitizeText(source.selectedStationOrderLabel) || "Push Forward",
+    stationOrderCommitted: sanitizeBoolean(source.stationOrderCommitted),
+    isStabilize: sanitizeBoolean(source.isStabilize),
+    stabilizePressureKey: sanitizeText(source.stabilizePressureKey),
+    stabilizePressureLabel: sanitizeText(source.stabilizePressureLabel),
+    focusCapacity: Math.max(0, sanitizeInteger(source.focusCapacity, 0)),
+    focusRemaining: Math.max(0, sanitizeInteger(source.focusRemaining, 0)),
+    focusOptions: sanitizeFocusOptions(source.focusOptions),
+    hasFocusOptions: sanitizeFocusOptions(source.focusOptions).length > 0,
+    selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
+    canSpendFocus: sanitizeBoolean(source.canSpendFocus),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)
   };
 }
@@ -366,6 +378,7 @@ export function registerTravelPlayerStationApproachSubmitHandler(handler) {
 
 export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundPlayerCardClick = this.#onPlayerCardClick.bind(this);
+  #boundPlayerCardChange = this.#onPlayerCardChange.bind(this);
 
   constructor(options = {}) {
     super(options);
@@ -410,6 +423,29 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
     super._onRender(context, options);
     this.element?.removeEventListener("click", this.#boundPlayerCardClick);
     this.element?.addEventListener("click", this.#boundPlayerCardClick);
+    this.element?.removeEventListener("change", this.#boundPlayerCardChange);
+    this.element?.addEventListener("change", this.#boundPlayerCardChange);
+  }
+
+  async #onPlayerCardChange(event) {
+    const optionSelect = event.target?.closest?.("[data-arcflight-player-card-approach]");
+    if (optionSelect && this.element?.contains(optionSelect) && this.playerCardState) {
+      const selectedOption = this.playerCardState.approachOptions.find((entry) => entry.value === optionSelect.value) ?? null;
+      this.playerCardState = sanitizeTravelPlayerStationCardState({
+        ...this.playerCardState,
+        selectedApproachValue: optionSelect.value,
+        selectedStationOrder: selectedOption?.actionType || "eventApproach",
+        selectedStationOrderLabel: selectedOption?.actionType === "stabilize" ? "Stabilize" : "Push Forward",
+        isStabilize: selectedOption?.actionType === "stabilize",
+        stabilizePressureKey: selectedOption?.stabilizePressureKey || "",
+        stabilizePressureLabel: selectedOption?.pressureLabel || ""
+      });
+      return this.render(true);
+    }
+    const focusSelect = event.target?.closest?.("[data-arcflight-player-card-focus]");
+    if (focusSelect && this.element?.contains(focusSelect) && this.playerCardState) {
+      this.playerCardState = sanitizeTravelPlayerStationCardState({ ...this.playerCardState, selectedFocusAbility: focusSelect.value ?? "" });
+    }
   }
 
   async #onPlayerCardClick(event) {
@@ -421,9 +457,9 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
 
   async #submitApproachChoice() {
     const select = this.element?.querySelector?.("[data-arcflight-player-card-approach]");
-    const skill = sanitizeText(select?.value);
-    if (!skill) {
-      ui.notifications?.warn?.("Choose an approach before submitting.");
+    const optionKey = sanitizeText(select?.value || this.playerCardState?.selectedApproachValue);
+    if (!optionKey) {
+      ui.notifications?.warn?.("Choose how to handle your station before committing.");
       return false;
     }
     if (!this.playerCardState) {
@@ -435,23 +471,30 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       sessionKey: this.playerCardState.sessionKey,
       stationKey: this.playerCardState.stationKey,
       roundIndex: this.playerCardState.currentRoundIndex,
-      skill,
+      optionKey,
+      selectedFocusAbility: this.playerCardState.selectedFocusAbility || "",
       userId: globalThis.game?.user?.id ?? ""
     });
-    const selectedApproach = this.playerCardState.approachOptions.find((entry) => entry.skill === skill) ?? null;
-    this.playerCardState = {
+    const selectedApproach = this.playerCardState.approachOptions.find((entry) => entry.value === optionKey) ?? null;
+    this.playerCardState = sanitizeTravelPlayerStationCardState({
       ...this.playerCardState,
-      selectedApproachValue: skill,
-      selectedApproachLabel: selectedApproach?.label || skill,
+      selectedApproachValue: optionKey,
+      selectedApproachLabel: selectedApproach?.label || optionKey,
       selectedApproachHelpText: selectedApproach?.helpText || "",
       selectedApproachRollLabel: selectedApproach ? `${selectedApproach.statisticLabel || "Statistic unavailable"} vs ${selectedApproach.dcLabel || "DC unavailable"}` : "",
       hasSelectedApproachHelpText: Boolean(selectedApproach?.helpText),
       hasSelectedApproach: true,
-      resultStatusLabel: "Approach submitted",
-      waitingStateText: "Approach submitted. Waiting for GM roll.",
+      selectedStationOrder: selectedApproach?.actionType || "eventApproach",
+      selectedStationOrderLabel: selectedApproach?.actionType === "stabilize" ? "Stabilize" : "Push Forward",
+      stationOrderCommitted: true,
+      isStabilize: selectedApproach?.actionType === "stabilize",
+      stabilizePressureKey: selectedApproach?.stabilizePressureKey || "",
+      stabilizePressureLabel: selectedApproach?.pressureLabel || "",
+      resultStatusLabel: "Station Order committed",
+      waitingStateText: "Station Order committed. Waiting for GM roll.",
       statusKey: "waitingForGmRoll"
-    };
-    ui.notifications?.info?.("Approach submitted to the GM.");
+    });
+    ui.notifications?.info?.("Station Order committed to the GM.");
     await this.render(true);
     return true;
   }
