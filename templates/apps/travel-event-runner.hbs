@@ -125,6 +125,30 @@
       <h3>Round {{state.currentRoundNumber}}: {{state.currentRoundTitle}}</h3>
       {{#if state.currentRoundOpeningVignette}}<p class="arcflight-travel-runner-mvp__vignette">{{state.currentRoundOpeningVignette}}</p>{{/if}}
 
+      <section class="arcflight-travel-runner-mvp__phase" aria-label="Current round phase">
+        <header class="arcflight-travel-runner-mvp__phase-header">
+          <div>
+            <span>Phase {{state.roundSegmentState.phaseStep}} of {{state.roundSegmentState.segments.length}}</span>
+            <h3>{{state.roundSegmentState.phaseLabel}}</h3>
+          </div>
+          <div class="arcflight-travel-runner-mvp__actions">
+            <button type="button" data-arcflight-runner-previous-phase {{#unless state.roundSegmentState.canRetreatPhase}}disabled{{/unless}}>Previous Phase</button>
+            <button type="button" data-arcflight-runner-next-phase {{#unless state.roundSegmentState.canAdvancePhase}}disabled{{/unless}}>Next Phase</button>
+          </div>
+        </header>
+        <p>{{state.roundSegmentState.phaseGuidance}}</p>
+        <ol class="arcflight-travel-runner-mvp__phase-list">
+          {{#each state.roundSegmentState.segments}}
+            <li class="{{#if active}}arcflight-travel-runner-mvp__phase-step--active{{else}}{{#if complete}}arcflight-travel-runner-mvp__phase-step--complete{{else}}arcflight-travel-runner-mvp__phase-step--pending{{/if}}{{/if}}">
+              <button type="button" data-arcflight-runner-set-phase data-round-phase="{{key}}" data-round-phase-label="{{label}}" {{#if active}}aria-current="step" disabled{{/if}}>
+                <span>{{step}}. {{label}}</span>
+                <small>{{#if active}}Active{{else}}{{#if complete}}Complete{{else}}Pending{{/if}}{{/if}}</small>
+              </button>
+            </li>
+          {{/each}}
+        </ol>
+      </section>
+
       {{#if state.hasStations}}
         <div class="arcflight-travel-runner-mvp__stations">
           {{#each state.stations}}

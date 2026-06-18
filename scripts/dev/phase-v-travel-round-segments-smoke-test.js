@@ -48,6 +48,8 @@ assert(state.hasRound, "segment state finds current round");
 assert(state.roundNumber === 1 && state.roundTitle === "Opening Split", "segment state exposes current round identity");
 assert(state.phase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, "segment state preserves current phase");
 assert(state.phaseStep === 7, "pressure application is seventh segment");
+assert(typeof state.phaseLabel === "string" && state.phaseLabel.length > 0, "segment state exposes the current phase label");
+assert(typeof state.phaseGuidance === "string" && state.phaseGuidance.length > 0, "segment state exposes current phase guidance");
 assert(state.canAdvancePhase && state.canRetreatPhase, "middle segment can advance and retreat");
 assert(state.primaryPressure === "strain" && state.primaryPressureLabel === "Strain", "segment state exposes primary pressure label");
 assert(state.secondaryPressure === "morale" && state.secondaryPressureLabel === "Morale", "segment state exposes secondary pressure label");
@@ -56,7 +58,15 @@ assert(state.pressure.strain === 3 && state.pressure.lifeveil === 1 && state.pre
 assert(state.pressureTracks.some((track) => track.pressureKey === "morale" && track.atCrisis && track.stateLabel === "Crisis"), "segment state flags crisis pressure tracks");
 assert(state.activeStationCount === 3, "segment state normalizes active station count");
 assert(state.segments.find((segment) => segment.key === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ROLLS).complete, "earlier segments are marked complete");
+assert(state.segments.find((segment) => segment.key === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION).active, "current segment is marked active");
 assert(state.segments.find((segment) => segment.key === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK).pending, "later segments are marked pending");
+assert(state.segments.every((segment) => [segment.active, segment.complete, segment.pending].filter(Boolean).length === 1), "each segment has exactly one active, complete, or pending status");
+
+const firstState = prepareTravelRoundSegmentState(session, { roundPhase: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL });
+assert(firstState.canAdvancePhase && !firstState.canRetreatPhase, "round reveal can advance but cannot retreat");
+
+const lastState = prepareTravelRoundSegmentState(session, { roundPhase: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_TRANSITION });
+assert(!lastState.canAdvancePhase && lastState.canRetreatPhase, "round transition can retreat but cannot advance");
 
 const overrideState = prepareTravelRoundSegmentState(session, { roundPhase: ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK, pressure: { strain: 0, lifeveil: 0, morale: 0 } });
 assert(overrideState.phase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_CHECK, "options can override displayed phase");

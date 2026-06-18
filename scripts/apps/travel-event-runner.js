@@ -3,6 +3,7 @@ import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { sendTravelPlayerMissionBoardToPlayers } from "./travel-player-station-card.js";
 import {
+  advanceTravelEventRunnerRoundPhase,
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
@@ -23,8 +24,10 @@ import {
   loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventEffectApplicationState,
   prepareTravelEventRunnerState,
+  retreatTravelEventRunnerRoundPhase,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
+  setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach,
   updateTravelEventRunnerStationAssignment,
@@ -42,6 +45,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-result]",
   "[data-arcflight-runner-previous]",
   "[data-arcflight-runner-next]",
+  "[data-arcflight-runner-previous-phase]",
+  "[data-arcflight-runner-next-phase]",
+  "[data-arcflight-runner-set-phase]",
   "[data-arcflight-runner-complete]",
   "[data-arcflight-runner-toggle-session-actions]",
   "[data-arcflight-runner-toggle-current-session]",
@@ -403,6 +409,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-result")) return this.#recordStationResult(target);
     if (target.hasAttribute("data-arcflight-runner-previous")) return this.#retreatRound();
     if (target.hasAttribute("data-arcflight-runner-next")) return this.#advanceRound();
+    if (target.hasAttribute("data-arcflight-runner-previous-phase")) return this.#retreatRoundPhase();
+    if (target.hasAttribute("data-arcflight-runner-next-phase")) return this.#advanceRoundPhase();
+    if (target.hasAttribute("data-arcflight-runner-set-phase")) return this.#setRoundPhase(target);
     if (target.hasAttribute("data-arcflight-runner-complete")) return this.#completeEvent();
     if (target.hasAttribute("data-arcflight-runner-toggle-session-actions")) return this.#toggleSessionActions();
     if (target.hasAttribute("data-arcflight-runner-toggle-current-session")) return this.#toggleCurrentSession();
@@ -700,6 +709,39 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.session = updated.session ?? this.session;
     this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
     this.statusMessage = updated.ok ? "Returned to the previous round." : (updated.errors?.[0] ?? "Could not return to the previous round.");
+    if (!updated.ok) ui.notifications?.warn?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #advanceRoundPhase() {
+    return this.#applyRoundPhaseMutation(
+      advanceTravelEventRunnerRoundPhase(this.session),
+      "Advanced to the next round phase.",
+      "Could not advance the round phase."
+    );
+  }
+
+  async #retreatRoundPhase() {
+    return this.#applyRoundPhaseMutation(
+      retreatTravelEventRunnerRoundPhase(this.session),
+      "Returned to the previous round phase.",
+      "Could not return to the previous round phase."
+    );
+  }
+
+  async #setRoundPhase(target) {
+    const roundPhase = target.dataset.roundPhase ?? "";
+    return this.#applyRoundPhaseMutation(
+      setTravelEventRunnerRoundPhase(this.session, roundPhase),
+      `Moved to ${target.dataset.roundPhaseLabel || humanizeIdentifier(roundPhase)}.`,
+      "Could not set the round phase."
+    );
+  }
+
+  async #applyRoundPhaseMutation(updated, successMessage, failureMessage) {
+    this.session = updated.session ?? this.session;
+    this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+    this.statusMessage = updated.ok ? successMessage : (updated.errors?.[0] ?? failureMessage);
     if (!updated.ok) ui.notifications?.warn?.(this.statusMessage);
     return this.render(true);
   }
