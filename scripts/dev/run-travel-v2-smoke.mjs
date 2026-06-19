@@ -5,6 +5,7 @@ import runTravelV2RunnerBridgeSmokeChecks from "../helpers/travel-v2-runner-brid
 import runTravelV2PreviewStateSmokeChecks from "../helpers/travel-v2-preview-state.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
+import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -13,7 +14,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 runner bridge", runTravelV2RunnerBridgeSmokeChecks],
   ["Travel v2 preview state", runTravelV2PreviewStateSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
-  ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks]
+  ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
+  ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
