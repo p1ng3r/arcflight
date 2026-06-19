@@ -39,11 +39,13 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 1, "consumer version should be 1");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 2, "consumer version should be 2");
 
   const emptyState = prepareTravelEventRunnerAppStateWithTravelV2Preview();
   assertSmoke(!emptyState.hasSession, "empty app state should have no session");
   assertSmoke(emptyState.travelV2Preview, "empty app state should expose preview object");
+  assertSmoke(emptyState.travelV2PreviewPanel, "empty app state should expose preview panel object");
+  assertSmoke(!emptyState.travelV2PreviewPanel.available, "empty preview panel should be unavailable");
   assertEqual(emptyState.compactRoundLabel, "No active round", "empty app state should keep compact label fallback");
 
   const state = prepareTravelEventRunnerAppStateWithTravelV2Preview({
@@ -55,6 +57,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(state.hasSession, "app state should preserve active session");
   assertSmoke(state.effectApplication, "app state should include effect application state");
   assertSmoke(state.travelV2Preview.ok, "app state should expose usable v2 preview");
+  assertSmoke(state.travelV2PreviewPanel.available, "app state should expose available preview panel");
   assertEqual(state.currentSessionCollapsed, false, "app state should preserve expanded current session UI setting");
   assertEqual(state.sessionActionsExpanded, true, "app state should preserve session actions UI setting");
   assertEqual(state.compactRunner, true, "app state should preserve compact UI setting");
@@ -64,6 +67,11 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(criticalFailure, "critical failure preview row should exist");
   assertEqual(criticalFailure.totalsByPressureType[ARCFLIGHT_TRAVEL_RESOURCES.HULL], 2, "critical failure should preview hull pressure");
   assertEqual(criticalFailure.totalsByPressureType[ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES], 1, "critical failure should preview supplies pressure");
+
+  const panelCriticalFailure = state.travelV2PreviewPanel.rows.find((row) => row.outcomeKey === "criticalFailure");
+  assertSmoke(panelCriticalFailure, "critical failure panel row should exist");
+  assertEqual(panelCriticalFailure.tone, "severe", "panel critical failure row should be severe");
+  assertEqual(panelCriticalFailure.pressureChips.length, 2, "panel critical failure row should expose two chips");
 
   assertEqual(state.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.STRAIN], 0, "app state should not mutate strain pressure");
   assertSmoke(!Object.hasOwn(state.session.pressure, ARCFLIGHT_TRAVEL_RESOURCES.HULL), "hull should remain preview-only in app state");
@@ -76,6 +84,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "active-app-state",
       "ui-state-preservation",
       "preview-row-exposure",
+      "preview-panel-exposure",
       "preview-only-pressure"
     ]
   };
