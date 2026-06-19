@@ -1,6 +1,5 @@
 import { prepareTravelV2PressureApplicationState } from "./travel-v2-pressure-application-state.js";
 import { applyTravelV2PressureToRunnerSession } from "./travel-v2-session-pressure-application.js";
-import { TRAVEL_V2_ROUND_OUTCOME_KEYS } from "./travel-v2-round-pressure-adapter.js";
 
 export const TRAVEL_V2_PRESSURE_CORRECTION_VERSION = 1;
 
@@ -22,7 +21,7 @@ function cloneData(value) {
 
 function selectedOutcomeKeyFromOptions(options = {}) {
   const value = options.correctedOutcomeKey ?? options.selectedOutcomeKey;
-  return typeof value === "string" && value.trim() ? value.trim() : TRAVEL_V2_ROUND_OUTCOME_KEYS.MIXED;
+  return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 function createdAtFromOptions(options = {}) {
@@ -136,13 +135,15 @@ export function correctTravelV2PressureApplicationOnRunnerSession(session, optio
     return blockedResult(session, ["No active Travel v2 runner session."], { selectedOutcomeKey, previousOutcomeKey: null });
   }
 
-  const priorState = prepareTravelV2PressureApplicationState(session, { ...options, selectedOutcomeKey });
+  const priorStateSelectedOutcomeKey = selectedOutcomeKey || "__missing-corrected-outcome__";
+  const priorState = prepareTravelV2PressureApplicationState(session, { ...options, selectedOutcomeKey: priorStateSelectedOutcomeKey });
   const previousOutcomeKey = priorState.applicationRecord?.outcomeKey ?? null;
   const blockedReasons = [];
 
   if (!priorState.hasCurrentRound) blockedReasons.push("Travel v2 runner session has no current round.");
   if (!priorState.applicationRecord) blockedReasons.push("Current Travel v2 round has no pressure application record to correct.");
-  if (!priorState.rows.some((row) => row.outcomeKey === selectedOutcomeKey && row.ok === true)) blockedReasons.push(`Selected Travel v2 pressure correction outcome is not available: ${selectedOutcomeKey}.`);
+  if (!selectedOutcomeKey) blockedReasons.push("A corrected Travel v2 pressure outcome key is required.");
+  if (selectedOutcomeKey && !priorState.rows.some((row) => row.outcomeKey === selectedOutcomeKey && row.ok === true)) blockedReasons.push(`Selected Travel v2 pressure correction outcome is not available: ${selectedOutcomeKey}.`);
   if (previousOutcomeKey && selectedOutcomeKey === previousOutcomeKey) blockedReasons.push("Corrected Travel v2 pressure outcome must be different from the prior applied outcome.");
 
   if (blockedReasons.length > 0) return blockedResult(session, blockedReasons, { selectedOutcomeKey, previousOutcomeKey });

@@ -49,6 +49,11 @@ export function runTravelV2PressureCorrectionSmokeChecks() {
   });
   const appliedSnapshot = snapshot(appliedFailure.session);
 
+  const missingOutcomeCorrection = correctTravelV2PressureApplicationOnRunnerSession(appliedFailure.session);
+  assertSmoke(!missingOutcomeCorrection.ok, "correction should block missing selected outcome");
+  assertEqual(missingOutcomeCorrection.selectedOutcomeKey, "", "missing selected outcome should remain empty");
+  assertSmoke(missingOutcomeCorrection.blockedReasons.some((reason) => reason.includes("required")), "missing selected outcome block should explain requirement");
+
   const invalidCorrection = correctTravelV2PressureApplicationOnRunnerSession(appliedFailure.session, { selectedOutcomeKey: "not-real" });
   assertSmoke(!invalidCorrection.ok, "correction should block invalid selected outcome");
 
@@ -109,6 +114,7 @@ export function runTravelV2PressureCorrectionSmokeChecks() {
     checked: [
       "pressure-correction-version",
       "missing-application-blocked",
+      "missing-corrected-outcome-blocked",
       "invalid-outcome-blocked",
       "same-outcome-blocked",
       "failure-to-mixed-correction-succeeds",
