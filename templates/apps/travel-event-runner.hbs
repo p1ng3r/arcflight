@@ -138,10 +138,14 @@
                   <strong>{{outcomeLabel}}</strong>
                   <p>{{summaryText}}</p>
                 </div>
-                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Preview pressure changes">
-                  {{#each pressureChips}}
-                    <span class="arcflight-travel-runner-mvp__v2-preview-chip"><strong>{{displayAmount}}</strong> {{label}}</span>
-                  {{/each}}
+                <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                  <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Preview pressure changes">
+                    {{#each pressureChips}}
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip"><strong>{{displayAmount}}</strong> {{label}}</span>
+                    {{/each}}
+                  </div>
+                  <button type="button" class="arcflight-travel-runner-mvp__v2-preview-apply" data-arcflight-travel-v2-pressure-apply="{{outcomeKey}}" {{#if pressureApplyDisabled}}disabled{{/if}}>{{pressureApplyLabel}}</button>
+                  {{#if pressureApplyBlockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{pressureApplyBlockedReason}}</p>{{/if}}
                 </div>
               </article>
             {{/each}}
@@ -149,7 +153,13 @@
         {{else}}
           <p class="arcflight-sheet__hint">Travel v2 pressure preview is unavailable for the current runner state.</p>
         {{/if}}
-        <p class="arcflight-sheet__hint"><strong>Read-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
+        {{#if state.travelV2PreviewPanel.pressureApplication.alreadyApplied}}
+          <p class="arcflight-travel-runner-mvp__v2-preview-feedback arcflight-travel-runner-mvp__v2-preview-feedback--applied">Travel v2 pressure already applied for this round{{#if state.travelV2PreviewPanel.pressureApplication.appliedOutcomeLabel}}: {{state.travelV2PreviewPanel.pressureApplication.appliedOutcomeLabel}}{{/if}}.</p>
+        {{/if}}
+        {{#if state.travelV2PreviewPanel.pressureApplication.hasFeedback}}
+          <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.pressureApplication.feedbackText}}</p>
+        {{/if}}
+        <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
       <section class="arcflight-travel-runner-mvp__phase" aria-label="Current round phase">

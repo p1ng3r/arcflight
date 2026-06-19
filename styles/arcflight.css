@@ -1338,6 +1338,13 @@
   border-left-color: #8a2f18;
 }
 
+.arcflight-travel-runner-mvp__v2-preview-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
 .arcflight-travel-runner-mvp__v2-preview-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1351,6 +1358,26 @@
   border-radius: 999px;
   padding: 0.15rem 0.45rem;
   white-space: nowrap;
+}
+
+.arcflight-travel-runner-mvp__v2-preview-apply {
+  width: max-content;
+}
+
+.arcflight-travel-runner-mvp__v2-preview-blocked {
+  max-width: 18rem;
+  text-align: right;
+}
+
+.arcflight-travel-runner-mvp__v2-preview-feedback {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid rgba(120, 104, 80, 0.35);
+  border-radius: 4px;
+  background: rgba(20, 18, 16, 0.05);
+}
+
+.arcflight-travel-runner-mvp__v2-preview-feedback--applied {
+  border-color: rgba(71, 122, 85, 0.55);
 }
 
 .arcflight-travel-runner-mvp__stations {
