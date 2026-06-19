@@ -140,6 +140,7 @@ export function correctTravelV2PressureApplicationOnRunnerSession(session, optio
   const previousOutcomeKey = priorState.applicationRecord?.outcomeKey ?? null;
   const blockedReasons = [];
 
+  if (priorState.isCompleted) blockedReasons.push("Completed Travel v2 runner sessions cannot correct round pressure.");
   if (!priorState.hasCurrentRound) blockedReasons.push("Travel v2 runner session has no current round.");
   if (!priorState.applicationRecord) blockedReasons.push("Current Travel v2 round has no pressure application record to correct.");
   if (!selectedOutcomeKey) blockedReasons.push("A corrected Travel v2 pressure outcome key is required.");
