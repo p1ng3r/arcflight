@@ -131,6 +131,8 @@ Rules:
 
 Only after GM apply is stable, decide whether to support undo, correction, or manual pressure adjustment.
 
+Phase 4F is documented in `docs/travel-v2/phase-4f-pressure-correction-plan.md` as a planning-only correction model. It keeps duplicate application blocked and recommends additive correction records rather than silently erasing application history.
+
 Until then, duplicate application remains blocked.
 
 ## Smoke-test expectations
