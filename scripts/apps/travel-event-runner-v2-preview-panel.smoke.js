@@ -40,7 +40,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 1, "panel version should be 1");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 2, "panel version should be 2");
 
   const emptyPanel = prepareTravelEventRunnerV2PreviewPanelState({});
   assertSmoke(!emptyPanel.available, "empty panel should be unavailable");
@@ -52,12 +52,15 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(panel.roundNumber, 1, "panel should carry round number");
   assertEqual(panel.rows.length, 5, "panel should expose all outcome rows");
   assertSmoke(panel.hasPressureChanges, "panel should flag pressure-changing outcomes");
-  assertSmoke(panel.footerText.includes("Preview only"), "panel should include read-only footer text");
+  assertSmoke(panel.footerText.includes("GM-only session-local controls"), "panel should include GM-only footer text");
+  assertSmoke(panel.pressureApplication.canApply, "panel should expose application readiness");
 
   const success = panel.rows.find((row) => row.outcomeKey === "success");
   assertSmoke(success, "success row should exist");
   assertEqual(success.tone, "safe", "success row should be safe tone");
   assertSmoke(!success.hasRequests, "success row should have no pressure chips");
+  assertSmoke(success.canApplyPressure, "success row should be actionable before application");
+  assertEqual(success.pressureApplyLabel, "Apply Success", "success row should expose apply label");
 
   const mixed = panel.rows.find((row) => row.outcomeKey === "mixed");
   assertSmoke(mixed, "mixed row should exist");
@@ -72,6 +75,19 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(criticalFailure.pressureChips[0].pressureType, ARCFLIGHT_TRAVEL_RESOURCES.HULL, "critical failure first chip should be hull");
   assertEqual(criticalFailure.pressureChips[1].pressureType, ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES, "critical failure second chip should be supplies");
 
+  const appliedPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "failure" }] }
+    },
+    travelV2PressureApplicationResult: { ok: true, applied: true, selectedOutcomeKey: "failure" }
+  });
+  assertSmoke(appliedPanel.pressureApplication.alreadyApplied, "panel should flag already-applied rounds");
+  assertEqual(appliedPanel.pressureApplication.appliedOutcomeLabel, "Failure", "panel should label applied outcome");
+  assertSmoke(appliedPanel.pressureApplication.feedbackText.includes("Failure"), "panel should carry latest success feedback");
+  assertSmoke(appliedPanel.rows.every((row) => row.pressureApplyDisabled), "already-applied panel rows should be disabled");
+
   return {
     ok: true,
     checked: [
@@ -81,7 +97,9 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "safe-outcome-row",
       "mixed-outcome-chip",
       "critical-failure-chips",
-      "read-only-footer"
+      "read-only-footer",
+      "row-application-controls",
+      "already-applied-disabled-state"
     ]
   };
 }

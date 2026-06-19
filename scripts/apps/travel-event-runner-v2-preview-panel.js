@@ -1,4 +1,6 @@
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 1;
+import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pressure-application-state.js";
+
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 2;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -22,7 +24,7 @@ function normalizeOutcomeTone(row = {}) {
   return row.hasRequests ? "warning" : "neutral";
 }
 
-function normalizePreviewRow(row = {}) {
+function normalizePreviewRow(row = {}, applicationState = null) {
   const outcomeKey = String(row.outcomeKey ?? "skipped");
   const totals = isPlainObject(row.totalsByPressureType) ? row.totalsByPressureType : {};
   const pressureChips = Object.entries(totals)
@@ -33,6 +35,10 @@ function normalizePreviewRow(row = {}) {
       amount: Number(amount),
       displayAmount: `${Number(amount) > 0 ? "+" : ""}${Number(amount)}`
     }));
+  const rowApplicationState = applicationState
+    ? prepareTravelV2PressureApplicationState(applicationState.session, { selectedOutcomeKey: outcomeKey })
+    : null;
+  const blockedReasons = Array.isArray(rowApplicationState?.blockedReasons) ? rowApplicationState.blockedReasons : [];
   return {
     outcomeKey,
     outcomeLabel: row.outcomeLabel || humanizeIdentifier(outcomeKey),
@@ -42,14 +48,26 @@ function normalizePreviewRow(row = {}) {
     hasRequests: row.hasRequests === true || pressureChips.length > 0,
     summaryText: typeof row.summaryText === "string" && row.summaryText.trim() ? row.summaryText.trim() : "No Travel v2 pressure change.",
     pressureChips,
-    errors: Array.isArray(row.errors) ? row.errors : []
+    errors: Array.isArray(row.errors) ? row.errors : [],
+    canApplyPressure: rowApplicationState?.canApply === true,
+    pressureApplyDisabled: rowApplicationState?.canApply !== true,
+    pressureApplyBlockedReason: blockedReasons[0] ?? "",
+    pressureApplyLabel: `Apply ${row.outcomeLabel || humanizeIdentifier(outcomeKey)}`
   };
 }
 
 export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const preview = isPlainObject(appState.travelV2Preview) ? appState.travelV2Preview : {};
-  const rows = Array.isArray(preview.rows) ? preview.rows.map(normalizePreviewRow) : [];
+  const applicationState = isPlainObject(appState.session) ? { session: appState.session } : null;
+  const rows = Array.isArray(preview.rows) ? preview.rows.map((row) => normalizePreviewRow(row, applicationState)) : [];
   const available = preview.ok === true && rows.length > 0;
+  const currentApplicationState = isPlainObject(appState.session) ? prepareTravelV2PressureApplicationState(appState.session) : null;
+  const latestResult = isPlainObject(appState.travelV2PressureApplicationResult) ? appState.travelV2PressureApplicationResult : null;
+  const latestBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
+  const latestOutcomeLabel = latestResult?.selectedOutcomeKey ? humanizeIdentifier(latestResult.selectedOutcomeKey) : "";
+  const feedbackText = latestResult?.ok === true && latestResult?.applied === true
+    ? `Applied Travel v2 pressure outcome: ${latestOutcomeLabel}.`
+    : (latestBlockedReasons[0] ?? latestResult?.error ?? "");
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -61,8 +79,16 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     roundNumber: preview.roundNumber ?? appState.currentRoundNumber ?? null,
     rows,
     hasPressureChanges: rows.some((row) => row.hasRequests),
+    pressureApplication: {
+      canApply: currentApplicationState?.canApply === true,
+      alreadyApplied: currentApplicationState?.alreadyApplied === true,
+      appliedOutcomeLabel: currentApplicationState?.applicationRecord?.outcomeKey ? humanizeIdentifier(currentApplicationState.applicationRecord.outcomeKey) : "",
+      blockedReasons: Array.isArray(currentApplicationState?.blockedReasons) ? currentApplicationState.blockedReasons : [],
+      feedbackText,
+      hasFeedback: Boolean(feedbackText)
+    },
     errors: Array.isArray(preview.errors) ? preview.errors : [],
-    footerText: "Preview only. This does not apply pressure, mutate the runner, notify players, or change actors."
+    footerText: "GM-only session-local controls apply pressure to this runner session only. They do not notify players, send chat, emit sockets, or change actors."
   };
 }
 

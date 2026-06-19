@@ -30,8 +30,13 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "pressureChips", "template should render pressure chips");
   assertIncludes(template, "{{displayAmount}}", "template should render chip display amount");
   assertIncludes(template, "{{label}}", "template should render chip label");
-  assertIncludes(template, "state.travelV2PreviewPanel.footerText", "template should render read-only footer text");
-  assertIncludes(template, "Read-only", "template should visibly mark the panel as read-only");
+  assertIncludes(template, "state.travelV2PreviewPanel.footerText", "template should render footer text");
+  assertIncludes(template, "data-arcflight-travel-v2-pressure-apply", "template should wire apply controls to Phase 4D handler");
+  assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-apply", "template should render apply controls inside preview rows");
+  assertIncludes(template, "{{#if pressureApplyDisabled}}disabled{{/if}}", "template should render disabled state from model");
+  assertIncludes(template, "state.travelV2PreviewPanel.pressureApplication.alreadyApplied", "template should render already-applied state");
+  assertIncludes(template, "state.travelV2PreviewPanel.pressureApplication.feedbackText", "template should render application feedback");
+  assertIncludes(template, "GM-only", "template should visibly mark the panel as GM-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
@@ -41,6 +46,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--danger", "css should include danger tone hook");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--severe", "css should include severe tone hook");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-chip", "css should style preview chips");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-apply", "css should style apply controls");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-feedback", "css should style application feedback");
 
   return {
     ok: true,
