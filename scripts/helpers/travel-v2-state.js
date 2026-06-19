@@ -6,6 +6,7 @@ export const TRAVEL_V2_DEFAULT_EVENT_LEVEL = 1;
 export const TRAVEL_V2_DEFAULT_EVENT_ROUND_COUNT = 3;
 export const TRAVEL_V2_DEFAULT_MOMENTUM_MAX = 3;
 export const TRAVEL_V2_DEFAULT_STATION_FOCUS_MAX = 1;
+export const TRAVEL_V2_DEFAULT_VOID_FORTUNE_HAND_LIMIT = 3;
 export const TRAVEL_V2_PRESSURE_MAX = 4;
 
 export const TRAVEL_V2_PRESSURE_TRACK_KEYS = Object.freeze([
@@ -89,6 +90,11 @@ export function normalizeTravelV2PressureType(pressureType, fallback = DEFAULT_P
 
 export function normalizeTravelV2StationKey(stationKey, fallback = DEFAULT_PRESSURE_STATION) {
   return isTravelV2StationKey(stationKey) ? stationKey : fallback;
+}
+
+export function getTravelV2HazardDrawCountForThreshold(threshold) {
+  const normalizedThreshold = Number(threshold);
+  return TRAVEL_V2_HAZARD_DRAW_COUNT_BY_THRESHOLD[normalizedThreshold] ?? 0;
 }
 
 export function createTravelV2ShipState(input = {}) {
@@ -218,10 +224,11 @@ export function createTravelV2HazardCardState(input = {}) {
 
 export function createTravelV2HazardDrawRequest(input = {}) {
   const source = isPlainObject(input) ? input : {};
+  const threshold = TRAVEL_V2_PRESSURE_THRESHOLDS.includes(Number(source.threshold)) ? Number(source.threshold) : 2;
   return {
     pressureType: normalizeTravelV2PressureType(source.pressureType),
-    threshold: Number(TRAVEL_V2_PRESSURE_THRESHOLDS.includes(Number(source.threshold)) ? Number(source.threshold) : 2),
-    count: Math.max(0, integerValue(source.count, 1)),
+    threshold,
+    count: Math.max(0, integerValue(source.count, getTravelV2HazardDrawCountForThreshold(threshold))),
     reason: stringValue(source.reason, "threshold-crossing"),
     roundNumber: source.roundNumber == null ? null : Math.max(1, integerValue(source.roundNumber, 1))
   };
@@ -279,7 +286,7 @@ export function createTravelV2VoidFortuneState(input = {}) {
   return {
     hand: (Array.isArray(source.hand) ? source.hand : []).map((entry) => createTravelV2VoidFortuneCardState(entry)),
     pendingDraws: (Array.isArray(source.pendingDraws) ? source.pendingDraws : []).map((entry) => normalizeObjectRecord(entry)),
-    handLimit: Math.max(0, integerValue(source.handLimit, 3)),
+    handLimit: Math.max(0, integerValue(source.handLimit, TRAVEL_V2_DEFAULT_VOID_FORTUNE_HAND_LIMIT)),
     usedThisRound: Array.isArray(source.usedThisRound) ? cloneData(source.usedThisRound) : []
   };
 }
@@ -347,15 +354,16 @@ export function normalizeTravelV2SessionState(input = {}) {
 }
 
 export function createTravelV2ThresholdCrossings({ pressureType = DEFAULT_PRESSURE_TYPE, fromValue = 0, toValue = 0, crossed = [] } = {}) {
+  const normalizedPressureType = normalizeTravelV2PressureType(pressureType);
   const startingValue = clampInteger(fromValue, 0, TRAVEL_V2_PRESSURE_MAX, 0);
   const endingValue = clampInteger(toValue, 0, TRAVEL_V2_PRESSURE_MAX, 0);
   const existing = createTravelV2PressureTrackState({ value: startingValue, crossed }).crossed;
   return TRAVEL_V2_PRESSURE_THRESHOLDS
     .filter((threshold) => startingValue < threshold && endingValue >= threshold && !existing.includes(threshold))
     .map((threshold) => ({
-      pressureType: normalizeTravelV2PressureType(pressureType),
+      pressureType: normalizedPressureType,
       threshold,
-      hazardDrawCount: TRAVEL_V2_HAZARD_DRAW_COUNT_BY_THRESHOLD[threshold] ?? 0
+      hazardDrawCount: getTravelV2HazardDrawCountForThreshold(threshold)
     }));
 }
 
