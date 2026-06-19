@@ -4,6 +4,7 @@ import runTravelV2RoundPressureAdapterSmokeChecks from "../helpers/travel-v2-rou
 import runTravelV2RunnerBridgeSmokeChecks from "../helpers/travel-v2-runner-bridge.smoke.js";
 import runTravelV2PreviewStateSmokeChecks from "../helpers/travel-v2-preview-state.smoke.js";
 import runTravelV2PressureApplicationStateSmokeChecks from "../helpers/travel-v2-pressure-application-state.smoke.js";
+import runTravelV2SessionPressureApplicationSmokeChecks from "../helpers/travel-v2-session-pressure-application.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
 import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
@@ -15,6 +16,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 runner bridge", runTravelV2RunnerBridgeSmokeChecks],
   ["Travel v2 preview state", runTravelV2PreviewStateSmokeChecks],
   ["Travel v2 pressure application state", runTravelV2PressureApplicationStateSmokeChecks],
+  ["Travel v2 session pressure application", runTravelV2SessionPressureApplicationSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
   ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks]
