@@ -125,6 +125,33 @@
       <h3>Round {{state.currentRoundNumber}}: {{state.currentRoundTitle}}</h3>
       {{#if state.currentRoundOpeningVignette}}<p class="arcflight-travel-runner-mvp__vignette">{{state.currentRoundOpeningVignette}}</p>{{/if}}
 
+      <section class="arcflight-travel-runner-mvp__v2-preview" aria-label="{{state.travelV2PreviewPanel.title}}">
+        <header>
+          <h3>{{state.travelV2PreviewPanel.title}}</h3>
+          <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.subtitle}}</p>
+        </header>
+        {{#if state.travelV2PreviewPanel.available}}
+          <div class="arcflight-travel-runner-mvp__v2-preview-rows">
+            {{#each state.travelV2PreviewPanel.rows}}
+              <article class="arcflight-travel-runner-mvp__v2-preview-row arcflight-travel-runner-mvp__v2-preview-row--{{tone}}">
+                <div>
+                  <strong>{{outcomeLabel}}</strong>
+                  <p>{{summaryText}}</p>
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Preview pressure changes">
+                  {{#each pressureChips}}
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip"><strong>{{displayAmount}}</strong> {{label}}</span>
+                  {{/each}}
+                </div>
+              </article>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="arcflight-sheet__hint">Travel v2 pressure preview is unavailable for the current runner state.</p>
+        {{/if}}
+        <p class="arcflight-sheet__hint"><strong>Read-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
+      </section>
+
       <section class="arcflight-travel-runner-mvp__phase" aria-label="Current round phase">
         <header class="arcflight-travel-runner-mvp__phase-header">
           <div>
