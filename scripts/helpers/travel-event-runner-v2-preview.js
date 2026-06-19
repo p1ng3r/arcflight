@@ -5,11 +5,10 @@ export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_VERSION = 1;
 
 export function prepareTravelEventRunnerStateWithTravelV2Preview(session = null, options = {}) {
   const state = prepareTravelEventRunnerState(session, options);
+  const previewSource = session && typeof session === "object" ? session : (state.hasSession ? state.session : null);
   return {
     ...state,
-    travelV2Preview: state.hasSession
-      ? prepareTravelV2RunnerCurrentRoundPreviewState(state.session, options)
-      : prepareTravelV2RunnerCurrentRoundPreviewState(null, options)
+    travelV2Preview: prepareTravelV2RunnerCurrentRoundPreviewState(previewSource, options)
   };
 }
 
