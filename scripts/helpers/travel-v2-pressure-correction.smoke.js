@@ -60,6 +60,15 @@ export function runTravelV2PressureCorrectionSmokeChecks() {
   const sameCorrection = correctTravelV2PressureApplicationOnRunnerSession(appliedFailure.session, { selectedOutcomeKey: "failure" });
   assertSmoke(!sameCorrection.ok, "correction should block same selected outcome");
 
+
+  const completedCorrection = correctTravelV2PressureApplicationOnRunnerSession({
+    ...appliedFailure.session,
+    status: "completed"
+  }, { selectedOutcomeKey: "mixed" });
+  assertSmoke(!completedCorrection.ok && !completedCorrection.corrected, "completed session should block correction");
+  assertSmoke(completedCorrection.blockedReasons.some((reason) => reason.includes("Completed")), "completed correction block should explain completed session");
+  assertSmoke(completedCorrection.session.status === "completed", "blocked completed correction should preserve session reference");
+
   const corrected = correctTravelV2PressureApplicationOnRunnerSession(appliedFailure.session, {
     selectedOutcomeKey: "mixed",
     reason: "GM selected the wrong outcome.",
@@ -117,6 +126,7 @@ export function runTravelV2PressureCorrectionSmokeChecks() {
       "missing-corrected-outcome-blocked",
       "invalid-outcome-blocked",
       "same-outcome-blocked",
+      "completed-session-correction-blocked",
       "failure-to-mixed-correction-succeeds",
       "input-session-not-mutated",
       "returned-session-is-clone",

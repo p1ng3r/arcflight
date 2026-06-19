@@ -49,6 +49,7 @@ function createRunnerEventFixture() {
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 3, "panel version should be 3");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
+  assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
 
   const emptyPanel = prepareTravelEventRunnerV2PreviewPanelState({});
@@ -63,6 +64,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(panel.hasPressureChanges, "panel should flag pressure-changing outcomes");
   assertSmoke(panel.footerText.includes("GM-only session-local controls"), "panel should include GM-only footer text");
   assertSmoke(panel.pressureApplication.canApply, "panel should expose application readiness");
+  assertSmoke(panel.rows.every((row) => row.canApplyPressure && !row.pressureApplyDisabled), "preview rows should render enabled apply controls before application");
+  assertSmoke(panel.rows.every((row) => !row.canCorrectPressure), "preview rows should not render correction controls before application");
 
   const success = panel.rows.find((row) => row.outcomeKey === "success");
   assertSmoke(success, "success row should exist");
@@ -122,13 +125,14 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     },
     isCompleted: true
   });
+  assertSmoke(completedPanel.rows.every((row) => row.pressureApplyDisabled), "completed sessions should disable apply controls");
   assertSmoke(completedPanel.rows.every((row) => !row.canCorrectPressure), "completed sessions should not expose correction controls");
 
   return {
     ok: true,
     checked: [
       "panel-version",
-      "no-correction-helper-in-preview-preparation",
+      "no-apply-or-correction-helper-in-preview-preparation",
       "empty-panel-state",
       "active-panel-state",
       "safe-outcome-row",
@@ -136,6 +140,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "critical-failure-chips",
       "read-only-footer",
       "row-application-controls",
+      "pre-application-correction-controls-hidden",
       "already-applied-disabled-state"
     ]
   };
