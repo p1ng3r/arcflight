@@ -32,6 +32,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "{{label}}", "template should render chip label");
   assertIncludes(template, "state.travelV2PreviewPanel.footerText", "template should render footer text");
   assertIncludes(template, "data-arcflight-travel-v2-pressure-apply", "template should wire apply controls to Phase 4D handler");
+  assertIncludes(template, "data-arcflight-travel-v2-pressure-correct", "template should wire correction controls to Phase 4G handler");
+  assertIncludes(template, "canCorrectPressure", "template should show correction controls from model state");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-apply", "template should render apply controls inside preview rows");
   assertIncludes(template, "{{#if pressureApplyDisabled}}disabled{{/if}}", "template should render disabled state from model");
   assertIncludes(template, "state.travelV2PreviewPanel.pressureApplication.alreadyApplied", "template should render already-applied state");
@@ -47,6 +49,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--severe", "css should include severe tone hook");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-chip", "css should style preview chips");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-apply", "css should style apply controls");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-correct", "css should style correction controls");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-feedback", "css should style application feedback");
 
   return {

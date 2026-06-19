@@ -1360,7 +1360,8 @@
   white-space: nowrap;
 }
 
-.arcflight-travel-runner-mvp__v2-preview-apply {
+.arcflight-travel-runner-mvp__v2-preview-apply,
+.arcflight-travel-runner-mvp__v2-preview-correct {
   width: max-content;
 }
 

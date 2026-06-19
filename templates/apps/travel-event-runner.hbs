@@ -145,7 +145,10 @@
                     {{/each}}
                   </div>
                   <button type="button" class="arcflight-travel-runner-mvp__v2-preview-apply" data-arcflight-travel-v2-pressure-apply="{{outcomeKey}}" {{#if pressureApplyDisabled}}disabled{{/if}}>{{pressureApplyLabel}}</button>
+                  {{#if canCorrectPressure}}<button type="button" class="arcflight-travel-runner-mvp__v2-preview-correct" data-arcflight-travel-v2-pressure-correct="{{outcomeKey}}" {{#if pressureCorrectionDisabled}}disabled{{/if}}>{{pressureCorrectionLabel}}</button>{{/if}}
+                  {{#if isEffectiveAppliedOutcome}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">Effective applied outcome</p>{{/if}}
                   {{#if pressureApplyBlockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{pressureApplyBlockedReason}}</p>{{/if}}
+                  {{#if pressureCorrectionBlockedReason}}{{#if pressureCorrectionDisabled}}{{#unless isEffectiveAppliedOutcome}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{pressureCorrectionBlockedReason}}</p>{{/unless}}{{/if}}{{/if}}
                 </div>
               </article>
             {{/each}}
