@@ -1,9 +1,16 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 import {
   prepareTravelEventRunnerV2PreviewPanelState,
   TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION
 } from "./travel-event-runner-v2-preview-panel.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PANEL_PATH = path.join(__dirname, "travel-event-runner-v2-preview-panel.js");
 
 function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 GM preview panel smoke check failed: ${message}`);
@@ -41,6 +48,8 @@ function createRunnerEventFixture() {
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 3, "panel version should be 3");
+  const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
+  assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
 
   const emptyPanel = prepareTravelEventRunnerV2PreviewPanelState({});
   assertSmoke(!emptyPanel.available, "empty panel should be unavailable");
@@ -93,11 +102,33 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(appliedPanel.rows.every((row) => row.pressureApplyDisabled), "already-applied panel rows should be disabled");
   assertSmoke(appliedPanel.rows.some((row) => row.canCorrectPressure), "already-applied panel should expose correction controls for other outcomes");
   assertSmoke(appliedPanel.rows.find((row) => row.outcomeKey === "failure").isEffectiveAppliedOutcome, "applied outcome row should be marked effective");
+  assertSmoke(!appliedPanel.rows.find((row) => row.outcomeKey === "failure").canCorrectPressure, "effective applied outcome correction should be disabled");
+  const skippedRow = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    travelV2Preview: { ...appState.travelV2Preview, rows: [{ outcomeKey: "skipped", ok: true }] },
+    session: {
+      ...appState.session,
+      travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "failure", totalsByPressureType: { [ARCFLIGHT_TRAVEL_RESOURCES.HULL]: 1 } }] }
+    }
+  }).rows[0];
+  assertSmoke(!skippedRow.canCorrectPressure, "skipped pseudo-outcome should not expose correction controls");
+
+  const completedPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      status: "completed",
+      travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "failure", totalsByPressureType: { [ARCFLIGHT_TRAVEL_RESOURCES.HULL]: 1 } }] }
+    },
+    isCompleted: true
+  });
+  assertSmoke(completedPanel.rows.every((row) => !row.canCorrectPressure), "completed sessions should not expose correction controls");
 
   return {
     ok: true,
     checked: [
       "panel-version",
+      "no-correction-helper-in-preview-preparation",
       "empty-panel-state",
       "active-panel-state",
       "safe-outcome-row",

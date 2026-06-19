@@ -1,5 +1,4 @@
 import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pressure-application-state.js";
-import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 3;
 
@@ -25,7 +24,7 @@ function normalizeOutcomeTone(row = {}) {
   return row.hasRequests ? "warning" : "neutral";
 }
 
-function normalizePreviewRow(row = {}, applicationState = null) {
+function normalizePreviewRow(row = {}, applicationState = null, correctionState = {}) {
   const outcomeKey = String(row.outcomeKey ?? "skipped");
   const totals = isPlainObject(row.totalsByPressureType) ? row.totalsByPressureType : {};
   const pressureChips = Object.entries(totals)
@@ -40,13 +39,22 @@ function normalizePreviewRow(row = {}, applicationState = null) {
     ? prepareTravelV2PressureApplicationState(applicationState.session, { selectedOutcomeKey: outcomeKey })
     : null;
   const blockedReasons = Array.isArray(rowApplicationState?.blockedReasons) ? rowApplicationState.blockedReasons : [];
-  const correctionResult = applicationState
-    ? correctTravelV2PressureApplicationOnRunnerSession(applicationState.session, { correctedOutcomeKey: outcomeKey, now: "2000-01-01T00:00:00.000Z" })
-    : null;
-  const correctionBlockedReasons = Array.isArray(correctionResult?.blockedReasons) ? correctionResult.blockedReasons : [];
-  const effectiveOutcomeKey = rowApplicationState?.applicationRecord?.outcomeKey ?? "";
+  const effectiveOutcomeKey = correctionState.effectiveOutcomeKey ?? rowApplicationState?.applicationRecord?.outcomeKey ?? "";
   const isEffectiveAppliedOutcome = Boolean(effectiveOutcomeKey && effectiveOutcomeKey === outcomeKey);
-  const canCorrectPressure = correctionResult?.ok === true && correctionResult?.corrected === true && !isEffectiveAppliedOutcome;
+  const hasEffectiveApplication = Boolean(correctionState.hasEffectiveApplication);
+  const sessionCompleted = correctionState.sessionCompleted === true;
+  const hasRealOutcomeKey = Boolean(outcomeKey && outcomeKey !== "skipped");
+  const canCorrectPressure = hasEffectiveApplication
+    && row.ok === true
+    && hasRealOutcomeKey
+    && !isEffectiveAppliedOutcome
+    && !sessionCompleted;
+  const correctionBlockedReasons = [];
+  if (!hasEffectiveApplication) correctionBlockedReasons.push("Current Travel v2 round has no pressure application record to correct.");
+  if (sessionCompleted) correctionBlockedReasons.push("Completed Travel v2 runner sessions cannot be corrected.");
+  if (!hasRealOutcomeKey) correctionBlockedReasons.push("Correction requires a real Travel v2 pressure outcome key.");
+  if (row.ok !== true) correctionBlockedReasons.push(`Selected Travel v2 pressure correction outcome is not available: ${outcomeKey}.`);
+  if (isEffectiveAppliedOutcome) correctionBlockedReasons.push("Corrected Travel v2 pressure outcome must be different from the prior applied outcome.");
   return {
     outcomeKey,
     outcomeLabel: row.outcomeLabel || humanizeIdentifier(outcomeKey),
@@ -74,9 +82,15 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const appSessionHasPressureApplications = isPlainObject(appState.session?.travelV2PressureApplications) || Array.isArray(appState.session?.travelV2PressureApplications);
   const runnerSession = appSessionHasPressureApplications ? appState.session : (isPlainObject(appState.travelV2PressureRunnerSession) ? appState.travelV2PressureRunnerSession : appState.session);
   const applicationState = isPlainObject(runnerSession) ? { session: runnerSession } : null;
-  const rows = Array.isArray(preview.rows) ? preview.rows.map((row) => normalizePreviewRow(row, applicationState)) : [];
-  const available = preview.ok === true && rows.length > 0;
   const currentApplicationState = isPlainObject(runnerSession) ? prepareTravelV2PressureApplicationState(runnerSession) : null;
+  const effectiveOutcomeKey = currentApplicationState?.applicationRecord?.outcomeKey ?? "";
+  const correctionState = {
+    hasEffectiveApplication: Boolean(currentApplicationState?.applicationRecord),
+    effectiveOutcomeKey,
+    sessionCompleted: currentApplicationState?.sessionCompleted === true || runnerSession?.status === "completed" || appState.isCompleted === true
+  };
+  const rows = Array.isArray(preview.rows) ? preview.rows.map((row) => normalizePreviewRow(row, applicationState, correctionState)) : [];
+  const available = preview.ok === true && rows.length > 0;
   const latestResult = isPlainObject(appState.travelV2PressureApplicationResult) ? appState.travelV2PressureApplicationResult : null;
   const latestCorrectionResult = isPlainObject(appState.travelV2PressureCorrectionResult) ? appState.travelV2PressureCorrectionResult : null;
   const latestBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
