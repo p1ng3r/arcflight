@@ -2,13 +2,15 @@
 
 Status: Phase 0 draft
 Branch: `travel-v2-phase-0-design-audit`
-Audit source: GitHub `main` plus Travel v2 handoff notes.
+Audit source: GitHub repository review plus Travel v2 handoff notes.
 
 ## Executive Summary
 
-Travel v2 should not be added as another layer inside the current travel runner. The current module already has useful foundations, but Travel v2 needs a normalized state model and smaller engine modules before large UI changes.
+Travel v2 should not be added as another layer inside the current travel runner. The module already has useful foundations, but Travel v2 needs a normalized state model and smaller engine modules before large UI changes.
 
-The most important immediate finding is that the GitHub `main` copy of `scripts/helpers/travel-event-runner.js` must be checked against the local Foundry module. The GitHub file fetch ended inside an unfinished object literal at `rollFeedback: {`, while other files import many functions from it. If this reflects actual `main`, the module is currently broken or the GitHub branch is behind/local-only work exists.
+Verification note: An earlier GitHub fetch appeared truncated around `rollFeedback: {`. Later fetches showed the file continues beyond that point, so this should be verified locally with `node --check scripts/helpers/travel-event-runner.js` and by comparing the local Foundry module copy against the repository before Phase 1 coding begins.
+
+This is not a blocker unless the local `node --check` fails or the local Foundry module differs from the repository in ways that affect Travel v2.
 
 ## Confirmed Current Repository Facts
 
@@ -22,6 +24,18 @@ Default branch:
 
 ```text
 main
+```
+
+PR #224 target decision:
+
+```text
+Keep PR #224 targeted at main unless a dev branch is created or confirmed as the active integration branch.
+```
+
+Reason:
+
+```text
+A repository branch search did not show a dev branch, and main is the repository default branch.
 ```
 
 Module manifest:
@@ -40,6 +54,32 @@ Current manifest target found in `module.json`:
 ```
 
 This differs from older notes that mentioned a v13 target/later v14. For Travel v2, treat Foundry v14 as the current code target unless the local repo says otherwise.
+
+## Immediate Local Verification Commands
+
+Run these before Phase 1 coding:
+
+```bash
+cd "/c/Users/Owner/AppData/Local/FoundryVTT/Data/modules/arcflight"
+
+git fetch origin
+git checkout travel-v2-phase-0-design-audit
+git status --short
+node --check scripts/helpers/travel-event-runner.js
+git diff --name-only main...HEAD
+```
+
+Expected good result:
+
+```text
+node --check passes with no syntax error
+
+git diff --name-only main...HEAD shows only:
+docs/travel-v2-design.md
+docs/travel-v2-repo-audit.md
+```
+
+If `node --check scripts/helpers/travel-event-runner.js` fails locally, fix that before Phase 1. If the diff includes runtime files, stop and inspect before merging the docs PR.
 
 ## Keep
 
@@ -232,30 +272,30 @@ The same session/round/player state should not be rebuilt differently in GM app,
 
 The handoff lists it as an existing file to refactor, but GitHub `main` returned 404 for that path. Check local repo before assuming deletion or recreation.
 
-### `scripts/helpers/travel-event-runner.js` appears incomplete on GitHub `main`
+### `scripts/helpers/travel-event-runner.js` needs local syntax verification
 
-The GitHub fetch for this file returned 222 lines and ended at:
-
-```js
-rollFeedback: {
-```
-
-This is syntactically incomplete. Because other code imports many functions from this helper, confirm the local Windows module copy before coding against GitHub `main`.
+Verification note: An earlier GitHub fetch appeared truncated around `rollFeedback: {`. Later fetches showed the file continues beyond that point, so this should be verified locally with `node --check scripts/helpers/travel-event-runner.js` and by comparing the local Foundry module copy against the repository before Phase 1 coding begins.
 
 Recommended local commands:
 
 ```bash
 cd "/c/Users/Owner/AppData/Local/FoundryVTT/Data/modules/arcflight"
 
+git fetch origin
+git checkout travel-v2-phase-0-design-audit
 git status --short
-git branch --show-current
-git rev-parse --short HEAD
-git log --oneline -10
+node --check scripts/helpers/travel-event-runner.js
+git diff --name-only main...HEAD
+```
 
-wc -l scripts/helpers/travel-event-runner.js
-sed -n '200,280p' scripts/helpers/travel-event-runner.js
+Expected good result:
 
-git diff -- scripts/helpers/travel-event-runner.js
+```text
+node --check passes with no syntax error
+
+git diff --name-only main...HEAD shows only:
+docs/travel-v2-design.md
+docs/travel-v2-repo-audit.md
 ```
 
 ## Phase 1 Target: Shared State Model
@@ -387,21 +427,14 @@ A Phase 1 PR should pass these checks before UI work:
 - Does not introduce custom Actor or Item types.
 - Does not require native Foundry Cards.
 
-## Recommended Immediate Local Check Before Coding
+## Phase 1 Safe Move
 
-Because GitHub `main` may not match the local Foundry module, run:
+After this docs PR is checked locally and merged, Phase 1 should be:
 
-```bash
-cd "/c/Users/Owner/AppData/Local/FoundryVTT/Data/modules/arcflight"
-
-git status --short
-git branch --show-current
-git rev-parse --short HEAD
-wc -l scripts/helpers/travel-event-runner.js
-node --check scripts/helpers/travel-event-runner.js
-node --check scripts/apps/travel-event-runner.js
-node --check scripts/apps/travel-player-station-card.js
-node --check scripts/helpers/travel-events.js
+```text
+Add `scripts/helpers/travel-v2-state.js` as pure model/state logic.
+No UI changes.
+No socket changes.
+No Hard Correction changes.
+No player roll flow changes.
 ```
-
-If `node --check scripts/helpers/travel-event-runner.js` fails on local too, fix that before Phase 1.
