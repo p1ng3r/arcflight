@@ -8,6 +8,7 @@ import runTravelV2SessionPressureApplicationSmokeChecks from "../helpers/travel-
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
 import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
+import runTravelEventRunnerV2PressureApplicationSmokeChecks from "../apps/travel-event-runner-v2-pressure-application.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -19,7 +20,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 session pressure application", runTravelV2SessionPressureApplicationSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
-  ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks]
+  ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks],
+  ["Travel event runner v2 pressure application", runTravelEventRunnerV2PressureApplicationSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
@@ -34,7 +36,7 @@ function printSuiteResult(label, result) {
 try {
   const results = [];
   for (const [label, runSuite] of SMOKE_SUITES) {
-    const result = runSuite();
+    const result = await runSuite();
     results.push({ label, result });
     printSuiteResult(label, result);
   }
