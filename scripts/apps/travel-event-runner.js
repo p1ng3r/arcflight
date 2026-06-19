@@ -4,6 +4,7 @@ import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from ".
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
+import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -89,6 +90,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-send-mission-board]",
   "[data-arcflight-travel-v2-pressure-apply]",
   "[data-arcflight-travel-v2-pressure-correct]",
+  "[data-arcflight-travel-v2-round-finalize]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -286,6 +288,17 @@ export function prepareTravelV2PressureCorrectionRunnerUpdate(currentSession, op
   };
 }
 
+export function prepareTravelV2RoundFinalizationRunnerUpdate(currentSession, options = {}) {
+  const result = finalizeTravelV2RoundOnRunnerSession(currentSession, options);
+  const shouldUpdateSession = result?.ok === true && result?.finalized === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
@@ -307,7 +320,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       scrollTop: 0,
       scrollSelector: "",
       travelV2PressureApplicationResult: null,
-      travelV2PressureCorrectionResult: null
+      travelV2PressureCorrectionResult: null,
+      travelV2RoundFinalizationResult: null
     };
   }
 
@@ -508,6 +522,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-apply")) return this.#applyTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-correct")) return this.#correctTravelV2Pressure(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -602,6 +617,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure correction was blocked.";
+    return update.shouldRerender ? this.render(true) : update;
+  }
+
+  async finalizeTravelV2Round(options = {}) {
+    const update = prepareTravelV2RoundFinalizationRunnerUpdate(this.session, options);
+    this.uiState.travelV2RoundFinalizationResult = update.result;
+
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = `Finalized Travel v2 round ${update.result.roundNumber ?? update.result.roundIndex + 1}.`;
+      return this.render(true);
+    }
+
+    this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 round finalization was blocked.";
     return update.shouldRerender ? this.render(true) : update;
   }
 
