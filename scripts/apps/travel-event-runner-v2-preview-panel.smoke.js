@@ -40,7 +40,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 2, "panel version should be 2");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 3, "panel version should be 3");
 
   const emptyPanel = prepareTravelEventRunnerV2PreviewPanelState({});
   assertSmoke(!emptyPanel.available, "empty panel should be unavailable");
@@ -79,7 +79,11 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     ...appState,
     session: {
       ...appState.session,
-      travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "failure" }] }
+      pressure: {
+        [ARCFLIGHT_TRAVEL_RESOURCES.HULL]: { value: 1, crossed: [] },
+        [ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES]: { value: 1, crossed: [] }
+      },
+      travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "failure", totalsByPressureType: { [ARCFLIGHT_TRAVEL_RESOURCES.HULL]: 1, [ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES]: 1 } }] }
     },
     travelV2PressureApplicationResult: { ok: true, applied: true, selectedOutcomeKey: "failure" }
   });
@@ -87,6 +91,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(appliedPanel.pressureApplication.appliedOutcomeLabel, "Failure", "panel should label applied outcome");
   assertSmoke(appliedPanel.pressureApplication.feedbackText.includes("Failure"), "panel should carry latest success feedback");
   assertSmoke(appliedPanel.rows.every((row) => row.pressureApplyDisabled), "already-applied panel rows should be disabled");
+  assertSmoke(appliedPanel.rows.some((row) => row.canCorrectPressure), "already-applied panel should expose correction controls for other outcomes");
+  assertSmoke(appliedPanel.rows.find((row) => row.outcomeKey === "failure").isEffectiveAppliedOutcome, "applied outcome row should be marked effective");
 
   return {
     ok: true,

@@ -1,6 +1,7 @@
 import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pressure-application-state.js";
+import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 2;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 3;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -39,6 +40,13 @@ function normalizePreviewRow(row = {}, applicationState = null) {
     ? prepareTravelV2PressureApplicationState(applicationState.session, { selectedOutcomeKey: outcomeKey })
     : null;
   const blockedReasons = Array.isArray(rowApplicationState?.blockedReasons) ? rowApplicationState.blockedReasons : [];
+  const correctionResult = applicationState
+    ? correctTravelV2PressureApplicationOnRunnerSession(applicationState.session, { correctedOutcomeKey: outcomeKey, now: "2000-01-01T00:00:00.000Z" })
+    : null;
+  const correctionBlockedReasons = Array.isArray(correctionResult?.blockedReasons) ? correctionResult.blockedReasons : [];
+  const effectiveOutcomeKey = rowApplicationState?.applicationRecord?.outcomeKey ?? "";
+  const isEffectiveAppliedOutcome = Boolean(effectiveOutcomeKey && effectiveOutcomeKey === outcomeKey);
+  const canCorrectPressure = correctionResult?.ok === true && correctionResult?.corrected === true && !isEffectiveAppliedOutcome;
   return {
     outcomeKey,
     outcomeLabel: row.outcomeLabel || humanizeIdentifier(outcomeKey),
@@ -52,22 +60,36 @@ function normalizePreviewRow(row = {}, applicationState = null) {
     canApplyPressure: rowApplicationState?.canApply === true,
     pressureApplyDisabled: rowApplicationState?.canApply !== true,
     pressureApplyBlockedReason: blockedReasons[0] ?? "",
-    pressureApplyLabel: `Apply ${row.outcomeLabel || humanizeIdentifier(outcomeKey)}`
+    pressureApplyLabel: `Apply ${row.outcomeLabel || humanizeIdentifier(outcomeKey)}`,
+    canCorrectPressure,
+    pressureCorrectionDisabled: !canCorrectPressure,
+    pressureCorrectionBlockedReason: correctionBlockedReasons[0] ?? "",
+    pressureCorrectionLabel: `Correct to ${row.outcomeLabel || humanizeIdentifier(outcomeKey)}`,
+    isEffectiveAppliedOutcome
   };
 }
 
 export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const preview = isPlainObject(appState.travelV2Preview) ? appState.travelV2Preview : {};
-  const applicationState = isPlainObject(appState.session) ? { session: appState.session } : null;
+  const appSessionHasPressureApplications = isPlainObject(appState.session?.travelV2PressureApplications) || Array.isArray(appState.session?.travelV2PressureApplications);
+  const runnerSession = appSessionHasPressureApplications ? appState.session : (isPlainObject(appState.travelV2PressureRunnerSession) ? appState.travelV2PressureRunnerSession : appState.session);
+  const applicationState = isPlainObject(runnerSession) ? { session: runnerSession } : null;
   const rows = Array.isArray(preview.rows) ? preview.rows.map((row) => normalizePreviewRow(row, applicationState)) : [];
   const available = preview.ok === true && rows.length > 0;
-  const currentApplicationState = isPlainObject(appState.session) ? prepareTravelV2PressureApplicationState(appState.session) : null;
+  const currentApplicationState = isPlainObject(runnerSession) ? prepareTravelV2PressureApplicationState(runnerSession) : null;
   const latestResult = isPlainObject(appState.travelV2PressureApplicationResult) ? appState.travelV2PressureApplicationResult : null;
+  const latestCorrectionResult = isPlainObject(appState.travelV2PressureCorrectionResult) ? appState.travelV2PressureCorrectionResult : null;
   const latestBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
+  const latestCorrectionBlockedReasons = Array.isArray(latestCorrectionResult?.blockedReasons) ? latestCorrectionResult.blockedReasons : [];
   const latestOutcomeLabel = latestResult?.selectedOutcomeKey ? humanizeIdentifier(latestResult.selectedOutcomeKey) : "";
-  const feedbackText = latestResult?.ok === true && latestResult?.applied === true
+  const previousCorrectionOutcomeLabel = latestCorrectionResult?.previousOutcomeKey ? humanizeIdentifier(latestCorrectionResult.previousOutcomeKey) : "";
+  const correctedOutcomeLabel = latestCorrectionResult?.selectedOutcomeKey ? humanizeIdentifier(latestCorrectionResult.selectedOutcomeKey) : "";
+  const correctionFeedbackText = latestCorrectionResult?.ok === true && latestCorrectionResult?.corrected === true
+    ? `Corrected Travel v2 pressure outcome: ${previousCorrectionOutcomeLabel} → ${correctedOutcomeLabel}.`
+    : (latestCorrectionBlockedReasons[0] ?? latestCorrectionResult?.error ?? "");
+  const feedbackText = correctionFeedbackText || (latestResult?.ok === true && latestResult?.applied === true
     ? `Applied Travel v2 pressure outcome: ${latestOutcomeLabel}.`
-    : (latestBlockedReasons[0] ?? latestResult?.error ?? "");
+    : (latestBlockedReasons[0] ?? latestResult?.error ?? ""));
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,

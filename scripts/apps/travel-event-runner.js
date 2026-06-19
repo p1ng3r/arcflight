@@ -3,6 +3,7 @@ import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
+import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -87,6 +88,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-open-travel-scene-overlay]",
   "[data-arcflight-runner-send-mission-board]",
   "[data-arcflight-travel-v2-pressure-apply]",
+  "[data-arcflight-travel-v2-pressure-correct]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -252,6 +254,7 @@ function getRunnerPressureSelectedOutcomeKey(source = {}) {
   const rawValue = dataset.selectedOutcomeKey
     ?? dataset.outcomeKey
     ?? dataset.arcflightTravelV2PressureApply
+    ?? dataset.arcflightTravelV2PressureCorrect
     ?? dataset.travelV2OutcomeKey
     ?? "";
   return typeof rawValue === "string" ? rawValue.trim() : "";
@@ -262,6 +265,19 @@ export function prepareTravelV2PressureApplicationRunnerUpdate(currentSession, o
   const helperOptions = selectedOutcomeKey ? { ...options, selectedOutcomeKey } : { ...options };
   const result = applyTravelV2PressureToRunnerSession(currentSession, helperOptions);
   const shouldUpdateSession = result?.ok === true && result?.applied === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
+export function prepareTravelV2PressureCorrectionRunnerUpdate(currentSession, options = {}) {
+  const correctedOutcomeKey = typeof options.correctedOutcomeKey === "string" ? options.correctedOutcomeKey.trim() : "";
+  const helperOptions = correctedOutcomeKey ? { ...options, correctedOutcomeKey } : { ...options };
+  const result = correctTravelV2PressureApplicationOnRunnerSession(currentSession, helperOptions);
+  const shouldUpdateSession = result?.ok === true && result?.corrected === true && result.session !== undefined;
   return {
     result,
     nextSession: shouldUpdateSession ? result.session : currentSession,
@@ -290,7 +306,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       compactRunner: options.compactRunner === true,
       scrollTop: 0,
       scrollSelector: "",
-      travelV2PressureApplicationResult: null
+      travelV2PressureApplicationResult: null,
+      travelV2PressureCorrectionResult: null
     };
   }
 
@@ -490,6 +507,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-apply")) return this.#applyTravelV2Pressure(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-pressure-correct")) return this.#correctTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -568,6 +586,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure application was blocked.";
+    return update.shouldRerender ? this.render(true) : update;
+  }
+
+  async #correctTravelV2Pressure(target) {
+    const correctedOutcomeKey = getRunnerPressureSelectedOutcomeKey(target);
+    const update = prepareTravelV2PressureCorrectionRunnerUpdate(this.session, { correctedOutcomeKey });
+    this.uiState.travelV2PressureCorrectionResult = update.result;
+
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = `Corrected Travel v2 pressure outcome: ${humanizeIdentifier(update.result.previousOutcomeKey)} → ${humanizeIdentifier(update.result.selectedOutcomeKey)}.`;
+      return this.render(true);
+    }
+
+    this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure correction was blocked.";
     return update.shouldRerender ? this.render(true) : update;
   }
 
