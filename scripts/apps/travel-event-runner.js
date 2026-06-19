@@ -2,6 +2,7 @@ import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-ev
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
+import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -85,6 +86,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-reset-assignment]",
   "[data-arcflight-open-travel-scene-overlay]",
   "[data-arcflight-runner-send-mission-board]",
+  "[data-arcflight-travel-v2-pressure-apply]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -245,6 +247,29 @@ function defaultSelectedEventId(options = {}) {
   return state.library?.selectedEventId ?? "";
 }
 
+function getRunnerPressureSelectedOutcomeKey(source = {}) {
+  const dataset = source?.dataset ?? source ?? {};
+  const rawValue = dataset.selectedOutcomeKey
+    ?? dataset.outcomeKey
+    ?? dataset.arcflightTravelV2PressureApply
+    ?? dataset.travelV2OutcomeKey
+    ?? "";
+  return typeof rawValue === "string" ? rawValue.trim() : "";
+}
+
+export function prepareTravelV2PressureApplicationRunnerUpdate(currentSession, options = {}) {
+  const selectedOutcomeKey = typeof options.selectedOutcomeKey === "string" ? options.selectedOutcomeKey.trim() : "";
+  const helperOptions = selectedOutcomeKey ? { ...options, selectedOutcomeKey } : { ...options };
+  const result = applyTravelV2PressureToRunnerSession(currentSession, helperOptions);
+  const shouldUpdateSession = result?.ok === true && result?.applied === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
@@ -264,7 +289,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       sessionActionsExpanded: options.sessionActionsExpanded === true,
       compactRunner: options.compactRunner === true,
       scrollTop: 0,
-      scrollSelector: ""
+      scrollSelector: "",
+      travelV2PressureApplicationResult: null
     };
   }
 
@@ -463,6 +489,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
     if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
+    if (target.hasAttribute("data-arcflight-travel-v2-pressure-apply")) return this.#applyTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -526,6 +553,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (updated.ok) this.session = updated.session;
     this.statusMessage = updated.ok ? "Focus note updated." : (updated.errors?.[0] ?? "Could not update Focus note.");
     return this.render(true);
+  }
+
+  async #applyTravelV2Pressure(target) {
+    const selectedOutcomeKey = getRunnerPressureSelectedOutcomeKey(target);
+    const update = prepareTravelV2PressureApplicationRunnerUpdate(this.session, { selectedOutcomeKey });
+    this.uiState.travelV2PressureApplicationResult = update.result;
+
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = `Applied Travel v2 pressure outcome: ${humanizeIdentifier(update.result.selectedOutcomeKey)}.`;
+      return this.render(true);
+    }
+
+    this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure application was blocked.";
+    return update.shouldRerender ? this.render(true) : update;
   }
 
   async #sendPlayerMissionBoard() {
