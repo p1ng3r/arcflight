@@ -58,8 +58,11 @@ export function runTravelEventRunnerV2PreviewSmokeChecks() {
   assertEqual(criticalFailure.totalsByPressureType[ARCFLIGHT_TRAVEL_RESOURCES.HULL], 2, "critical failure row should preview primary pressure");
   assertEqual(criticalFailure.totalsByPressureType[ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES], 1, "critical failure row should preview secondary pressure");
 
-  assertEqual(sessionState.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.HULL], 0, "wrapper should not mutate live runner pressure");
-  assertEqual(sessionState.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES], 0, "wrapper should not mutate secondary live runner pressure");
+  assertEqual(sessionState.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.STRAIN], 0, "strain should stay at zero");
+  assertEqual(sessionState.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.LIFEVEIL], 0, "lifeveil should stay at zero");
+  assertEqual(sessionState.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.MORALE], 0, "morale should stay at zero");
+  assertSmoke(!Object.hasOwn(sessionState.session.pressure, ARCFLIGHT_TRAVEL_RESOURCES.HULL), "hull should stay preview-only");
+  assertSmoke(!Object.hasOwn(sessionState.session.pressure, ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES), "supplies should stay preview-only");
 
   return {
     ok: true,
@@ -69,7 +72,7 @@ export function runTravelEventRunnerV2PreviewSmokeChecks() {
       "active-state-preservation",
       "travel-v2-preview-exposure",
       "critical-failure-preview",
-      "no-live-runner-mutation"
+      "preview-only-pressure"
     ]
   };
 }
