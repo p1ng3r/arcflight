@@ -1,6 +1,7 @@
 import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-events/core-travel-events.js";
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
+import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -354,12 +355,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const targetActor = this.#getSelectedShipActor();
-    const state = prepareTravelEventRunnerState(this.session, { selectedEventId: this.selectedEventId, selectedSessionKey: this.selectedSessionKey, actor: targetActor });
-    state.effectApplication = prepareTravelEventEffectApplicationState(this.session, targetActor);
-    state.currentSessionCollapsed = this.uiState.currentSessionCollapsed;
-    state.sessionActionsExpanded = this.uiState.sessionActionsExpanded;
-    state.compactRunner = this.uiState.compactRunner;
-    state.compactRoundLabel = state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round";
+    const state = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: this.session,
+      selectedEventId: this.selectedEventId,
+      selectedSessionKey: this.selectedSessionKey,
+      actor: targetActor,
+      uiState: this.uiState
+    });
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
