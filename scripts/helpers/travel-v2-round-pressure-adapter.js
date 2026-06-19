@@ -43,6 +43,10 @@ function positiveRoundNumber(value) {
   return number > 0 ? number : null;
 }
 
+function normalizeOptionalPressureType(value) {
+  return typeof value === "string" && value.trim() ? normalizeTravelV2PressureType(value) : "";
+}
+
 export function normalizeTravelV2RoundOutcomeKey(value) {
   if (value === 3 || value === "3" || value === "critical-success" || value === "criticalSuccess" || value === "criticalRoundSuccess") return TRAVEL_V2_ROUND_OUTCOME_KEYS.CRITICAL_SUCCESS;
   if (value === 2 || value === "2" || value === "success" || value === "roundSuccess" || value === "dominantSuccess") return TRAVEL_V2_ROUND_OUTCOME_KEYS.SUCCESS;
@@ -60,8 +64,8 @@ export function getTravelV2RoundOutcomePressureRule(outcomeKeyInput) {
 
 export function normalizeTravelV2RoundPressureProfile(roundInput = {}) {
   const round = isPlainObject(roundInput) ? roundInput : {};
-  const primaryPressureType = normalizeTravelV2PressureType(round.primaryPressureType ?? round.primaryPressure ?? round.pressureType ?? ARCFLIGHT_TRAVEL_RESOURCES.STRAIN);
-  const secondaryPressureType = normalizeTravelV2PressureType(round.secondaryPressureType ?? round.secondaryPressure ?? "");
+  const primaryPressureType = normalizeTravelV2PressureType(round.primaryPressureType || round.primaryPressure || round.pressureType || ARCFLIGHT_TRAVEL_RESOURCES.STRAIN);
+  const secondaryPressureType = normalizeOptionalPressureType(round.secondaryPressureType || round.secondaryPressure || "");
   const roundNumber = positiveRoundNumber(round.roundNumber ?? round.number ?? round.round);
   return {
     roundNumber,
@@ -108,12 +112,13 @@ export function createTravelV2RoundOutcomePressureRequests(roundInput = {}, outc
 
 export function normalizeTravelV2StationResultPressureInput(stationResultInput = {}) {
   const result = isPlainObject(stationResultInput) ? stationResultInput : {};
+  const roundNumber = result.roundNumber ?? (result.roundIndex === null || result.roundIndex === undefined ? result.round : Number(result.roundIndex) + 1);
   return {
     stationKey: stringValue(result.stationKey ?? result.station),
     outcomeKey: normalizeTravelV2RoundOutcomeKey(result.outcomeKey ?? result.result ?? result.degreeOfSuccess ?? result.degree),
-    pressureType: normalizeTravelV2PressureType(result.pressureType ?? result.primaryPressureType ?? result.primaryPressure ?? ""),
-    secondaryPressureType: normalizeTravelV2PressureType(result.secondaryPressureType ?? result.secondaryPressure ?? ""),
-    roundNumber: positiveRoundNumber(result.roundNumber ?? result.roundIndex + 1 ?? result.round),
+    pressureType: normalizeOptionalPressureType(result.pressureType || result.primaryPressureType || result.primaryPressure || ""),
+    secondaryPressureType: normalizeOptionalPressureType(result.secondaryPressureType || result.secondaryPressure || ""),
+    roundNumber: positiveRoundNumber(roundNumber),
     note: stringValue(result.note ?? result.notes)
   };
 }
@@ -122,8 +127,8 @@ export function createTravelV2StationResultPressureRequests(stationResultInput =
   const normalized = normalizeTravelV2StationResultPressureInput(stationResultInput);
   const roundProfile = {
     roundNumber: options.roundNumber ?? normalized.roundNumber,
-    primaryPressureType: options.pressureType ?? normalized.pressureType,
-    secondaryPressureType: options.secondaryPressureType ?? normalized.secondaryPressureType,
+    primaryPressureType: options.pressureType || normalized.pressureType,
+    secondaryPressureType: options.secondaryPressureType || normalized.secondaryPressureType,
     pressureStation: options.stationKey ?? normalized.stationKey
   };
   return createTravelV2RoundOutcomePressureRequests(roundProfile, normalized.outcomeKey, {
@@ -139,7 +144,7 @@ export function createTravelV2RoundPressureRequestSummary(requests = []) {
   const list = Array.isArray(requests) ? requests : [];
   const totalsByPressureType = {};
   for (const request of list) {
-    const pressureType = normalizeTravelV2PressureType(request?.pressureType);
+    const pressureType = normalizeOptionalPressureType(request?.pressureType);
     if (!pressureType) continue;
     totalsByPressureType[pressureType] = (totalsByPressureType[pressureType] ?? 0) + integerValue(request?.amount, 0);
   }
