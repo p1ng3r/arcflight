@@ -51,6 +51,11 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "completeDisabled", "template should render disabled completion state from model");
   assertIncludes(template, "completeButtonLabel", "template should render completion button label from model");
   assertIncludes(template, "Event Completed", "template should include completed state label");
+  assertIncludes(template, "state.travelV2PreviewPanel.travelV2EventOutcomePackage", "template should render outcome package state");
+  assertIncludes(template, "Event Outcome Package", "template should render outcome package label");
+  assertIncludes(template, "data-arcflight-travel-v2-outcome-apply", "template should wire outcome application control");
+  assertIncludes(template, "applyButtonLabel", "template should render outcome apply label from model");
+  assertIncludes(template, "Outcome Applied", "template should include applied outcome label");
   assertIncludes(template, "GM-only", "template should visibly mark the panel as GM-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
 
@@ -68,6 +73,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-finalize-button", "css should style round finalization button");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-event-readiness", "css should style event completion readiness summary");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-event-complete-button", "css should style event completion button");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-outcome-package", "css should style outcome package summary");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-outcome-apply-button", "css should style outcome apply button");
 
   return {
     ok: true,

@@ -190,6 +190,24 @@
           {{#if state.travelV2PreviewPanel.travelV2EventCompletionReadiness.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.blockedReason}}</p>{{/if}}
           {{#if state.travelV2PreviewPanel.travelV2EventCompletionReadiness.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.feedbackText}}</p>{{/if}}
         </div>
+        <div class="arcflight-travel-runner-mvp__v2-outcome-package" aria-label="Travel v2 event outcome package">
+          <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
+            <div>
+              <strong>Event Outcome Package</strong>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.summaryText}}</p>
+            </div>
+            <button type="button" class="arcflight-travel-runner-mvp__v2-outcome-apply-button" data-arcflight-travel-v2-outcome-apply {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyButtonLabel}}</button>
+          </div>
+          <p><strong>Outcome:</strong> {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.eventOutcomeLabel}}</p>
+          <p>{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.nextStepText}}</p>
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.blockedReason}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasHazards}}<p class="arcflight-sheet__hint">Hazard candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.hazardSummary.length}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasShipScars}}<p class="arcflight-sheet__hint">Ship scar candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.shipScarCandidates.length}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasFortunes}}<p class="arcflight-sheet__hint">Fortune candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.fortuneCandidates.length}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasRewards}}<p class="arcflight-sheet__hint">Reward candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.rewardCandidates.length}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasConsequences}}<p class="arcflight-sheet__hint">Consequence candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.consequenceCandidates.length}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.feedbackText}}</p>{{/if}}
+        </div>
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
