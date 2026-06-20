@@ -3,8 +3,9 @@ import { prepareTravelV2EventCompletionReadiness } from "../helpers/travel-v2-ev
 import { prepareTravelV2RoundFinalizationState } from "../helpers/travel-v2-round-finalization-state.js";
 import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
+import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 6;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 7;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -256,10 +257,9 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     latestOutcomeApplicationResult
   );
   const latestActorApplicationResult = isPlainObject(appState.travelV2ActorApplicationResult) ? appState.travelV2ActorApplicationResult : null;
-  const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(
-    isPlainObject(runnerSession) ? prepareTravelV2ActorApplicationPreviewFromSession(runnerSession, appState.actor, { session: runnerSession }) : null,
-    latestActorApplicationResult
-  );
+  const actorPreviewSource = isPlainObject(runnerSession) ? prepareTravelV2ActorApplicationPreviewFromSession(runnerSession, appState.actor, { session: runnerSession }) : null;
+  const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
+  const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -279,6 +279,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     eventOutcomePackage: travelV2EventOutcomePackage,
     travelV2ActorApplicationPreview,
     actorApplicationPreview: travelV2ActorApplicationPreview,
+    travelV2FollowUps,
+    followUps: travelV2FollowUps,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,
