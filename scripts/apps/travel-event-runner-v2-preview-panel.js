@@ -2,6 +2,7 @@ import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pr
 import { prepareTravelV2EventCompletionReadiness } from "../helpers/travel-v2-event-completion-readiness.js";
 import { prepareTravelV2RoundFinalizationState } from "../helpers/travel-v2-round-finalization-state.js";
 import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-outcome-package.js";
+import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 6;
 
@@ -138,6 +139,27 @@ function normalizeOutcomePackage(state = null, latestResult = null) {
   };
 }
 
+function normalizeActorApplicationPreview(state = null, latestResult = null) {
+  const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
+  const resultBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
+  const applied = latestResult?.ok === true && latestResult?.applied === true;
+  return {
+    canApply: state?.canApply === true && !applied,
+    applyDisabled: state?.canApply !== true || applied,
+    applyButtonLabel: applied ? "Approved Changes Applied" : (state?.canApply === true ? "Apply Approved Changes to Ship" : "Cannot Apply to Ship"),
+    targetActorName: state?.targetActor?.name ?? "No ship selected",
+    targetActorType: state?.targetActor?.type ?? "",
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    proposedChanges: Array.isArray(state?.proposedChanges) ? state.proposedChanges : [],
+    manualFollowUps: Array.isArray(state?.manualFollowUps) ? state.manualFollowUps : [],
+    hasProposedChanges: Array.isArray(state?.proposedChanges) && state.proposedChanges.length > 0,
+    hasManualFollowUps: Array.isArray(state?.manualFollowUps) && state.manualFollowUps.length > 0,
+    feedbackText: applied ? "Applied approved Travel v2 changes to the selected ship." : (resultBlockedReasons[0] ?? latestResult?.error ?? ""),
+    hasFeedback: Boolean(applied || resultBlockedReasons[0] || latestResult?.error)
+  };
+}
+
 function normalizePreviewRow(row = {}, applicationState = null, correctionState = {}) {
   const outcomeKey = String(row.outcomeKey ?? "skipped");
   const totals = isPlainObject(row.totalsByPressureType) ? row.totalsByPressureType : {};
@@ -233,6 +255,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     isPlainObject(runnerSession) ? prepareTravelV2EventOutcomePackage(runnerSession) : null,
     latestOutcomeApplicationResult
   );
+  const latestActorApplicationResult = isPlainObject(appState.travelV2ActorApplicationResult) ? appState.travelV2ActorApplicationResult : null;
+  const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(
+    isPlainObject(runnerSession) ? prepareTravelV2ActorApplicationPreviewFromSession(runnerSession, appState.actor, { session: runnerSession }) : null,
+    latestActorApplicationResult
+  );
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -250,6 +277,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,
     eventOutcomePackage: travelV2EventOutcomePackage,
+    travelV2ActorApplicationPreview,
+    actorApplicationPreview: travelV2ActorApplicationPreview,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,

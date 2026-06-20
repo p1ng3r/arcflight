@@ -7,6 +7,7 @@ import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/tr
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
 import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-session-event-completion.js";
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
+import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -96,6 +97,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-finalize]",
   "[data-arcflight-travel-v2-event-complete]",
   "[data-arcflight-travel-v2-outcome-apply]",
+  "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -350,7 +352,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2PressureCorrectionResult: null,
       travelV2RoundFinalizationResult: null,
       travelV2EventCompletionResult: null,
-      travelV2EventOutcomeApplicationResult: null
+      travelV2EventOutcomeApplicationResult: null,
+      travelV2ActorApplicationResult: null
     };
   }
 
@@ -560,6 +563,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
     if (target.hasAttribute("data-arcflight-travel-v2-event-complete")) return this.completeTravelV2Event();
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
+    if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -700,6 +704,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 outcome package application was blocked.";
     return update.shouldRerender ? this.render(true) : update;
+  }
+
+
+  async applyTravelV2ActorApplication(options = {}) {
+    const actor = this.#getSessionShipActor();
+    const preview = prepareTravelV2ActorApplicationPreviewFromSession(this.session, actor, { ...options, session: this.session });
+    const result = await applyTravelV2ActorApplicationPreview(actor, preview, options);
+    this.uiState.travelV2ActorApplicationResult = result;
+    this.statusMessage = result.ok ? "Applied approved Travel v2 changes to ship." : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.");
+    return this.render(true);
   }
 
   async #sendPlayerMissionBoard() {

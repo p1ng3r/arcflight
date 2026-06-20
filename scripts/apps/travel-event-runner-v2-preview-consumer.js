@@ -8,6 +8,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor });
   const appState = {
     ...state,
+    actor,
     effectApplication: prepareTravelEventEffectApplicationState(session, actor),
     currentSessionCollapsed: uiState.currentSessionCollapsed !== false,
     sessionActionsExpanded: uiState.sessionActionsExpanded === true,
@@ -17,6 +18,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2RoundFinalizationResult: uiState.travelV2RoundFinalizationResult ?? null,
     travelV2EventCompletionResult: uiState.travelV2EventCompletionResult ?? null,
     travelV2EventOutcomeApplicationResult: uiState.travelV2EventOutcomeApplicationResult ?? null,
+    travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null,
     travelV2PressureRunnerSession: session,
     compactRoundLabel: state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round"
   };

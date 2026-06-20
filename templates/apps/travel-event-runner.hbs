@@ -222,6 +222,34 @@
           {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasConsequences}}<p class="arcflight-sheet__hint">Consequence candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.consequenceCandidates.length}}</p>{{/if}}
           {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.feedbackText}}</p>{{/if}}
         </div>
+        <div class="arcflight-travel-runner-mvp__v2-actor-application" aria-label="Travel v2 GM actor application preview">
+          <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
+            <div>
+              <strong>GM Application Preview</strong>
+              <p class="arcflight-sheet__hint">Target ship actor: {{state.travelV2PreviewPanel.travelV2ActorApplicationPreview.targetActorName}}</p>
+            </div>
+            <button type="button" class="arcflight-travel-runner-mvp__v2-actor-apply-button" data-arcflight-travel-v2-actor-apply {{#if state.travelV2PreviewPanel.travelV2ActorApplicationPreview.applyDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2ActorApplicationPreview.applyButtonLabel}}</button>
+          </div>
+          {{#if state.travelV2PreviewPanel.travelV2ActorApplicationPreview.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.travelV2ActorApplicationPreview.blockedReason}}</p>{{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2ActorApplicationPreview.hasProposedChanges}}
+            <ul class="arcflight-travel-runner-mvp__v2-pressure-list">
+              {{#each state.travelV2PreviewPanel.travelV2ActorApplicationPreview.proposedChanges}}
+                <li>{{label}}: {{current}} {{displayDelta}} → {{next}}</li>
+              {{/each}}
+            </ul>
+          {{else}}
+            <p class="arcflight-sheet__hint">No automatically supported ship state deltas are available.</p>
+          {{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2ActorApplicationPreview.hasManualFollowUps}}
+            <p><strong>Manual GM Follow-Up</strong></p>
+            <ul class="arcflight-travel-runner-mvp__v2-pressure-list">
+              {{#each state.travelV2PreviewPanel.travelV2ActorApplicationPreview.manualFollowUps}}
+                <li>{{text}}</li>
+              {{/each}}
+            </ul>
+          {{/if}}
+          {{#if state.travelV2PreviewPanel.travelV2ActorApplicationPreview.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2ActorApplicationPreview.feedbackText}}</p>{{/if}}
+        </div>
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
