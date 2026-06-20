@@ -1,8 +1,9 @@
 import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pressure-application-state.js";
 import { prepareTravelV2EventCompletionReadiness } from "../helpers/travel-v2-event-completion-readiness.js";
 import { prepareTravelV2RoundFinalizationState } from "../helpers/travel-v2-round-finalization-state.js";
+import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-outcome-package.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 5;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 6;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -103,6 +104,40 @@ function normalizeEventCompletionReadiness(state = null, latestResult = null) {
   };
 }
 
+
+function normalizeOutcomePackage(state = null, latestResult = null) {
+  const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
+  const resultBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
+  const alreadyApplied = state?.alreadyApplied === true || latestResult?.applied === true;
+  const canApply = state?.canPreparePackage === true && !alreadyApplied;
+  return {
+    canPreparePackage: state?.canPreparePackage === true,
+    canApply,
+    applyDisabled: !canApply,
+    applyButtonLabel: alreadyApplied ? "Outcome Applied" : (canApply ? "Apply Outcome Package" : "Cannot Apply Outcome"),
+    alreadyApplied,
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    eventOutcomeKey: state?.eventOutcomeKey ?? "mixed",
+    eventOutcomeLabel: state?.eventOutcomeLabel ?? "Mixed",
+    summaryText: state?.summaryText ?? "Complete the Travel v2 event before preparing an outcome package.",
+    nextStepText: state?.nextStepText ?? "Complete the Travel v2 event before preparing an outcome package.",
+    pressureSummary: state?.pressureSummary ?? {},
+    hazardSummary: Array.isArray(state?.hazardSummary) ? state.hazardSummary : [],
+    shipScarCandidates: Array.isArray(state?.shipScarCandidates) ? state.shipScarCandidates : [],
+    fortuneCandidates: Array.isArray(state?.fortuneCandidates) ? state.fortuneCandidates : [],
+    rewardCandidates: Array.isArray(state?.rewardCandidates) ? state.rewardCandidates : [],
+    consequenceCandidates: Array.isArray(state?.consequenceCandidates) ? state.consequenceCandidates : [],
+    hasHazards: Array.isArray(state?.hazardSummary) && state.hazardSummary.length > 0,
+    hasShipScars: Array.isArray(state?.shipScarCandidates) && state.shipScarCandidates.length > 0,
+    hasFortunes: Array.isArray(state?.fortuneCandidates) && state.fortuneCandidates.length > 0,
+    hasRewards: Array.isArray(state?.rewardCandidates) && state.rewardCandidates.length > 0,
+    hasConsequences: Array.isArray(state?.consequenceCandidates) && state.consequenceCandidates.length > 0,
+    feedbackText: latestResult?.ok === true && latestResult?.applied === true ? "Applied Travel v2 outcome package to this runner session." : (resultBlockedReasons[0] ?? latestResult?.error ?? ""),
+    hasFeedback: Boolean(latestResult?.ok === true && latestResult?.applied === true || resultBlockedReasons[0] || latestResult?.error)
+  };
+}
+
 function normalizePreviewRow(row = {}, applicationState = null, correctionState = {}) {
   const outcomeKey = String(row.outcomeKey ?? "skipped");
   const totals = isPlainObject(row.totalsByPressureType) ? row.totalsByPressureType : {};
@@ -193,6 +228,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
     latestEventCompletionResult
   );
+  const latestOutcomeApplicationResult = isPlainObject(appState.travelV2EventOutcomeApplicationResult) ? appState.travelV2EventOutcomeApplicationResult : null;
+  const travelV2EventOutcomePackage = normalizeOutcomePackage(
+    isPlainObject(runnerSession) ? prepareTravelV2EventOutcomePackage(runnerSession) : null,
+    latestOutcomeApplicationResult
+  );
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -208,6 +248,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     roundFinalization: travelV2RoundFinalizationState,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
+    travelV2EventOutcomePackage,
+    eventOutcomePackage: travelV2EventOutcomePackage,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,

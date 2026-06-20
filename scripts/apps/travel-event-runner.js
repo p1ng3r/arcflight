@@ -6,6 +6,7 @@ import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-sessi
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
 import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-session-event-completion.js";
+import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -93,6 +94,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-pressure-correct]",
   "[data-arcflight-travel-v2-round-finalize]",
   "[data-arcflight-travel-v2-event-complete]",
+  "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -312,6 +314,17 @@ export function prepareTravelV2EventCompletionRunnerUpdate(currentSession, optio
   };
 }
 
+export function prepareTravelV2EventOutcomeApplicationRunnerUpdate(currentSession, options = {}) {
+  const result = applyTravelV2EventOutcomePackageToRunnerSession(currentSession, options);
+  const shouldUpdateSession = result?.ok === true && result?.applied === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
@@ -335,7 +348,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2PressureApplicationResult: null,
       travelV2PressureCorrectionResult: null,
       travelV2RoundFinalizationResult: null,
-      travelV2EventCompletionResult: null
+      travelV2EventCompletionResult: null,
+      travelV2EventOutcomeApplicationResult: null
     };
   }
 
@@ -538,6 +552,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-correct")) return this.#correctTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
     if (target.hasAttribute("data-arcflight-travel-v2-event-complete")) return this.completeTravelV2Event();
+    if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -662,6 +677,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 event completion was blocked.";
+    return update.shouldRerender ? this.render(true) : update;
+  }
+
+  async applyTravelV2EventOutcomePackage(options = {}) {
+    const update = prepareTravelV2EventOutcomeApplicationRunnerUpdate(this.session, options);
+    this.uiState.travelV2EventOutcomeApplicationResult = update.result;
+
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = "Applied Travel v2 outcome package.";
+      return this.render(true);
+    }
+
+    this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 outcome package application was blocked.";
     return update.shouldRerender ? this.render(true) : update;
   }
 

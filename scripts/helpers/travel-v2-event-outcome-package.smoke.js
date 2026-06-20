@@ -1,0 +1,23 @@
+import { prepareTravelV2EventOutcomePackage } from "./travel-v2-event-outcome-package.js";
+function assertSmoke(c,m){if(!c)throw new Error(`Travel v2 event outcome package smoke check failed: ${m}`)}
+function assertEqual(a,e,m){if(a!==e)throw new Error(`Travel v2 event outcome package smoke check failed: ${m}. Expected ${e}, got ${a}.`)}
+function snap(v){return JSON.stringify(v)}
+function completed(outcomes=["success"]){return { status:"completed", completed:true, completedAt:"2026-06-20T00:00:00.000Z", event:{rounds:outcomes.map((_,i)=>({roundNumber:i+1}))}, travelV2EventCompletion:{completed:true, summaryText:"done"}, pressure:{strain:2}, hazards:{pendingDraws:[{id:"hazard"}]}, shipScars:{pending:[{id:"scar"}]}, rewardCandidates:[{id:"reward"}], consequenceCandidates:[{id:"consequence"}], travelV2PressureApplications:{records:[{roundIndex:0, roundNumber:1, outcomeKey:outcomes[0], totalsByPressureType:{strain:2}}]}, travelV2RoundResolutions:{records:outcomes.map((o,i)=>({roundIndex:i, roundNumber:i+1, effectiveOutcomeKey:o, stationSummary:{ok:true}}))}}}
+export function runTravelV2EventOutcomePackageSmokeChecks(){
+  assertSmoke(!prepareTravelV2EventOutcomePackage(null).canPreparePackage,"missing session blocks");
+  assertSmoke(!prepareTravelV2EventOutcomePackage({status:"active", event:{rounds:[]}}).canPreparePackage,"active session blocks");
+  assertSmoke(!prepareTravelV2EventOutcomePackage({status:"completed", event:{rounds:[]}}).canPreparePackage,"missing completion summary blocks");
+  const session=completed(["success","criticalSuccess"]); const before=snap(session); const pkg=prepareTravelV2EventOutcomePackage(session);
+  assertSmoke(pkg.canPreparePackage,"completed session prepares package");
+  assertEqual(pkg.eventOutcomeKey,"critical-success","critical success majority summarizes");
+  assertEqual(pkg.pressureSummary.totalsByPressureType.strain,2,"pressure summary cloned");
+  assertEqual(pkg.hazardSummary.length,1,"hazards cloned");
+  assertEqual(pkg.shipScarCandidates.length,1,"ship scars cloned");
+  assertEqual(pkg.rewardCandidates.length,1,"rewards cloned only when present");
+  assertEqual(pkg.consequenceCandidates.length,1,"consequences cloned only when present");
+  assertEqual(snap(session),before,"helper does not mutate input");
+  assertEqual(prepareTravelV2EventOutcomePackage(completed(["success","failure"])).eventOutcomeKey,"mixed","mixed summarizes conservatively");
+  assertEqual(prepareTravelV2EventOutcomePackage(completed(["failure","failure","success"])).eventOutcomeKey,"failure","failure majority summarizes");
+  return {ok:true, checked:["blocks","prepares","summarizes","clones","inert"]};
+}
+export default runTravelV2EventOutcomePackageSmokeChecks;
