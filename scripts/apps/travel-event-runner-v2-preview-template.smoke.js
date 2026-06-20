@@ -25,6 +25,12 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const css = readUtf8(STYLE_PATH);
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
+  assertIncludes(template, "data-arcflight-start-travel-event-runner", "template should include local runner session start button");
+  assertIncludes(template, "How to start a local runner session", "template should explain the startup path");
+  assertIncludes(template, "Local runner session startup diagnostics", "template should render startup diagnostics");
+  assertIncludes(template, "No published finalized travel event exists", "template should explain missing published finalized event state");
+  assertIncludes(template, "PF2E vehicle / Arcflight ship actor", "template should explain ship/PF2E vehicle requirement");
+  assertIncludes(template, "Start Local Runner Session is blocked", "template should explain blocked start state");
   assertIncludes(template, "state.travelV2PreviewPanel.available", "template should gate preview rows on availability");
   assertIncludes(template, "state.travelV2PreviewPanel.rows", "template should iterate preview rows");
   assertIncludes(template, "pressureChips", "template should render pressure chips");
@@ -80,6 +86,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
     ok: true,
     checked: [
       "template-panel-state",
+      "template-startup-session-copy",
       "template-availability-gate",
       "template-row-rendering",
       "template-chip-rendering",
