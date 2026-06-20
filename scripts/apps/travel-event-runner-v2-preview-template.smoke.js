@@ -38,6 +38,11 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "{{#if pressureApplyDisabled}}disabled{{/if}}", "template should render disabled state from model");
   assertIncludes(template, "state.travelV2PreviewPanel.pressureApplication.alreadyApplied", "template should render already-applied state");
   assertIncludes(template, "state.travelV2PreviewPanel.pressureApplication.feedbackText", "template should render application feedback");
+  assertIncludes(template, "state.travelV2PreviewPanel.travelV2RoundFinalizationState", "template should render finalization state");
+  assertIncludes(template, "data-arcflight-travel-v2-round-finalize", "template should wire finalize control to Phase 5D handler");
+  assertIncludes(template, "finalizeDisabled", "template should render disabled finalization state from model");
+  assertIncludes(template, "buttonLabel", "template should render finalization button label from model");
+  assertIncludes(template, "readinessText", "template should render event-complete-ready readiness text");
   assertIncludes(template, "GM-only", "template should visibly mark the panel as GM-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
 
@@ -51,6 +56,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-apply", "css should style apply controls");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-correct", "css should style correction controls");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-feedback", "css should style application feedback");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-finalize", "css should style round finalization controls");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-finalize-button", "css should style round finalization button");
 
   return {
     ok: true,

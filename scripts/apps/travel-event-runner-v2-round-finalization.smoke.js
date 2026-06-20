@@ -165,7 +165,10 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
 
     const fs = await import("node:fs");
     const template = fs.readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
-    assertSmoke(!template.includes("data-arcflight-travel-v2-round-finalize"), "template should not include visible round finalization controls yet");
+    assertSmoke(template.includes("data-arcflight-travel-v2-round-finalize"), "template should include visible round finalization control");
+    assertSmoke(template.includes("state.travelV2PreviewPanel.travelV2RoundFinalizationState"), "template should use prepared finalization state");
+    assertSmoke(template.includes("finalizeDisabled"), "template should use prepared disabled state");
+    assertSmoke(!template.includes("data-arcflight-runner-complete") || template.includes("data-arcflight-travel-v2-round-finalize"), "finalization control should not replace or add event completion behavior");
     const aggregate = fs.readFileSync(new URL("../dev/run-travel-v2-smoke.mjs", import.meta.url), "utf8");
     assertSmoke(aggregate.includes("runTravelEventRunnerV2RoundFinalizationSmokeChecks"), "aggregate Travel v2 smoke runner should include finalization suite");
     assertSmoke(getRenderCalls() >= 1, "successful app finalization should have requested at least one render");
@@ -184,7 +187,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
         "input-session-not-mutated",
         "no-chat-socket-actor-item-side-effects",
         "render-state-does-not-finalize",
-        "no-visible-template-controls",
+        "visible-template-controls",
         "aggregate-smoke-includes-suite",
         "app-internal-action-wiring"
       ]

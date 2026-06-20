@@ -2118,3 +2118,19 @@
 .roll-overlay {
   z-index: 100000 !important;
 }
+
+.arcflight-travel-runner-mvp__v2-finalize {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(120, 104, 80, 0.35);
+  border-radius: 4px;
+  background: rgba(20, 18, 16, 0.04);
+}
+
+.arcflight-travel-runner-mvp__v2-finalize-button {
+  width: max-content;
+  white-space: nowrap;
+}
