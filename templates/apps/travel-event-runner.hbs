@@ -178,6 +178,12 @@
         {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.hasReadinessText}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback arcflight-travel-runner-mvp__v2-preview-feedback--applied">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.readinessText}}</p>
         {{/if}}
+        <div class="arcflight-travel-runner-mvp__v2-event-readiness" aria-label="Travel v2 event completion readiness">
+          <strong>Event Completion Readiness</strong>
+          <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.countText}}</p>
+          <p>{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.nextStepText}}</p>
+          {{#if state.travelV2PreviewPanel.travelV2EventCompletionReadiness.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.blockedReason}}</p>{{/if}}
+        </div>
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 

@@ -1,7 +1,8 @@
 import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pressure-application-state.js";
+import { prepareTravelV2EventCompletionReadiness } from "../helpers/travel-v2-event-completion-readiness.js";
 import { prepareTravelV2RoundFinalizationState } from "../helpers/travel-v2-round-finalization-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 4;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 5;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -61,6 +62,34 @@ function normalizeFinalizationState(state = null, latestResult = null) {
     hasFeedback: Boolean(feedbackText),
     readinessText,
     hasReadinessText: Boolean(readinessText)
+  };
+}
+
+function normalizeEventCompletionReadiness(state = null) {
+  const eventRoundCount = Number(state?.eventRoundCount) || 0;
+  const finalizedRoundCount = Number(state?.finalizedRoundCount) || 0;
+  const pendingRoundCount = Number(state?.pendingRoundCount) || 0;
+  const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
+  const countText = state?.isCompleted === true
+    ? (blockedReasons[0] ?? "Travel v2 runner session is already completed.")
+    : `${finalizedRoundCount} / ${eventRoundCount} rounds finalized. ${pendingRoundCount} ${pendingRoundCount === 1 ? "round" : "rounds"} pending.`;
+  return {
+    version: state?.version ?? 1,
+    title: state?.title ?? "Event Completion Readiness",
+    status: state?.status ?? "blocked",
+    lifecycleState: state?.lifecycleState ?? "event-completion-blocked",
+    eventReady: state?.eventReady === true,
+    canCompleteEvent: state?.canCompleteEvent === true,
+    isCompleted: state?.isCompleted === true,
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    eventRoundCount,
+    finalizedRoundCount,
+    pendingRoundCount,
+    countText,
+    summaryText: state?.summaryText ?? "Finalize all Travel v2 rounds before event completion.",
+    footerText: state?.footerText ?? "Finalize all Travel v2 rounds before event completion.",
+    nextStepText: state?.nextStepText ?? "Finalize all Travel v2 rounds before event completion."
   };
 }
 
@@ -149,6 +178,9 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     isPlainObject(runnerSession) ? prepareTravelV2RoundFinalizationState(runnerSession) : null,
     latestFinalizationResult
   );
+  const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
+    isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null
+  );
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -162,6 +194,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     hasPressureChanges: rows.some((row) => row.hasRequests),
     travelV2RoundFinalizationState,
     roundFinalization: travelV2RoundFinalizationState,
+    travelV2EventCompletionReadiness,
+    eventCompletionReadiness: travelV2EventCompletionReadiness,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,
