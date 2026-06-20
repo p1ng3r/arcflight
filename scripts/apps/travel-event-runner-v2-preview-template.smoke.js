@@ -43,6 +43,11 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "finalizeDisabled", "template should render disabled finalization state from model");
   assertIncludes(template, "buttonLabel", "template should render finalization button label from model");
   assertIncludes(template, "readinessText", "template should render event-complete-ready readiness text");
+  assertIncludes(template, "state.travelV2PreviewPanel.travelV2EventCompletionReadiness", "template should render event completion readiness state");
+  assertIncludes(template, "Event Completion Readiness", "template should render readiness label");
+  assertIncludes(template, "countText", "template should render readiness counts");
+  assertIncludes(template, "nextStepText", "template should render readiness next-step text");
+  assertSmoke(!template.includes("data-arcflight-travel-v2-event-complete"), "template should not include event completion control selector");
   assertIncludes(template, "GM-only", "template should visibly mark the panel as GM-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
 
@@ -58,6 +63,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-feedback", "css should style application feedback");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-finalize", "css should style round finalization controls");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-finalize-button", "css should style round finalization button");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__v2-event-readiness", "css should style event completion readiness summary");
 
   return {
     ok: true,

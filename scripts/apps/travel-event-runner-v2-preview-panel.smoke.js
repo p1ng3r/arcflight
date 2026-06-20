@@ -47,11 +47,12 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 4, "panel version should be 4");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 5, "panel version should be 5");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
   assertSmoke(!panelSource.includes("finalizeTravelV2RoundOnRunnerSession"), "preview panel should not import or execute finalization helper during state preparation");
+  assertSmoke(!panelSource.includes("completeTravelV2Event"), "preview panel should not import or execute completion helper during state preparation");
 
   const emptyPanel = prepareTravelEventRunnerV2PreviewPanelState({});
   assertSmoke(!emptyPanel.available, "empty panel should be unavailable");
@@ -68,6 +69,9 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(!panel.travelV2RoundFinalizationState.canFinalize, "panel should block finalization before pressure application");
   assertSmoke(panel.travelV2RoundFinalizationState.finalizeDisabled, "panel should disable finalization before pressure application");
   assertSmoke(panel.travelV2RoundFinalizationState.footerText.includes("no effective pressure application"), "panel should explain blocked finalization");
+  assertSmoke(panel.travelV2EventCompletionReadiness, "panel should expose event completion readiness summary");
+  assertEqual(panel.travelV2EventCompletionReadiness.eventRoundCount, 1, "readiness should count event rounds");
+  assertSmoke(!panel.travelV2EventCompletionReadiness.eventReady, "unfinalized panel should not be event-ready");
   assertSmoke(panel.rows.every((row) => row.canApplyPressure && !row.pressureApplyDisabled), "preview rows should render enabled apply controls before application");
   assertSmoke(panel.rows.every((row) => !row.canCorrectPressure), "preview rows should not render correction controls before application");
 
@@ -144,6 +148,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(finalizedPanel.travelV2RoundFinalizationState.isEventCompleteReady, "single final round should be event-complete-ready");
   assertEqual(finalizedPanel.travelV2RoundFinalizationState.buttonLabel, "Event Ready", "final round finalized should show event ready label");
   assertSmoke(finalizedPanel.travelV2RoundFinalizationState.readinessText.includes("later step"), "event ready panel should defer event completion");
+  assertSmoke(finalizedPanel.travelV2EventCompletionReadiness.eventReady, "finalized panel should expose event completion readiness");
+  assertEqual(finalizedPanel.travelV2EventCompletionReadiness.countText, "1 / 1 rounds finalized. 0 rounds pending.", "ready panel should expose readiness counts");
   assertSmoke(finalizedPanel.travelV2RoundFinalizationState.feedbackText.includes("Finalized Travel v2 round 1"), "success finalization feedback should appear");
 
   assertSmoke(completedPanel.rows.every((row) => row.pressureApplyDisabled), "completed sessions should disable apply controls");
@@ -162,7 +168,9 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "read-only-footer",
       "row-application-controls",
       "pre-application-correction-controls-hidden",
-      "already-applied-disabled-state"
+      "already-applied-disabled-state",
+      "event-completion-readiness-summary",
+      "no-completion-helper-in-preview-preparation"
     ]
   };
 }

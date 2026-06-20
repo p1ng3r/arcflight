@@ -2134,3 +2134,16 @@
   width: max-content;
   white-space: nowrap;
 }
+
+.arcflight-travel-runner-mvp__v2-event-readiness {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(120, 104, 80, 0.35);
+  border-radius: 4px;
+  background: rgba(20, 18, 16, 0.04);
+}
+
+.arcflight-travel-runner-mvp__v2-event-readiness p {
+  margin: 0;
+}
