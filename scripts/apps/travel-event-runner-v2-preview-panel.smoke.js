@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 6, "panel version should be 5");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 7, "panel version should be 7");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");

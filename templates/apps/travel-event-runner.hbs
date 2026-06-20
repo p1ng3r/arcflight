@@ -250,6 +250,33 @@
           {{/if}}
           {{#if state.travelV2PreviewPanel.travelV2ActorApplicationPreview.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2ActorApplicationPreview.feedbackText}}</p>{{/if}}
         </div>
+        <div class="arcflight-travel-runner-mvp__v2-follow-ups" aria-label="End-of-event follow-ups">
+          <h4>End-of-Event Follow-Ups</h4>
+          {{#if state.travelV2PreviewPanel.travelV2FollowUps.hasRecords}}
+            {{#each state.travelV2PreviewPanel.travelV2FollowUps.groups}}
+              {{#if hasRecords}}
+                <section class="arcflight-travel-runner-mvp__v2-follow-up-group">
+                  <h5>{{label}}</h5>
+                  {{#each records}}
+                    <article class="arcflight-travel-runner-mvp__v2-follow-up-card" data-arcflight-travel-v2-follow-up-card>
+                      <header><strong>{{title}}</strong> <span class="arcflight-sheet__hint">{{type}} · {{status}}</span></header>
+                      <p>{{text}}</p>
+                      <p class="arcflight-sheet__hint">Source: {{sourceEventName}} · {{sourceOutcomeLabel}} · {{sourceSessionKey}}</p>
+                      <textarea data-arcflight-travel-v2-follow-up-note placeholder="Add GM note">{{note}}</textarea>
+                      <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+                        <button type="button" data-arcflight-travel-v2-follow-up-id="{{id}}" data-arcflight-travel-v2-follow-up-status="kept">Keep for Later</button>
+                        <button type="button" data-arcflight-travel-v2-follow-up-id="{{id}}" data-arcflight-travel-v2-follow-up-status="resolved">Mark Resolved</button>
+                        <button type="button" data-arcflight-travel-v2-follow-up-id="{{id}}" data-arcflight-travel-v2-follow-up-status="dismissed">Dismiss</button>
+                      </div>
+                    </article>
+                  {{/each}}
+                </section>
+              {{/if}}
+            {{/each}}
+          {{else}}
+            <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2FollowUps.emptyText}}</p>
+          {{/if}}
+        </div>
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
