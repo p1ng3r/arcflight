@@ -12,6 +12,7 @@ import {
   getPublishedTravelEventLibrary,
   duplicateTravelEventBuilderLibraryDraft,
   loadPublishedTravelEventFromLibrary,
+  loadLanternInTheStaticSampleDraftIntoBuilderLibrary,
   loadTravelEventBuilderDraftFromLibrary,
   prepareTravelEventBuilderFinalOutcomeEditorState,
   prepareTravelEventBuilderFinalOutcomeEffectEditorState,
@@ -60,6 +61,7 @@ const BUILDER_CLICK_SELECTOR = [
   "[data-arcflight-builder-library-duplicate]",
   "[data-arcflight-builder-library-delete]",
   "[data-arcflight-builder-library-refresh]",
+  "[data-arcflight-builder-load-lantern-sample]",
   "[data-arcflight-builder-published-publish]",
   "[data-arcflight-builder-published-load]",
   "[data-arcflight-builder-published-duplicate]",
@@ -331,6 +333,7 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
     if (target.hasAttribute("data-arcflight-builder-library-duplicate")) return this.#onDuplicateLibraryDraft(event, target);
     if (target.hasAttribute("data-arcflight-builder-library-delete")) return this.#onDeleteLibraryDraft(event, target);
     if (target.hasAttribute("data-arcflight-builder-library-refresh")) return this.#onRefreshLibrary(event);
+    if (target.hasAttribute("data-arcflight-builder-load-lantern-sample")) return this.#onLoadLanternSample(event);
     if (target.hasAttribute("data-arcflight-builder-published-publish")) return this.#onPublishCurrentDraft(event);
     if (target.hasAttribute("data-arcflight-builder-published-load")) return this.#onLoadPublishedEvent(event, target);
     if (target.hasAttribute("data-arcflight-builder-published-duplicate")) return this.#onDuplicatePublishedEvent(event, target);
@@ -665,6 +668,18 @@ export class ArcflightTravelEventBuilder extends HandlebarsApplicationMixin(Appl
   async #onRefreshLibrary(event) {
     event.preventDefault();
     this.status = createStatus("success", "Saved draft library refreshed from the Arcflight world setting.");
+    await this.#rerenderAfterAction();
+  }
+
+  async #onLoadLanternSample(event) {
+    event.preventDefault();
+    const seeded = await loadLanternInTheStaticSampleDraftIntoBuilderLibrary();
+    if (seeded.draft) {
+      this.draft = cloneData(seeded.draft);
+      this.currentLibraryDraftId = seeded.entry?.id ?? "";
+    }
+    this.outputJson = "";
+    this.status = createStatus(seeded.ok ? (seeded.warnings.length > 0 ? "warning" : "success") : "warning", seeded.ok ? (seeded.warnings[0] ?? `Loaded sample draft "${seeded.entry.name}" into the Event Builder. Review it, then use Publish Current Draft to add it to the Published Events library for the runner.`) : firstError(seeded, "Sample draft could not be loaded."));
     await this.#rerenderAfterAction();
   }
 

@@ -1,4 +1,5 @@
 import { getStation } from "../../data/stations/core-stations.js";
+import { LANTERN_IN_THE_STATIC_SAMPLE_DRAFT_ID, LANTERN_IN_THE_STATIC_SAMPLE_EVENT } from "../../data/travel-events/sample-travel-v2-events.js";
 import { ARCFLIGHT_MODULE_ID, ARCFLIGHT_TRAVEL_EVENT_CATEGORIES, ARCFLIGHT_TRAVEL_EVENT_OUTCOMES, ARCFLIGHT_TRAVEL_RESOURCES, ARCFLIGHT_TRAVEL_ROUND_OUTCOMES, ARCFLIGHT_TRAVEL_STATIONS, ARCFLIGHT_TRAVEL_TAGS } from "../config/constants.js";
 import { createBlankOutcomeBranchesTemplate, createBlankStationCardTemplate, createBlankStationPromptTemplate, createBlankTravelEventTemplate, createBlankTravelRoundTemplate } from "./travel-event-template.js";
 import { validateTravelEventDefinition } from "./travel-events.js";
@@ -2037,6 +2038,23 @@ export function cloneTravelEventToDraft(eventDefinition, options = {}) {
     ...source,
     builder: createBuilderMetadata({}, options)
   }, { ...options, preserveUpdatedAt: true });
+}
+
+export function createLanternInTheStaticSampleDraft(options = {}) {
+  assertOptionsObject(options, "createLanternInTheStaticSampleDraft");
+  return cloneTravelEventToDraft(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { ...options, preserveUpdatedAt: true });
+}
+
+export async function loadLanternInTheStaticSampleDraftIntoBuilderLibrary(options = {}) {
+  assertOptionsObject(options, "loadLanternInTheStaticSampleDraftIntoBuilderLibrary");
+  const draft = createLanternInTheStaticSampleDraft(options);
+  return saveTravelEventBuilderDraftToLibrary(draft, {
+    ...options,
+    id: options.id ?? LANTERN_IN_THE_STATIC_SAMPLE_DRAFT_ID,
+    overwrite: options.overwrite ?? true,
+    name: draft.name,
+    category: draft.category
+  });
 }
 
 export function prepareTravelEventBuilderPreview(draft, options = {}) {

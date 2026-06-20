@@ -1478,7 +1478,7 @@ export function prepareTravelEventRunnerStartupDiagnostics(options = {}) {
   const nextSteps = [];
 
   if (hasSession) issues.push("A local runner session already exists. Save, export, or clear the current local runner session before starting another.");
-  if (!library.hasEvents) issues.push("No published finalized travel event exists. Publish a finalized event from the Published Travel Event Library before starting a local runner session.");
+  if (!library.hasEvents) issues.push("No published finalized travel event exists. Open Travel Event Builder, use Load Sample: The Lantern in the Static if desired, then Publish Current Draft before starting a local runner session.");
   else if (!library.hasLoadableEvents) issues.push("Published travel event entries exist, but none are loadable finalized events. Malformed or not-finalized entries cannot start a local runner session.");
   else if (selectedEntry?.isMalformed || selectedEntry?.canLoad === false) issues.push("The selected published travel event is malformed or not finalized. Select a loadable finalized published event.");
   else if (launchState && !launchState.event) issues.push(launchState.errors?.[0] ?? "The selected published travel event could not be loaded.");
