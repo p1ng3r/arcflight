@@ -52,6 +52,37 @@ function collectCandidates(session = {}, keys = []) {
   }
   return cloneData(collected);
 }
+
+function finalOutcomeFor(session = {}, outcomeKey = "") {
+  const finalOutcomes = isPlainObject(session.event?.finalOutcomes) ? session.event.finalOutcomes : {};
+  const aliases = {
+    "critical-success": ["criticalSuccess", "critical-success", "critical_success"],
+    "critical-failure": ["criticalFailure", "critical-failure", "critical_failure"]
+  };
+  for (const key of aliases[outcomeKey] ?? [outcomeKey]) {
+    if (isPlainObject(finalOutcomes[key])) return finalOutcomes[key];
+  }
+  return {};
+}
+function valueCandidate(value, type) {
+  if (isPlainObject(value)) return cloneData(value);
+  const text = String(value ?? "").trim();
+  return text ? { name: text, text, sourceType: type } : null;
+}
+function collectFinalOutcomeCandidates(finalOutcome = {}, explicitKeys = [], legacyKeys = []) {
+  const collected = [];
+  for (const key of explicitKeys) {
+    if (Array.isArray(finalOutcome[key])) collected.push(...finalOutcome[key].map((value) => valueCandidate(value, key)).filter(Boolean));
+  }
+  for (const key of legacyKeys) {
+    if (Array.isArray(finalOutcome[key])) collected.push(...finalOutcome[key].map((value) => valueCandidate(value, key)).filter(Boolean));
+  }
+  return cloneData(collected);
+}
+function combineCandidates(...lists) {
+  return cloneData(lists.flat().filter((entry) => entry !== null && entry !== undefined));
+}
+
 function blocked(session, reasons) {
   return deepFreeze({ version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, hasSession: isPlainObject(session), canPreparePackage: false, blockedReasons: cloneData(reasons), status: "blocked", isCompleted: isPlainObject(session) ? isCompletedSession(session) : false, alreadyApplied: Boolean(session?.travelV2EventOutcomeApplication?.applied), completedAt: session?.completedAt ?? null, eventRoundCount: 0, finalizedRoundCount: 0, roundSummaries: [], pressureSummary: {}, hazardSummary: [], shipScarCandidates: [], fortuneCandidates: [], rewardCandidates: [], consequenceCandidates: [], eventOutcomeKey: "mixed", eventOutcomeLabel: "Mixed", summaryText: reasons[0] ?? "Travel v2 event outcome package is blocked.", nextStepText: reasons[0] ?? "Complete the event before preparing an outcome package.", packageRecord: null });
 }
@@ -69,11 +100,12 @@ export function prepareTravelV2EventOutcomePackage(session, options = {}) {
   const eventOutcomeKey = summarizeOutcome(finalizationRecords);
   const eventOutcomeLabel = humanizeIdentifier(eventOutcomeKey);
   const pressureSummary = pressureSummaryFrom(session, pressureRecords);
-  const hazardSummary = collectCandidates(session, ["hazards", "travelV2Hazards", "hazardSummary", "hazardCandidates"]);
-  const shipScarCandidates = collectCandidates(session, ["shipScars", "travelV2ShipScars", "shipScarCandidates"]);
-  const fortuneCandidates = collectCandidates(session, ["fortuneCandidates", "travelV2FortuneCandidates", "fortunes"]);
-  const rewardCandidates = collectCandidates(session, ["rewardCandidates", "travelV2RewardCandidates", "rewards"]);
-  const consequenceCandidates = collectCandidates(session, ["consequenceCandidates", "travelV2ConsequenceCandidates", "consequences"]);
+  const finalOutcome = finalOutcomeFor(session, eventOutcomeKey);
+  const hazardSummary = combineCandidates(collectCandidates(session, ["hazards", "travelV2Hazards", "hazardSummary", "hazardCandidates"]), collectFinalOutcomeCandidates(finalOutcome, ["hazardCandidates", "hazards"], []));
+  const shipScarCandidates = combineCandidates(collectCandidates(session, ["shipScars", "travelV2ShipScars", "shipScarCandidates"]), collectFinalOutcomeCandidates(finalOutcome, ["shipScarCandidates", "shipScars"], []));
+  const fortuneCandidates = combineCandidates(collectCandidates(session, ["fortuneCandidates", "travelV2FortuneCandidates", "fortunes"]), collectFinalOutcomeCandidates(finalOutcome, ["fortuneCandidates", "fortunes"], []));
+  const rewardCandidates = combineCandidates(collectCandidates(session, ["rewardCandidates", "travelV2RewardCandidates", "rewards"]), collectFinalOutcomeCandidates(finalOutcome, ["rewardCandidates"], ["rewards"]));
+  const consequenceCandidates = combineCandidates(collectCandidates(session, ["consequenceCandidates", "travelV2ConsequenceCandidates", "consequences"]), collectFinalOutcomeCandidates(finalOutcome, ["consequenceCandidates"], ["losses", "consequences"]));
   const summaryText = `Travel v2 event outcome package prepared: ${eventOutcomeLabel}.`;
   const nextStepText = "GM may review and apply this package to lock a session-local outcome record. Actor/item mutation is intentionally deferred.";
   const packageRecord = { version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, preparedAt: options.preparedAt ?? options.now ?? null, eventOutcomeKey, eventOutcomeLabel, completedAt: session.completedAt ?? session.travelV2EventCompletion?.completedAt ?? null, roundSummaries: cloneData(roundSummaries), pressureSummary: cloneData(pressureSummary), hazardSummary: cloneData(hazardSummary), shipScarCandidates: cloneData(shipScarCandidates), fortuneCandidates: cloneData(fortuneCandidates), rewardCandidates: cloneData(rewardCandidates), consequenceCandidates: cloneData(consequenceCandidates), summaryText, nextStepText };

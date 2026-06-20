@@ -15,9 +15,14 @@ export function runTravelV2EventOutcomePackageSmokeChecks(){
   assertEqual(pkg.shipScarCandidates.length,1,"ship scars cloned");
   assertEqual(pkg.rewardCandidates.length,1,"rewards cloned only when present");
   assertEqual(pkg.consequenceCandidates.length,1,"consequences cloned only when present");
+  const withFinalOutcome = completed(["mixed"]);
+  withFinalOutcome.event.finalOutcomes = { mixed: { rewardCandidates: [{ name: "Rescued Lantern Flame" }], consequenceCandidates: [{ name: "Static Fingerprints" }], rewards: ["Passage secured"], losses: ["Lingering occult unease"] } };
+  const finalPkg = prepareTravelV2EventOutcomePackage(withFinalOutcome);
+  assertEqual(finalPkg.rewardCandidates.length,3,"final outcome reward candidates and legacy rewards become visible follow-ups");
+  assertEqual(finalPkg.consequenceCandidates.length,3,"final outcome consequence candidates and losses become visible follow-ups");
   assertEqual(snap(session),before,"helper does not mutate input");
   assertEqual(prepareTravelV2EventOutcomePackage(completed(["success","failure"])).eventOutcomeKey,"mixed","mixed summarizes conservatively");
   assertEqual(prepareTravelV2EventOutcomePackage(completed(["failure","failure","success"])).eventOutcomeKey,"failure","failure majority summarizes");
-  return {ok:true, checked:["blocks","prepares","summarizes","clones","inert"]};
+  return {ok:true, checked:["blocks","prepares","summarizes","clones","final-outcome-candidates","inert"]};
 }
 export default runTravelV2EventOutcomePackageSmokeChecks;

@@ -1,4 +1,5 @@
 import { prepareTravelV2EventOutcomePackage } from "./travel-v2-event-outcome-package.js";
+import { prepareTravelV2FollowUpRecordsFromActorApplication, mergeTravelV2FollowUpRecords } from "./travel-v2-followups.js";
 
 export const TRAVEL_V2_ACTOR_APPLICATION_BRIDGE_VERSION = 1;
 const MODULE_ID = "arcflight";
@@ -18,6 +19,7 @@ function getProperty(source, path) { return String(path ?? "").split(".").filter
 function numeric(value) { const number = Number(value); return Number.isFinite(number) ? number : null; }
 function actorSystem(actor) { return actor?.getFlag?.(MODULE_ID, "system") ?? actor?.flags?.[MODULE_ID]?.system ?? {}; }
 function actorApplications(actor) { return actorSystem(actor)?.travelV2?.actorApplications?.records ?? []; }
+function actorFollowUps(actor) { return actorSystem(actor)?.travelV2?.followUps?.records ?? []; }
 function actorId(actor) { return actor?.id ?? actor?._id ?? actor?.uuid ?? ""; }
 function actorName(actor) { return actor?.name ?? "Unselected ship"; }
 function userIsGm(options = {}) { return options.isGM ?? options.user?.isGM ?? globalThis.game?.user?.isGM ?? false; }
@@ -95,6 +97,8 @@ export async function applyTravelV2ActorApplicationPreview(actor, preview, optio
   const records = [...actorApplications(actor), applicationRecord];
   const updateData = Object.fromEntries(preview.proposedChanges.map((change) => [change.path, change.next]));
   updateData[`flags.${MODULE_ID}.system.travelV2.actorApplications`] = { version: TRAVEL_V2_ACTOR_APPLICATION_BRIDGE_VERSION, records };
+  const followUpRecords = mergeTravelV2FollowUpRecords(actorFollowUps(actor), prepareTravelV2FollowUpRecordsFromActorApplication(applicationRecord, options), options);
+  updateData[`flags.${MODULE_ID}.system.travelV2.followUps`] = { version: 1, records: followUpRecords };
   const updateFn = options.updateActor ?? ((target, data) => target.update(data));
   await updateFn(actor, updateData);
   return { ok: true, applied: true, actor, preview, updateData, applicationRecord, blockedReasons: [] };
