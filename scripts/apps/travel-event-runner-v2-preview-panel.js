@@ -1,6 +1,7 @@
 import { prepareTravelV2PressureApplicationState } from "../helpers/travel-v2-pressure-application-state.js";
+import { prepareTravelV2RoundFinalizationState } from "../helpers/travel-v2-round-finalization-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 3;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 4;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -22,6 +23,45 @@ function normalizeOutcomeTone(row = {}) {
   if (outcomeKey === "failure") return "danger";
   if (outcomeKey === "criticalFailure") return "severe";
   return row.hasRequests ? "warning" : "neutral";
+}
+
+
+function normalizeFinalizationState(state = null, latestResult = null) {
+  const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
+  const resultBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
+  const roundNumber = state?.roundNumber ?? null;
+  const successText = latestResult?.ok === true && latestResult?.finalized === true
+    ? `Finalized Travel v2 round ${latestResult.roundNumber ?? latestResult.roundIndex + 1}.`
+    : "";
+  const feedbackText = successText || resultBlockedReasons[0] || latestResult?.error || "";
+  const isEventCompleteReady = state?.isEventCompleteReady === true;
+  const isFinalized = state?.isFinalized === true;
+  const canFinalize = state?.canFinalize === true;
+  const buttonLabel = isEventCompleteReady
+    ? "Event Ready"
+    : (isFinalized ? "Round Finalized" : (canFinalize ? "Finalize Round" : "Cannot Finalize"));
+  const readinessText = isEventCompleteReady
+    ? "Final event round finalized. Event completion will be handled in a later step."
+    : "";
+
+  return {
+    lifecycleState: state?.lifecycleState ?? "previewing",
+    canFinalize,
+    finalizeDisabled: !canFinalize,
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    roundIndex: Number.isInteger(Number(state?.roundIndex)) ? Number(state.roundIndex) : -1,
+    roundNumber,
+    effectiveOutcomeKey: state?.effectiveOutcomeKey ?? "",
+    isFinalized,
+    isEventCompleteReady,
+    footerText: state?.footerText ?? "Current Travel v2 round is not ready to finalize.",
+    buttonLabel,
+    feedbackText,
+    hasFeedback: Boolean(feedbackText),
+    readinessText,
+    hasReadinessText: Boolean(readinessText)
+  };
 }
 
 function normalizePreviewRow(row = {}, applicationState = null, correctionState = {}) {
@@ -92,6 +132,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const rows = Array.isArray(preview.rows) ? preview.rows.map((row) => normalizePreviewRow(row, applicationState, correctionState)) : [];
   const available = preview.ok === true && rows.length > 0;
   const latestResult = isPlainObject(appState.travelV2PressureApplicationResult) ? appState.travelV2PressureApplicationResult : null;
+  const latestFinalizationResult = isPlainObject(appState.travelV2RoundFinalizationResult) ? appState.travelV2RoundFinalizationResult : null;
   const latestCorrectionResult = isPlainObject(appState.travelV2PressureCorrectionResult) ? appState.travelV2PressureCorrectionResult : null;
   const latestBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
   const latestCorrectionBlockedReasons = Array.isArray(latestCorrectionResult?.blockedReasons) ? latestCorrectionResult.blockedReasons : [];
@@ -104,6 +145,10 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const feedbackText = correctionFeedbackText || (latestResult?.ok === true && latestResult?.applied === true
     ? `Applied Travel v2 pressure outcome: ${latestOutcomeLabel}.`
     : (latestBlockedReasons[0] ?? latestResult?.error ?? ""));
+  const travelV2RoundFinalizationState = normalizeFinalizationState(
+    isPlainObject(runnerSession) ? prepareTravelV2RoundFinalizationState(runnerSession) : null,
+    latestFinalizationResult
+  );
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -115,6 +160,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     roundNumber: preview.roundNumber ?? appState.currentRoundNumber ?? null,
     rows,
     hasPressureChanges: rows.some((row) => row.hasRequests),
+    travelV2RoundFinalizationState,
+    roundFinalization: travelV2RoundFinalizationState,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,

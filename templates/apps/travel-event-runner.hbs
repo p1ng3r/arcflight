@@ -162,6 +162,22 @@
         {{#if state.travelV2PreviewPanel.pressureApplication.hasFeedback}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.pressureApplication.feedbackText}}</p>
         {{/if}}
+        <div class="arcflight-travel-runner-mvp__v2-finalize" aria-label="Travel v2 round finalization">
+          <div>
+            <strong>Round Finalization</strong>
+            <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.footerText}}</p>
+          </div>
+          <button type="button" class="arcflight-travel-runner-mvp__v2-finalize-button" data-arcflight-travel-v2-round-finalize {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.buttonLabel}}</button>
+        </div>
+        {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.blockedReason}}
+          <p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.blockedReason}}</p>
+        {{/if}}
+        {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.hasFeedback}}
+          <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.feedbackText}}</p>
+        {{/if}}
+        {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.hasReadinessText}}
+          <p class="arcflight-travel-runner-mvp__v2-preview-feedback arcflight-travel-runner-mvp__v2-preview-feedback--applied">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.readinessText}}</p>
+        {{/if}}
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
