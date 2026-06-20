@@ -5,6 +5,7 @@ import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-ev
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
+import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-session-event-completion.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -91,6 +92,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-pressure-apply]",
   "[data-arcflight-travel-v2-pressure-correct]",
   "[data-arcflight-travel-v2-round-finalize]",
+  "[data-arcflight-travel-v2-event-complete]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -299,6 +301,17 @@ export function prepareTravelV2RoundFinalizationRunnerUpdate(currentSession, opt
   };
 }
 
+export function prepareTravelV2EventCompletionRunnerUpdate(currentSession, options = {}) {
+  const result = completeTravelV2EventOnRunnerSession(currentSession, options);
+  const shouldUpdateSession = result?.ok === true && result?.completed === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
@@ -321,7 +334,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       scrollSelector: "",
       travelV2PressureApplicationResult: null,
       travelV2PressureCorrectionResult: null,
-      travelV2RoundFinalizationResult: null
+      travelV2RoundFinalizationResult: null,
+      travelV2EventCompletionResult: null
     };
   }
 
@@ -523,6 +537,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-apply")) return this.#applyTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-correct")) return this.#correctTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
+    if (target.hasAttribute("data-arcflight-travel-v2-event-complete")) return this.completeTravelV2Event();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -632,6 +647,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 round finalization was blocked.";
+    return update.shouldRerender ? this.render(true) : update;
+  }
+
+  async completeTravelV2Event(options = {}) {
+    const update = prepareTravelV2EventCompletionRunnerUpdate(this.session, options);
+    this.uiState.travelV2EventCompletionResult = update.result;
+
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = "Completed Travel v2 event.";
+      return this.render(true);
+    }
+
+    this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 event completion was blocked.";
     return update.shouldRerender ? this.render(true) : update;
   }
 

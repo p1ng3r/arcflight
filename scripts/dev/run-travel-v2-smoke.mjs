@@ -9,12 +9,14 @@ import runTravelV2PressureCorrectionSmokeChecks from "../helpers/travel-v2-press
 import runTravelV2RoundFinalizationStateSmokeChecks from "../helpers/travel-v2-round-finalization-state.smoke.js";
 import runTravelV2SessionRoundFinalizationSmokeChecks from "../helpers/travel-v2-session-round-finalization.smoke.js";
 import runTravelV2EventCompletionReadinessSmokeChecks from "../helpers/travel-v2-event-completion-readiness.smoke.js";
+import runTravelV2SessionEventCompletionSmokeChecks from "../helpers/travel-v2-session-event-completion.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
 import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
 import runTravelEventRunnerV2PressureApplicationSmokeChecks from "../apps/travel-event-runner-v2-pressure-application.smoke.js";
 import runTravelEventRunnerV2PressureCorrectionSmokeChecks from "../apps/travel-event-runner-v2-pressure-correction.smoke.js";
 import runTravelEventRunnerV2RoundFinalizationSmokeChecks from "../apps/travel-event-runner-v2-round-finalization.smoke.js";
+import runTravelEventRunnerV2EventCompletionSmokeChecks from "../apps/travel-event-runner-v2-event-completion.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -28,12 +30,14 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 round finalization state", runTravelV2RoundFinalizationStateSmokeChecks],
   ["Travel v2 session round finalization", runTravelV2SessionRoundFinalizationSmokeChecks],
   ["Travel v2 event completion readiness", runTravelV2EventCompletionReadinessSmokeChecks],
+  ["Travel v2 session event completion", runTravelV2SessionEventCompletionSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
   ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks],
   ["Travel event runner v2 pressure application", runTravelEventRunnerV2PressureApplicationSmokeChecks],
   ["Travel event runner v2 pressure correction", runTravelEventRunnerV2PressureCorrectionSmokeChecks],
-  ["Travel event runner v2 round finalization", runTravelEventRunnerV2RoundFinalizationSmokeChecks]
+  ["Travel event runner v2 round finalization", runTravelEventRunnerV2RoundFinalizationSmokeChecks],
+  ["Travel event runner v2 event completion", runTravelEventRunnerV2EventCompletionSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {

@@ -65,22 +65,30 @@ function normalizeFinalizationState(state = null, latestResult = null) {
   };
 }
 
-function normalizeEventCompletionReadiness(state = null) {
+function normalizeEventCompletionReadiness(state = null, latestResult = null) {
   const eventRoundCount = Number(state?.eventRoundCount) || 0;
   const finalizedRoundCount = Number(state?.finalizedRoundCount) || 0;
   const pendingRoundCount = Number(state?.pendingRoundCount) || 0;
   const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
-  const countText = state?.isCompleted === true
-    ? (blockedReasons[0] ?? "Travel v2 runner session is already completed.")
+  const completed = state?.isCompleted === true || latestResult?.completed === true;
+  const resultBlockedReasons = Array.isArray(latestResult?.blockedReasons) ? latestResult.blockedReasons : [];
+  const countText = completed
+    ? "Event completed."
     : `${finalizedRoundCount} / ${eventRoundCount} rounds finalized. ${pendingRoundCount} ${pendingRoundCount === 1 ? "round" : "rounds"} pending.`;
+  const feedbackText = latestResult?.ok === true && latestResult?.completed === true
+    ? (latestResult.summaryText ?? "Completed Travel v2 event.")
+    : (resultBlockedReasons[0] ?? latestResult?.error ?? "");
+  const canCompleteEvent = state?.canCompleteEvent === true && !completed;
   return {
     version: state?.version ?? 1,
     title: state?.title ?? "Event Completion Readiness",
     status: state?.status ?? "blocked",
     lifecycleState: state?.lifecycleState ?? "event-completion-blocked",
     eventReady: state?.eventReady === true,
-    canCompleteEvent: state?.canCompleteEvent === true,
-    isCompleted: state?.isCompleted === true,
+    canCompleteEvent,
+    completeDisabled: !canCompleteEvent,
+    completeButtonLabel: completed ? "Event Completed" : (canCompleteEvent ? "Complete Event" : "Cannot Complete Event"),
+    isCompleted: completed,
     blockedReasons,
     blockedReason: blockedReasons[0] ?? "",
     eventRoundCount,
@@ -89,7 +97,9 @@ function normalizeEventCompletionReadiness(state = null) {
     countText,
     summaryText: state?.summaryText ?? "Finalize all Travel v2 rounds before event completion.",
     footerText: state?.footerText ?? "Finalize all Travel v2 rounds before event completion.",
-    nextStepText: state?.nextStepText ?? "Finalize all Travel v2 rounds before event completion."
+    nextStepText: completed ? "Travel v2 event session is completed locally." : (state?.nextStepText ?? "Finalize all Travel v2 rounds before event completion."),
+    feedbackText,
+    hasFeedback: Boolean(feedbackText)
   };
 }
 
@@ -178,8 +188,10 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     isPlainObject(runnerSession) ? prepareTravelV2RoundFinalizationState(runnerSession) : null,
     latestFinalizationResult
   );
+  const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
-    isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null
+    isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
+    latestEventCompletionResult
   );
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
