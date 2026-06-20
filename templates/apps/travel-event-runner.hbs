@@ -56,6 +56,9 @@
 
   <section class="arcflight-travel-runner-mvp__panel">
     <h2>Published Travel Event Library</h2>
+    {{#unless state.hasSession}}
+      <p class="arcflight-sheet__hint"><strong>How to start a local runner session:</strong> select a published finalized travel event, click <strong>Start Local Runner Session</strong>, choose a ship/PF2E vehicle, then confirm the DialogV2 prompt to create a local runner session.</p>
+    {{/unless}}
     {{#if state.hasPublishedEvents}}
       <label class="arcflight-sheet__field">
         <span>Published Event</span>
@@ -66,13 +69,24 @@
         </select>
       </label>
       <div class="arcflight-travel-runner-mvp__actions">
-        <button type="button" data-arcflight-start-travel-event-runner {{#if state.hasSession}}disabled{{/if}}>Start Local Runner Session</button>
+        <button type="button" data-arcflight-start-travel-event-runner {{#unless state.startupDiagnostics.canStart}}disabled{{/unless}}>Start Local Runner Session</button>
       </div>
-      {{#unless state.hasLoadableEvents}}<p class="arcflight-sheet__hint">Published library entries exist, but none are valid finalized travel events.</p>{{/unless}}
+      {{#unless state.hasLoadableEvents}}<p class="arcflight-sheet__hint">Published travel event entries exist, but none are valid finalized travel events. Malformed or not-finalized entries cannot start a local runner session.</p>{{/unless}}
     {{else}}
-      <p class="arcflight-sheet__hint">No published travel events are available. Publish a finalized event from the Published Travel Event Library before starting the runner.</p>
+      <p class="arcflight-sheet__hint">No published finalized travel event exists. Publish a finalized event from the Published Travel Event Library before starting a local runner session.</p>
       <button type="button" data-arcflight-start-travel-event-runner disabled>Start Local Runner Session</button>
     {{/if}}
+    <div class="arcflight-sheet__hint">
+      <strong>Local runner session startup diagnostics:</strong>
+      {{#if state.startupDiagnostics.canStart}}
+        Ready: a published finalized travel event, PF2E vehicle / Arcflight ship actor, and Foundry DialogV2 are available.
+      {{else}}
+        Start Local Runner Session is blocked:
+        <ul>
+          {{#each state.startupDiagnostics.issues}}<li>{{this}}</li>{{/each}}
+        </ul>
+      {{/if}}
+    </div>
   </section>
 
 

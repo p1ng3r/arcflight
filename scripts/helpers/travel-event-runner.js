@@ -1466,6 +1466,49 @@ export function prepareTravelEventRunnerLibraryState(options = {}) {
   return { ...state, entries, selectedEventId: entries.find((entry) => entry.selected)?.id ?? "", hasLoadableEvents: entries.some((entry) => entry.canLoad) };
 }
 
+export function prepareTravelEventRunnerStartupDiagnostics(options = {}) {
+  const hasSession = Boolean(options.session);
+  const library = prepareTravelEventRunnerLibraryState(options);
+  const selectedEventId = options.selectedEventId || library.selectedEventId || "";
+  const selectedEntry = library.entries?.find((entry) => entry.selected || entry.id === selectedEventId || entry.key === selectedEventId) ?? null;
+  const launchState = selectedEventId ? preparePublishedTravelEventRunnerLaunchState({ ...options, idOrKey: selectedEventId }) : null;
+  const shipOptions = launchState?.shipOptions ?? getArcflightTravelEventRunnerShipOptions(options);
+  const dialogV2Available = options.dialogV2Available === true;
+  const issues = [];
+  const nextSteps = [];
+
+  if (hasSession) issues.push("A local runner session already exists. Save, export, or clear the current local runner session before starting another.");
+  if (!library.hasEvents) issues.push("No published finalized travel event exists. Publish a finalized event from the Published Travel Event Library before starting a local runner session.");
+  else if (!library.hasLoadableEvents) issues.push("Published travel event entries exist, but none are loadable finalized events. Malformed or not-finalized entries cannot start a local runner session.");
+  else if (selectedEntry?.isMalformed || selectedEntry?.canLoad === false) issues.push("The selected published travel event is malformed or not finalized. Select a loadable finalized published event.");
+  else if (launchState && !launchState.event) issues.push(launchState.errors?.[0] ?? "The selected published travel event could not be loaded.");
+
+  if (shipOptions.length === 0) issues.push("No PF2E vehicle / Arcflight ship actor exists. Create or enable a vehicle actor before starting a local runner session.");
+  if (!dialogV2Available) issues.push("Foundry DialogV2 is unavailable. Start Local Runner Session cannot show the ship/session dialog in this environment.");
+
+  if (!hasSession) {
+    nextSteps.push("Select a published finalized travel event.");
+    nextSteps.push("Click Start Local Runner Session.");
+    nextSteps.push("Choose a ship/PF2E vehicle in the DialogV2 prompt.");
+    nextSteps.push("Confirm to create a local runner session.");
+  }
+
+  return Object.freeze({
+    canStart: issues.length === 0,
+    hasSession,
+    hasPublishedFinalizedEvent: library.hasLoadableEvents === true,
+    hasSelectedPublishedEvent: Boolean(selectedEventId),
+    selectedEventId,
+    selectedEventName: selectedEntry?.name ?? launchState?.event?.name ?? "",
+    selectedEventMalformed: selectedEntry?.isMalformed === true || selectedEntry?.canLoad === false,
+    hasShipOptions: shipOptions.length > 0,
+    shipOptionCount: shipOptions.length,
+    dialogV2Available,
+    issues,
+    nextSteps
+  });
+}
+
 export function createTravelEventRunnerSession(event, options = {}) {
   const runnerValidation = validateRunnerEvent(event, options);
   if (!runnerValidation.ok) return { ok: false, errors: runnerValidation.errors, warnings: runnerValidation.warnings, session: null };

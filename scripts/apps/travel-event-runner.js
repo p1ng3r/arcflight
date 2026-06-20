@@ -18,6 +18,7 @@ import {
   duplicateTravelEventRunnerSession,
   importTravelEventRunnerSessionFromJson,
   preparePublishedTravelEventRunnerLaunchState,
+  prepareTravelEventRunnerStartupDiagnostics,
   startTravelEventRunnerFromPublishedEvent,
   postTravelEventRunnerSummaryToChat,
   saveImportedTravelEventRunnerSessionToLibrary,
@@ -447,6 +448,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       actor: targetActor,
       uiState: this.uiState
     });
+    const startupDiagnostics = prepareTravelEventRunnerStartupDiagnostics({
+      session: this.session,
+      selectedEventId: this.selectedEventId || state.library?.selectedEventId || "",
+      dialogV2Available: typeof globalThis.foundry?.applications?.api?.DialogV2?.prompt === "function"
+    });
+    state.startupDiagnostics = startupDiagnostics;
     if (!this.selectedEventId) this.selectedEventId = state.library?.selectedEventId ?? "";
     return {
       ...context,
