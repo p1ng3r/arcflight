@@ -149,9 +149,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(finalizedPanel.travelV2RoundFinalizationState.buttonLabel, "Event Ready", "final round finalized should show event ready label");
   assertSmoke(finalizedPanel.travelV2RoundFinalizationState.readinessText.includes("later step"), "event ready panel should defer event completion");
   assertSmoke(finalizedPanel.travelV2EventCompletionReadiness.eventReady, "finalized panel should expose event completion readiness");
+  assertSmoke(finalizedPanel.travelV2EventCompletionReadiness.canCompleteEvent, "finalized panel should enable event completion");
+  assertEqual(finalizedPanel.travelV2EventCompletionReadiness.completeButtonLabel, "Complete Event", "ready panel should show complete label");
   assertEqual(finalizedPanel.travelV2EventCompletionReadiness.countText, "1 / 1 rounds finalized. 0 rounds pending.", "ready panel should expose readiness counts");
   assertSmoke(finalizedPanel.travelV2RoundFinalizationState.feedbackText.includes("Finalized Travel v2 round 1"), "success finalization feedback should appear");
 
+  assertEqual(completedPanel.travelV2EventCompletionReadiness.completeButtonLabel, "Event Completed", "completed panel should show completed label");
+  assertSmoke(completedPanel.travelV2EventCompletionReadiness.completeDisabled, "completed panel should disable completion control");
   assertSmoke(completedPanel.rows.every((row) => row.pressureApplyDisabled), "completed sessions should disable apply controls");
   assertSmoke(completedPanel.rows.every((row) => !row.canCorrectPressure), "completed sessions should not expose correction controls");
 

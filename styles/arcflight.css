@@ -2147,3 +2147,16 @@
 .arcflight-travel-runner-mvp__v2-event-readiness p {
   margin: 0;
 }
+
+
+.arcflight-travel-runner-mvp__v2-event-readiness-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__v2-event-complete-button {
+  width: max-content;
+  white-space: nowrap;
+}

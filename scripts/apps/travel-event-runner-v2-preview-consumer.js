@@ -15,6 +15,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2PressureApplicationResult: uiState.travelV2PressureApplicationResult ?? null,
     travelV2PressureCorrectionResult: uiState.travelV2PressureCorrectionResult ?? null,
     travelV2RoundFinalizationResult: uiState.travelV2RoundFinalizationResult ?? null,
+    travelV2EventCompletionResult: uiState.travelV2EventCompletionResult ?? null,
     travelV2PressureRunnerSession: session,
     compactRoundLabel: state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round"
   };
