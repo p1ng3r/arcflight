@@ -66,8 +66,10 @@ export default async function runTravelV2SampleEventSmokeChecks() {
   assertSmoke(published.entry?.sourceDraftId === LANTERN_IN_THE_STATIC_SAMPLE_DRAFT_ID, "publish result should remember builder source draft id");
   checked.push("Sample passes existing builder publish validation path");
 
+  const criticalSuccessOutcome = published.event.finalOutcomes?.criticalSuccess ?? {};
   const mixedOutcome = published.event.finalOutcomes?.mixed ?? {};
   const failureOutcome = published.event.finalOutcomes?.failure ?? {};
+  assertSmoke(Array.isArray(criticalSuccessOutcome.rewards) && criticalSuccessOutcome.rewards.length >= 2, "critical success final outcome should expose reward candidates through legacy rewards");
   assertSmoke(Array.isArray(mixedOutcome.rewardCandidates) && mixedOutcome.rewardCandidates.some((candidate) => candidate.name === "Rescued Lantern Flame"), "mixed final outcome should expose a visible reward candidate");
   assertSmoke(Array.isArray(mixedOutcome.fortuneCandidates) && mixedOutcome.fortuneCandidates.some((candidate) => candidate.name === "True Bearing Remembered"), "mixed final outcome should expose a visible fortune candidate");
   assertSmoke(Array.isArray(mixedOutcome.consequenceCandidates) && mixedOutcome.consequenceCandidates.some((candidate) => candidate.name === "Static Fingerprints"), "mixed final outcome should expose a visible consequence candidate");

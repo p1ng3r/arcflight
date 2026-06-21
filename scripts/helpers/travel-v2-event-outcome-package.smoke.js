@@ -18,6 +18,9 @@ export function runTravelV2EventOutcomePackageSmokeChecks(){
   const withFinalOutcome = completed(["mixed"]);
   withFinalOutcome.event.finalOutcomes = { mixed: { rewardCandidates: [{ name: "Rescued Lantern Flame" }], consequenceCandidates: [{ name: "Static Fingerprints" }], rewards: ["Passage secured"], losses: ["Lingering occult unease"] } };
   const finalPkg = prepareTravelV2EventOutcomePackage(withFinalOutcome);
+  const criticalSuccessSession = completed(["criticalSuccess"]);
+  criticalSuccessSession.event.finalOutcomes = { criticalSuccess: { label: "Lantern Rescued Cleanly", rewards: ["The true lantern flame as a narrative boon"] } };
+  assertEqual(prepareTravelV2EventOutcomePackage(criticalSuccessSession).rewardCandidates.length,2,"critical success legacy rewards become visible follow-ups alongside session rewards");
   assertEqual(finalPkg.rewardCandidates.length,3,"final outcome reward candidates and legacy rewards become visible follow-ups");
   assertEqual(finalPkg.consequenceCandidates.length,3,"final outcome consequence candidates and losses become visible follow-ups");
   assertEqual(snap(session),before,"helper does not mutate input");

@@ -7,6 +7,8 @@ export default async function runTravelV2FollowUpsSmokeChecks(){
   const checked=[]; const p=preview(); const records=prepareTravelV2FollowUpRecordsFromActorApplication(p,{now:"now"});
   assertEqual(records.length,5,"extracts follow-up candidates from actor application preview"); checked.push("extract candidates");
   const state=prepareTravelV2FollowUpState(actor(),p,{now:"now"}); assertSmoke(state.groups.find(g=>g.type==="reward").records.length===1,"groups by type"); checked.push("groups by type");
+  assertSmoke(state.hasStagedRecords && state.records.every((record)=>record.actionsDisabled),"unsaved follow-ups should be staged with disabled actions"); checked.push("staged actions disabled");
+  const persistedState=prepareTravelV2FollowUpState(actor(records),p,{now:"now"}); assertSmoke(persistedState.hasPersistedRecords && persistedState.records.some((record)=>!record.actionsDisabled),"saved follow-ups should expose enabled actions"); checked.push("persisted actions enabled");
   assertEqual(records[0].id, prepareTravelV2FollowUpRecordsFromActorApplication(p,{now:"later"})[0].id,"creates stable IDs"); checked.push("stable IDs");
   const dedup=prepareTravelV2FollowUpState(actor([records[0]]),p,{now:"now"}); assertEqual(dedup.records.length,5,"does not duplicate existing follow-ups"); checked.push("dedupe existing");
   const nonGm=await updateTravelV2FollowUpStatus(actor(records),records[0].id,"kept",{user:{isGM:false}}); assertSmoke(!nonGm.ok && nonGm.error.includes("Only a GM"),"status update requires GM when user exists"); checked.push("GM required");
