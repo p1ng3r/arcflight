@@ -13,7 +13,7 @@ import {
 
 function assert(condition, message) { if (!condition) throw new Error(`Travel v2 dev tools smoke failed: ${message}`); }
 
-export default function runTravelV2DevToolsSmokeChecks() {
+export default async function runTravelV2DevToolsSmokeChecks() {
   const checked = [];
   assert(TRAVEL_V2_DEV_TOOLS_SETTING === "travelV2DevToolsEnabled", "setting key is stable");
   checked.push("setting key");
@@ -42,9 +42,14 @@ export default function runTravelV2DevToolsSmokeChecks() {
   assert(debug.roundResults[0].outcomeKey === "not-run" && debug.roundResults[0].statusLabel.includes("Not run"), "debug report labels not-run rounds");
   checked.push("debug report");
 
-  const copied = copyTravelV2DebugReport(early.session, { now: "2026-01-01T00:05:00.000Z" });
-  assert(copied.ok && copied.text.includes('"roundResults"'), "copy debug report returns JSON text");
-  checked.push("copy debug report");
+  const copied = await copyTravelV2DebugReport(early.session, { now: "2026-01-01T00:05:00.000Z" });
+  assert(copied.ok && copied.copied === false && copied.text.includes('"roundResults"'), "copy debug report returns JSON text and reports clipboard status");
+  checked.push("copy debug report status");
+
+  const emptyRound = { ...early.session, roundResults: [{ ...early.session.roundResults[0], stationResults: {} }] };
+  const emptyRoundDialog = prepareTravelV2RoundResolutionDialogState(emptyRound);
+  assert(emptyRoundDialog.notRun === true && emptyRoundDialog.outcomeLabel.includes("Not run"), "empty station-result maps are treated as not run");
+  checked.push("empty station not-run handling");
 
   const completed = { ...forced.session, status: "completed", completed: true, completedAt: "2026-01-02T00:00:00.000Z", summary: { eventOutcomeKey: "failure" } };
   const endDialog = prepareTravelV2EndOfEventResolutionDialogState(completed);
@@ -54,7 +59,7 @@ export default function runTravelV2DevToolsSmokeChecks() {
   const older = { ...completed, key: "older", completedAt: "2026-01-01T00:00:00.000Z" };
   const newer = { ...completed, key: "newer", completedAt: "2026-01-03T00:00:00.000Z" };
   const history = prepareTravelV2CompletedSessionHistoryState([{ session: older, key: "older" }, { session: newer, key: "newer" }]);
-  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].canReopen === true, "completed history sorts newest first and supports reopen");
+  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].canReopen === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel, "completed history sorts newest first with date/time labels and supports reopen");
   checked.push("completed history state");
 
   return { ok: true, checked };

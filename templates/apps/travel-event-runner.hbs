@@ -181,6 +181,7 @@
             <strong>Round Finalization</strong>
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.footerText}}</p>
           </div>
+          <button type="button" data-arcflight-travel-v2-round-review>Review Round Resolution</button>
           <button type="button" class="arcflight-travel-runner-mvp__v2-finalize-button" data-arcflight-travel-v2-round-finalize {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.buttonLabel}}</button>
         </div>
         {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.blockedReason}}
@@ -198,6 +199,7 @@
               <strong>Event Completion Readiness</strong>
               <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.countText}}</p>
             </div>
+            <button type="button" data-arcflight-travel-v2-event-review>Review End-of-Event Resolution</button>
             <button type="button" class="arcflight-travel-runner-mvp__v2-event-complete-button" title="Complete Event / Cannot Complete Event / Event Completed" data-arcflight-travel-v2-event-complete {{#if state.travelV2PreviewPanel.travelV2EventCompletionReadiness.completeDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.completeButtonLabel}}</button>
           </div>
           <p>{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.nextStepText}}</p>
@@ -714,6 +716,26 @@
           {{/each}}
         </select>
       </label>
+
+      {{#if state.travelV2CompletedSessionHistory.hasRows}}
+        <section class="arcflight-travel-runner-mvp__completed-history" aria-label="Completed Travel v2 Sessions">
+          <h3>Completed Travel v2 Sessions</h3>
+          <p class="arcflight-sheet__hint">Newest completed sessions first. Reopen loads the saved snapshot only; actor mutation still requires explicit GM Apply buttons.</p>
+          {{#each state.travelV2CompletedSessionHistory.rows}}
+            <article class="arcflight-travel-runner-mvp__session-row">
+              <header>
+                <strong>{{eventName}}</strong>
+                <span>{{outcome}}</span>
+              </header>
+              <p><strong>Ship:</strong> {{shipName}}</p>
+              <p class="arcflight-sheet__hint">Completed {{completedAtLabel}} • Applied {{appliedAtLabel}} • Follow-ups {{followUpCount}}</p>
+              <div class="arcflight-travel-runner-mvp__actions">
+                <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canReopen}}disabled{{/unless}}>Reopen Completed Session</button>
+              </div>
+            </article>
+          {{/each}}
+        </section>
+      {{/if}}
 
       <div class="arcflight-travel-runner-mvp__sessions">
         {{#each state.sessionLibrary.entries}}
