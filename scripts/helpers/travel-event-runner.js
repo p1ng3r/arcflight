@@ -916,8 +916,15 @@ function normalizeFinalOutcomes(finalOutcomes = {}) {
     return [key, {
       key,
       label: typeof outcome.label === "string" && outcome.label.length > 0 ? outcome.label : FINAL_OUTCOME_LABELS[key],
-      text: typeof outcome.text === "string" ? outcome.text : (typeof outcome.narrative === "string" ? outcome.narrative : ""),
-      proposedEffects: Array.isArray(outcome.proposedEffects) ? cloneData(outcome.proposedEffects) : []
+      text: typeof outcome.text === "string" ? outcome.text : (typeof outcome.narrative === "string" ? outcome.narrative : (typeof outcome.vignette === "string" ? outcome.vignette : "")),
+      proposedEffects: Array.isArray(outcome.proposedEffects) ? cloneData(outcome.proposedEffects) : [],
+      rewards: Array.isArray(outcome.rewards) ? cloneData(outcome.rewards) : [],
+      losses: Array.isArray(outcome.losses) ? cloneData(outcome.losses) : [],
+      shipScarCandidates: Array.isArray(outcome.shipScarCandidates) ? cloneData(outcome.shipScarCandidates) : [],
+      fortuneCandidates: Array.isArray(outcome.fortuneCandidates) ? cloneData(outcome.fortuneCandidates) : [],
+      rewardCandidates: Array.isArray(outcome.rewardCandidates) ? cloneData(outcome.rewardCandidates) : [],
+      consequenceCandidates: Array.isArray(outcome.consequenceCandidates) ? cloneData(outcome.consequenceCandidates) : [],
+      hazardCandidates: Array.isArray(outcome.hazardCandidates) ? cloneData(outcome.hazardCandidates) : []
     }];
   }));
 }

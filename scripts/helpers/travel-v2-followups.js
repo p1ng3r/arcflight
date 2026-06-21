@@ -50,9 +50,30 @@ export function mergeTravelV2FollowUpRecords(existing = [], candidates = [], opt
 }
 export function prepareTravelV2FollowUpState(actor, packageRecordOrApplicationRecord, options = {}) {
   const candidates = prepareTravelV2FollowUpRecordsFromActorApplication(packageRecordOrApplicationRecord, options);
-  const records = mergeTravelV2FollowUpRecords(actor ? existingRecords(actor) : [], candidates, options);
+  const persistedIds = new Set(actor ? existingRecords(actor).map((record) => record?.id).filter(Boolean) : []);
+  const records = mergeTravelV2FollowUpRecords(actor ? existingRecords(actor) : [], candidates, options).map((record) => {
+    const persisted = persistedIds.has(record.id);
+    return { ...record, persisted, staged: !persisted, persistenceLabel: persisted ? "Saved to ship" : "Staged preview", actionsDisabled: !persisted };
+  });
+  const stagedCount = records.filter((record) => record.staged).length;
+  const persistedCount = records.filter((record) => record.persisted).length;
   const groups = GROUPS.map(([type, label]) => ({ type, label, records: records.filter((record) => record.type === type), hasRecords: records.some((record) => record.type === type) }));
-  return { version: TRAVEL_V2_FOLLOW_UPS_VERSION, hasActor: Boolean(actor), records, groups, hasRecords: records.length > 0, pendingCount: records.filter((r) => r.status === "pending").length, emptyText: "No end-of-event follow-ups are pending for this outcome." };
+  return {
+    version: TRAVEL_V2_FOLLOW_UPS_VERSION,
+    hasActor: Boolean(actor),
+    records,
+    groups,
+    hasRecords: records.length > 0,
+    hasStagedRecords: stagedCount > 0,
+    hasPersistedRecords: persistedCount > 0,
+    stagedCount,
+    persistedCount,
+    pendingCount: records.filter((r) => r.status === "pending").length,
+    emptyText: "No end-of-event follow-ups are pending for this outcome.",
+    helpText: actor ? "Complete the event and apply approved ship changes to save staged follow-ups to the ship." : "Select a ship actor to preview and save end-of-event follow-ups.",
+    stagedText: stagedCount > 0 ? "Staged follow-ups are previews only. Apply Approved Changes to Ship before using Keep, Resolve, Dismiss, or GM notes." : "",
+    persistedText: persistedCount > 0 ? "Saved follow-ups are stored on the ship actor and can be kept, resolved, dismissed, or annotated." : ""
+  };
 }
 export async function updateTravelV2FollowUpStatus(actor, followUpId, status, options = {}) {
   const blockedReasons = [];

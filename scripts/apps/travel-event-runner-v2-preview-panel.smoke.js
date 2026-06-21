@@ -159,6 +159,33 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(completedPanel.rows.every((row) => row.pressureApplyDisabled), "completed sessions should disable apply controls");
   assertSmoke(completedPanel.rows.every((row) => !row.canCorrectPressure), "completed sessions should not expose correction controls");
 
+  const liveCompletedPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    session: {
+      key: "live-completed",
+      status: "completed",
+      completedAt: "2026-06-21T00:00:00.000Z",
+      event: { key: "lantern-in-the-static", name: "The Lantern in the Static", rounds: [{ roundNumber: 1 }] },
+      summary: {
+        suggestedFinalOutcome: "criticalSuccess",
+        suggestedFinalOutcomeLabel: "Lantern Rescued Cleanly",
+        finalOutcomeText: "The lantern is rescued cleanly.",
+        rounds: [{ roundNumber: 1, stationResults: { navigator: "criticalSuccess" } }]
+      },
+      roundResults: [{ roundNumber: 1, stationResults: { navigator: "criticalSuccess" } }]
+    },
+    actor: {
+      id: "ship",
+      name: "Live Ship",
+      type: "vehicle",
+      flags: { arcflight: { enabled: true, system: { current: { hull: 0, strain: 0, lifeveil: 0, morale: 0 }, resources: { supplies: 0 }, cargo: { used: 0 }, travelV2: { followUps: { records: [] } } } } }
+    },
+    travelV2Preview: { ok: false, rows: [] }
+  });
+  assertSmoke(liveCompletedPanel.travelV2EventOutcomePackage.canPreparePackage, "live completed panel should prepare an outcome package without v2 completion records");
+  assertSmoke(liveCompletedPanel.travelV2FollowUps.hasRecords, "live completed panel should expose staged follow-up cards");
+  assertSmoke(liveCompletedPanel.travelV2FollowUps.records.some((record) => record.title === "Lantern Rescued Cleanly"), "live completed panel should stage summary final outcome text as a follow-up card");
+  assertSmoke(liveCompletedPanel.travelV2FollowUps.records.every((record) => record.actionsDisabled), "live completed staged follow-up cards should disable actions until saved");
+
   return {
     ok: true,
     checked: [
@@ -174,6 +201,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "pre-application-correction-controls-hidden",
       "already-applied-disabled-state",
       "event-completion-readiness-summary",
+      "live-completed-follow-ups",
       "no-completion-helper-in-preview-preparation"
     ]
   };
