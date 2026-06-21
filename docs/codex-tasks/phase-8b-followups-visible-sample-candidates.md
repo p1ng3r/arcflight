@@ -10,105 +10,119 @@
 
 ## Why this fix exists
 
-After Phase 8 merged, Foundry testing showed the GM could not find the expected follow-up workflow:
+After Phase 8 merged, Foundry testing first showed the GM could not find the expected follow-up workflow. Further testing on PR #262 showed the UI header now renders, but the workflow is still blocked because the completed live runner session is missing the specific completion/package fields expected by the new outcome package helper.
 
-- No visible **End-of-Event Follow-Ups** section.
-- No follow-up cards.
-- No GM note field.
-- No clear reward/negative candidates after completing `The Lantern in the Static`.
+## New Foundry diagnostics
 
-Phase 8 added the structure, but the actual table result is not usable yet. This phase must make the feature visible and testable in Foundry.
-
-## Expected user-facing behavior
-
-After a Travel v2 event is completed, the runner must clearly show an **End-of-Event Follow-Ups** section near the outcome/GM application area.
-
-The section should be visible even when no follow-up records are persisted yet.
-
-If follow-ups are not available yet, the UI must explain why, for example:
+From live Foundry console on PR #262:
 
 ```text
-No follow-up records have been saved yet. Apply Approved Changes to Ship to save reward and consequence follow-ups, or review the outcome package for manual follow-up candidates.
+Runner class: ArcflightTravelEventRunner
+Event: The Lantern in the Static
+Event key: lantern-in-the-static
+Completed at: 2026-06-20T23:46:04.738Z
+Current round index: 2
+Session keys include:
+  appliedEffects
+  completedAt
+  currentRoundIndex
+  event
+  focusEffectRecords
+  key
+  name
+  notes
+  npcStationControllers
+  playerMissionBoardRollDetails
+  pressure
+  reactionPrompts
+  roundPhase
+  roundResults
+  ship
+  stabilizeResolutionRecords
+  startedAt
+  stationAssignments
+  stationFocus
+  status
+  summary
+  updatedAt
+  version
+Session keys do NOT include:
+  travelV2EventCompletion
+  travelV2RoundResolutions
+  travelV2PressureApplications
+  completionSummary
+  eventCompletion
 ```
 
-If the selected event/outcome has follow-up candidates, the section should show cards.
-
-For `The Lantern in the Static`, completing the event should produce visible follow-up candidates such as:
-
-- Ship Scar Candidate: Echoes in the Rigging
-- Fortune Candidate: True Bearing Remembered
-- Reward Candidate: Rescued Lantern Flame
-- Consequence Candidate: Static Fingerprints
-
-These should appear as cards in the **End-of-Event Follow-Ups** section after the event is completed and should persist after **Apply Approved Changes to Ship**.
-
-## Required fixes
-
-### 1. Make the panel visible
-
-The **End-of-Event Follow-Ups** UI must be visible in the runner when Travel v2 preview/completion state is visible.
-
-Do not hide the whole section merely because `hasRecords` is false.
-
-Show an empty/help state when there are no follow-ups.
-
-### 2. Add real sample follow-up candidates
-
-If `The Lantern in the Static` does not currently define final outcome reward/consequence/scar/fortune candidates, add them.
-
-At minimum, the sample event should include candidate data that can flow into Phase 8 follow-up cards:
+The visible Foundry UI says:
 
 ```text
-Ship Scar Candidate: Echoes in the Rigging
-Fortune Candidate: True Bearing Remembered
-Reward Candidate: Rescued Lantern Flame
-Consequence Candidate: Static Fingerprints
-```
-
-Use good short narrative text for each.
-
-These are candidates/follow-ups only. Do not auto-create items/effects/journals/chat.
-
-### 3. Feed follow-up state from completed outcome package
-
-The follow-up state should be able to read candidates from the completed outcome package / final outcome, even before actor application has persisted records.
-
-Expected behavior:
-
-- Before Apply Approved Changes to Ship: show available candidates as preview cards or clearly staged candidates.
-- After Apply Approved Changes to Ship: persist those candidates under the ship actor follow-up flags.
-- After persistence: Keep/Resolve/Dismiss/GM Note should work against actor-stored records.
-
-If status actions are not available until persistence, disable them or show text saying:
-
-```text
-Apply Approved Changes to Ship before updating follow-up status.
-```
-
-Do not show clickable status buttons that simply fail because the record was not found.
-
-### 4. Improve empty state wording
-
-Replace any silent absence with clear text.
-
-Bad:
-
-```text
-[section not present]
-```
-
-Good:
-
-```text
+Completed Travel v2 runner session is missing its completion summary.
+Cannot Apply Outcome
+Travel v2 event outcome package is required.
 End-of-Event Follow-Ups
 No end-of-event follow-ups are pending for this outcome.
 ```
 
-Better when candidates are staged but not persisted:
+So the immediate problem is not that the UI markup is missing. The problem is that the outcome package helper expects `session.travelV2EventCompletion`, `session.travelV2RoundResolutions`, and related newer fields, while the real live runner session currently contains older/session-local fields like `summary` and `roundResults`.
+
+## Required fix
+
+Make the Travel v2 outcome package and follow-up path understand the actual live runner session shape, especially early-ended/completed sessions.
+
+### 1. Completion summary compatibility
+
+Do not require only `session.travelV2EventCompletion` if the live completed runner session has usable completion data under `session.summary` and/or `session.roundResults`.
+
+Add a normalization layer that can derive a completion record from the live session shape:
 
 ```text
-End-of-Event Follow-Ups
-These candidates are ready to save to the ship. Apply Approved Changes to Ship to persist them, then add GM notes or mark them kept/resolved/dismissed.
+status/completedAt/summary/roundResults
+```
+
+Expected outcome: the event outcome package should no longer block with:
+
+```text
+Completed Travel v2 runner session is missing its completion summary.
+```
+
+when the session is already completed and has summary/roundResults data.
+
+### 2. Round outcome compatibility
+
+`prepareTravelV2EventOutcomePackage` currently needs round finalization records. It must also support the real runner session’s `roundResults` shape if `travelV2RoundResolutions` is absent.
+
+Derive the selected/effective outcome from the best available live round result data.
+
+### 3. Follow-up candidates should populate after outcome package can prepare
+
+Once the outcome package can prepare, feed final-outcome candidates into the follow-up panel.
+
+For The Lantern in the Static, visible candidate cards should appear for the selected outcome.
+
+### 4. Critical Success candidate coverage
+
+The user’s earlier real run ended as Critical Success / Lantern Rescued Cleanly. The sample event should produce meaningful follow-up candidates for that path too, not only mixed/failure.
+
+Add explicit candidates to criticalSuccess, such as:
+
+```text
+Fortune Candidate: True Bearing Remembered
+Reward Candidate: Rescued Lantern Flame
+```
+
+### 5. Empty state clarity
+
+If cards still cannot load, the follow-up section should distinguish:
+
+```text
+No candidates exist for this outcome.
+```
+
+from:
+
+```text
+Follow-up candidates cannot load because the event outcome package is blocked.
 ```
 
 ## Boundaries
@@ -122,8 +136,7 @@ Do not:
 - emit sockets.
 - auto-apply reward/scar/consequence results without GM approval.
 - change pressure math.
-- change Travel v2 scoring.
-- change event completion rules unless required to expose selected outcome candidates.
+- change Travel v2 scoring unless required to correctly read existing live session results.
 
 Do:
 
@@ -135,24 +148,18 @@ Do:
 
 ## Smoke tests
 
-Add or update smoke tests to prove:
+Add/update tests proving:
 
-1. The preview panel state includes a follow-ups section/state even when there are no persisted records.
-2. The empty/help text is present when no follow-ups exist.
-3. `The Lantern in the Static` sample includes meaningful follow-up candidates for at least one final outcome.
-4. Completed `The Lantern in the Static` produces follow-up candidates in preview state.
-5. Staged candidates are visible before persistence.
-6. Status buttons/actions are disabled or blocked with a useful reason before persistence.
-7. After Apply Approved Changes to Ship, follow-up records persist to actor flags.
-8. After persistence, Keep for Later / Mark Resolved / Dismiss / GM Note updates work.
-9. Re-rendering does not duplicate follow-up records.
+1. A completed live-style session with `summary` and `roundResults`, but without `travelV2EventCompletion`, can prepare an outcome package.
+2. A completed live-style session without `travelV2RoundResolutions` can derive final outcome from `roundResults`.
+3. The exact live failure shape from Foundry no longer shows `Completed Travel v2 runner session is missing its completion summary`.
+4. The follow-up section reports package-blocked vs no-candidates clearly.
+5. Critical Success / Lantern Rescued Cleanly has visible follow-up candidates.
+6. Mixed/failure candidate extraction still works.
+7. After actor application, follow-up records persist under ship flags.
+8. Keep/Resolve/Dismiss/GM note updates work after persistence.
+9. Re-rendering does not duplicate records.
 10. No item/effect/journal/chat/socket side effects occur.
-
-Update aggregate smoke:
-
-```bash
-node scripts/dev/run-travel-v2-smoke.mjs
-```
 
 ## Acceptance checks
 
@@ -160,11 +167,13 @@ Run:
 
 ```bash
 node --check data/travel-events/sample-travel-v2-events.js
+node --check scripts/helpers/travel-v2-event-outcome-package.js
 node --check scripts/helpers/travel-v2-followups.js
 node --check scripts/helpers/travel-v2-actor-application-bridge.js
 node --check scripts/apps/travel-event-runner-v2-preview-panel.js
 node --check scripts/apps/travel-event-runner.js
 node scripts/dev/run-travel-v2-followups-smoke.mjs
+node scripts/dev/run-travel-v2-sample-event-smoke.mjs
 node scripts/dev/run-travel-v2-smoke.mjs
 ```
 
@@ -172,12 +181,14 @@ Add node checks for any new/changed smoke or helper files.
 
 ## Expected Foundry result
 
-A GM completes `The Lantern in the Static` and can visibly find:
+A GM completes or early-ends `The Lantern in the Static` and can visibly find:
 
 ```text
 End-of-Event Follow-Ups
 ```
 
-The section includes follow-up cards for the sample event’s reward/negative candidates, or a clear empty/help state explaining what must happen next.
+The Event Outcome Package should prepare instead of blocking on missing completion summary.
 
-After **Apply Approved Changes to Ship**, those cards persist to the ship actor. The GM can add notes and mark cards kept, resolved, or dismissed.
+The follow-up section should show cards for the selected final outcome, or show a precise package-blocked recovery message.
+
+After **Apply Approved Changes to Ship**, cards persist to the ship actor. The GM can add notes and mark cards kept, resolved, or dismissed.
