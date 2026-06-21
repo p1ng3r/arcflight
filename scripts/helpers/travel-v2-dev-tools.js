@@ -20,6 +20,9 @@ function normalizeOutcome(value, fallback = "mixed") { if (value === "critical-s
 function stationKeysForRoundResult(roundResult = {}) { return Object.keys(isPlainObject(roundResult.stationResults) ? roundResult.stationResults : {}); }
 function resultMapForOutcome(stationKeys = [], outcomeKey = "mixed") { const normalized = normalizeOutcome(outcomeKey); return Object.fromEntries(stationKeys.map((key, index) => [key, normalized === "mixed" ? (index % 2 === 0 ? "success" : "failure") : RESULT_BY_OUTCOME[normalized]])); }
 function getCurrentRoundIndex(session = {}) { const count = Array.isArray(session.roundResults) ? session.roundResults.length : 0; const index = Number.isInteger(Number(session.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0; return Math.min(Math.max(index, 0), Math.max(count - 1, 0)); }
+function recordsFrom(container) { if (Array.isArray(container)) return container; if (Array.isArray(container?.records)) return container.records; return []; }
+function roundRecord(session = {}, roundIndex = 0, roundNumber = roundIndex + 1) { return recordsFrom(session.travelV2PressureApplications).find((record) => Number(record?.roundIndex) === roundIndex || Number(record?.roundNumber) === roundNumber) ?? null; }
+function pressureChangeRows(record = null) { return Object.entries(record?.totalsByPressureType ?? {}).filter(([, amount]) => Number(amount) !== 0).map(([pressureType, amount]) => ({ pressureType, amount: Number(amount), label: pressureType, displayAmount: `${Number(amount) > 0 ? "+" : ""}${Number(amount)}` })); }
 
 export function isTravelV2DevToolsEnabled(options = {}) {
   if (options.enabled === true || options.force === true) return true;
@@ -85,7 +88,9 @@ export function prepareTravelV2RoundResolutionDialogState(session, options = {})
   const stationResults = isPlainObject(roundResult.stationResults) ? roundResult.stationResults : {};
   const values = Object.values(stationResults);
   const notRun = values.length === 0 || values.every((value) => value == null);
-  return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, title: `Round ${roundIndex + 1} Resolution`, roundIndex, roundNumber: roundIndex + 1, eventName: normalized?.event?.name ?? normalized?.event?.title ?? "Travel Event", vignette: round.vignette ?? round.intro ?? "", stationResults: cloneData(stationResults), notRun, outcomeLabel: notRun ? "Not run / ended early" : "Ready for GM review", canFinalize: true, finalizeButtonLabel: "Finalize Round" });
+  const pressureApplicationRecord = roundRecord(normalized, roundIndex, roundIndex + 1);
+  const pressureChanges = pressureChangeRows(pressureApplicationRecord);
+  return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, title: `Round ${roundIndex + 1} Resolution`, roundIndex, roundNumber: roundIndex + 1, eventName: normalized?.event?.name ?? normalized?.event?.title ?? "Travel Event", vignette: round.vignette ?? round.intro ?? "", stationResults: cloneData(stationResults), notRun, outcomeLabel: notRun ? "Not run / ended early" : "Ready for GM review", pressureApplicationRecord: cloneData(pressureApplicationRecord), pressureChanges, hasPressureChanges: pressureChanges.length > 0, pressureChangeText: pressureChanges.length ? pressureChanges.map((row) => `${row.displayAmount} ${row.label}`).join(", ") : "No pressure changes", canFinalize: true, finalizeButtonLabel: "Finalize Round" });
 }
 
 export function prepareTravelV2EndOfEventResolutionDialogState(session, options = {}) {
@@ -102,8 +107,13 @@ export function prepareTravelV2CompletedSessionHistoryState(libraryStateOrSessio
     const outcome = prepareTravelV2EventOutcomePackage(session, options);
     const followUps = prepareTravelV2FollowUpState(options.actor ?? null, session?.travelV2ActorApplication ?? outcome.packageRecord, { session });
     const completedAt = session.completedAt ?? entry.completedAt ?? "";
-    const appliedAt = session.travelV2EventOutcomeApplication?.appliedAt ?? session.travelV2ActorApplication?.appliedAt ?? entry.appliedAt ?? "";
-    return { key: entry.key ?? session.key ?? "", eventName: entry.eventName ?? session.event?.name ?? session.event?.title ?? "Travel Event", shipName: entry.shipName ?? session.ship?.actorName ?? session.ship?.name ?? "", outcome: outcome.eventOutcomeLabel ?? "", outcomeKey: outcome.eventOutcomeKey ?? "", completedAt, completedAtLabel: formatDateTime(completedAt), completedDateTime: formatDateTime(completedAt), appliedAt, appliedAtLabel: appliedAt ? formatDateTime(appliedAt) : "Not applied", appliedDateTime: appliedAt ? formatDateTime(appliedAt) : "Not applied", followUpCount: followUps.recordCount ?? followUps.records?.length ?? 0, canReopen: Boolean(entry.key ?? session.key), session: cloneData(session) };
+    const actorAppliedAt = session.travelV2ActorApplication?.appliedAt ?? "";
+    const outcomeAppliedAt = session.travelV2EventOutcomeApplication?.appliedAt ?? "";
+    const appliedAt = actorAppliedAt || outcomeAppliedAt || entry.appliedAt || "";
+    const followUpsSaved = followUps.hasPersistedRecords === true || Number(followUps.persistedCount) > 0;
+    const applicationStatusKey = followUpsSaved ? "followUpsSaved" : (actorAppliedAt ? "actorApplied" : (outcomeAppliedAt ? "outcomeApplied" : "completedNotApplied"));
+    const applicationStatusLabel = followUpsSaved ? "Follow-ups saved to ship" : (actorAppliedAt ? "Actor applied" : (outcomeAppliedAt ? "Outcome applied" : "Completed / not applied"));
+    return { key: entry.key ?? session.key ?? "", eventName: entry.eventName ?? session.event?.name ?? session.event?.title ?? "Travel Event", shipName: entry.shipName ?? session.ship?.actorName ?? session.ship?.name ?? "", outcome: outcome.eventOutcomeLabel ?? "", outcomeKey: outcome.eventOutcomeKey ?? "", completedAt, completedAtLabel: formatDateTime(completedAt), completedDateTime: formatDateTime(completedAt), appliedAt, appliedAtLabel: appliedAt ? formatDateTime(appliedAt) : "Not applied", appliedDateTime: appliedAt ? formatDateTime(appliedAt) : "Not applied", applicationStatusKey, applicationStatusLabel, followUpCount: followUps.recordCount ?? followUps.records?.length ?? 0, canReopen: Boolean(entry.key ?? session.key), session: cloneData(session) };
   }).sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
   return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, rows, count: rows.length, hasRows: rows.length > 0, newestFirst: true });
 }
@@ -119,13 +129,13 @@ export async function copyTravelV2DebugReport(session, options = {}) {
   const report = buildTravelV2DebugReport(session, options);
   const text = JSON.stringify(report, null, 2);
   if (typeof globalThis.navigator?.clipboard?.writeText !== "function") {
-    return { ok: true, copied: false, text, report, warning: "Clipboard API is unavailable; use the returned debug report text." };
+    return { ok: false, copied: false, text, report, error: "Clipboard API is unavailable; use the returned debug report text." };
   }
   try {
     await globalThis.navigator.clipboard.writeText(text);
-    return { ok: true, copied: true, text, report, warning: "" };
+    return { ok: true, copied: true, text, report, error: "" };
   } catch (error) {
-    return { ok: true, copied: false, text, report, warning: error?.message ?? "Clipboard write failed; use the returned debug report text." };
+    return { ok: false, copied: false, text, report, error: error?.message ?? "Clipboard write failed; use the returned debug report text." };
   }
 }
 

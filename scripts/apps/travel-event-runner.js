@@ -286,7 +286,8 @@ function renderTravelV2KeyValueList(rows = []) {
 
 function renderTravelV2RoundResolutionDialogHtml(state = {}) {
   const stationRows = Object.entries(state.stationResults ?? {}).map(([station, result]) => `<li><strong>${escapeHtml(humanizeIdentifier(station))}:</strong> ${escapeHtml(result ?? "Not run / ended early")}</li>`).join("") || `<li>Not run / ended early</li>`;
-  return `<section class="arcflight-travel-v2-resolution-dialog"><h2>${escapeHtml(state.title)}</h2><p><strong>Event:</strong> ${escapeHtml(state.eventName)}</p>${state.vignette ? `<h3>Vignette</h3><p>${escapeHtml(state.vignette)}</p>` : ""}<h3>Round Pressure / Station Results</h3><ul>${stationRows}</ul><p class="notes"><strong>Outcome:</strong> ${escapeHtml(state.outcomeLabel)}</p><p class="notes">Review this round pressure and vignette before finalizing. This dialog does not mutate actors.</p></section>`;
+  const pressureRows = (state.pressureChanges ?? []).map((row) => `<li><strong>${escapeHtml(row.displayAmount)}</strong> ${escapeHtml(humanizeIdentifier(row.pressureType ?? row.label))}</li>`).join("") || `<li>No pressure changes</li>`;
+  return `<section class="arcflight-travel-v2-resolution-dialog"><h2>${escapeHtml(state.title)}</h2><p><strong>Event:</strong> ${escapeHtml(state.eventName)}</p>${state.vignette ? `<h3>Vignette</h3><p>${escapeHtml(state.vignette)}</p>` : ""}<h3>Station Outcomes</h3><ul>${stationRows}</ul><h3>Pressure Changes</h3><ul>${pressureRows}</ul><p class="notes"><strong>Outcome:</strong> ${escapeHtml(state.outcomeLabel)}</p><p class="notes">Review this round pressure and vignette before finalizing. This dialog does not mutate actors until the GM confirms finalization.</p></section>`;
 }
 
 function renderTravelV2EndOfEventDialogHtml(state = {}) {
@@ -742,18 +743,20 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #showTravelV2RoundResolutionDialog({ finalize = false } = {}) {
     const state = prepareTravelV2RoundResolutionDialogState(this.session);
     const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-    if (typeof dialogV2?.confirm !== "function") {
+    if (typeof dialogV2?.wait !== "function") {
       this.statusMessage = finalize ? "Round resolution dialog unavailable; finalizing with current reviewed state." : "Round resolution dialog requires Foundry DialogV2.";
       if (!finalize) ui.notifications?.warn?.(this.statusMessage);
       return finalize;
     }
-    const confirmed = await dialogV2.confirm({
+    const result = await dialogV2.wait({
       window: { title: state.title },
       content: renderTravelV2RoundResolutionDialogHtml(state),
-      yes: { label: finalize ? "Finalize Round" : "Close" },
-      no: finalize ? { label: "Cancel" } : undefined,
-      rejectClose: false
+      buttons: finalize
+        ? [{ action: "finalize", label: "Finalize Round", default: true }, { action: "cancel", label: "Cancel" }]
+        : [{ action: "close", label: "Close", default: true }],
+      close: () => null
     });
+    const confirmed = result === "finalize" || result === "close";
     if (!confirmed && finalize) this.statusMessage = "Round finalization cancelled after resolution review.";
     return Boolean(confirmed);
   }
@@ -761,20 +764,30 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   async #showTravelV2EndOfEventDialog({ complete = false } = {}) {
     const state = prepareTravelV2EndOfEventResolutionDialogState(this.session, { actor: this.#getSessionShipActor() });
     const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-    if (typeof dialogV2?.confirm !== "function") {
+    if (typeof dialogV2?.wait !== "function") {
       this.statusMessage = complete ? "End-of-event resolution dialog unavailable; completing with current reviewed state." : "End-of-event resolution dialog requires Foundry DialogV2.";
       if (!complete) ui.notifications?.warn?.(this.statusMessage);
       return complete;
     }
-    const confirmed = await dialogV2.confirm({
+    const buttons = complete
+      ? [{ action: "complete", label: "Complete Event", default: true }, { action: "cancel", label: "Cancel" }]
+      : [{ action: "applyOutcome", label: "Apply Outcome Package" }, { action: "applyShip", label: "Apply Approved Changes to Ship" }, { action: "close", label: "Close", default: true }];
+    const result = await dialogV2.wait({
       window: { title: state.title },
       content: renderTravelV2EndOfEventDialogHtml(state),
-      yes: { label: complete ? "Complete Event" : "Close" },
-      no: complete ? { label: "Cancel" } : undefined,
-      rejectClose: false
+      buttons,
+      close: () => null
     });
-    if (!confirmed && complete) this.statusMessage = "Event completion cancelled after end-of-event review.";
-    return Boolean(confirmed);
+    if (result === "applyOutcome") {
+      await this.applyTravelV2EventOutcomePackage();
+      return false;
+    }
+    if (result === "applyShip") {
+      await this.applyTravelV2ActorApplication();
+      return false;
+    }
+    if (result !== "complete" && complete) this.statusMessage = "Event completion cancelled after end-of-event review.";
+    return result === "complete" || result === "close";
   }
 
   async applyTravelV2EventOutcomePackage(options = {}) {
@@ -900,11 +913,23 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.statusMessage = "Lantern sample setup cancelled; no runner session was created.";
       return this.render(true);
     }
+    if (!setup.actorId && !setup.actorUuid) {
+      this.statusMessage = "Lantern sample setup requires a PF2E vehicle / Arcflight ship.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
     const actor = this.#resolveActorByIdOrUuid(setup.actorId, setup.actorUuid);
     const result = createLanternTravelV2SampleSession({ ship: actor ?? { actorId: setup.actorId, actorUuid: setup.actorUuid, actorName: setup.actorName }, name: setup.sessionName, notes: setup.notes });
-    if (result.ok) this.session = result.session;
-    this.uiState.travelV2DevToolResult = result;
-    this.statusMessage = result.ok ? "Travel v2 Lantern sample session created." : (result.errors?.[0] ?? result.error ?? "Could not create Lantern sample session.");
+    if (result.ok) {
+      const saved = await saveTravelEventRunnerSessionToLibrary(result.session, { saveAs: true, name: result.session.name });
+      this.session = saved.session ?? result.session;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2DevToolResult = saved.ok ? saved : result;
+      this.statusMessage = saved.ok ? "Travel v2 Lantern sample session created and saved for repeated testing." : "Travel v2 Lantern sample session created locally; save it manually if needed.";
+    } else {
+      this.uiState.travelV2DevToolResult = result;
+      this.statusMessage = result.errors?.[0] ?? result.error ?? "Could not create Lantern sample session.";
+    }
     return this.render(true);
   }
 

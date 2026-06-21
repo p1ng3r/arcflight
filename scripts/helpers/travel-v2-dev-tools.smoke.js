@@ -35,7 +35,7 @@ export default async function runTravelV2DevToolsSmokeChecks() {
   checked.push("early end");
 
   const roundDialog = prepareTravelV2RoundResolutionDialogState(early.session);
-  assert(roundDialog.notRun === true && roundDialog.outcomeLabel.includes("Not run"), "round dialog labels all-null rounds as not run");
+  assert(roundDialog.notRun === true && roundDialog.outcomeLabel.includes("Not run") && roundDialog.pressureChangeText === "No pressure changes", "round dialog labels all-null rounds as not run and exposes pressure changes");
   checked.push("round resolution dialog state");
 
   const debug = buildTravelV2DebugReport(early.session, { now: "2026-01-01T00:04:00.000Z" });
@@ -43,8 +43,8 @@ export default async function runTravelV2DevToolsSmokeChecks() {
   checked.push("debug report");
 
   const copied = await copyTravelV2DebugReport(early.session, { now: "2026-01-01T00:05:00.000Z" });
-  assert(copied.ok && copied.copied === false && copied.text.includes('"roundResults"'), "copy debug report returns JSON text and reports clipboard status");
-  checked.push("copy debug report status");
+  assert(copied.ok === false && copied.copied === false && copied.error && copied.text.includes('"roundResults"'), "copy debug report returns JSON text and reports clipboard failure status");
+  checked.push("copy debug report failure status");
 
   const emptyRound = { ...early.session, roundResults: [{ ...early.session.roundResults[0], stationResults: {} }] };
   const emptyRoundDialog = prepareTravelV2RoundResolutionDialogState(emptyRound);
@@ -57,9 +57,9 @@ export default async function runTravelV2DevToolsSmokeChecks() {
   checked.push("end-of-event dialog state");
 
   const older = { ...completed, key: "older", completedAt: "2026-01-01T00:00:00.000Z" };
-  const newer = { ...completed, key: "newer", completedAt: "2026-01-03T00:00:00.000Z" };
+  const newer = { ...completed, key: "newer", completedAt: "2026-01-03T00:00:00.000Z", travelV2EventOutcomeApplication: { appliedAt: "2026-01-03T00:15:00.000Z" } };
   const history = prepareTravelV2CompletedSessionHistoryState([{ session: older, key: "older" }, { session: newer, key: "newer" }]);
-  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].canReopen === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel, "completed history sorts newest first with date/time labels and supports reopen");
+  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].applicationStatusKey === "outcomeApplied" && history.rows[1].applicationStatusKey === "completedNotApplied" && history.rows[0].canReopen === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel, "completed history sorts newest first with date/time labels, application states, and reopen");
   checked.push("completed history state");
 
   return { ok: true, checked };

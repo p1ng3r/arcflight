@@ -728,7 +728,7 @@
                 <span>{{outcome}}</span>
               </header>
               <p><strong>Ship:</strong> {{shipName}}</p>
-              <p class="arcflight-sheet__hint">Completed {{completedAtLabel}} • Applied {{appliedAtLabel}} • Follow-ups {{followUpCount}}</p>
+              <p class="arcflight-sheet__hint">{{applicationStatusLabel}} • Completed {{completedAtLabel}} • Applied {{appliedAtLabel}} • Follow-ups {{followUpCount}}</p>
               <div class="arcflight-travel-runner-mvp__actions">
                 <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canReopen}}disabled{{/unless}}>Reopen Completed Session</button>
               </div>
