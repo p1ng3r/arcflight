@@ -3,6 +3,7 @@ function assertSmoke(c,m){if(!c)throw new Error(`Travel v2 event outcome package
 function assertEqual(a,e,m){if(a!==e)throw new Error(`Travel v2 event outcome package smoke check failed: ${m}. Expected ${e}, got ${a}.`)}
 function snap(v){return JSON.stringify(v)}
 function completed(outcomes=["success"]){return { status:"completed", completed:true, completedAt:"2026-06-20T00:00:00.000Z", event:{rounds:outcomes.map((_,i)=>({roundNumber:i+1}))}, travelV2EventCompletion:{completed:true, summaryText:"done"}, pressure:{strain:2}, hazards:{pendingDraws:[{id:"hazard"}]}, shipScars:{pending:[{id:"scar"}]}, rewardCandidates:[{id:"reward"}], consequenceCandidates:[{id:"consequence"}], travelV2PressureApplications:{records:[{roundIndex:0, roundNumber:1, outcomeKey:outcomes[0], totalsByPressureType:{strain:2}}]}, travelV2RoundResolutions:{records:outcomes.map((o,i)=>({roundIndex:i, roundNumber:i+1, effectiveOutcomeKey:o, stationSummary:{ok:true}}))}}}
+function liveCompleted(){return { status:"completed", completedAt:"2026-06-21T00:00:00.000Z", event:{key:"lantern-in-the-static", name:"The Lantern in the Static", rounds:[{roundNumber:1}], finalOutcomes:{criticalSuccess:{label:"Lantern Rescued Cleanly", rewards:["The true lantern flame as a narrative boon"]}}}, summary:{suggestedFinalOutcome:"criticalSuccess", suggestedFinalOutcomeLabel:"Lantern Rescued Cleanly"}, roundResults:[{roundNumber:1, stationResults:{navigator:"criticalSuccess", engineer:"success"}}] }}
 export function runTravelV2EventOutcomePackageSmokeChecks(){
   assertSmoke(!prepareTravelV2EventOutcomePackage(null).canPreparePackage,"missing session blocks");
   assertSmoke(!prepareTravelV2EventOutcomePackage({status:"active", event:{rounds:[]}}).canPreparePackage,"active session blocks");
@@ -21,11 +22,15 @@ export function runTravelV2EventOutcomePackageSmokeChecks(){
   const criticalSuccessSession = completed(["criticalSuccess"]);
   criticalSuccessSession.event.finalOutcomes = { criticalSuccess: { label: "Lantern Rescued Cleanly", rewards: ["The true lantern flame as a narrative boon"] } };
   assertEqual(prepareTravelV2EventOutcomePackage(criticalSuccessSession).rewardCandidates.length,2,"critical success legacy rewards become visible follow-ups alongside session rewards");
+  const livePkg = prepareTravelV2EventOutcomePackage(liveCompleted());
+  assertSmoke(livePkg.canPreparePackage,"live completed runner session shape prepares package");
+  assertEqual(livePkg.eventOutcomeKey,"critical-success","live summary suggested outcome drives package outcome");
+  assertEqual(livePkg.rewardCandidates.length,1,"live final outcome rewards become visible follow-up candidates");
   assertEqual(finalPkg.rewardCandidates.length,3,"final outcome reward candidates and legacy rewards become visible follow-ups");
   assertEqual(finalPkg.consequenceCandidates.length,3,"final outcome consequence candidates and losses become visible follow-ups");
   assertEqual(snap(session),before,"helper does not mutate input");
   assertEqual(prepareTravelV2EventOutcomePackage(completed(["success","failure"])).eventOutcomeKey,"mixed","mixed summarizes conservatively");
   assertEqual(prepareTravelV2EventOutcomePackage(completed(["failure","failure","success"])).eventOutcomeKey,"failure","failure majority summarizes");
-  return {ok:true, checked:["blocks","prepares","summarizes","clones","final-outcome-candidates","inert"]};
+  return {ok:true, checked:["blocks","prepares","summarizes","clones","final-outcome-candidates","live-session-shape","inert"]};
 }
 export default runTravelV2EventOutcomePackageSmokeChecks;

@@ -1,8 +1,10 @@
 import { prepareTravelV2FollowUpRecordsFromActorApplication, prepareTravelV2FollowUpState, updateTravelV2FollowUpStatus, ensureTravelV2FollowUpsOnActor } from "./travel-v2-followups.js";
+import { prepareTravelV2ActorApplicationPreviewFromSession } from "./travel-v2-actor-application-bridge.js";
 function assertSmoke(c,m){if(!c)throw new Error(`Travel v2 follow-ups smoke failed: ${m}`)}
 function assertEqual(a,b,m){if(a!==b)throw new Error(`Travel v2 follow-ups smoke failed: ${m}: expected ${b}, got ${a}`)}
 function actor(records=[]){return {type:"vehicle", flags:{arcflight:{system:{travelV2:{followUps:{version:1,records}}}}}}}
 function preview(){return {packageKey:"pkg", eventKey:"e", eventName:"The Lantern", sessionKey:"s", eventOutcomeKey:"mixed", eventOutcomeLabel:"Mixed", manualFollowUps:[{label:"Ship Scar Candidate", value:{name:"Echoes in the Rigging"}, text:"Ship Scar Candidate: Echoes"},{label:"Fortune Candidate", value:{name:"True Bearing Remembered"}},{label:"Reward Candidate", value:{name:"Rescued Lantern Flame", value:5}},{label:"Consequence Candidate", value:{name:"Static Fingerprints"}},{label:"Hull", value:{delta:3}, text:"Hull: +3 manual"}]}}
+function liveSession(){return {key:"live", status:"completed", completedAt:"2026-06-21T00:00:00.000Z", event:{key:"lantern-in-the-static", name:"The Lantern in the Static", rounds:[{roundNumber:1}], finalOutcomes:{criticalSuccess:{label:"Lantern Rescued Cleanly", rewards:["The true lantern flame as a narrative boon"]}}}, summary:{suggestedFinalOutcome:"criticalSuccess", suggestedFinalOutcomeLabel:"Lantern Rescued Cleanly"}, roundResults:[{roundNumber:1, stationResults:{navigator:"criticalSuccess", engineer:"success"}}] }}
 export default async function runTravelV2FollowUpsSmokeChecks(){
   const checked=[]; const p=preview(); const records=prepareTravelV2FollowUpRecordsFromActorApplication(p,{now:"now"});
   assertEqual(records.length,5,"extracts follow-up candidates from actor application preview"); checked.push("extract candidates");
@@ -10,6 +12,8 @@ export default async function runTravelV2FollowUpsSmokeChecks(){
   assertSmoke(state.hasStagedRecords && state.records.every((record)=>record.actionsDisabled),"unsaved follow-ups should be staged with disabled actions"); checked.push("staged actions disabled");
   const persistedState=prepareTravelV2FollowUpState(actor(records),p,{now:"now"}); assertSmoke(persistedState.hasPersistedRecords && persistedState.records.some((record)=>!record.actionsDisabled),"saved follow-ups should expose enabled actions"); checked.push("persisted actions enabled");
   assertEqual(records[0].id, prepareTravelV2FollowUpRecordsFromActorApplication(p,{now:"later"})[0].id,"creates stable IDs"); checked.push("stable IDs");
+  const livePreview = prepareTravelV2ActorApplicationPreviewFromSession(liveSession(), actor(), { session: liveSession() });
+  assertSmoke(prepareTravelV2FollowUpState(actor(), livePreview, { session: liveSession() }).records.some((record)=>record.title === "The true lantern flame as a narrative boon"),"live completed session shape stages follow-up records"); checked.push("live session follow-ups");
   const dedup=prepareTravelV2FollowUpState(actor([records[0]]),p,{now:"now"}); assertEqual(dedup.records.length,5,"does not duplicate existing follow-ups"); checked.push("dedupe existing");
   const nonGm=await updateTravelV2FollowUpStatus(actor(records),records[0].id,"kept",{user:{isGM:false}}); assertSmoke(!nonGm.ok && nonGm.error.includes("Only a GM"),"status update requires GM when user exists"); checked.push("GM required");
   let updateData=null; const gmActor=actor(records); const kept=await updateTravelV2FollowUpStatus(gmActor,records[0].id,"kept",{user:{isGM:true},note:"later",now:"then",updateActor:async(a,d)=>{updateData=d;}}); assertSmoke(kept.ok,"keep works"); assertEqual(Object.keys(updateData).length,1,"status update changes only expected flag data"); checked.push("keep and scoped update");

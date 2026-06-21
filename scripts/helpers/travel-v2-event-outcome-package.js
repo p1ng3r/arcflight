@@ -16,6 +16,46 @@ function normalizeOutcomeKey(value) {
   if (["critical-failure", "criticalFailure", "critical_failure"].includes(key)) return "critical-failure";
   return "";
 }
+
+function finalOutcomeKeyForPackage(value) {
+  return normalizeOutcomeKey(value) || "mixed";
+}
+const RESULT_SCORES = Object.freeze({ criticalSuccess: 2, success: 1, failure: -1, criticalFailure: -2 });
+function scoreToOutcome(score) {
+  if (score >= 4) return "critical-success";
+  if (score > 0) return "success";
+  if (score === 0) return "mixed";
+  if (score <= -4) return "critical-failure";
+  return "failure";
+}
+function liveRoundResults(session = {}) {
+  return Array.isArray(session.roundResults) ? session.roundResults.filter(isPlainObject) : [];
+}
+function outcomeFromLiveRoundResult(roundResult = {}, index = 0) {
+  const explicit = normalizeOutcomeKey(roundResult.effectiveOutcomeKey ?? roundResult.outcomeKey ?? roundResult.selectedOutcomeKey ?? roundResult.roundOutcomeKey);
+  if (explicit) return explicit;
+  const stationResults = isPlainObject(roundResult.stationResults) ? Object.values(roundResult.stationResults) : [];
+  if (!stationResults.length) return null;
+  const score = stationResults.reduce((sum, result) => sum + (RESULT_SCORES[result] ?? 0), 0);
+  return scoreToOutcome(score);
+}
+function roundSummariesFromLiveSession(session = {}) {
+  return liveRoundResults(session).map((roundResult, index) => ({
+    roundIndex: roundResult.roundIndex ?? index,
+    roundNumber: roundResult.roundNumber ?? index + 1,
+    outcomeKey: outcomeFromLiveRoundResult(roundResult, index),
+    finalizedAt: roundResult.finalizedAt ?? session.completedAt ?? null,
+    stationSummary: cloneData(roundResult.stationSummary ?? roundResult.stationResults ?? null)
+  }));
+}
+function eventOutcomeFromLiveSession(session = {}, fallbackRecords = []) {
+  const summaryValue = session.summary?.suggestedFinalOutcome ?? session.summary?.finalOutcomeKey ?? session.summary?.eventOutcomeKey;
+  if (summaryValue !== undefined && summaryValue !== null && String(summaryValue).trim()) return finalOutcomeKeyForPackage(summaryValue);
+  const roundSummaries = roundSummariesFromLiveSession(session).filter((record) => record.outcomeKey);
+  if (roundSummaries.length) return summarizeOutcome(roundSummaries);
+  if (fallbackRecords.length) return summarizeOutcome(fallbackRecords);
+  return "mixed";
+}
 function summarizeOutcome(records = []) {
   const outcomes = records.map(outcomeFrom).map(normalizeOutcomeKey).filter(Boolean);
   if (!outcomes.length) return "mixed";
@@ -90,14 +130,16 @@ export function prepareTravelV2EventOutcomePackage(session, options = {}) {
   const reasons = [];
   if (!isPlainObject(session)) reasons.push("Travel v2 runner session is required.");
   if (isPlainObject(session) && !isCompletedSession(session)) reasons.push("Travel v2 runner session must be completed before outcome package preparation.");
-  if (isPlainObject(session) && !isPlainObject(session.travelV2EventCompletion)) reasons.push("Completed Travel v2 runner session is missing its completion summary.");
+  if (isPlainObject(session) && !isPlainObject(session.travelV2EventCompletion) && !isPlainObject(session.summary) && !Array.isArray(session.roundResults)) reasons.push("Completed Travel v2 runner session is missing its completion summary or live round results.");
   if (reasons.length) return blocked(session, reasons);
 
   const rounds = Array.isArray(session.event?.rounds) ? session.event.rounds : [];
-  const finalizationRecords = recordsFromContainer(session.travelV2RoundResolutions).filter(isPlainObject);
-  const roundSummaries = finalizationRecords.map((record) => ({ roundIndex: record.roundIndex ?? null, roundNumber: record.roundNumber ?? null, outcomeKey: outcomeFrom(record), finalizedAt: record.finalizedAt ?? record.createdAt ?? null, stationSummary: cloneData(record.stationSummary ?? null) }));
+  const explicitFinalizationRecords = recordsFromContainer(session.travelV2RoundResolutions).filter(isPlainObject);
+  const liveRoundSummaries = roundSummariesFromLiveSession(session).filter((record) => record.outcomeKey || record.stationSummary);
+  const finalizationRecords = explicitFinalizationRecords.length ? explicitFinalizationRecords : liveRoundSummaries;
+  const roundSummaries = finalizationRecords.map((record) => ({ roundIndex: record.roundIndex ?? null, roundNumber: record.roundNumber ?? null, outcomeKey: outcomeFrom(record), finalizedAt: record.finalizedAt ?? record.createdAt ?? session.completedAt ?? null, stationSummary: cloneData(record.stationSummary ?? null) }));
   const pressureRecords = recordsFromContainer(session.travelV2PressureApplications).filter(isPlainObject);
-  const eventOutcomeKey = summarizeOutcome(finalizationRecords);
+  const eventOutcomeKey = explicitFinalizationRecords.length ? summarizeOutcome(explicitFinalizationRecords) : eventOutcomeFromLiveSession(session, finalizationRecords);
   const eventOutcomeLabel = humanizeIdentifier(eventOutcomeKey);
   const pressureSummary = pressureSummaryFrom(session, pressureRecords);
   const finalOutcome = finalOutcomeFor(session, eventOutcomeKey);
