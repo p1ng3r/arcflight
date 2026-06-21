@@ -9,6 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
+import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -100,6 +101,11 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
+  "[data-arcflight-travel-v2-dev-force-outcome]",
+  "[data-arcflight-travel-v2-dev-force-round-result]",
+  "[data-arcflight-travel-v2-dev-early-end]",
+  "[data-arcflight-travel-v2-dev-lantern-sample]",
+  "[data-arcflight-travel-v2-dev-copy-debug]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -452,7 +458,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       selectedEventId: this.selectedEventId,
       selectedSessionKey: this.selectedSessionKey,
       actor: targetActor,
-      uiState: this.uiState
+      uiState: this.uiState,
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled()
     });
     const startupDiagnostics = prepareTravelEventRunnerStartupDiagnostics({
       session: this.session,
@@ -568,6 +575,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-force-outcome")) return this.#forceTravelV2DevOutcome(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-force-round-result")) return this.#forceTravelV2DevRoundResult(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-early-end")) return this.#forceTravelV2DevEarlyEnd();
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-lantern-sample")) return this.#setupTravelV2LanternSample();
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-copy-debug")) return this.#copyTravelV2DebugReport();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -728,6 +740,48 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const result = await updateTravelV2FollowUpStatus(actor, followUpId, status, { note: noteInput?.value ?? undefined });
     this.uiState.travelV2FollowUpResult = result;
     this.statusMessage = result.ok ? `Updated Travel v2 follow-up: ${status}.` : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 follow-up update was blocked.");
+    return this.render(true);
+  }
+
+
+  async #forceTravelV2DevOutcome(target) {
+    const outcomeKey = target?.dataset?.arcflightTravelV2DevForceOutcome ?? "mixed";
+    const result = forceTravelV2Outcome(this.session, outcomeKey);
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? `Travel v2 dev forced outcome: ${humanizeIdentifier(result.outcomeKey)}.` : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 dev force outcome failed.");
+    return this.render(true);
+  }
+
+  async #forceTravelV2DevRoundResult(target) {
+    const outcomeKey = target?.dataset?.arcflightTravelV2DevForceRoundResult ?? "mixed";
+    const result = forceTravelV2CurrentRoundResults(this.session, outcomeKey);
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? `Travel v2 dev forced current-round results: ${humanizeIdentifier(result.outcomeKey)}.` : (result.error ?? "Travel v2 dev force round results failed.");
+    return this.render(true);
+  }
+
+  async #forceTravelV2DevEarlyEnd() {
+    const result = forceTravelV2EarlyEndRound(this.session);
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? "Travel v2 dev marked current round not run / ended early." : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 dev early-end failed.");
+    return this.render(true);
+  }
+
+  async #setupTravelV2LanternSample() {
+    const result = createLanternTravelV2SampleSession();
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? "Travel v2 Lantern sample session created." : (result.errors?.[0] ?? result.error ?? "Could not create Lantern sample session.");
+    return this.render(true);
+  }
+
+  async #copyTravelV2DebugReport() {
+    const result = copyTravelV2DebugReport(this.session);
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? "Copied Travel v2 debug report." : (result.error ?? "Could not copy Travel v2 debug report.");
     return this.render(true);
   }
 

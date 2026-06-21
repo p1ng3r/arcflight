@@ -1,4 +1,5 @@
 import { ARCFLIGHT } from "./config/constants.js";
+import { TRAVEL_V2_DEV_TOOLS_SETTING } from "./helpers/travel-v2-dev-tools.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog, updateActiveTravelEventRunnerSession } from "./apps/travel-event-runner.js";
@@ -1037,6 +1038,15 @@ async function handleTravelPlayerReactionResponse(payload = {}) {
 
 Hooks.once("init", () => {
   console.log("Arcflight | Initializing module");
+
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_V2_DEV_TOOLS_SETTING, {
+    name: "Travel v2 Dev Tools",
+    hint: "Show GM-only Travel v2 test controls and debug report actions in the Travel Event Runner. Disable during normal play.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false
+  });
 
   game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_REACTION_DEBUG_SETTING, {
     name: "Debug Travel Reactions",

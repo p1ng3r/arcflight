@@ -175,6 +175,20 @@ import {
   removeInstallState
 } from "../helpers/install-state.js";
 import {
+  TRAVEL_V2_DEV_TOOLS_SETTING,
+  buildTravelV2DebugReport,
+  copyTravelV2DebugReport,
+  createLanternTravelV2SampleSession,
+  forceTravelV2CurrentRoundResults,
+  forceTravelV2EarlyEndRound,
+  forceTravelV2Outcome,
+  isTravelV2DevToolsEnabled,
+  prepareTravelV2CompletedSessionHistoryState,
+  prepareTravelV2EndOfEventResolutionDialogState,
+  prepareTravelV2RoundResolutionDialogState,
+  resolveTravelV2DevToolAction
+} from "../helpers/travel-v2-dev-tools.js";
+import {
   TRAVEL_EVENT_BUILDER_IO_VERSION,
   exportTravelEventDraftToJson,
   importTravelEventDraftFromJson,
@@ -664,6 +678,18 @@ export function createArcflightDevTools() {
     prepareTravelEventLibraryOptions,
     prepareSelectedTravelEventLibraryDetails,
     prepareTravelEventNarrativeLog,
+    TRAVEL_V2_DEV_TOOLS_SETTING,
+    isTravelV2DevToolsEnabled,
+    forceTravelV2Outcome,
+    forceTravelV2EarlyEndRound,
+    forceTravelV2CurrentRoundResults,
+    createLanternTravelV2SampleSession,
+    buildTravelV2DebugReport,
+    copyTravelV2DebugReport,
+    prepareTravelV2RoundResolutionDialogState,
+    prepareTravelV2EndOfEventResolutionDialogState,
+    prepareTravelV2CompletedSessionHistoryState,
+    resolveTravelV2DevToolAction,
 
     /**
      * Return normalized ship-attached travel event state.

@@ -281,6 +281,33 @@
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2FollowUps.helpText}}</p>
           {{/if}}
         </div>
+        {{#if state.travelV2DevToolsEnabled}}
+          <section class="arcflight-travel-runner-mvp__v2-dev-tools" aria-label="Travel v2 Dev Tools">
+            <h4>Travel v2 Dev Tools</h4>
+            <p class="arcflight-sheet__hint">GM-only controls for local Travel v2 testing. Actor mutation remains behind explicit Apply buttons.</p>
+            <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+              <button type="button" data-arcflight-travel-v2-dev-lantern-sample>One-click Lantern Sample Setup</button>
+              <button type="button" data-arcflight-travel-v2-dev-copy-debug>Copy Travel v2 Debug Report</button>
+              <button type="button" data-arcflight-travel-v2-dev-early-end>Force Not Run / Ended Early</button>
+            </div>
+            <p><strong>Force outcome and pressure</strong></p>
+            <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="criticalSuccess">Critical Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="success">Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="mixed">Mixed</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="failure">Failure</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="criticalFailure">Critical Failure</button>
+            </div>
+            <p><strong>Force current-round station results only</strong></p>
+            <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="criticalSuccess">Critical Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="success">Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="mixed">Mixed</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="failure">Failure</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="criticalFailure">Critical Failure</button>
+            </div>
+          </section>
+        {{/if}}
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
