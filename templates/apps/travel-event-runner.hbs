@@ -308,6 +308,18 @@
               <button type="button" data-arcflight-travel-v2-dev-force-round-result="failure">Failure</button>
               <button type="button" data-arcflight-travel-v2-dev-force-round-result="criticalFailure">Critical Failure</button>
             </div>
+            {{#if state.travelV2DevToolResult}}
+              <div class="arcflight-travel-runner-mvp__v2-dev-result">
+                <p class="arcflight-sheet__hint">
+                  <strong>Dev Tool Result:</strong>
+                  {{#if state.travelV2DevToolResult.ok}}OK{{else}}Needs attention{{/if}}
+                  {{#if state.travelV2DevToolResult.error}} — {{state.travelV2DevToolResult.error}}{{/if}}
+                </p>
+                {{#if state.travelV2DevToolResult.text}}
+                  <label class="arcflight-sheet__field"><span>Travel v2 Debug Report</span><textarea readonly class="arcflight-travel-runner-mvp__json">{{state.travelV2DevToolResult.text}}</textarea></label>
+                {{/if}}
+              </div>
+            {{/if}}
           </section>
         {{/if}}
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>

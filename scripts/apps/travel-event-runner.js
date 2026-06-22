@@ -9,7 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
-import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, buildTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState } from "../helpers/travel-v2-dev-tools.js";
+import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -384,7 +384,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2EventCompletionResult: null,
       travelV2EventOutcomeApplicationResult: null,
       travelV2ActorApplicationResult: null,
-      travelV2FollowUpResult: null
+      travelV2FollowUpResult: null,
+      travelV2DevToolResult: null,
+      travelV2AutoSaveResult: null
     };
   }
 
@@ -731,7 +733,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (update.shouldUpdateSession) {
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
-      this.statusMessage = "Completed Travel v2 event.";
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Completed Travel v2 event and saved it for reopen." : "Completed Travel v2 event. Save Current Session to preserve the reopen/history entry.";
       return this.render(true);
     }
 
@@ -797,7 +800,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (update.shouldUpdateSession) {
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
-      this.statusMessage = "Applied Travel v2 outcome package.";
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Applied Travel v2 outcome package and saved the completed session for reopen." : "Applied Travel v2 outcome package. Save Current Session to preserve the reopen/history entry.";
       return this.render(true);
     }
 
@@ -811,7 +815,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const preview = prepareTravelV2ActorApplicationPreviewFromSession(this.session, actor, { ...options, session: this.session });
     const result = await applyTravelV2ActorApplicationPreview(actor, preview, options);
     this.uiState.travelV2ActorApplicationResult = result;
-    this.statusMessage = result.ok ? "Applied approved Travel v2 changes to ship." : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.");
+    if (result.ok && this.session) {
+      const nextSession = cloneData(this.session);
+      nextSession.travelV2ActorApplication = result.applicationRecord ?? nextSession.travelV2ActorApplication;
+      nextSession.updatedAt = new Date().toISOString();
+      this.session = nextSession;
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Applied approved Travel v2 changes to ship and saved the completed session for reopen." : "Applied approved Travel v2 changes to ship. Save Current Session to preserve the reopen/history entry.";
+    } else {
+      this.statusMessage = result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.";
+    }
     return this.render(true);
   }
 
@@ -934,9 +947,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #copyTravelV2DebugReport() {
-    const report = buildTravelV2DebugReport(this.session);
-    this.uiState.travelV2DevToolResult = { ok: true, report, text: JSON.stringify(report, null, 2) };
-    return this.#copyOrFallback(this.uiState.travelV2DevToolResult.text, "Copied Travel v2 debug report.");
+    const result = await copyTravelV2DebugReport(this.session);
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? "Copied Travel v2 debug report." : (result.error ?? "Could not copy Travel v2 debug report; debug text is shown below.");
+    if (result.ok) ui.notifications?.info?.(this.statusMessage); else ui.notifications?.warn?.(this.statusMessage);
+    return this.render(true);
   }
 
   async #sendPlayerMissionBoard() {
@@ -1022,6 +1037,44 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   #getSessionShipActor() {
     const ship = this.session?.ship ?? {};
     return this.#resolveActorByIdOrUuid(ship.actorId, ship.actorUuid) ?? this.#getSelectedShipActor();
+  }
+
+  async #saveCompletedTravelV2SessionForReopen() {
+    const completed = this.session?.status === "completed" || this.session?.completed === true || Boolean(this.session?.completedAt);
+    if (!this.session || !completed) {
+      return { ok: false, skipped: true, error: "No completed Travel v2 runner session is available to preserve." };
+    }
+
+    const options = {};
+    if (this.session.key) {
+      options.key = this.session.key;
+      options.overwrite = true;
+    } else {
+      const eventName = this.session.event?.name ?? "Travel Event";
+      const completedAt = this.session.completedAt ? new Date(this.session.completedAt).toLocaleString() : new Date().toLocaleString();
+      options.name = this.session.name?.trim?.() || `${eventName} — Completed ${completedAt}`;
+    }
+
+    if (typeof globalThis.game?.settings?.set !== "function") {
+      const skipped = {
+        ok: false,
+        skipped: true,
+        error: "Foundry game.settings is unavailable; completed session was not saved for reopen/history in this environment."
+      };
+      this.uiState.travelV2AutoSaveResult = skipped;
+      return skipped;
+    }
+
+    const saved = await saveTravelEventRunnerSessionToLibrary(this.session, options);
+    this.uiState.travelV2AutoSaveResult = saved;
+    if (saved.ok) {
+      this.session = saved.session ?? this.session;
+      this.selectedSessionKey = saved.entry?.key ?? this.session?.key ?? this.selectedSessionKey;
+      return { ...saved, preserved: true };
+    }
+
+    ui.notifications?.warn?.(saved.errors?.[0] ?? "Completed Travel v2 runner session could not be saved for reopen/history.");
+    return saved;
   }
 
   async #startSelectedEvent() {
