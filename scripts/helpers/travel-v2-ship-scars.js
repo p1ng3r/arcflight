@@ -7,11 +7,30 @@ function cloneData(value) { return value == null ? value : JSON.parse(JSON.strin
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function nowIso(options = {}) { return typeof options.now === "string" && options.now ? options.now : new Date().toISOString(); }
 function actorSystem(actor) { return actor?.getFlag?.(MODULE_ID, "system") ?? actor?.flags?.[MODULE_ID]?.system ?? {}; }
-function actorShipScars(actor) { return normalizeTravelV2ShipScarsState(actorSystem(actor)?.travelV2?.shipScars).records; }
+function actorShipScars(actor) { return readTravelV2ActorShipScarRecords(actor); }
 function isSupportedActor(actor) { const enabled = actor?.getFlag?.(MODULE_ID, "enabled") ?? actor?.flags?.[MODULE_ID]?.enabled; const arcType = actor?.getFlag?.(MODULE_ID, "actorType") ?? actor?.flags?.[MODULE_ID]?.actorType; return actor?.type === "vehicle" && (enabled === true || arcType === "ship" || arcType === "arcflightShip"); }
 function userIsGm(options = {}) { return options.isGM ?? options.user?.isGM ?? globalThis.game?.user?.isGM ?? false; }
 function userRecord(options = {}) { const user = options.user ?? globalThis.game?.user ?? {}; return { id: user.id ?? user._id ?? "", name: user.name ?? "" }; }
 function stableId(record = {}) { return record.id || `${record.scarId || record.key || "scar"}-${record.pressureType || "pressure"}-${record.roundNumber ?? "manual"}`; }
+
+function preserveActorScarMetadata(normalizedRecord, source = {}) {
+  const preserved = { ...normalizedRecord };
+  if (isPlainObject(source.playerSafe)) preserved.playerSafe = cloneData(source.playerSafe);
+  for (const key of ["appliedByUserId", "appliedByUserName", "appliedAt", "repairedAt", "dismissedAt", "drawnAt"]) {
+    if (typeof source[key] === "string") preserved[key] = source[key];
+  }
+  return preserved;
+}
+
+function readTravelV2ActorShipScarRecords(actor) {
+  const shipScars = actorSystem(actor)?.travelV2?.shipScars;
+  const source = isPlainObject(shipScars) ? shipScars : {};
+  const records = Array.isArray(source.records) ? source.records : [];
+  return Array.from(new Map(records.filter(isPlainObject).map((record) => {
+    const normalized = normalizeTravelV2ShipScarRecord(record);
+    return preserveActorScarMetadata(normalized, record);
+  }).map((record) => [stableId(record), record])).values());
+}
 
 export function normalizeTravelV2ShipScarRecord(input = {}) {
   const source = isPlainObject(input) ? input : {};

@@ -33,10 +33,27 @@ export default async function runTravelV2ShipScarsSmokeChecks() {
   const duplicateApply = await applyTravelV2ShipScarToActor(drawn.session, dupActor, scarId, { user: { isGM: true }, updateActor: async () => { throw new Error("duplicate should not update actor"); } });
   assertSmoke(!duplicateApply.ok, "duplicate apply is blocked");
 
+  const secondPressure = applyTravelV2PressureChanges({ key: "scar-smoke-2", pressure: { hull: { value: 4, crossed: [2, 3, 4] } }, shipScars: { records: [] } }, [{ pressureType: "hull", amount: 1, source: "manual", roundNumber: 3 }]);
+  const secondDrawn = drawTravelV2ShipScarsForPressureResult({ key: "scar-smoke-2", shipScars: { records: [] } }, secondPressure, { now: "2026-06-22T00:02:30.000Z" });
+  let secondUpdateData = null;
+  const secondApplied = await applyTravelV2ShipScarToActor(secondDrawn.session, dupActor, secondDrawn.session.shipScars.records[0].id, { user: { isGM: true, id: "gm2", name: "Second GM" }, now: "2026-06-22T00:02:45.000Z", updateActor: async (_actor, data) => { secondUpdateData = data; } });
+  assertSmoke(secondApplied.ok && secondApplied.applied, "second scar applies to actor with existing scars");
+  const preservedFirst = secondUpdateData["flags.arcflight.system.travelV2.shipScars"].records.find((record) => record.id === scarId);
+  assertEqual(preservedFirst.playerSafe.text, updateData["flags.arcflight.system.travelV2.shipScars"].records[0].playerSafe.text, "applying second scar preserves first playerSafe text");
+  assertEqual(preservedFirst.playerSafe.repairRequirement, updateData["flags.arcflight.system.travelV2.shipScars"].records[0].playerSafe.repairRequirement, "applying second scar preserves first playerSafe repair requirement");
+  assertEqual(preservedFirst.appliedByUserName, updateData["flags.arcflight.system.travelV2.shipScars"].records[0].appliedByUserName, "applying second scar preserves first apply metadata");
+
+  const repairActor = actor({ travelV2: { shipScars: secondUpdateData["flags.arcflight.system.travelV2.shipScars"], followUps: { records: [{ id: "f" }] }, actorApplications: { records: [{ id: "a" }] } } });
   let repairUpdate = null;
-  const repaired = await repairTravelV2ShipScarOnActor(applied.session, dupActor, scarId, { user: { isGM: true }, now: "2026-06-22T00:03:00.000Z", updateActor: async (_actor, data) => { repairUpdate = data; } });
+  const repaired = await repairTravelV2ShipScarOnActor(applied.session, repairActor, scarId, { user: { isGM: true }, now: "2026-06-22T00:03:00.000Z", updateActor: async (_actor, data) => { repairUpdate = data; } });
   assertSmoke(repaired.ok && repaired.repaired, "repair updates actor scar status");
-  assertEqual(repairUpdate["flags.arcflight.system.travelV2.shipScars"].records[0].status, "repaired", "actor scar is repaired");
+  const repairedFirst = repairUpdate["flags.arcflight.system.travelV2.shipScars"].records.find((record) => record.id === scarId);
+  assertEqual(repairedFirst.status, "repaired", "actor scar is repaired");
+  assertEqual(repairedFirst.playerSafe.status, "repaired", "repair updates playerSafe status");
+  assertEqual(repairedFirst.playerSafe.text, preservedFirst.playerSafe.text, "repair preserves playerSafe text");
+  assertEqual(repairedFirst.playerSafe.name, preservedFirst.playerSafe.name, "repair preserves playerSafe name");
+  assertEqual(repairedFirst.playerSafe.repairRequirement, preservedFirst.playerSafe.repairRequirement, "repair preserves playerSafe repair requirement");
+  assertEqual(repairedFirst.appliedByUserName, preservedFirst.appliedByUserName, "repair preserves apply metadata");
   assertEqual(normalizeTravelV2ShipScarsState(repaired.session.shipScars).records[0].status, "repaired", "session scar is repaired");
-  return { checked: ["overflow-draw", "no-actor-mutation-on-draw", "apply-persists", "duplicate-apply-blocked", "repair-updates", "existing-records-preserved", "safe-player-payload"] };
+  return { checked: ["overflow-draw", "no-actor-mutation-on-draw", "apply-persists", "duplicate-apply-blocked", "second-apply-preserves-existing", "repair-updates", "repair-preserves-player-safe", "existing-records-preserved", "safe-player-payload"] };
 }
