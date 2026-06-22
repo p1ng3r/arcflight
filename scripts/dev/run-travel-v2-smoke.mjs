@@ -24,6 +24,7 @@ import runTravelEventRunnerV2EventCompletionSmokeChecks from "../apps/travel-eve
 import runTravelEventRunnerV2EventOutcomeApplicationSmokeChecks from "../apps/travel-event-runner-v2-event-outcome-application.smoke.js";
 import runTravelEventRunnerStartupDiagnosticsSmokeChecks from "../apps/travel-event-runner-startup-diagnostics.smoke.js";
 import runTravelV2SampleEventSmokeChecks from "./run-travel-v2-sample-event-smoke.mjs";
+import runTravelV2DevToolsSmokeChecks from "../helpers/travel-v2-dev-tools.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -51,7 +52,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 event completion", runTravelEventRunnerV2EventCompletionSmokeChecks],
   ["Travel event runner v2 event outcome application", runTravelEventRunnerV2EventOutcomeApplicationSmokeChecks],
   ["Travel event runner startup diagnostics", runTravelEventRunnerStartupDiagnosticsSmokeChecks],
-  ["Travel v2 sample event", runTravelV2SampleEventSmokeChecks]
+  ["Travel v2 sample event", runTravelV2SampleEventSmokeChecks],
+  ["Travel v2 dev tools", runTravelV2DevToolsSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {

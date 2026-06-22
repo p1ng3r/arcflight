@@ -181,6 +181,7 @@
             <strong>Round Finalization</strong>
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.footerText}}</p>
           </div>
+          <button type="button" data-arcflight-travel-v2-round-review>Review Round Resolution</button>
           <button type="button" class="arcflight-travel-runner-mvp__v2-finalize-button" data-arcflight-travel-v2-round-finalize {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.buttonLabel}}</button>
         </div>
         {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.blockedReason}}
@@ -198,6 +199,7 @@
               <strong>Event Completion Readiness</strong>
               <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.countText}}</p>
             </div>
+            <button type="button" data-arcflight-travel-v2-event-review>Review End-of-Event Resolution</button>
             <button type="button" class="arcflight-travel-runner-mvp__v2-event-complete-button" title="Complete Event / Cannot Complete Event / Event Completed" data-arcflight-travel-v2-event-complete {{#if state.travelV2PreviewPanel.travelV2EventCompletionReadiness.completeDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.completeButtonLabel}}</button>
           </div>
           <p>{{state.travelV2PreviewPanel.travelV2EventCompletionReadiness.nextStepText}}</p>
@@ -281,6 +283,45 @@
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2FollowUps.helpText}}</p>
           {{/if}}
         </div>
+        {{#if state.travelV2DevToolsEnabled}}
+          <section class="arcflight-travel-runner-mvp__v2-dev-tools" aria-label="Travel v2 Dev Tools">
+            <h4>Travel v2 Dev Tools</h4>
+            <p class="arcflight-sheet__hint">GM-only controls for local Travel v2 testing. Actor mutation remains behind explicit Apply buttons.</p>
+            <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+              <button type="button" data-arcflight-travel-v2-dev-lantern-sample>One-click Lantern Sample Setup</button>
+              <button type="button" data-arcflight-travel-v2-dev-copy-debug>Copy Travel v2 Debug Report</button>
+              <button type="button" data-arcflight-travel-v2-dev-early-end>Force Not Run / Ended Early</button>
+            </div>
+            <p><strong>Force outcome and pressure</strong></p>
+            <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="criticalSuccess">Critical Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="success">Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="mixed">Mixed</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="failure">Failure</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-outcome="criticalFailure">Critical Failure</button>
+            </div>
+            <p><strong>Force current-round station results only</strong></p>
+            <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="criticalSuccess">Critical Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="success">Success</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="mixed">Mixed</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="failure">Failure</button>
+              <button type="button" data-arcflight-travel-v2-dev-force-round-result="criticalFailure">Critical Failure</button>
+            </div>
+            {{#if state.travelV2DevToolResult}}
+              <div class="arcflight-travel-runner-mvp__v2-dev-result">
+                <p class="arcflight-sheet__hint">
+                  <strong>Dev Tool Result:</strong>
+                  {{#if state.travelV2DevToolResult.ok}}OK{{else}}Needs attention{{/if}}
+                  {{#if state.travelV2DevToolResult.error}} — {{state.travelV2DevToolResult.error}}{{/if}}
+                </p>
+                {{#if state.travelV2DevToolResult.text}}
+                  <label class="arcflight-sheet__field"><span>Travel v2 Debug Report</span><textarea readonly class="arcflight-travel-runner-mvp__json">{{state.travelV2DevToolResult.text}}</textarea></label>
+                {{/if}}
+              </div>
+            {{/if}}
+          </section>
+        {{/if}}
         <p class="arcflight-sheet__hint"><strong>GM-only:</strong> {{state.travelV2PreviewPanel.footerText}}</p>
       </section>
 
@@ -687,6 +728,26 @@
           {{/each}}
         </select>
       </label>
+
+      {{#if state.travelV2CompletedSessionHistory.hasRows}}
+        <section class="arcflight-travel-runner-mvp__completed-history" aria-label="Completed Travel v2 Sessions">
+          <h3>Completed Travel v2 Sessions</h3>
+          <p class="arcflight-sheet__hint">Newest completed sessions first. Reopen loads the saved snapshot only; actor mutation still requires explicit GM Apply buttons.</p>
+          {{#each state.travelV2CompletedSessionHistory.rows}}
+            <article class="arcflight-travel-runner-mvp__session-row">
+              <header>
+                <strong>{{eventName}}</strong>
+                <span>{{outcome}}</span>
+              </header>
+              <p><strong>Ship:</strong> {{shipName}}</p>
+              <p class="arcflight-sheet__hint">{{applicationStatusLabel}} • Completed {{completedAtLabel}} • Applied {{appliedAtLabel}} • Follow-ups {{followUpCount}}</p>
+              <div class="arcflight-travel-runner-mvp__actions">
+                <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canReopen}}disabled{{/unless}}>Reopen Completed Session</button>
+              </div>
+            </article>
+          {{/each}}
+        </section>
+      {{/if}}
 
       <div class="arcflight-travel-runner-mvp__sessions">
         {{#each state.sessionLibrary.entries}}

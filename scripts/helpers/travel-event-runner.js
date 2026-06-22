@@ -1590,8 +1590,17 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     focusEffectRecords: normalizeTravelFocusEffectRecords(session.focusEffectRecords, options),
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(session.stabilizeResolutionRecords, options),
     reactionPrompts: normalizeTravelReactionPromptRecords(session.reactionPrompts, options),
-    playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {}
+    playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
+    travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
+    travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
+    travelV2RoundResolutions: isPlainObject(session.travelV2RoundResolutions) || Array.isArray(session.travelV2RoundResolutions) ? cloneData(session.travelV2RoundResolutions) : undefined,
+    travelV2EventCompletion: isPlainObject(session.travelV2EventCompletion) ? cloneData(session.travelV2EventCompletion) : undefined,
+    travelV2EventOutcomeApplication: isPlainObject(session.travelV2EventOutcomeApplication) ? cloneData(session.travelV2EventOutcomeApplication) : undefined,
+    travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined
   };
+  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication"]) {
+    if (normalized[key] === undefined) delete normalized[key];
+  }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
 }
 

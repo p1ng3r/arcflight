@@ -9,6 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
+import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -100,6 +101,13 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
+  "[data-arcflight-travel-v2-dev-force-outcome]",
+  "[data-arcflight-travel-v2-dev-force-round-result]",
+  "[data-arcflight-travel-v2-dev-early-end]",
+  "[data-arcflight-travel-v2-dev-lantern-sample]",
+  "[data-arcflight-travel-v2-dev-copy-debug]",
+  "[data-arcflight-travel-v2-round-review]",
+  "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -271,6 +279,26 @@ function getRunnerPressureSelectedOutcomeKey(source = {}) {
   return typeof rawValue === "string" ? rawValue.trim() : "";
 }
 
+
+function renderTravelV2KeyValueList(rows = []) {
+  return `<dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "")}</dd>`).join("")}</dl>`;
+}
+
+function renderTravelV2RoundResolutionDialogHtml(state = {}) {
+  const stationRows = Object.entries(state.stationResults ?? {}).map(([station, result]) => `<li><strong>${escapeHtml(humanizeIdentifier(station))}:</strong> ${escapeHtml(result ?? "Not run / ended early")}</li>`).join("") || `<li>Not run / ended early</li>`;
+  const pressureRows = (state.pressureChanges ?? []).map((row) => `<li><strong>${escapeHtml(row.displayAmount)}</strong> ${escapeHtml(humanizeIdentifier(row.pressureType ?? row.label))}</li>`).join("") || `<li>No pressure changes</li>`;
+  return `<section class="arcflight-travel-v2-resolution-dialog"><h2>${escapeHtml(state.title)}</h2><p><strong>Event:</strong> ${escapeHtml(state.eventName)}</p>${state.vignette ? `<h3>Vignette</h3><p>${escapeHtml(state.vignette)}</p>` : ""}<h3>Station Outcomes</h3><ul>${stationRows}</ul><h3>Pressure Changes</h3><ul>${pressureRows}</ul><p class="notes"><strong>Outcome:</strong> ${escapeHtml(state.outcomeLabel)}</p><p class="notes">Review this round pressure and vignette before finalizing. This dialog does not mutate actors until the GM confirms finalization.</p></section>`;
+}
+
+function renderTravelV2EndOfEventDialogHtml(state = {}) {
+  const packageState = state.outcomePackage ?? {};
+  const roundRows = (packageState.roundSummaries ?? []).map((round) => `<li>Round ${escapeHtml(round.roundNumber ?? "?")}: ${escapeHtml(round.outcomeKey ?? "not-run")}</li>`).join("") || `<li>No round summaries available.</li>`;
+  const rewards = (packageState.rewardCandidates ?? []).map((entry) => `<li>${escapeHtml(entry.name ?? entry.text ?? entry)}</li>`).join("") || `<li>No reward candidates.</li>`;
+  const consequences = (packageState.consequenceCandidates ?? []).map((entry) => `<li>${escapeHtml(entry.name ?? entry.text ?? entry)}</li>`).join("") || `<li>No consequence candidates.</li>`;
+  const followUps = (state.followUps?.records ?? []).map((entry) => `<li>${escapeHtml(entry.title ?? entry.text ?? entry.id)}</li>`).join("") || `<li>No follow-ups.</li>`;
+  return `<section class="arcflight-travel-v2-resolution-dialog"><h2>${escapeHtml(state.title)}</h2>${renderTravelV2KeyValueList([["Event", state.eventName], ["Ship", state.shipName], ["Outcome", packageState.eventOutcomeLabel ?? ""], ["Completed", state.completedAt || "Not completed"]])}<nav class="tabs"><span>Vignette</span><span>Rounds</span><span>Rewards</span><span>Consequences</span><span>Ship Changes</span><span>Follow-Ups</span><span>Debug</span></nav><h3>Vignette</h3><p>${escapeHtml(packageState.summaryText ?? "")}</p><h3>Rounds</h3><ul>${roundRows}</ul><h3>Rewards</h3><ul>${rewards}</ul><h3>Consequences</h3><ul>${consequences}</ul><h3>Ship Changes</h3><p>Actor mutation remains behind explicit GM Apply buttons.</p><h3>Follow-Ups</h3><ul>${followUps}</ul><h3>Debug</h3><textarea readonly rows="8">${escapeHtml(JSON.stringify(state.debugReport ?? {}, null, 2))}</textarea></section>`;
+}
+
 export function prepareTravelV2PressureApplicationRunnerUpdate(currentSession, options = {}) {
   const selectedOutcomeKey = typeof options.selectedOutcomeKey === "string" ? options.selectedOutcomeKey.trim() : "";
   const helperOptions = selectedOutcomeKey ? { ...options, selectedOutcomeKey } : { ...options };
@@ -356,7 +384,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2EventCompletionResult: null,
       travelV2EventOutcomeApplicationResult: null,
       travelV2ActorApplicationResult: null,
-      travelV2FollowUpResult: null
+      travelV2FollowUpResult: null,
+      travelV2DevToolResult: null,
+      travelV2AutoSaveResult: null
     };
   }
 
@@ -452,7 +482,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       selectedEventId: this.selectedEventId,
       selectedSessionKey: this.selectedSessionKey,
       actor: targetActor,
-      uiState: this.uiState
+      uiState: this.uiState,
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled()
     });
     const startupDiagnostics = prepareTravelEventRunnerStartupDiagnostics({
       session: this.session,
@@ -568,6 +599,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-force-outcome")) return this.#forceTravelV2DevOutcome(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-force-round-result")) return this.#forceTravelV2DevRoundResult(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-early-end")) return this.#forceTravelV2DevEarlyEnd();
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-lantern-sample")) return this.#setupTravelV2LanternSample();
+    if (target.hasAttribute("data-arcflight-travel-v2-dev-copy-debug")) return this.#copyTravelV2DebugReport();
+    if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
+    if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
@@ -666,6 +704,10 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async finalizeTravelV2Round(options = {}) {
+    if (options.skipDialog !== true) {
+      const confirmed = await this.#showTravelV2RoundResolutionDialog({ finalize: true });
+      if (!confirmed) return this.render(true);
+    }
     const update = prepareTravelV2RoundFinalizationRunnerUpdate(this.session, options);
     this.uiState.travelV2RoundFinalizationResult = update.result;
 
@@ -681,18 +723,74 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async completeTravelV2Event(options = {}) {
+    if (options.skipDialog !== true) {
+      const confirmed = await this.#showTravelV2EndOfEventDialog({ complete: true });
+      if (!confirmed) return this.render(true);
+    }
     const update = prepareTravelV2EventCompletionRunnerUpdate(this.session, options);
     this.uiState.travelV2EventCompletionResult = update.result;
 
     if (update.shouldUpdateSession) {
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
-      this.statusMessage = "Completed Travel v2 event.";
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Completed Travel v2 event and saved it for reopen." : "Completed Travel v2 event. Save Current Session to preserve the reopen/history entry.";
       return this.render(true);
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 event completion was blocked.";
     return update.shouldRerender ? this.render(true) : update;
+  }
+
+
+  async #showTravelV2RoundResolutionDialog({ finalize = false } = {}) {
+    const state = prepareTravelV2RoundResolutionDialogState(this.session);
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.wait !== "function") {
+      this.statusMessage = finalize ? "Round resolution dialog unavailable; finalizing with current reviewed state." : "Round resolution dialog requires Foundry DialogV2.";
+      if (!finalize) ui.notifications?.warn?.(this.statusMessage);
+      return finalize;
+    }
+    const result = await dialogV2.wait({
+      window: { title: state.title },
+      content: renderTravelV2RoundResolutionDialogHtml(state),
+      buttons: finalize
+        ? [{ action: "finalize", label: "Finalize Round", default: true }, { action: "cancel", label: "Cancel" }]
+        : [{ action: "close", label: "Close", default: true }],
+      close: () => null
+    });
+    const confirmed = result === "finalize" || result === "close";
+    if (!confirmed && finalize) this.statusMessage = "Round finalization cancelled after resolution review.";
+    return Boolean(confirmed);
+  }
+
+  async #showTravelV2EndOfEventDialog({ complete = false } = {}) {
+    const state = prepareTravelV2EndOfEventResolutionDialogState(this.session, { actor: this.#getSessionShipActor() });
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.wait !== "function") {
+      this.statusMessage = complete ? "End-of-event resolution dialog unavailable; completing with current reviewed state." : "End-of-event resolution dialog requires Foundry DialogV2.";
+      if (!complete) ui.notifications?.warn?.(this.statusMessage);
+      return complete;
+    }
+    const buttons = complete
+      ? [{ action: "complete", label: "Complete Event", default: true }, { action: "cancel", label: "Cancel" }]
+      : [{ action: "applyOutcome", label: "Apply Outcome Package" }, { action: "applyShip", label: "Apply Approved Changes to Ship" }, { action: "close", label: "Close", default: true }];
+    const result = await dialogV2.wait({
+      window: { title: state.title },
+      content: renderTravelV2EndOfEventDialogHtml(state),
+      buttons,
+      close: () => null
+    });
+    if (result === "applyOutcome") {
+      await this.applyTravelV2EventOutcomePackage();
+      return false;
+    }
+    if (result === "applyShip") {
+      await this.applyTravelV2ActorApplication();
+      return false;
+    }
+    if (result !== "complete" && complete) this.statusMessage = "Event completion cancelled after end-of-event review.";
+    return result === "complete" || result === "close";
   }
 
   async applyTravelV2EventOutcomePackage(options = {}) {
@@ -702,7 +800,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (update.shouldUpdateSession) {
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
-      this.statusMessage = "Applied Travel v2 outcome package.";
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Applied Travel v2 outcome package and saved the completed session for reopen." : "Applied Travel v2 outcome package. Save Current Session to preserve the reopen/history entry.";
       return this.render(true);
     }
 
@@ -716,7 +815,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const preview = prepareTravelV2ActorApplicationPreviewFromSession(this.session, actor, { ...options, session: this.session });
     const result = await applyTravelV2ActorApplicationPreview(actor, preview, options);
     this.uiState.travelV2ActorApplicationResult = result;
-    this.statusMessage = result.ok ? "Applied approved Travel v2 changes to ship." : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.");
+    if (result.ok && this.session) {
+      const nextSession = cloneData(this.session);
+      nextSession.travelV2ActorApplication = result.applicationRecord ?? nextSession.travelV2ActorApplication;
+      nextSession.updatedAt = new Date().toISOString();
+      this.session = nextSession;
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Applied approved Travel v2 changes to ship and saved the completed session for reopen." : "Applied approved Travel v2 changes to ship. Save Current Session to preserve the reopen/history entry.";
+    } else {
+      this.statusMessage = result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.";
+    }
     return this.render(true);
   }
 
@@ -728,6 +836,121 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const result = await updateTravelV2FollowUpStatus(actor, followUpId, status, { note: noteInput?.value ?? undefined });
     this.uiState.travelV2FollowUpResult = result;
     this.statusMessage = result.ok ? `Updated Travel v2 follow-up: ${status}.` : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 follow-up update was blocked.");
+    return this.render(true);
+  }
+
+
+  async #forceTravelV2DevOutcome(target) {
+    const outcomeKey = target?.dataset?.arcflightTravelV2DevForceOutcome ?? "mixed";
+    const result = forceTravelV2Outcome(this.session, outcomeKey);
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? `Travel v2 dev forced outcome: ${humanizeIdentifier(result.outcomeKey)}.` : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 dev force outcome failed.");
+    return this.render(true);
+  }
+
+  async #forceTravelV2DevRoundResult(target) {
+    const outcomeKey = target?.dataset?.arcflightTravelV2DevForceRoundResult ?? "mixed";
+    const result = forceTravelV2CurrentRoundResults(this.session, outcomeKey);
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? `Travel v2 dev forced current-round results: ${humanizeIdentifier(result.outcomeKey)}.` : (result.error ?? "Travel v2 dev force round results failed.");
+    return this.render(true);
+  }
+
+  async #forceTravelV2DevEarlyEnd() {
+    const result = forceTravelV2EarlyEndRound(this.session);
+    if (result.ok) this.session = result.session;
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? "Travel v2 dev marked current round not run / ended early." : (result.blockedReasons?.[0] ?? result.error ?? "Travel v2 dev early-end failed.");
+    return this.render(true);
+  }
+
+
+  #getTravelV2SampleShipOptions() {
+    const selected = this.#getSelectedShipActor() ?? this.#getSessionShipActor();
+    const actors = Array.from(globalThis.game?.actors ?? []);
+    return actors
+      .filter((actor) => actor?.type === "vehicle" || actor?.getFlag?.("arcflight", "ship") === true || actor?.system?.arcflight?.ship === true)
+      .map((actor) => ({
+        id: actor.id ?? "",
+        uuid: actor.uuid ?? "",
+        name: actor.name ?? "Unnamed Ship",
+        label: `${actor.name ?? "Unnamed Ship"}${actor.type ? ` (${actor.type})` : ""}`,
+        selected: selected ? (actor.id === selected.id || actor.uuid === selected.uuid) : false
+      }));
+  }
+
+  async #requestTravelV2LanternSampleSetup() {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    const shipOptions = this.#getTravelV2SampleShipOptions();
+    if (typeof dialogV2?.prompt !== "function") {
+      const selected = shipOptions.find((option) => option.selected) ?? shipOptions[0] ?? null;
+      return selected ? { cancelled: false, actorId: selected.id, actorUuid: selected.uuid, actorName: selected.name, sessionName: "Lantern in the Static — Travel v2 Dev Sample", notes: "Travel v2 Lantern sample setup." } : { cancelled: true };
+    }
+    const optionsHtml = shipOptions.length
+      ? shipOptions.map((ship, index) => `<option value="${escapeHtml(ship.id)}" data-actor-uuid="${escapeHtml(ship.uuid)}" data-actor-name="${escapeHtml(ship.name)}" ${(ship.selected || (!shipOptions.some((option) => option.selected) && index === 0)) ? "selected" : ""}>${escapeHtml(ship.label)}</option>`).join("")
+      : `<option value="" selected>No PF2E vehicle actors available</option>`;
+    try {
+      const data = await dialogV2.prompt({
+        window: { title: "Set Up Lantern Travel v2 Sample" },
+        content: `<form><p>Create a local Travel v2 sample runner for <strong>Lantern in the Static</strong>.</p><div class="form-group"><label>Ship / PF2E vehicle</label><select name="actorId" ${shipOptions.length ? "" : "disabled"}>${optionsHtml}</select></div><div class="form-group"><label>Session name</label><input type="text" name="sessionName" value="Lantern in the Static — Travel v2 Dev Sample"></div><div class="form-group"><label>Session notes</label><textarea name="notes" rows="3">Travel v2 Lantern sample setup.</textarea></div><p class="notes">This creates a local runner session only. It does not mutate actors or publish content.</p></form>`,
+        rejectClose: false,
+        ok: {
+          label: "Create Sample",
+          callback: (event, _button, dialog) => {
+            const form = event?.currentTarget?.closest?.("form") ?? dialog?.element?.querySelector?.("form") ?? dialog?.element?.[0]?.querySelector?.("form");
+            const formData = form ? new FormData(form) : null;
+            const select = form?.querySelector?.("[name='actorId']");
+            const selectedOption = select?.selectedOptions?.[0];
+            return {
+              actorId: String(formData?.get("actorId") ?? ""),
+              actorUuid: selectedOption?.dataset?.actorUuid ?? "",
+              actorName: selectedOption?.dataset?.actorName ?? "",
+              sessionName: String(formData?.get("sessionName") ?? ""),
+              notes: String(formData?.get("notes") ?? "")
+            };
+          }
+        },
+        cancel: { label: "Cancel" }
+      });
+      return data ? { cancelled: false, ...data } : { cancelled: true };
+    } catch (_error) {
+      return { cancelled: true };
+    }
+  }
+
+  async #setupTravelV2LanternSample() {
+    const setup = await this.#requestTravelV2LanternSampleSetup();
+    if (setup.cancelled) {
+      this.statusMessage = "Lantern sample setup cancelled; no runner session was created.";
+      return this.render(true);
+    }
+    if (!setup.actorId && !setup.actorUuid) {
+      this.statusMessage = "Lantern sample setup requires a PF2E vehicle / Arcflight ship.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const actor = this.#resolveActorByIdOrUuid(setup.actorId, setup.actorUuid);
+    const result = createLanternTravelV2SampleSession({ ship: actor ?? { actorId: setup.actorId, actorUuid: setup.actorUuid, actorName: setup.actorName }, name: setup.sessionName, notes: setup.notes });
+    if (result.ok) {
+      const saved = await saveTravelEventRunnerSessionToLibrary(result.session, { saveAs: true, name: result.session.name });
+      this.session = saved.session ?? result.session;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2DevToolResult = saved.ok ? saved : result;
+      this.statusMessage = saved.ok ? "Travel v2 Lantern sample session created and saved for repeated testing." : "Travel v2 Lantern sample session created locally; save it manually if needed.";
+    } else {
+      this.uiState.travelV2DevToolResult = result;
+      this.statusMessage = result.errors?.[0] ?? result.error ?? "Could not create Lantern sample session.";
+    }
+    return this.render(true);
+  }
+
+  async #copyTravelV2DebugReport() {
+    const result = await copyTravelV2DebugReport(this.session);
+    this.uiState.travelV2DevToolResult = result;
+    this.statusMessage = result.ok ? "Copied Travel v2 debug report." : (result.error ?? "Could not copy Travel v2 debug report; debug text is shown below.");
+    if (result.ok) ui.notifications?.info?.(this.statusMessage); else ui.notifications?.warn?.(this.statusMessage);
     return this.render(true);
   }
 
@@ -814,6 +1037,44 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   #getSessionShipActor() {
     const ship = this.session?.ship ?? {};
     return this.#resolveActorByIdOrUuid(ship.actorId, ship.actorUuid) ?? this.#getSelectedShipActor();
+  }
+
+  async #saveCompletedTravelV2SessionForReopen() {
+    const completed = this.session?.status === "completed" || this.session?.completed === true || Boolean(this.session?.completedAt);
+    if (!this.session || !completed) {
+      return { ok: false, skipped: true, error: "No completed Travel v2 runner session is available to preserve." };
+    }
+
+    const options = {};
+    if (this.session.key) {
+      options.key = this.session.key;
+      options.overwrite = true;
+    } else {
+      const eventName = this.session.event?.name ?? "Travel Event";
+      const completedAt = this.session.completedAt ? new Date(this.session.completedAt).toLocaleString() : new Date().toLocaleString();
+      options.name = this.session.name?.trim?.() || `${eventName} — Completed ${completedAt}`;
+    }
+
+    if (typeof globalThis.game?.settings?.set !== "function") {
+      const skipped = {
+        ok: false,
+        skipped: true,
+        error: "Foundry game.settings is unavailable; completed session was not saved for reopen/history in this environment."
+      };
+      this.uiState.travelV2AutoSaveResult = skipped;
+      return skipped;
+    }
+
+    const saved = await saveTravelEventRunnerSessionToLibrary(this.session, options);
+    this.uiState.travelV2AutoSaveResult = saved;
+    if (saved.ok) {
+      this.session = saved.session ?? this.session;
+      this.selectedSessionKey = saved.entry?.key ?? this.session?.key ?? this.selectedSessionKey;
+      return { ...saved, preserved: true };
+    }
+
+    ui.notifications?.warn?.(saved.errors?.[0] ?? "Completed Travel v2 runner session could not be saved for reopen/history.");
+    return saved;
   }
 
   async #startSelectedEvent() {
