@@ -2222,3 +2222,13 @@
 .arcflight-travel-runner-advanced > summary { cursor: pointer; color: #ffe4a3; font-size: 1rem; }
 .arcflight-travel-card { margin: .5rem 0; padding: .65rem; border: 1px solid rgba(204,162,82,.35); border-radius: 10px; background: rgba(6, 8, 10, .62); }
 .arcflight-travel-card button { margin: .15rem .25rem .15rem 0; }
+.arcflight-travel-runner-guided .arcflight-travel-runner-mvp__header { padding: .45rem .65rem; }
+.arcflight-travel-runner-guided .arcflight-travel-runner-mvp__header-row { gap: .45rem; align-items: center; }
+.arcflight-travel-runner-guided .arcflight-travel-runner-mvp__header-row h1 { font-size: clamp(2rem, 4vw, 3.25rem); line-height: 1; letter-spacing: .02em; }
+.arcflight-travel-runner-guided .arcflight-travel-runner-mvp__actions { gap: .35rem; }
+.arcflight-travel-safety-chip { display: inline-flex; width: max-content; margin-top: .35rem; padding: .15rem .45rem; border: 1px solid rgba(204,162,82,.42); border-radius: 999px; color: #ffe4a3; background: rgba(8,10,13,.72); font-size: .75rem; }
+.arcflight-travel-start-steps { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin-top: .75rem; }
+.arcflight-travel-start-steps section { padding: .65rem; border: 1px solid rgba(204,162,82,.35); border-radius: 12px; background: rgba(11,15,17,.7); }
+.arcflight-travel-command-bridge button { max-width: 100%; white-space: normal; }
+.arcflight-travel-runner-guided .arcflight-travel-command-bridge { overflow: visible; }
+@media (max-width: 760px) { .arcflight-travel-start-steps { grid-template-columns: 1fr; } }

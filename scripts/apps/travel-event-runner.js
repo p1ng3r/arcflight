@@ -413,7 +413,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     classes: ["arcflight", "arcflight-travel-event-runner"],
     tag: "section",
     position: { width: 820, height: 720 },
-    window: { title: "Travel Event Runner", resizable: true }
+    window: { title: "Arcflight Travel Command", resizable: true }
   };
 
   static PARTS = {

@@ -8,7 +8,7 @@
         {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
       </div>
     </div>
-    {{#unless state.compactRunner}}<p>{{hardBoundaryHint}}</p>{{/unless}}
+    {{#unless state.compactRunner}}<span class="arcflight-travel-safety-chip" title="No automatic actor/item/chat/journal/combat mutation. Actor changes require explicit GM Apply.">Manual GM Apply only</span>{{/unless}}
     <p class="arcflight-sheet__hint"><strong>Status:</strong> {{statusMessage}}</p>
     {{#if state.compactRunner}}
       <div class="arcflight-travel-runner-mvp__compact-summary">
@@ -28,9 +28,14 @@
         <h2>Start Travel Session</h2>
         <div class="arcflight-travel-command-bridge__tags"><span>No active event</span><span>Choose published event</span><span>Select PF2E vehicle ship</span></div>
       </div>
-      <button type="button" data-arcflight-guided-action="start">Open Session Setup</button>
+      <button type="button" data-arcflight-start-travel-event-runner {{#unless state.startupDiagnostics.canStart}}disabled{{/unless}}>Start Travel Session</button>
     </header>
-    <article class="arcflight-travel-next-action arcflight-needs-attention"><span class="arcflight-travel-next-action__icon">🧭</span><div><p>NEXT REQUIRED ACTION</p><h3>Start Travel Session</h3><span>Choose a published finalized travel event and selected ship before running the Command Bridge.</span></div><button type="button" data-arcflight-guided-action="start">Open Details</button></article>
+    <article class="arcflight-travel-next-action arcflight-needs-attention"><span class="arcflight-travel-next-action__icon">🧭</span><div><p>NEXT REQUIRED ACTION</p><h3>Start Travel Session</h3><span>Choose a published finalized travel event and selected ship, then begin the local runner session.</span></div><button type="button" data-arcflight-start-travel-event-runner {{#unless state.startupDiagnostics.canStart}}disabled{{/unless}}>Begin Travel</button></article>
+    <div class="arcflight-travel-start-steps">
+      <section><strong>Step 1: Choose Published Event</strong>{{#if state.hasPublishedEvents}}<label class="arcflight-sheet__field"><span>Published Event</span><select data-arcflight-runner-event-select>{{#each state.library.entries}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if isMalformed}}disabled{{/if}}>{{name}} — {{categoryLabel}}{{#if isMalformed}} (malformed){{/if}}</option>{{/each}}</select></label>{{else}}<p class="arcflight-sheet__hint">No published finalized travel event exists yet.</p>{{/if}}</section>
+      <section><strong>Step 2: Choose Ship / PF2E Vehicle</strong><p class="arcflight-sheet__hint">The start dialog will ask for the ship/PF2E vehicle before creating the local runner session.</p></section>
+      <section><strong>Step 3: Start Local Runner Session</strong><p class="arcflight-sheet__hint">{{#if state.startupDiagnostics.canStart}}Ready to begin.{{else}}Blocked: {{#each state.startupDiagnostics.issues}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}{{/if}}</p></section>
+    </div>
   </section>
   {{/unless}}
 
