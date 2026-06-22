@@ -23,6 +23,36 @@ function buildQueueItem(input = {}) {
   return { ...input, key, buttons: guidedQueueButtons(input.action, input) };
 }
 
+
+function buildPressureGauges(state = {}, pendingScars = []) {
+  const configs = [
+    { key: "strain", icon: "🔥", label: "Strain", description: "Arkengine stress and magical system pressure" },
+    { key: "lifeveil", icon: "🌬️", label: "Lifeveil", description: "Breathable air / protective veil stability" },
+    { key: "morale", icon: "🎭", label: "Morale", description: "Crew confidence and cohesion" },
+    { key: "hull", icon: "⚓", label: "Hull", description: "Physical ship integrity pressure" },
+    { key: "supplies", icon: "📦", label: "Supplies", description: "Food, parts, and voyage stores pressure" }
+  ];
+  return configs.map((config) => {
+    const rawValue = Number(state.session?.pressure?.[config.key]?.value ?? state.session?.pressure?.[config.key] ?? 0) || 0;
+    const value = Math.max(0, Math.min(4, rawValue));
+    const overflow = rawValue > 4 || pendingScars.some((scar) => scar.pressureType === config.key);
+    const stateClass = overflow ? "overflow" : (value >= 4 ? "danger" : (value >= 3 ? "strong-warning" : (value >= 2 ? "warning" : (value >= 1 ? "active" : "calm"))));
+    return {
+      ...config,
+      value,
+      rawValue,
+      valueLabel: `${value} / 4`,
+      stateClass,
+      isWarning: value >= 2,
+      isDanger: value >= 4,
+      isOverflow: overflow,
+      needleAngle: -60 + (value * 30),
+      fillPercent: value * 25,
+      tooltip: `${config.label}: ${config.description}. Pressure ranges from 0–4; thresholds at 2, 3, and 4.`
+    };
+  });
+}
+
 function buildTravelV2GuidedState(state = {}) {
   const stations = Array.isArray(state.stations) ? state.stations : [];
   const hazards = state.travelV2Hazards ?? { records: [] };
@@ -61,7 +91,7 @@ function buildTravelV2GuidedState(state = {}) {
     actionQueue: queue,
     hasActionQueue: queue.length > 0,
     stationSummary: { total: stations.length, waiting: waitingStations.length, resolved: resolvedStations.length, critical: criticalStations.length },
-    pressurePips: ["strain", "lifeveil", "morale", "supplies", "hull"].map((key) => ({ key, label: key.charAt(0).toUpperCase() + key.slice(1), value: Number(state.session?.pressure?.[key]?.value ?? state.session?.pressure?.[key] ?? 0) || 0 })),
+    pressureGauges: buildPressureGauges(state, pendingScars),
     tags: { category: state.event?.categoryLabel || state.event?.category || "Uncategorized", level: state.event?.level ?? "—", severity: state.event?.severity ?? "—" },
     drawers: { hazards: pendingHazards.length, shipScars: pendingScars.length, reactions: pendingReactions.length, followUps: followUps.records?.length ?? 0 },
     hazards: { pending: pendingHazards, active: activeHazards, cleared: clearedHazards, hasAny: (hazards.records ?? []).length > 0 },

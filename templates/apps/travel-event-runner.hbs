@@ -94,7 +94,23 @@
       </section>
       <section class="arcflight-travel-guided-panel" aria-label="Pressure & Resources">
         <h3>🔥 Pressure & Resources</h3>
-        <div class="arcflight-rune-pips">{{#each state.guidedBridge.pressurePips}}<span title="{{label}}"><b>{{label}}</b><i style="--arcflight-pip-count: {{value}}"></i>{{value}}</span>{{/each}}</div>
+        <div class="arcflight-pressure-gauge-board">
+          {{#each state.guidedBridge.pressureGauges}}
+            <article class="arcflight-pressure-gauge arcflight-pressure-gauge--{{stateClass}}" title="{{tooltip}}" style="--arcflight-gauge-angle: {{needleAngle}}deg; --arcflight-gauge-fill: {{fillPercent}}%;">
+              <div class="arcflight-pressure-gauge__meta"><span class="arcflight-pressure-gauge__label">{{icon}} {{label}}</span><strong class="arcflight-pressure-gauge__value">{{valueLabel}}</strong></div>
+              <div class="arcflight-pressure-gauge__face" aria-label="{{label}} pressure {{valueLabel}}">
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--0">0</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--1">1</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--2">2</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--3">3</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--4">4</span>
+                <span class="arcflight-pressure-gauge__needle"></span>
+              </div>
+              <p class="arcflight-pressure-gauge__description">{{description}}</p>
+              {{#if isOverflow}}<p class="arcflight-pressure-gauge__warning">Ship Scar Risk</p>{{else}}{{#if isDanger}}<p class="arcflight-pressure-gauge__warning">Maximum Pressure</p>{{else}}{{#if isWarning}}<p class="arcflight-pressure-gauge__warning">Threshold Warning</p>{{/if}}{{/if}}{{/if}}
+            </article>
+          {{/each}}
+        </div>
       </section>
     </div>
 
