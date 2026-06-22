@@ -1,6 +1,7 @@
 import { applyTravelV2PressureChanges } from "./travel-v2-pressure-engine.js";
 import { prepareTravelV2PressureApplicationState } from "./travel-v2-pressure-application-state.js";
 import { TRAVEL_V2_ROUND_OUTCOME_KEYS } from "./travel-v2-round-pressure-adapter.js";
+import { drawTravelV2HazardsForPressureResult } from "./travel-v2-hazards.js";
 
 export const TRAVEL_V2_SESSION_PRESSURE_APPLICATION_VERSION = 1;
 
@@ -85,8 +86,9 @@ export function applyTravelV2PressureToRunnerSession(session, options = {}) {
     ...clonedSession,
     pressure: cloneData(pressureResult.session.pressure)
   };
+  const hazardResult = drawTravelV2HazardsForPressureResult(updatedSession, pressureResult, options);
   const applicationRecord = createApplicationRecord(applicationStateBefore, pressureResult, options);
-  const sessionWithRecord = appendApplicationRecord(updatedSession, applicationRecord);
+  const sessionWithRecord = appendApplicationRecord(hazardResult.session, applicationRecord);
 
   return {
     ok: true,
@@ -95,7 +97,8 @@ export function applyTravelV2PressureToRunnerSession(session, options = {}) {
     applicationRecord,
     applicationStateBefore,
     selectedOutcomeKey,
-    pressureResult
+    pressureResult,
+    hazardDraws: hazardResult.drawn
   };
 }
 

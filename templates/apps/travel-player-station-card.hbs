@@ -26,6 +26,16 @@
     </section>
   {{/if}}
 
+  {{#if state.hasPublicHazards}}
+    <section class="arcflight-travel-player-station-card__section" aria-label="Active travel hazards">
+      <h2>Active Hazards</h2>
+      {{#each state.publicHazards}}
+        <p><strong>{{name}}</strong>{{#if category}} — {{category}}{{/if}}</p>
+        <p>{{playerText}}</p>
+      {{/each}}
+    </section>
+  {{/if}}
+
   <section class="arcflight-travel-player-station-card__section" aria-label="Station prompt">
     <h2>Station Problem</h2>
     {{#if state.hasPromptText}}

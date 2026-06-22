@@ -51,7 +51,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -102,6 +102,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
+  "[data-arcflight-travel-v2-hazard-activate]",
+  "[data-arcflight-travel-v2-hazard-clear]",
   "[data-arcflight-travel-v2-dev-force-outcome]",
   "[data-arcflight-travel-v2-dev-force-round-result]",
   "[data-arcflight-travel-v2-dev-early-end]",
@@ -601,6 +603,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-hazard-activate")) return this.#updateTravelV2Hazard(target, "active");
+    if (target.hasAttribute("data-arcflight-travel-v2-hazard-clear")) return this.#updateTravelV2Hazard(target, "cleared");
     if (target.hasAttribute("data-arcflight-travel-v2-dev-force-outcome")) return this.#forceTravelV2DevOutcome(target);
     if (target.hasAttribute("data-arcflight-travel-v2-dev-force-round-result")) return this.#forceTravelV2DevRoundResult(target);
     if (target.hasAttribute("data-arcflight-travel-v2-dev-early-end")) return this.#forceTravelV2DevEarlyEnd();
@@ -617,6 +621,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-reaction-reroll-result")) return this.#resolveReaction(target, "reroll");
     if (target.hasAttribute("data-arcflight-reaction-backlash-apply")) return this.#resolveReaction(target, "applyBacklash");
     if (target.hasAttribute("data-arcflight-reaction-backlash-dismiss")) return this.#resolveReaction(target, "dismissBacklash");
+  }
+
+  async #updateTravelV2Hazard(target, status) {
+    const id = target.dataset.arcflightTravelV2HazardActivate || target.dataset.arcflightTravelV2HazardClear || target.dataset.hazardId || "";
+    const updated = status === "active" ? activateTravelV2RunnerHazard(this.session, id) : clearTravelV2RunnerHazard(this.session, id);
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok ? (status === "active" ? "Travel v2 hazard activated in runner-session state." : "Travel v2 hazard cleared in runner-session state.") : (updated.errors?.[0] ?? "Could not update Travel v2 hazard.");
+    return this.render(true);
   }
 
   async #resolveReaction(target, action) {
