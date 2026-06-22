@@ -2218,3 +2218,7 @@
 .arcflight-travel-player-action-card .arcflight-travel-player-station-card__section { border: 1px solid rgba(204,162,82,.34); border-radius: 12px; padding: .75rem; margin: .65rem 0; background: rgba(255,244,207,.035); }
 .arcflight-travel-player-action-card h2 { color: #ffd37b; }
 @media (max-width: 760px) { .arcflight-travel-guided-grid, .arcflight-travel-guided-drawers { grid-template-columns: 1fr; } .arcflight-travel-command-bridge__header, .arcflight-travel-next-action { flex-direction: column; } .arcflight-travel-next-action button { margin-left: 0; } }
+.arcflight-travel-runner-advanced { margin-top: 1rem; padding: .75rem; border: 1px solid rgba(204,162,82,.35); border-radius: 14px; background: rgba(8,10,13,.72); }
+.arcflight-travel-runner-advanced > summary { cursor: pointer; color: #ffe4a3; font-size: 1rem; }
+.arcflight-travel-card { margin: .5rem 0; padding: .65rem; border: 1px solid rgba(204,162,82,.35); border-radius: 10px; background: rgba(6, 8, 10, .62); }
+.arcflight-travel-card button { margin: .15rem .25rem .15rem 0; }
