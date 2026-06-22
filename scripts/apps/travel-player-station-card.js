@@ -88,6 +88,33 @@ function sanitizePublicShipScars(value = []) {
     .filter((entry) => entry.name || entry.playerText);
 }
 
+
+function sanitizePressureGauges(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      key: sanitizeText(entry.key),
+      icon: sanitizeText(entry.icon),
+      label: sanitizeText(entry.label),
+      description: sanitizeText(entry.description),
+      value: Math.max(0, Math.min(4, sanitizeInteger(entry.value, 0))),
+      valueLabel: sanitizeText(entry.valueLabel) || `${Math.max(0, Math.min(4, sanitizeInteger(entry.value, 0)))} / 4`,
+      statusBand: sanitizeText(entry.statusBand) || "Calm",
+      stateClass: sanitizeText(entry.stateClass) || "calm",
+      needleAngle: Number.isFinite(Number(entry.needleAngle)) ? Number(entry.needleAngle) : -60,
+      fillPercent: Number.isFinite(Number(entry.fillPercent)) ? Number(entry.fillPercent) : 0,
+      tooltip: sanitizeText(entry.tooltip)
+    }))
+    .filter((entry) => entry.key && entry.label);
+}
+
+function sanitizePartyAlerts(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({ tone: sanitizeText(entry.tone) || "attention", icon: sanitizeText(entry.icon), text: sanitizeText(entry.text) }))
+    .filter((entry) => entry.text);
+}
+
 function sanitizeFocusOptions(value = []) {
   return (Array.isArray(value) ? value : [])
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
@@ -863,9 +890,22 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
     roundLabel: sanitizeText(source.roundLabel),
     roundTitle: sanitizeText(source.roundTitle),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1),
+    currentPhaseLabel: sanitizeText(source.currentPhaseLabel) || "Travel Round",
+    shipName: sanitizeText(source.shipName) || "Unknown Ship",
+    voyageStatus: sanitizeText(source.voyageStatus) || "In Progress",
     vignette: sanitizeText(source.vignette),
     stations,
-    hasStations: stations.length > 0
+    hasStations: stations.length > 0,
+    pressureGauges: sanitizePressureGauges(source.pressureGauges),
+    hasPressureGauges: sanitizePressureGauges(source.pressureGauges).length > 0,
+    publicHazards: sanitizePublicHazards(source.publicHazards),
+    hasPublicHazards: sanitizeBoolean(source.hasPublicHazards) || sanitizePublicHazards(source.publicHazards).length > 0,
+    publicShipScars: sanitizePublicShipScars(source.publicShipScars),
+    hasPublicShipScars: sanitizeBoolean(source.hasPublicShipScars) || sanitizePublicShipScars(source.publicShipScars).length > 0,
+    partyAlerts: sanitizePartyAlerts(source.partyAlerts),
+    hasPartyAlerts: sanitizeBoolean(source.hasPartyAlerts) || sanitizePartyAlerts(source.partyAlerts).length > 0,
+    hudMode: sanitizeText(source.hudMode) || "expanded",
+    isCompactHud: sanitizeText(source.hudMode) === "compact"
   };
 }
 
@@ -966,7 +1006,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     id: "arcflight-travel-player-mission-board",
     classes: ["arcflight", "arcflight-travel-player-mission-board"],
     position: { width: 1280, height: 900 },
-    window: { title: "Travel Mission Board", resizable: true }
+    window: { title: "Arcflight Party Travel HUD", resizable: true }
   };
 
   static PARTS = {
@@ -1035,12 +1075,69 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
   async #onMissionBoardClick(event) {
     const submit = event.target?.closest?.("[data-arcflight-mission-board-commit-order]");
     const roll = event.target?.closest?.("[data-arcflight-mission-board-roll]");
-    const target = submit ?? roll;
+    const openStation = event.target?.closest?.("[data-arcflight-party-hud-open-station]");
+    const toggleHud = event.target?.closest?.("[data-arcflight-party-hud-toggle]");
+    const target = submit ?? roll ?? openStation ?? toggleHud;
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     const stationKey = target.dataset.stationKey ?? "";
+    if (toggleHud) return this.#toggleHudMode();
     if (submit) return this.#submitApproach(stationKey);
+    if (openStation) return this.#openStationCard(stationKey);
     return this.#rollStation(stationKey);
+  }
+
+  async #toggleHudMode() {
+    this.boardState = sanitizeTravelPlayerMissionBoardState({ ...this.boardState, hudMode: this.boardState.isCompactHud ? "expanded" : "compact" });
+    return this.render(true);
+  }
+
+  async #openStationCard(stationKey) {
+    const station = this.#getStation(stationKey) ?? this.boardState.stations.find((entry) => entry.isCurrentUserRollable) ?? null;
+    if (!station) return ui.notifications?.warn?.("No station card is currently available for you.");
+    return openTravelPlayerStationCard({
+      state: {
+        hasSession: this.boardState.hasSession,
+        sessionKey: this.boardState.sessionKey,
+        roundLabel: this.boardState.roundLabel,
+        roundTitle: this.boardState.roundTitle,
+        stationKey: station.stationKey,
+        stationName: station.stationName,
+        assignedActorName: station.assignedActorName,
+        promptText: station.promptText,
+        hasPromptText: station.hasPromptText,
+        selectedApproachLabel: station.selectedApproachLabel,
+        selectedApproachHelpText: station.selectedApproachHelpText,
+        selectedApproachRollLabel: station.selectedApproachRollLabel,
+        hasSelectedApproach: station.hasSelectedApproach,
+        hasSelectedApproachHelpText: station.hasSelectedApproachHelpText,
+        resultStatusLabel: station.stateLabel,
+        resultLabel: station.resultLabel,
+        resultFeedbackText: station.resultFeedbackText,
+        hasResultFeedback: station.hasResultFeedback,
+        waitingStateText: station.stateLabel,
+        isResolved: station.hasResult,
+        statusKey: station.hasResult ? "resolved" : "waitingForGmRoll",
+        approachOptions: station.approachOptions,
+        hasApproachOptions: station.hasApproachOptions,
+        selectedApproachValue: station.selectedApproachValue,
+        selectedStationOrder: station.selectedStationOrder,
+        selectedStationOrderLabel: station.selectedStationOrderLabel,
+        stationOrderCommitted: station.stationOrderCommitted,
+        isStabilize: station.isStabilize,
+        stabilizePressureKey: station.stabilizePressureKey,
+        stabilizePressureLabel: station.stabilizePressureLabel,
+        focusCapacity: station.focusCapacity,
+        focusRemaining: station.focusRemaining,
+        focusOptions: station.focusOptions,
+        hasFocusOptions: station.hasFocusOptions,
+        currentRoundIndex: this.boardState.currentRoundIndex,
+        hasPublicHazards: this.boardState.hasPublicHazards,
+        publicHazards: this.boardState.publicHazards,
+        hasPublicShipScars: this.boardState.hasPublicShipScars,
+        publicShipScars: this.boardState.publicShipScars
+      }
+    });
   }
 
   #getStation(stationKey) {
