@@ -9,7 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
-import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState } from "../helpers/travel-v2-dev-tools.js";
+import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
@@ -78,6 +78,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-load-session]",
   "[data-arcflight-runner-duplicate-session]",
   "[data-arcflight-runner-delete-session]",
+  "[data-arcflight-travel-v2-delete-completed-session]",
   "[data-arcflight-runner-refresh-sessions]",
   "[data-arcflight-runner-copy-markdown]",
   "[data-arcflight-runner-copy-html]",
@@ -576,6 +577,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-load-session")) return this.#loadSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-duplicate-session")) return this.#duplicateSelectedSession(target);
     if (target.hasAttribute("data-arcflight-runner-delete-session")) return this.#deleteSelectedSession(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-delete-completed-session")) return this.#deleteCompletedTravelV2Session(target);
     if (target.hasAttribute("data-arcflight-runner-refresh-sessions")) return this.#refreshSessions();
     if (target.hasAttribute("data-arcflight-runner-copy-markdown")) return this.#copySummaryMarkdown();
     if (target.hasAttribute("data-arcflight-runner-copy-html")) return this.#copySummaryHtml();
@@ -734,7 +736,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       const saved = await this.#saveCompletedTravelV2SessionForReopen();
-      this.statusMessage = saved.ok ? "Completed Travel v2 event and saved it for reopen." : "Completed Travel v2 event. Save Current Session to preserve the reopen/history entry.";
+      this.statusMessage = saved.ok ? "Saved for Reopen: completed Travel v2 event is in Completed Travel v2 Sessions." : "Completed Travel v2 event, but saving for reopen is unavailable. Save Current Session to preserve the reopen/history entry if available.";
       return this.render(true);
     }
 
@@ -801,7 +803,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       const saved = await this.#saveCompletedTravelV2SessionForReopen();
-      this.statusMessage = saved.ok ? "Applied Travel v2 outcome package and saved the completed session for reopen." : "Applied Travel v2 outcome package. Save Current Session to preserve the reopen/history entry.";
+      this.statusMessage = saved.ok ? "Saved for Reopen: applied outcome package status was saved to the completed session." : "Applied Travel v2 outcome package, but saving the completed-session update is unavailable.";
       return this.render(true);
     }
 
@@ -821,7 +823,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       nextSession.updatedAt = new Date().toISOString();
       this.session = nextSession;
       const saved = await this.#saveCompletedTravelV2SessionForReopen();
-      this.statusMessage = saved.ok ? "Applied approved Travel v2 changes to ship and saved the completed session for reopen." : "Applied approved Travel v2 changes to ship. Save Current Session to preserve the reopen/history entry.";
+      this.statusMessage = saved.ok ? "Saved for Reopen: approved ship changes application was saved to the completed session." : "Applied approved Travel v2 changes to ship, but saving the completed-session update is unavailable.";
     } else {
       this.statusMessage = result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.";
     }
@@ -1062,6 +1064,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
         error: "Foundry game.settings is unavailable; completed session was not saved for reopen/history in this environment."
       };
       this.uiState.travelV2AutoSaveResult = skipped;
+      globalThis.ui?.notifications?.warn?.(skipped.error);
       return skipped;
     }
 
@@ -1070,10 +1073,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (saved.ok) {
       this.session = saved.session ?? this.session;
       this.selectedSessionKey = saved.entry?.key ?? this.session?.key ?? this.selectedSessionKey;
+      globalThis.ui?.notifications?.info?.("Saved for Reopen: completed Travel v2 session history updated.");
       return { ...saved, preserved: true };
     }
 
-    ui.notifications?.warn?.(saved.errors?.[0] ?? "Completed Travel v2 runner session could not be saved for reopen/history.");
+    globalThis.ui?.notifications?.warn?.(saved.errors?.[0] ?? "Completed Travel v2 runner session could not be saved for reopen/history.");
     return saved;
   }
 
@@ -1648,6 +1652,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return target.dataset.arcflightRunnerLoadSession
       ?? target.dataset.arcflightRunnerDuplicateSession
       ?? target.dataset.arcflightRunnerDeleteSession
+      ?? target.dataset.arcflightTravelV2DeleteCompletedSession
       ?? this.selectedSessionKey
       ?? "";
   }
@@ -1705,6 +1710,33 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       if (this.selectedSessionKey === deleted.deleted.key) this.selectedSessionKey = "";
       if (this.session?.key === deleted.deleted.key) this.session = null;
       this.statusMessage = `Deleted saved runner session "${deleted.deleted.name}".`;
+      ui.notifications?.info?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  async #deleteCompletedTravelV2Session(target) {
+    const key = this.#getSessionKeyFromTarget(target);
+    const label = target.dataset.sessionName || key;
+    const confirmed = await this.#confirmRunnerDialog({
+      title: "Delete Completed Travel v2 Session",
+      content: `<p>Delete completed Travel v2 runner session <strong>${escapeHtml(label)}</strong> from completed-session history?</p><p>This removes only the saved runner session library entry. It does not delete actor follow-up records, actor application records, published events, resources, chat, journals, or combat.</p>`,
+      yesLabel: "Delete Completed Session",
+      unavailableMessage: "Delete requires Foundry DialogV2; this environment cannot show the confirmation dialog."
+    });
+    if (!confirmed) {
+      this.statusMessage = "Delete cancelled; completed Travel v2 history was not changed.";
+      return this.render(true);
+    }
+
+    const deleted = await deleteTravelV2CompletedSessionFromLibrary(key);
+    if (!deleted.ok) {
+      this.statusMessage = deleted.errors?.[0] ?? "Completed Travel v2 session could not be deleted.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      if (this.selectedSessionKey === deleted.deleted.key) this.selectedSessionKey = "";
+      if (this.session?.key === deleted.deleted.key) this.session = null;
+      this.statusMessage = `Deleted completed Travel v2 runner session "${deleted.deleted.name}". Actor follow-ups and application records were not changed.`;
       ui.notifications?.info?.(this.statusMessage);
     }
     return this.render(true);
