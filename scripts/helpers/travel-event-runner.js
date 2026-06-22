@@ -17,6 +17,7 @@ import {
 } from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus } from "./travel-v2-hazards.js";
+import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -1545,7 +1546,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     focusEffectRecords: normalizeTravelFocusEffectRecords(options.focusEffectRecords, options),
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(options.stabilizeResolutionRecords, options),
     reactionPrompts: normalizeTravelReactionPromptRecords(options.reactionPrompts, options),
-    travelV2Hazards: normalizeTravelV2HazardDeckState(options.travelV2Hazards)
+    travelV2Hazards: normalizeTravelV2HazardDeckState(options.travelV2Hazards),
+    shipScars: normalizeTravelV2ShipScarsState(options.shipScars)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1593,6 +1595,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(session.stabilizeResolutionRecords, options),
     reactionPrompts: normalizeTravelReactionPromptRecords(session.reactionPrompts, options),
     travelV2Hazards: normalizeTravelV2HazardDeckState(session.travelV2Hazards ?? session.hazards),
+    shipScars: normalizeTravelV2ShipScarsState(session.shipScars ?? session.travelV2ShipScars),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
@@ -2105,6 +2108,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     },
     focusEffectReview,
     travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
+    travelV2ShipScars: prepareTravelV2ShipScarsPanelState(activeSession),
     roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
@@ -3416,3 +3420,4 @@ export function getPublishedTravelEventRunnerEntries(options = {}) {
 
 export function activateTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "active", options); }
 export function clearTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "cleared", options); }
+export function dismissTravelV2RunnerShipScar(session, scarRecordId, options = {}) { return setTravelV2ShipScarSessionStatus(session, scarRecordId, "dismissed", options); }
