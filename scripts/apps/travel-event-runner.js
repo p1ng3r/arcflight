@@ -9,6 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
+import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
 import {
@@ -51,7 +52,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, dismissTravelV2RunnerShipScar
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -104,6 +105,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-follow-up-status]",
   "[data-arcflight-travel-v2-hazard-activate]",
   "[data-arcflight-travel-v2-hazard-clear]",
+  "[data-arcflight-travel-v2-ship-scar-apply]",
+  "[data-arcflight-travel-v2-ship-scar-dismiss]",
+  "[data-arcflight-travel-v2-ship-scar-repair]",
   "[data-arcflight-travel-v2-dev-force-outcome]",
   "[data-arcflight-travel-v2-dev-force-round-result]",
   "[data-arcflight-travel-v2-dev-early-end]",
@@ -388,6 +392,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2EventOutcomeApplicationResult: null,
       travelV2ActorApplicationResult: null,
       travelV2FollowUpResult: null,
+      travelV2ShipScarResult: null,
       travelV2DevToolResult: null,
       travelV2AutoSaveResult: null
     };
@@ -605,6 +610,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-activate")) return this.#updateTravelV2Hazard(target, "active");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-clear")) return this.#updateTravelV2Hazard(target, "cleared");
+    if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-apply")) return this.#applyTravelV2ShipScar(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-dismiss")) return this.#dismissTravelV2ShipScar(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-repair")) return this.#repairTravelV2ShipScar(target);
     if (target.hasAttribute("data-arcflight-travel-v2-dev-force-outcome")) return this.#forceTravelV2DevOutcome(target);
     if (target.hasAttribute("data-arcflight-travel-v2-dev-force-round-result")) return this.#forceTravelV2DevRoundResult(target);
     if (target.hasAttribute("data-arcflight-travel-v2-dev-early-end")) return this.#forceTravelV2DevEarlyEnd();
@@ -621,6 +629,33 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-reaction-reroll-result")) return this.#resolveReaction(target, "reroll");
     if (target.hasAttribute("data-arcflight-reaction-backlash-apply")) return this.#resolveReaction(target, "applyBacklash");
     if (target.hasAttribute("data-arcflight-reaction-backlash-dismiss")) return this.#resolveReaction(target, "dismissBacklash");
+  }
+
+  async #applyTravelV2ShipScar(target) {
+    const id = target.dataset.arcflightTravelV2ShipScarApply || "";
+    const result = await applyTravelV2ShipScarToActor(this.session, this.#getSessionShipActor(), id);
+    this.uiState.travelV2ShipScarResult = result;
+    if (result.ok) this.session = result.session;
+    this.statusMessage = result.ok ? "Ship Scar applied to selected ship actor flags." : (result.blockedReasons?.[0] ?? result.error ?? "Could not apply Ship Scar.");
+    return this.render(true);
+  }
+
+  async #dismissTravelV2ShipScar(target) {
+    const id = target.dataset.arcflightTravelV2ShipScarDismiss || "";
+    const result = dismissTravelV2RunnerShipScar(this.session, id);
+    this.uiState.travelV2ShipScarResult = result;
+    if (result.ok) this.session = result.session;
+    this.statusMessage = result.ok ? "Pending Ship Scar dismissed in runner-session state." : (result.errors?.[0] ?? "Could not dismiss Ship Scar.");
+    return this.render(true);
+  }
+
+  async #repairTravelV2ShipScar(target) {
+    const id = target.dataset.arcflightTravelV2ShipScarRepair || "";
+    const result = await repairTravelV2ShipScarOnActor(this.session, this.#getSessionShipActor(), id);
+    this.uiState.travelV2ShipScarResult = result;
+    if (result.ok) this.session = result.session;
+    this.statusMessage = result.ok ? "Ship Scar marked repaired on selected ship actor flags." : (result.blockedReasons?.[0] ?? result.error ?? "Could not repair Ship Scar.");
+    return this.render(true);
   }
 
   async #updateTravelV2Hazard(target, status) {

@@ -2,6 +2,7 @@ import { applyTravelV2PressureChanges } from "./travel-v2-pressure-engine.js";
 import { prepareTravelV2PressureApplicationState } from "./travel-v2-pressure-application-state.js";
 import { TRAVEL_V2_ROUND_OUTCOME_KEYS } from "./travel-v2-round-pressure-adapter.js";
 import { drawTravelV2HazardsForPressureResult } from "./travel-v2-hazards.js";
+import { drawTravelV2ShipScarsForPressureResult } from "./travel-v2-ship-scars.js";
 
 export const TRAVEL_V2_SESSION_PRESSURE_APPLICATION_VERSION = 1;
 
@@ -87,8 +88,9 @@ export function applyTravelV2PressureToRunnerSession(session, options = {}) {
     pressure: cloneData(pressureResult.session.pressure)
   };
   const hazardResult = drawTravelV2HazardsForPressureResult(updatedSession, pressureResult, options);
+  const shipScarResult = drawTravelV2ShipScarsForPressureResult(hazardResult.session, pressureResult, options);
   const applicationRecord = createApplicationRecord(applicationStateBefore, pressureResult, options);
-  const sessionWithRecord = appendApplicationRecord(hazardResult.session, applicationRecord);
+  const sessionWithRecord = appendApplicationRecord(shipScarResult.session, applicationRecord);
 
   return {
     ok: true,
@@ -98,7 +100,8 @@ export function applyTravelV2PressureToRunnerSession(session, options = {}) {
     applicationStateBefore,
     selectedOutcomeKey,
     pressureResult,
-    hazardDraws: hazardResult.drawn
+    hazardDraws: hazardResult.drawn,
+    shipScarDraws: shipScarResult.drawn
   };
 }
 

@@ -245,6 +245,29 @@
             <p class="arcflight-sheet__hint">No hazards drawn yet. Pressure crossing 2, 3, and 4 draws one pending hazard each.</p>
           {{/if}}
         </div>
+        <div class="arcflight-travel-runner-mvp__v2-ship-scars" aria-label="Travel v2 ship scars deck">
+          <h4>Ship Scars Deck v1</h4>
+          <p class="arcflight-sheet__hint">{{state.travelV2ShipScars.footerText}}</p>
+          {{#if state.travelV2ShipScars.hasRecords}}
+            {{#each state.travelV2ShipScars.records}}
+              <article class="arcflight-travel-runner-mvp__v2-follow-up-card">
+                <header><strong>{{name}}</strong> <span class="arcflight-sheet__hint">{{pressureType}} · {{category}} · {{severity}} · {{statusLabel}}</span></header>
+                <p>{{flavorText}}</p>
+                {{#if playerText}}<p><strong>Player-safe:</strong> {{playerText}}</p>{{/if}}
+                {{#if gmText}}<p class="arcflight-sheet__hint"><strong>GM:</strong> {{gmText}}</p>{{/if}}
+                <p class="arcflight-sheet__hint"><strong>Repair:</strong> {{repairRequirement}} {{downtimeRequirement}} {{costRequirement}}</p>
+                <p class="arcflight-sheet__hint"><strong>Hook:</strong> {{roleplayHook}}</p>
+                <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+                  {{#if canApply}}<button type="button" data-arcflight-travel-v2-ship-scar-apply="{{id}}" {{#if ../state.isCompleted}}disabled{{/if}}>Apply Ship Scar</button>{{/if}}
+                  {{#if canDismiss}}<button type="button" data-arcflight-travel-v2-ship-scar-dismiss="{{id}}" {{#if ../state.isCompleted}}disabled{{/if}}>Dismiss</button>{{/if}}
+                  {{#if canRepair}}<button type="button" data-arcflight-travel-v2-ship-scar-repair="{{id}}">Mark Repaired</button>{{/if}}
+                </div>
+              </article>
+            {{/each}}
+          {{else}}
+            <p class="arcflight-sheet__hint">No Ship Scars drawn yet. Pressure overflow beyond 4 creates one pending matching scar candidate.</p>
+          {{/if}}
+        </div>
         <div class="arcflight-travel-runner-mvp__v2-actor-application" aria-label="Travel v2 GM actor application preview">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>
