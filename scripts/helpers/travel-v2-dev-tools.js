@@ -1,4 +1,4 @@
-import { createTravelEventRunnerSession, normalizeTravelEventRunnerSession, saveTravelEventRunnerSessionToLibrary } from "./travel-event-runner.js";
+import { createTravelEventRunnerSession, deleteTravelEventRunnerSessionFromLibrary, getTravelEventRunnerSessionLibrary, normalizeTravelEventRunnerSession, saveTravelEventRunnerSessionToLibrary } from "./travel-event-runner.js";
 import { applyTravelV2PressureToRunnerSession } from "./travel-v2-session-pressure-application.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "./travel-v2-session-round-finalization.js";
 import { completeTravelV2EventOnRunnerSession } from "./travel-v2-session-event-completion.js";
@@ -101,21 +101,41 @@ export function prepareTravelV2EndOfEventResolutionDialogState(session, options 
   return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, title: "End-of-Event Resolution", tabs: ["vignette", "rounds", "rewards", "consequences", "shipChanges", "followUps", "debug"], eventName: normalized?.event?.name ?? normalized?.event?.title ?? "Travel Event", shipName: normalized?.ship?.actorName ?? normalized?.ship?.name ?? "", completedAt: normalized?.completedAt ?? "", outcomePackage: outcome, followUps, debugReport, applyButtonsExplicit: true });
 }
 
-export function prepareTravelV2CompletedSessionHistoryState(libraryStateOrSessions = {}, options = {}) {
+export function filterTravelV2CompletedSessionEntries(libraryStateOrSessions = {}) {
   const entries = Array.isArray(libraryStateOrSessions) ? libraryStateOrSessions : (Array.isArray(libraryStateOrSessions.entries) ? libraryStateOrSessions.entries : Object.values(libraryStateOrSessions.sessions ?? {}));
-  const rows = entries.map((entry) => ({ entry, session: entry.session ?? entry })).filter(({ session }) => session?.status === "completed" || session?.completed === true || session?.completedAt).map(({ entry, session }) => {
+  return entries.map((entry) => {
+    const session = entry?.session ?? entry;
+    const status = session?.status ?? entry?.status ?? "";
+    const completedAt = session?.completedAt ?? entry?.completedAt ?? "";
+    return { entry, session, status, completedAt };
+  }).filter(({ entry, session, status, completedAt }) => Boolean(entry) && (status === "completed" || session?.completed === true || Boolean(completedAt)));
+}
+
+export async function deleteTravelV2CompletedSessionFromLibrary(sessionKey, options = {}) {
+  const key = String(sessionKey ?? "");
+  const library = getTravelEventRunnerSessionLibrary(options);
+  const matches = filterTravelV2CompletedSessionEntries(library).map(({ entry, session }) => entry?.key ?? session?.key ?? "");
+  if (!matches.includes(key)) {
+    return { ok: false, errors: [`No completed Travel v2 runner session found for "${key}".`], warnings: [], library, deleted: null };
+  }
+  return deleteTravelEventRunnerSessionFromLibrary(key, { ...options, library });
+}
+
+export function prepareTravelV2CompletedSessionHistoryState(libraryStateOrSessions = {}, options = {}) {
+  const rows = filterTravelV2CompletedSessionEntries(libraryStateOrSessions).map(({ entry, session }) => {
     const outcome = prepareTravelV2EventOutcomePackage(session, options);
     const followUps = prepareTravelV2FollowUpState(options.actor ?? null, session?.travelV2ActorApplication ?? outcome.packageRecord, { session });
-    const completedAt = session.completedAt ?? entry.completedAt ?? "";
-    const actorAppliedAt = session.travelV2ActorApplication?.appliedAt ?? "";
-    const outcomeAppliedAt = session.travelV2EventOutcomeApplication?.appliedAt ?? "";
-    const appliedAt = actorAppliedAt || outcomeAppliedAt || entry.appliedAt || "";
+    const completedAt = session?.completedAt ?? entry?.completedAt ?? "";
+    const actorAppliedAt = session?.travelV2ActorApplication?.appliedAt ?? "";
+    const outcomeAppliedAt = session?.travelV2EventOutcomeApplication?.appliedAt ?? "";
+    const appliedAt = actorAppliedAt || outcomeAppliedAt || entry?.appliedAt || "";
     const followUpsSaved = followUps.hasPersistedRecords === true || Number(followUps.persistedCount) > 0;
     const applicationStatusKey = followUpsSaved ? "followUpsSaved" : (actorAppliedAt ? "actorApplied" : (outcomeAppliedAt ? "outcomeApplied" : "completedNotApplied"));
     const applicationStatusLabel = followUpsSaved ? "Follow-ups saved to ship" : (actorAppliedAt ? "Actor applied" : (outcomeAppliedAt ? "Outcome applied" : "Completed / not applied"));
-    return { key: entry.key ?? session.key ?? "", eventName: entry.eventName ?? session.event?.name ?? session.event?.title ?? "Travel Event", shipName: entry.shipName ?? session.ship?.actorName ?? session.ship?.name ?? "", outcome: outcome.eventOutcomeLabel ?? "", outcomeKey: outcome.eventOutcomeKey ?? "", completedAt, completedAtLabel: formatDateTime(completedAt), completedDateTime: formatDateTime(completedAt), appliedAt, appliedAtLabel: appliedAt ? formatDateTime(appliedAt) : "Not applied", appliedDateTime: appliedAt ? formatDateTime(appliedAt) : "Not applied", applicationStatusKey, applicationStatusLabel, followUpCount: followUps.recordCount ?? followUps.records?.length ?? 0, canReopen: Boolean(entry.key ?? session.key), session: cloneData(session) };
-  }).sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
-  return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, rows, count: rows.length, hasRows: rows.length > 0, newestFirst: true });
+    const key = entry?.key ?? session?.key ?? "";
+    return { key, name: entry?.name ?? session?.name ?? "", eventName: entry?.eventName ?? session?.event?.name ?? session?.event?.title ?? "Travel Event", shipName: entry?.shipName ?? session?.ship?.actorName ?? session?.ship?.name ?? "Unknown ship", outcome: outcome.eventOutcomeLabel ?? "", outcomeKey: outcome.eventOutcomeKey ?? "", completedAt, completedAtLabel: formatDateTime(completedAt) || "Missing timestamp", completedDateTime: formatDateTime(completedAt) || "Missing timestamp", appliedAt, appliedAtLabel: appliedAt ? formatDateTime(appliedAt) : "Not applied", appliedDateTime: appliedAt ? formatDateTime(appliedAt) : "Not applied", applicationStatusKey, applicationStatusLabel, followUpCount: followUps.recordCount ?? followUps.records?.length ?? 0, canReopen: Boolean(key) && entry?.isMalformed !== true && Boolean(session), canDelete: Boolean(key), isMalformed: entry?.isMalformed === true, session: cloneData(session) };
+  }).sort((a, b) => String(b.completedAt || "0000").localeCompare(String(a.completedAt || "0000")) || String(b.key).localeCompare(String(a.key)));
+  return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, rows, count: rows.length, hasRows: rows.length > 0, isEmpty: rows.length === 0, newestFirst: true });
 }
 
 export function buildTravelV2DebugReport(session, options = {}) {

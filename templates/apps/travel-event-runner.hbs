@@ -734,15 +734,22 @@
           <h3>Completed Travel v2 Sessions</h3>
           <p class="arcflight-sheet__hint">Newest completed sessions first. Reopen loads the saved snapshot only; actor mutation still requires explicit GM Apply buttons.</p>
           {{#each state.travelV2CompletedSessionHistory.rows}}
-            <article class="arcflight-travel-runner-mvp__session-row">
+            <article class="arcflight-travel-runner-mvp__session-row arcflight-travel-runner-mvp__completed-card">
               <header>
                 <strong>{{eventName}}</strong>
                 <span>{{outcome}}</span>
               </header>
-              <p><strong>Ship:</strong> {{shipName}}</p>
-              <p class="arcflight-sheet__hint">{{applicationStatusLabel}} • Completed {{completedAtLabel}} • Applied {{appliedAtLabel}} • Follow-ups {{followUpCount}}</p>
+              <dl class="arcflight-travel-runner-mvp__completed-grid">
+                <dt>Ship</dt><dd>{{shipName}}</dd>
+                <dt>Outcome</dt><dd>{{outcome}}</dd>
+                <dt>Completed</dt><dd>{{completedAtLabel}}</dd>
+                <dt>Applied</dt><dd>{{appliedAtLabel}} — {{applicationStatusLabel}}</dd>
+                <dt>Follow-ups</dt><dd>{{followUpCount}}</dd>
+              </dl>
+              {{#if isMalformed}}<p class="arcflight-sheet__hint"><strong>Warning:</strong> This completed session entry is malformed and cannot be reopened, but it can be deleted from runner history.</p>{{/if}}
               <div class="arcflight-travel-runner-mvp__actions">
                 <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canReopen}}disabled{{/unless}}>Reopen Completed Session</button>
+                <button type="button" data-arcflight-travel-v2-delete-completed-session="{{key}}" data-session-name="{{name}}" {{#unless canDelete}}disabled{{/unless}}>Delete Completed Session</button>
               </div>
             </article>
           {{/each}}

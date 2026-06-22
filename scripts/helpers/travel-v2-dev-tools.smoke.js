@@ -3,9 +3,11 @@ import {
   buildTravelV2DebugReport,
   copyTravelV2DebugReport,
   createLanternTravelV2SampleSession,
+  deleteTravelV2CompletedSessionFromLibrary,
   forceTravelV2CurrentRoundResults,
   forceTravelV2EarlyEndRound,
   forceTravelV2Outcome,
+  filterTravelV2CompletedSessionEntries,
   prepareTravelV2CompletedSessionHistoryState,
   prepareTravelV2EndOfEventResolutionDialogState,
   prepareTravelV2RoundResolutionDialogState
@@ -59,8 +61,26 @@ export default async function runTravelV2DevToolsSmokeChecks() {
   const older = { ...completed, key: "older", completedAt: "2026-01-01T00:00:00.000Z" };
   const newer = { ...completed, key: "newer", completedAt: "2026-01-03T00:00:00.000Z", travelV2EventOutcomeApplication: { appliedAt: "2026-01-03T00:15:00.000Z" } };
   const history = prepareTravelV2CompletedSessionHistoryState([{ session: older, key: "older" }, { session: newer, key: "newer" }]);
-  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].applicationStatusKey === "outcomeApplied" && history.rows[1].applicationStatusKey === "completedNotApplied" && history.rows[0].canReopen === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel, "completed history sorts newest first with date/time labels, application states, and reopen");
+  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].applicationStatusKey === "outcomeApplied" && history.rows[1].applicationStatusKey === "completedNotApplied" && history.rows[0].canReopen === true && history.rows[0].canDelete === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel, "completed history sorts newest first with date/time labels, application states, reopen, and delete");
   checked.push("completed history state");
+
+  const libraryStateRows = prepareTravelV2CompletedSessionHistoryState({ entries: [{ ...newer, session: undefined, status: "completed", completedAt: newer.completedAt, eventName: "Old Saved", key: "old-entry" }, { key: "bad", status: "completed", completedAt: "", isMalformed: true }] });
+  assert(libraryStateRows.rows.length === 2 && libraryStateRows.rows[0].canDelete === true && libraryStateRows.rows[1].completedAtLabel === "Missing timestamp", "completed history handles old saved entries, malformed entries, and missing timestamps");
+  checked.push("completed history malformed and missing timestamp state");
+
+  const emptyHistory = prepareTravelV2CompletedSessionHistoryState({ entries: [] });
+  assert(emptyHistory.hasRows === false && emptyHistory.count === 0, "completed history handles empty library");
+  checked.push("completed history empty state");
+
+  const filtered = filterTravelV2CompletedSessionEntries([{ session: older, key: "older" }, { session: sample.session, key: "active" }, { key: "entry-completed", status: "completed", completedAt: "2026-01-04T00:00:00.000Z" }]);
+  assert(filtered.length === 2, "completed session filter returns only completed entries");
+  checked.push("completed session filter helper");
+
+  const actorRecordSentinel = { actorApplicationRecords: [{ id: "actor-apply" }], followUps: [{ id: "follow-up" }] };
+  const library = { version: 1, sessions: { older: { key: "older", name: "Older", status: "completed", completedAt: older.completedAt, session: { ...older, travelV2ActorApplication: { appliedAt: "2026-01-02T00:30:00.000Z", sentinel: actorRecordSentinel.actorApplicationRecords }, travelV2FollowUps: { records: actorRecordSentinel.followUps } } }, active: { key: "active", name: "Active", status: "active", session: sample.session } } };
+  const deleted = await deleteTravelV2CompletedSessionFromLibrary("older", { library, dryRun: true });
+  assert(deleted.ok && !deleted.library.sessions.older && deleted.library.sessions.active && actorRecordSentinel.actorApplicationRecords.length === 1 && actorRecordSentinel.followUps.length === 1, "delete completed helper removes only runner session library entry and leaves actor record sentinels untouched");
+  checked.push("completed session delete helper safety");
 
   return { ok: true, checked };
 }
