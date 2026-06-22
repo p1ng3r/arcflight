@@ -73,6 +73,21 @@ function sanitizePublicHazards(value = []) {
     .filter((entry) => entry.name || entry.playerText);
 }
 
+function sanitizePublicShipScars(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      id: sanitizeText(entry.id),
+      name: sanitizeText(entry.name),
+      severity: sanitizeText(entry.severity),
+      category: sanitizeText(entry.category),
+      playerText: sanitizeText(entry.playerText),
+      repairRequirement: sanitizeText(entry.repairRequirement),
+      status: sanitizeText(entry.status)
+    }))
+    .filter((entry) => entry.name || entry.playerText);
+}
+
 function sanitizeFocusOptions(value = []) {
   return (Array.isArray(value) ? value : [])
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
@@ -137,6 +152,8 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     pendingReactionPromptAbilityLabel: sanitizeText(source.pendingReactionPromptAbilityLabel),
     hasPublicHazards: sanitizeBoolean(source.hasPublicHazards) || sanitizePublicHazards(source.publicHazards).length > 0,
     publicHazards: sanitizePublicHazards(source.publicHazards),
+    hasPublicShipScars: sanitizeBoolean(source.hasPublicShipScars) || sanitizePublicShipScars(source.publicShipScars).length > 0,
+    publicShipScars: sanitizePublicShipScars(source.publicShipScars),
     hasPendingReactionBacklash: sanitizeBoolean(source.hasPendingReactionBacklash),
     pendingReactionBacklashText: sanitizeText(source.pendingReactionBacklashText),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)

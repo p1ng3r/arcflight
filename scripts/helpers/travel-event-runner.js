@@ -2414,6 +2414,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   const publicHazards = prepareTravelV2HazardPanelState(activeSession).records
     .filter((record) => record.status === "active" && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText }));
+  const publicShipScars = prepareTravelV2ShipScarsPanelState(activeSession).records
+    .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status }));
   const pendingReactionPrompt = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
     record.stationKey === station.stationKey
     && record.roundIndex === activeSession?.currentRoundIndex
@@ -2486,6 +2489,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     pendingReactionPromptAbilityLabel: pendingReactionPrompt?.abilityLabel ?? "",
     hasPublicHazards: publicHazards.length > 0,
     publicHazards,
+    hasPublicShipScars: publicShipScars.length > 0,
+    publicShipScars,
     hasPendingReactionBacklash: Boolean(reactionBacklash),
     pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1

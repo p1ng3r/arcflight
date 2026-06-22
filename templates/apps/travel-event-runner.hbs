@@ -18,6 +18,81 @@
     {{/if}}
   </header>
 
+
+  {{#if state.hasSession}}
+  <section class="arcflight-travel-command-bridge arcflight-needs-attention" aria-label="Command Bridge">
+    <div class="arcflight-travel-command-bridge__astrolabe" aria-hidden="true"></div>
+    <header class="arcflight-travel-command-bridge__header">
+      <div>
+        <p class="arcflight-travel-command-bridge__eyebrow">🧭 Command Bridge</p>
+        <h2>{{state.event.name}}</h2>
+        <div class="arcflight-travel-command-bridge__tags">
+          <span>Event Level: {{state.guidedBridge.tags.level}}</span>
+          <span>Severity: {{state.guidedBridge.tags.severity}}</span>
+          <span>Category: {{state.guidedBridge.tags.category}}</span>
+          <span>Ship: {{#if state.session.ship.actorName}}{{state.session.ship.actorName}}{{else}}Unassigned{{/if}}</span>
+          <span>Round {{state.currentRoundNumber}}</span>
+          <span>Phase: {{state.roundSegmentState.currentSegmentLabel}}</span>
+          <span>Status: {{state.session.status}}</span>
+        </div>
+      </div>
+      <button type="button" data-arcflight-runner-send-mission-board>Send Station Roll Cards</button>
+    </header>
+
+    <article class="arcflight-travel-next-action arcflight-{{state.guidedBridge.nextRequiredAction.tone}}">
+      <span class="arcflight-travel-next-action__icon">{{state.guidedBridge.nextRequiredAction.icon}}</span>
+      <div>
+        <p>NEXT REQUIRED ACTION</p>
+        <h3>{{state.guidedBridge.nextRequiredAction.title}}</h3>
+        <span>{{state.guidedBridge.nextRequiredAction.detail}}</span>
+      </div>
+      <button type="button" data-arcflight-travel-v2-round-review>Open Details</button>
+    </article>
+
+    <div class="arcflight-travel-guided-grid">
+      <section class="arcflight-travel-guided-panel" aria-label="Round Flow">
+        <h3>🧭 Round Flow</h3>
+        <p>{{state.roundSegmentState.currentSegmentLabel}} · {{state.currentRoundTitle}}</p>
+        <div class="arcflight-travel-runner-mvp__actions"><button type="button" data-arcflight-runner-previous-phase>Previous Phase</button><button type="button" data-arcflight-runner-next-phase>Next Phase</button></div>
+      </section>
+      <section class="arcflight-travel-guided-panel" aria-label="Station Console">
+        <h3>⚙️ Station Console</h3>
+        <p>{{state.guidedBridge.stationSummary.resolved}}/{{state.guidedBridge.stationSummary.total}} resolved · {{state.guidedBridge.stationSummary.waiting}} waiting · {{state.guidedBridge.stationSummary.critical}} critical</p>
+      </section>
+      <section class="arcflight-travel-guided-panel" aria-label="Pressure & Resources">
+        <h3>🔥 Pressure & Resources</h3>
+        <div class="arcflight-rune-pips">{{#each state.guidedBridge.pressurePips}}<span title="{{label}}"><b>{{label}}</b><i style="--arcflight-pip-count: {{value}}"></i>{{value}}</span>{{/each}}</div>
+      </section>
+    </div>
+
+    <section class="arcflight-travel-action-queue" aria-label="Action Queue">
+      <h3>⚠️ Action Queue</h3>
+      {{#if state.guidedBridge.hasActionQueue}}
+        {{#each state.guidedBridge.actionQueue}}
+          <article class="arcflight-travel-action-queue__item arcflight-{{tone}}">
+            <strong>{{icon}} {{title}}</strong><p>{{detail}}</p>
+            <div><button type="button" data-arcflight-travel-v2-round-review>{{actionLabel}}</button><button type="button" data-arcflight-runner-send-mission-board>Send to Players</button><button type="button">Dismiss</button></div>
+          </article>
+        {{/each}}
+      {{else}}<p class="arcflight-resolved">No GM attention items. Continue the voyage when ready.</p>{{/if}}
+    </section>
+
+    <div class="arcflight-travel-guided-drawers">
+      <details class="arcflight-card-drawer"><summary>🧭 Reaction Console <span>{{state.guidedBridge.drawers.reactions}}</span></summary><p>Resolve Navigator Hard Correction and other pending reactions below.</p></details>
+      <details class="arcflight-card-drawer arcflight-card-stack"><summary>⚠️ Hazard Deck <span>{{state.guidedBridge.drawers.hazards}}</span></summary><p>Hazards behave as pending cards until the GM activates or clears them.</p></details>
+      <details class="arcflight-card-drawer arcflight-card-stack arcflight-ship-scar-drawer"><summary>🚨 Ship Scars Deck <span>{{state.guidedBridge.drawers.shipScars}}</span></summary><p>Ship Scars are session-local candidates until explicit GM Apply writes actor flags.</p></details>
+      <details class="arcflight-card-drawer arcflight-momentum-drawer"><summary>✨ Momentum Pool</summary><p title="Future system. Momentum can be earned from strong station results and spent for travel advantages.">Momentum: 1</p><button type="button" disabled>Spend Momentum</button></details>
+      <details class="arcflight-card-drawer"><summary>🗣️ Support Orders</summary><p title="Future system. Stations may support another station instead of making a primary roll.">Support Orders: Not Assigned</p><button type="button" disabled>Assign Support</button></details>
+      <details class="arcflight-card-drawer arcflight-fortune-drawer"><summary>🃏 Void Fortune Hand</summary><p title="Future system. Special cards drawn, held, and spent during travel.">Void Fortune: 0 Cards</p><button type="button" disabled>Open Fortune Hand</button></details>
+      <details class="arcflight-card-drawer"><summary>🛠️ Ship Upgrade Effects</summary><p title="Future system. Installed ship upgrades may add travel actions, reactions, or passive effects.">Smuggler Engine: Low-Burn Route Option · Reinforced Hull: Reduce Hull Pressure Once</p></details>
+      <details class="arcflight-card-drawer"><summary>📜 Outcome & Follow-ups</summary><p>Follow-ups: {{state.guidedBridge.drawers.followUps}}</p></details>
+      <details class="arcflight-card-drawer"><summary>💾 Completed Sessions</summary><p>Saved and completed session controls remain below.</p></details>
+      {{#if state.travelV2DevToolsEnabled}}<details class="arcflight-card-drawer arcflight-gm-only"><summary>🧪 Dev Tools</summary><p>GM-only dev tools are gated by travelV2DevToolsEnabled below.</p></details>{{/if}}
+      <details class="arcflight-card-drawer arcflight-gm-only"><summary>🔒 Event Schema</summary><p>Category: {{state.guidedBridge.tags.category}} · Level: {{state.guidedBridge.tags.level}} · Severity: {{state.guidedBridge.tags.severity}} · Stations: {{state.guidedBridge.stationSummary.total}} · Pressure Suggestions / Hazards / Follow-ups prepared from event schema. Future authoring/schema support. GM-only.</p></details>
+    </div>
+  </section>
+  {{/if}}
+
   {{#unless state.compactRunner}}
   <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-toolbar">
     <button type="button" class="arcflight-travel-runner-mvp__action-toggle" data-arcflight-runner-toggle-session-actions aria-label="{{#if state.sessionActionsExpanded}}Collapse Session Actions{{else}}Expand Session Actions{{/if}}" aria-expanded="{{#if state.sessionActionsExpanded}}true{{else}}false{{/if}}">

@@ -520,6 +520,17 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     updateActiveTravelSceneOverlayContext({ session: this.session, actor: this.#getSelectedShipActor() }, { render: true });
     this.#applyCompactPosition();
     this.#restoreScrollPosition();
+    this.#maybeOpenGuidedRoundResolution(context?.state);
+  }
+
+  #maybeOpenGuidedRoundResolution(state) {
+    if (!state?.hasSession || state.isCompleted) return;
+    const key = `${state.session?.key ?? "session"}:${state.currentRoundNumber}:round-resolution`;
+    const guided = state.guidedBridge ?? {};
+    const ready = guided.stationSummary?.total > 0 && guided.stationSummary?.waiting === 0 && state.travelV2PreviewPanel?.pressureApplication?.alreadyApplied !== true;
+    if (!ready || this.uiState.lastGuidedRoundResolutionKey === key) return;
+    this.uiState.lastGuidedRoundResolutionKey = key;
+    setTimeout(() => this.#showTravelV2RoundResolutionDialog({ finalize: false }), 0);
   }
 
   async #onRunnerChange(event) {
@@ -729,11 +740,27 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       this.statusMessage = `Applied Travel v2 pressure outcome: ${humanizeIdentifier(update.result.selectedOutcomeKey)}.`;
+      this.#showTravelV2PressureAppliedDialog(update.result);
       return this.render(true);
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure application was blocked.";
     return update.shouldRerender ? this.render(true) : update;
+  }
+
+  #showTravelV2PressureAppliedDialog(result = {}) {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.prompt !== "function") return;
+    const changes = (Array.isArray(result.pressureChanges) ? result.pressureChanges : Array.isArray(result.appliedDeltas) ? result.appliedDeltas : [])
+      .map((change) => `<li>${escapeHtml(humanizeIdentifier(change.pressureType ?? change.key ?? change.track ?? "Pressure"))}: ${escapeHtml(change.before ?? "?")} → ${escapeHtml(change.after ?? "?")}</li>`)
+      .join("") || "<li>Pressure application recorded in the local runner session.</li>";
+    dialogV2.prompt({
+      window: { title: "Pressure Applied" },
+      content: `<section class="arcflight-travel-pressure-applied"><h2>Pressure Applied</h2><ul>${changes}</ul><p>Review any threshold crossings, Hazard Deck cards, or Ship Scar overflow candidates in the Action Queue. Actor writes still require explicit GM Apply.</p></section>`,
+      rejectClose: false,
+      ok: { label: "Continue", callback: () => true },
+      buttons: [{ action: "hazard", label: "Review Hazard", callback: () => true }, { action: "scar", label: "Review Ship Scar", callback: () => true }]
+    }).catch?.(() => {});
   }
 
   async #correctTravelV2Pressure(target) {
