@@ -224,6 +224,27 @@
           {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasConsequences}}<p class="arcflight-sheet__hint">Consequence candidates: {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.consequenceCandidates.length}}</p>{{/if}}
           {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.feedbackText}}</p>{{/if}}
         </div>
+        <div class="arcflight-travel-runner-mvp__v2-hazards" aria-label="Travel v2 hazard deck">
+          <h4>Hazard Deck v1</h4>
+          <p class="arcflight-sheet__hint">Runner-session state only. Hazards do not mutate actors, items, chat, journals, combat, or sockets automatically. Drawn thresholds: {{state.travelV2Hazards.drawnThresholdText}}.</p>
+          {{#if state.travelV2Hazards.hasRecords}}
+            {{#each state.travelV2Hazards.records}}
+              <article class="arcflight-travel-runner-mvp__v2-follow-up-card">
+                <header><strong>{{name}}</strong> <span class="arcflight-sheet__hint">{{category}} · Threshold {{threshold}} · {{statusLabel}}</span></header>
+                <p>{{description}}</p>
+                {{#if playerText}}<p><strong>Player-safe:</strong> {{playerText}}</p>{{/if}}
+                {{#if gmText}}<p class="arcflight-sheet__hint"><strong>GM:</strong> {{gmText}}</p>{{/if}}
+                <p class="arcflight-sheet__hint">{{pressureContext}}</p>
+                <div class="arcflight-travel-runner-mvp__v2-follow-up-actions">
+                  {{#if canActivate}}<button type="button" data-arcflight-travel-v2-hazard-activate="{{id}}" {{#if ../state.isCompleted}}disabled{{/if}}>Activate / Apply</button>{{/if}}
+                  {{#if canClear}}<button type="button" data-arcflight-travel-v2-hazard-clear="{{id}}" {{#if ../state.isCompleted}}disabled{{/if}}>Clear</button>{{/if}}
+                </div>
+              </article>
+            {{/each}}
+          {{else}}
+            <p class="arcflight-sheet__hint">No hazards drawn yet. Pressure crossing 2, 3, and 4 draws one pending hazard each.</p>
+          {{/if}}
+        </div>
         <div class="arcflight-travel-runner-mvp__v2-actor-application" aria-label="Travel v2 GM actor application preview">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>

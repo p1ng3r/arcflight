@@ -61,6 +61,18 @@ function sanitizeApproachOptions(value = []) {
     .filter((entry) => entry.skill || entry.label || entry.helpText);
 }
 
+function sanitizePublicHazards(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({
+      id: sanitizeText(entry.id),
+      name: sanitizeText(entry.name),
+      category: sanitizeText(entry.category),
+      playerText: sanitizeText(entry.playerText)
+    }))
+    .filter((entry) => entry.name || entry.playerText);
+}
+
 function sanitizeFocusOptions(value = []) {
   return (Array.isArray(value) ? value : [])
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
@@ -123,6 +135,8 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     pendingReactionPromptId: sanitizeText(source.pendingReactionPromptId),
     pendingReactionPromptTitle: sanitizeText(source.pendingReactionPromptTitle),
     pendingReactionPromptAbilityLabel: sanitizeText(source.pendingReactionPromptAbilityLabel),
+    hasPublicHazards: sanitizeBoolean(source.hasPublicHazards) || sanitizePublicHazards(source.publicHazards).length > 0,
+    publicHazards: sanitizePublicHazards(source.publicHazards),
     hasPendingReactionBacklash: sanitizeBoolean(source.hasPendingReactionBacklash),
     pendingReactionBacklashText: sanitizeText(source.pendingReactionBacklashText),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)

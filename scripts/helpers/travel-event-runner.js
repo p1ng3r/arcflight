@@ -16,6 +16,7 @@ import {
   stabilize
 } from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
+import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus } from "./travel-v2-hazards.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -1543,7 +1544,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     stationFocus: normalizeTravelEventRunnerStationFocus(options.stationFocus, normalizedEvent, options),
     focusEffectRecords: normalizeTravelFocusEffectRecords(options.focusEffectRecords, options),
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(options.stabilizeResolutionRecords, options),
-    reactionPrompts: normalizeTravelReactionPromptRecords(options.reactionPrompts, options)
+    reactionPrompts: normalizeTravelReactionPromptRecords(options.reactionPrompts, options),
+    travelV2Hazards: normalizeTravelV2HazardDeckState(options.travelV2Hazards)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1590,6 +1592,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     focusEffectRecords: normalizeTravelFocusEffectRecords(session.focusEffectRecords, options),
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(session.stabilizeResolutionRecords, options),
     reactionPrompts: normalizeTravelReactionPromptRecords(session.reactionPrompts, options),
+    travelV2Hazards: normalizeTravelV2HazardDeckState(session.travelV2Hazards ?? session.hazards),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
@@ -2101,6 +2104,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
       hasComplications: pendingStabilizeRows.some((row) => row.complication)
     },
     focusEffectReview,
+    travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
     roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
@@ -2403,6 +2407,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   }
   const focusSource = prepareTravelStationFocusState(activeSession, station.stationKey, activeSession?.currentRoundIndex ?? 0, options);
   const { focusOptions, focusCapacity, focusRemaining } = focusSource;
+  const publicHazards = prepareTravelV2HazardPanelState(activeSession).records
+    .filter((record) => record.status === "active" && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText }));
   const pendingReactionPrompt = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
     record.stationKey === station.stationKey
     && record.roundIndex === activeSession?.currentRoundIndex
@@ -2473,6 +2480,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     pendingReactionPromptId: pendingReactionPrompt?.reactionPromptId ?? "",
     pendingReactionPromptTitle: pendingReactionPrompt?.promptTitle ?? "",
     pendingReactionPromptAbilityLabel: pendingReactionPrompt?.abilityLabel ?? "",
+    hasPublicHazards: publicHazards.length > 0,
+    publicHazards,
     hasPendingReactionBacklash: Boolean(reactionBacklash),
     pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
@@ -3404,3 +3413,6 @@ export function getPublishedTravelEventRunnerEntries(options = {}) {
   const library = getPublishedTravelEventLibrary(options);
   return prepareTravelEventRunnerLibraryState({ ...options, library }).entries;
 }
+
+export function activateTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "active", options); }
+export function clearTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "cleared", options); }
