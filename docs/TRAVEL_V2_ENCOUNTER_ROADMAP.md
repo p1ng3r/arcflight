@@ -106,6 +106,8 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
+**Current PR scope — Hazard Encounter Mechanics:** this pass turns the shared hazard deck into session-local gameplay modifiers: active hazards can change station DCs, suppress options or Focus, inject response actions, track clear progress, and record unresolved consequences without mutating actors/items/chat/journals/combat. Later PRs should deepen event-specific hazard hooks, richer momentum spends, and explicit GM Apply handoffs for persistent fallout.
+
 Hazard cards are generic shared deck cards that work across Travel v2 events, but each card must create a real gameplay complication.
 
 A hazard should not simply say `+1 Strain` or `+1 Lifeveil`. That is pressure, not a hazard.

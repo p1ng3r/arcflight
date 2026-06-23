@@ -53,7 +53,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, dismissTravelV2RunnerShipScar
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, dismissTravelV2RunnerShipScar
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -111,6 +111,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-hazard-hold]",
   "[data-arcflight-travel-v2-hazard-activate]",
   "[data-arcflight-travel-v2-hazard-clear]",
+  "[data-arcflight-travel-v2-hazard-apply]",
   "[data-arcflight-travel-v2-ship-scar-apply]",
   "[data-arcflight-travel-v2-ship-scar-dismiss]",
   "[data-arcflight-travel-v2-ship-scar-repair]",
@@ -642,6 +643,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-hold")) return this.#updateTravelV2Hazard(target, "held");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-activate")) return this.#updateTravelV2Hazard(target, "active");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-clear")) return this.#updateTravelV2Hazard(target, "cleared");
+    if (target.hasAttribute("data-arcflight-travel-v2-hazard-apply")) return this.#applyTravelV2HazardToRound(target);
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-apply")) return this.#applyTravelV2ShipScar(target);
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-dismiss")) return this.#dismissTravelV2ShipScar(target);
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-repair")) return this.#repairTravelV2ShipScar(target);
@@ -751,6 +753,20 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (updated.ok) this.session = updated.session;
     this.statusMessage = updated.ok ? `Travel v2 hazard staged: ${updated.drawn?.name ?? "Hazard"}.` : (updated.errors?.[0] ?? "Could not draw Travel v2 hazard.");
     return this.render(true);
+  }
+
+  async #applyTravelV2HazardToRound(target) {
+    if (!this.session) return;
+    const id = target.dataset.arcflightTravelV2HazardApply || target.dataset.hazardId || "";
+    const updated = applyTravelV2RunnerHazardToRound(this.session, id);
+    if (updated.ok) {
+      this.session = updated.session;
+      this.statusMessage = "Travel v2 hazard applied to the current round.";
+      queueTravelPlayerMissionBoardRefreshToPlayers(this.session);
+    } else {
+      this.statusMessage = updated.errors?.[0] ?? "Could not apply Travel v2 hazard.";
+    }
+    await this.render(true);
   }
 
   async #updateTravelV2Hazard(target, status) {
@@ -902,6 +918,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       const confirmed = await this.#showTravelV2RoundResolutionDialog({ finalize: true });
       if (!confirmed) return this.render(true);
     }
+    const hazardResolution = resolveTravelV2RunnerUnresolvedHazards(this.session, options);
+    if (hazardResolution.ok) this.session = hazardResolution.session;
     const update = prepareTravelV2RoundFinalizationRunnerUpdate(this.session, options);
     this.uiState.travelV2RoundFinalizationResult = update.result;
 
