@@ -135,7 +135,13 @@ export function prepareTravelV2MomentumPanelState(session = {}) {
   const state = normalizeTravelV2MomentumState(session?.travelV2Momentum);
   const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
   const roundResult = session?.roundResults?.[roundIndex] ?? {};
-  const spendOptions = Object.entries(roundResult.stationResults ?? {}).filter(([, result]) => Object.hasOwn(MOMENTUM_DOWNGRADE_MAP, result)).map(([stationKey, result]) => ({ type: "downgradeFailure", stationKey, roundIndex, fromResult: result, toResult: MOMENTUM_DOWNGRADE_MAP[result], label: `Spend 1: ${humanizeIdentifier(stationKey)} ${humanizeIdentifier(result)} → ${humanizeIdentifier(MOMENTUM_DOWNGRADE_MAP[result])}`, disabled: state.value < 1 }));
+  const round = session?.event?.rounds?.[roundIndex] ?? {};
+  const spendOptions = Object.entries(roundResult.stationResults ?? {})
+    .filter(([stationKey, result]) => {
+      const action = normalizeTravelStationAction(roundResult.stationActions?.[stationKey], stationKey, round);
+      return action.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH && Object.hasOwn(MOMENTUM_DOWNGRADE_MAP, result);
+    })
+    .map(([stationKey, result]) => ({ type: "downgradeFailure", stationKey, roundIndex, fromResult: result, toResult: MOMENTUM_DOWNGRADE_MAP[result], label: `Spend 1: ${humanizeIdentifier(stationKey)} ${humanizeIdentifier(result)} → ${humanizeIdentifier(MOMENTUM_DOWNGRADE_MAP[result])}`, disabled: state.value < 1 }));
   return { ...state, hasMomentum: state.value > 0, recentRecords: state.records.slice(-5).reverse(), hasRecords: state.records.length > 0, spendOptions, hasSpendOptions: spendOptions.length > 0, publicHelpText: "Earn Momentum on critical Travel v2 plays. Spend it to downgrade a station failure in the local session before final pressure is settled." };
 }
 
@@ -177,7 +183,11 @@ export function spendTravelV2MomentumToDowngradeStationFailure(session, roundInd
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
   const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
-  const result = normalized.session.roundResults?.[index]?.stationResults?.[stationKey];
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const roundResult = normalized.session.roundResults?.[index] ?? {};
+  const action = normalizeTravelStationAction(roundResult.stationActions?.[stationKey], stationKey, round);
+  if (action.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH) return { ok: false, errors: ["Momentum failure downgrade currently only supports main objective station actions."], warnings: [], session: normalized.session };
+  const result = roundResult.stationResults?.[stationKey];
   const nextResult = MOMENTUM_DOWNGRADE_MAP[result];
   if (!nextResult) return { ok: false, errors: ["Momentum can only downgrade failure or critical failure results."], warnings: [], session: normalized.session };
   const spend = spendTravelV2Momentum(normalized.session, { id: momentumRecordId(["momentum-spend", "downgrade", index, stationKey, result, nextResult]), roundIndex: index, stationKey, source: "failureDowngrade", amount: 1, publicSummary: `${humanizeIdentifier(stationKey)} spends Momentum to shift ${humanizeIdentifier(result)} to ${humanizeIdentifier(nextResult)}.`, gmNote: `Session-local audit: ${stationKey} result changed from ${result} to ${nextResult}. No actor/item/chat/journal/combat mutation.`, target: { fromResult: result, toResult: nextResult } }, options);

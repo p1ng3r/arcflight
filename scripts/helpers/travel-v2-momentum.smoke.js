@@ -16,7 +16,7 @@ function okSession(result) { assertSmoke(result.ok, result.errors?.join("; ") ||
 function snap(value) { return JSON.stringify(value); }
 
 function fixtureEvent() {
-  const stations = ["navigator", "engineer", "captain"];
+  const stations = ["navigator", "engineer", "captain", "watchmaster"];
   return {
     key: "momentum-pass", name: "Momentum Pass", category: "navigation", baseDC: 20, roundCount: 1, tags: ["smoke"], activeResources: ["strain"],
     rounds: [{ roundNumber: 1, title: "Catch the Current", activeStations: stations, primaryPressure: "strain", outcomeBranches: { dominantSuccess: "Win.", mixed: "Mixed.", dominantFailure: "Fail.", catastrophicFailure: "Crash." }, stationPrompts: Object.fromEntries(stations.map((stationKey) => [stationKey, { stationKey, stationName: stationKey, playerAction: "Act decisively.", suggestedSkills: ["perception"], rollFeedback: { criticalSuccess: "Strong.", success: "Good.", failure: "Bad.", criticalFailure: "Worse." } }])), stationCards: stations.map((stationKey) => ({ stationKey, skillApproaches: [{ label: "Push", skill: "perception", helpText: "Help the objective.", boardResultFeedback: { criticalSuccess: "Strong.", success: "Good.", failure: "Bad.", criticalFailure: "Worse." }, gmNarrationFeedback: { criticalSuccess: "Strong.", success: "Good.", failure: "Bad.", criticalFailure: "Worse." } }] })) }],
@@ -50,9 +50,18 @@ export async function runTravelV2MomentumSmokeChecks() {
     assertSmoke(session.travelV2Momentum.value === 1, "regular success does not award momentum");
     session = okSession(setTravelEventRunnerStationResult(session, 0, "captain", "failure"));
     assertSmoke(session.travelV2Momentum.value === 1, "regular failure does not award momentum");
+    session = okSession(setTravelEventRunnerStationResult(session, 0, "engineer", "failure"));
+    session = okSession(setTravelEventRunnerStationAction(session, 0, "watchmaster", "hazardResponse"));
+    session = okSession(setTravelEventRunnerStationResult(session, 0, "watchmaster", "failure"));
 
     const panel = prepareTravelV2MomentumPanelState(session);
-    assertSmoke(panel.spendOptions.some((option) => option.stationKey === "captain" && option.toResult === "success"), "failure downgrade spend appears in GM panel");
+    assertSmoke(panel.spendOptions.some((option) => option.stationKey === "captain" && option.toResult === "success"), "eventApproach failure appears as eligible downgrade spend");
+    assertSmoke(!panel.spendOptions.some((option) => option.stationKey === "engineer"), "stabilize failure does not appear as eligible downgrade spend");
+    assertSmoke(!panel.spendOptions.some((option) => option.stationKey === "watchmaster"), "hazardResponse failure does not appear as eligible downgrade spend");
+    const rejectedStabilizeSpend = spendTravelV2MomentumToDowngradeStationFailure(session, 0, "engineer");
+    assertSmoke(rejectedStabilizeSpend.ok === false && rejectedStabilizeSpend.errors?.[0] === "Momentum failure downgrade currently only supports main objective station actions.", "direct stabilize downgrade is rejected");
+    const rejectedHazardSpend = spendTravelV2MomentumToDowngradeStationFailure(session, 0, "watchmaster");
+    assertSmoke(rejectedHazardSpend.ok === false && rejectedHazardSpend.errors?.[0] === "Momentum failure downgrade currently only supports main objective station actions.", "direct hazardResponse downgrade is rejected");
     session = okSession(spendTravelV2MomentumToDowngradeStationFailure(session, 0, "captain", { now: "2026-06-23T00:02:00.000Z" }));
     assertSmoke(session.travelV2Momentum.value === 0 && session.travelV2Momentum.spentTotal === 1, "explicit spend reduces momentum");
     assertSmoke(session.roundResults[0].stationResults.captain === "success", "failure downgrade spend changes station result");
@@ -71,7 +80,7 @@ export async function runTravelV2MomentumSmokeChecks() {
   } finally {
     globalThis.ChatMessage = prior.ChatMessage; globalThis.JournalEntry = prior.JournalEntry; globalThis.game = prior.game; globalThis.Actor = prior.Actor; globalThis.Item = prior.Item; globalThis.socket = prior.socket;
   }
-  return { ok: true, checked: ["default-state", "critical-award", "duplicate-prevention", "no-default-stabilize-or-regular-awards", "explicit-spend", "failure-downgrade", "auditable-session-record", "player-sanitization", "no-side-effects", "safe-narration"] };
+  return { ok: true, checked: ["default-state", "critical-award", "duplicate-prevention", "no-default-stabilize-or-regular-awards", "event-approach-spend-eligibility", "stabilize-hazard-spend-exclusion", "direct-non-event-spend-rejection", "explicit-spend", "failure-downgrade", "auditable-session-record", "player-sanitization", "no-side-effects", "safe-narration"] };
 }
 
 export default runTravelV2MomentumSmokeChecks;
