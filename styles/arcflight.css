@@ -2373,3 +2373,26 @@
 .arcflight-round-tracker__step--active { border-color: #79f2d0; }
 .arcflight-round-tracker__step--done { opacity: 0.75; }
 .arcflight-round-tracker__step--blocked { border-color: #d65f4a; }
+
+/* GM Command Bridge pressure gauges must stay contained within the guided grid. */
+.arcflight-travel-runner-guided .arcflight-travel-guided-grid,
+.arcflight-travel-runner-guided .arcflight-travel-guided-panel {
+  min-width: 0;
+}
+
+.arcflight-travel-runner-guided .arcflight-travel-guided-panel[aria-label="Pressure & Resources"] {
+  grid-column: 1 / -1;
+}
+
+.arcflight-travel-runner-guided .arcflight-travel-guided-panel[aria-label="Pressure & Resources"] .arcflight-pressure-gauge-board {
+  display: grid;
+  gap: .4rem;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.arcflight-travel-runner-guided .arcflight-travel-guided-panel[aria-label="Pressure & Resources"] .arcflight-pressure-gauge {
+  min-width: 0;
+}
