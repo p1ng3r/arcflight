@@ -204,6 +204,7 @@ export function prepareTravelV2ActiveHazardModifiers(session, options = {}) {
   const suppressions = [];
   const responseActions = [];
   let suppressFocus = false;
+  let focusSuppression = null;
   for (const record of activeRecords) {
     const runtime = normalizeHazardRuntime(record.runtime);
     if (runtime.suppressedRoundKeys.includes(key)) continue;
@@ -211,11 +212,14 @@ export function prepareTravelV2ActiveHazardModifiers(session, options = {}) {
     for (const effect of mechanics.effects) {
       if (effect.type === "dcModifier") dcModifiers.push({ ...effect, hazardRecordId: record.id, hazardName: record.name, publicModifierText: mechanics.publicModifierText });
       if (effect.type === "suppressOption") suppressions.push({ ...effect, hazardRecordId: record.id, hazardName: record.name, publicModifierText: mechanics.publicModifierText });
-      if (effect.type === "suppressFocus") suppressFocus = true;
+      if (effect.type === "suppressFocus") {
+        suppressFocus = true;
+        if (!focusSuppression) focusSuppression = { hazardRecordId: record.id, hazardName: record.revealed === true ? record.name : "", publicReasonText: mechanics.publicModifierText || "Focus is unavailable while this active hazard remains in play." };
+      }
     }
     responseActions.push(...mechanics.responseActions.map((action) => ({ ...action, hazardRecordId: record.id, hazardName: record.name, publicModifierText: mechanics.publicModifierText })));
   }
-  return { roundKey: key, publicHazards, dcModifiers, suppressions, responseActions, suppressFocus, hasActiveHazards: activeRecords.length > 0 };
+  return { roundKey: key, publicHazards, dcModifiers, suppressions, responseActions, suppressFocus, focusSuppression, hasActiveHazards: activeRecords.length > 0 };
 }
 
 export function applyTravelV2HazardToRound(session, hazardRecordId, options = {}) {

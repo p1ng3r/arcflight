@@ -78,7 +78,16 @@
       <section id="arcflight-guided-station-console" class="arcflight-travel-guided-panel" aria-label="Station Console" tabindex="-1">
         <h3>⚙️ Station Console</h3>
         <p>{{state.guidedBridge.stationSummary.resolved}}/{{state.guidedBridge.stationSummary.total}} resolved · {{state.guidedBridge.stationSummary.waiting}} waiting · {{state.guidedBridge.stationSummary.critical}} critical</p>
-        {{#if state.hasStations}}
+  
+      {{#if state.focusRiskSummary.hasRows}}
+        <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe">
+          <h2>Focus Risk / Suppression</h2>
+          <p class="arcflight-sheet__hint">{{state.focusRiskSummary.mutationNote}}</p>
+          {{#if state.focusRiskSummary.hasBlockedRows}}<p class="arcflight-travel-builder__warning"><strong>Blocked Focus stations:</strong> {{#each state.focusRiskSummary.blockedRows}}{{stationName}}{{#if blockedHazardName}} ({{blockedHazardName}}){{/if}}{{#unless @last}}, {{/unless}}{{/each}}</p>{{/if}}
+        </section>
+      {{/if}}
+
+      {{#if state.hasStations}}
           <div class="arcflight-travel-compact-stations">
             {{#each state.stations}}
               <article class="arcflight-travel-card {{#if result}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
@@ -550,6 +559,15 @@
         </ol>
       </section>
 
+
+      {{#if state.focusRiskSummary.hasRows}}
+        <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe">
+          <h2>Focus Risk / Suppression</h2>
+          <p class="arcflight-sheet__hint">{{state.focusRiskSummary.mutationNote}}</p>
+          {{#if state.focusRiskSummary.hasBlockedRows}}<p class="arcflight-travel-builder__warning"><strong>Blocked Focus stations:</strong> {{#each state.focusRiskSummary.blockedRows}}{{stationName}}{{#if blockedHazardName}} ({{blockedHazardName}}){{/if}}{{#unless @last}}, {{/unless}}{{/each}}</p>{{/if}}
+        </section>
+      {{/if}}
+
       {{#if state.hasStations}}
         <div class="arcflight-travel-runner-mvp__stations">
           {{#each state.stations}}
@@ -562,6 +580,8 @@
               {{#if problem}}<p class="arcflight-sheet__hint"><strong>Station Card Problem:</strong> {{problem}}</p>{{/if}}
               {{#if stationOrderCommitted}}<p class="arcflight-sheet__hint"><strong>Player Committed:</strong> {{selectedActionLabel}}{{#if selectedFocusAbility}} — Station Focus: {{selectedFocusAbility}}{{/if}}</p>{{/if}}
               <p class="arcflight-sheet__hint"><strong>Focus Remaining:</strong> {{focusRemaining}} / {{focusCapacity}}</p>
+              {{#if focusSuppressedByHazard}}<p class="arcflight-travel-builder__warning"><strong>Focus unavailable:</strong> {{#if focusSuppression.hazardName}}{{focusSuppression.hazardName}} — {{/if}}{{focusSuppression.publicReasonText}}</p>{{/if}}
+              {{#if focusOptions.length}}<details class="arcflight-sheet__hint"><summary>Focus risk preview</summary>{{#each focusOptions}}<p><strong>{{label}}:</strong> {{whatItHelps}} {{publicRiskText}} {{publicBacklashPreviewText}}</p>{{/each}}</details>{{/if}}
               {{#if isStabilize}}
                 <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
                 {{#if result}}

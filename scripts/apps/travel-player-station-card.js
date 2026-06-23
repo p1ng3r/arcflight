@@ -128,7 +128,15 @@ function sanitizeFocusOptions(value = []) {
     .map((entry) => ({
       value: sanitizeText(entry.value ?? entry.key),
       label: sanitizeText(entry.label ?? entry.name),
-      description: sanitizeText(entry.description),
+      description: sanitizeText(entry.description ?? entry.whatItHelps),
+      whatItHelps: sanitizeText(entry.whatItHelps ?? entry.description),
+      publicRiskText: sanitizeText(entry.publicRiskText),
+      publicBacklashPreviewText: sanitizeText(entry.publicBacklashPreviewText),
+      available: sanitizeBoolean(entry.available),
+      blocked: sanitizeBoolean(entry.blocked),
+      blockedReason: sanitizeText(entry.blockedReason),
+      stationKey: sanitizeText(entry.stationKey),
+      roundIndex: sanitizeInteger(entry.roundIndex, 0),
       used: sanitizeBoolean(entry.used),
       unavailable: sanitizeBoolean(entry.unavailable)
     }))
@@ -180,6 +188,9 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
     noFocusRemaining: sanitizeBoolean(source.noFocusRemaining),
     canSpendFocus: sanitizeBoolean(source.canSpendFocus),
+    focusBlocked: sanitizeBoolean(source.focusBlocked),
+    focusBlockedReason: sanitizeText(source.focusBlockedReason),
+    focusBlockedHazardName: sanitizeText(source.focusBlockedHazardName),
     hasPendingReactionPrompt: sanitizeBoolean(source.hasPendingReactionPrompt),
     pendingReactionPromptId: sanitizeText(source.pendingReactionPromptId),
     pendingReactionPromptTitle: sanitizeText(source.pendingReactionPromptTitle),
@@ -914,6 +925,9 @@ function sanitizeMissionBoardStation(station = {}) {
     selectedFocusAbility: sanitizeText(source.selectedFocusAbility),
     noFocusRemaining: sanitizeBoolean(source.noFocusRemaining),
     canSpendFocus: sanitizeBoolean(source.canSpendFocus),
+    focusBlocked: sanitizeBoolean(source.focusBlocked),
+    focusBlockedReason: sanitizeText(source.focusBlockedReason),
+    focusBlockedHazardName: sanitizeText(source.focusBlockedHazardName),
     rollUnavailableReason: sanitizeText(source.rollUnavailableReason),
     canRollStation: sanitizeBoolean(source.canRollStation),
     permissionReason: sanitizeText(source.permissionReason) || "Not assigned to your actor."

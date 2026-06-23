@@ -62,6 +62,8 @@ const DEFAULT_STABILIZE_SKILLS = Object.freeze({
   [ARCFLIGHT_TRAVEL_STATIONS.VEILWARDEN]: "occultism",
   [ARCFLIGHT_TRAVEL_STATIONS.WATCHMASTER]: "perception"
 });
+const DEFAULT_FOCUS_RISK_TEXT = "Risk: if this Focus push backfires, the GM may create a session-local backlash complication.";
+const DEFAULT_FOCUS_BACKLASH_PREVIEW_TEXT = "The GM resolves any Focus consequences later. This does not automatically mutate actor, item, chat, journal, combat, or socket state.";
 const DEFAULT_STATION_FOCUS_ABILITIES = Object.freeze({
   captain: Object.freeze([
     { key: "command-the-momentum", label: "Command the Momentum", timing: "End of Round / before next station roll.", effectText: "Choose one active station. That station gains advantage on its next station roll." },
@@ -236,6 +238,34 @@ export function normalizeTravelEventRunnerStationFocus(value, roundOrSession = n
   return Object.fromEntries(stationKeys.map((stationKey) => [stationKey, normalizeTravelStationFocusState(source[stationKey], stationKey, options)]));
 }
 
+export function sanitizeTravelStationFocusOption(ability = {}, context = {}) {
+  const key = typeof ability.key === "string" && ability.key ? ability.key : (typeof ability.value === "string" ? ability.value : "");
+  const label = typeof ability.label === "string" && ability.label ? ability.label : humanizeIdentifier(key);
+  const whatItHelps = typeof ability.whatItHelps === "string" && ability.whatItHelps
+    ? ability.whatItHelps
+    : [ability.timing, ability.effectText].filter((part) => typeof part === "string" && part.trim()).join(" ");
+  const publicRiskText = typeof ability.publicRiskText === "string" && ability.publicRiskText ? ability.publicRiskText : DEFAULT_FOCUS_RISK_TEXT;
+  const publicBacklashPreviewText = typeof ability.publicBacklashPreviewText === "string" && ability.publicBacklashPreviewText ? ability.publicBacklashPreviewText : DEFAULT_FOCUS_BACKLASH_PREVIEW_TEXT;
+  const unavailable = context.used === true || context.spentThisRound === true || context.noFocusRemaining === true || context.blocked === true;
+  return {
+    key,
+    value: key,
+    label,
+    whatItHelps,
+    description: whatItHelps,
+    publicRiskText,
+    publicBacklashPreviewText,
+    available: !unavailable,
+    blocked: context.blocked === true,
+    blockedReason: typeof context.blockedReason === "string" ? context.blockedReason : "",
+    stationKey: typeof context.stationKey === "string" ? context.stationKey : "",
+    roundIndex: Number.isInteger(Number(context.roundIndex)) ? Number(context.roundIndex) : 0,
+    used: context.used === true,
+    unavailable,
+    availabilityLabel: context.used === true ? "Used this event." : (context.spentThisRound === true ? "Focus already spent this round." : (context.noFocusRemaining === true ? "No Focus remaining." : (context.blocked === true ? "Blocked by an active hazard." : "")))
+  };
+}
+
 export function prepareTravelStationFocusState(session, stationKey, roundIndex, options = {}) {
   const state = normalizeTravelStationFocusState(session?.stationFocus?.[stationKey], stationKey, options);
   const abilities = getDefaultStationFocusAbilities(stationKey, options);
@@ -245,7 +275,7 @@ export function prepareTravelStationFocusState(session, stationKey, roundIndex, 
     spentThisRound,
     focusOptions: abilities.map((ability) => {
       const used = state.usedAbilityKeys.includes(ability.key);
-      return { ...ability, value: ability.key, description: `${ability.timing} ${ability.effectText}`, used, unavailable: used || spentThisRound || state.focusRemaining <= 0, availabilityLabel: used ? "Used this event." : "" };
+      return sanitizeTravelStationFocusOption(ability, { stationKey, roundIndex, used, spentThisRound, noFocusRemaining: state.focusRemaining <= 0 });
     })
   };
 }
@@ -1906,6 +1936,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       focusRemaining: stationFocus.focusRemaining,
       focusCapacity: stationFocus.focusCapacity,
       focusSuppressedByHazard: hazardModifiers.suppressFocus,
+      focusSuppression: hazardModifiers.focusSuppression,
       activeHazardModifiers: hazardModifiers.publicHazards,
       isEventApproach: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
       isStabilize: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
@@ -2257,6 +2288,20 @@ export function prepareTravelEventRunnerSessionLibraryState(options = {}) {
   });
 }
 
+function prepareTravelFocusRiskSummary(stations = []) {
+  const rows = (Array.isArray(stations) ? stations : []).map((station) => ({
+    stationKey: station.stationKey,
+    stationName: station.stationName,
+    focusRemaining: station.focusRemaining,
+    focusCapacity: station.focusCapacity,
+    blocked: station.focusSuppressedByHazard === true,
+    blockedReason: station.focusSuppression?.publicReasonText ?? "",
+    blockedHazardName: station.focusSuppression?.hazardName ?? "",
+    options: (station.focusOptions ?? []).map((option) => sanitizeTravelStationFocusOption(option, { stationKey: station.stationKey, roundIndex: station.currentRoundIndex ?? 0, used: option.used, noFocusRemaining: station.focusRemaining <= 0, spentThisRound: option.unavailable === true && option.used !== true, blocked: station.focusSuppressedByHazard === true, blockedReason: station.focusSuppression?.publicReasonText ?? "" }))
+  }));
+  return { rows, hasRows: rows.length > 0, blockedRows: rows.filter((row) => row.blocked), hasBlockedRows: rows.some((row) => row.blocked), mutationNote: DEFAULT_FOCUS_BACKLASH_PREVIEW_TEXT };
+}
+
 export function prepareTravelEventRunnerState(session = null, options = {}) {
   const libraryState = prepareTravelEventRunnerLibraryState(options);
   const sessionLibraryOptions = Object.hasOwn(options, "runnerSessionLibrary") ? { ...options, library: options.runnerSessionLibrary } : options;
@@ -2307,6 +2352,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
       hasComplications: pendingStabilizeRows.some((row) => row.complication)
     },
     focusEffectReview,
+    focusRiskSummary: prepareTravelFocusRiskSummary(stations),
     travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
     travelV2Narration: activeSession ? prepareTravelV2RoundNarration(activeSession, activeSession.currentRoundIndex, options) : null,
     travelV2ShipScars: prepareTravelV2ShipScarsPanelState(activeSession),
@@ -2410,6 +2456,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       stabilizePressureLabel: row.stabilizePressureLabel || "",
       selectedFocusAbility: row.selectedFocusAbility || "",
       focusSuppressedByHazard: row.focusSuppressedByHazard === true,
+      focusSuppression: row.focusSuppression ?? null,
       activeHazardModifiers: row.activeHazardModifiers ?? [],
       assignmentOptions: assignmentRow?.options ?? [],
       hasAssignmentOptions: (assignmentRow?.options ?? []).length > 0,
@@ -2683,11 +2730,14 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     stabilizePressureLabel: station.stabilizePressureLabel || "",
     focusCapacity,
     focusRemaining,
-    focusOptions,
+    focusOptions: focusOptions.map((option) => station.focusSuppressedByHazard === true ? sanitizeTravelStationFocusOption(option, { stationKey: station.stationKey, roundIndex: activeSession?.currentRoundIndex ?? 0, used: option.used, noFocusRemaining: focusRemaining <= 0, spentThisRound: focusSource.spentThisRound, blocked: true, blockedReason: station.focusSuppression?.publicReasonText ?? "Focus is blocked by an active hazard." }) : option),
     hasFocusOptions: focusOptions.length > 0,
     selectedFocusAbility: station.selectedFocusAbility || "",
     noFocusRemaining: focusRemaining <= 0 || station.focusSuppressedByHazard === true,
     canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound && station.focusSuppressedByHazard !== true,
+    focusBlocked: station.focusSuppressedByHazard === true,
+    focusBlockedReason: station.focusSuppression?.publicReasonText ?? "",
+    focusBlockedHazardName: station.focusSuppression?.hazardName ?? "",
     hasPendingReactionPrompt: Boolean(pendingReactionPrompt),
     pendingReactionPromptId: pendingReactionPrompt?.reactionPromptId ?? "",
     pendingReactionPromptTitle: pendingReactionPrompt?.promptTitle ?? "",
@@ -2841,6 +2891,9 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       selectedFocusAbility: station.selectedFocusAbility || "",
       noFocusRemaining: focusRemaining <= 0 || station.focusSuppressedByHazard === true,
       canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound && station.focusSuppressedByHazard !== true,
+    focusBlocked: station.focusSuppressedByHazard === true,
+    focusBlockedReason: station.focusSuppression?.publicReasonText ?? "",
+    focusBlockedHazardName: station.focusSuppression?.hazardName ?? "",
       canChooseApproach: false,
       permissionReason: "Waiting for board permissions."
       };
