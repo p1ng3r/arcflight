@@ -710,6 +710,36 @@
         <p class="arcflight-sheet__hint">This round has no active station prompts.</p>
       {{/if}}
 
+      {{#if state.travelV2Narration}}
+        <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__narration">
+          <header class="arcflight-travel-runner-mvp__panel-header">
+            <h2>Round Narration</h2>
+            <button type="button" data-arcflight-travel-v2-narration-refresh>Refresh Round Narration</button>
+          </header>
+          <p class="arcflight-sheet__hint">Session-local GM aid only. Nothing is posted to chat, journals, actors, items, or combat automatically.</p>
+          <h3>Combined Round Summary ({{state.travelV2Narration.completionState}})</h3>
+          <p>{{state.travelV2Narration.whatHappened}}</p>
+          <h4>Suggested Read-Aloud</h4>
+          <p>{{state.travelV2Narration.suggestedReadAloud}}</p>
+          <h4>Station Vignettes</h4>
+          {{#if state.travelV2Narration.stationVignettes.length}}
+            <ul>
+              {{#each state.travelV2Narration.stationVignettes}}
+                <li><strong>{{stationLabel}}</strong>{{#if actorName}} ({{actorName}}){{/if}} — {{actionLabel}}{{#if selectedOptionLabel}}: {{selectedOptionLabel}}{{/if}} — <em>{{resultLabel}}</em>. {{narrativeText}} <span class="arcflight-sheet__hint">{{mechanicalSummary}}</span></li>
+              {{/each}}
+            </ul>
+          {{else}}
+            <p class="arcflight-sheet__hint">No active station vignettes are available for this round.</p>
+          {{/if}}
+          <h4>Hazard Notes</h4>
+          <p><strong>Active:</strong> {{#if state.travelV2Narration.hazardNotes.active.length}}{{#each state.travelV2Narration.hazardNotes.active}}{{name}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}None{{/if}}</p>
+          <p><strong>Responded To:</strong> {{#if state.travelV2Narration.hazardNotes.responded.length}}{{#each state.travelV2Narration.hazardNotes.responded}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}None{{/if}}</p>
+          <p><strong>Cleared:</strong> {{#if state.travelV2Narration.hazardNotes.cleared.length}}{{#each state.travelV2Narration.hazardNotes.cleared}}{{name}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}None{{/if}}</p>
+          <p><strong>Unresolved:</strong> {{#if state.travelV2Narration.hazardNotes.unresolved.length}}{{#each state.travelV2Narration.hazardNotes.unresolved}}{{name}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}None{{/if}}</p>
+          {{#if state.travelV2Narration.pressureNotes.length}}<p><strong>Pressure:</strong> {{#each state.travelV2Narration.pressureNotes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</p>{{/if}}
+        </section>
+      {{/if}}
+
       <footer class="arcflight-travel-runner-mvp__actions">
         <button type="button" data-arcflight-runner-previous {{#unless state.canRetreat}}disabled{{/unless}}>Previous Round</button>
         <button type="button" data-arcflight-runner-next {{#unless state.canAdvance}}disabled{{/unless}}>Next Round</button>
