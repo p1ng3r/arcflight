@@ -1,4 +1,4 @@
-import { normalizeTravelEventRunnerSession, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard } from "./travel-event-runner.js";
+import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard } from "./travel-event-runner.js";
 import { drawTravelV2HazardsForPressureResult, prepareTravelV2HazardPanelState } from "./travel-v2-hazards.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 hazards smoke check failed: ${message}`); }
@@ -55,6 +55,17 @@ export function runTravelV2HazardsSmokeChecks() {
     const reopened = normalizeTravelEventRunnerSession(JSON.parse(JSON.stringify(normalized.session)));
     assertEqual(reopened.session.travelV2Hazards.records[0].status, "cleared", "hazard state survives save/reopen JSON path");
 
+    const revealedPublic = prepareTravelPlayerMissionBoardState(revealed.session);
+    assertSmoke(revealedPublic.publicHazards.some((record) => record.id === stagedId && record.playerText && !record.gmText), "revealed hazard appears in player-safe payload without GM text");
+    const activatedRevealed = activateTravelV2RunnerHazard(revealed.session, stagedId, { now: "2026-06-22T00:00:03.100Z" });
+    const activatedPublic = prepareTravelPlayerMissionBoardState(activatedRevealed.session);
+    assertSmoke(activatedPublic.publicHazards.some((record) => record.id === stagedId && record.status === "active" && !record.gmText), "activating revealed hazard updates player-safe status without GM text");
+    const clearedRevealed = clearTravelV2RunnerHazard(activatedRevealed.session, stagedId, { now: "2026-06-22T00:00:03.200Z" });
+    const clearedPublic = prepareTravelPlayerMissionBoardState(clearedRevealed.session);
+    assertSmoke(!clearedPublic.publicHazards.some((record) => record.id === stagedId), "clearing revealed hazard removes it from player-safe payload");
+    const unrevealedPublic = prepareTravelPlayerMissionBoardState(activated.session);
+    assertSmoke(!unrevealedPublic.publicHazards.some((record) => record.id === firstId), "activating unrevealed hazard does not leak into player-safe payload");
+
     const panel = prepareTravelV2HazardPanelState(revealed.session);
     assertSmoke(panel.records.every((record) => typeof record.playerText === "string" && typeof record.gmText === "string"), "player-safe and GM text are separated");
     assertSmoke(panel.revealed.every((record) => record.revealed === true && record.playerText && record.gmText), "panel tracks revealed player-safe hazards while retaining GM text for GM panel only");
@@ -64,7 +75,7 @@ export function runTravelV2HazardsSmokeChecks() {
     globalThis.JournalEntry = prior.JournalEntry;
     globalThis.game = prior.game;
   }
-  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "no-side-effects"] };
+  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "no-side-effects"] };
 }
 
 export default runTravelV2HazardsSmokeChecks;

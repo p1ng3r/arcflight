@@ -752,11 +752,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async #updateTravelV2Hazard(target, status) {
     const id = target.dataset.arcflightTravelV2HazardActivate || target.dataset.arcflightTravelV2HazardClear || target.dataset.arcflightTravelV2HazardReveal || target.dataset.arcflightTravelV2HazardHold || target.dataset.hazardId || "";
+    const wasRevealed = this.session?.travelV2Hazards?.records?.some?.((record) => record.id === id && record.revealed === true) === true;
     const actions = { active: activateTravelV2RunnerHazard, cleared: clearTravelV2RunnerHazard, revealed: revealTravelV2RunnerHazard, held: holdTravelV2RunnerHazard };
     const updated = actions[status]?.(this.session, id) ?? { ok: false, errors: ["Unsupported hazard action."] };
+    const isRevealed = updated.session?.travelV2Hazards?.records?.some?.((record) => record.id === id && record.revealed === true) === true;
     if (updated.ok) this.session = updated.session;
     this.statusMessage = updated.ok ? `Travel v2 hazard ${status} in runner-session state.` : (updated.errors?.[0] ?? "Could not update Travel v2 hazard.");
-    if (updated.ok && status === "revealed") this.#refreshPlayersQuietly();
+    if (updated.ok && (status === "revealed" || wasRevealed || isRevealed)) this.#refreshPlayersQuietly();
     return this.render(true);
   }
 
