@@ -70,7 +70,11 @@ function sanitizePublicHazards(value = []) {
       id: sanitizeText(entry.id),
       name: sanitizeText(entry.name),
       category: sanitizeText(entry.category),
-      playerText: sanitizeText(entry.playerText)
+      playerText: sanitizeText(entry.playerText),
+      publicModifierText: sanitizeText(entry.publicModifierText),
+      status: sanitizeText(entry.status),
+      affectedStations: Array.isArray(entry.affectedStations) ? entry.affectedStations.map(sanitizeText).filter(Boolean) : [],
+      responseActions: (Array.isArray(entry.responseActions) ? entry.responseActions : []).filter((action) => action && typeof action === "object" && !Array.isArray(action)).map((action) => ({ key: sanitizeText(action.key), stationKey: sanitizeText(action.stationKey), label: sanitizeText(action.label), skill: sanitizeText(action.skill), helpText: sanitizeText(action.helpText) }))
     }))
     .filter((entry) => entry.name || entry.playerText);
 }
@@ -84,6 +88,10 @@ function sanitizePublicShipScars(value = []) {
       severity: sanitizeText(entry.severity),
       category: sanitizeText(entry.category),
       playerText: sanitizeText(entry.playerText),
+      publicModifierText: sanitizeText(entry.publicModifierText),
+      status: sanitizeText(entry.status),
+      affectedStations: Array.isArray(entry.affectedStations) ? entry.affectedStations.map(sanitizeText).filter(Boolean) : [],
+      responseActions: (Array.isArray(entry.responseActions) ? entry.responseActions : []).filter((action) => action && typeof action === "object" && !Array.isArray(action)).map((action) => ({ key: sanitizeText(action.key), stationKey: sanitizeText(action.stationKey), label: sanitizeText(action.label), skill: sanitizeText(action.skill), helpText: sanitizeText(action.helpText) })),
       repairRequirement: sanitizeText(entry.repairRequirement),
       status: sanitizeText(entry.status)
     }))

@@ -16,7 +16,7 @@ import {
   stabilize
 } from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
-import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard } from "./travel-v2-hazards.js";
+import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -1329,15 +1329,16 @@ function resolveActorStatisticModifier(actor, skill) {
 
 function resolveStationDc(row, baseDC) {
   const approachDc = Number(row?.selectedApproach?.dc);
-  if (Number.isFinite(approachDc) && approachDc > 0) return { dc: approachDc, source: "approach" };
+  const hazardDcModifier = Number(row?.selectedApproach?.hazardDcModifier ?? row?.hazardDcModifier ?? 0) || 0;
+  if (Number.isFinite(approachDc) && approachDc > 0) return { dc: approachDc + hazardDcModifier, source: hazardDcModifier ? "hazard" : "approach" };
   const card = isPlainObject(row?.stationCard) ? row.stationCard : {};
   const prompt = isPlainObject(row?.promptData) ? row.promptData : {};
   const directDc = Number(card.dc ?? card.DC ?? prompt.dc ?? prompt.DC);
-  if (Number.isFinite(directDc) && directDc > 0) return { dc: directDc, source: "station" };
+  if (Number.isFinite(directDc) && directDc > 0) return { dc: directDc + hazardDcModifier, source: hazardDcModifier ? "hazard" : "station" };
   const dcModifier = Number(card.dcModifier ?? prompt.dcModifier);
   const eventDc = Number(baseDC);
-  if (Number.isFinite(eventDc) && eventDc > 0 && Number.isFinite(dcModifier)) return { dc: eventDc + dcModifier, source: "stationModifier" };
-  if (Number.isFinite(eventDc) && eventDc > 0) return { dc: eventDc, source: "event" };
+  if (Number.isFinite(eventDc) && eventDc > 0 && Number.isFinite(dcModifier)) return { dc: eventDc + dcModifier + hazardDcModifier, source: hazardDcModifier ? "hazard" : "stationModifier" };
+  if (Number.isFinite(eventDc) && eventDc > 0) return { dc: eventDc + hazardDcModifier, source: hazardDcModifier ? "hazard" : "event" };
   return { dc: null, source: "" };
 }
 
@@ -1644,6 +1645,7 @@ function normalizeTravelEventAppliedEffects(appliedEffects = {}) {
 
 function prepareStationRows(session, round, roundResult, options = {}) {
   const assignments = normalizeTravelEventRunnerStationAssignments(session?.stationAssignments);
+  const hazardModifiers = prepareTravelV2ActiveHazardModifiers(session, { ...options, roundIndex: roundResult?.roundIndex ?? session?.currentRoundIndex ?? 0 });
   return round.activeStations.map((stationKey) => {
     const station = getStation(stationKey) ?? {};
     const prompt = round.stationPrompts[stationKey] ?? { stationKey };
@@ -1673,12 +1675,37 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       stabilizePressureKey: ""
     }));
     const stabilizeOptions = normalizeCustomStabilizeOptions(card, stationKey, round, assignedActor);
-    const stationOptions = [...eventOptions, ...stabilizeOptions].map((option) => ({
+    const hazardResponseOptions = hazardModifiers.responseActions
+      .filter((action) => action.stationKey === stationKey || action.stationKey === "any")
+      .map((action) => ({
+        ...action,
+        optionKey: stationOptionKey("hazardResponse", `${action.hazardRecordId}-${action.key}-${stationKey}`),
+        value: stationOptionKey("hazardResponse", `${action.hazardRecordId}-${action.key}-${stationKey}`),
+        actionType: "hazardResponse",
+        label: `${action.hazardName}: ${action.label}`,
+        dc: Number.isFinite(Number(card.dc)) ? Number(card.dc) : null,
+        hazardRecordId: action.hazardRecordId,
+        hazardName: action.hazardName
+      }));
+    const stationOptions = [...eventOptions, ...stabilizeOptions, ...hazardResponseOptions].map((option) => {
+      const hazardDc = hazardModifiers.dcModifiers
+        .filter((modifier) => (!modifier.stationKey || modifier.stationKey === stationKey) && (!modifier.actionType || modifier.actionType === option.actionType))
+        .reduce((sum, modifier) => sum + (Number(modifier.modifier) || 0), 0);
+      const suppressedByHazard = hazardModifiers.suppressions.some((suppression) => (!suppression.stationKey || suppression.stationKey === stationKey) && suppression.match.some((needle) => `${option.optionKey} ${option.label} ${option.helpText}`.toLowerCase().includes(needle)));
+      const baseDc = Number.isFinite(Number(option.dc)) ? Number(option.dc) : null;
+      return {
       ...option,
+      dc: baseDc == null ? baseDc : baseDc + hazardDc,
+      hazardDcModifier: hazardDc,
+      suppressedByHazard,
+      disabled: suppressedByHazard,
+      unavailable: suppressedByHazard,
+      hazardModifierText: hazardDc ? `Hazard DC ${hazardDc >= 0 ? "+" : ""}${hazardDc}` : "",
       selected: option.actionType === selectedAction.type
         && option.skill === (storedSkill || eventApproachSelection.skill)
         && (option.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE || option.stabilizePressureKey === stabilizePressureKey)
-    }));
+      };
+    });
     const selectedStationOption = stationOptions.find((option) => option.selected) ?? stationOptions.find((option) => option.actionType === selectedAction.type) ?? stationOptions[0] ?? null;
     const selectedApproach = {
       ...eventApproachSelection,
@@ -1710,7 +1737,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       selectedApproach,
       selectedAction,
       selectedActionType: selectedAction.type,
-      selectedActionLabel: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? "Stabilize" : "Push Forward",
+      selectedActionLabel: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? "Stabilize" : (selectedAction.type === "hazardResponse" ? "Respond to Hazard" : "Push Forward"),
       selectedStationOption,
       selectedStationOptionKey: selectedStationOption?.optionKey ?? "",
       selectedStationOptionLabel: roundResult?.selectedStationOptionLabels?.[stationKey] || selectedStationOption?.label || "",
@@ -1721,6 +1748,8 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       selectedFocusAbilityKey: stationOrderCommitment.selectedFocusAbility,
       focusRemaining: stationFocus.focusRemaining,
       focusCapacity: stationFocus.focusCapacity,
+      focusSuppressedByHazard: hazardModifiers.suppressFocus,
+      activeHazardModifiers: hazardModifiers.publicHazards,
       isEventApproach: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
       isStabilize: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
       stabilizePressureKey,
@@ -2208,6 +2237,8 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       stabilizePressureKey: row.stabilizePressureKey || "",
       stabilizePressureLabel: row.stabilizePressureLabel || "",
       selectedFocusAbility: row.selectedFocusAbility || "",
+      focusSuppressedByHazard: row.focusSuppressedByHazard === true,
+      activeHazardModifiers: row.activeHazardModifiers ?? [],
       assignmentOptions: assignmentRow?.options ?? [],
       hasAssignmentOptions: (assignmentRow?.options ?? []).length > 0,
       selectedAssignmentValue: row.assignment?.actorUuid || row.assignment?.actorId || "",
@@ -2414,7 +2445,7 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   const { focusOptions, focusCapacity, focusRemaining } = focusSource;
   const publicHazards = prepareTravelV2HazardPanelState(activeSession).records
     .filter((record) => record.revealed === true && record.status !== "cleared" && typeof record.playerText === "string" && record.playerText.trim())
-    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText, status: record.status, roundRevealed: record.revealedAt }));
+    .map(sanitizeTravelV2PublicHazard);
   const publicShipScars = prepareTravelV2ShipScarsPanelState(activeSession).records
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status }));
@@ -2483,8 +2514,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     focusOptions,
     hasFocusOptions: focusOptions.length > 0,
     selectedFocusAbility: station.selectedFocusAbility || "",
-    noFocusRemaining: focusRemaining <= 0,
-    canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound,
+    noFocusRemaining: focusRemaining <= 0 || station.focusSuppressedByHazard === true,
+    canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound && station.focusSuppressedByHazard !== true,
     hasPendingReactionPrompt: Boolean(pendingReactionPrompt),
     pendingReactionPromptId: pendingReactionPrompt?.reactionPromptId ?? "",
     pendingReactionPromptTitle: pendingReactionPrompt?.promptTitle ?? "",
@@ -2582,7 +2613,7 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
   }
   const publicHazards = prepareTravelV2HazardPanelState(normalized.session).records
     .filter((record) => record.revealed === true && record.status !== "cleared" && typeof record.playerText === "string" && record.playerText.trim())
-    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText, status: record.status, roundRevealed: record.revealedAt }));
+    .map(sanitizeTravelV2PublicHazard);
   const publicShipScars = prepareTravelV2ShipScarsPanelState(normalized.session).records
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status, statusLabel: record.statusLabel }));
@@ -2634,8 +2665,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       focusOptions,
       hasFocusOptions: focusOptions.length > 0,
       selectedFocusAbility: station.selectedFocusAbility || "",
-      noFocusRemaining: focusRemaining <= 0,
-      canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound,
+      noFocusRemaining: focusRemaining <= 0 || station.focusSuppressedByHazard === true,
+      canSpendFocus: focusRemaining > 0 && focusOptions.length > 0 && !focusSource.spentThisRound && station.focusSuppressedByHazard !== true,
       canChooseApproach: false,
       permissionReason: "Waiting for board permissions."
       };
@@ -2765,6 +2796,7 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
     .find((row) => row.stationKey === stationKey)?.stationOptions
     ?.find((option) => option.optionKey === optionKey);
   if (!stationOption) return { ok: false, errors: [`Station option "${optionKey}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
+  if (stationOption.suppressedByHazard || stationOption.disabled || stationOption.unavailable) return { ok: false, errors: [`Station option "${stationOption.label}" is suppressed by an active hazard.`], warnings: [], session: normalized.session };
   const previousCommitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
   const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, options);
   if (!actionUpdate.ok) return actionUpdate;
@@ -2775,9 +2807,12 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   nextSession.roundResults[index].selectedStationOptionLabels[stationKey] = stationOption.label;
   if (stationOption.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE) {
     nextSession.roundResults[index].stationActions[stationKey] = stabilize(stationOption.stabilizePressureKey);
+  } else if (stationOption.actionType === "hazardResponse") {
+    nextSession.roundResults[index].stationActions[stationKey] = { type: "hazardResponse", hazardRecordId: stationOption.hazardRecordId ?? "", hazardName: stationOption.hazardName ?? "" };
   }
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
-  const requestedFocusAbility = typeof options.selectedFocusAbility === "string" ? options.selectedFocusAbility : "";
+  const hazardModifiers = prepareTravelV2ActiveHazardModifiers(nextSession, { ...options, roundIndex: index });
+  const requestedFocusAbility = hazardModifiers.suppressFocus ? "" : (typeof options.selectedFocusAbility === "string" ? options.selectedFocusAbility : "");
   if (requestedFocusAbility && previousCommitment?.committed && previousCommitment.selectedFocusAbility === requestedFocusAbility) {
     // Preserve the original spend when the same committed order is submitted again.
   } else if (requestedFocusAbility) {
@@ -3527,5 +3562,7 @@ export function drawTravelV2RunnerHazard(session, options = {}) { return drawTra
 export function revealTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return revealTravelV2Hazard(session, hazardRecordId, options); }
 export function holdTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "held", options); }
 export function activateTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "active", options); }
+export function applyTravelV2RunnerHazardToRound(session, hazardRecordId, options = {}) { return applyTravelV2HazardToRound(session, hazardRecordId, options); }
+export function resolveTravelV2RunnerUnresolvedHazards(session, options = {}) { return resolveTravelV2UnresolvedHazardsForRound(session, options); }
 export function clearTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "cleared", options); }
 export function dismissTravelV2RunnerShipScar(session, scarRecordId, options = {}) { return setTravelV2ShipScarSessionStatus(session, scarRecordId, "dismissed", options); }

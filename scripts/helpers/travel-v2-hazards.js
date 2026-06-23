@@ -38,7 +38,14 @@ export function normalizeTravelV2HazardDeckState(input = {}) {
         revealedAt: typeof record.revealedAt === "string" ? record.revealedAt : "",
         heldAt: typeof record.heldAt === "string" ? record.heldAt : "",
         activatedAt: typeof record.activatedAt === "string" ? record.activatedAt : "",
-        clearedAt: typeof record.clearedAt === "string" ? record.clearedAt : ""
+        clearedAt: typeof record.clearedAt === "string" ? record.clearedAt : "",
+        effects: cloneData(deck.effects ?? record.effects ?? []),
+        responseActions: cloneData(deck.responseActions ?? record.responseActions ?? []),
+        clearCondition: cloneData(deck.clearCondition ?? record.clearCondition ?? {}),
+        unresolvedConsequence: cloneData(deck.unresolvedConsequence ?? record.unresolvedConsequence ?? {}),
+        publicModifierText: deck.publicModifierText ?? record.publicModifierText ?? "",
+        gmMechanicalNotes: deck.gmMechanicalNotes ?? record.gmMechanicalNotes ?? "",
+        runtime: normalizeHazardRuntime(record.runtime)
       };
     });
   const unique = Array.from(new Map(records.map((record) => [record.id, record])).values());
@@ -109,6 +116,160 @@ export function revealTravelV2Hazard(session, hazardRecordId, options = {}) {
 
 export function prepareTravelV2HazardPanelState(session) {
   const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
-  const records = state.records.map((record) => ({ ...record, statusLabel: record.status[0].toUpperCase() + record.status.slice(1), revealDisabled: !String(record.playerText || "").trim(), canReveal: record.revealed !== true && String(record.playerText || "").trim(), canActivate: ["pending", "held"].includes(record.status), canHold: record.status === "pending", canClear: record.status === "pending" || record.status === "held" || record.status === "active" }));
+  const records = state.records.map((record) => {
+    const gm = sanitizeTravelV2GmHazard(record);
+    const runtime = normalizeHazardRuntime(record.runtime);
+    const currentRoundKey = String(Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0);
+    return { ...record, ...gm, statusLabel: record.status[0].toUpperCase() + record.status.slice(1), revealDisabled: !String(record.playerText || "").trim(), canReveal: record.revealed !== true && String(record.playerText || "").trim(), canActivate: ["pending", "held"].includes(record.status), canHold: record.status === "pending", canClear: record.status === "pending" || record.status === "held" || record.status === "active", canApplyToRound: record.status !== "cleared" && !runtime.appliedRoundKeys.includes(currentRoundKey), appliedThisRound: runtime.appliedRoundKeys.includes(currentRoundKey), applyButtonLabel: record.revealed === true || record.status === "active" ? "Apply Hazard to Round" : "Reveal and Apply" };
+  });
   return { ...state, records, pending: records.filter((r) => r.status === "pending"), held: records.filter((r) => r.status === "held"), revealed: records.filter((r) => r.revealed === true && r.status !== "cleared"), active: records.filter((r) => r.status === "active"), cleared: records.filter((r) => r.status === "cleared"), availableCount: getTravelV2HazardDeck().length, deckName: "Travel v2 Hazard Deck v1", hasRecords: records.length > 0, drawnThresholdText: state.drawnThresholds.join(", ") || "none" };
+}
+
+function normalizeHazardEffects(value = []) {
+  return (Array.isArray(value) ? value : []).filter(isPlainObject).map((effect) => ({
+    type: typeof effect.type === "string" ? effect.type : "",
+    stationKey: typeof effect.stationKey === "string" ? effect.stationKey : "",
+    actionType: typeof effect.actionType === "string" ? effect.actionType : "",
+    modifier: Number.isFinite(Number(effect.modifier)) ? Number(effect.modifier) : 0,
+    match: Array.isArray(effect.match) ? effect.match.map((entry) => String(entry ?? "").toLowerCase()).filter(Boolean) : [],
+    label: typeof effect.label === "string" ? effect.label : ""
+  })).filter((effect) => effect.type);
+}
+
+function normalizeHazardResponseActions(value = []) {
+  return (Array.isArray(value) ? value : []).filter(isPlainObject).map((action) => ({
+    key: typeof action.key === "string" ? action.key : "",
+    stationKey: typeof action.stationKey === "string" ? action.stationKey : "",
+    label: typeof action.label === "string" ? action.label : "Respond to Hazard",
+    skill: typeof action.skill === "string" ? action.skill : "",
+    helpText: typeof action.helpText === "string" ? action.helpText : "",
+    actionType: "hazardResponse",
+    hazardResponse: true
+  })).filter((action) => action.key && action.stationKey);
+}
+
+function normalizeHazardMechanics(record = {}) {
+  const deck = getTravelV2HazardById(record.hazardId ?? record.id) ?? {};
+  return {
+    effects: normalizeHazardEffects(record.effects ?? deck.effects),
+    responseActions: normalizeHazardResponseActions(record.responseActions ?? deck.responseActions),
+    clearCondition: isPlainObject(record.clearCondition ?? deck.clearCondition) ? cloneData(record.clearCondition ?? deck.clearCondition) : {},
+    unresolvedConsequence: isPlainObject(record.unresolvedConsequence ?? deck.unresolvedConsequence) ? cloneData(record.unresolvedConsequence ?? deck.unresolvedConsequence) : {},
+    publicModifierText: typeof (record.publicModifierText ?? deck.publicModifierText) === "string" ? (record.publicModifierText ?? deck.publicModifierText) : "",
+    gmMechanicalNotes: typeof (record.gmMechanicalNotes ?? deck.gmMechanicalNotes) === "string" ? (record.gmMechanicalNotes ?? deck.gmMechanicalNotes) : ""
+  };
+}
+
+function normalizeHazardRuntime(value = {}) {
+  const source = isPlainObject(value) ? value : {};
+  return {
+    appliedRoundKeys: Array.isArray(source.appliedRoundKeys) ? source.appliedRoundKeys.filter((key) => typeof key === "string") : [],
+    responseProgress: Math.max(0, Number.isFinite(Number(source.responseProgress)) ? Number(source.responseProgress) : 0),
+    responseLog: Array.isArray(source.responseLog) ? cloneData(source.responseLog) : [],
+    suppressedRoundKeys: Array.isArray(source.suppressedRoundKeys) ? source.suppressedRoundKeys.filter((key) => typeof key === "string") : [],
+    unresolvedFiredRoundKeys: Array.isArray(source.unresolvedFiredRoundKeys) ? source.unresolvedFiredRoundKeys.filter((key) => typeof key === "string") : []
+  };
+}
+
+function roundKey(session, options = {}) { return String(Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : (Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0)); }
+
+export function sanitizeTravelV2PublicHazard(record = {}) {
+  const mechanics = normalizeHazardMechanics(record);
+  return {
+    id: record.id ?? "", hazardId: record.hazardId ?? "", name: record.name ?? "Unknown Hazard", category: record.category ?? "", status: record.status ?? "", revealed: record.revealed === true,
+    playerText: record.playerText ?? "", publicModifierText: mechanics.publicModifierText,
+    affectedStations: mechanics.effects.map((effect) => effect.stationKey).filter(Boolean),
+    responseActions: mechanics.responseActions.map((action) => ({ key: action.key, stationKey: action.stationKey, label: action.label, skill: action.skill, helpText: action.helpText, actionType: action.actionType, hazardRecordId: record.id ?? "", hazardName: record.name ?? "" }))
+  };
+}
+
+export function sanitizeTravelV2GmHazard(record = {}) {
+  const pub = sanitizeTravelV2PublicHazard(record);
+  const mechanics = normalizeHazardMechanics(record);
+  return { ...pub, gmText: record.gmText ?? "", gmMechanicalNotes: mechanics.gmMechanicalNotes, effects: mechanics.effects, clearCondition: mechanics.clearCondition, unresolvedConsequence: mechanics.unresolvedConsequence, runtime: normalizeHazardRuntime(record.runtime) };
+}
+
+export function prepareTravelV2ActiveHazardModifiers(session, options = {}) {
+  const key = roundKey(session, options);
+  const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
+  const activeRecords = state.records.filter((record) => record.status === "active");
+  const publicHazards = activeRecords.filter((record) => record.revealed === true).map(sanitizeTravelV2PublicHazard);
+  const dcModifiers = [];
+  const suppressions = [];
+  const responseActions = [];
+  let suppressFocus = false;
+  for (const record of activeRecords) {
+    const runtime = normalizeHazardRuntime(record.runtime);
+    if (runtime.suppressedRoundKeys.includes(key)) continue;
+    const mechanics = normalizeHazardMechanics(record);
+    for (const effect of mechanics.effects) {
+      if (effect.type === "dcModifier") dcModifiers.push({ ...effect, hazardRecordId: record.id, hazardName: record.name, publicModifierText: mechanics.publicModifierText });
+      if (effect.type === "suppressOption") suppressions.push({ ...effect, hazardRecordId: record.id, hazardName: record.name, publicModifierText: mechanics.publicModifierText });
+      if (effect.type === "suppressFocus") suppressFocus = true;
+    }
+    responseActions.push(...mechanics.responseActions.map((action) => ({ ...action, hazardRecordId: record.id, hazardName: record.name, publicModifierText: mechanics.publicModifierText })));
+  }
+  return { roundKey: key, publicHazards, dcModifiers, suppressions, responseActions, suppressFocus, hasActiveHazards: activeRecords.length > 0 };
+}
+
+export function applyTravelV2HazardToRound(session, hazardRecordId, options = {}) {
+  const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
+  const key = roundKey(session, options);
+  let found = false, duplicate = false;
+  const at = nowIso(options);
+  const records = state.records.map((record) => {
+    if (record.id !== hazardRecordId) return record;
+    found = true;
+    const runtime = normalizeHazardRuntime(record.runtime);
+    if (runtime.appliedRoundKeys.includes(key)) { duplicate = true; return { ...record, runtime }; }
+    return { ...record, status: "active", revealed: true, revealedAt: record.revealedAt || at, activatedAt: record.activatedAt || at, runtime: { ...runtime, appliedRoundKeys: [...runtime.appliedRoundKeys, key] } };
+  });
+  if (!found) return { ok: false, errors: ["Hazard was not found."], session };
+  if (duplicate) return { ok: false, duplicate: true, errors: ["Hazard already applied to this round."], session: { ...cloneData(session), travelV2Hazards: { ...state, records } } };
+  return { ok: true, duplicate: false, errors: [], session: { ...cloneData(session), travelV2Hazards: { ...state, records } } };
+}
+
+export function resolveTravelV2HazardResponse(session, hazardRecordId, stationKey, degreeOfSuccess, options = {}) {
+  const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
+  const key = roundKey(session, options);
+  const success = ["success", "criticalSuccess", 2, 3, "2", "3"].includes(degreeOfSuccess);
+  const critical = ["criticalSuccess", 3, "3"].includes(degreeOfSuccess);
+  let found = false, cleared = false;
+  const records = state.records.map((record) => {
+    if (record.id !== hazardRecordId) return record;
+    found = true;
+    const mechanics = normalizeHazardMechanics(record);
+    const cc = mechanics.clearCondition ?? {};
+    const runtime = normalizeHazardRuntime(record.runtime);
+    let progressGain = success ? 1 : 0;
+    if (critical) progressGain = Number(cc.criticalSuccessProgress ?? 2) || 2;
+    const clearingStations = Array.isArray(cc.clearingStations) ? cc.clearingStations : [];
+    const stationClears = success && clearingStations.includes(stationKey);
+    const nextProgress = runtime.responseProgress + (stationClears ? Number(cc.target ?? 1) || 1 : progressGain);
+    const target = Math.max(1, Number(cc.target ?? 1) || 1);
+    cleared = success && (stationClears || nextProgress >= target);
+    const nextRuntime = { ...runtime, responseProgress: nextProgress, responseLog: [...runtime.responseLog, { roundKey: key, stationKey, degreeOfSuccess: String(degreeOfSuccess), progressGain, at: nowIso(options) }] };
+    if (success && cc.suppressOnSuccess === true && !cleared && !nextRuntime.suppressedRoundKeys.includes(key)) nextRuntime.suppressedRoundKeys.push(key);
+    return { ...record, status: cleared ? "cleared" : record.status, clearedAt: cleared ? nowIso(options) : record.clearedAt, runtime: nextRuntime };
+  });
+  if (!found) return { ok: false, errors: ["Hazard was not found."], session };
+  return { ok: true, cleared, errors: [], session: { ...cloneData(session), travelV2Hazards: { ...state, records } } };
+}
+
+export function resolveTravelV2UnresolvedHazardsForRound(session, options = {}) {
+  const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
+  const key = roundKey(session, options);
+  const consequences = [];
+  const records = state.records.map((record) => {
+    if (record.status !== "active") return record;
+    const runtime = normalizeHazardRuntime(record.runtime);
+    if (!runtime.appliedRoundKeys.includes(key) || runtime.unresolvedFiredRoundKeys.includes(key)) return { ...record, runtime };
+    const mechanics = normalizeHazardMechanics(record);
+    consequences.push({ hazardRecordId: record.id, hazardName: record.name, ...cloneData(mechanics.unresolvedConsequence) });
+    return { ...record, runtime: { ...runtime, unresolvedFiredRoundKeys: [...runtime.unresolvedFiredRoundKeys, key] } };
+  });
+  if (consequences.length === 0 && records.every((record, index) => JSON.stringify(record.runtime ?? {}) === JSON.stringify(state.records[index]?.runtime ?? {}))) return { ok: true, errors: [], consequences, session: cloneData(session) };
+  const next = { ...cloneData(session), travelV2Hazards: { ...state, records } };
+  if (consequences.length > 0 || Array.isArray(session?.travelV2HazardConsequences?.records)) next.travelV2HazardConsequences = { records: [...(Array.isArray(session?.travelV2HazardConsequences?.records) ? cloneData(session.travelV2HazardConsequences.records) : []), ...consequences.map((c) => ({ ...c, roundKey: key, firedAt: nowIso(options) }))] };
+  return { ok: true, errors: [], consequences, session: next };
 }

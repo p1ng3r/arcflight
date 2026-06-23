@@ -1,12 +1,12 @@
 import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard } from "./travel-event-runner.js";
-import { drawTravelV2HazardsForPressureResult, prepareTravelV2HazardPanelState } from "./travel-v2-hazards.js";
+import { drawTravelV2HazardsForPressureResult, prepareTravelV2HazardPanelState, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 hazards smoke check failed: ${message}`); }
 function assertEqual(actual, expected, message) { if (actual !== expected) throw new Error(`Travel v2 hazards smoke check failed: ${message}. Expected ${expected}, got ${actual}.`); }
 function snap(value) { return JSON.stringify(value); }
 
 function hazardDraw(threshold) { return { pressureType: "strain", threshold, count: 1, reason: "threshold-crossing", roundNumber: 1 }; }
-function session() { return { status: "active", currentRoundIndex: 0, event: { rounds: [{ round: 1, title: "Hazards", activeStations: [] }] } }; }
+function session() { return { status: "active", currentRoundIndex: 0, event: { baseDC: 15, rounds: [{ round: 1, title: "Hazards", activeStations: ["navigator", "engineer", "captain", "watchmaster", "veilwarden"], stationPrompts: {}, stationCards: [{ stationKey: "engineer", skillApproaches: [{ skill: "crafting", label: "Hard Burn", helpText: "Push the engine hard." }] }] }] } }; }
 
 export async function runTravelV2HazardsSmokeChecks() {
   const sideEffects = [];
@@ -66,6 +66,37 @@ export async function runTravelV2HazardsSmokeChecks() {
     const unrevealedPublic = prepareTravelPlayerMissionBoardState(activated.session);
     assertSmoke(!unrevealedPublic.publicHazards.some((record) => record.id === firstId), "activating unrevealed hazard does not leak into player-safe payload");
 
+    const appliedVoid = applyTravelV2HazardToRound(rerun.session, firstId, { roundIndex: 0, now: "2026-06-22T00:00:05.000Z" });
+    assertSmoke(appliedVoid.ok, "active hazard applies to current round");
+    const duplicateVoid = applyTravelV2HazardToRound(appliedVoid.session, firstId, { roundIndex: 0 });
+    assertSmoke(!duplicateVoid.ok && duplicateVoid.duplicate === true, "double application to same round is prevented");
+    const mods = prepareTravelV2ActiveHazardModifiers(appliedVoid.session, { roundIndex: 0 });
+    assertSmoke(mods.dcModifiers.some((modifier) => modifier.stationKey === "navigator" && modifier.modifier === 2), "Void Shear increases Navigator DC");
+    assertSmoke(mods.responseActions.some((action) => action.stationKey === "navigator" && action.hazardRecordId === firstId), "hazard response actions are injected into modifier state");
+    const response = resolveTravelV2HazardResponse(appliedVoid.session, firstId, "navigator", "success", { roundIndex: 0 });
+    assertSmoke(response.ok && response.cleared, "successful response tracks clear progress and clears Void Shear");
+    const unresolvedOnce = resolveTravelV2UnresolvedHazardsForRound(appliedVoid.session, { roundIndex: 0, now: "2026-06-22T00:00:06.000Z" });
+    const unresolvedTwice = resolveTravelV2UnresolvedHazardsForRound(unresolvedOnce.session, { roundIndex: 0, now: "2026-06-22T00:00:07.000Z" });
+    assertEqual(unresolvedOnce.consequences.length, 1, "unresolved consequence fires once when applied hazard remains active");
+    assertEqual(unresolvedTwice.consequences.length, 0, "unresolved consequence does not fire twice for same round");
+    const safeVoid = sanitizeTravelV2PublicHazard(appliedVoid.session.travelV2Hazards.records.find((record) => record.id === firstId));
+    assertSmoke(!Object.hasOwn(safeVoid, "gmText") && !Object.hasOwn(safeVoid, "gmMechanicalNotes"), "player-safe sanitizer does not leak GM hazard fields");
+
+    const coughId = rerun.session.travelV2Hazards.records[1].id;
+    const appliedCough = applyTravelV2HazardToRound(rerun.session, coughId, { roundIndex: 0 });
+    const coughBoard = prepareTravelPlayerMissionBoardState(appliedCough.session);
+    const engineer = coughBoard.stations.find((station) => station.stationKey === "engineer");
+    assertSmoke(engineer.approachOptions.some((option) => /hard burn/i.test(option.label) && option.unavailable === true), "Arkengine Cough suppresses Engineer hard-burn style options");
+
+    const lowStoresDraw = drawTravelV2RunnerHazard(result.session);
+    const edgeDraw = drawTravelV2RunnerHazard(lowStoresDraw.session);
+    const edgeSession = edgeDraw.session;
+    const edgeId = edgeSession.travelV2Hazards.records.find((record) => record.hazardId === "hazard-crew-on-edge")?.id;
+    const appliedEdge = edgeId ? applyTravelV2HazardToRound(edgeSession, edgeId, { roundIndex: 0 }) : { ok: false };
+    assertSmoke(appliedEdge.ok, "Crew on Edge can be applied to the round");
+    const edgeBoard = prepareTravelPlayerMissionBoardState(appliedEdge.session);
+    assertSmoke(edgeBoard.stations.every((station) => station.canSpendFocus === false), "Crew on Edge suppresses Focus spending");
+
     const panel = prepareTravelV2HazardPanelState(revealed.session);
     assertSmoke(panel.records.every((record) => typeof record.playerText === "string" && typeof record.gmText === "string"), "player-safe and GM text are separated");
     assertSmoke(panel.revealed.every((record) => record.revealed === true && record.playerText && record.gmText), "panel tracks revealed player-safe hazards while retaining GM text for GM panel only");
@@ -85,7 +116,7 @@ export async function runTravelV2HazardsSmokeChecks() {
     globalThis.JournalEntry = prior.JournalEntry;
     globalThis.game = prior.game;
   }
-  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "party-hud-review-buttons", "party-hud-review-scroll-routing", "no-side-effects"] };
+  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "party-hud-review-buttons", "party-hud-review-scroll-routing", "active-modifiers", "void-shear-dc", "arkengine-cough-suppression", "crew-on-edge-focus-suppression", "response-actions", "clear-progress", "unresolved-once", "double-apply-guard", "public-sanitizer-no-gm-leak", "no-side-effects"] };
 }
 
 export default runTravelV2HazardsSmokeChecks;
