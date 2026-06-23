@@ -11,7 +11,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorAp
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
-import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers } from "./travel-player-station-card.js";
+import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers, queueTravelPlayerMissionBoardRefreshToPlayers } from "./travel-player-station-card.js";
 import {
   advanceTravelEventRunnerRoundPhase,
   advanceTravelEventRunnerRound,
@@ -41,6 +41,7 @@ import {
   commitTravelEventRunnerStationOrder,
   setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
+  clearTravelEventRunnerStationResult,
   updateTravelEventRunnerStationAssignment,
   clearTravelEventRunnerStationAssignment,
   resetTravelEventRunnerStationAssignmentToShip,
@@ -62,6 +63,7 @@ let activeTravelEventRunner = null;
 const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-start-travel-event-runner]",
   "[data-arcflight-runner-result]",
+  "[data-arcflight-runner-clear-result]",
   "[data-arcflight-runner-previous]",
   "[data-arcflight-runner-next]",
   "[data-arcflight-runner-previous-phase]",
@@ -589,6 +591,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
     if (target.hasAttribute("data-arcflight-start-travel-event-runner")) return this.#startSelectedEvent();
     if (target.hasAttribute("data-arcflight-runner-result")) return this.#recordStationResult(target);
+    if (target.hasAttribute("data-arcflight-runner-clear-result")) return this.#clearStationResult(target);
     if (target.hasAttribute("data-arcflight-runner-previous")) return this.#retreatRound();
     if (target.hasAttribute("data-arcflight-runner-next")) return this.#advanceRound();
     if (target.hasAttribute("data-arcflight-runner-previous-phase")) return this.#retreatRoundPhase();
@@ -674,6 +677,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (action === "actor-apply") return this.#focusGuidedDrawer("arcflight-guided-actor-apply");
     if (action === "followups") return this.#focusGuidedDrawer("arcflight-guided-followups");
     if (action === "devtools") return this.#focusGuidedDrawer("arcflight-guided-devtools");
+    if (action === "advance-round") return this.#advanceRound();
+    if (action === "complete-event") return this.completeTravelV2Event();
     if (action === "completed") return this.#focusGuidedDrawer("arcflight-guided-completed");
     return this.#focusGuidedDrawer("arcflight-guided-command-bridge");
   }
@@ -747,7 +752,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const id = target.dataset.reactionPromptId ?? "";
     const actions = { accept: () => acceptTravelReactionPrompt(this.session, id), dismiss: () => dismissTravelReactionPrompt(this.session, id), reroll: () => markTravelReactionPromptRerollResult(this.session, id, target.dataset.result ?? ""), applyBacklash: () => applyTravelReactionPromptBacklash(this.session, id), dismissBacklash: () => dismissTravelReactionPromptBacklash(this.session, id) };
     const updated = actions[action]?.() ?? { ok: false, errors: ["Unknown reaction action."] };
-    if (updated.ok) this.session = updated.session;
+    if (updated.ok) { this.session = updated.session; this.#refreshPlayersQuietly(); }
     this.statusMessage = updated.ok ? "Reaction prompt updated." : (updated.errors?.[0] ?? "Could not update reaction prompt.");
     return this.render(true);
   }
@@ -807,6 +812,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       this.statusMessage = `Applied Travel v2 pressure outcome: ${humanizeIdentifier(update.result.selectedOutcomeKey)}.`;
       this.#showTravelV2PressureAppliedDialog(update.result);
+      this.#refreshPlayersQuietly();
       return this.render(true);
     }
 
@@ -906,6 +912,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       const saved = await this.#saveCompletedTravelV2SessionForReopen();
       this.statusMessage = saved.ok ? "Saved for Reopen: completed Travel v2 event is in Completed Travel v2 Sessions." : "Completed Travel v2 event, but saving for reopen is unavailable. Save Current Session to preserve the reopen/history entry if available.";
+      this.#refreshPlayersQuietly();
       return this.render(true);
     }
 
@@ -1148,7 +1155,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const result = sendTravelPlayerMissionBoardToPlayers(this.session, { actor: this.#getSelectedShipActor(), refresh: true });
     if (!result.ok) ui.notifications?.warn?.(result.errors?.[0] ?? "No active non-GM users found.");
     else ui.notifications?.info?.(`Sent player mission board to ${result.sentRecipients} active player recipient(s).`);
+    this.statusMessage = result.ok ? "Sent / refreshed Player HUD and Station Cards." : (result.errors?.[0] ?? "No active non-GM users found.");
+    await this.render(true);
     return result;
+  }
+
+  #refreshPlayersQuietly() {
+    return queueTravelPlayerMissionBoardRefreshToPlayers(this.session, { actor: this.#getSelectedShipActor(), refresh: true });
   }
 
   async #openTravelSceneOverlay() {
@@ -1438,6 +1451,23 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
         && record.status === "pending"
       );
       if (pendingReaction) sendTravelPlayerReactionPromptToPlayers(updated.session, pendingReaction.reactionPromptId, { actor: this.#getSessionShipActor() });
+      this.#refreshPlayersQuietly();
+    }
+    return this.render(true);
+  }
+
+  async #clearStationResult(target) {
+    const roundIndex = Number(target.dataset.roundIndex);
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = clearTravelEventRunnerStationResult(this.session, roundIndex, stationKey);
+    if (updated.ok) {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = `Cleared result for ${humanizeIdentifier(stationKey)}.`;
+      this.#refreshPlayersQuietly();
+    } else {
+      this.statusMessage = updated.errors?.[0] ?? "Station result was not cleared.";
+      ui.notifications?.warn?.(this.statusMessage);
     }
     return this.render(true);
   }
@@ -1448,6 +1478,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
     this.statusMessage = updated.ok ? "Advanced to the next round." : (updated.errors?.[0] ?? "Could not advance the runner round.");
     if (!updated.ok) ui.notifications?.warn?.(this.statusMessage);
+    this.#refreshPlayersQuietly();
     return this.render(true);
   }
 

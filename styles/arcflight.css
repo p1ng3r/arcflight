@@ -2396,3 +2396,33 @@
 .arcflight-travel-runner-guided .arcflight-travel-guided-panel[aria-label="Pressure & Resources"] .arcflight-pressure-gauge {
   min-width: 0;
 }
+
+
+/* Player Travel v2 windows: keep scrolling inside the Foundry app content. */
+.arcflight-travel-player-mission-board.window-app,
+.application.arcflight-travel-player-mission-board,
+.arcflight-travel-player-station-card.window-app,
+.application.arcflight-travel-player-station-card {
+  min-height: 0;
+  max-height: calc(100vh - 2rem);
+}
+
+.arcflight-travel-player-mission-board .window-content,
+.application.arcflight-travel-player-mission-board .window-content,
+.arcflight-travel-player-station-card .window-content,
+.application.arcflight-travel-player-station-card .window-content {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.arcflight-travel-party-hud,
+.arcflight-travel-player-action-card,
+.arcflight-travel-player-station-card__shell {
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}

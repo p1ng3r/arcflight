@@ -1732,7 +1732,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       selectedSkillLabel: selectedApproach.skill ? humanizeIdentifier(selectedApproach.skill) : "No rollable statistic found",
       statisticLabel: resolveSafeStatisticLabel(assignedActor, [selectedApproach.skill]),
       result,
-      resultLabel: result ? humanizeIdentifier(result) : "Unrecorded",
+      resultLabel: result ? (result === "skipped" ? "Skipped / Not Participating" : humanizeIdentifier(result)) : "Unrecorded",
       resultFeedback: result ? (selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
       rollDetailText: session?.playerMissionBoardRollDetails?.[stationKey] || "",
       gmNarrationFeedback: result ? (selectedApproach.selected?.gmNarrationFeedback?.[result] || selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result] || "") : "",
@@ -1740,7 +1740,8 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       hasResultFeedback: Boolean(result && (selectedApproach.selected?.boardResultFeedback?.[result] || card.visibleResultFeedback?.[result] || card.rollFeedback?.[result])),
       hasGmOnlyConsequence: Boolean(result && (selectedApproach.selected?.gmOnlyConsequence || card.gmOnlyConsequence)),
       qualityWarnings: [...(card.qualityWarnings ?? []), ...(selectedApproach.selected?.qualityWarnings ?? [])],
-      resultOptions: TRAVEL_EVENT_RUNNER_RESULT_VALUES.map((value) => ({ value, label: humanizeIdentifier(value), selected: value === result }))
+      resultOptions: TRAVEL_EVENT_RUNNER_RESULT_VALUES.map((value) => ({ value, label: value === "skipped" ? "Skip Station" : humanizeIdentifier(value), selected: value === result })),
+      stationStateLabel: deriveTravelStationStateLabel({ result, assigned, stationOrderCommitted: stationOrderCommitment.committed, pendingReaction: (session?.reactionPrompts?.records ?? []).some((record) => record.stationKey === stationKey && record.roundIndex === (roundResult?.roundIndex ?? session?.currentRoundIndex ?? 0) && record.status === "pending") })
     };
   });
 }
@@ -2660,6 +2661,29 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     partyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }),
     hasPartyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }).length > 0
   };
+}
+
+function deriveTravelStationStateLabel({ result = null, assigned = false, stationOrderCommitted = false, pendingReaction = false } = {}) {
+  if (result === "skipped") return "Skipped / Not Participating";
+  if (pendingReaction) return "Reaction Available";
+  if (result) return "Rolled";
+  if (!assigned) return "Unassigned";
+  if (stationOrderCommitted) return "Ready to Roll";
+  return "Choosing";
+}
+
+export function clearTravelEventRunnerStationResult(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Math.min(Math.max(Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex, 0), normalized.session.roundResults.length - 1);
+  if (!Object.hasOwn(normalized.session.roundResults[index]?.stationResults ?? {}, stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundResults[index].stationResults[stationKey] = null;
+  nextSession.playerMissionBoardRollDetails = { ...(nextSession.playerMissionBoardRollDetails ?? {}) };
+  delete nextSession.playerMissionBoardRollDetails[stationKey];
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
 export function setTravelEventRunnerStationResult(session, roundIndex, stationKey, result, options = {}) {
