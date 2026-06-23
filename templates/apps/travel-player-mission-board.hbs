@@ -1,5 +1,5 @@
-<section class="arcflight-travel-party-hud {{#if state.isCompactHud}}arcflight-travel-party-hud--compact{{else}}arcflight-travel-party-hud--expanded{{/if}} arcflight-player-safe">
-  <header class="arcflight-travel-party-hud__header">
+<section class="arcflight-card-table arcflight-travel-party-hud {{#if state.isCompactHud}}arcflight-travel-party-hud--compact{{else}}arcflight-travel-party-hud--expanded{{/if}} arcflight-player-safe">
+  <header class="arcflight-card-table__header arcflight-travel-party-hud__header">
     <div>
       <p class="arcflight-travel-party-hud__eyebrow">Arcflight Party Travel HUD</p>
       <h1>{{state.eventName}}</h1>
@@ -13,7 +13,7 @@
   </header>
 
   {{#unless state.isCompactHud}}
-  <section class="arcflight-travel-party-hud__quick" aria-label="Current Player Quick Action">
+  <section class="arcflight-card-table arcflight-travel-party-hud__quick" aria-label="Current Player Quick Action">
     <h2>Current Player Quick Action</h2>
     {{#if state.hasStations}}
       {{#each state.stations}}
@@ -25,12 +25,12 @@
   </section>
 
   {{#if state.hasPartyAlerts}}
-    <section class="arcflight-travel-party-hud__alerts" aria-label="Party Alerts">
+    <section class="arcflight-card-table arcflight-travel-party-hud__alerts" aria-label="Party Alerts">
       {{#each state.partyAlerts}}<p class="arcflight-travel-party-hud__alert arcflight-travel-party-hud__alert--{{tone}}">{{icon}} {{text}}</p>{{/each}}
     </section>
   {{/if}}
 
-  <section class="arcflight-travel-party-hud__overview" aria-label="Current Travel Event">
+  <section class="arcflight-card-table arcflight-travel-party-hud__overview" aria-label="Current Travel Event">
     <h2>Current Travel Event</h2>
     <dl>
       <div><dt>Event</dt><dd>{{state.eventName}}</dd></div>
@@ -42,15 +42,15 @@
     {{#if state.vignette}}<p>{{state.vignette}}</p>{{/if}}
   </section>
 
-  <section class="arcflight-travel-party-hud__stations" aria-label="Party Station Overview">
+  <section class="arcflight-card-table arcflight-travel-party-hud__stations" aria-label="Party Station Overview">
     <h2>Party Station Overview</h2>
     {{#if state.hasStations}}
       <div class="arcflight-travel-party-hud__station-grid">
         {{#each state.stations}}
-          <article class="arcflight-travel-party-hud__station {{#if hasResult}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
+          <article class="arcflight-party-row {{partyRowClass}} arcflight-travel-party-hud__station {{#if hasResult}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
             <h3>{{stationName}}</h3>
             <p><strong>{{assignedActorName}}</strong></p>
-            <p>{{stateLabel}}</p>
+            <p><strong>{{stationConsoleLabel}}</strong></p><p>{{#if selectedApproachLabel}}{{selectedApproachLabel}}{{else}}Selecting an action{{/if}}</p>
             {{#if hasResult}}<p class="arcflight-sheet__hint">Result: {{resultLabel}}</p>{{/if}}
             {{#if isCurrentUserRollable}}<button type="button" data-arcflight-party-hud-open-station data-station-key="{{stationKey}}">Open My Station Card</button>{{/if}}
           </article>
@@ -63,7 +63,7 @@
     <h2>Shared Ship Pressure Gauges</h2>
     <div class="arcflight-travel-party-hud__gauges">
       {{#each state.pressureGauges}}
-        <article class="arcflight-travel-party-hud__gauge arcflight-pressure-gauge arcflight-pressure-gauge--{{stateClass}}" title="{{tooltip}}" style="--arcflight-gauge-angle: {{needleAngle}}deg; --arcflight-gauge-fill: {{fillPercent}}%;">
+        <article class="arcflight-travel-party-hud__gauge arcflight-pressure-gauge arcflight-pressure-gauge--{{key}} arcflight-pressure-gauge--{{stateClass}}" title="{{tooltip}}" style="--arcflight-gauge-angle: {{needleAngle}}deg; --arcflight-gauge-fill: {{fillPercent}}%;">
           <div class="arcflight-pressure-gauge__meta"><span class="arcflight-pressure-gauge__label">{{icon}} {{label}}</span><strong class="arcflight-pressure-gauge__value">{{valueLabel}}</strong></div>
           <div class="arcflight-pressure-gauge__face" aria-label="{{label}} pressure {{statusBand}}"><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--0">0</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--1">1</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--2">2</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--3">3</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--4">4</span><span class="arcflight-pressure-gauge__needle"></span></div>
           <p class="arcflight-pressure-gauge__description">{{statusBand}}</p>
@@ -74,12 +74,12 @@
 
   <section id="arcflight-party-hud-hazards" class="arcflight-travel-party-hud__cards" aria-label="Revealed Hazard Cards">
     <h2>Revealed Hazard Cards</h2>
-    {{#if state.hasPublicHazards}}{{#each state.publicHazards}}<article class="arcflight-travel-party-hud__revealed-card arcflight-player-safe"><strong>{{name}}</strong>{{#if category}}<span>{{category}}</span>{{/if}}<p>{{playerText}}</p><p class="arcflight-sheet__hint">{{status}}</p></article>{{/each}}{{else}}<p class="arcflight-sheet__hint">No hazards have been revealed.</p>{{/if}}
+    {{#if state.hasPublicHazards}}{{#each state.publicHazards}}<article class="arcflight-travel-card arcflight-travel-card--hazard arcflight-travel-card--revealed arcflight-travel-party-hud__revealed-card arcflight-player-safe"><strong>{{name}}</strong>{{#if category}}<span>{{category}}</span>{{/if}}<p>{{playerText}}</p><p class="arcflight-sheet__hint">{{status}}</p></article>{{/each}}{{else}}<p class="arcflight-sheet__hint">No hazards have been revealed.</p>{{/if}}
   </section>
 
-  <section class="arcflight-travel-party-hud__cards" aria-label="Revealed Ship Scars">
+  <section class="arcflight-card-table arcflight-travel-party-hud__cards" aria-label="Revealed Ship Scars">
     <h2>Revealed Ship Scars</h2>
-    {{#if state.hasPublicShipScars}}{{#each state.publicShipScars}}<article class="arcflight-travel-party-hud__revealed-card arcflight-player-safe"><strong>{{name}}</strong>{{#if severity}}<span>{{severity}}</span>{{/if}}<p>{{playerText}}</p>{{#if repairRequirement}}<p class="arcflight-sheet__hint">Repair: {{repairRequirement}}</p>{{/if}}<p class="arcflight-sheet__hint">{{status}}</p></article>{{/each}}{{else}}<p class="arcflight-sheet__hint">No Ship Scars have been revealed.</p>{{/if}}
+    {{#if state.hasPublicShipScars}}{{#each state.publicShipScars}}<article class="arcflight-travel-card arcflight-travel-card--ship-scar arcflight-travel-card--revealed arcflight-travel-party-hud__revealed-card arcflight-player-safe"><strong>{{name}}</strong>{{#if severity}}<span>{{severity}}</span>{{/if}}<p>{{playerText}}</p>{{#if repairRequirement}}<p class="arcflight-sheet__hint">Repair: {{repairRequirement}}</p>{{/if}}<p class="arcflight-sheet__hint">{{status}}</p></article>{{/each}}{{else}}<p class="arcflight-sheet__hint">No Ship Scars have been revealed.</p>{{/if}}
   </section>
   {{/unless}}
 </section>

@@ -2280,3 +2280,96 @@
 .arcflight-travel-party-hud--compact .arcflight-sheet__hint { display: none; }
 @media (max-width: 980px) { .arcflight-travel-party-hud__overview dl, .arcflight-travel-party-hud__station-grid, .arcflight-travel-party-hud__gauges { grid-template-columns: repeat(2, minmax(7rem, 1fr)); } }
 @media (max-width: 620px) { .arcflight-travel-party-hud__header { flex-direction: column; } .arcflight-travel-party-hud__overview dl, .arcflight-travel-party-hud__station-grid, .arcflight-travel-party-hud__gauges { grid-template-columns: 1fr; } }
+
+/* Travel v2 player/GM flow alignment component names. */
+.arcflight-card-table {
+  background: linear-gradient(135deg, rgba(36, 22, 14, 0.96), rgba(12, 14, 22, 0.94));
+  border: 1px solid rgba(199, 151, 80, 0.55);
+  border-radius: 14px;
+  color: #f3e3c1;
+  padding: 0.75rem;
+}
+
+.arcflight-card-table__header,
+.arcflight-card-table__round-tracker,
+.arcflight-card-table__party-list,
+.arcflight-card-table__main-station,
+.arcflight-card-table__ship-panel { margin-block: 0.5rem; }
+
+.arcflight-travel-card {
+  background: rgba(44, 31, 24, 0.9);
+  border: 1px solid rgba(188, 132, 58, 0.45);
+  border-radius: 12px;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.28);
+  padding: 0.65rem;
+}
+
+.arcflight-travel-card--mission,
+.arcflight-travel-card--station,
+.arcflight-travel-card--action,
+.arcflight-travel-card--reaction,
+.arcflight-travel-card--hazard,
+.arcflight-travel-card--ship-scar,
+.arcflight-travel-card--revealed { position: relative; }
+
+.arcflight-travel-card--selected {
+  border-color: #79f2d0;
+  box-shadow: 0 0 0 1px rgba(121, 242, 208, 0.75), 0 0 18px rgba(121, 242, 208, 0.22);
+  transform: translateY(-1px);
+}
+
+.arcflight-travel-card--disabled { opacity: 0.55; }
+.arcflight-travel-card--revealed { background: rgba(57, 42, 30, 0.92); }
+
+.arcflight-action-card-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.arcflight-action-card__title,
+.arcflight-action-card__footer {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.arcflight-action-card__body { margin-block: 0.45rem; }
+.arcflight-action-card__skill,
+.arcflight-action-card__dc { color: #f0cf8c; font-size: 0.86rem; }
+
+.arcflight-party-row { border-left: 3px solid rgba(199, 151, 80, 0.6); }
+.arcflight-party-row--current-user { border-color: #79f2d0; }
+.arcflight-party-row--waiting { opacity: 0.82; }
+.arcflight-party-row--choosing { border-color: #f0cf8c; }
+.arcflight-party-row--ready { border-color: #79f2d0; }
+.arcflight-party-row--rolled { border-color: #8fb7ff; }
+.arcflight-party-row--resolved { border-color: #7fdc8a; }
+
+.arcflight-pressure-gauge--strain,
+.arcflight-pressure-gauge--lifeveil,
+.arcflight-pressure-gauge--morale,
+.arcflight-pressure-gauge--hull,
+.arcflight-pressure-gauge--supplies { min-width: 0; }
+.arcflight-pressure-gauge--warning { border-color: #d7a444; }
+.arcflight-pressure-gauge--danger { border-color: #d65f4a; }
+.arcflight-pressure-gauge--overflow { box-shadow: 0 0 14px rgba(214, 95, 74, 0.35); }
+
+.arcflight-roll-tray {
+  background: rgba(14, 18, 27, 0.92);
+  border: 1px solid rgba(121, 242, 208, 0.35);
+  border-radius: 12px;
+  margin-block: 0.6rem;
+  padding: 0.65rem;
+}
+.arcflight-roll-tray__dice,
+.arcflight-roll-tray__formula,
+.arcflight-roll-tray__result { margin-block: 0.35rem; }
+.arcflight-roll-tray__button { font-weight: 700; }
+
+.arcflight-round-tracker { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.arcflight-round-tracker__step { border: 1px solid rgba(199, 151, 80, 0.45); border-radius: 999px; padding: 0.15rem 0.5rem; }
+.arcflight-round-tracker__step--active { border-color: #79f2d0; }
+.arcflight-round-tracker__step--done { opacity: 0.75; }
+.arcflight-round-tracker__step--blocked { border-color: #d65f4a; }

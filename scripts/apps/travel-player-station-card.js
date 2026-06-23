@@ -56,7 +56,9 @@ function sanitizeApproachOptions(value = []) {
       helpText: sanitizeText(entry.helpText),
       dc: Number.isFinite(Number(entry.dc)) ? Number(entry.dc) : null,
       dcLabel: sanitizeText(entry.dcLabel),
-      selected: sanitizeBoolean(entry.selected)
+      selected: sanitizeBoolean(entry.selected),
+      selectedClass: sanitizeBoolean(entry.selected) ? "arcflight-travel-card--selected" : "",
+      typeLabel: sanitizeText(entry.actionType) === "stabilize" ? "Stabilize" : "Push Forward"
     }))
     .filter((entry) => entry.skill || entry.label || entry.helpText);
 }
@@ -156,7 +158,7 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     hasResultFeedback: sanitizeBoolean(source.hasResultFeedback),
     waitingStateText: sanitizeText(source.waitingStateText) || "Waiting for GM resolution",
     isResolved: sanitizeBoolean(source.isResolved),
-    statusKey: sanitizeText(source.statusKey) || "waitingForGmRoll",
+    statusKey: sanitizeText(source.statusKey) || "waitingOnGm",
     approachOptions: sanitizeApproachOptions(source.approachOptions),
     hasApproachOptions: sanitizeBoolean(source.hasApproachOptions) || sanitizeApproachOptions(source.approachOptions).length > 0,
     selectedApproachValue: sanitizeText(source.selectedApproachValue),
@@ -727,7 +729,7 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
   }
 
   async #onPlayerCardClick(event) {
-    const target = event.target?.closest?.("[data-arcflight-player-card-submit-approach], [data-arcflight-player-card-reopen-reaction]");
+    const target = event.target?.closest?.("[data-arcflight-player-card-select-approach], [data-arcflight-player-card-roll], [data-arcflight-player-card-reopen-reaction]");
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     if (target.hasAttribute("data-arcflight-player-card-reopen-reaction")) {
@@ -740,7 +742,60 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       });
       return true;
     }
-    return this.#submitApproachChoice();
+    if (target.hasAttribute("data-arcflight-player-card-select-approach")) return this.#selectApproachChoice(target.dataset.approachValue || "");
+    if (target.hasAttribute("data-arcflight-player-card-roll")) return this.#rollSelectedApproach();
+    return false;
+  }
+
+  async #selectApproachChoice(optionValue = "") {
+    const optionKey = sanitizeText(optionValue);
+    if (!optionKey || !this.playerCardState) return false;
+    const selectedOption = this.playerCardState.approachOptions.find((entry) => entry.value === optionKey) ?? null;
+    this.playerCardState = sanitizeTravelPlayerStationCardState({
+      ...this.playerCardState,
+      approachOptions: this.playerCardState.approachOptions.map((entry) => ({ ...entry, selected: entry.value === optionKey })),
+      selectedApproachValue: optionKey,
+      selectedApproachLabel: selectedOption?.label || optionKey,
+      selectedApproachHelpText: selectedOption?.helpText || "",
+      selectedApproachRollLabel: selectedOption ? `${selectedOption.statisticLabel || "Statistic unavailable"} vs ${selectedOption.dcLabel || "DC unavailable"}` : "",
+      hasSelectedApproachHelpText: Boolean(selectedOption?.helpText),
+      hasSelectedApproach: true,
+      selectedStationOrder: selectedOption?.actionType || "eventApproach",
+      selectedStationOrderLabel: selectedOption?.actionType === "stabilize" ? "Stabilize" : "Push Forward",
+      isStabilize: selectedOption?.actionType === "stabilize",
+      stabilizePressureKey: selectedOption?.stabilizePressureKey || "",
+      stabilizePressureLabel: selectedOption?.pressureLabel || "",
+      resultStatusLabel: "Ready to Roll",
+      waitingStateText: `Ready to roll ${this.playerCardState.stationName}.`,
+      statusKey: "readyToRoll"
+    });
+    await this.render(true);
+    return true;
+  }
+
+  async #rollSelectedApproach() {
+    const optionKey = sanitizeText(this.playerCardState?.selectedApproachValue);
+    if (!optionKey) {
+      ui.notifications?.warn?.("Select an action card before rolling.");
+      return false;
+    }
+    if (!this.playerCardState) {
+      ui.notifications?.warn?.("This player card cannot roll without socket state.");
+      return false;
+    }
+    const selectedApproach = this.playerCardState.approachOptions.find((entry) => entry.value === optionKey) ?? null;
+    this.playerCardState = sanitizeTravelPlayerStationCardState({ ...this.playerCardState, resultStatusLabel: "Rolling", waitingStateText: "Rolling your selected station action...", statusKey: "rolling" });
+    await this.render(true);
+    globalThis.game?.socket?.emit?.("module.arcflight", {
+      action: TRAVEL_PLAYER_STATION_ROLL_ACTION,
+      ...buildTravelPlayerStationOrderCommitData(this.playerCardState, optionKey),
+      skill: selectedApproach?.skill || "",
+      userId: globalThis.game?.user?.id ?? ""
+    });
+    this.playerCardState = sanitizeTravelPlayerStationCardState({ ...this.playerCardState, resultStatusLabel: "Rolling", waitingStateText: "Roll sent to the GM Command Bridge.", statusKey: "rolling" });
+    ui.notifications?.info?.(`Rolling ${this.playerCardState.stationName}.`);
+    await this.render(true);
+    return true;
   }
 
   async #submitApproachChoice() {
@@ -770,11 +825,11 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       isStabilize: selectedApproach?.actionType === "stabilize",
       stabilizePressureKey: selectedApproach?.stabilizePressureKey || "",
       stabilizePressureLabel: selectedApproach?.pressureLabel || "",
-      resultStatusLabel: "Station Order committed",
-      waitingStateText: "Station Order committed. Waiting for GM roll.",
-      statusKey: "waitingForGmRoll"
+      resultStatusLabel: "Action selected",
+      waitingStateText: "Action selected. Roll from your station card when ready.",
+      statusKey: "waitingOnGm"
     });
-    ui.notifications?.info?.("Station Order committed to the GM.");
+    ui.notifications?.info?.("Action selection sent to the GM.");
     await this.render(true);
     return true;
   }
@@ -832,6 +887,9 @@ function sanitizeMissionBoardStation(station = {}) {
     isRolling: sanitizeBoolean(source.isRolling),
     rollDetailText: sanitizeText(source.rollDetailText),
     stateLabel: sanitizeText(source.stateLabel) || "Waiting for player",
+    statusKey: sanitizeText(source.statusKey) || "waiting",
+    partyRowClass: sanitizeText(source.partyRowClass) || "arcflight-party-row--waiting",
+    stationConsoleLabel: sanitizeText(source.stationConsoleLabel),
     isCurrentUserRollable: sanitizeBoolean(source.isCurrentUserRollable),
     disabledReason: sanitizeText(source.disabledReason),
     npcControllerUserId: sanitizeText(source.npcControllerUserId),
@@ -871,7 +929,8 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
       : "Choose an approach first.";
     const canChooseApproach = allowed && !safe.hasSelectedApproach && safe.hasApproachOptions && !safe.isRolling;
     const canRollStation = allowed && hasLocalOrSubmittedApproach && !safe.hasResult && !safe.isRolling && localRollReady;
-    const stateLabel = safe.isRolling ? "Rolling..." : (safe.hasResult ? "Resolved" : (hasLocalOrSubmittedApproach ? (canRollStation ? "Ready to roll" : "Waiting for player") : (canChooseApproach ? "Ready to choose" : "Waiting for player")));
+    const stateLabel = safe.stateLabel && safe.stateLabel !== "Waiting for player" ? safe.stateLabel : (safe.isRolling ? "Rolling" : (safe.hasResult ? "Rolled / Waiting on GM" : (hasLocalOrSubmittedApproach ? (canRollStation ? "Ready to Roll" : "Waiting on GM") : (canChooseApproach ? "Choosing" : "Waiting"))));
+    const statusKey = safe.statusKey || (safe.hasResult ? "rolled" : (hasLocalOrSubmittedApproach ? "ready" : "choosing"));
     const disabledReason = canRollStation || canChooseApproach ? "" : (safe.isRolling ? "Dice are rolling for this station." : (allowed ? (safe.hasResult ? "This station has already been rolled." : (safe.rollUnavailableReason || localRollReason)) : safe.permissionReason));
     return {
       ...safe,
@@ -879,6 +938,9 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
       canRollStation,
       isCurrentUserRollable: canRollStation || canChooseApproach,
       stateLabel,
+      statusKey,
+      partyRowClass: safe.partyRowClass || `arcflight-party-row--${statusKey}`,
+      stationConsoleLabel: safe.stationConsoleLabel || `${safe.stationName} — ${stateLabel}`,
       disabledReason,
       permissionReason: disabledReason || (canRollStation ? "Ready to roll." : "Choose an approach before rolling.")
     };
@@ -1117,7 +1179,7 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
         hasResultFeedback: station.hasResultFeedback,
         waitingStateText: station.stateLabel,
         isResolved: station.hasResult,
-        statusKey: station.hasResult ? "resolved" : "waitingForGmRoll",
+        statusKey: station.hasResult ? "resolved" : "waitingOnGm",
         approachOptions: station.approachOptions,
         hasApproachOptions: station.hasApproachOptions,
         selectedApproachValue: station.selectedApproachValue,
@@ -1198,13 +1260,13 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
           selectedStationOrderLabel: approach.actionType === "stabilize" ? "Stabilize" : "Push Forward",
           stationOrderCommitted: true,
           isStabilize: approach.actionType === "stabilize",
-          stateLabel: "Station Order committed",
+          stateLabel: "Action selected",
           disabledReason: entry.canRollStation ? "" : entry.disabledReason
         } : entry)
       });
       await this.#renderPreservingScroll(true);
     }
-    ui.notifications?.info?.("Station Order committed to the GM.");
+    ui.notifications?.info?.("Action selection sent to the GM.");
     return true;
   }
 

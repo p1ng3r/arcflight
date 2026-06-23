@@ -82,8 +82,8 @@
           <div class="arcflight-travel-compact-stations">
             {{#each state.stations}}
               <article class="arcflight-travel-card {{#if result}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
-                <strong>{{stationName}}</strong><span>{{resultLabel}}</span>
-                <p>{{assignedActorName}} · {{selectedActionLabel}}</p>
+                <strong>{{stationName}} — {{resultLabel}}</strong><span>{{#if result}}Rolled{{else}}{{#if stationOrderCommitted}}Ready to Roll{{else}}Choosing{{/if}}{{/if}}</span>
+                <p>{{assignedActorName}} · {{selectedActionLabel}}{{#if selectedStationOptionLabel}} · {{selectedStationOptionLabel}}{{/if}}</p>
                 <div class="arcflight-travel-runner-mvp__result-buttons">
                   {{#each resultOptions}}<button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>{{/each}}
                 </div>

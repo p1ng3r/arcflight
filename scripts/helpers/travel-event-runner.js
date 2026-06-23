@@ -2427,22 +2427,23 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     && record.roundIndex === activeSession?.currentRoundIndex
     && record.backlashStatus === "pending"
   ) ?? null;
+  const stationFlow = buildTravelPlayerStationFlowState(station, normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records);
 
-  let statusKey = "waitingForGmRoll";
-  let resultStatusLabel = "Waiting for GM roll";
-  let waitingStateText = "Waiting for GM resolution";
+  let statusKey = stationFlow.statusKey;
+  let resultStatusLabel = stationFlow.stateLabel;
+  let waitingStateText = stationFlow.stateLabel;
   if (!station.hasAssignment) {
     statusKey = "needsAssignment";
     resultStatusLabel = "Needs assignment";
     waitingStateText = "Waiting for station assignment";
   } else if (!station.hasSelectedApproach) {
-    statusKey = "waitingForApproach";
-    resultStatusLabel = "Waiting for approach";
-    waitingStateText = "Waiting for GM to confirm approach";
+    statusKey = "choosing";
+    resultStatusLabel = "Choosing";
+    waitingStateText = "Choose an action card, then roll from this station card.";
   } else if (station.hasResult) {
-    statusKey = "resolved";
-    resultStatusLabel = "Resolved";
-    waitingStateText = station.resultLabel || "Resolved";
+    statusKey = "rolled";
+    resultStatusLabel = "Rolled";
+    waitingStateText = "Waiting for GM pressure resolution";
   }
 
   return {
@@ -2497,6 +2498,24 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   };
 }
 
+
+function buildTravelPlayerStationFlowState(station = {}, reactionRecords = []) {
+  const pendingReaction = reactionRecords.some((record) => record.stationKey === station.stationKey && record.status === "pending");
+  let key = "waiting";
+  let label = "Waiting";
+  if (pendingReaction) { key = "reaction"; label = "Reaction Available"; }
+  else if (station.hasResult) { key = "rolled"; label = "Rolled / Waiting on GM"; }
+  else if (!station.hasAssignment) { key = "waiting"; label = "Waiting"; }
+  else if (!station.hasSelectedApproach) { key = "choosing"; label = "Choosing"; }
+  else if (station.canRollStationCheck) { key = "ready"; label = "Ready to Roll"; }
+  else { key = "waitingOnGm"; label = "Waiting on GM"; }
+  return {
+    statusKey: key,
+    stateLabel: label,
+    partyRowClass: `arcflight-party-row--${key === "waitingOnGm" ? "waiting" : key === "reaction" ? "ready" : key}`,
+    stationConsoleLabel: `${station.stationName || humanizeIdentifier(station.stationKey)} — ${label}`
+  };
+}
 
 function buildTravelPlayerPressureGauges(session = {}) {
   const configs = [
@@ -2570,7 +2589,9 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
   const stations = (overlayState.stations ?? []).map((station) => {
       const focusSource = prepareTravelStationFocusState(normalized.session, station.stationKey, normalized.session?.currentRoundIndex ?? 0, options);
       const { focusOptions, focusCapacity, focusRemaining } = focusSource;
+      const stationFlow = buildTravelPlayerStationFlowState(station, reactionRecords);
       return {
+      ...stationFlow,
       stationKey: station.stationKey,
       stationName: station.stationName,
       assignedActorName: station.assignedActorName,
