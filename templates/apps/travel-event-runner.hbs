@@ -642,7 +642,10 @@
               <article>
                 <h3>{{stationName}}{{#if assignedActorName}} — {{assignedActorName}}{{/if}}</h3>
                 <p><strong>Result:</strong> {{resultLabel}} · <strong>Pressure target:</strong> {{pressureLabel}}</p>
+                <p><strong>Proposed delta:</strong> {{pressureDelta}}</p>
                 <p><strong>Pending effect:</strong> {{pendingEffectText}}</p>
+                {{#if publicSummary}}<p><strong>Public summary:</strong> {{publicSummary}}</p>{{/if}}
+                {{#if gmNote}}<p class="arcflight-sheet__hint"><strong>GM note:</strong> {{gmNote}}</p>{{/if}}
                 <p><strong>Status:</strong> {{statusLabel}}</p>
                 <label>Resolution note
                   <input type="text" maxlength="500" value="{{resolutionNote}}" data-arcflight-stabilize-resolution-note data-stabilize-resolution-id="{{stabilizeResolutionId}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
@@ -686,6 +689,12 @@
             <h2>GM Round Summary</h2>
             <p class="arcflight-sheet__hint">Read-only MVP preview built from selected station results.</p>
             <p><strong>{{state.roundSummaryCard.roundOutcomeLabel}}</strong> (weighted score {{state.roundSummaryCard.roundScore}})</p>
+            <div class="arcflight-travel-runner-mvp__stats">
+              <div><span>Main objective contributors</span><strong>{{state.roundSummaryCard.objectiveContributorCount}}</strong></div>
+              <div><span>Stabilize / Repair</span><strong>{{state.roundSummaryCard.stabilizerCount}}</strong></div>
+              <div><span>Hazard response</span><strong>{{state.roundSummaryCard.hazardResponderCount}}</strong></div>
+              <div><span>Unresolved / pending</span><strong>{{state.roundSummaryCard.unresolvedStationCount}}</strong></div>
+            </div>
             <section class="arcflight-travel-runner-mvp__round-summary-section">
               <h3>Cinematic Summary</h3>
               <p>{{state.roundSummaryCard.cinematicSummaryText}}</p>
