@@ -8,7 +8,7 @@ function snap(value) { return JSON.stringify(value); }
 function hazardDraw(threshold) { return { pressureType: "strain", threshold, count: 1, reason: "threshold-crossing", roundNumber: 1 }; }
 function session() { return { status: "active", currentRoundIndex: 0, event: { rounds: [{ round: 1, title: "Hazards", activeStations: [] }] } }; }
 
-export function runTravelV2HazardsSmokeChecks() {
+export async function runTravelV2HazardsSmokeChecks() {
   const sideEffects = [];
   const prior = { ChatMessage: globalThis.ChatMessage, JournalEntry: globalThis.JournalEntry, game: globalThis.game };
   globalThis.ChatMessage = { create: () => sideEffects.push("chat") };
@@ -69,13 +69,18 @@ export function runTravelV2HazardsSmokeChecks() {
     const panel = prepareTravelV2HazardPanelState(revealed.session);
     assertSmoke(panel.records.every((record) => typeof record.playerText === "string" && typeof record.gmText === "string"), "player-safe and GM text are separated");
     assertSmoke(panel.revealed.every((record) => record.revealed === true && record.playerText && record.gmText), "panel tracks revealed player-safe hazards while retaining GM text for GM panel only");
+    const fs = await import("node:fs");
+    const appSource = fs.readFileSync(new URL("../apps/travel-event-runner.js", import.meta.url), "utf8");
+    for (const selector of ["data-arcflight-travel-v2-hazard-draw", "data-arcflight-travel-v2-hazard-reveal", "data-arcflight-travel-v2-hazard-hold"]) {
+      assertSmoke(appSource.includes(`"[${selector}]"`) && appSource.includes(`hasAttribute("${selector}")`), `${selector} is covered by both click selector and route handler`);
+    }
     assertEqual(sideEffects.length, 0, "hazard helpers do not call chat, journal, combat, or socket APIs");
   } finally {
     globalThis.ChatMessage = prior.ChatMessage;
     globalThis.JournalEntry = prior.JournalEntry;
     globalThis.game = prior.game;
   }
-  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "no-side-effects"] };
+  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "no-side-effects"] };
 }
 
 export default runTravelV2HazardsSmokeChecks;
