@@ -16,7 +16,7 @@ import {
   stabilize
 } from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
-import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus } from "./travel-v2-hazards.js";
+import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard } from "./travel-v2-hazards.js";
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -2413,8 +2413,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   const focusSource = prepareTravelStationFocusState(activeSession, station.stationKey, activeSession?.currentRoundIndex ?? 0, options);
   const { focusOptions, focusCapacity, focusRemaining } = focusSource;
   const publicHazards = prepareTravelV2HazardPanelState(activeSession).records
-    .filter((record) => record.status === "active" && typeof record.playerText === "string" && record.playerText.trim())
-    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText }));
+    .filter((record) => record.revealed === true && record.status !== "cleared" && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText, status: record.status, roundRevealed: record.revealedAt }));
   const publicShipScars = prepareTravelV2ShipScarsPanelState(activeSession).records
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status }));
@@ -2581,8 +2581,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     };
   }
   const publicHazards = prepareTravelV2HazardPanelState(normalized.session).records
-    .filter((record) => record.status === "active" && typeof record.playerText === "string" && record.playerText.trim())
-    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText, status: record.status }));
+    .filter((record) => record.revealed === true && record.status !== "cleared" && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText, status: record.status, roundRevealed: record.revealedAt }));
   const publicShipScars = prepareTravelV2ShipScarsPanelState(normalized.session).records
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status, statusLabel: record.statusLabel }));
@@ -3523,6 +3523,9 @@ export function getPublishedTravelEventRunnerEntries(options = {}) {
   return prepareTravelEventRunnerLibraryState({ ...options, library }).entries;
 }
 
+export function drawTravelV2RunnerHazard(session, options = {}) { return drawTravelV2ManualHazard(session, options); }
+export function revealTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return revealTravelV2Hazard(session, hazardRecordId, options); }
+export function holdTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "held", options); }
 export function activateTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "active", options); }
 export function clearTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "cleared", options); }
 export function dismissTravelV2RunnerShipScar(session, scarRecordId, options = {}) { return setTravelV2ShipScarSessionStatus(session, scarRecordId, "dismissed", options); }

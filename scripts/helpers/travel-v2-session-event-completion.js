@@ -33,6 +33,17 @@ function effectiveOutcomeSummary(readiness = {}) {
   }));
 }
 
+function hazardSummaryFor(session = {}) {
+  const records = Array.isArray(session?.travelV2Hazards?.records) ? session.travelV2Hazards.records : [];
+  const map = (filter) => records.filter(filter).map((record) => ({ id: record.id, hazardId: record.hazardId, name: record.name, status: record.status, revealed: record.revealed === true, drawnAt: record.drawnAt || "", revealedAt: record.revealedAt || "", activatedAt: record.activatedAt || "", clearedAt: record.clearedAt || "" }));
+  return {
+    revealed: map((record) => record.revealed === true),
+    activated: map((record) => record.status === "active" || Boolean(record.activatedAt)),
+    dismissedResolved: map((record) => record.status === "cleared"),
+    stillActive: map((record) => record.status === "active")
+  };
+}
+
 function summaryTextFor(readiness = {}) {
   return `Completed Travel v2 event with ${Number(readiness.finalizedRoundCount) || 0} / ${Number(readiness.eventRoundCount) || 0} rounds finalized.`;
 }
@@ -62,6 +73,7 @@ export function completeTravelV2EventOnRunnerSession(session, options = {}) {
 
   const completedAt = timestampFromOptions(options);
   const summaryText = summaryTextFor(readiness);
+  const hazardSummary = hazardSummaryFor(session);
   const completionRecord = {
     version: TRAVEL_V2_SESSION_EVENT_COMPLETION_VERSION,
     completed: true,
@@ -70,6 +82,7 @@ export function completeTravelV2EventOnRunnerSession(session, options = {}) {
     finalizedRoundCount: readiness.finalizedRoundCount,
     eventRoundCount: readiness.eventRoundCount,
     effectiveOutcomeSummary: effectiveOutcomeSummary(readiness),
+    hazardSummary,
     readinessSummary: {
       status: readiness.status,
       lifecycleState: readiness.lifecycleState,

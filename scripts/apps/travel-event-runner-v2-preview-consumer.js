@@ -5,7 +5,7 @@ import { prepareTravelV2CompletedSessionHistoryState } from "../helpers/travel-v
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 2;
 
-function guidedQueueButtons(action, { canApply = false, canSend = false } = {}) {
+function guidedQueueButtons(action, { canApply = false, canSend = false, noDismiss = false } = {}) {
   const buttons = [];
   const reviewActions = new Set(["stations", "reactions", "hazards", "ship-scars", "followups", "devtools", "completed"]);
   if (action === "start") buttons.push({ label: "Open Details", action: "start" });
@@ -16,7 +16,7 @@ function guidedQueueButtons(action, { canApply = false, canSend = false } = {}) 
   else if (reviewActions.has(action)) buttons.push({ label: "Review", action }, { label: "Open Details", action });
   else buttons.push({ label: "Open Details", action });
   if (canSend) buttons.push({ label: "Send to Players", action: "send-players" });
-  buttons.push({ label: "Dismiss", action: "dismiss" });
+  if (!noDismiss) buttons.push({ label: "Dismiss", action: "dismiss" });
   return buttons;
 }
 
@@ -65,6 +65,7 @@ function buildTravelV2GuidedState(state = {}) {
   const followUps = state.travelV2PreviewPanel?.travelV2FollowUps ?? {};
   const dismissed = new Set(Array.isArray(state.dismissedGuidedQueueKeys) ? state.dismissedGuidedQueueKeys : []);
   const pendingHazards = (hazards.records ?? []).filter((record) => record.status === "pending");
+  const heldHazards = (hazards.records ?? []).filter((record) => record.status === "held");
   const activeHazards = (hazards.records ?? []).filter((record) => record.status === "active");
   const clearedHazards = (hazards.records ?? []).filter((record) => record.status === "cleared");
   const pendingScars = (scars.records ?? []).filter((record) => record.status === "pending");
@@ -89,7 +90,9 @@ function buildTravelV2GuidedState(state = {}) {
       ? { key: `complete-event:${state.currentRoundNumber}`, tone: "needs-attention", icon: "🏁", title: "Complete Travel Event", detail: "Final round pressure is applied. Review the outcome package and complete the event without auto-posting or actor effects.", action: "complete-event" }
       : { key: `advance-round:${state.currentRoundNumber}`, tone: "needs-attention", icon: "➡️", title: "Advance to Next Round", detail: "Pressure is applied. Advance to reset station cards and refresh players for the next round.", action: "advance-round" }));
   }
-  for (const hazard of pendingHazards) allQueue.push(buildQueueItem({ key: `hazard:${hazard.id}`, tone: "pending-card", icon: "⚠️", title: `Hazard card pending: ${hazard.name}`, detail: hazard.playerText || hazard.gmText || "Review this hazard card.", actionLabel: "Review", action: "hazards" }));
+  for (const hazard of pendingHazards) allQueue.push(buildQueueItem({ key: `hazard:${hazard.id}`, tone: "pending-card", icon: "⚠️", title: `Hazard Card Pending: ${hazard.name}`, detail: hazard.playerText ? "Reveal, activate, hold, or dismiss this staged hazard." : "Add player-safe text before revealing, or activate/hold/dismiss GM-only.", actionLabel: "Review", action: "hazards", noDismiss: true }));
+  for (const hazard of heldHazards) allQueue.push(buildQueueItem({ key: `hazard-held:${hazard.id}`, tone: "pending-card", icon: "⏸️", title: `Hazard Held: ${hazard.name}`, detail: "Held hazard needs later reveal, activation, or dismissal.", actionLabel: "Review", action: "hazards", noDismiss: true }));
+  for (const hazard of activeHazards) allQueue.push(buildQueueItem({ key: `hazard-active:${hazard.id}`, tone: "needs-attention", icon: "⚠️", title: `Active Hazard: ${hazard.name}`, detail: "Resolve Hazard when it no longer applies. Actor changes still require explicit GM Apply elsewhere.", actionLabel: "Review", action: "hazards", noDismiss: true }));
   for (const scar of pendingScars) allQueue.push(buildQueueItem({ key: `ship-scar:${scar.id}`, tone: "danger-attention", icon: "🚨", title: `Ship Scar candidate: ${scar.name}`, detail: "Explicit GM Apply is required before actor flags are written.", actionLabel: "Review", action: "ship-scars" }));
   if (actorPreview.hasProposedChanges && !actorPreview.applyDisabled) allQueue.push(buildQueueItem({ key: "actor-apply", tone: "needs-attention", icon: "⚓", title: "Actor application ready", detail: actorPreview.summaryText || "Approved actor changes can be applied explicitly by the GM.", actionLabel: "Apply", action: "actor-apply", canApply: true }));
   if (followUps.hasRecords) allQueue.push(buildQueueItem({ key: "followups", tone: "resolved", icon: "📜", title: "Outcome follow-ups prepared", detail: followUps.persistedText || followUps.stagedText || "Review follow-up records.", actionLabel: "Review", action: "followups" }));
@@ -104,8 +107,8 @@ function buildTravelV2GuidedState(state = {}) {
     stationSummary: { total: stations.length, waiting: waitingStations.length, resolved: resolvedStations.length, critical: criticalStations.length },
     pressureGauges: buildPressureGauges(state, pendingScars),
     tags: { category: state.event?.categoryLabel || state.event?.category || "Uncategorized", level: state.event?.level ?? "—", severity: state.event?.severity ?? "—" },
-    drawers: { hazards: pendingHazards.length, shipScars: pendingScars.length, reactions: pendingReactions.length, followUps: followUps.records?.length ?? 0 },
-    hazards: { pending: pendingHazards, active: activeHazards, cleared: clearedHazards, hasAny: (hazards.records ?? []).length > 0 },
+    drawers: { hazards: pendingHazards.length + heldHazards.length + activeHazards.length, shipScars: pendingScars.length, reactions: pendingReactions.length, followUps: followUps.records?.length ?? 0 },
+    hazards: { pending: pendingHazards, held: heldHazards, revealed: (hazards.records ?? []).filter((record) => record.revealed === true && record.status !== "cleared"), active: activeHazards, cleared: clearedHazards, hasAny: (hazards.records ?? []).length > 0 },
     shipScars: { pending: pendingScars, applied: appliedScars, resolved: resolvedScars, hasAny: (scars.records ?? []).length > 0 }
   };
 }

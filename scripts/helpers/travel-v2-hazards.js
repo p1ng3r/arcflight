@@ -1,6 +1,6 @@
 import { getTravelV2HazardDeck, getTravelV2HazardById } from "../../data/travel-events/travel-v2-hazard-deck.js";
 
-const STATUSES = Object.freeze(["pending", "active", "cleared"]);
+const STATUSES = Object.freeze(["pending", "held", "active", "cleared"]);
 
 function cloneData(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -28,12 +28,15 @@ export function normalizeTravelV2HazardDeckState(input = {}) {
         threshold: [2, 3, 4].includes(Number(record.threshold)) ? Number(record.threshold) : null,
         pressureType: typeof record.pressureType === "string" ? record.pressureType : "",
         status,
+        revealed: record.revealed === true || Boolean(record.revealedAt),
         description: deck.description ?? record.description ?? "",
         pressureContext: deck.pressureContext ?? record.pressureContext ?? "",
         triggerContext: deck.triggerContext ?? record.triggerContext ?? "",
         gmText: deck.gmText ?? record.gmText ?? "",
         playerText: deck.playerText ?? record.playerText ?? "",
         drawnAt: typeof record.drawnAt === "string" ? record.drawnAt : "",
+        revealedAt: typeof record.revealedAt === "string" ? record.revealedAt : "",
+        heldAt: typeof record.heldAt === "string" ? record.heldAt : "",
         activatedAt: typeof record.activatedAt === "string" ? record.activatedAt : "",
         clearedAt: typeof record.clearedAt === "string" ? record.clearedAt : ""
       };
@@ -42,13 +45,20 @@ export function normalizeTravelV2HazardDeckState(input = {}) {
   return { version: 1, drawnThresholds: normalizeThresholds(source.drawnThresholds), records: unique };
 }
 
+function nextDeckCard(state) {
+  const deck = getTravelV2HazardDeck();
+  if (deck.length <= 0) return null;
+  const count = Array.isArray(state.records) ? state.records.length : 0;
+  return deck[count % deck.length];
+}
+
 function drawForThreshold(session, draw, options) {
   const state = normalizeTravelV2HazardDeckState(session.travelV2Hazards ?? session.hazards);
   const threshold = Number(draw?.threshold);
   if (![2, 3, 4].includes(threshold) || state.drawnThresholds.includes(threshold)) return { state, drawn: null };
-  const deck = getTravelV2HazardDeck();
-  const hazard = deck[(threshold - 2) % deck.length];
-  const record = { ...hazard, id: `${hazard.id}-threshold-${threshold}`, hazardId: hazard.id, threshold, pressureType: draw?.pressureType ?? "", status: "pending", drawnAt: nowIso(options), activatedAt: "", clearedAt: "" };
+  const hazard = nextDeckCard(state);
+  if (!hazard) return { state, drawn: null };
+  const record = { ...hazard, id: `${hazard.id}-threshold-${threshold}`, hazardId: hazard.id, threshold, pressureType: draw?.pressureType ?? "", status: "pending", revealed: false, drawnAt: nowIso(options), revealedAt: "", heldAt: "", activatedAt: "", clearedAt: "" };
   return { state: { ...state, drawnThresholds: [...state.drawnThresholds, threshold].sort((a, b) => a - b), records: [...state.records, record] }, drawn: record };
 }
 
@@ -63,16 +73,42 @@ export function drawTravelV2HazardsForPressureResult(session, pressureResult = {
   return { session: next, drawn };
 }
 
+export function drawTravelV2ManualHazard(session, options = {}) {
+  const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
+  const hazard = nextDeckCard(state);
+  if (!hazard) return { ok: false, errors: ["Hazard deck is empty."], session, drawn: null };
+  const count = state.records.length + 1;
+  const record = { ...hazard, id: `${hazard.id}-manual-${count}`, hazardId: hazard.id, threshold: null, pressureType: "", status: "pending", revealed: false, drawnAt: nowIso(options), revealedAt: "", heldAt: "", activatedAt: "", clearedAt: "" };
+  const nextState = { ...state, records: [...state.records, record] };
+  return { ok: true, errors: [], session: { ...cloneData(session), travelV2Hazards: nextState }, drawn: record };
+}
+
 export function setTravelV2HazardStatus(session, hazardRecordId, status, options = {}) {
   const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
-  if (!["active", "cleared"].includes(status)) return { ok: false, errors: ["Unsupported hazard status."], session };
-  const records = state.records.map((record) => record.id === hazardRecordId ? { ...record, status, activatedAt: status === "active" ? nowIso(options) : record.activatedAt, clearedAt: status === "cleared" ? nowIso(options) : record.clearedAt } : record);
+  if (!["active", "held", "cleared"].includes(status)) return { ok: false, errors: ["Unsupported hazard status."], session };
+  const at = nowIso(options);
+  const records = state.records.map((record) => record.id === hazardRecordId ? {
+    ...record,
+    status,
+    heldAt: status === "held" ? at : record.heldAt,
+    activatedAt: status === "active" ? at : record.activatedAt,
+    clearedAt: status === "cleared" ? at : record.clearedAt
+  } : record);
   if (!records.some((record) => record.id === hazardRecordId)) return { ok: false, errors: ["Hazard was not found."], session };
+  return { ok: true, errors: [], session: { ...cloneData(session), travelV2Hazards: { ...state, records } } };
+}
+
+export function revealTravelV2Hazard(session, hazardRecordId, options = {}) {
+  const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
+  const target = state.records.find((record) => record.id === hazardRecordId);
+  if (!target) return { ok: false, errors: ["Hazard was not found."], session };
+  if (!String(target.playerText || "").trim()) return { ok: false, errors: ["Hazard has no player-safe reveal text."], session };
+  const records = state.records.map((record) => record.id === hazardRecordId ? { ...record, revealed: true, revealedAt: record.revealedAt || nowIso(options) } : record);
   return { ok: true, errors: [], session: { ...cloneData(session), travelV2Hazards: { ...state, records } } };
 }
 
 export function prepareTravelV2HazardPanelState(session) {
   const state = normalizeTravelV2HazardDeckState(session?.travelV2Hazards ?? session?.hazards);
-  const records = state.records.map((record) => ({ ...record, statusLabel: record.status[0].toUpperCase() + record.status.slice(1), canActivate: record.status === "pending", canClear: record.status === "pending" || record.status === "active" }));
-  return { ...state, records, pending: records.filter((r) => r.status === "pending"), active: records.filter((r) => r.status === "active"), cleared: records.filter((r) => r.status === "cleared"), hasRecords: records.length > 0, drawnThresholdText: state.drawnThresholds.join(", ") || "none" };
+  const records = state.records.map((record) => ({ ...record, statusLabel: record.status[0].toUpperCase() + record.status.slice(1), revealDisabled: !String(record.playerText || "").trim(), canReveal: record.revealed !== true && String(record.playerText || "").trim(), canActivate: ["pending", "held"].includes(record.status), canHold: record.status === "pending", canClear: record.status === "pending" || record.status === "held" || record.status === "active" }));
+  return { ...state, records, pending: records.filter((r) => r.status === "pending"), held: records.filter((r) => r.status === "held"), revealed: records.filter((r) => r.revealed === true && r.status !== "cleared"), active: records.filter((r) => r.status === "active"), cleared: records.filter((r) => r.status === "cleared"), availableCount: getTravelV2HazardDeck().length, deckName: "Travel v2 Hazard Deck v1", hasRecords: records.length > 0, drawnThresholdText: state.drawnThresholds.join(", ") || "none" };
 }

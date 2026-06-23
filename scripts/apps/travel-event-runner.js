@@ -53,7 +53,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, dismissTravelV2RunnerShipScar
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, dismissTravelV2RunnerShipScar
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -106,6 +106,9 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
+  "[data-arcflight-travel-v2-hazard-draw]",
+  "[data-arcflight-travel-v2-hazard-reveal]",
+  "[data-arcflight-travel-v2-hazard-hold]",
   "[data-arcflight-travel-v2-hazard-activate]",
   "[data-arcflight-travel-v2-hazard-clear]",
   "[data-arcflight-travel-v2-ship-scar-apply]",
@@ -634,6 +637,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-hazard-draw")) return this.#drawTravelV2Hazard();
+    if (target.hasAttribute("data-arcflight-travel-v2-hazard-reveal")) return this.#updateTravelV2Hazard(target, "revealed");
+    if (target.hasAttribute("data-arcflight-travel-v2-hazard-hold")) return this.#updateTravelV2Hazard(target, "held");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-activate")) return this.#updateTravelV2Hazard(target, "active");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-clear")) return this.#updateTravelV2Hazard(target, "cleared");
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-apply")) return this.#applyTravelV2ShipScar(target);
@@ -740,11 +746,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
-  async #updateTravelV2Hazard(target, status) {
-    const id = target.dataset.arcflightTravelV2HazardActivate || target.dataset.arcflightTravelV2HazardClear || target.dataset.hazardId || "";
-    const updated = status === "active" ? activateTravelV2RunnerHazard(this.session, id) : clearTravelV2RunnerHazard(this.session, id);
+  async #drawTravelV2Hazard() {
+    const updated = drawTravelV2RunnerHazard(this.session);
     if (updated.ok) this.session = updated.session;
-    this.statusMessage = updated.ok ? (status === "active" ? "Travel v2 hazard activated in runner-session state." : "Travel v2 hazard cleared in runner-session state.") : (updated.errors?.[0] ?? "Could not update Travel v2 hazard.");
+    this.statusMessage = updated.ok ? `Travel v2 hazard staged: ${updated.drawn?.name ?? "Hazard"}.` : (updated.errors?.[0] ?? "Could not draw Travel v2 hazard.");
+    return this.render(true);
+  }
+
+  async #updateTravelV2Hazard(target, status) {
+    const id = target.dataset.arcflightTravelV2HazardActivate || target.dataset.arcflightTravelV2HazardClear || target.dataset.arcflightTravelV2HazardReveal || target.dataset.arcflightTravelV2HazardHold || target.dataset.hazardId || "";
+    const wasRevealed = this.session?.travelV2Hazards?.records?.some?.((record) => record.id === id && record.revealed === true) === true;
+    const actions = { active: activateTravelV2RunnerHazard, cleared: clearTravelV2RunnerHazard, revealed: revealTravelV2RunnerHazard, held: holdTravelV2RunnerHazard };
+    const updated = actions[status]?.(this.session, id) ?? { ok: false, errors: ["Unsupported hazard action."] };
+    const isRevealed = updated.session?.travelV2Hazards?.records?.some?.((record) => record.id === id && record.revealed === true) === true;
+    if (updated.ok) this.session = updated.session;
+    this.statusMessage = updated.ok ? `Travel v2 hazard ${status} in runner-session state.` : (updated.errors?.[0] ?? "Could not update Travel v2 hazard.");
+    if (updated.ok && (status === "revealed" || wasRevealed || isRevealed)) this.#refreshPlayersQuietly();
     return this.render(true);
   }
 
