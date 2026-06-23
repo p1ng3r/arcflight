@@ -74,13 +74,18 @@ export async function runTravelV2HazardsSmokeChecks() {
     for (const selector of ["data-arcflight-travel-v2-hazard-draw", "data-arcflight-travel-v2-hazard-reveal", "data-arcflight-travel-v2-hazard-hold"]) {
       assertSmoke(appSource.includes(`"[${selector}]"`) && appSource.includes(`hasAttribute("${selector}")`), `${selector} is covered by both click selector and route handler`);
     }
+    const missionBoardTemplate = fs.readFileSync(new URL("../../templates/apps/travel-player-mission-board.hbs", import.meta.url), "utf8");
+    const playerStationCardSource = fs.readFileSync(new URL("../apps/travel-player-station-card.js", import.meta.url), "utf8");
+    assertSmoke(!missionBoardTemplate.includes('href="#arcflight-party-hud-ship-status"') && !missionBoardTemplate.includes('href="#arcflight-party-hud-hazards"'), "party HUD review controls should not use navigation anchors");
+    assertSmoke(missionBoardTemplate.includes('data-arcflight-party-hud-review-section="ship-status"') && missionBoardTemplate.includes('data-arcflight-party-hud-review-section="hazards"'), "party HUD review controls should use section buttons");
+    assertSmoke(playerStationCardSource.includes("[data-arcflight-party-hud-review-section]") && playerStationCardSource.includes("#scrollToHudSection"), "party HUD review controls should be handled by in-app scrolling");
     assertEqual(sideEffects.length, 0, "hazard helpers do not call chat, journal, combat, or socket APIs");
   } finally {
     globalThis.ChatMessage = prior.ChatMessage;
     globalThis.JournalEntry = prior.JournalEntry;
     globalThis.game = prior.game;
   }
-  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "no-side-effects"] };
+  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "party-hud-review-buttons", "party-hud-review-scroll-routing", "no-side-effects"] };
 }
 
 export default runTravelV2HazardsSmokeChecks;

@@ -1139,14 +1139,28 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     const roll = event.target?.closest?.("[data-arcflight-mission-board-roll]");
     const openStation = event.target?.closest?.("[data-arcflight-party-hud-open-station]");
     const toggleHud = event.target?.closest?.("[data-arcflight-party-hud-toggle]");
-    const target = submit ?? roll ?? openStation ?? toggleHud;
+    const reviewSection = event.target?.closest?.("[data-arcflight-party-hud-review-section]");
+    const target = submit ?? roll ?? openStation ?? toggleHud ?? reviewSection;
     if (!target || !this.element?.contains(target) || target.disabled === true) return;
     event.preventDefault();
     const stationKey = target.dataset.stationKey ?? "";
+    if (reviewSection) return this.#scrollToHudSection(reviewSection.dataset.arcflightPartyHudReviewSection ?? "");
     if (toggleHud) return this.#toggleHudMode();
     if (submit) return this.#submitApproach(stationKey);
     if (openStation) return this.#openStationCard(stationKey);
     return this.#rollStation(stationKey);
+  }
+
+  #scrollToHudSection(sectionKey = "") {
+    const selectors = { hazards: "#arcflight-party-hud-hazards", "ship-status": "#arcflight-party-hud-ship-status" };
+    const section = this.element?.querySelector?.(selectors[sectionKey] ?? selectors["ship-status"]);
+    if (!section) {
+      ui.notifications?.warn?.("That travel HUD section is not currently available.");
+      return false;
+    }
+    section.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    section.focus?.({ preventScroll: true });
+    return true;
   }
 
   async #toggleHudMode() {

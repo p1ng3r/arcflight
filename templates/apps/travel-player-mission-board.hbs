@@ -20,8 +20,8 @@
         {{#if isCurrentUserRollable}}<button type="button" data-arcflight-party-hud-open-station data-station-key="{{stationKey}}">Open My Station Card — {{stationName}}</button>{{/if}}
       {{/each}}
     {{/if}}
-    <a href="#arcflight-party-hud-ship-status" class="button">Review Ship Status</a>
-    {{#if state.hasPublicHazards}}<a href="#arcflight-party-hud-hazards" class="button">Review Revealed Hazard</a>{{/if}}
+    <button type="button" data-arcflight-party-hud-review-section="ship-status">Review Ship Status</button>
+    {{#if state.hasPublicHazards}}<button type="button" data-arcflight-party-hud-review-section="hazards">Review Revealed Hazard</button>{{/if}}
   </section>
 
   {{#if state.hasPartyAlerts}}
