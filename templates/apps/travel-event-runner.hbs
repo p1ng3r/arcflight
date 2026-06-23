@@ -5,7 +5,7 @@
       <div class="arcflight-travel-runner-mvp__actions">
         <button type="button" data-arcflight-runner-toggle-compact>{{#if state.compactRunner}}Expand Runner{{else}}Compact Runner{{/if}}</button>
         <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
-        {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
+        {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send / Refresh Player HUD</button>{{/if}}
       </div>
     </div>
     {{#unless state.compactRunner}}<span class="arcflight-travel-safety-chip" title="No automatic actor/item/chat/journal/combat mutation. Actor changes require explicit GM Apply.">Manual GM Apply only</span>{{/unless}}
@@ -56,7 +56,7 @@
           <span>Status: {{state.session.status}}</span>
         </div>
       </div>
-      <button type="button" data-arcflight-runner-send-mission-board>Send Station Roll Cards</button>
+      <button type="button" data-arcflight-runner-send-mission-board>Send / Refresh Player HUD</button>
     </header>
 
     <article class="arcflight-travel-next-action arcflight-{{state.guidedBridge.nextRequiredAction.tone}}">
@@ -82,11 +82,12 @@
           <div class="arcflight-travel-compact-stations">
             {{#each state.stations}}
               <article class="arcflight-travel-card {{#if result}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
-                <strong>{{stationName}} — {{resultLabel}}</strong><span>{{#if result}}Rolled{{else}}{{#if stationOrderCommitted}}Ready to Roll{{else}}Choosing{{/if}}{{/if}}</span>
+                <strong>{{stationName}} — {{stationStateLabel}}</strong><span>{{resultLabel}}</span>
                 <p>{{assignedActorName}} · {{selectedActionLabel}}{{#if selectedStationOptionLabel}} · {{selectedStationOptionLabel}}{{/if}}</p>
                 <div class="arcflight-travel-runner-mvp__result-buttons">
-                  {{#each resultOptions}}<button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>{{/each}}
+                  {{#each resultOptions}}<button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>{{/each}}<button type="button" data-arcflight-runner-result data-round-index="{{../session.currentRoundIndex}}" data-station-key="{{stationKey}}" data-result="skipped" {{#if ../isCompleted}}disabled{{/if}}>Mark Not Participating</button><button type="button" data-arcflight-runner-clear-result data-round-index="{{../session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../isCompleted}}disabled{{/if}}>Clear Station Result</button>
                 </div>
+                {{#if result}}<p class="arcflight-sheet__hint">{{stationName}} summary: {{assignedActorName}} · {{selectedActionLabel}}{{#if selectedStationOptionLabel}} / {{selectedStationOptionLabel}}{{/if}} · {{resultLabel}}{{#if pendingStabilize}} · suggested pressure {{pendingStabilizeReduction}}{{/if}}</p>{{/if}}
               </article>
             {{/each}}
           </div>

@@ -47,6 +47,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(emptyState.travelV2PreviewPanel, "empty app state should expose preview panel object");
   assertSmoke(!emptyState.travelV2PreviewPanel.available, "empty preview panel should be unavailable");
   assertEqual(emptyState.compactRoundLabel, "No active round", "empty app state should keep compact label fallback");
+  assertEqual(emptyState.guidedBridge.nextRequiredAction.title, "Start Travel Session", "empty guided bridge should require starting a session");
 
   const state = prepareTravelEventRunnerAppStateWithTravelV2Preview({
     session: { event: createRunnerEventFixture() },
@@ -62,6 +63,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(state.sessionActionsExpanded, true, "app state should preserve session actions UI setting");
   assertEqual(state.compactRunner, true, "app state should preserve compact UI setting");
   assertEqual(state.compactRoundLabel, "Round 1", "app state should preserve compact round label behavior");
+  assertEqual(state.guidedBridge.nextRequiredAction.title, "Send / Refresh Player HUD", "fresh session should guide GM to refresh player HUD/cards");
 
   const criticalFailure = state.travelV2Preview.rows.find((row) => row.outcomeKey === "criticalFailure");
   assertSmoke(criticalFailure, "critical failure preview row should exist");
@@ -76,6 +78,16 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(state.session.pressure[ARCFLIGHT_TRAVEL_RESOURCES.STRAIN], 0, "app state should not mutate strain pressure");
   assertSmoke(!Object.hasOwn(state.session.pressure, ARCFLIGHT_TRAVEL_RESOURCES.HULL), "hull should remain preview-only in app state");
 
+  const rolledState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session: {
+      event: createRunnerEventFixture(),
+      roundResults: [{ stationResults: { navigator: "success", engineer: "skipped" } }]
+    }
+  });
+  assertEqual(rolledState.guidedBridge.nextRequiredAction.title, "Round Pressure Ready", "rolled/skipped stations should unlock pressure review");
+  assertSmoke(rolledState.guidedBridge.nextRequiredAction.buttons.some((button) => button.action === "round-apply" && button.label === "Apply Suggested Pressure"), "pressure-ready queue should expose real apply button");
+  assertEqual(rolledState.stations.find((station) => station.stationKey === "engineer")?.stationStateLabel, "Skipped / Not Participating", "skipped stations should render a clear station state label");
+
   return {
     ok: true,
     checked: [
@@ -85,7 +97,10 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "ui-state-preservation",
       "preview-row-exposure",
       "preview-panel-exposure",
-      "preview-only-pressure"
+      "preview-only-pressure",
+      "guided-empty-start",
+      "guided-send-refresh",
+      "pressure-ready-after-skipped"
     ]
   };
 }
