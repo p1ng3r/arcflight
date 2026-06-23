@@ -172,14 +172,20 @@ function normalizeHazardRuntime(value = {}) {
 }
 
 function roundKey(session, options = {}) { return String(Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : (Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0)); }
+function humanizeIdentifier(value = "") { return String(value ?? "").replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 
 export function sanitizeTravelV2PublicHazard(record = {}) {
   const mechanics = normalizeHazardMechanics(record);
+  const affectedStations = Array.from(new Set([
+    ...mechanics.effects.map((effect) => effect.stationKey).filter(Boolean),
+    ...mechanics.responseActions.map((action) => action.stationKey).filter((stationKey) => stationKey && stationKey !== "any")
+  ]));
   return {
     id: record.id ?? "", hazardId: record.hazardId ?? "", name: record.name ?? "Unknown Hazard", category: record.category ?? "", status: record.status ?? "", revealed: record.revealed === true,
     playerText: record.playerText ?? "", publicModifierText: mechanics.publicModifierText,
-    affectedStations: mechanics.effects.map((effect) => effect.stationKey).filter(Boolean),
-    responseActions: mechanics.responseActions.map((action) => ({ key: action.key, stationKey: action.stationKey, label: action.label, skill: action.skill, helpText: action.helpText, actionType: action.actionType, hazardRecordId: record.id ?? "", hazardName: record.name ?? "" }))
+    affectedStations,
+    affectedStationText: affectedStations.length ? affectedStations.map(humanizeIdentifier).join(", ") : "Any station",
+    responseActions: mechanics.responseActions.map((action) => ({ key: action.key, stationKey: action.stationKey, stationLabel: action.stationKey === "any" ? "Any station" : humanizeIdentifier(action.stationKey), label: action.label, skill: action.skill, helpText: action.helpText, actionType: action.actionType, hazardRecordId: record.id ?? "", hazardName: record.name ?? "" }))
   };
 }
 

@@ -1,4 +1,4 @@
-import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard } from "./travel-event-runner.js";
+import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, commitTravelEventRunnerStationOrder, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard, setTravelEventRunnerStationResult } from "./travel-event-runner.js";
 import { drawTravelV2HazardsForPressureResult, prepareTravelV2HazardPanelState, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 hazards smoke check failed: ${message}`); }
@@ -81,6 +81,24 @@ export async function runTravelV2HazardsSmokeChecks() {
     assertEqual(unresolvedTwice.consequences.length, 0, "unresolved consequence does not fire twice for same round");
     const safeVoid = sanitizeTravelV2PublicHazard(appliedVoid.session.travelV2Hazards.records.find((record) => record.id === firstId));
     assertSmoke(!Object.hasOwn(safeVoid, "gmText") && !Object.hasOwn(safeVoid, "gmMechanicalNotes"), "player-safe sanitizer does not leak GM hazard fields");
+    assertSmoke(typeof safeVoid.affectedStationText === "string" && !safeVoid.affectedStationText.includes("[") && !safeVoid.affectedStationText.includes("{"), "affected stations render as clean player text");
+
+    const integratedBoard = prepareTravelPlayerMissionBoardState(appliedVoid.session);
+    const navigatorOption = integratedBoard.stations.find((station) => station.stationKey === "navigator")?.approachOptions.find((option) => option.actionType === "hazardResponse" && option.hazardRecordId === firstId);
+    assertSmoke(navigatorOption, "integrated flow exposes hazard response station option");
+    const committedResponse = commitTravelEventRunnerStationOrder(appliedVoid.session, 0, "navigator", navigatorOption.optionKey, { source: "player" });
+    assertSmoke(committedResponse.ok, "integrated flow commits hazard response action");
+    assertEqual(committedResponse.session.roundResults[0].stationActions.navigator.type, "hazardResponse", "committed station action remains hazardResponse");
+    const resolvedResponse = setTravelEventRunnerStationResult(committedResponse.session, 0, "navigator", "success");
+    assertSmoke(resolvedResponse.ok, "integrated flow resolves hazard response station result");
+    const resolvedVoid = resolvedResponse.session.travelV2Hazards.records.find((record) => record.id === firstId);
+    assertEqual(resolvedVoid.runtime.responseProgress, 1, "integrated success advances hazard runtime progress");
+    assertEqual(resolvedVoid.status, "cleared", "integrated clearing station success clears hazard");
+    const noUnresolvedAfterClear = resolveTravelV2UnresolvedHazardsForRound(resolvedResponse.session, { roundIndex: 0 });
+    assertEqual(noUnresolvedAfterClear.consequences.length, 0, "cleared hazard does not fire unresolved consequence");
+
+    const failureResponse = resolveTravelV2HazardResponse(appliedVoid.session, firstId, "navigator", "failure", { roundIndex: 0 });
+    assertEqual(failureResponse.session.travelV2Hazards.records.find((record) => record.id === firstId).runtime.responseProgress, 0, "failed hazard response does not advance progress");
 
     const coughId = rerun.session.travelV2Hazards.records[1].id;
     const appliedCough = applyTravelV2HazardToRound(rerun.session, coughId, { roundIndex: 0 });
@@ -116,7 +134,7 @@ export async function runTravelV2HazardsSmokeChecks() {
     globalThis.JournalEntry = prior.JournalEntry;
     globalThis.game = prior.game;
   }
-  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "party-hud-review-buttons", "party-hud-review-scroll-routing", "active-modifiers", "void-shear-dc", "arkengine-cough-suppression", "crew-on-edge-focus-suppression", "response-actions", "clear-progress", "unresolved-once", "double-apply-guard", "public-sanitizer-no-gm-leak", "no-side-effects"] };
+  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "player-safe-reveal-payload", "player-safe-status-update", "player-safe-clear-removal", "unrevealed-no-leak", "click-selector-routing", "party-hud-review-buttons", "party-hud-review-scroll-routing", "active-modifiers", "void-shear-dc", "arkengine-cough-suppression", "crew-on-edge-focus-suppression", "response-actions", "clear-progress", "unresolved-once", "double-apply-guard", "public-sanitizer-no-gm-leak", "affected-stations-clean-text", "integrated-response-option", "integrated-response-commit", "integrated-response-progress", "integrated-response-clear", "cleared-no-unresolved", "failure-no-progress", "no-side-effects"] };
 }
 
 export default runTravelV2HazardsSmokeChecks;

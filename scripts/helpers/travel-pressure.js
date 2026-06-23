@@ -9,7 +9,8 @@ export const ARCFLIGHT_TRAVEL_PRESSURE_TRACKS = Object.freeze({
 export const ARCFLIGHT_TRAVEL_PRESSURE_KEYS = Object.freeze(Object.values(ARCFLIGHT_TRAVEL_PRESSURE_TRACKS));
 export const ARCFLIGHT_TRAVEL_STATION_ACTIONS = Object.freeze({
   EVENT_APPROACH: "eventApproach",
-  STABILIZE: "stabilize"
+  STABILIZE: "stabilize",
+  HAZARD_RESPONSE: "hazardResponse"
 });
 
 const STATION_STABILIZE_PRESSURE = Object.freeze({
@@ -125,8 +126,18 @@ export function getTravelStationStabilizePressureKey(stationKey, round = {}) {
     ?? (isTravelPressureKey(round?.primaryPressure) ? round.primaryPressure : "");
 }
 
+export function hazardResponse(hazardRecordId = "", hazardName = "") {
+  return {
+    type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE,
+    stabilizePressureKey: "",
+    hazardRecordId: typeof hazardRecordId === "string" ? hazardRecordId : "",
+    hazardName: typeof hazardName === "string" ? hazardName : ""
+  };
+}
+
 export function normalizeTravelStationAction(value = {}, stationKey = "", round = {}) {
   const source = isPlainObject(value) ? value : {};
+  if (source.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE) return hazardResponse(source.hazardRecordId, source.hazardName);
   if (source.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE) return eventApproach();
   const pressureKey = isTravelPressureKey(source.stabilizePressureKey)
     ? source.stabilizePressureKey

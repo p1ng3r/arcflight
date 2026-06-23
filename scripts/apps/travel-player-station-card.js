@@ -74,7 +74,8 @@ function sanitizePublicHazards(value = []) {
       publicModifierText: sanitizeText(entry.publicModifierText),
       status: sanitizeText(entry.status),
       affectedStations: Array.isArray(entry.affectedStations) ? entry.affectedStations.map(sanitizeText).filter(Boolean) : [],
-      responseActions: (Array.isArray(entry.responseActions) ? entry.responseActions : []).filter((action) => action && typeof action === "object" && !Array.isArray(action)).map((action) => ({ key: sanitizeText(action.key), stationKey: sanitizeText(action.stationKey), label: sanitizeText(action.label), skill: sanitizeText(action.skill), helpText: sanitizeText(action.helpText) }))
+      affectedStationText: sanitizeText(entry.affectedStationText),
+      responseActions: (Array.isArray(entry.responseActions) ? entry.responseActions : []).filter((action) => action && typeof action === "object" && !Array.isArray(action)).map((action) => ({ key: sanitizeText(action.key), stationKey: sanitizeText(action.stationKey), stationLabel: sanitizeText(action.stationLabel), label: sanitizeText(action.label), skill: sanitizeText(action.skill), helpText: sanitizeText(action.helpText) }))
     }))
     .filter((entry) => entry.name || entry.playerText);
 }
@@ -88,10 +89,6 @@ function sanitizePublicShipScars(value = []) {
       severity: sanitizeText(entry.severity),
       category: sanitizeText(entry.category),
       playerText: sanitizeText(entry.playerText),
-      publicModifierText: sanitizeText(entry.publicModifierText),
-      status: sanitizeText(entry.status),
-      affectedStations: Array.isArray(entry.affectedStations) ? entry.affectedStations.map(sanitizeText).filter(Boolean) : [],
-      responseActions: (Array.isArray(entry.responseActions) ? entry.responseActions : []).filter((action) => action && typeof action === "object" && !Array.isArray(action)).map((action) => ({ key: sanitizeText(action.key), stationKey: sanitizeText(action.stationKey), label: sanitizeText(action.label), skill: sanitizeText(action.skill), helpText: sanitizeText(action.helpText) })),
       repairRequirement: sanitizeText(entry.repairRequirement),
       status: sanitizeText(entry.status)
     }))
