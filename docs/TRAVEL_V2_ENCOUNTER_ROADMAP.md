@@ -106,7 +106,9 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Stabilize / Repair Action Pass:** this pass formalizes Stabilize / Repair as a tradeoff action: stabilizing stations do not count toward main objective progress, their critical success / success / failure / critical failure results create session-local pressure deltas, and GM-facing apply/dismiss controls keep persistent changes under explicit GM control. It does not add live AI/API generation or automatic actor/item/chat/journal/combat mutation. Later PRs should deepen event-specific narration packs, richer momentum spends, and explicit GM Apply handoffs for persistent fallout.
+**Current PR scope — Momentum Pass:** this pass adds a session-local Travel v2 Momentum pool, awards Momentum from strong play such as critical main-objective station results and critical hazard clears, adds an explicit GM-auditable failure downgrade spend, surfaces player-safe Momentum state, and folds earned/spent Momentum into narration. It does not add live AI/API generation or automatic actor/item/chat/journal/combat mutation. Later PRs should deepen additional Momentum spends and explicit GM Apply handoffs for persistent fallout.
+
+**Previous PR scope — Stabilize / Repair Action Pass:** this pass formalized Stabilize / Repair as a tradeoff action: stabilizing stations do not count toward main objective progress, their critical success / success / failure / critical failure results create session-local pressure deltas, and GM-facing apply/dismiss controls keep persistent changes under explicit GM control.
 
 **Previous PR scope — Narration Engine Pass:** the runner now provides session-local station result vignettes, combined round summaries, and player-safe narration sanitization for already-authored Travel v2 encounter text and resolved station data.
 

@@ -30,6 +30,12 @@
     </section>
   {{/if}}
 
+  <section class="arcflight-card-table arcflight-travel-party-hud__momentum arcflight-player-safe" aria-label="Party Momentum">
+    <h2>✨ Momentum</h2>
+    <p><strong>{{state.momentum.value}}</strong> available · Earned {{state.momentum.earnedTotal}} · Spent {{state.momentum.spentTotal}}</p>
+    <p class="arcflight-sheet__hint">{{state.momentum.helpText}}</p>
+  </section>
+
   <section class="arcflight-card-table arcflight-travel-party-hud__overview" aria-label="Current Travel Event">
     <h2>Current Travel Event</h2>
     <dl>
