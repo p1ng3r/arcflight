@@ -158,6 +158,29 @@ export function getPendingTravelStabilizeEffect(result, pressureKey) {
   };
 }
 
+export function resolveTravelStabilizePressureDelta(result, pressureKey) {
+  const effect = getPendingTravelStabilizeEffect(result, pressureKey);
+  return {
+    pressureKey: effect.pressureKey,
+    degreeOfSuccess: TRAVEL_STABILIZE_RESULT_ALIASES[result] ?? result ?? "",
+    pressureDelta: effect.pendingDelta,
+    reduction: effect.reduction,
+    pressureIncrease: effect.pressureIncrease,
+    complicationCandidate: effect.complication
+  };
+}
+
+const TRAVEL_STABILIZE_RESULT_ALIASES = Object.freeze({
+  2: "criticalSuccess",
+  1: "success",
+  0: "failure",
+  "-1": "criticalFailure",
+  criticalSuccess: "criticalSuccess",
+  success: "success",
+  failure: "failure",
+  criticalFailure: "criticalFailure"
+});
+
 export function getTravelPressureIdentity(key) {
   return ARCFLIGHT_TRAVEL_PRESSURE_IDENTITIES[key] ?? null;
 }

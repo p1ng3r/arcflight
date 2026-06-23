@@ -20,6 +20,7 @@ function resultLabel(result) { return RESULT_LABELS[result] ?? (result ? humaniz
 function actionLabel(action = {}) { return ACTION_LABELS[action?.type] ?? ACTION_LABELS.eventApproach; }
 function publicHazardRecords(session = {}) { return (session.travelV2Hazards?.records ?? session.hazards?.records ?? []).filter((record) => record?.revealed === true); }
 function gmHazardRecords(session = {}) { return (session.travelV2Hazards?.records ?? session.hazards?.records ?? []).filter(isPlainObject); }
+function stabilizeRecords(session = {}, roundIndex = 0) { return (session.stabilizeResolutionRecords?.records ?? []).filter((record) => isPlainObject(record) && Number(record.roundIndex) === Number(roundIndex)); }
 
 function sanitizePublicStationVignette(vignette = {}) {
   const publicStationLabel = typeof vignette.stationLabel === "string" && vignette.stationLabel ? vignette.stationLabel : stationLabel(vignette.stationKey);
@@ -59,10 +60,14 @@ function buildPublicReadAloud(publicWhatHappened, stationVignettes = [], safeHaz
   if (publicWhatHappened) return `${publicWhatHappened}${hazardText}`.trim();
   return `${buildPublicRoundSummary(stationVignettes, options)}${hazardText}`.trim();
 }
-function summarizeMechanical(result, action = {}) {
+function summarizeMechanical(result, action = {}, stabilizeRecord = null) {
   if (!result) return "No station result has been recorded yet.";
   if (result === "skipped") return "Station did not roll this round.";
   if (action?.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE) {
+    const label = stabilizeRecord?.pressureLabel || (action?.stabilizePressureKey ? humanizeIdentifier(action.stabilizePressureKey) : "selected");
+    const status = stabilizeRecord?.status === "applied" ? "applied" : (stabilizeRecord?.status === "dismissed" ? "dismissed" : "pending GM apply");
+    if (Number(stabilizeRecord?.pressureDelta) < 0) return `Stabilize ${status}: reduced ${label} pressure by ${Math.abs(Number(stabilizeRecord.pressureDelta))}.`;
+    if (Number(stabilizeRecord?.pressureDelta) > 0) return `Stabilize ${status}: ${label} pressure increase or complication candidate.`;
     if (result === "criticalSuccess") return "Stabilize candidate: reduce the selected pressure by 2 if the GM applies it.";
     if (result === "success") return "Stabilize candidate: reduce the selected pressure by 1 if the GM applies it.";
     if (result === "criticalFailure") return "Stabilize complication candidate: pressure may worsen if the GM applies it.";
@@ -77,9 +82,16 @@ function summarizeMechanical(result, action = {}) {
   if (result === "criticalFailure") return "Counts as a failed objective attempt with heightened scene pressure.";
   return "Counts as a failed objective attempt.";
 }
-function narrativeSentence({ stationName, actorName, result, actionText, optionLabel, hazardName }) {
+function narrativeSentence({ stationName, actorName, result, actionText, optionLabel, hazardName, stabilizeRecord }) {
   const subject = actorName || `The ${stationName}`;
   const target = hazardName ? ` against ${hazardName}` : (optionLabel ? ` through ${optionLabel}` : "");
+  if (stabilizeRecord) {
+    const pressureLabel = stabilizeRecord.pressureLabel || "pressure";
+    const status = stabilizeRecord.status === "applied" ? "applied" : (stabilizeRecord.status === "dismissed" ? "dismissed" : "pending GM apply");
+    if (Number(stabilizeRecord.pressureDelta) < 0) return `${subject}'s stabilize work reduces ${pressureLabel} by ${Math.abs(Number(stabilizeRecord.pressureDelta))}, ${status}, without adding main objective progress.`;
+    if (Number(stabilizeRecord.pressureDelta) > 0) return `${subject}'s stabilize work creates a ${pressureLabel} complication candidate, ${status}, without adding main objective progress.`;
+    return `${subject}'s stabilize work does not reduce ${pressureLabel} and does not add main objective progress.`;
+  }
   if (!result) return `${subject} is still waiting to resolve ${actionText.toLowerCase()}${target}; keep this beat provisional.`;
   if (result === "criticalSuccess") return `${subject} lands a decisive ${actionText.toLowerCase()}${target}, turning the crisis into momentum without locking in permanent fallout.`;
   if (result === "success") return `${subject} makes useful ${actionText.toLowerCase()}${target}, steadying the scene and giving the crew something to build on.`;
@@ -94,6 +106,7 @@ export function prepareTravelV2StationResultVignettes(session, options = {}) {
   const roundResult = session?.roundResults?.[roundIndex] ?? {};
   const activeStations = Array.isArray(round.activeStations) ? round.activeStations : Object.keys(roundResult.stationResults ?? {});
   const assignments = isPlainObject(session?.stationAssignments) ? session.stationAssignments : {};
+  const stabilizeLookup = new Map(stabilizeRecords(session, roundIndex).map((record) => [record.stationKey, record]));
   return activeStations.map((stationKey) => {
     const action = roundResult.stationActions?.[stationKey] ?? { type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH };
     const result = roundResult.stationResults?.[stationKey] ?? null;
@@ -102,8 +115,9 @@ export function prepareTravelV2StationResultVignettes(session, options = {}) {
     const actionText = actionLabel(action);
     const optionLabel = roundResult.selectedStationOptionLabels?.[stationKey] ?? "";
     const hazardName = action?.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE ? (action.hazardName || optionLabel) : "";
-    const narrativeText = narrativeSentence({ stationName, actorName, result, actionText, optionLabel, hazardName });
-    return { stationKey, stationLabel: stationName, actorName, actionType: action?.type ?? "eventApproach", actionLabel: actionText, selectedOptionLabel: optionLabel, hazardName, result, resultLabel: resultLabel(result), degreeOfSuccess: result ?? "", tone: RESULT_TONES[result] ?? "pending", mechanicalSummary: summarizeMechanical(result, action), narrativeText, publicText: `${stationName}: ${narrativeText}`, complete: Boolean(result) };
+    const stabilizeRecord = action?.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? stabilizeLookup.get(stationKey) : null;
+    const narrativeText = narrativeSentence({ stationName, actorName, result, actionText, optionLabel, hazardName, stabilizeRecord });
+    return { stationKey, stationLabel: stationName, actorName, actionType: action?.type ?? "eventApproach", actionLabel: actionText, selectedOptionLabel: optionLabel, hazardName, stabilizePressureLabel: stabilizeRecord?.pressureLabel ?? "", stabilizePressureDelta: Number(stabilizeRecord?.pressureDelta) || 0, stabilizeStatus: stabilizeRecord?.status ?? "", result, resultLabel: resultLabel(result), degreeOfSuccess: result ?? "", tone: RESULT_TONES[result] ?? "pending", mechanicalSummary: summarizeMechanical(result, action, stabilizeRecord), narrativeText, publicText: `${stationName}: ${narrativeText}`, complete: Boolean(result) };
   });
 }
 

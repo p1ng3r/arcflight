@@ -14,6 +14,7 @@ import {
   normalizeTravelPressureState,
   normalizeTravelRoundPressureProfile,
   normalizeTravelStationAction,
+  resolveTravelStabilizePressureDelta,
   stabilize
 } from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
@@ -548,7 +549,10 @@ export function normalizeTravelStabilizeResolutionRecords(value = {}, options = 
     pressureLabel: typeof record.pressureLabel === "string" ? record.pressureLabel : "",
     reduction: Math.max(0, Math.trunc(Number(record.reduction) || 0)),
     pressureIncrease: Math.max(0, Math.trunc(Number(record.pressureIncrease) || 0)),
+    pressureDelta: Number.isFinite(Number(record.pressureDelta)) ? Math.trunc(Number(record.pressureDelta)) : Math.trunc(Number(record.pressureIncrease || 0)) - Math.trunc(Number(record.reduction || 0)),
     complication: record.complication === true,
+    publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+    gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
     status: ["pending", "applied", "dismissed"].includes(record.status) ? record.status : "pending",
     createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
     resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
@@ -571,9 +575,16 @@ export function buildTravelStabilizeResolutionRecord(session, roundIndex, statio
   const result = roundResult?.stationResults?.[stationKey];
   if (!round || !roundResult || action?.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE || !result) return null;
   const pressureKey = action.stabilizePressureKey || getTravelStationStabilizePressureKey(stationKey, round);
-  const effect = getPendingTravelStabilizeEffect(result, pressureKey);
+  const effect = resolveTravelStabilizePressureDelta(result, pressureKey);
   const pressure = getTravelPressureIdentity(pressureKey);
   const station = prepareStationRows(normalized.session, round, roundResult, options).find((row) => row.stationKey === stationKey);
+  const pressureLabel = pressure?.label || humanizeIdentifier(pressureKey);
+  const resultLabel = humanizeIdentifier(result);
+  const publicSummary = effect.pressureDelta < 0
+    ? `${station?.stationName || humanizeIdentifier(stationKey)} ${resultLabel}: ${pressureLabel} pressure reduction ${Math.abs(effect.pressureDelta)} pending GM apply.`
+    : (effect.pressureDelta > 0
+      ? `${station?.stationName || humanizeIdentifier(stationKey)} ${resultLabel}: ${pressureLabel} pressure increase candidate pending GM apply.`
+      : `${station?.stationName || humanizeIdentifier(stationKey)} ${resultLabel}: no ${pressureLabel} pressure reduction.`);
   return {
     stabilizeResolutionId: `round-${index}-${stationKey}-${pressureKey}`,
     roundIndex: index,
@@ -581,12 +592,15 @@ export function buildTravelStabilizeResolutionRecord(session, roundIndex, statio
     stationName: station?.stationName || humanizeIdentifier(stationKey),
     assignedActorName: station?.assignedActorName || "",
     result,
-    resultLabel: humanizeIdentifier(result),
+    resultLabel,
     pressureKey,
-    pressureLabel: pressure?.label || humanizeIdentifier(pressureKey),
+    pressureLabel,
     reduction: effect?.reduction ?? 0,
     pressureIncrease: effect?.pressureIncrease ?? 0,
-    complication: effect?.complication === true,
+    pressureDelta: effect?.pressureDelta ?? 0,
+    complication: effect?.complicationCandidate === true,
+    publicSummary,
+    gmNote: effect?.complicationCandidate ? "Critical failure creates a session-local pressure increase candidate; apply only if the GM wants that pressure reflected in session state." : "Session-local stabilize candidate; no actor, item, chat, journal, or combat mutation.",
     status: "pending",
     createdAt: nowIso(options),
     resolvedAt: "",
@@ -634,11 +648,41 @@ export function prepareTravelStabilizeResolutionReviewState(session, options = {
     ...record,
     statusLabel: humanizeIdentifier(record.status),
     isPending: record.status === "pending",
+    isApplied: record.status === "applied",
+    isDismissed: record.status === "dismissed",
     pendingEffectText: record.reduction > 0
       ? `Reduce ${record.pressureLabel} by ${record.reduction}.`
       : (record.pressureIncrease > 0 ? `Add ${record.pressureIncrease} ${record.pressureLabel} pressure complication.` : "No pressure reduction.")
   }));
   return { records, hasRecords: records.length > 0, pendingCount: records.filter((record) => record.isPending).length };
+}
+
+export function prepareTravelStabilizeResolution(session, roundIndex, stationKey, options = {}) {
+  return buildTravelStabilizeResolutionRecord(session, roundIndex, stationKey, options);
+}
+
+export function sanitizeTravelStabilizeResolutionForPlayers(record = {}) {
+  return {
+    stabilizeResolutionId: typeof record.stabilizeResolutionId === "string" ? record.stabilizeResolutionId : "",
+    roundIndex: Math.max(0, Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : 0),
+    stationKey: typeof record.stationKey === "string" ? record.stationKey : "",
+    stationName: typeof record.stationName === "string" ? record.stationName : "",
+    assignedActorName: typeof record.assignedActorName === "string" ? record.assignedActorName : "",
+    result: TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(record.result) ? record.result : "",
+    resultLabel: typeof record.resultLabel === "string" ? record.resultLabel : "",
+    pressureKey: typeof record.pressureKey === "string" ? record.pressureKey : "",
+    pressureLabel: typeof record.pressureLabel === "string" ? record.pressureLabel : "",
+    pressureDelta: Number.isFinite(Number(record.pressureDelta)) ? Math.trunc(Number(record.pressureDelta)) : 0,
+    publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+    status: ["pending", "applied", "dismissed"].includes(record.status) ? record.status : "pending",
+    pendingGmApply: record.status === "pending",
+    applied: record.status === "applied",
+    dismissed: record.status === "dismissed"
+  };
+}
+
+export function applyTravelStabilizePressureDeltaToSession(session, stabilizeResolutionId, options = {}) {
+  return markTravelStabilizeResolutionApplied(session, stabilizeResolutionId, options);
 }
 
 export function markTravelStabilizeResolutionApplied(session, stabilizeResolutionId, options = {}) {
@@ -1754,10 +1798,12 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       activeHazardModifiers: hazardModifiers.publicHazards,
       isEventApproach: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
       isStabilize: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
+      isHazardResponse: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE,
       stabilizePressureKey,
       stabilizePressureLabel: stabilizePressure?.label ?? humanizeIdentifier(stabilizePressureKey),
       pendingStabilize,
       pendingStabilizeReduction: pendingStabilize?.reduction ?? 0,
+      pendingStabilizeDelta: pendingStabilize?.pendingDelta ?? 0,
       hasStabilizeComplication: pendingStabilize?.complication === true,
       selectedSkill: selectedApproach.skill,
       selectedSkillLabel: selectedApproach.skill ? humanizeIdentifier(selectedApproach.skill) : "No rollable statistic found",
@@ -1846,8 +1892,12 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
   }
   const stationRows = prepareStationRows(session, round, roundResult, options);
   const resolvedRows = stationRows.filter((row) => Boolean(row.result));
-  const successCount = resolvedRows.filter((row) => ["success", "criticalSuccess"].includes(row.result)).length;
-  const failureCount = resolvedRows.filter((row) => ["failure", "criticalFailure"].includes(row.result)).length;
+  const objectiveRows = resolvedRows.filter((row) => row.isEventApproach);
+  const stabilizeRows = resolvedRows.filter((row) => row.isStabilize);
+  const hazardResponseRows = resolvedRows.filter((row) => row.isHazardResponse);
+  const unresolvedRows = stationRows.filter((row) => !row.result);
+  const successCount = objectiveRows.filter((row) => ["success", "criticalSuccess"].includes(row.result)).length;
+  const failureCount = objectiveRows.filter((row) => ["failure", "criticalFailure"].includes(row.result)).length;
   const unresolvedStationCount = stationRows.length - resolvedRows.length;
   const summaryLines = resolvedRows.map((row) => {
     const actorName = row.assignedActorName && row.assignedActorName !== "Unassigned" ? row.assignedActorName : "Unassigned crew";
@@ -1856,19 +1906,26 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
     const complication = row.hasGmOnlyConsequence ? ` GM complication: ${row.gmOnlyConsequence}` : "";
     return `${actorName} at ${row.stationName} used ${approachLabel} and scored ${row.resultLabel}.${feedback}${complication}`;
   });
-  const roundScore = resolvedRows.reduce((sum, row) => sum + (row.isEventApproach ? (RESULT_SCORES[row.result] ?? 0) : 0), 0);
+  const roundScore = objectiveRows.reduce((sum, row) => sum + (RESULT_SCORES[row.result] ?? 0), 0);
   const roundOutcomeKey = roundOutcomeKeyFromScore(roundScore);
   const summaryText = buildTravelEventRunnerRoundSummaryText(stationRows, successCount, failureCount, roundOutcomeKey, round?.roundEndNarration?.[roundOutcomeKey] || "");
-  const unresolvedStationNames = stationRows.filter((row) => !row.result).map((row) => row.stationName || humanizeIdentifier(row.stationKey));
+  const unresolvedStationNames = unresolvedRows.map((row) => row.stationName || humanizeIdentifier(row.stationKey));
   const unresolvedStationText = unresolvedStationNames.length > 0 ? `Unresolved: ${unresolvedStationNames.join(", ")}.` : "";
   const gmOnlyComplicationText = resolvedRows.filter((row) => row.hasGmOnlyConsequence).map((row) => `${row.stationName || humanizeIdentifier(row.stationKey)}: ${row.gmOnlyConsequence}`).join(" ");
-  if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} success-side results, ${failureCount} failure-side results, ${unresolvedStationCount} unresolved stations. Weighted score ${roundScore}: ${ROUND_RESULT_LABELS[roundOutcomeKey]}.`);
+  if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} objective success-side results, ${failureCount} objective failure-side results, ${stabilizeRows.length} stabilizer${stabilizeRows.length === 1 ? "" : "s"}, ${hazardResponseRows.length} hazard responder${hazardResponseRows.length === 1 ? "" : "s"}, ${unresolvedStationCount} unresolved stations. Weighted objective score ${roundScore}: ${ROUND_RESULT_LABELS[roundOutcomeKey]}.`);
   return {
     hasResolvedStations: resolvedRows.length > 0,
     resolvedStationCount: resolvedRows.length,
     unresolvedStationCount,
     successCount,
     failureCount,
+    objectiveContributorCount: objectiveRows.length,
+    objectiveContributors: objectiveRows.map((row) => row.stationKey),
+    stabilizerCount: stabilizeRows.length,
+    stabilizers: stabilizeRows.map((row) => row.stationKey),
+    hazardResponderCount: hazardResponseRows.length,
+    hazardResponders: hazardResponseRows.map((row) => row.stationKey),
+    unresolvedStations: unresolvedRows.map((row) => row.stationKey),
     roundScore,
     roundOutcomeKey,
     roundOutcomeLabel: ROUND_RESULT_LABELS[roundOutcomeKey],
