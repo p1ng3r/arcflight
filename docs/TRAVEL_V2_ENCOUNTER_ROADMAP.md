@@ -106,7 +106,9 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Hazard Encounter Mechanics:** this pass turns the shared hazard deck into session-local gameplay modifiers: active hazards can change station DCs, suppress options or Focus, inject response actions, track clear progress, and record unresolved consequences without mutating actors/items/chat/journals/combat. Later PRs should deepen event-specific hazard hooks, richer momentum spends, and explicit GM Apply handoffs for persistent fallout.
+**Current PR scope — Narration Engine Pass:** this pass adds session-local station result vignettes, combined round summaries, and player-safe narration sanitization for already-authored Travel v2 encounter text and resolved station data. It does not add live AI/API generation, automatic chat posting, or actor/item/journal/combat mutation. Later PRs should deepen event-specific narration packs, richer momentum spends, and explicit GM Apply handoffs for persistent fallout.
+
+**Previous PR scope — Hazard Encounter Mechanics:** the shared hazard deck now supports session-local gameplay modifiers: active hazards can change station DCs, suppress options or Focus, inject response actions, track clear progress, and record unresolved consequences without mutating actors/items/chat/journals/combat.
 
 Hazard cards are generic shared deck cards that work across Travel v2 events, but each card must create a real gameplay complication.
 
