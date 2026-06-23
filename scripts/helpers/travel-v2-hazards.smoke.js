@@ -1,4 +1,4 @@
-import { normalizeTravelEventRunnerSession, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard } from "./travel-event-runner.js";
+import { normalizeTravelEventRunnerSession, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard } from "./travel-event-runner.js";
 import { drawTravelV2HazardsForPressureResult, prepareTravelV2HazardPanelState } from "./travel-v2-hazards.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 hazards smoke check failed: ${message}`); }
@@ -21,6 +21,7 @@ export function runTravelV2HazardsSmokeChecks() {
     assertEqual(snap(start), before, "drawing does not mutate input session");
     assertEqual(result.session.travelV2Hazards.records.length, 1, "pressure reaching 2 draws one hazard");
     assertEqual(result.session.travelV2Hazards.records[0].status, "pending", "drawn hazard starts pending");
+    assertEqual(result.session.travelV2Hazards.records[0].revealed, false, "drawn hazard starts GM-only and unrevealed");
 
     result = drawTravelV2HazardsForPressureResult(result.session, { hazardDraws: [hazardDraw(3)] }, { now: "2026-06-22T00:00:01.000Z" });
     assertEqual(result.session.travelV2Hazards.records.length, 2, "pressure reaching 3 draws another hazard");
@@ -28,6 +29,17 @@ export function runTravelV2HazardsSmokeChecks() {
     assertEqual(result.session.travelV2Hazards.records.length, 3, "pressure reaching 4 draws another hazard");
     const rerun = drawTravelV2HazardsForPressureResult(result.session, { hazardDraws: [hazardDraw(2), hazardDraw(3), hazardDraw(4)] });
     assertEqual(rerun.session.travelV2Hazards.records.length, 3, "rerunning pressure handling does not duplicate threshold hazards");
+
+    const staged = drawTravelV2RunnerHazard(rerun.session, { now: "2026-06-22T00:00:02.500Z" });
+    assertSmoke(staged.ok, "manual draw stages a hazard");
+    const stagedId = staged.drawn.id;
+    assertEqual(staged.session.travelV2Hazards.records.find((record) => record.id === stagedId).status, "pending", "manual draw stages pending hazard");
+    const held = holdTravelV2RunnerHazard(staged.session, stagedId, { now: "2026-06-22T00:00:02.750Z" });
+    assertSmoke(held.ok, "manual hold succeeds");
+    assertEqual(held.session.travelV2Hazards.records.find((record) => record.id === stagedId).status, "held", "held hazard remains unresolved");
+    const revealed = revealTravelV2RunnerHazard(held.session, stagedId, { now: "2026-06-22T00:00:02.900Z" });
+    assertSmoke(revealed.ok, "manual reveal succeeds with player-safe text");
+    assertEqual(revealed.session.travelV2Hazards.records.find((record) => record.id === stagedId).revealed, true, "reveal marks player visibility without activating");
 
     const firstId = rerun.session.travelV2Hazards.records[0].id;
     const activated = activateTravelV2RunnerHazard(rerun.session, firstId, { now: "2026-06-22T00:00:03.000Z" });
@@ -43,15 +55,16 @@ export function runTravelV2HazardsSmokeChecks() {
     const reopened = normalizeTravelEventRunnerSession(JSON.parse(JSON.stringify(normalized.session)));
     assertEqual(reopened.session.travelV2Hazards.records[0].status, "cleared", "hazard state survives save/reopen JSON path");
 
-    const panel = prepareTravelV2HazardPanelState(reopened.session);
+    const panel = prepareTravelV2HazardPanelState(revealed.session);
     assertSmoke(panel.records.every((record) => typeof record.playerText === "string" && typeof record.gmText === "string"), "player-safe and GM text are separated");
+    assertSmoke(panel.revealed.every((record) => record.revealed === true && record.playerText && record.gmText), "panel tracks revealed player-safe hazards while retaining GM text for GM panel only");
     assertEqual(sideEffects.length, 0, "hazard helpers do not call chat, journal, combat, or socket APIs");
   } finally {
     globalThis.ChatMessage = prior.ChatMessage;
     globalThis.JournalEntry = prior.JournalEntry;
     globalThis.game = prior.game;
   }
-  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "no-side-effects"] };
+  return { ok: true, checked: ["threshold-2-draw", "threshold-3-draw", "threshold-4-draw", "duplicate-threshold-guard", "manual-draw", "manual-hold", "manual-reveal", "manual-activate", "manual-clear", "normalization-save-reopen", "safe-text-separation", "visibility-boundary", "no-side-effects"] };
 }
 
 export default runTravelV2HazardsSmokeChecks;
