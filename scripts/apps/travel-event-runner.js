@@ -53,7 +53,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, dismissTravelV2RunnerShipScar
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, spendTravelV2RunnerMomentumDowngrade, dismissTravelV2RunnerShipScar
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -112,6 +112,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-hazard-activate]",
   "[data-arcflight-travel-v2-hazard-clear]",
   "[data-arcflight-travel-v2-hazard-apply]",
+  "[data-arcflight-travel-v2-momentum-downgrade]",
   "[data-arcflight-travel-v2-ship-scar-apply]",
   "[data-arcflight-travel-v2-ship-scar-dismiss]",
   "[data-arcflight-travel-v2-ship-scar-repair]",
@@ -645,6 +646,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-activate")) return this.#updateTravelV2Hazard(target, "active");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-clear")) return this.#updateTravelV2Hazard(target, "cleared");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-apply")) return this.#applyTravelV2HazardToRound(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-momentum-downgrade")) return this.#spendTravelV2MomentumDowngrade(target);
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-apply")) return this.#applyTravelV2ShipScar(target);
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-dismiss")) return this.#dismissTravelV2ShipScar(target);
     if (target.hasAttribute("data-arcflight-travel-v2-ship-scar-repair")) return this.#repairTravelV2ShipScar(target);
@@ -753,6 +755,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.uiState.travelV2ShipScarResult = result;
     if (result.ok) this.session = result.session;
     this.statusMessage = result.ok ? "Ship Scar marked repaired on selected ship actor flags." : (result.blockedReasons?.[0] ?? result.error ?? "Could not repair Ship Scar.");
+    return this.render(true);
+  }
+
+
+  async #spendTravelV2MomentumDowngrade(target) {
+    const roundIndex = Number(target.dataset.roundIndex ?? this.session?.currentRoundIndex ?? 0);
+    const stationKey = target.dataset.stationKey ?? "";
+    const updated = spendTravelV2RunnerMomentumDowngrade(this.session, roundIndex, stationKey);
+    if (updated.ok) {
+      this.session = updated.session;
+      this.statusMessage = `Momentum spent: ${humanizeIdentifier(stationKey)} shifted from ${humanizeIdentifier(updated.fromResult)} to ${humanizeIdentifier(updated.toResult)}.`;
+      this.#refreshPlayersQuietly();
+    } else {
+      this.statusMessage = updated.errors?.[0] ?? "Could not spend Momentum.";
+    }
     return this.render(true);
   }
 

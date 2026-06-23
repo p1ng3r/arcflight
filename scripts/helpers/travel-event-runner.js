@@ -90,6 +90,115 @@ const DEFAULT_STATION_FOCUS_ABILITIES = Object.freeze({
   ])
 });
 
+
+const MOMENTUM_RECORD_STATUSES = Object.freeze(["earned", "spent", "pending", "dismissed"]);
+const MOMENTUM_SOURCE_LABELS = Object.freeze({ stationCritical: "Station Critical", hazardClearCritical: "Hazard Clear Critical", failureDowngrade: "Failure Downgrade", manual: "Manual" });
+const MOMENTUM_DOWNGRADE_MAP = Object.freeze({ criticalFailure: "failure", failure: "success" });
+
+export function normalizeTravelV2MomentumState(input = {}) {
+  const source = isPlainObject(input) ? input : {};
+  const rawRecords = [...(Array.isArray(source.records) ? source.records : []), ...(Array.isArray(source.pendingRecords) ? source.pendingRecords : [])];
+  const records = rawRecords.filter(isPlainObject).map((record, index) => {
+    const status = MOMENTUM_RECORD_STATUSES.includes(record.status) ? record.status : (Number(record.amount) < 0 ? "spent" : "earned");
+    const amount = Number.isFinite(Number(record.amount)) ? Number(record.amount) : 0;
+    return {
+      id: typeof record.id === "string" && record.id ? record.id : `momentum-${index + 1}`,
+      roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
+      stationKey: typeof record.stationKey === "string" ? record.stationKey : "",
+      source: typeof record.source === "string" ? record.source : "manual",
+      sourceLabel: MOMENTUM_SOURCE_LABELS[record.source] ?? humanizeIdentifier(record.source || "manual"),
+      amount,
+      status,
+      publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+      gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
+      createdAt: typeof record.createdAt === "string" ? record.createdAt : "",
+      resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+      target: isPlainObject(record.target) ? cloneData(record.target) : {}
+    };
+  });
+  const activeRecords = records.filter((record) => record.status !== "dismissed");
+  const earnedTotal = Number.isFinite(Number(source.earnedTotal)) ? Math.max(0, Number(source.earnedTotal)) : activeRecords.filter((record) => record.amount > 0 && record.status === "earned").reduce((sum, record) => sum + record.amount, 0);
+  const spentTotal = Number.isFinite(Number(source.spentTotal)) ? Math.max(0, Number(source.spentTotal)) : Math.abs(activeRecords.filter((record) => record.amount < 0 && record.status === "spent").reduce((sum, record) => sum + record.amount, 0));
+  const valueFromRecords = Math.max(0, earnedTotal - spentTotal);
+  const value = Number.isFinite(Number(source.value)) ? Math.max(0, Number(source.value)) : valueFromRecords;
+  return { version: 1, value, earnedTotal, spentTotal, records, pendingRecords: records.filter((record) => record.status === "pending") };
+}
+
+function momentumRecordId(parts = []) { return parts.map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).filter(Boolean).join(":"); }
+
+export function sanitizeTravelV2MomentumForPlayers(value = {}) {
+  const state = normalizeTravelV2MomentumState(value);
+  return { value: state.value, earnedTotal: state.earnedTotal, spentTotal: state.spentTotal, records: state.records.map(({ gmNote, target, ...record }) => ({ ...record, target: undefined })).slice(-5), helpText: "Momentum is earned from decisive Travel v2 play and can be spent by the GM to help the crew fight back against event pressure." };
+}
+
+export function prepareTravelV2MomentumPanelState(session = {}) {
+  const state = normalizeTravelV2MomentumState(session?.travelV2Momentum);
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const roundResult = session?.roundResults?.[roundIndex] ?? {};
+  const round = session?.event?.rounds?.[roundIndex] ?? {};
+  const spendOptions = Object.entries(roundResult.stationResults ?? {})
+    .filter(([stationKey, result]) => {
+      const action = normalizeTravelStationAction(roundResult.stationActions?.[stationKey], stationKey, round);
+      return action.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH && Object.hasOwn(MOMENTUM_DOWNGRADE_MAP, result);
+    })
+    .map(([stationKey, result]) => ({ type: "downgradeFailure", stationKey, roundIndex, fromResult: result, toResult: MOMENTUM_DOWNGRADE_MAP[result], label: `Spend 1: ${humanizeIdentifier(stationKey)} ${humanizeIdentifier(result)} → ${humanizeIdentifier(MOMENTUM_DOWNGRADE_MAP[result])}`, disabled: state.value < 1 }));
+  return { ...state, hasMomentum: state.value > 0, recentRecords: state.records.slice(-5).reverse(), hasRecords: state.records.length > 0, spendOptions, hasSpendOptions: spendOptions.length > 0, publicHelpText: "Earn Momentum on critical Travel v2 plays. Spend it to downgrade a station failure in the local session before final pressure is settled." };
+}
+
+export function awardTravelV2Momentum(session, recordData = {}, options = {}) {
+  const state = normalizeTravelV2MomentumState(session?.travelV2Momentum);
+  const amount = Math.max(1, Number.isFinite(Number(recordData.amount)) ? Number(recordData.amount) : 1);
+  const id = typeof recordData.id === "string" && recordData.id ? recordData.id : momentumRecordId(["momentum", recordData.source ?? "award", recordData.roundIndex ?? session?.currentRoundIndex ?? 0, recordData.stationKey ?? "party"]);
+  if (state.records.some((record) => record.id === id && record.status !== "dismissed")) return { ok: true, duplicate: true, errors: [], warnings: [], session: { ...cloneData(session), travelV2Momentum: state }, record: state.records.find((record) => record.id === id) };
+  const record = { id, roundIndex: Number.isInteger(Number(recordData.roundIndex)) ? Number(recordData.roundIndex) : (Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : null), stationKey: typeof recordData.stationKey === "string" ? recordData.stationKey : "", source: typeof recordData.source === "string" ? recordData.source : "manual", sourceLabel: MOMENTUM_SOURCE_LABELS[recordData.source] ?? humanizeIdentifier(recordData.source || "manual"), amount, status: recordData.status === "pending" ? "pending" : "earned", publicSummary: typeof recordData.publicSummary === "string" ? recordData.publicSummary : `The crew gains ${amount} Momentum.`, gmNote: typeof recordData.gmNote === "string" ? recordData.gmNote : "", createdAt: nowIso(options), resolvedAt: recordData.status === "pending" ? "" : nowIso(options), target: isPlainObject(recordData.target) ? cloneData(recordData.target) : {} };
+  const nextState = normalizeTravelV2MomentumState({ ...state, value: state.value + amount, earnedTotal: state.earnedTotal + amount, records: [...state.records, record] });
+  return { ok: true, duplicate: false, errors: [], warnings: [], session: { ...cloneData(session), travelV2Momentum: nextState, updatedAt: nowIso(options), summary: null }, record };
+}
+
+export function spendTravelV2Momentum(session, spendData = {}, options = {}) {
+  const state = normalizeTravelV2MomentumState(session?.travelV2Momentum);
+  const amount = Math.max(1, Number.isFinite(Number(spendData.amount)) ? Number(spendData.amount) : 1);
+  if (state.value < amount) return { ok: false, errors: ["Not enough Momentum."], warnings: [], session: cloneData(session) };
+  const id = typeof spendData.id === "string" && spendData.id ? spendData.id : momentumRecordId(["momentum-spend", spendData.source ?? "spend", spendData.roundIndex ?? session?.currentRoundIndex ?? 0, spendData.stationKey ?? "party", state.records.length + 1]);
+  const record = { id, roundIndex: Number.isInteger(Number(spendData.roundIndex)) ? Number(spendData.roundIndex) : (Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : null), stationKey: typeof spendData.stationKey === "string" ? spendData.stationKey : "", source: typeof spendData.source === "string" ? spendData.source : "manual", sourceLabel: MOMENTUM_SOURCE_LABELS[spendData.source] ?? humanizeIdentifier(spendData.source || "manual"), amount: -amount, status: "spent", publicSummary: typeof spendData.publicSummary === "string" ? spendData.publicSummary : `The crew spends ${amount} Momentum.`, gmNote: typeof spendData.gmNote === "string" ? spendData.gmNote : "", createdAt: nowIso(options), resolvedAt: nowIso(options), target: isPlainObject(spendData.target) ? cloneData(spendData.target) : {} };
+  const nextState = normalizeTravelV2MomentumState({ ...state, value: state.value - amount, spentTotal: state.spentTotal + amount, records: [...state.records, record] });
+  return { ok: true, errors: [], warnings: [], session: { ...cloneData(session), travelV2Momentum: nextState, updatedAt: nowIso(options), summary: null }, record };
+}
+
+function syncTravelV2MomentumAwardsForStationResult(session, roundIndex, stationKey, options = {}) {
+  const action = normalizeTravelStationAction(session?.roundResults?.[roundIndex]?.stationActions?.[stationKey], stationKey, session?.event?.rounds?.[roundIndex]);
+  const result = session?.roundResults?.[roundIndex]?.stationResults?.[stationKey];
+  if (result !== "criticalSuccess") return { ok: true, errors: [], warnings: [], session };
+  if (action.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH) {
+    return awardTravelV2Momentum(session, { id: momentumRecordId(["momentum", "station-critical", roundIndex, stationKey]), roundIndex, stationKey, source: "stationCritical", amount: 1, publicSummary: `${humanizeIdentifier(stationKey)} turns a critical success into +1 Momentum.`, gmNote: "Awarded for critical success on a main objective station action.", target: { result } }, options);
+  }
+  if (action.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE && action.hazardRecordId) {
+    const hazard = session?.travelV2Hazards?.records?.find?.((record) => record.id === action.hazardRecordId);
+    if (hazard?.status === "cleared") return awardTravelV2Momentum(session, { id: momentumRecordId(["momentum", "hazard-clear-critical", roundIndex, stationKey, action.hazardRecordId]), roundIndex, stationKey, source: "hazardClearCritical", amount: 1, publicSummary: `${humanizeIdentifier(stationKey)} clears ${hazard.name ?? "a hazard"} with a critical success for +1 Momentum.`, gmNote: "Awarded for a critical hazard response that cleared an active hazard.", target: { hazardRecordId: action.hazardRecordId, result } }, options);
+  }
+  return { ok: true, errors: [], warnings: [], session };
+}
+
+export function spendTravelV2MomentumToDowngradeStationFailure(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const roundResult = normalized.session.roundResults?.[index] ?? {};
+  const action = normalizeTravelStationAction(roundResult.stationActions?.[stationKey], stationKey, round);
+  if (action.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH) return { ok: false, errors: ["Momentum failure downgrade currently only supports main objective station actions."], warnings: [], session: normalized.session };
+  const result = roundResult.stationResults?.[stationKey];
+  const nextResult = MOMENTUM_DOWNGRADE_MAP[result];
+  if (!nextResult) return { ok: false, errors: ["Momentum can only downgrade failure or critical failure results."], warnings: [], session: normalized.session };
+  const spend = spendTravelV2Momentum(normalized.session, { id: momentumRecordId(["momentum-spend", "downgrade", index, stationKey, result, nextResult]), roundIndex: index, stationKey, source: "failureDowngrade", amount: 1, publicSummary: `${humanizeIdentifier(stationKey)} spends Momentum to shift ${humanizeIdentifier(result)} to ${humanizeIdentifier(nextResult)}.`, gmNote: `Session-local audit: ${stationKey} result changed from ${result} to ${nextResult}. No actor/item/chat/journal/combat mutation.`, target: { fromResult: result, toResult: nextResult } }, options);
+  if (!spend.ok) return spend;
+  const nextSession = cloneData(spend.session);
+  nextSession.roundResults[index].stationResults[stationKey] = nextResult;
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession, record: spend.record, fromResult: result, toResult: nextResult };
+}
+
 export function getDefaultStationFocusAbilities(stationKey, options = {}) {
   const configured = options.stationFocusAbilities?.[stationKey];
   return cloneData(Array.isArray(configured) ? configured : (DEFAULT_STATION_FOCUS_ABILITIES[stationKey] ?? []));
@@ -1594,7 +1703,8 @@ export function createTravelEventRunnerSession(event, options = {}) {
     stabilizeResolutionRecords: normalizeTravelStabilizeResolutionRecords(options.stabilizeResolutionRecords, options),
     reactionPrompts: normalizeTravelReactionPromptRecords(options.reactionPrompts, options),
     travelV2Hazards: normalizeTravelV2HazardDeckState(options.travelV2Hazards),
-    shipScars: normalizeTravelV2ShipScarsState(options.shipScars)
+    shipScars: normalizeTravelV2ShipScarsState(options.shipScars),
+    travelV2Momentum: normalizeTravelV2MomentumState(options.travelV2Momentum)
   };
 
   return { ok: true, errors: [], warnings: runnerValidation.warnings, session };
@@ -1643,6 +1753,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     reactionPrompts: normalizeTravelReactionPromptRecords(session.reactionPrompts, options),
     travelV2Hazards: normalizeTravelV2HazardDeckState(session.travelV2Hazards ?? session.hazards),
     shipScars: normalizeTravelV2ShipScarsState(session.shipScars ?? session.travelV2ShipScars),
+    travelV2Momentum: normalizeTravelV2MomentumState(session.travelV2Momentum),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
@@ -2199,6 +2310,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
     travelV2Narration: activeSession ? prepareTravelV2RoundNarration(activeSession, activeSession.currentRoundIndex, options) : null,
     travelV2ShipScars: prepareTravelV2ShipScarsPanelState(activeSession),
+    travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
     roundSummaryCard,
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
@@ -2586,7 +2698,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     publicShipScars,
     hasPendingReactionBacklash: Boolean(reactionBacklash),
     pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
-    currentRoundIndex: activeSession?.currentRoundIndex ?? -1
+    currentRoundIndex: activeSession?.currentRoundIndex ?? -1,
+    momentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum),
+    hasMomentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum).value > 0
   };
 }
 
@@ -2749,6 +2863,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     hasPublicHazards: publicHazards.length > 0,
     publicShipScars,
     hasPublicShipScars: publicShipScars.length > 0,
+    momentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum),
+    hasMomentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum).value > 0,
     partyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }),
     hasPartyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }).length > 0
   };
@@ -2799,6 +2915,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const reactionUpdate = syncTravelReactionPromptsForStationResult(nextSession, index, stationKey, options);
   if (!reactionUpdate.ok) return reactionUpdate;
   Object.assign(nextSession, reactionUpdate.session);
+  const momentumUpdate = syncTravelV2MomentumAwardsForStationResult(nextSession, index, stationKey, options);
+  if (!momentumUpdate.ok) return momentumUpdate;
+  Object.assign(nextSession, momentumUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -3632,4 +3751,5 @@ export function activateTravelV2RunnerHazard(session, hazardRecordId, options = 
 export function applyTravelV2RunnerHazardToRound(session, hazardRecordId, options = {}) { return applyTravelV2HazardToRound(session, hazardRecordId, options); }
 export function resolveTravelV2RunnerUnresolvedHazards(session, options = {}) { return resolveTravelV2UnresolvedHazardsForRound(session, options); }
 export function clearTravelV2RunnerHazard(session, hazardRecordId, options = {}) { return setTravelV2HazardStatus(session, hazardRecordId, "cleared", options); }
+export function spendTravelV2RunnerMomentumDowngrade(session, roundIndex, stationKey, options = {}) { return spendTravelV2MomentumToDowngradeStationFailure(session, roundIndex, stationKey, options); }
 export function dismissTravelV2RunnerShipScar(session, scarRecordId, options = {}) { return setTravelV2ShipScarSessionStatus(session, scarRecordId, "dismissed", options); }
