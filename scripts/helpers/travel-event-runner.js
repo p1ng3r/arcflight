@@ -2414,6 +2414,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   const publicHazards = prepareTravelV2HazardPanelState(activeSession).records
     .filter((record) => record.status === "active" && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText }));
+  const publicShipScars = prepareTravelV2ShipScarsPanelState(activeSession).records
+    .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status }));
   const pendingReactionPrompt = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
     record.stationKey === station.stationKey
     && record.roundIndex === activeSession?.currentRoundIndex
@@ -2424,22 +2427,23 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     && record.roundIndex === activeSession?.currentRoundIndex
     && record.backlashStatus === "pending"
   ) ?? null;
+  const stationFlow = buildTravelPlayerStationFlowState(station, normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records);
 
-  let statusKey = "waitingForGmRoll";
-  let resultStatusLabel = "Waiting for GM roll";
-  let waitingStateText = "Waiting for GM resolution";
+  let statusKey = stationFlow.statusKey;
+  let resultStatusLabel = stationFlow.stateLabel;
+  let waitingStateText = stationFlow.stateLabel;
   if (!station.hasAssignment) {
     statusKey = "needsAssignment";
     resultStatusLabel = "Needs assignment";
     waitingStateText = "Waiting for station assignment";
   } else if (!station.hasSelectedApproach) {
-    statusKey = "waitingForApproach";
-    resultStatusLabel = "Waiting for approach";
-    waitingStateText = "Waiting for GM to confirm approach";
+    statusKey = "choosing";
+    resultStatusLabel = "Choosing";
+    waitingStateText = "Choose an action card, then roll from this station card.";
   } else if (station.hasResult) {
-    statusKey = "resolved";
-    resultStatusLabel = "Resolved";
-    waitingStateText = station.resultLabel || "Resolved";
+    statusKey = "rolled";
+    resultStatusLabel = "Rolled";
+    waitingStateText = "Waiting for GM pressure resolution";
   }
 
   return {
@@ -2486,10 +2490,67 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     pendingReactionPromptAbilityLabel: pendingReactionPrompt?.abilityLabel ?? "",
     hasPublicHazards: publicHazards.length > 0,
     publicHazards,
+    hasPublicShipScars: publicShipScars.length > 0,
+    publicShipScars,
     hasPendingReactionBacklash: Boolean(reactionBacklash),
     pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1
   };
+}
+
+
+function buildTravelPlayerStationFlowState(station = {}, reactionRecords = []) {
+  const pendingReaction = reactionRecords.some((record) => record.stationKey === station.stationKey && record.status === "pending");
+  let key = "waiting";
+  let label = "Waiting";
+  if (pendingReaction) { key = "reaction"; label = "Reaction Available"; }
+  else if (station.hasResult) { key = "rolled"; label = "Rolled / Waiting on GM"; }
+  else if (!station.hasAssignment) { key = "waiting"; label = "Waiting"; }
+  else if (!station.hasSelectedApproach) { key = "choosing"; label = "Choosing"; }
+  else if (station.canRollStationCheck) { key = "ready"; label = "Ready to Roll"; }
+  else { key = "waitingOnGm"; label = "Waiting on GM"; }
+  return {
+    statusKey: key,
+    stateLabel: label,
+    partyRowClass: `arcflight-party-row--${key === "waitingOnGm" ? "waiting" : key === "reaction" ? "ready" : key}`,
+    stationConsoleLabel: `${station.stationName || humanizeIdentifier(station.stationKey)} — ${label}`
+  };
+}
+
+function buildTravelPlayerPressureGauges(session = {}) {
+  const configs = [
+    { key: "strain", icon: "🔥", label: "Strain", description: "Arkengine stress and magical system pressure" },
+    { key: "lifeveil", icon: "🌬️", label: "Lifeveil", description: "Breathable air / protective veil stability" },
+    { key: "morale", icon: "🎭", label: "Morale", description: "Crew confidence and cohesion" },
+    { key: "hull", icon: "⚓", label: "Hull", description: "Physical ship integrity pressure" },
+    { key: "supplies", icon: "📦", label: "Supplies", description: "Food, parts, and voyage stores pressure" }
+  ];
+  return configs.map((config) => {
+    const rawValue = Number(session?.pressure?.[config.key]?.value ?? session?.pressure?.[config.key] ?? 0) || 0;
+    const value = Math.max(0, Math.min(4, rawValue));
+    const statusBand = value >= 4 ? "Critical" : (value >= 3 ? "Dangerous" : (value >= 2 ? "Rising" : "Calm"));
+    return {
+      ...config,
+      value,
+      valueLabel: `${value} / 4`,
+      statusBand,
+      stateClass: value >= 4 ? "danger" : (value >= 3 ? "strong-warning" : (value >= 2 ? "warning" : (value >= 1 ? "active" : "calm"))),
+      needleAngle: -60 + (value * 30),
+      fillPercent: value * 25,
+      tooltip: `${config.label}: ${config.description}. ${statusBand}.`
+    };
+  });
+}
+
+function buildTravelPlayerPartyAlerts({ stations = [], publicHazards = [], publicShipScars = [], reactionRecords = [] } = {}) {
+  const alerts = [];
+  const waitingCount = stations.filter((station) => !station.hasResult).length;
+  if (waitingCount > 0) alerts.push({ tone: "waiting", icon: "⚠️", text: `${waitingCount} station ${waitingCount === 1 ? "roll" : "rolls"} waiting.` });
+  if (reactionRecords.some((record) => record.status === "pending")) alerts.push({ tone: "attention", icon: "🧭", text: "Reaction prompt available." });
+  if (publicHazards.length > 0) alerts.push({ tone: "attention", icon: "⚠️", text: `${publicHazards.length} hazard ${publicHazards.length === 1 ? "card" : "cards"} revealed.` });
+  if (publicShipScars.length > 0) alerts.push({ tone: "danger", icon: "🚨", text: `${publicShipScars.length} Ship Scar ${publicShipScars.length === 1 ? "is" : "are"} revealed.` });
+  if (stations.length > 0 && waitingCount === 0) alerts.push({ tone: "resolved", icon: "✅", text: "Round rolls resolved. GM is reviewing pressure." });
+  return alerts;
 }
 
 export function buildTravelPlayerStationOrderCommitData(state = {}, optionKey = "") {
@@ -2518,18 +2579,19 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       hasStations: false
     };
   }
-  return {
-    hasSession: true,
-    sessionKey: normalized.session?.key ?? "",
-    eventName: overlayState.eventName,
-    roundLabel: overlayState.roundLabel,
-    roundTitle: overlayState.roundTitle,
-    currentRoundIndex: overlayState.currentRoundIndex,
-    vignette: overlayState.vignette,
-    stations: (overlayState.stations ?? []).map((station) => {
+  const publicHazards = prepareTravelV2HazardPanelState(normalized.session).records
+    .filter((record) => record.status === "active" && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, category: record.category, playerText: record.playerText, status: record.status }));
+  const publicShipScars = prepareTravelV2ShipScarsPanelState(normalized.session).records
+    .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
+    .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status, statusLabel: record.statusLabel }));
+  const reactionRecords = normalizeTravelReactionPromptRecords(normalized.session?.reactionPrompts, options).records;
+  const stations = (overlayState.stations ?? []).map((station) => {
       const focusSource = prepareTravelStationFocusState(normalized.session, station.stationKey, normalized.session?.currentRoundIndex ?? 0, options);
       const { focusOptions, focusCapacity, focusRemaining } = focusSource;
+      const stationFlow = buildTravelPlayerStationFlowState(station, reactionRecords);
       return {
+      ...stationFlow,
       stationKey: station.stationKey,
       stationName: station.stationName,
       assignedActorName: station.assignedActorName,
@@ -2576,8 +2638,27 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       canChooseApproach: false,
       permissionReason: "Waiting for board permissions."
       };
-    }),
-    hasStations: (overlayState.stations ?? []).length > 0
+    });
+  return {
+    hasSession: true,
+    sessionKey: normalized.session?.key ?? "",
+    eventName: overlayState.eventName,
+    roundLabel: overlayState.roundLabel,
+    roundTitle: overlayState.roundTitle,
+    currentRoundIndex: overlayState.currentRoundIndex,
+    currentPhaseLabel: overlayState.roundCompletionState ? humanizeIdentifier(overlayState.roundCompletionState) : "Travel Round",
+    shipName: normalized.session?.ship?.actorName || normalized.session?.ship?.name || "Unknown Ship",
+    voyageStatus: normalized.session?.status === "completed" ? "Completed" : "In Progress",
+    vignette: overlayState.vignette,
+    stations,
+    hasStations: stations.length > 0,
+    pressureGauges: buildTravelPlayerPressureGauges(normalized.session),
+    publicHazards,
+    hasPublicHazards: publicHazards.length > 0,
+    publicShipScars,
+    hasPublicShipScars: publicShipScars.length > 0,
+    partyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }),
+    hasPartyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }).length > 0
   };
 }
 

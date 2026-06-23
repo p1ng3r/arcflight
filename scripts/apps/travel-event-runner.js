@@ -96,6 +96,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-runner-reset-assignment]",
   "[data-arcflight-open-travel-scene-overlay]",
   "[data-arcflight-runner-send-mission-board]",
+  "[data-arcflight-guided-action]",
   "[data-arcflight-travel-v2-pressure-apply]",
   "[data-arcflight-travel-v2-pressure-correct]",
   "[data-arcflight-travel-v2-round-finalize]",
@@ -275,6 +276,15 @@ function defaultSelectedEventId(options = {}) {
   return state.library?.selectedEventId ?? "";
 }
 
+function normalizeGuidedRoundOutcomeKey(value) {
+  if (["criticalSuccess", "criticalRoundSuccess", "critical-success", "3", 3].includes(value)) return "criticalSuccess";
+  if (["success", "roundSuccess", "dominantSuccess", "2", 2].includes(value)) return "success";
+  if (["mixed", "narrowRoundSuccess"].includes(value)) return "mixed";
+  if (["failure", "roundFailure", "dominantFailure", "1", 1].includes(value)) return "failure";
+  if (["criticalFailure", "criticalRoundFailure", "critical-failure", "catastrophicFailure", "0", 0].includes(value)) return "criticalFailure";
+  return "mixed";
+}
+
 function getRunnerPressureSelectedOutcomeKey(source = {}) {
   const dataset = source?.dataset ?? source ?? {};
   const rawValue = dataset.selectedOutcomeKey
@@ -383,6 +393,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       currentSessionCollapsed: options.currentSessionCollapsed !== false,
       sessionActionsExpanded: options.sessionActionsExpanded === true,
       compactRunner: options.compactRunner === true,
+      dismissedGuidedQueueKeys: Array.isArray(options.dismissedGuidedQueueKeys) ? options.dismissedGuidedQueueKeys : [],
       scrollTop: 0,
       scrollSelector: "",
       travelV2PressureApplicationResult: null,
@@ -402,7 +413,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     classes: ["arcflight", "arcflight-travel-event-runner"],
     tag: "section",
     position: { width: 820, height: 720 },
-    window: { title: "Travel Event Runner", resizable: true }
+    window: { title: "Arcflight Travel Command", resizable: true }
   };
 
   static PARTS = {
@@ -520,6 +531,17 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     updateActiveTravelSceneOverlayContext({ session: this.session, actor: this.#getSelectedShipActor() }, { render: true });
     this.#applyCompactPosition();
     this.#restoreScrollPosition();
+    this.#maybeOpenGuidedRoundResolution(context?.state);
+  }
+
+  #maybeOpenGuidedRoundResolution(state) {
+    if (!state?.hasSession || state.isCompleted) return;
+    const key = `${state.session?.key ?? "session"}:${state.currentRoundNumber}:round-resolution`;
+    const guided = state.guidedBridge ?? {};
+    const ready = guided.stationSummary?.total > 0 && guided.stationSummary?.waiting === 0 && state.travelV2PreviewPanel?.pressureApplication?.alreadyApplied !== true;
+    if (!ready || this.uiState.lastGuidedRoundResolutionKey === key) return;
+    this.uiState.lastGuidedRoundResolutionKey = key;
+    setTimeout(() => this.#showTravelV2RoundResolutionDialog({ finalize: false }), 0);
   }
 
   async #onRunnerChange(event) {
@@ -601,6 +623,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-reset-assignment")) return this.#resetStationAssignment(target);
     if (target.hasAttribute("data-arcflight-open-travel-scene-overlay")) return this.#openTravelSceneOverlay();
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
+    if (target.hasAttribute("data-arcflight-guided-action")) return this.#runGuidedAction(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-apply")) return this.#applyTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-correct")) return this.#correctTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
@@ -629,6 +652,60 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-reaction-reroll-result")) return this.#resolveReaction(target, "reroll");
     if (target.hasAttribute("data-arcflight-reaction-backlash-apply")) return this.#resolveReaction(target, "applyBacklash");
     if (target.hasAttribute("data-arcflight-reaction-backlash-dismiss")) return this.#resolveReaction(target, "dismissBacklash");
+  }
+
+  async #runGuidedAction(target) {
+    const action = target.dataset.arcflightGuidedAction ?? "";
+    const queueKey = target.dataset.queueKey ?? "";
+    if (action === "dismiss") {
+      if (queueKey && !this.uiState.dismissedGuidedQueueKeys.includes(queueKey)) this.uiState.dismissedGuidedQueueKeys = [...this.uiState.dismissedGuidedQueueKeys, queueKey];
+      this.statusMessage = "Guided queue item dismissed for this local runner view.";
+      return this.render(true);
+    }
+    if (action === "send-players") return this.#sendPlayerMissionBoard();
+    if (action === "start") return this.#focusGuidedDrawer("arcflight-guided-session-setup");
+    if (action === "stations") return this.#focusGuidedDrawer("arcflight-guided-station-console");
+    if (action === "reactions") return this.#focusGuidedDrawer("arcflight-guided-reaction-console");
+    if (action === "round-review") return this.#showTravelV2RoundResolutionDialog({ finalize: false });
+    if (action === "round-apply") return this.#applyGuidedSuggestedPressure();
+    if (action === "round-details") return this.#focusGuidedDrawer("arcflight-guided-round-flow");
+    if (action === "hazards") return this.#focusGuidedDrawer("arcflight-guided-hazard-deck");
+    if (action === "ship-scars") return this.#focusGuidedDrawer("arcflight-guided-ship-scars-deck");
+    if (action === "actor-apply") return this.#focusGuidedDrawer("arcflight-guided-actor-apply");
+    if (action === "followups") return this.#focusGuidedDrawer("arcflight-guided-followups");
+    if (action === "devtools") return this.#focusGuidedDrawer("arcflight-guided-devtools");
+    if (action === "completed") return this.#focusGuidedDrawer("arcflight-guided-completed");
+    return this.#focusGuidedDrawer("arcflight-guided-command-bridge");
+  }
+
+  #focusGuidedDrawer(id) {
+    const safeId = typeof globalThis.CSS?.escape === "function" ? globalThis.CSS.escape(id) : String(id).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+    const element = this.element?.querySelector?.(`#${safeId}`);
+    if (element?.tagName?.toLowerCase?.() === "details") element.open = true;
+    element?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    element?.focus?.();
+    return element;
+  }
+
+  async #applyGuidedSuggestedPressure() {
+    const state = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: this.session,
+      selectedEventId: this.selectedEventId,
+      selectedSessionKey: this.selectedSessionKey,
+      actor: this.#getSelectedShipActor(),
+      uiState: this.uiState,
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled()
+    });
+    const suggestedOutcomeKey = normalizeGuidedRoundOutcomeKey(state.roundSummaryCard?.roundOutcomeKey);
+    const preferred = state.travelV2PreviewPanel?.rows?.find((row) => row.outcomeKey === suggestedOutcomeKey && !row.pressureApplyDisabled)
+      ?? state.travelV2PreviewPanel?.rows?.find((row) => row.isEffectiveAppliedOutcome)
+      ?? state.travelV2PreviewPanel?.rows?.find((row) => !row.pressureApplyDisabled)
+      ?? null;
+    if (!preferred?.outcomeKey) {
+      this.statusMessage = "No suggested pressure outcome is currently available to apply.";
+      return this.render(true);
+    }
+    return this.#applyTravelV2Pressure({ dataset: { arcflightTravelV2PressureApply: preferred.outcomeKey } });
   }
 
   async #applyTravelV2ShipScar(target) {
@@ -729,11 +806,56 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       this.statusMessage = `Applied Travel v2 pressure outcome: ${humanizeIdentifier(update.result.selectedOutcomeKey)}.`;
+      this.#showTravelV2PressureAppliedDialog(update.result);
       return this.render(true);
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure application was blocked.";
     return update.shouldRerender ? this.render(true) : update;
+  }
+
+  #showTravelV2PressureAppliedDialog(result = {}) {
+    const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof dialogV2?.wait !== "function") return;
+    const pressureResult = result.pressureResult ?? {};
+    const applicationRecord = result.applicationRecord ?? {};
+    const changes = Array.isArray(pressureResult.changes) ? pressureResult.changes : [];
+    const hazards = [
+      ...(Array.isArray(pressureResult.hazardDraws) ? pressureResult.hazardDraws : []),
+      ...(Array.isArray(result.hazardDraws) ? result.hazardDraws : [])
+    ];
+    const scars = [
+      ...(Array.isArray(pressureResult.shipScarTriggers) ? pressureResult.shipScarTriggers : []),
+      ...(Array.isArray(result.shipScarDraws) ? result.shipScarDraws : [])
+    ];
+    const changeRows = changes.map((change) => {
+      const label = humanizeIdentifier(change.pressureType ?? change.key ?? change.track ?? "Pressure");
+      const before = change.before ?? change.from ?? "?";
+      const after = change.after ?? change.to ?? "?";
+      const amount = Number.isFinite(Number(change.amount)) ? ` (${Number(change.amount) >= 0 ? "+" : ""}${Number(change.amount)})` : "";
+      return `<li><strong>${escapeHtml(label)}</strong>: ${escapeHtml(before)} → ${escapeHtml(after)}${escapeHtml(amount)}</li>`;
+    }).join("") || `<li>Application record created for ${escapeHtml(humanizeIdentifier(applicationRecord.outcomeKey ?? result.selectedOutcomeKey ?? "selected outcome"))}.</li>`;
+    const hazardRows = hazards.map((draw) => `<li>${escapeHtml(draw.name ?? draw.hazardName ?? humanizeIdentifier(draw.pressureType ?? "Hazard"))}${draw.threshold ? ` — threshold ${escapeHtml(draw.threshold)}` : ""}${draw.count ? ` ×${escapeHtml(draw.count)}` : ""}</li>`).join("") || "<li>No Hazard cards drawn.</li>";
+    const scarRows = scars.map((scar) => `<li>${escapeHtml(scar.name ?? scar.scarName ?? humanizeIdentifier(scar.pressureType ?? "Ship Scar"))}${scar.overflowAmount ? ` — overflow ${escapeHtml(scar.overflowAmount)}` : ""}</li>`).join("") || "<li>No Ship Scar candidates drawn.</li>";
+    const nextAction = (hazards.length ? "Review Hazard Deck" : (scars.length ? "Review Ship Scars Deck" : "Continue the round flow"));
+    setTimeout(async () => {
+      try {
+        const action = await dialogV2.wait({
+          window: { title: "Pressure Applied" },
+          content: `<section class="arcflight-travel-pressure-applied"><h2>Pressure Applied</h2><h3>Track Changes</h3><ul>${changeRows}</ul><h3>Thresholds / Hazard Draws</h3><ul>${hazardRows}</ul><h3>Ship Scar Candidates</h3><ul>${scarRows}</ul><p><strong>Next required action:</strong> ${escapeHtml(nextAction)}</p><p>Actor writes still require explicit GM Apply.</p></section>`,
+          buttons: [
+            ...(hazards.length ? [{ action: "hazards", label: "Review Hazard" }] : []),
+            ...(scars.length ? [{ action: "shipScars", label: "Review Ship Scar" }] : []),
+            { action: "continue", label: "Continue", default: true }
+          ],
+          close: () => "continue"
+        });
+        if (action === "hazards") this.#focusGuidedDrawer("arcflight-guided-hazard-deck");
+        if (action === "shipScars") this.#focusGuidedDrawer("arcflight-guided-ship-scars-deck");
+      } catch (_error) {
+        // Dialog dismissal should not block pressure application.
+      }
+    }, 0);
   }
 
   async #correctTravelV2Pressure(target) {
@@ -805,9 +927,27 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       content: renderTravelV2RoundResolutionDialogHtml(state),
       buttons: finalize
         ? [{ action: "finalize", label: "Finalize Round", default: true }, { action: "cancel", label: "Cancel" }]
-        : [{ action: "close", label: "Close", default: true }],
+        : [
+          { action: "applyPressure", label: "Apply Suggested Pressure", default: true },
+          { action: "editPressure", label: "Edit Pressure" },
+          { action: "skipPressure", label: "Skip Pressure" },
+          { action: "details", label: "Open Details" },
+          { action: "cancel", label: "Cancel" }
+        ],
       close: () => null
     });
+    if (result === "applyPressure") {
+      await this.#applyGuidedSuggestedPressure();
+      return false;
+    }
+    if (result === "editPressure" || result === "details") {
+      this.#focusGuidedDrawer("arcflight-guided-round-flow");
+      return false;
+    }
+    if (result === "skipPressure") {
+      this.statusMessage = "Suggested pressure skipped for now; use the Action Queue to review or apply it later.";
+      return false;
+    }
     const confirmed = result === "finalize" || result === "close";
     if (!confirmed && finalize) this.statusMessage = "Round finalization cancelled after resolution review.";
     return Boolean(confirmed);

@@ -1,14 +1,14 @@
-<div class="arcflight-travel-runner-mvp">
+<div class="arcflight-travel-runner-mvp arcflight-travel-runner-guided">
   <header class="arcflight-travel-runner-mvp__header">
     <div class="arcflight-travel-runner-mvp__header-row">
-      <h1>Travel Event Runner MVP</h1>
+      <h1>Arcflight Travel Command</h1>
       <div class="arcflight-travel-runner-mvp__actions">
         <button type="button" data-arcflight-runner-toggle-compact>{{#if state.compactRunner}}Expand Runner{{else}}Compact Runner{{/if}}</button>
         <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
         {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send/Refresh Player Mission Board</button>{{/if}}
       </div>
     </div>
-    {{#unless state.compactRunner}}<p>{{hardBoundaryHint}}</p>{{/unless}}
+    {{#unless state.compactRunner}}<span class="arcflight-travel-safety-chip" title="No automatic actor/item/chat/journal/combat mutation. Actor changes require explicit GM Apply.">Manual GM Apply only</span>{{/unless}}
     <p class="arcflight-sheet__hint"><strong>Status:</strong> {{statusMessage}}</p>
     {{#if state.compactRunner}}
       <div class="arcflight-travel-runner-mvp__compact-summary">
@@ -18,7 +18,146 @@
     {{/if}}
   </header>
 
+
+  {{#unless state.hasSession}}
+  <section id="arcflight-guided-command-bridge" class="arcflight-travel-command-bridge arcflight-needs-attention" aria-label="Command Bridge">
+    <div class="arcflight-travel-command-bridge__astrolabe" aria-hidden="true"></div>
+    <header class="arcflight-travel-command-bridge__header">
+      <div>
+        <p class="arcflight-travel-command-bridge__eyebrow">🧭 Command Bridge</p>
+        <h2>Start Travel Session</h2>
+        <div class="arcflight-travel-command-bridge__tags"><span>No active event</span><span>Choose published event</span><span>Select PF2E vehicle ship</span></div>
+      </div>
+      <button type="button" data-arcflight-start-travel-event-runner {{#unless state.startupDiagnostics.canStart}}disabled{{/unless}}>Start Travel Session</button>
+    </header>
+    <article class="arcflight-travel-next-action arcflight-needs-attention"><span class="arcflight-travel-next-action__icon">🧭</span><div><p>NEXT REQUIRED ACTION</p><h3>Start Travel Session</h3><span>Choose a published finalized travel event and selected ship, then begin the local runner session.</span></div><button type="button" data-arcflight-start-travel-event-runner {{#unless state.startupDiagnostics.canStart}}disabled{{/unless}}>Begin Travel</button></article>
+    <div class="arcflight-travel-start-steps">
+      <section><strong>Step 1: Choose Published Event</strong>{{#if state.hasPublishedEvents}}<label class="arcflight-sheet__field"><span>Published Event</span><select data-arcflight-runner-event-select>{{#each state.library.entries}}<option value="{{id}}" {{#if selected}}selected{{/if}} {{#if isMalformed}}disabled{{/if}}>{{name}} — {{categoryLabel}}{{#if isMalformed}} (malformed){{/if}}</option>{{/each}}</select></label>{{else}}<p class="arcflight-sheet__hint">No published finalized travel event exists yet.</p>{{/if}}</section>
+      <section><strong>Step 2: Choose Ship / PF2E Vehicle</strong><p class="arcflight-sheet__hint">The start dialog will ask for the ship/PF2E vehicle before creating the local runner session.</p></section>
+      <section><strong>Step 3: Start Local Runner Session</strong><p class="arcflight-sheet__hint">{{#if state.startupDiagnostics.canStart}}Ready to begin.{{else}}Blocked: {{#each state.startupDiagnostics.issues}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}{{/if}}</p></section>
+    </div>
+  </section>
+  {{/unless}}
+
+  {{#if state.hasSession}}
+  <section id="arcflight-guided-command-bridge" class="arcflight-travel-command-bridge arcflight-needs-attention" aria-label="Command Bridge">
+    <div class="arcflight-travel-command-bridge__astrolabe" aria-hidden="true"></div>
+    <header class="arcflight-travel-command-bridge__header">
+      <div>
+        <p class="arcflight-travel-command-bridge__eyebrow">🧭 Command Bridge</p>
+        <h2>{{state.event.name}}</h2>
+        <div class="arcflight-travel-command-bridge__tags">
+          <span>Event Level: {{state.guidedBridge.tags.level}}</span>
+          <span>Severity: {{state.guidedBridge.tags.severity}}</span>
+          <span>Category: {{state.guidedBridge.tags.category}}</span>
+          <span>Ship: {{#if state.session.ship.actorName}}{{state.session.ship.actorName}}{{else}}Unassigned{{/if}}</span>
+          <span>Round {{state.currentRoundNumber}}</span>
+          <span>Phase: {{state.roundSegmentState.currentSegmentLabel}}</span>
+          <span>Status: {{state.session.status}}</span>
+        </div>
+      </div>
+      <button type="button" data-arcflight-runner-send-mission-board>Send Station Roll Cards</button>
+    </header>
+
+    <article class="arcflight-travel-next-action arcflight-{{state.guidedBridge.nextRequiredAction.tone}}">
+      <span class="arcflight-travel-next-action__icon">{{state.guidedBridge.nextRequiredAction.icon}}</span>
+      <div>
+        <p>NEXT REQUIRED ACTION</p>
+        <h3>{{state.guidedBridge.nextRequiredAction.title}}</h3>
+        <span>{{state.guidedBridge.nextRequiredAction.detail}}</span>
+      </div>
+      {{#if state.guidedBridge.nextRequiredAction.buttons}}{{#each state.guidedBridge.nextRequiredAction.buttons}}<button type="button" data-arcflight-guided-action="{{action}}" data-queue-key="{{../key}}">{{label}}</button>{{/each}}{{else}}<button type="button" data-arcflight-guided-action="round-review">Open Details</button>{{/if}}
+    </article>
+
+    <div class="arcflight-travel-guided-grid">
+      <section id="arcflight-guided-round-flow" class="arcflight-travel-guided-panel" aria-label="Round Flow" tabindex="-1">
+        <h3>🧭 Round Flow</h3>
+        <p>{{state.roundSegmentState.currentSegmentLabel}} · {{state.currentRoundTitle}}</p>
+        <div class="arcflight-travel-runner-mvp__actions"><button type="button" data-arcflight-runner-previous-phase>Previous Phase</button><button type="button" data-arcflight-runner-next-phase>Next Phase</button></div>
+      </section>
+      <section id="arcflight-guided-station-console" class="arcflight-travel-guided-panel" aria-label="Station Console" tabindex="-1">
+        <h3>⚙️ Station Console</h3>
+        <p>{{state.guidedBridge.stationSummary.resolved}}/{{state.guidedBridge.stationSummary.total}} resolved · {{state.guidedBridge.stationSummary.waiting}} waiting · {{state.guidedBridge.stationSummary.critical}} critical</p>
+        {{#if state.hasStations}}
+          <div class="arcflight-travel-compact-stations">
+            {{#each state.stations}}
+              <article class="arcflight-travel-card {{#if result}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
+                <strong>{{stationName}} — {{resultLabel}}</strong><span>{{#if result}}Rolled{{else}}{{#if stationOrderCommitted}}Ready to Roll{{else}}Choosing{{/if}}{{/if}}</span>
+                <p>{{assignedActorName}} · {{selectedActionLabel}}{{#if selectedStationOptionLabel}} · {{selectedStationOptionLabel}}{{/if}}</p>
+                <div class="arcflight-travel-runner-mvp__result-buttons">
+                  {{#each resultOptions}}<button type="button" data-arcflight-runner-result data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{../stationKey}}" data-result="{{value}}" {{#if ../../state.isCompleted}}disabled{{/if}} class="{{#if selected}}arcflight-travel-runner-mvp__result-button--selected{{/if}}">{{label}}</button>{{/each}}
+                </div>
+              </article>
+            {{/each}}
+          </div>
+        {{/if}}
+      </section>
+      <section class="arcflight-travel-guided-panel" aria-label="Pressure & Resources">
+        <h3>🔥 Pressure & Resources</h3>
+        <div class="arcflight-pressure-gauge-board">
+          {{#each state.guidedBridge.pressureGauges}}
+            <article class="arcflight-pressure-gauge arcflight-pressure-gauge--{{stateClass}}" title="{{tooltip}}" style="--arcflight-gauge-angle: {{needleAngle}}deg; --arcflight-gauge-fill: {{fillPercent}}%;">
+              <div class="arcflight-pressure-gauge__meta"><span class="arcflight-pressure-gauge__label">{{icon}} {{label}}</span><strong class="arcflight-pressure-gauge__value">{{valueLabel}}</strong></div>
+              <div class="arcflight-pressure-gauge__face" aria-label="{{label}} pressure {{valueLabel}}">
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--0">0</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--1">1</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--2">2</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--3">3</span>
+                <span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--4">4</span>
+                <span class="arcflight-pressure-gauge__needle"></span>
+              </div>
+              <p class="arcflight-pressure-gauge__description">{{description}}</p>
+              {{#if isOverflow}}<p class="arcflight-pressure-gauge__warning">Ship Scar Risk</p>{{else}}{{#if isDanger}}<p class="arcflight-pressure-gauge__warning">Maximum Pressure</p>{{else}}{{#if isWarning}}<p class="arcflight-pressure-gauge__warning">Threshold Warning</p>{{/if}}{{/if}}{{/if}}
+            </article>
+          {{/each}}
+        </div>
+      </section>
+    </div>
+
+    <section class="arcflight-travel-action-queue" aria-label="Action Queue">
+      <h3>⚠️ Action Queue</h3>
+      {{#if state.guidedBridge.hasActionQueue}}
+        {{#each state.guidedBridge.actionQueue}}
+          <article class="arcflight-travel-action-queue__item arcflight-{{tone}}">
+            <strong>{{icon}} {{title}}</strong><p>{{detail}}</p>
+            <div>{{#each buttons}}<button type="button" data-arcflight-guided-action="{{action}}" data-queue-key="{{../key}}">{{label}}</button>{{/each}}</div>
+          </article>
+        {{/each}}
+      {{else}}<p class="arcflight-resolved">No GM attention items. Continue the voyage when ready.</p>{{/if}}
+    </section>
+
+    <div class="arcflight-travel-guided-drawers">
+      <details id="arcflight-guided-reaction-console" class="arcflight-card-drawer" tabindex="-1"><summary>🧭 Reaction Console <span>{{state.guidedBridge.drawers.reactions}}</span></summary><p>Resolve Navigator Hard Correction and other pending reactions in the advanced Reaction Console drawer below.</p></details>
+      <details id="arcflight-guided-hazard-deck" class="arcflight-card-drawer arcflight-card-stack" tabindex="-1"><summary>⚠️ Hazard Deck <span>{{state.guidedBridge.drawers.hazards}}</span></summary>
+        {{#if state.guidedBridge.hazards.hasAny}}
+          <h4>Pending Hazard Cards</h4>{{#each state.guidedBridge.hazards.pending}}<article class="arcflight-travel-card arcflight-pending-card"><strong>{{name}}</strong><p>{{playerText}}</p><p class="arcflight-gm-only">🔒 {{gmText}}</p><button type="button" data-arcflight-travel-v2-hazard-activate="{{id}}">Activate</button><button type="button" data-arcflight-guided-action="hazards">Keep Pending</button><button type="button" data-arcflight-travel-v2-hazard-clear="{{id}}">Clear</button><button type="button" data-arcflight-guided-action="send-players">Send Player-Safe Card</button></article>{{else}}<p class="arcflight-sheet__hint">No pending hazard cards.</p>{{/each}}
+          <h4>Active Hazard Cards</h4>{{#each state.guidedBridge.hazards.active}}<article class="arcflight-travel-card arcflight-player-safe"><strong>{{name}}</strong><p>{{playerText}}</p><button type="button" data-arcflight-travel-v2-hazard-clear="{{id}}">Clear</button><button type="button" data-arcflight-guided-action="send-players">Send Player-Safe Card</button></article>{{else}}<p class="arcflight-sheet__hint">No active hazard cards.</p>{{/each}}
+          <h4>Cleared Hazard Cards</h4>{{#each state.guidedBridge.hazards.cleared}}<article class="arcflight-travel-card arcflight-resolved"><strong>{{name}}</strong><p>{{playerText}}</p></article>{{else}}<p class="arcflight-sheet__hint">No cleared hazard cards.</p>{{/each}}
+        {{else}}<p class="arcflight-sheet__hint">Hazard Deck has no drawn cards yet.</p>{{/if}}
+      </details>
+      <details id="arcflight-guided-ship-scars-deck" class="arcflight-card-drawer arcflight-card-stack arcflight-ship-scar-drawer" tabindex="-1"><summary>🚨 Ship Scars Deck <span>{{state.guidedBridge.drawers.shipScars}}</span></summary>
+        <p class="arcflight-danger-attention">Applying a Ship Scar writes to the selected ship actor flags only after explicit GM Apply.</p>
+        {{#if state.guidedBridge.shipScars.hasAny}}
+          <h4>Pending Scar Cards</h4>{{#each state.guidedBridge.shipScars.pending}}<article class="arcflight-travel-card arcflight-danger-attention"><strong>{{name}}</strong><p>{{playerText}}</p><p><strong>Repair:</strong> {{repairRequirement}}</p><p><strong>Downtime/Cost:</strong> {{downtimeRequirement}} {{costRequirement}}</p><p>{{roleplayHook}}</p><p class="arcflight-gm-only">🔒 {{gmText}}</p><button type="button" data-arcflight-travel-v2-ship-scar-apply="{{id}}">Apply Ship Scar</button><button type="button" data-arcflight-guided-action="ship-scars">Hold Pending</button><button type="button" data-arcflight-travel-v2-ship-scar-dismiss="{{id}}">Dismiss</button><button type="button" data-arcflight-guided-action="send-players">Send Player-Safe Reveal</button></article>{{else}}<p class="arcflight-sheet__hint">No pending Ship Scar cards.</p>{{/each}}
+          <h4>Applied Scar Cards</h4>{{#each state.guidedBridge.shipScars.applied}}<article class="arcflight-travel-card arcflight-player-safe"><strong>{{name}}</strong><p>{{playerText}}</p><button type="button" data-arcflight-travel-v2-ship-scar-repair="{{id}}">Mark Repaired</button><button type="button" data-arcflight-guided-action="send-players">Send Player-Safe Reveal</button></article>{{else}}<p class="arcflight-sheet__hint">No applied Ship Scars.</p>{{/each}}
+          <h4>Repaired / Dismissed Scar Cards</h4>{{#each state.guidedBridge.shipScars.resolved}}<article class="arcflight-travel-card arcflight-resolved"><strong>{{name}}</strong><p>{{statusLabel}}</p><p>{{playerText}}</p></article>{{else}}<p class="arcflight-sheet__hint">No repaired or dismissed Ship Scars.</p>{{/each}}
+        {{else}}<p class="arcflight-sheet__hint">Ship Scars Deck has no drawn candidates yet.</p>{{/if}}
+      </details>
+      <details class="arcflight-card-drawer arcflight-momentum-drawer"><summary>✨ Momentum Pool</summary><p title="Future system. Momentum can be earned from strong station results and spent for travel advantages.">Future placeholder — Momentum: 1</p><button type="button" disabled>Spend Momentum</button></details>
+      <details class="arcflight-card-drawer"><summary>🗣️ Support Orders</summary><p title="Future system. Stations may support another station instead of making a primary roll.">Future placeholder — Support Orders: Not Assigned</p><button type="button" disabled>Assign Support</button></details>
+      <details class="arcflight-card-drawer arcflight-fortune-drawer"><summary>🃏 Void Fortune Hand</summary><p title="Future system. Special cards drawn, held, and spent during travel.">Future placeholder — Void Fortune: 0 Cards</p><button type="button" disabled>Open Fortune Hand</button></details>
+      <details class="arcflight-card-drawer"><summary>🛠️ Ship Upgrade Effects</summary><p title="Future system. Installed ship upgrades may add travel actions, reactions, or passive effects.">Future placeholder — Smuggler Engine: Low-Burn Route Option · Reinforced Hull: Reduce Hull Pressure Once</p></details>
+      <details id="arcflight-guided-followups" class="arcflight-card-drawer" tabindex="-1"><summary>📜 Outcome & Follow-ups</summary><p>Follow-ups: {{state.guidedBridge.drawers.followUps}}</p></details>
+      <details id="arcflight-guided-completed" class="arcflight-card-drawer" tabindex="-1"><summary>💾 Completed Sessions</summary><p>Saved and completed session controls are available in Advanced Runner Details below.</p></details>
+      {{#if state.travelV2DevToolsEnabled}}<details id="arcflight-guided-devtools" class="arcflight-card-drawer arcflight-gm-only" tabindex="-1"><summary>🧪 Dev Tools</summary><p>GM-only dev tools are gated by travelV2DevToolsEnabled below.</p></details>{{/if}}
+      <details class="arcflight-card-drawer arcflight-gm-only"><summary>🔒 Event Schema</summary><p>Future authoring/schema support. GM-only. Category: {{state.guidedBridge.tags.category}} · Level: {{state.guidedBridge.tags.level}} · Severity: {{state.guidedBridge.tags.severity}} · Stations: {{state.guidedBridge.stationSummary.total}} · Pressure Suggestions / Hazards / Follow-ups prepared from event schema.</p></details>
+    </div>
+  </section>
+  {{/if}}
+
   {{#unless state.compactRunner}}
+  <details id="arcflight-guided-session-setup" class="arcflight-travel-runner-advanced" tabindex="-1">
+    <summary><strong>Advanced Runner Details</strong> — session setup, legacy controls, detailed reviews, completed sessions, and GM-only tooling</summary>
   <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__session-toolbar">
     <button type="button" class="arcflight-travel-runner-mvp__action-toggle" data-arcflight-runner-toggle-session-actions aria-label="{{#if state.sessionActionsExpanded}}Collapse Session Actions{{else}}Expand Session Actions{{/if}}" aria-expanded="{{#if state.sessionActionsExpanded}}true{{else}}false{{/if}}">
       {{#if state.sessionActionsExpanded}}▼{{else}}▶{{/if}} Session Actions
@@ -268,7 +407,7 @@
             <p class="arcflight-sheet__hint">No Ship Scars drawn yet. Pressure overflow beyond 4 creates one pending matching scar candidate.</p>
           {{/if}}
         </div>
-        <div class="arcflight-travel-runner-mvp__v2-actor-application" aria-label="Travel v2 GM actor application preview">
+        <div id="arcflight-guided-actor-apply" class="arcflight-travel-runner-mvp__v2-actor-application" aria-label="Travel v2 GM actor application preview" tabindex="-1">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>
               <strong>GM Application Preview</strong>
@@ -829,5 +968,6 @@
     {{/if}}
     </details>
   </section>
+  </details>
   {{/unless}}
 </div>

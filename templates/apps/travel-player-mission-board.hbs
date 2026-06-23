@@ -1,93 +1,85 @@
-<section class="arcflight-travel-player-mission-board__shell">
-  <header class="arcflight-travel-player-mission-board__header">
+<section class="arcflight-card-table arcflight-travel-party-hud {{#if state.isCompactHud}}arcflight-travel-party-hud--compact{{else}}arcflight-travel-party-hud--expanded{{/if}} arcflight-player-safe">
+  <header class="arcflight-card-table__header arcflight-travel-party-hud__header">
     <div>
-      <p class="arcflight-travel-player-mission-board__eyebrow">{{state.roundLabel}}{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}}</p>
+      <p class="arcflight-travel-party-hud__eyebrow">Arcflight Party Travel HUD</p>
       <h1>{{state.eventName}}</h1>
-      <p class="arcflight-sheet__hint">Shared player mission board. Updates appear when the GM sends or refreshes the board.</p>
+      <p class="arcflight-sheet__hint">{{state.roundLabel}}{{#if state.roundTitle}} — {{state.roundTitle}}{{/if}} · {{state.currentPhaseLabel}}</p>
+    </div>
+    <div class="arcflight-travel-party-hud__status">
+      <span>{{state.shipName}}</span>
+      <strong>{{state.voyageStatus}}</strong>
+      <button type="button" data-arcflight-party-hud-toggle>{{#if state.isCompactHud}}Expand{{else}}Minimize{{/if}}</button>
     </div>
   </header>
 
-  <section class="arcflight-travel-player-mission-board__vignette" aria-label="Current round vignette">
-    <h2>Current Mission</h2>
-    {{#if state.vignette}}<p>{{state.vignette}}</p>{{else}}<p class="arcflight-sheet__hint">No round vignette is available.</p>{{/if}}
+  {{#unless state.isCompactHud}}
+  <section class="arcflight-card-table arcflight-travel-party-hud__quick" aria-label="Current Player Quick Action">
+    <h2>Current Player Quick Action</h2>
+    {{#if state.hasStations}}
+      {{#each state.stations}}
+        {{#if isCurrentUserRollable}}<button type="button" data-arcflight-party-hud-open-station data-station-key="{{stationKey}}">Open My Station Card — {{stationName}}</button>{{/if}}
+      {{/each}}
+    {{/if}}
+    <a href="#arcflight-party-hud-ship-status" class="button">Review Ship Status</a>
+    {{#if state.hasPublicHazards}}<a href="#arcflight-party-hud-hazards" class="button">Review Revealed Hazard</a>{{/if}}
   </section>
 
-  {{#if state.hasStations}}
-    <section class="arcflight-travel-player-mission-board__grid" aria-label="Active travel stations">
-      {{#each state.stations}}
-        <article class="arcflight-travel-player-mission-board__station {{#if isCurrentUserRollable}}arcflight-travel-player-mission-board__station--rollable{{/if}} {{#if isRolling}}arcflight-travel-player-mission-board__station--rolling{{/if}}" data-arcflight-mission-board-station data-station-key="{{stationKey}}">
-          <header class="arcflight-travel-player-mission-board__station-header">
-            <h2>{{stationName}}</h2>
-            <div class="arcflight-travel-player-mission-board__status-stack">
-              <span class="arcflight-travel-player-mission-board__badge" title="{{rollDetailText}}">{{resultLabel}}</span>
-              <span class="arcflight-travel-player-mission-board__state" data-arcflight-mission-board-state>{{stateLabel}}</span>
-            </div>
-          </header>
-          <dl class="arcflight-travel-player-mission-board__facts">
-            <div><dt>Assigned</dt><dd>{{assignedActorName}}</dd></div>
-            <div><dt>DC</dt><dd>{{dcLabel}}</dd></div>
-            <div><dt>Selected</dt><dd>{{#if hasSelectedApproach}}{{selectedApproachLabel}}{{else}}Not selected{{/if}}</dd></div>
-            {{#if npcControllerName}}<div><dt>NPC Controller</dt><dd>{{npcControllerName}}</dd></div>{{/if}}
-          </dl>
-          {{#if hasPromptText}}<p class="arcflight-travel-player-mission-board__prompt">{{promptText}}</p>{{/if}}
+  {{#if state.hasPartyAlerts}}
+    <section class="arcflight-card-table arcflight-travel-party-hud__alerts" aria-label="Party Alerts">
+      {{#each state.partyAlerts}}<p class="arcflight-travel-party-hud__alert arcflight-travel-party-hud__alert--{{tone}}">{{icon}} {{text}}</p>{{/each}}
+    </section>
+  {{/if}}
 
-          {{#if isStabilize}}
-            <p class="arcflight-sheet__hint"><strong>Station Order:</strong> Stabilize</p>
-            <p class="arcflight-sheet__hint"><strong>Stabilize Target:</strong> {{stabilizePressureLabel}}</p>
-            <p class="arcflight-sheet__hint">This roll reduces pressure and does not add round progress.</p>
-          {{else}}
-            <p class="arcflight-sheet__hint"><strong>Station Order:</strong> Push Forward</p>
-            <p class="arcflight-sheet__hint">This roll contributes to round progress.</p>
-          {{/if}}
+  <section class="arcflight-card-table arcflight-travel-party-hud__overview" aria-label="Current Travel Event">
+    <h2>Current Travel Event</h2>
+    <dl>
+      <div><dt>Event</dt><dd>{{state.eventName}}</dd></div>
+      <div><dt>Round</dt><dd>{{state.roundLabel}}</dd></div>
+      <div><dt>Phase</dt><dd>{{state.currentPhaseLabel}}</dd></div>
+      <div><dt>Ship</dt><dd>{{state.shipName}}</dd></div>
+      <div><dt>Status</dt><dd>{{state.voyageStatus}}</dd></div>
+    </dl>
+    {{#if state.vignette}}<p>{{state.vignette}}</p>{{/if}}
+  </section>
 
-          {{#if hasSelectedApproach}}
-            {{#if selectedApproachRollLabel}}<p class="arcflight-sheet__hint"><strong>Selected:</strong> {{selectedApproachLabel}}</p><p class="arcflight-sheet__hint"><strong>Roll:</strong> {{selectedApproachRollLabel}}</p>{{else}}{{#if selectedApproachStatisticLabel}}<p class="arcflight-sheet__hint"><strong>Roll:</strong> {{selectedApproachStatisticLabel}}{{#if dcLabel}} vs {{dcLabel}}{{/if}}</p>{{/if}}{{/if}}
-            {{#if hasSelectedApproachHelpText}}<p class="arcflight-sheet__hint"><strong>How This Helps:</strong> {{selectedApproachHelpText}}</p>{{/if}}
-          {{else}}
-            {{#if hasApproachOptions}}
-              <label class="arcflight-travel-player-mission-board__control">
-                <span>How do you handle your station?</span>
-                <select data-arcflight-mission-board-approach data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled{{/unless}}>
-                  {{#each approachOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{#if displayLabel}}{{displayLabel}}{{else}}{{#if label}}{{label}}{{else}}{{skill}}{{/if}}{{/if}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <details class="arcflight-travel-player-mission-board__approach-help">
-                <summary>How This Helps</summary>
-                {{#each approachOptions}}
-                  <p><strong>{{#if label}}{{label}}{{else}}{{skill}}{{/if}}</strong>{{#if statisticLabel}} — {{statisticLabel}}{{/if}}{{#if dcLabel}} — {{dcLabel}}{{/if}}{{#if helpText}}<br>{{helpText}}{{/if}}</p>
-                {{/each}}
-              </details>
-              {{#if hasFocusOptions}}
-                <section class="arcflight-travel-player-mission-board__focus">
-                  <h3>Station Focus</h3>
-                  <p><strong>Focus Remaining:</strong> {{focusRemaining}} / {{focusCapacity}}</p>
-                  {{#if noFocusRemaining}}<p class="arcflight-sheet__hint">No Focus remaining.</p>{{/if}}
-                  <label class="arcflight-travel-player-mission-board__control">
-                    <span>Spend Focus</span>
-                    <select data-arcflight-mission-board-focus data-station-key="{{stationKey}}" {{#unless canSpendFocus}}disabled{{/unless}}>
-                      <option value="">Do not spend Focus</option>
-                      {{#each focusOptions}}<option value="{{value}}" {{#if unavailable}}disabled{{/if}}>{{label}}{{#if used}} — Used this event.{{/if}}</option>{{/each}}
-                    </select>
-                  </label>
-                  <details><summary>Focus abilities</summary>{{#each focusOptions}}<p><strong>{{label}}</strong> — {{description}}{{#if used}} <em>Used this event.</em>{{/if}}</p>{{/each}}</details>
-                </section>
-              {{/if}}
-              <button type="button" data-arcflight-mission-board-commit-order data-station-key="{{stationKey}}" {{#unless canChooseApproach}}disabled title="{{permissionReason}}"{{/unless}}>Commit Station Order</button>
-            {{else}}
-              <p class="arcflight-sheet__hint">No approaches are available for this station.</p>
-            {{/if}}
-          {{/if}}
+  <section class="arcflight-card-table arcflight-travel-party-hud__stations" aria-label="Party Station Overview">
+    <h2>Party Station Overview</h2>
+    {{#if state.hasStations}}
+      <div class="arcflight-travel-party-hud__station-grid">
+        {{#each state.stations}}
+          <article class="arcflight-party-row {{partyRowClass}} arcflight-travel-party-hud__station {{#if hasResult}}arcflight-resolved{{else}}arcflight-player-waiting{{/if}}">
+            <h3>{{stationName}}</h3>
+            <p><strong>{{assignedActorName}}</strong></p>
+            <p><strong>{{stationConsoleLabel}}</strong></p><p>{{#if selectedApproachLabel}}{{selectedApproachLabel}}{{else}}Selecting an action{{/if}}</p>
+            {{#if hasResult}}<p class="arcflight-sheet__hint">Result: {{resultLabel}}</p>{{/if}}
+            {{#if isCurrentUserRollable}}<button type="button" data-arcflight-party-hud-open-station data-station-key="{{stationKey}}">Open My Station Card</button>{{/if}}
+          </article>
+        {{/each}}
+      </div>
+    {{else}}<p class="arcflight-sheet__hint">No active stations are available for this round.</p>{{/if}}
+  </section>
 
-          <button type="button" data-arcflight-mission-board-roll data-station-key="{{stationKey}}" {{#unless canRollStation}}disabled title="{{permissionReason}}"{{/unless}}>Roll Station</button>
-          {{#if disabledReason}}<p class="arcflight-sheet__hint">{{disabledReason}}</p>{{/if}}
-          {{#if rollDetailText}}<details class="arcflight-travel-player-mission-board__roll-detail"><summary>Roll detail</summary><p>{{rollDetailText}}</p></details>{{/if}}
-          {{#if hasResultFeedback}}<p class="arcflight-travel-player-mission-board__feedback">{{resultFeedbackText}}</p>{{/if}}
+  <section id="arcflight-party-hud-ship-status" class="arcflight-travel-party-hud__ship-status" aria-label="Shared Ship Pressure Gauges">
+    <h2>Shared Ship Pressure Gauges</h2>
+    <div class="arcflight-travel-party-hud__gauges">
+      {{#each state.pressureGauges}}
+        <article class="arcflight-travel-party-hud__gauge arcflight-pressure-gauge arcflight-pressure-gauge--{{key}} arcflight-pressure-gauge--{{stateClass}}" title="{{tooltip}}" style="--arcflight-gauge-angle: {{needleAngle}}deg; --arcflight-gauge-fill: {{fillPercent}}%;">
+          <div class="arcflight-pressure-gauge__meta"><span class="arcflight-pressure-gauge__label">{{icon}} {{label}}</span><strong class="arcflight-pressure-gauge__value">{{valueLabel}}</strong></div>
+          <div class="arcflight-pressure-gauge__face" aria-label="{{label}} pressure {{statusBand}}"><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--0">0</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--1">1</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--2">2</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--3">3</span><span class="arcflight-pressure-gauge__tick arcflight-pressure-gauge__tick--4">4</span><span class="arcflight-pressure-gauge__needle"></span></div>
+          <p class="arcflight-pressure-gauge__description">{{statusBand}}</p>
         </article>
       {{/each}}
-    </section>
-  {{else}}
-    <p class="arcflight-sheet__hint">No active stations are available for this round.</p>
-  {{/if}}
+    </div>
+  </section>
+
+  <section id="arcflight-party-hud-hazards" class="arcflight-travel-party-hud__cards" aria-label="Revealed Hazard Cards">
+    <h2>Revealed Hazard Cards</h2>
+    {{#if state.hasPublicHazards}}{{#each state.publicHazards}}<article class="arcflight-travel-card arcflight-travel-card--hazard arcflight-travel-card--revealed arcflight-travel-party-hud__revealed-card arcflight-player-safe"><strong>{{name}}</strong>{{#if category}}<span>{{category}}</span>{{/if}}<p>{{playerText}}</p><p class="arcflight-sheet__hint">{{status}}</p></article>{{/each}}{{else}}<p class="arcflight-sheet__hint">No hazards have been revealed.</p>{{/if}}
+  </section>
+
+  <section class="arcflight-card-table arcflight-travel-party-hud__cards" aria-label="Revealed Ship Scars">
+    <h2>Revealed Ship Scars</h2>
+    {{#if state.hasPublicShipScars}}{{#each state.publicShipScars}}<article class="arcflight-travel-card arcflight-travel-card--ship-scar arcflight-travel-card--revealed arcflight-travel-party-hud__revealed-card arcflight-player-safe"><strong>{{name}}</strong>{{#if severity}}<span>{{severity}}</span>{{/if}}<p>{{playerText}}</p>{{#if repairRequirement}}<p class="arcflight-sheet__hint">Repair: {{repairRequirement}}</p>{{/if}}<p class="arcflight-sheet__hint">{{status}}</p></article>{{/each}}{{else}}<p class="arcflight-sheet__hint">No Ship Scars have been revealed.</p>{{/if}}
+  </section>
+  {{/unless}}
 </section>
