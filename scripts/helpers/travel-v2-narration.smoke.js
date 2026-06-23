@@ -30,14 +30,39 @@ export async function runTravelV2NarrationSmokeChecks() {
     assertSmoke(!partial.complete && partial.completionState === "partial" && /Draft narration/.test(partial.whatHappened), "partial round narration is marked incomplete");
     const publicNarration = sanitizeTravelV2PublicNarration(round);
     const publicSnap = snap(publicNarration);
+    assertSmoke(publicSnap.includes("Navigator") && publicSnap.includes("Critical Success"), "public narration keeps station labels and result labels");
     assertSmoke(publicSnap.includes("Void Shear"), "revealed hazards may appear in public narration");
+    assertSmoke(publicSnap.includes("The route shivers sideways.") && publicSnap.includes("Navigator DC +2."), "revealed hazard player text and public modifier text remain public");
     assertSmoke(!publicSnap.includes("Hidden Teeth") && !publicSnap.includes("Should not leak"), "unrevealed hazards do not appear in public narration");
     assertSmoke(!publicSnap.includes("GM SECRET") && !publicSnap.includes("GM MECH") && !publicSnap.includes("gmOnly"), "GM-only fields do not leak into public narration");
+
+    const unsafePublic = sanitizeTravelV2PublicNarration({
+      ...round,
+      whatHappened: "GM SECRET DO NOT SHOW private route notes",
+      suggestedReadAloud: "GM MECH DO NOT SHOW secret pressure math",
+      publicWhatHappened: "",
+      publicSuggestedReadAloud: "",
+      stationVignettes: round.stationVignettes.map((vignette) => ({ ...vignette, privateNote: "private", secretText: "secret", gmText: "GM station secret" })),
+      hazardNotes: {
+        ...round.hazardNotes,
+        active: [
+          ...round.hazardNotes.active,
+          { id: "hz-hidden", name: "Hidden Teeth", status: "active", revealed: false, playerText: "Should not leak", gmText: "GM SECRET", gmMechanicalNotes: "GM MECH", unresolvedConsequence: { secret: "private" } }
+        ]
+      }
+    });
+    const unsafeSnap = snap(unsafePublic);
+    for (const unsafe of ["GM SECRET", "GM MECH", "gmText", "gmMechanicalNotes", "unresolvedConsequence", "Hidden Teeth", "Should not leak", "secret", "private"]) {
+      assertSmoke(!unsafeSnap.includes(unsafe), `hardened public sanitizer strips ${unsafe}`);
+    }
+    assertSmoke(unsafeSnap.includes("Navigator") && unsafeSnap.includes("Critical Success"), "hardened sanitizer keeps safe station labels and results");
+    assertSmoke(unsafeSnap.includes("Navigator:") && unsafeSnap.includes("Void Shear"), "hardened sanitizer keeps public station vignette and revealed hazard text");
+    assertSmoke(unsafeSnap.includes("The route shivers sideways.") && unsafeSnap.includes("Navigator DC +2."), "hardened sanitizer keeps revealed hazard public fields");
     assertSmoke(sideEffects.length === 0, "narration generation does not call chat, journal, combat, actor, item, or socket APIs");
   } finally {
     globalThis.ChatMessage = prior.ChatMessage; globalThis.JournalEntry = prior.JournalEntry; globalThis.game = prior.game; globalThis.Actor = prior.Actor; globalThis.Item = prior.Item;
   }
-  return { ok: true, checked: ["station-vignettes", "action-labels", "degree-tones", "combined-summary", "partial-round", "public-revealed-hazard", "public-unrevealed-boundary", "public-no-gm-leak", "no-side-effects"] };
+  return { ok: true, checked: ["station-vignettes", "action-labels", "degree-tones", "combined-summary", "partial-round", "public-revealed-hazard", "public-unrevealed-boundary", "public-no-gm-leak", "hardened-public-sanitizer", "public-safe-fallback", "no-side-effects"] };
 }
 
 export default runTravelV2NarrationSmokeChecks;

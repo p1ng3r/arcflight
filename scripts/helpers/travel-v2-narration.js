@@ -20,6 +20,45 @@ function resultLabel(result) { return RESULT_LABELS[result] ?? (result ? humaniz
 function actionLabel(action = {}) { return ACTION_LABELS[action?.type] ?? ACTION_LABELS.eventApproach; }
 function publicHazardRecords(session = {}) { return (session.travelV2Hazards?.records ?? session.hazards?.records ?? []).filter((record) => record?.revealed === true); }
 function gmHazardRecords(session = {}) { return (session.travelV2Hazards?.records ?? session.hazards?.records ?? []).filter(isPlainObject); }
+
+function sanitizePublicStationVignette(vignette = {}) {
+  const publicStationLabel = typeof vignette.stationLabel === "string" && vignette.stationLabel ? vignette.stationLabel : stationLabel(vignette.stationKey);
+  const resultText = typeof vignette.resultLabel === "string" && vignette.resultLabel ? vignette.resultLabel : resultLabel(vignette.result);
+  const actionText = typeof vignette.actionLabel === "string" && vignette.actionLabel ? vignette.actionLabel : actionLabel({ type: vignette.actionType });
+  const publicText = typeof vignette.publicText === "string" && vignette.publicText
+    ? vignette.publicText
+    : `${publicStationLabel}: ${resultText} on ${actionText}.`;
+  return {
+    stationKey: typeof vignette.stationKey === "string" ? vignette.stationKey : "",
+    stationLabel: publicStationLabel,
+    actorName: typeof vignette.actorName === "string" ? vignette.actorName : "",
+    actionLabel: actionText,
+    selectedOptionLabel: typeof vignette.selectedOptionLabel === "string" ? vignette.selectedOptionLabel : "",
+    resultLabel: resultText,
+    tone: typeof vignette.tone === "string" ? vignette.tone : "",
+    publicText,
+    complete: vignette.complete === true
+  };
+}
+
+function buildPublicRoundSummary(stationVignettes = [], options = {}) {
+  const complete = options.complete === true;
+  const count = stationVignettes.length;
+  const resolvedCount = stationVignettes.filter((entry) => entry.complete).length;
+  if (!count) return "No public station outcomes are available yet.";
+  const stationResults = stationVignettes.map((entry) => `${entry.stationLabel} ${String(entry.resultLabel || "Pending").toLowerCase()}`).join(", ");
+  return complete
+    ? `The round resolves through ${count} station beat${count === 1 ? "" : "s"}: ${stationResults}.`
+    : `Draft public summary: ${resolvedCount} of ${count} station beat${count === 1 ? "" : "s"} have results.`;
+}
+
+function buildPublicReadAloud(publicWhatHappened, stationVignettes = [], safeHazards = [], options = {}) {
+  const hazardText = safeHazards.length
+    ? ` Revealed hazards in the scene: ${safeHazards.map((hazard) => hazard.name).filter(Boolean).join(", ")}.`
+    : "";
+  if (publicWhatHappened) return `${publicWhatHappened}${hazardText}`.trim();
+  return `${buildPublicRoundSummary(stationVignettes, options)}${hazardText}`.trim();
+}
 function summarizeMechanical(result, action = {}) {
   if (!result) return "No station result has been recorded yet.";
   if (result === "skipped") return "Station did not roll this round.";
@@ -84,14 +123,35 @@ export function prepareTravelV2RoundNarration(session, roundIndex = undefined, o
   const whatHappened = complete
     ? `The round resolves through ${vignettes.length} station beat${vignettes.length === 1 ? "" : "s"}: ${vignettes.map((v) => `${v.stationLabel} ${v.resultLabel.toLowerCase()}`).join(", ")}.`
     : `Draft narration: ${vignettes.filter((v) => v.complete).length} of ${vignettes.length} station beat${vignettes.length === 1 ? "" : "s"} have results, so keep the outcome provisional.`;
-  return { roundIndex: index, roundNumber: index + 1, title, completionState: complete ? "complete" : "partial", complete, whatHappened, stationVignettes: vignettes, stationOutcomeBullets: stationBullets, hazardNotes: { active: activeHazards.map(sanitizeTravelV2GmHazard), responded: respondedHazardNames, cleared: clearedHazards.map(sanitizeTravelV2GmHazard), unresolved: unresolvedHazards.map(sanitizeTravelV2GmHazard) }, pressureNotes, suggestedReadAloud: `${whatHappened} ${complete ? "Read the strongest success first, then frame any remaining hazard pressure." : "Ask for the remaining station results before making final consequences sound certain."}`.trim(), generatedAt: options.now ?? new Date().toISOString() };
+  const safePublicHazards = publicHazardRecords(session).map(sanitizeTravelV2PublicHazard);
+  const publicStationVignettes = vignettes.map(sanitizePublicStationVignette);
+  const publicWhatHappened = buildPublicRoundSummary(publicStationVignettes, { complete });
+  const publicSuggestedReadAloud = buildPublicReadAloud(publicWhatHappened, publicStationVignettes, safePublicHazards, { complete });
+  return { roundIndex: index, roundNumber: index + 1, title, completionState: complete ? "complete" : "partial", complete, whatHappened, publicWhatHappened, stationVignettes: vignettes, stationOutcomeBullets: stationBullets, publicStationOutcomeBullets: publicStationVignettes.map((v) => v.publicText), hazardNotes: { active: activeHazards.map(sanitizeTravelV2GmHazard), responded: respondedHazardNames, cleared: clearedHazards.map(sanitizeTravelV2GmHazard), unresolved: unresolvedHazards.map(sanitizeTravelV2GmHazard) }, publicHazardNotes: { revealed: safePublicHazards }, pressureNotes, suggestedReadAloud: `${whatHappened} ${complete ? "Read the strongest success first, then frame any remaining hazard pressure." : "Ask for the remaining station results before making final consequences sound certain."}`.trim(), publicSuggestedReadAloud, generatedAt: options.now ?? new Date().toISOString() };
 }
 
 export function sanitizeTravelV2PublicNarration(narration) {
   const source = cloneData(narration ?? {});
-  const stationVignettes = (source.stationVignettes ?? []).map((v) => ({ stationKey: v.stationKey, stationLabel: v.stationLabel, actorName: v.actorName, actionLabel: v.actionLabel, selectedOptionLabel: v.selectedOptionLabel, resultLabel: v.resultLabel, tone: v.tone, publicText: v.publicText ?? v.narrativeText, complete: v.complete }));
-  const safeHazards = publicHazardRecords({ travelV2Hazards: { records: [...(source.hazardNotes?.active ?? []), ...(source.hazardNotes?.cleared ?? []), ...(source.hazardNotes?.unresolved ?? [])] } }).map(sanitizeTravelV2PublicHazard);
-  return { roundNumber: source.roundNumber, title: source.title, completionState: source.completionState, complete: source.complete === true, whatHappened: source.whatHappened, stationVignettes, stationOutcomeBullets: stationVignettes.map((v) => v.publicText), hazardNotes: { revealed: safeHazards }, suggestedReadAloud: source.suggestedReadAloud };
+  const stationVignettes = (Array.isArray(source.stationVignettes) ? source.stationVignettes : []).map(sanitizePublicStationVignette);
+  const hazardSourceRecords = [
+    ...(source.publicHazardNotes?.revealed ?? []),
+    ...(source.hazardNotes?.active ?? []),
+    ...(source.hazardNotes?.cleared ?? []),
+    ...(source.hazardNotes?.unresolved ?? [])
+  ];
+  const safeHazards = publicHazardRecords({ travelV2Hazards: { records: hazardSourceRecords } }).map(sanitizeTravelV2PublicHazard);
+  const complete = source.complete === true;
+  const publicWhatHappened = typeof source.publicWhatHappened === "string" && source.publicWhatHappened
+    ? source.publicWhatHappened
+    : (typeof source.publicSummary?.whatHappened === "string" && source.publicSummary.whatHappened
+      ? source.publicSummary.whatHappened
+      : buildPublicRoundSummary(stationVignettes, { complete }));
+  const publicSuggestedReadAloud = typeof source.publicSuggestedReadAloud === "string" && source.publicSuggestedReadAloud
+    ? source.publicSuggestedReadAloud
+    : (typeof source.publicSummary?.suggestedReadAloud === "string" && source.publicSummary.suggestedReadAloud
+      ? source.publicSummary.suggestedReadAloud
+      : buildPublicReadAloud(publicWhatHappened, stationVignettes, safeHazards, { complete }));
+  return { roundNumber: source.roundNumber, title: source.title, completionState: source.completionState, complete, whatHappened: publicWhatHappened, publicWhatHappened, stationVignettes, stationOutcomeBullets: stationVignettes.map((v) => v.publicText), hazardNotes: { revealed: safeHazards }, suggestedReadAloud: publicSuggestedReadAloud, publicSuggestedReadAloud };
 }
 
 export function sanitizeTravelV2GmNarration(narration) { return cloneData(narration ?? {}); }
