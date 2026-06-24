@@ -53,7 +53,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, spendTravelV2RunnerMomentumDowngrade, dismissTravelV2RunnerShipScar
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, spendTravelV2RunnerMomentumDowngrade, dismissTravelV2RunnerShipScar, applyTravelV2FocusBacklash, dismissTravelV2FocusBacklash
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -129,7 +129,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-stabilize-resolution-apply]",
   "[data-arcflight-stabilize-resolution-dismiss]",
   "[data-arcflight-reaction-accept]", "[data-arcflight-reaction-dismiss]",
-  "[data-arcflight-reaction-reroll-result]", "[data-arcflight-reaction-backlash-apply]", "[data-arcflight-reaction-backlash-dismiss]"
+  "[data-arcflight-reaction-reroll-result]", "[data-arcflight-reaction-backlash-apply]", "[data-arcflight-reaction-backlash-dismiss]",
+  "[data-arcflight-focus-backlash-apply]", "[data-arcflight-focus-backlash-dismiss]"
 ].join(", ");
 
 
@@ -660,6 +661,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
+    if (target.hasAttribute("data-arcflight-focus-backlash-apply")) return this.#resolveFocusBacklash(target, "applied");
+    if (target.hasAttribute("data-arcflight-focus-backlash-dismiss")) return this.#resolveFocusBacklash(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-dismiss")) return this.#resolveStabilizeResolution(target, "dismissed");
     if (target.hasAttribute("data-arcflight-reaction-accept")) return this.#resolveReaction(target, "accept");
@@ -819,6 +822,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const updated = updateTravelReactionPromptNote(this.session, input.dataset.reactionPromptId ?? "", input.value ?? "");
     if (updated.ok) this.session = updated.session;
     this.statusMessage = updated.ok ? "Reaction note updated." : (updated.errors?.[0] ?? "Could not update reaction note.");
+    return this.render(true);
+  }
+
+  async #resolveFocusBacklash(target, status) {
+    const recordId = target.dataset.focusBacklashId ?? "";
+    const updated = status === "applied" ? applyTravelV2FocusBacklash(this.session, recordId) : dismissTravelV2FocusBacklash(this.session, recordId);
+    if (updated.ok) { this.session = updated.session; this.#refreshPlayersQuietly(); }
+    this.statusMessage = updated.ok ? (status === "applied" ? "Focus backlash applied." : "Focus backlash dismissed.") : (updated.errors?.[0] ?? "Could not update Focus backlash.");
     return this.render(true);
   }
 

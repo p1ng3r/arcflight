@@ -106,9 +106,11 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Focus Risk / Suppression Foundation:** this pass makes Focus choices player-safe before commitment by surfacing Focus help text, public backlash risk text, and hazard suppression messaging. It does not apply backlash, add Support, or mutate actor/item/chat/journal/combat state.
+**Current PR scope — Focus Backlash Records:** this pass creates session-local Focus backlash records from failed Focus-backed station results, adds GM Apply/Dismiss controls, keeps pressure/consequence changes session-local, and exposes only public-safe Focus backlash summaries.
 
-**Previous PR scope — Momentum Pass:** this pass added a session-local Travel v2 Momentum pool, awards Momentum from strong play such as critical main-objective station results and critical hazard clears, an explicit GM-auditable failure downgrade spend, player-safe Momentum state, and earned/spent Momentum narration.
+**Previous PR scope — Momentum Pass:** this pass added a session-local Travel v2 Momentum pool, awards Momentum from strong play such as critical main-objective station results and critical hazard clears, adds an explicit GM-auditable failure downgrade spend, surfaces player-safe Momentum state, and folds earned/spent Momentum into narration. It does not add live AI/API generation or automatic actor/item/chat/journal/combat mutation. Later PRs should deepen additional Momentum spends and explicit GM Apply handoffs for persistent fallout.
+
+**Previous PR scope — Focus Risk / Suppression Foundation:** this pass added Focus option public help text, public risk/backlash preview text, hazard-based Focus suppression, player-safe Focus display sanitization, and GM Focus risk summaries without making backlash persistent or automatic.
 
 **Previous PR scope — Stabilize / Repair Action Pass:** this pass formalized Stabilize / Repair as a tradeoff action: stabilizing stations do not count toward main objective progress, their critical success / success / failure / critical failure results create session-local pressure deltas, and GM-facing apply/dismiss controls keep persistent changes under explicit GM control.
 

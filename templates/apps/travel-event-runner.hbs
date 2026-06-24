@@ -659,6 +659,31 @@
             </details>
           </section>
         {{/if}}
+
+        {{#if state.focusBacklashReview.hasRecords}}
+          <section class="arcflight-travel-runner-mvp__panel">
+            <h2>Focus Backlash</h2>
+            <p class="arcflight-sheet__hint">Session-local only. Apply/Dismiss updates runner session pressure/consequence candidates only; no automatic actor, item, chat, journal, combat, or socket mutation.</p>
+            {{#each state.focusBacklashReview.records}}
+              <article>
+                <h3>{{stationName}}{{#if actorName}} — {{actorName}}{{/if}}</h3>
+                <p><strong>Focus:</strong> {{focusLabel}} · <strong>Status:</strong> {{statusLabel}}</p>
+                {{#if publicSummary}}<p><strong>Public summary:</strong> {{publicSummary}}</p>{{/if}}
+                {{#if publicRiskText}}<p><strong>Public risk:</strong> {{publicRiskText}}</p>{{/if}}
+                {{#if publicBacklashPreviewText}}<p><strong>Public preview:</strong> {{publicBacklashPreviewText}}</p>{{/if}}
+                {{#if hasPressure}}<p><strong>Pressure candidate:</strong> +{{pressureDelta}} {{pressureLabel}}</p>{{/if}}
+                {{#if hasConsequenceCandidate}}<p><strong>Consequence candidate:</strong> {{consequenceCandidate}}</p>{{/if}}
+                {{#if gmNote}}<p class="arcflight-sheet__hint"><strong>GM note:</strong> {{gmNote}}</p>{{/if}}
+                {{#if isPending}}
+                  <div class="arcflight-travel-runner-mvp__result-buttons">
+                    <button type="button" data-arcflight-focus-backlash-apply data-focus-backlash-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Apply Backlash</button>
+                    <button type="button" data-arcflight-focus-backlash-dismiss data-focus-backlash-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Dismiss</button>
+                  </div>
+                {{/if}}
+              </article>
+            {{/each}}
+          </section>
+        {{/if}}
         {{#if state.stabilizeResolutionReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
             <h2>Stabilize Pressure Resolution</h2>

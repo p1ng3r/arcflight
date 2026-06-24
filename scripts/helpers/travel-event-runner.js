@@ -5,10 +5,12 @@ import { getPublishedTravelEventLibrary, loadPublishedTravelEventFromLibrary, pr
 import { validateTravelEventDefinition } from "./travel-events.js";
 import {
   ARCFLIGHT_TRAVEL_STATION_ACTIONS,
+  ARCFLIGHT_TRAVEL_PRESSURE_TRACKS,
   createEmptyTravelPressureState,
   eventApproach,
   getPendingTravelStabilizeEffect,
   getTravelPressureIdentity,
+  isTravelPressureKey,
   getTravelStationStabilizePressureKey,
   hazardResponse,
   normalizeTravelPressureState,
@@ -426,6 +428,143 @@ export function updateTravelFocusEffectNote(session, focusEffectId, note, option
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
+}
+
+const FOCUS_BACKLASH_STATUSES = Object.freeze(["pending", "applied", "dismissed"]);
+
+function focusBacklashRecordId(roundIndex, stationKey, focusKey) { return ["focus-backlash", roundIndex, stationKey, focusKey].map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).join(":"); }
+function focusBacklashRecordsMatch(record, roundIndex, stationKey, focusKey) { return Number(record?.roundIndex) === Number(roundIndex) && record?.stationKey === stationKey && record?.focusKey === focusKey; }
+function nextFocusBacklashRecordId(records = [], baseId = "") {
+  if (!records.some((record) => record.id === baseId)) return baseId;
+  let suffix = 2;
+  while (records.some((record) => record.id === `${baseId}:${suffix}`)) suffix += 1;
+  return `${baseId}:${suffix}`;
+}
+
+export function normalizeTravelV2FocusBacklashRecords(recordsOrState = {}, options = {}) {
+  const rawRecords = Array.isArray(recordsOrState) ? recordsOrState : (Array.isArray(recordsOrState?.records) ? recordsOrState.records : []);
+  const records = rawRecords.filter(isPlainObject).map((record, index) => ({
+    id: typeof record.id === "string" && record.id ? record.id : `focus-backlash:${index + 1}`,
+    roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
+    stationKey: typeof record.stationKey === "string" ? record.stationKey : "",
+    stationName: typeof record.stationName === "string" ? record.stationName : "",
+    focusKey: typeof record.focusKey === "string" ? record.focusKey : (typeof record.abilityKey === "string" ? record.abilityKey : ""),
+    focusLabel: typeof record.focusLabel === "string" ? record.focusLabel : (typeof record.abilityLabel === "string" ? record.abilityLabel : ""),
+    actorId: typeof record.actorId === "string" ? record.actorId : "",
+    actorName: typeof record.actorName === "string" ? record.actorName : (typeof record.assignedActorName === "string" ? record.assignedActorName : ""),
+    publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+    publicRiskText: typeof record.publicRiskText === "string" ? record.publicRiskText : "",
+    publicBacklashPreviewText: typeof record.publicBacklashPreviewText === "string" ? record.publicBacklashPreviewText : "",
+    pressureKey: isTravelPressureKey(record.pressureKey) ? record.pressureKey : "",
+    pressureLabel: typeof record.pressureLabel === "string" ? record.pressureLabel : (isTravelPressureKey(record.pressureKey) ? humanizeIdentifier(record.pressureKey) : ""),
+    pressureDelta: Number.isFinite(Number(record.pressureDelta)) ? Math.max(0, Math.trunc(Number(record.pressureDelta))) : 0,
+    consequenceCandidate: typeof record.consequenceCandidate === "string" ? record.consequenceCandidate : "",
+    gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
+    status: FOCUS_BACKLASH_STATUSES.includes(record.status) ? record.status : "pending",
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+    resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+    resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+    resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : "",
+    pressureBefore: Number.isFinite(Number(record.pressureBefore)) ? Number(record.pressureBefore) : null,
+    pressureAfter: Number.isFinite(Number(record.pressureAfter)) ? Number(record.pressureAfter) : null
+  })).filter((record) => record.id && record.stationKey && record.focusKey);
+  return { records: Array.from(new Map(records.map((record) => [record.id, record])).values()) };
+}
+
+export function prepareTravelV2FocusBacklashPanelState(session, options = {}) {
+  const records = normalizeTravelV2FocusBacklashRecords(session?.travelV2FocusBacklashRecords, options).records.map((record) => ({
+    ...record, statusLabel: humanizeIdentifier(record.status), isPending: record.status === "pending", isApplied: record.status === "applied", isDismissed: record.status === "dismissed", hasPressure: record.pressureDelta > 0 && Boolean(record.pressureKey), hasConsequenceCandidate: Boolean(record.consequenceCandidate)
+  }));
+  return { records, pendingRecords: records.filter((record) => record.isPending), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.isPending).length };
+}
+
+export function sanitizeTravelV2FocusBacklashForPlayers(recordsOrState = {}, options = {}) {
+  const records = normalizeTravelV2FocusBacklashRecords(recordsOrState, options).records.map((record) => ({
+    id: record.id, roundIndex: record.roundIndex, stationKey: record.stationKey, stationName: record.stationName, focusKey: record.focusKey, focusLabel: record.focusLabel, actorName: record.actorName, publicSummary: record.publicSummary, publicRiskText: record.publicRiskText, publicBacklashPreviewText: record.publicBacklashPreviewText, status: record.status, statusLabel: humanizeIdentifier(record.status)
+  }));
+  return { records, pendingRecords: records.filter((record) => record.status === "pending"), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending").length };
+}
+
+export function createTravelV2FocusBacklashRecord(session, roundIndex, stationKey, focusKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const result = options.result ?? normalized.session.roundResults?.[index]?.stationResults?.[stationKey];
+  if (!options.force && !["failure", "criticalFailure"].includes(result)) return { ok: true, errors: [], warnings: [], session: normalized.session, record: null, skipped: true };
+  const spentFocusKey = focusKey || normalized.session.stationFocus?.[stationKey]?.roundSpent?.[String(index)] || normalized.session.stationFocus?.[stationKey]?.selectedFocusAbility || "";
+  if (!spentFocusKey) return { ok: true, errors: [], warnings: [], session: normalized.session, record: null, skipped: true };
+  const baseId = typeof options.id === "string" && options.id ? options.id : focusBacklashRecordId(index, stationKey, spentFocusKey);
+  const records = normalizeTravelV2FocusBacklashRecords(normalized.session.travelV2FocusBacklashRecords, options).records;
+  const existing = records.find((record) => record.status !== "dismissed" && (record.id === baseId || focusBacklashRecordsMatch(record, index, stationKey, spentFocusKey)));
+  if (existing) return { ok: true, duplicate: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2FocusBacklashRecords: { records } }, record: existing };
+  const id = nextFocusBacklashRecordId(records, baseId);
+  const ability = getDefaultStationFocusAbilities(stationKey, options).find((entry) => entry.key === spentFocusKey) ?? {};
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const action = normalizeTravelStationAction(normalized.session.roundResults?.[index]?.stationActions?.[stationKey], stationKey, round);
+  const pressureKey = isTravelPressureKey(options.pressureKey) ? options.pressureKey : (action.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? action.stabilizePressureKey : (isTravelPressureKey(round.primaryPressure) ? round.primaryPressure : ARCFLIGHT_TRAVEL_PRESSURE_TRACKS.STRAIN));
+  const pressure = getTravelPressureIdentity(pressureKey);
+  const assignment = normalized.session.stationAssignments?.[stationKey] ?? {};
+  const pressureDelta = Number.isFinite(Number(options.pressureDelta)) ? Math.max(0, Math.trunc(Number(options.pressureDelta))) : (result === "criticalFailure" ? 2 : 1);
+  // Conservative Part 2 mapping: failed Focus-backed results create pending session-local pressure/consequence candidates only after the roll resolves.
+  const record = { id, roundIndex: index, stationKey, stationName: getStation(stationKey)?.displayName || getStation(stationKey)?.name || humanizeIdentifier(stationKey), focusKey: spentFocusKey, focusLabel: ability.label || humanizeIdentifier(spentFocusKey), actorId: assignment.actorId || "", actorName: assignment.actorName || "", publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${humanizeIdentifier(stationKey)}'s Focus creates backlash pending GM review.`, publicRiskText: typeof options.publicRiskText === "string" ? options.publicRiskText : "Failed Focus can create session-local pressure after GM review.", publicBacklashPreviewText: typeof options.publicBacklashPreviewText === "string" ? options.publicBacklashPreviewText : `${pressure?.label || humanizeIdentifier(pressureKey)} pressure may increase by ${pressureDelta}.`, pressureKey, pressureLabel: pressure?.label || humanizeIdentifier(pressureKey), pressureDelta, consequenceCandidate: typeof options.consequenceCandidate === "string" ? options.consequenceCandidate : (result === "criticalFailure" ? "Critical Focus backlash consequence candidate; keep session-local unless the GM later converts it manually." : ""), gmNote: typeof options.gmNote === "string" ? options.gmNote : "Session-local Focus backlash candidate. Apply/dismiss only; no actor/item/chat/journal/combat/socket mutation.", status: "pending", createdAt: nowIso(options), resolvedAt: "", resolvedByUserId: "", resolvedByUserName: "", resolutionNote: "", pressureBefore: null, pressureAfter: null };
+  records.push(record);
+  const nextSession = { ...cloneData(normalized.session), travelV2FocusBacklashRecords: { records }, updatedAt: nowIso(options), summary: null };
+  return { ok: true, duplicate: false, errors: [], warnings: [], session: nextSession, record };
+}
+
+export function syncTravelV2FocusBacklashRecordsForStationResult(session, roundIndex, stationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const focusKey = normalized.session.stationFocus?.[stationKey]?.roundSpent?.[String(index)] || normalized.session.stationFocus?.[stationKey]?.selectedFocusAbility || "";
+  if (!focusKey) return { ok: true, errors: [], warnings: [], session: normalized.session };
+  const result = normalized.session.roundResults?.[index]?.stationResults?.[stationKey] ?? null;
+  if (["failure", "criticalFailure"].includes(result)) return createTravelV2FocusBacklashRecord(normalized.session, index, stationKey, focusKey, options);
+  const records = normalizeTravelV2FocusBacklashRecords(normalized.session.travelV2FocusBacklashRecords, options).records;
+  const baseId = focusBacklashRecordId(index, stationKey, focusKey);
+  let changed = false;
+  for (const record of records) {
+    if (record.status !== "pending") continue;
+    if (record.id !== baseId && !focusBacklashRecordsMatch(record, index, stationKey, focusKey)) continue;
+    record.status = "dismissed";
+    record.resolvedAt = nowIso(options);
+    record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+    record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+    record.resolutionNote = options.cleared === true
+      ? "Station result was cleared before the Focus backlash was resolved."
+      : "Original Focus backlash trigger result changed before the backlash was resolved.";
+    changed = true;
+  }
+  if (!changed) return { ok: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2FocusBacklashRecords: { records } } };
+  return { ok: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2FocusBacklashRecords: { records }, updatedAt: nowIso(options), summary: null } };
+}
+
+export function applyTravelV2FocusBacklash(session, recordId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.travelV2FocusBacklashRecords.records.find((entry) => entry.id === recordId);
+  if (!record) return { ok: false, errors: [`Focus backlash "${recordId}" was not found.`], warnings: [], session: nextSession };
+  if (record.status !== "pending") return { ok: false, errors: [`Focus backlash "${recordId}" is already ${record.status}.`], warnings: [], session: nextSession };
+  const before = Number(nextSession.pressure?.[record.pressureKey] ?? 0);
+  nextSession.pressure = normalizeTravelPressureState({ ...nextSession.pressure, [record.pressureKey]: before + record.pressureDelta });
+  record.status = "applied"; record.resolvedAt = nowIso(options); record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? ""; record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? ""; record.pressureBefore = before; record.pressureAfter = nextSession.pressure[record.pressureKey];
+  nextSession.travelV2PressureApplications = { records: [...(Array.isArray(nextSession.travelV2PressureApplications?.records) ? nextSession.travelV2PressureApplications.records : []), { id: `${record.id}:application`, source: "focusBacklash", recordId: record.id, pressureKey: record.pressureKey, pressureDelta: record.pressureDelta, createdAt: record.resolvedAt }] };
+  nextSession.updatedAt = nowIso(options); nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession, record };
+}
+
+export function dismissTravelV2FocusBacklash(session, recordId, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.travelV2FocusBacklashRecords.records.find((entry) => entry.id === recordId);
+  if (!record) return { ok: false, errors: [`Focus backlash "${recordId}" was not found.`], warnings: [], session: nextSession };
+  if (record.status !== "pending") return { ok: false, errors: [`Focus backlash "${recordId}" is already ${record.status}.`], warnings: [], session: nextSession };
+  record.status = "dismissed"; record.resolvedAt = nowIso(options); record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? ""; record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? ""; record.resolutionNote = typeof options.note === "string" ? options.note.trim().slice(0, 500) : record.resolutionNote;
+  nextSession.updatedAt = nowIso(options); nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession, record };
 }
 
 
@@ -1784,6 +1923,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2Hazards: normalizeTravelV2HazardDeckState(session.travelV2Hazards ?? session.hazards),
     shipScars: normalizeTravelV2ShipScarsState(session.shipScars ?? session.travelV2ShipScars),
     travelV2Momentum: normalizeTravelV2MomentumState(session.travelV2Momentum),
+    travelV2FocusBacklashRecords: normalizeTravelV2FocusBacklashRecords(session.travelV2FocusBacklashRecords, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
@@ -2317,6 +2457,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
   const focusEffectReview = prepareTravelFocusEffectReviewState(activeSession, options);
+  const focusBacklashReview = prepareTravelV2FocusBacklashPanelState(activeSession, options);
   return {
     ok: normalized.ok,
     errors: normalized.errors,
@@ -2352,6 +2493,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
       hasComplications: pendingStabilizeRows.some((row) => row.complication)
     },
     focusEffectReview,
+    focusBacklashReview,
     focusRiskSummary: prepareTravelFocusRiskSummary(stations),
     travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
     travelV2Narration: activeSession ? prepareTravelV2RoundNarration(activeSession, activeSession.currentRoundIndex, options) : null,
@@ -2750,7 +2892,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1,
     momentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum),
-    hasMomentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum).value > 0
+    hasMomentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum).value > 0,
+    focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords),
+    hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords).hasRecords
   };
 }
 
@@ -2918,6 +3062,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     hasPublicShipScars: publicShipScars.length > 0,
     momentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum),
     hasMomentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum).value > 0,
+    focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords),
+    hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords).hasRecords,
     partyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }),
     hasPartyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }).length > 0
   };
@@ -2941,6 +3087,9 @@ export function clearTravelEventRunnerStationResult(session, roundIndex, station
   nextSession.roundResults[index].stationResults[stationKey] = null;
   nextSession.playerMissionBoardRollDetails = { ...(nextSession.playerMissionBoardRollDetails ?? {}) };
   delete nextSession.playerMissionBoardRollDetails[stationKey];
+  const focusBacklashUpdate = syncTravelV2FocusBacklashRecordsForStationResult(nextSession, index, stationKey, { ...options, cleared: true });
+  if (!focusBacklashUpdate.ok) return focusBacklashUpdate;
+  Object.assign(nextSession, focusBacklashUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -2971,6 +3120,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const momentumUpdate = syncTravelV2MomentumAwardsForStationResult(nextSession, index, stationKey, options);
   if (!momentumUpdate.ok) return momentumUpdate;
   Object.assign(nextSession, momentumUpdate.session);
+  const focusBacklashUpdate = syncTravelV2FocusBacklashRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!focusBacklashUpdate.ok) return focusBacklashUpdate;
+  Object.assign(nextSession, focusBacklashUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
