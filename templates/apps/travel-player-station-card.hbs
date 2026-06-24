@@ -44,7 +44,25 @@
           </article>
         {{/each}}
       </div>
-      {{#if state.hasFocusOptions}}<div class="arcflight-travel-player-station-card__focus"><p><strong>Station Focus:</strong> {{state.focusRemaining}} / {{state.focusCapacity}}</p><select data-arcflight-player-card-focus {{#unless state.canSpendFocus}}disabled{{/unless}}><option value="">Do not spend Focus</option>{{#each state.focusOptions}}<option value="{{value}}" {{#if unavailable}}disabled{{/if}}>{{label}}{{#if used}} — Used this event.{{/if}}</option>{{/each}}</select></div>{{/if}}
+      {{#if state.hasFocusOptions}}
+        <div class="arcflight-travel-player-station-card__focus arcflight-player-safe">
+          <p><strong>Station Focus:</strong> {{state.focusRemaining}} / {{state.focusCapacity}}</p>
+          {{#if state.focusBlocked}}<p class="arcflight-travel-builder__warning"><strong>Focus unavailable.</strong> {{#if state.focusBlockedHazardName}}{{state.focusBlockedHazardName}}: {{/if}}{{state.focusBlockedReason}}</p>{{/if}}
+          <p class="arcflight-sheet__hint">Focus is a player choice before commitment. The GM resolves any consequences later; this card does not apply actor, item, chat, journal, combat, or socket changes.</p>
+          <select data-arcflight-player-card-focus {{#unless state.canSpendFocus}}disabled{{/unless}}><option value="">Do not spend Focus</option>{{#each state.focusOptions}}<option value="{{value}}" {{#if unavailable}}disabled{{/if}}>{{label}}{{#if used}} — Used this event.{{/if}}{{#if blocked}} — Blocked{{/if}}</option>{{/each}}</select>
+          <div class="arcflight-action-card-grid">
+            {{#each state.focusOptions}}
+              <article class="arcflight-travel-card arcflight-travel-card--action">
+                <strong>{{label}}</strong>
+                {{#if whatItHelps}}<p>{{whatItHelps}}</p>{{/if}}
+                {{#if publicRiskText}}<p class="arcflight-sheet__hint"><strong>{{publicRiskText}}</strong></p>{{/if}}
+                {{#if publicBacklashPreviewText}}<p class="arcflight-sheet__hint">{{publicBacklashPreviewText}}</p>{{/if}}
+                {{#if blocked}}<p class="arcflight-travel-builder__warning">Blocked: {{blockedReason}}</p>{{/if}}
+              </article>
+            {{/each}}
+          </div>
+        </div>
+      {{/if}}
     {{else}}<p class="arcflight-sheet__hint">No approaches are available for this station.</p>{{/if}}
   </section>
 
