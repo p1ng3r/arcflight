@@ -4,6 +4,7 @@ import {
   createTravelEventRunnerSession,
   createTravelV2FocusBacklashRecord,
   dismissTravelV2FocusBacklash,
+  clearTravelEventRunnerStationResult,
   sanitizeTravelV2FocusBacklashForPlayers,
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
@@ -45,17 +46,42 @@ export async function runTravelV2FocusBacklashRecordsSmokeChecks() {
     const duplicate = createTravelV2FocusBacklashRecord(session, 0, "captain", "hold-the-line");
     assertSmoke(duplicate.duplicate === true && duplicate.session.travelV2FocusBacklashRecords.records.length === 1, "duplicate pending backlash is prevented");
 
+    const originalCaptainBacklashId = session.travelV2FocusBacklashRecords.records[0].id;
+    session = okSession(setTravelEventRunnerStationResult(session, 0, "captain", "success", { now: "2026-06-24T00:02:30.000Z" }));
+    const staleDismissed = session.travelV2FocusBacklashRecords.records.find((record) => record.id === originalCaptainBacklashId);
+    assertSmoke(staleDismissed?.status === "dismissed", "changing failure to success dismisses pending Focus backlash");
+    assertSmoke(staleDismissed?.resolutionNote === "Original Focus backlash trigger result changed before the backlash was resolved.", "stale result dismissal records a clear resolution note");
+    session = okSession(setTravelEventRunnerStationResult(session, 0, "captain", "failure", { now: "2026-06-24T00:02:45.000Z" }));
+    const captainPending = session.travelV2FocusBacklashRecords.records.filter((record) => record.stationKey === "captain" && record.status === "pending");
+    assertSmoke(captainPending.length === 1 && captainPending[0].id !== originalCaptainBacklashId, "failure after a dismissed stale record creates one fresh pending backlash without rewriting the dismissed record");
+
     session = okSession(commitTravelEventRunnerStationFocus(session, 0, "watchmaster", "read-the-enemy"));
     session = okSession(setTravelEventRunnerStationResult(session, 0, "watchmaster", "criticalFailure", { now: "2026-06-24T00:03:00.000Z" }));
     const critical = session.travelV2FocusBacklashRecords.records.find((record) => record.stationKey === "watchmaster");
     assertSmoke(critical?.pressureDelta === 2 && critical.consequenceCandidate, "critical failure creates a stronger pending backlash");
 
     const beforeSnap = snap({ actors: globalThis.Actor, items: globalThis.Item });
-    session = okSession(applyTravelV2FocusBacklash(session, session.travelV2FocusBacklashRecords.records[0].id, { now: "2026-06-24T00:04:00.000Z" }));
-    assertSmoke(session.travelV2FocusBacklashRecords.records[0].status === "applied" && session.pressure.strain === 1, "GM Apply marks applied and updates session-local pressure");
+    const captainApplyId = captainPending[0].id;
+    session = okSession(applyTravelV2FocusBacklash(session, captainApplyId, { now: "2026-06-24T00:04:00.000Z" }));
+    assertSmoke(session.travelV2FocusBacklashRecords.records.find((record) => record.id === captainApplyId)?.status === "applied" && session.pressure.strain === 1, "GM Apply marks applied and updates session-local pressure");
+    const appliedResolvedAt = session.travelV2FocusBacklashRecords.records.find((record) => record.id === captainApplyId)?.resolvedAt;
+    session = okSession(setTravelEventRunnerStationResult(session, 0, "captain", "success", { now: "2026-06-24T00:04:30.000Z" }));
+    const appliedAfterResultChange = session.travelV2FocusBacklashRecords.records.find((record) => record.id === captainApplyId);
+    assertSmoke(appliedAfterResultChange?.status === "applied" && appliedAfterResultChange?.resolvedAt === appliedResolvedAt, "applied records are not rewritten if the station result later changes");
     session = okSession(dismissTravelV2FocusBacklash(session, critical.id, { note: "GM ONLY dismissal", now: "2026-06-24T00:05:00.000Z" }));
     assertSmoke(session.travelV2FocusBacklashRecords.records.find((record) => record.id === critical.id).status === "dismissed", "GM Dismiss marks dismissed");
     assertSmoke(beforeSnap === snap({ actors: globalThis.Actor, items: globalThis.Item }), "apply/dismiss does not replace actor/item globals");
+
+    let clearSession = okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-24T01:00:00.000Z" }));
+    clearSession = okSession(commitTravelEventRunnerStationFocus(clearSession, 0, "navigator", "hard-correction"));
+    clearSession = okSession(setTravelEventRunnerStationResult(clearSession, 0, "navigator", "failure", { now: "2026-06-24T01:01:00.000Z" }));
+    const clearPendingId = clearSession.travelV2FocusBacklashRecords.records[0].id;
+    clearSession = okSession(clearTravelEventRunnerStationResult(clearSession, 0, "navigator", { now: "2026-06-24T01:02:00.000Z" }));
+    const clearDismissed = clearSession.travelV2FocusBacklashRecords.records.find((record) => record.id === clearPendingId);
+    assertSmoke(clearDismissed?.status === "dismissed" && clearDismissed?.resolutionNote === "Station result was cleared before the Focus backlash was resolved.", "clearing a result dismisses pending Focus backlash with a clear note");
+    const dismissedResolvedAt = clearDismissed.resolvedAt;
+    clearSession = okSession(clearTravelEventRunnerStationResult(clearSession, 0, "navigator", { now: "2026-06-24T01:03:00.000Z" }));
+    assertSmoke(clearSession.travelV2FocusBacklashRecords.records.find((record) => record.id === clearPendingId)?.resolvedAt === dismissedResolvedAt, "clearing again does not rewrite already-dismissed records");
 
     const player = sanitizeTravelV2FocusBacklashForPlayers({ records: [{ ...session.travelV2FocusBacklashRecords.records[0], gmNote: "GM ONLY SECRET", consequenceCandidate: "SECRET CONSEQUENCE", actorId: "PRIVATE" }] });
     assertSmoke(!snap(player).includes("GM ONLY SECRET") && !snap(player).includes("SECRET CONSEQUENCE") && !snap(player).includes("PRIVATE"), "player sanitizer omits GM/private fields");
@@ -63,7 +89,7 @@ export async function runTravelV2FocusBacklashRecordsSmokeChecks() {
     const publicNarration = sanitizeTravelV2PublicNarration(narration);
     assertSmoke(!snap(publicNarration).includes("GM ONLY SECRET"), "public narration omits GM-only backlash notes");
     assertSmoke(sideEffects.length === 0, "focus backlash flow has no actor/item/chat/journal/combat/socket side effects");
-    return { checked: ["creation timing", "duplicate prevention", "apply dismiss", "player sanitizer", "public narration", "no side effects"] };
+    return { checked: ["creation timing", "duplicate prevention", "stale result cleanup", "clear result cleanup", "applied dismissed preservation", "apply dismiss", "player sanitizer", "public narration", "no side effects"] };
   } finally {
     Object.assign(globalThis, prior);
   }
