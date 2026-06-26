@@ -669,6 +669,29 @@
           </section>
         {{/if}}
 
+        {{#if state.supportAssistReview.hasRecords}}
+          <section class="arcflight-travel-runner-mvp__panel">
+            <h2>Support Assists</h2>
+            <p class="arcflight-sheet__hint">Session-local only. Use/Dismiss records do not automatically mutate actors, items, chat, journals, combat, sockets, or target station results.</p>
+            {{#each state.supportAssistReview.records}}
+              <article>
+                <h3>{{supportingStationName}} → {{targetStationName}}</h3>
+                <p><strong>Assist:</strong> +{{assistValue}} · <strong>Status:</strong> {{statusLabel}}</p>
+                {{#if publicSummary}}<p><strong>Public summary:</strong> {{publicSummary}}</p>{{/if}}
+                {{#if publicAssistText}}<p><strong>Public assist:</strong> {{publicAssistText}}</p>{{/if}}
+                {{#if gmNote}}<p class="arcflight-sheet__hint"><strong>GM note:</strong> {{gmNote}}</p>{{/if}}
+                {{#if resolutionNote}}<p class="arcflight-sheet__hint"><strong>Resolution:</strong> {{resolutionNote}}</p>{{/if}}
+                {{#if isPending}}
+                  <div class="arcflight-travel-runner-mvp__result-buttons">
+                    <button type="button" data-arcflight-support-assist-use data-support-assist-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Mark Used</button>
+                    <button type="button" data-arcflight-support-assist-dismiss data-support-assist-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Dismiss</button>
+                  </div>
+                {{/if}}
+              </article>
+            {{/each}}
+          </section>
+        {{/if}}
+
         {{#if state.focusBacklashReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
             <h2>Focus Backlash</h2>
