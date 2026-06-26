@@ -379,51 +379,208 @@ The goal is that the GM can read a clean combined round vignette that reflects:
 
 Do not implement this in code in the roadmap PR. This PR is docs-only.
 
+
+## Applyable Consequence System
+
+Travel v2 should not require the GM to constantly invent consequences in the middle of play. When the table takes risks, misses rolls, ignores hazards, overflows pressure, or reaches a bad ending, the system should create premade consequence candidates that are fast to review and safe to apply only when the GM chooses.
+
+Consequence triggers should include:
+
+- Failed station action.
+- Critical failure.
+- Unresolved hazard.
+- Hazard escalation.
+- Pressure threshold or overflow.
+- Failed Focus.
+- Failed Support.
+- Bad final outcome.
+
+System response:
+
+- Create one or more session-local premade consequence candidates.
+- Show all pending consequences in one GM-facing pending consequence queue.
+- Allow the GM to **Apply**, **Dismiss**, or **Defer** each candidate.
+- Expose only player-safe public summaries to players.
+- Never automatically mutate actors, items, chat messages, journals, combats, sockets, scenes, tokens, or persisted world data. Any persistent handoff remains explicit GM Apply only.
+
+The intended loop is simple: the runner identifies the consequence source, offers authored candidates, the GM chooses what is table-appropriate, and the player HUD only receives safe summaries. This keeps consequences premade, fast to apply, and meaningful without turning Travel v2 into a hidden automation layer.
+
+## Consequence Card Shape
+
+Future consequence cards should be authored data records rather than freeform runtime inventions. This PR only documents the intended shape; it does not add runtime consequence schemas or behavior.
+
+A consequence card should eventually include fields such as:
+
+- `id`
+- `title`
+- `severity`: `minor`, `major`, or `severe`
+- `source`: `hazard`, `focus`, `support`, `pressure`, `finalOutcome`, `shipScar`, or another stable source key
+- `affectedTrack`: `Hull`, `Strain`, `Lifeveil`, `Morale`, `Supplies`, `Route`, `Cargo`, `Crew`, `Hazard`, `Ship Scar`, `Follow-up`, or `Threat`
+- `publicText`
+- `gmText`
+- `applyEffectSummary`
+- Optional session-local effect payload
+- Optional explicit GM Apply persistent payload
+- `playerSafeSummary`
+- `status`: `pending`, `applied`, `dismissed`, or `deferred`
+
+Roadmap example consequence cards:
+
+- **Arkengine Surge:** Strain or engine instability candidate from Engineer failure, Focus backlash, or an unresolved engine hazard.
+- **Lifeveil Flicker:** Lifeveil instability candidate from Veilwarden failure, occult hazard escalation, or weird void fallout.
+- **Route Drift:** Route complication candidate from Navigator failure, Void Shear, or a poor final outcome.
+- **Hull Stress:** Hull consequence candidate from pressure overflow, missed Watchmaster warning, or a physical hazard.
+- **Crew Panic:** Morale/Crew consequence candidate from Captain failure, failed Support, or frightening event narration.
+- **Cargo Shift:** Cargo consequence candidate from hard maneuvers, hull shocks, or neglected holds.
+- **Supplies Delay:** Supplies consequence candidate from low stores, blocked access, or off-course travel.
+- **Threat Attracted:** Follow-up/Threat consequence candidate from loud arkengine signatures, Lifeveil flare, or failed stealth.
+- **Hazard Escalation:** Existing hazard worsens, locks an option, advances a countdown, or creates a stronger candidate.
+- **Ship Scar Candidate:** Severe or repeated damage creates a GM-reviewed scar handoff candidate, never automatic actor/item mutation.
+
+These examples are roadmap examples only. They are not runtime implementations in this documentation PR.
+
+## Permanent Travel v2 Card Schema / Import System
+
+Travel v2 content should become data-driven through stable, versioned schemas so future hazards, consequences, station actions, risk bids, encounter templates, and narration hooks can be authored, validated, imported, exported, and expanded without changing runner code.
+
+Future schema/import targets include:
+
+- Hazard cards.
+- Consequence cards.
+- Station action cards.
+- Station action risk-bid options.
+- Station combo benefit cards.
+- Encounter templates.
+- Narration/vignette hooks.
+- Validation/dev tools.
+- Import/export tools.
+
+This PR does not implement schemas, importers, exporters, validators, compendia, or runtime data migrations. It only records that stable card schemas should come before broad runner cleanup so content and behavior targets are locked first.
+
+## Visible Stakes Card
+
+Every Travel v2 event should eventually show a clean player/GM-facing stakes summary so the table understands what they are trying to accomplish and why their choices matter.
+
+A visible stakes card should summarize:
+
+- Event goal.
+- Round count.
+- Current round.
+- Current pressure.
+- Danger thresholds.
+- Known hazards.
+- Success result.
+- Failure result.
+- Escalation risk.
+- Current pending decisions.
+
+The goal is not to expose GM secrets. The goal is to make the playable encounter legible: what the crisis is, what success looks like, what failure threatens, and which immediate decisions need attention.
+
+## Momentum Identity
+
+Momentum should feel exciting, not like a small generic bonus pool. It should represent the crew seizing control of the crisis and turning strong play into visible options.
+
+Potential future Momentum spends:
+
+- Upgrade a pending station benefit.
+- Cancel or dismiss one minor consequence candidate.
+- Suppress or clear a hazard.
+- Take an extra emergency response action.
+- Protect a station from minor backlash.
+- Improve final outcome by one step.
+- Convert a critical success into a cross-station opening.
+
+The exact implementation should remain narrow, explicit, and GM-auditable. Momentum should not stack infinitely with station benefits, bypass player choice, or become invisible automation.
+
+## Veilwarden Identity
+
+The Veilwarden needs a clearer Travel v2 role: the Veilwarden is the ship's magical immune system.
+
+Future Veilwarden actions should focus on:
+
+- Suppressing occult/environmental hazards.
+- Shielding another station from backlash.
+- Stabilizing Lifeveil pressure.
+- Absorbing or redirecting weird void fallout.
+- Protecting the ship from threat attraction.
+- Converting Lifeveil instability into a controlled opening or Momentum.
+
+This identity should help Veilwarden choices feel distinct from Engineer repairs or Captain coordination while still fitting the same station-card and consequence-candidate framework.
+
+## Final Outcome / Aftermath
+
+The final event output should feed the campaign, not merely end the minigame. A completed Travel v2 event should answer:
+
+- Where did the ship end up?
+- What changed on the ship?
+- What consequence candidates remain?
+- Which hazards were cleared or ignored?
+- What reward, clue, route advantage, or opportunity opened?
+- What follow-up event or threat might happen?
+
+Final outcome text should give the GM a clear aftermath summary, safe public text for players, and explicit GM Apply choices for any persistent effect. Bad outcomes should create authored fallout candidates instead of forcing the GM to improvise consequences from scratch.
+
+## UI Simplicity and Balance Guardrails
+
+Travel v2 should not ask the GM to manage ten separate piles of records. Future UI should aim for:
+
+- One **Current Round** panel.
+- One **Pending Decisions** queue.
+- One clear **Final Outcome / Aftermath** summary.
+
+Balance guardrails:
+
+- Only one pending station benefit should affect a single station roll unless explicitly allowed.
+- DC reductions usually cap at -3.
+- Risk bid DC increases are fixed, not custom.
+- Most benefits expire after one use or at end of round.
+- Momentum should not stack infinitely with station benefits.
+- Critical success may improve a benefit but should not double every effect.
+- Same-track pressure treadmill hazards should be avoided.
+
 ## Implementation Roadmap
 
-This PR is documentation-only. The next roadmap work should make the runner easier to understand before adding broader gameplay polish. Keep scopes narrow, reviewable, and one subsystem per PR. Broad runner splitting belongs to alpha cleanup and should happen incrementally, not as a single sweeping rewrite.
+This PR is documentation-only. The next roadmap work should lock the clean gameplay arc before broad runner cleanup. Keep scopes narrow, reviewable, and one subsystem per PR. Broad runner splitting belongs to alpha cleanup after the core Travel v2 content, consequence, schema, and stakes targets are clear.
 
-### Recommended Next 3 PRs
+### Recommended Next Sequence
 
-1. **Alpha roadmap cleanup / doc truth pass**
-   - Keep Travel v2 docs aligned with completed Focus + Support behavior.
-   - Remove stale PR-era labels and early hazard-planning language as implementation lands.
-   - Confirm the docs still state that mutation is explicit GM Apply only and that player-facing text is sanitized.
+1. **Consequence/schema roadmap pillars**
+   - This PR.
+   - Docs only.
 
-2. **Travel v2 runner alpha cleanup split planning**
-   - Map the current runner responsibilities into candidate extraction seams.
-   - Identify subsystem boundaries, test coverage, and file ownership before moving code.
-   - Explicitly sequence broad runner splitting as one subsystem per PR.
+2. **Permanent card schema planning**
+   - Define stable schemas for hazards, consequences, station actions, risk bids, station benefits, and encounter templates.
+   - No broad runtime changes yet.
 
-3. **Support record helper extraction**
-   - Extract Support record creation, lifecycle, display helpers, and summary formatting behind focused helper functions/modules.
-   - Preserve existing Support rules: Support does not count as main objective progress, does not award Momentum, does not automatically mutate rolls, and failed Support creates GM-controlled candidates only.
+3. **Applyable consequence catalog foundation**
+   - Add authored consequence definitions.
+   - Keep candidates session-local only.
+   - Do not add automatic mutation.
 
-### Later Alpha Cleanup PRs
+4. **Pending consequence queue**
+   - Provide one GM-facing queue for Focus backlash, Support backlash, unresolved hazards, pressure overflow, final outcome fallout, and ship scar candidates.
+   - Support **Apply / Dismiss / Defer** lifecycle.
+   - Preserve player-safe sanitizer coverage.
 
-4. **Focus backlash extraction**
-   - Move Focus backlash record creation, GM lifecycle controls, and player-safe summary shaping into a focused helper boundary.
-   - Preserve session-local behavior and explicit GM Apply for any persistent consequence.
+5. **First 12 gold-standard hazards**
+   - Use the permanent hazard/consequence schema.
+   - Avoid same-track pressure treadmill hazards.
+   - Ensure each hazard changes player choices.
 
-5. **Momentum extraction**
-   - Move Momentum award/spend/session summary logic into a focused helper boundary.
-   - Preserve current award rules, GM-auditable spend flow, and the rule that Support does not award Momentum.
+6. **Gold-standard Travel v2 encounter sample**
+   - Demonstrate visible stakes, station choices, hazards, risk bids, station combo benefits, Momentum, consequences, and final aftermath.
 
-6. **Player sanitizer extraction**
-   - Extract player-facing sanitization helpers so GM-only notes stay private across HUD, narration, Support, Focus, hazards, and final summaries.
-   - Do not change sanitizer behavior as part of the extraction; keep this as a behavior-preserving refactor.
+7. **Then alpha cleanup extraction**
+   - Support record helper extraction.
+   - Focus backlash extraction.
+   - Momentum extraction.
+   - Player sanitizer extraction.
+   - Runner library/session extraction.
+   - Station row/action handling extraction.
 
-7. **Runner library/session extraction**
-   - Separate runner library helpers from session-state orchestration.
-   - Keep persistent Foundry document mutation explicit and GM-initiated only.
+### Later Gameplay Polish
 
-8. **Station row/action handling extraction**
-   - Move station row rendering/action handlers behind clearer helper boundaries.
-   - Preserve existing station action semantics, including Stabilize/Repair tradeoffs and Support exclusions from objective progress.
-
-### Revisit After Runner Cleanup
-
-After the runner is easier to navigate, revisit gameplay polish in narrow PRs:
+After the schema, consequence, hazard, and sample encounter direction is validated, revisit gameplay polish in narrow PRs:
 
 - Deepen hazard variety, clear conditions, and unresolved consequence presentation.
 - Add ship scar candidate polish while keeping actor/item mutation explicit GM Apply only.
@@ -437,6 +594,12 @@ After the runner is easier to navigate, revisit gameplay polish in narrow PRs:
 - GM workload should go down, not up.
 - Players should see fun, clear, public card text and meaningful choices.
 - GM-only notes must not leak.
-- Actor/item/chat/journal/combat mutation must remain explicit GM Apply.
+- Actor/item/chat/journal/combat/socket/scene/token mutation must remain explicit GM Apply only.
 - Pressure is the consequence layer, not the whole gameplay loop.
 - The system should generate or assemble narration from player action results so the GM can read it at the table.
+- Support does not count as main objective progress.
+- Support does not award Momentum.
+- Support assists do not automatically mutate rolls.
+- Failed Support creates GM-controlled candidates only.
+- Consequences should be premade, fast to apply, and meaningful.
+- Card content should be data-driven and importable long-term.
