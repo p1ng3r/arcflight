@@ -106,7 +106,9 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Support Action Targeting Foundation:** this pass adds a formal Support station action, target selection, validation, and objective-separate supporter counting. It does not create Support assist records, Support backlash, or failed-Support consequences.
+**Current PR scope — Support Assist Records:** this pass creates session-local pending Support assist records from successful Support actions, adds GM Use/Dismiss controls, and keeps Support assists separate from main objective progress, Momentum awards, and Support backlash.
+
+**Previous PR scope — Support Action Targeting Foundation:** this pass made Support a formal station action, added target validation and minimal GM target UI, and kept Support contributors separate from main-objective success counting.
 
 **Previous PR scope — Focus Backlash Records:** this pass creates session-local Focus backlash records from failed Focus-backed station results, adds GM Apply/Dismiss controls, keeps pressure/consequence changes session-local, and exposes only public-safe Focus backlash summaries.
 

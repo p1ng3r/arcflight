@@ -568,6 +568,160 @@ export function dismissTravelV2FocusBacklash(session, recordId, options = {}) {
   return { ok: true, errors: [], warnings: [], session: nextSession, record };
 }
 
+const SUPPORT_RECORD_STATUSES = Object.freeze(["pending", "used", "dismissed"]);
+
+function supportAssistRecordId(roundIndex, supportingStationKey, targetStationKey) { return ["support-assist", roundIndex, supportingStationKey, targetStationKey].map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).join(":"); }
+function supportAssistRecordsMatch(record, roundIndex, supportingStationKey, targetStationKey) { return Number(record?.roundIndex) === Number(roundIndex) && record?.supportingStationKey === supportingStationKey && record?.targetStationKey === targetStationKey; }
+function nextSupportAssistRecordId(records = [], baseId = "") {
+  if (!records.some((record) => record.id === baseId)) return baseId;
+  let suffix = 2;
+  while (records.some((record) => record.id === `${baseId}:${suffix}`)) suffix += 1;
+  return `${baseId}:${suffix}`;
+}
+
+export function normalizeTravelV2SupportRecords(recordsOrState = {}, options = {}) {
+  const rawRecords = Array.isArray(recordsOrState) ? recordsOrState : (Array.isArray(recordsOrState?.records) ? recordsOrState.records : []);
+  const records = rawRecords.filter(isPlainObject).map((record, index) => ({
+    id: typeof record.id === "string" && record.id ? record.id : `support-assist:${index + 1}`,
+    roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
+    supportingStationKey: typeof record.supportingStationKey === "string" ? record.supportingStationKey : "",
+    supportingStationName: typeof record.supportingStationName === "string" ? record.supportingStationName : "",
+    targetStationKey: typeof record.targetStationKey === "string" ? record.targetStationKey : "",
+    targetStationName: typeof record.targetStationName === "string" ? record.targetStationName : "",
+    supportKey: typeof record.supportKey === "string" ? record.supportKey : (typeof record.supportMode === "string" ? record.supportMode : ""),
+    supportMode: typeof record.supportMode === "string" ? record.supportMode : (typeof record.supportKey === "string" ? record.supportKey : ""),
+    publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+    publicAssistText: typeof record.publicAssistText === "string" ? record.publicAssistText : "",
+    assistValue: Number.isFinite(Number(record.assistValue)) ? Math.max(0, Math.trunc(Number(record.assistValue))) : 0,
+    gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
+    status: SUPPORT_RECORD_STATUSES.includes(record.status) ? record.status : "pending",
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+    resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+    resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+    resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : ""
+  })).filter((record) => record.id && record.supportingStationKey && record.targetStationKey);
+  return { records: Array.from(new Map(records.map((record) => [record.id, record])).values()) };
+}
+
+export function prepareTravelV2SupportPanelState(session, options = {}) {
+  const records = normalizeTravelV2SupportRecords(session?.travelV2SupportRecords, options).records.map((record) => ({
+    ...record,
+    statusLabel: humanizeIdentifier(record.status),
+    isPending: record.status === "pending",
+    isUsed: record.status === "used",
+    isDismissed: record.status === "dismissed"
+  }));
+  return { records, pendingRecords: records.filter((record) => record.isPending), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.isPending).length };
+}
+
+export function sanitizeTravelV2SupportForPlayers(recordsOrState = {}, options = {}) {
+  const records = normalizeTravelV2SupportRecords(recordsOrState, options).records.map((record) => ({
+    id: record.id,
+    roundIndex: record.roundIndex,
+    supportingStationKey: record.supportingStationKey,
+    supportingStationName: record.supportingStationName,
+    targetStationKey: record.targetStationKey,
+    targetStationName: record.targetStationName,
+    publicSummary: record.publicSummary,
+    publicAssistText: record.publicAssistText,
+    assistValue: record.assistValue,
+    status: record.status,
+    statusLabel: humanizeIdentifier(record.status)
+  }));
+  return { records, pendingRecords: records.filter((record) => record.status === "pending"), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending").length };
+}
+
+export function createTravelV2SupportRecord(session, roundIndex, supportingStationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const action = normalizeTravelStationAction(normalized.session.roundResults?.[index]?.stationActions?.[supportingStationKey], supportingStationKey, round);
+  const result = options.result ?? normalized.session.roundResults?.[index]?.stationResults?.[supportingStationKey];
+  if (action.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT || !action.targetStationKey || !["success", "criticalSuccess"].includes(result)) return { ok: true, errors: [], warnings: [], session: normalized.session, record: null, skipped: true };
+  const baseId = typeof options.id === "string" && options.id ? options.id : supportAssistRecordId(index, supportingStationKey, action.targetStationKey);
+  const records = normalizeTravelV2SupportRecords(normalized.session.travelV2SupportRecords, options).records;
+  const existing = records.find((record) => record.status !== "dismissed" && (record.id === baseId || supportAssistRecordsMatch(record, index, supportingStationKey, action.targetStationKey)));
+  if (existing) return { ok: true, duplicate: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportRecords: { records } }, record: existing };
+  const supportingStationName = getStation(supportingStationKey)?.displayName || getStation(supportingStationKey)?.name || humanizeIdentifier(supportingStationKey);
+  const targetStationName = getStation(action.targetStationKey)?.displayName || getStation(action.targetStationKey)?.name || humanizeIdentifier(action.targetStationKey);
+  const assistValue = result === "criticalSuccess" ? 2 : 1;
+  const record = {
+    id: nextSupportAssistRecordId(records, baseId),
+    roundIndex: index,
+    supportingStationKey,
+    supportingStationName,
+    targetStationKey: action.targetStationKey,
+    targetStationName,
+    supportKey: action.supportKey || "support",
+    supportMode: action.supportKey || "support",
+    publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${supportingStationName} creates a pending Support assist for ${targetStationName}.`,
+    publicAssistText: typeof options.publicAssistText === "string" ? options.publicAssistText : `${targetStationName} may receive a session-local Support assist (+${assistValue}) if the GM uses it.`,
+    assistValue,
+    gmNote: typeof options.gmNote === "string" ? options.gmNote : "Session-local Support assist. Use/dismiss only; no automatic actor/item/chat/journal/combat/socket mutation and no automatic target roll change.",
+    status: "pending",
+    createdAt: nowIso(options),
+    resolvedAt: "",
+    resolvedByUserId: "",
+    resolvedByUserName: "",
+    resolutionNote: ""
+  };
+  records.push(record);
+  return { ok: true, duplicate: false, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportRecords: { records }, updatedAt: nowIso(options), summary: null }, record };
+}
+
+export function syncTravelV2SupportRecordsForStationResult(session, roundIndex, supportingStationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const action = normalizeTravelStationAction(normalized.session.roundResults?.[index]?.stationActions?.[supportingStationKey], supportingStationKey, round);
+  if (action.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT || !action.targetStationKey) return { ok: true, errors: [], warnings: [], session: normalized.session };
+  const result = normalized.session.roundResults?.[index]?.stationResults?.[supportingStationKey] ?? null;
+  if (["success", "criticalSuccess"].includes(result)) return createTravelV2SupportRecord(normalized.session, index, supportingStationKey, options);
+  const records = normalizeTravelV2SupportRecords(normalized.session.travelV2SupportRecords, options).records;
+  let changed = false;
+  for (const record of records) {
+    if (record.status !== "pending" || !supportAssistRecordsMatch(record, index, supportingStationKey, action.targetStationKey)) continue;
+    record.status = "dismissed";
+    record.resolvedAt = nowIso(options);
+    record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+    record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+    record.resolutionNote = options.cleared === true
+      ? "Station result was cleared before the Support assist was used."
+      : "Original Support assist trigger result changed before the assist was used.";
+    changed = true;
+  }
+  if (!changed) return { ok: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportRecords: { records } } };
+  return { ok: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportRecords: { records }, updatedAt: nowIso(options), summary: null } };
+}
+
+function resolveTravelV2SupportRecord(session, recordId, status, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.travelV2SupportRecords.records.find((entry) => entry.id === recordId);
+  if (!record) return { ok: false, errors: [`Support assist "${recordId}" was not found.`], warnings: [], session: nextSession };
+  if (record.status !== "pending") return { ok: false, errors: [`Support assist "${recordId}" is already ${record.status}.`], warnings: [], session: nextSession };
+  record.status = status;
+  record.resolvedAt = nowIso(options);
+  record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+  record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+  record.resolutionNote = typeof options.note === "string" ? options.note.trim().slice(0, 500) : record.resolutionNote;
+  nextSession.updatedAt = nowIso(options);
+  nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession, record };
+}
+
+export function useTravelV2SupportRecord(session, recordId, options = {}) {
+  return resolveTravelV2SupportRecord(session, recordId, "used", options);
+}
+
+export function dismissTravelV2SupportRecord(session, recordId, options = {}) {
+  return resolveTravelV2SupportRecord(session, recordId, "dismissed", options);
+}
+
 
 export const TRAVEL_REACTION_DEFINITIONS = Object.freeze({
   "navigator.hard-correction": Object.freeze({
@@ -1475,16 +1629,25 @@ function normalizeSelectedStationOptionLabels(roundResult = {}, round = null) {
   return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, typeof source[stationKey] === "string" ? source[stationKey] : ""]));
 }
 
-function validateTravelSupportTarget(round, stationKey, targetStationKey) {
-  const activeStations = Array.isArray(round?.activeStations) ? round.activeStations : [];
-  if (typeof targetStationKey !== "string" || !targetStationKey) return "Support requires a target station.";
-  if (targetStationKey === stationKey) return "Support cannot target its own station.";
-  if (!activeStations.includes(targetStationKey)) return `Support target "${targetStationKey}" is not active in this round.`;
-  return "";
+export function validateTravelSupportTarget(session, roundIndex, supportingStationKey, targetStationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[index] ?? null;
+  if (!round) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  if (!round.activeStations?.includes(supportingStationKey)) return { ok: false, errors: [`Station "${supportingStationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
+  if (typeof targetStationKey !== "string" || !targetStationKey) return { ok: false, errors: ["Support requires a target station."], warnings: [], session: normalized.session };
+  if (targetStationKey === supportingStationKey) return { ok: false, errors: ["Support cannot target its own station."], warnings: [], session: normalized.session };
+  if (!round.activeStations?.includes(targetStationKey)) return { ok: false, errors: [`Support target "${targetStationKey}" is not active in this round.`], warnings: [], session: normalized.session };
+  return { ok: true, errors: [], warnings: [], session: normalized.session, round, roundIndex: index, supportingStationKey, targetStationKey };
 }
 
 function stationOptionKey(actionType, skill, pressureKey = "") {
   return [actionType, pressureKey, skill].filter(Boolean).join(":");
+}
+
+function supportStationOptionKey(targetStationKey) {
+  return stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, "assist", targetStationKey);
 }
 
 function stationNameForRound(round, stationKey) {
@@ -1939,6 +2102,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     shipScars: normalizeTravelV2ShipScarsState(session.shipScars ?? session.travelV2ShipScars),
     travelV2Momentum: normalizeTravelV2MomentumState(session.travelV2Momentum),
     travelV2FocusBacklashRecords: normalizeTravelV2FocusBacklashRecords(session.travelV2FocusBacklashRecords, options),
+    travelV2SupportRecords: normalizeTravelV2SupportRecords(session.travelV2SupportRecords, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
@@ -2017,15 +2181,23 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       stabilizePressureKey: ""
     }));
     const stabilizeOptions = normalizeCustomStabilizeOptions(card, stationKey, round, assignedActor);
-    const supportOptions = [{
-      optionKey: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, "target"),
-      value: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, "target"),
-      actionType: ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT,
-      label: "Support another station",
-      helpText: "Choose another active station to support. This does not count toward main objective progress in this pass.",
-      skill: "target",
-      dc: null
-    }];
+    const supportOptions = (Array.isArray(round?.activeStations) ? round.activeStations : [])
+      .filter((targetStationKey) => targetStationKey && targetStationKey !== stationKey)
+      .map((targetStationKey) => {
+        const targetStation = getStation(targetStationKey);
+        const targetName = targetStation?.displayName || targetStation?.name || humanizeIdentifier(targetStationKey);
+        return {
+          optionKey: supportStationOptionKey(targetStationKey),
+          actionType: ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT,
+          skill: eventApproachSelection.skill,
+          supportKey: "assist",
+          supportMode: "assist",
+          label: `Support ${targetName}`,
+          helpText: "Create a session-local assist for another station on success. Does not add main objective progress.",
+          targetStationKey,
+          targetStationName: targetName
+        };
+      });
     const hazardResponseOptions = hazardModifiers.responseActions
       .filter((action) => action.stationKey === stationKey || action.stationKey === "any")
       .map((action) => ({
@@ -2038,7 +2210,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
         hazardRecordId: action.hazardRecordId,
         hazardName: action.hazardName
       }));
-    const stationOptions = [...eventOptions, ...stabilizeOptions, ...hazardResponseOptions, ...supportOptions].map((option) => {
+    const stationOptions = [...eventOptions, ...stabilizeOptions, ...supportOptions, ...hazardResponseOptions].map((option) => {
       const hazardDc = hazardModifiers.dcModifiers
         .filter((modifier) => (!modifier.stationKey || modifier.stationKey === stationKey) && (!modifier.actionType || modifier.actionType === option.actionType))
         .reduce((sum, modifier) => sum + (Number(modifier.modifier) || 0), 0);
@@ -2055,6 +2227,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       selected: option.actionType === selectedAction.type
         && option.skill === (storedSkill || eventApproachSelection.skill)
         && (option.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE || option.stabilizePressureKey === stabilizePressureKey)
+        && (option.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT || option.targetStationKey === selectedAction.targetStationKey)
       };
     });
     const selectedStationOption = stationOptions.find((option) => option.selected) ?? stationOptions.find((option) => option.actionType === selectedAction.type) ?? stationOptions[0] ?? null;
@@ -2489,6 +2662,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
   const focusEffectReview = prepareTravelFocusEffectReviewState(activeSession, options);
   const focusBacklashReview = prepareTravelV2FocusBacklashPanelState(activeSession, options);
+  const supportAssistReview = prepareTravelV2SupportPanelState(activeSession, options);
   return {
     ok: normalized.ok,
     errors: normalized.errors,
@@ -2525,6 +2699,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     },
     focusEffectReview,
     focusBacklashReview,
+    supportAssistReview,
     focusRiskSummary: prepareTravelFocusRiskSummary(stations),
     travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
     travelV2Narration: activeSession ? prepareTravelV2RoundNarration(activeSession, activeSession.currentRoundIndex, options) : null,
@@ -2930,7 +3105,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     momentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum),
     hasMomentum: sanitizeTravelV2MomentumForPlayers(activeSession?.travelV2Momentum).value > 0,
     focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords),
-    hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords).hasRecords
+    hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords).hasRecords,
+    supportAssists: sanitizeTravelV2SupportForPlayers(activeSession?.travelV2SupportRecords),
+    hasSupportAssists: sanitizeTravelV2SupportForPlayers(activeSession?.travelV2SupportRecords).hasRecords
   };
 }
 
@@ -3100,6 +3277,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     hasMomentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum).value > 0,
     focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords),
     hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords).hasRecords,
+    supportAssists: sanitizeTravelV2SupportForPlayers(normalized.session?.travelV2SupportRecords),
+    hasSupportAssists: sanitizeTravelV2SupportForPlayers(normalized.session?.travelV2SupportRecords).hasRecords,
     partyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }),
     hasPartyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }).length > 0
   };
@@ -3126,6 +3305,9 @@ export function clearTravelEventRunnerStationResult(session, roundIndex, station
   const focusBacklashUpdate = syncTravelV2FocusBacklashRecordsForStationResult(nextSession, index, stationKey, { ...options, cleared: true });
   if (!focusBacklashUpdate.ok) return focusBacklashUpdate;
   Object.assign(nextSession, focusBacklashUpdate.session);
+  const supportUpdate = syncTravelV2SupportRecordsForStationResult(nextSession, index, stationKey, { ...options, cleared: true });
+  if (!supportUpdate.ok) return supportUpdate;
+  Object.assign(nextSession, supportUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -3159,6 +3341,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const focusBacklashUpdate = syncTravelV2FocusBacklashRecordsForStationResult(nextSession, index, stationKey, options);
   if (!focusBacklashUpdate.ok) return focusBacklashUpdate;
   Object.assign(nextSession, focusBacklashUpdate.session);
+  const supportUpdate = syncTravelV2SupportRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!supportUpdate.ok) return supportUpdate;
+  Object.assign(nextSession, supportUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -3198,21 +3383,58 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
     return { ok: false, errors: [`Invalid travel runner station action "${actionType}".`], warnings: [], session: normalized.session };
   }
   if (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT) {
-    const error = validateTravelSupportTarget(round, stationKey, typeof options.targetStationKey === "string" ? options.targetStationKey : "");
-    if (error) return { ok: false, errors: [error], warnings: [], session: normalized.session };
+    const targetValidation = validateTravelSupportTarget(
+      normalized.session,
+      index,
+      stationKey,
+      typeof options.targetStationKey === "string" ? options.targetStationKey : "",
+      options
+    );
+    if (!targetValidation.ok) return targetValidation;
   }
+  const previousAction = normalizeTravelStationAction(
+    normalized.session.roundResults?.[index]?.stationActions?.[stationKey],
+    stationKey,
+    round
+  );
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationActions = normalizeStationActions(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationActions[stationKey] = actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
     ? stabilize(getTravelStationStabilizePressureKey(stationKey, round))
-    : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE
-      ? hazardResponse()
-      : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT ? support(options.targetStationKey, options) : eventApproach()));
+    : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE ? hazardResponse() : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT ? support(options.targetStationKey ?? "", options) : eventApproach()));
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);
+  const supportUpdate = syncTravelV2SupportRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!supportUpdate.ok) return supportUpdate;
+  Object.assign(nextSession, supportUpdate.session);
+  if (
+    previousAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT
+    && previousAction.targetStationKey
+    && (
+      actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT
+      || previousAction.targetStationKey !== options.targetStationKey
+    )
+  ) {
+    const supportRecords = normalizeTravelV2SupportRecords(nextSession.travelV2SupportRecords, options).records;
+    let dismissedSupportAssist = false;
+    for (const record of supportRecords) {
+      if (record.status !== "pending" || !supportAssistRecordsMatch(record, index, stationKey, previousAction.targetStationKey)) continue;
+      record.status = "dismissed";
+      record.resolvedAt = nowIso(options);
+      record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? "";
+      record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? "";
+      record.resolutionNote = "Support station action changed before the assist was used.";
+      dismissedSupportAssist = true;
+    }
+    if (dismissedSupportAssist) {
+      nextSession.travelV2SupportRecords = { records: supportRecords };
+      nextSession.updatedAt = nowIso(options);
+      nextSession.summary = null;
+    }
+  }
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -3232,7 +3454,7 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   if (stationOption.suppressedByHazard || stationOption.disabled || stationOption.unavailable) return { ok: false, errors: [`Station option "${stationOption.label}" is suppressed by an active hazard.`], warnings: [], session: normalized.session };
   const previousCommitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
   const actionOptions = stationOption.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT
-    ? { ...options, targetStationKey: typeof options.targetStationKey === "string" ? options.targetStationKey : "" }
+    ? { ...options, targetStationKey: stationOption.targetStationKey, supportKey: stationOption.supportKey, supportMode: stationOption.supportMode, label: stationOption.label, helpText: stationOption.helpText }
     : options;
   const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, actionOptions);
   if (!actionUpdate.ok) return actionUpdate;
@@ -3245,6 +3467,13 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
     nextSession.roundResults[index].stationActions[stationKey] = stabilize(stationOption.stabilizePressureKey);
   } else if (stationOption.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE) {
     nextSession.roundResults[index].stationActions[stationKey] = hazardResponse(stationOption.hazardRecordId ?? "", stationOption.hazardName ?? "");
+  } else if (stationOption.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT) {
+    nextSession.roundResults[index].stationActions[stationKey] = support(stationOption.targetStationKey ?? "", {
+      supportKey: stationOption.supportKey ?? stationOption.optionKey ?? "",
+      supportMode: stationOption.supportMode ?? "assist",
+      label: stationOption.label ?? "",
+      helpText: stationOption.helpText ?? ""
+    });
   }
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   const hazardModifiers = prepareTravelV2ActiveHazardModifiers(nextSession, { ...options, roundIndex: index });

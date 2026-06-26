@@ -128,12 +128,15 @@ export function getTravelStationStabilizePressureKey(stationKey, round = {}) {
 }
 
 export function support(targetStationKey = "", options = {}) {
-  const source = isPlainObject(options) ? options : {};
+  const source = isPlainObject(options) ? options : { supportKey: options };
+  const supportKey = typeof source.supportKey === "string" ? source.supportKey : (typeof source.supportMode === "string" ? source.supportMode : "");
+  const supportMode = typeof source.supportMode === "string" ? source.supportMode : supportKey;
   return {
     type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT,
+    stabilizePressureKey: "",
     targetStationKey: typeof targetStationKey === "string" ? targetStationKey : "",
-    supportMode: typeof source.supportMode === "string" ? source.supportMode : (typeof source.supportKey === "string" ? source.supportKey : ""),
-    supportKey: typeof source.supportKey === "string" ? source.supportKey : "",
+    supportKey,
+    supportMode,
     label: typeof source.label === "string" ? source.label : "",
     helpText: typeof source.helpText === "string" ? source.helpText : ""
   };
