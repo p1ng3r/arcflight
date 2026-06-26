@@ -237,6 +237,148 @@ Recommended categories:
 - Clear condition: one response success clears it.
 - If unresolved: supply shortage follow-up or final outcome penalty.
 
+## Station Combo Play / Round Action Order
+
+Travel v2 should support station actions that create temporary benefits for later stations in the same round. This requires a simple player-chosen round action order so station timing matters without becoming a full initiative subsystem.
+
+At the start of each Travel v2 round, the table should be able to choose the order in which active stations resolve. The GM can arrange the station order in the runner. The chosen order matters because some station actions create benefits for later stations.
+
+Default rule:
+
+- Players choose station order each round.
+- GM can adjust or override when an event or hazard requires it.
+- Hazards may sometimes force or restrict order.
+- No initiative roll is required by default.
+
+Station combo actions may create pending station benefits such as:
+
+- Target station DC -2.
+- Target station ignores one hazard modifier.
+- Target station gains improved hazard-clear progress.
+- Target station may use a risk bid with reduced surcharge.
+- Target station is protected from minor backlash.
+- Target station unlocks a special response action.
+
+Pending station benefits must be:
+
+- Session-local.
+- Player-safe.
+- Tied to source station and target station.
+- Visible in one clean GM/player-facing queue.
+- Usable/dismissible by GM or by the appropriate flow.
+- Expired after use or at end of round.
+- Never automatic Foundry document mutation.
+
+Initial station combo identities:
+
+- **Engineer:** overcharge the arkengine to empower one chosen station.
+- **Watchmaster:** call out threats, weak points, hazards, or ship danger before another station acts.
+- **Captain:** convert callouts into coordinated crew action, redirect benefits, strengthen benefits, or protect stations from minor backlash.
+
+### Example Engineer Action: Overcharge the Arkengine
+
+Declare a target station: Navigator, Veilwarden, Watchmaster, Captain, or Engineer.
+
+- **Success:** create a pending station benefit for the chosen target this round. Suggested easiest implementation: target station receives DC -2 on its next action this round.
+- **Critical Success:** improve the benefit to DC -3, or grant the table 1 Momentum.
+- **Failure:** no benefit. Create a Minor Arkengine Surge consequence candidate.
+- **Critical Failure:** no benefit. Create a Major Arkengine Surge consequence candidate.
+
+### Example Watchmaster Action: Call the Warning
+
+- **Success:** create a pending callout benefit for one target station this round, such as DC -2, reveal a hidden hazard response, suppress a surprise penalty, or identify the safest station to act next.
+- **Critical Success:** improve the benefit or also grant 1 Momentum.
+- **Failure:** no benefit.
+- **Critical Failure:** create a Missed Warning consequence candidate.
+
+### Example Captain Action: Command the Response
+
+Requirement: another station has created a callout, opening, assist, or pending benefit this round.
+
+- **Success:** choose one:
+  - Move one pending station benefit to a different valid station.
+  - Increase one pending station benefit by 1.
+  - Let one station act immediately after Captain.
+  - Protect one station from minor backlash this round.
+- **Critical Success:** also grant 1 Momentum or dismiss one minor consequence candidate.
+- **Failure:** no change.
+- **Critical Failure:** create a Crew Confusion consequence candidate.
+
+## Risk Bids
+
+Travel v2 station actions may define pre-authored risk bids.
+
+A risk bid:
+
+- Is selected before rolling.
+- Increases the DC by a fixed amount, usually +2, +5, or +10.
+- Grants a listed benefit on success or critical success.
+- May create a premade consequence candidate on failure or critical failure.
+- Must be written in card data, not improvised by the GM during play.
+
+Example: **Navigator — Thread the Wake**
+
+Base action: normal Navigator check to gain route progress.
+
+Risk bid: +5 DC.
+
+Success benefit: choose one:
+
+- Reduce the next Engineer DC by 2.
+- Remove 1 Strain.
+- Suppress one navigation hazard for the round.
+
+Critical success: gain the chosen benefit and 1 Momentum.
+
+Critical failure: create a Route Overcorrection consequence candidate.
+
+Guardrails:
+
+- No freeform DC bidding.
+- One risk bid per action unless the card explicitly supports more.
+- Bids must be declared before rolling.
+- Benefits should usually affect station DCs, hazard progress, pressure relief, Momentum, final outcome, or consequence prevention.
+- Same-track pressure treadmill effects should be avoided.
+- Failure should use premade consequence candidates instead of GM improvisation.
+
+## Vignette / Narration Hooks for Combo Play
+
+The existing Travel v2 narration system should eventually support authored vignette hooks from station actions, hazards, risk bids, pending benefits, and consequence candidates.
+
+This should not be live AI generation and should not require GM improvisation. It should use card-authored text fragments that the runner can assemble into GM-readable narration.
+
+Future card schemas should support narration fields such as:
+
+- `onDeclare`
+- `onSuccess`
+- `onCriticalSuccess`
+- `onFailure`
+- `onCriticalFailure`
+- `onBenefitCreated`
+- `onBenefitUsed`
+- `onConsequenceCreated`
+- `onHazardCleared`
+- `onHazardIgnored`
+
+Example: **Engineer Overcharge targeting Navigator**
+
+- **Declare:** the Engineer opens the throttle and sends a dangerous surge through the arkengine lines.
+- **Success:** the surge steadies into a bright wake-channel, giving the Navigator a cleaner line.
+- **Critical Success:** the ship leaps forward as the wake opens perfectly, and the crew feels the whole vessel answer.
+- **Failure:** the surge sputters and collapses before the target station can use it.
+- **Critical Failure:** the engine flare rebounds through the deck plates, leaving the arkengine coughing hot.
+
+The goal is that the GM can read a clean combined round vignette that reflects:
+
+- Station order.
+- Who helped whom.
+- Which risks were taken.
+- Which hazards changed the scene.
+- Which consequences are now pending.
+- What the ship feels like at the end of the round.
+
+Do not implement this in code in the roadmap PR. This PR is docs-only.
+
 ## Implementation Roadmap
 
 This PR is documentation-only. The next roadmap work should make the runner easier to understand before adding broader gameplay polish. Keep scopes narrow, reviewable, and one subsystem per PR. Broad runner splitting belongs to alpha cleanup and should happen incrementally, not as a single sweeping rewrite.
