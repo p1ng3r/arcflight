@@ -8,6 +8,7 @@ import {
   setTravelEventRunnerStationResult,
   useTravelV2SupportRecord
 } from "./travel-event-runner.js";
+import { prepareTravelV2RoundNarration, sanitizeTravelV2PublicNarration } from "./travel-v2-narration.js";
 import { ARCFLIGHT_TRAVEL_STATION_ACTIONS } from "./travel-pressure.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 support assist records smoke check failed: ${message}`); }
@@ -20,6 +21,11 @@ function fixtureEvent() {
 }
 function setSupport(session, supportingStationKey = "engineer", targetStationKey = "navigator") {
   return okSession(setTravelEventRunnerStationAction(session, 0, supportingStationKey, ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, { targetStationKey }));
+}
+function cloneSessionWithSecretSupport(session, gmNote) {
+  const next = JSON.parse(JSON.stringify(session));
+  next.travelV2SupportRecords.records[0].gmNote = gmNote;
+  return next;
 }
 
 export async function runTravelV2SupportAssistRecordsSmokeChecks() {
@@ -37,6 +43,11 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     session = okSession(setTravelEventRunnerStationResult(session, 0, "engineer", "success", { now: "2026-06-25T00:01:00.000Z" }));
     assertSmoke(session.travelV2SupportRecords.records.length === 1 && session.travelV2SupportRecords.records[0].status === "pending", "Support + success creates one pending assist");
     assertSmoke(session.travelV2SupportRecords.records[0].assistValue === 1, "Support success assist has value 1");
+    const pendingPlayer = sanitizeTravelV2SupportForPlayers({ records: [{ ...session.travelV2SupportRecords.records[0], gmNote: "GM ONLY SECRET", actorId: "PRIVATE", hiddenHazardData: "SECRET", target: { raw: true }, resolverUserId: "gm-user" }] });
+    const pendingRecord = pendingPlayer.records[0];
+    assertSmoke(pendingRecord.supportingStationKey === "engineer" && pendingRecord.supportingStationName === "Engineer" && pendingRecord.targetStationKey === "navigator" && pendingRecord.targetStationName === "Navigator" && pendingRecord.assistValue === 1 && pendingRecord.status === "pending" && pendingRecord.statusLabel === "Pending", "player sanitizer includes source, target, assist value, and status label");
+    assertSmoke(pendingRecord.publicAssistText === "Engineer is helping Navigator. Pending assist: +1.", "pending assist player text is clear");
+    assertSmoke(!snap(pendingPlayer).includes("GM ONLY SECRET") && !snap(pendingPlayer).includes("PRIVATE") && !snap(pendingPlayer).includes("SECRET") && !snap(pendingPlayer).includes("gm-user") && !snap(pendingPlayer).includes("raw"), "player sanitizer omits GM-only/private/internal fields");
     const duplicate = createTravelV2SupportRecord(session, 0, "engineer");
     assertSmoke(duplicate.duplicate === true && duplicate.session.travelV2SupportRecords.records.length === 1, "duplicate pending Support assist records are prevented");
 
@@ -44,6 +55,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     criticalSession = setSupport(criticalSession);
     criticalSession = okSession(setTravelEventRunnerStationResult(criticalSession, 0, "engineer", "criticalSuccess"));
     assertSmoke(criticalSession.travelV2SupportRecords.records.length === 1 && criticalSession.travelV2SupportRecords.records[0].assistValue === 2, "Support + critical success creates one stronger pending assist");
+    assertSmoke(sanitizeTravelV2SupportForPlayers(criticalSession.travelV2SupportRecords).records[0].publicAssistText === "Engineer gives Navigator a strong opening. Pending assist: +2.", "critical Support player text shows stronger assist value");
 
     for (const result of ["failure", "criticalFailure"]) {
       let failedSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
@@ -93,6 +105,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     usedSession = okSession(useTravelV2SupportRecord(usedSession, usedId, { note: "Used manually", now: "2026-06-25T02:01:00.000Z" }));
     const usedResolvedAt = usedSession.travelV2SupportRecords.records.find((record) => record.id === usedId)?.resolvedAt;
     assertSmoke(usedSession.travelV2SupportRecords.records.find((record) => record.id === usedId)?.status === "used", "Use marks pending assist as used");
+    assertSmoke(sanitizeTravelV2SupportForPlayers(usedSession.travelV2SupportRecords).records[0].publicAssistText === "Navigator used Engineer’s assist.", "used Support player text is clear");
     usedSession = okSession(setTravelEventRunnerStationResult(usedSession, 0, "engineer", "failure", { now: "2026-06-25T02:02:00.000Z" }));
     assertSmoke(usedSession.travelV2SupportRecords.records.find((record) => record.id === usedId)?.status === "used" && usedSession.travelV2SupportRecords.records.find((record) => record.id === usedId)?.resolvedAt === usedResolvedAt, "used records are not rewritten when result later changes");
 
@@ -103,13 +116,20 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     dismissedSession = okSession(dismissTravelV2SupportRecord(dismissedSession, dismissedId, { note: "No longer needed", now: "2026-06-25T03:00:00.000Z" }));
     const dismissedResolvedAt = dismissedSession.travelV2SupportRecords.records.find((record) => record.id === dismissedId)?.resolvedAt;
     assertSmoke(dismissedSession.travelV2SupportRecords.records.find((record) => record.id === dismissedId)?.status === "dismissed", "Dismiss marks pending assist as dismissed");
+    assertSmoke(sanitizeTravelV2SupportForPlayers(dismissedSession.travelV2SupportRecords).records[0].publicAssistText === "Engineer’s assist was dismissed.", "dismissed Support player text is clear");
     dismissedSession = okSession(setTravelEventRunnerStationResult(dismissedSession, 0, "engineer", "failure", { now: "2026-06-25T03:01:00.000Z" }));
     assertSmoke(dismissedSession.travelV2SupportRecords.records.find((record) => record.id === dismissedId)?.resolvedAt === dismissedResolvedAt, "dismissed records are not rewritten when result later changes");
 
-    const player = sanitizeTravelV2SupportForPlayers({ records: [{ ...usedSession.travelV2SupportRecords.records[0], gmNote: "GM ONLY SECRET", actorId: "PRIVATE", hiddenHazardData: "SECRET" }] });
-    assertSmoke(!snap(player).includes("GM ONLY SECRET") && !snap(player).includes("PRIVATE") && !snap(player).includes("SECRET"), "player sanitizer omits GM-only/private fields");
+    const narrationSession = cloneSessionWithSecretSupport(session, "GM ONLY SECRET");
+    const narration = prepareTravelV2RoundNarration(narrationSession, 0);
+    assertSmoke(narration.support.narrationLines.some((line) => line.includes("Engineer supports Navigator") && line.includes("+1 assist")), "round narration mentions Support assists");
+    assertSmoke(narration.stationVignettes.find((v) => v.stationKey === "engineer")?.mechanicalSummary.includes("does not count toward main-objective progress"), "Support station narration stays outside objective progress");
+    assertSmoke(!snap(narration.support).includes("GM ONLY SECRET"), "Support narration does not leak GM-only notes");
+    assertSmoke(!snap(narration.support).includes("automatically applied") && narration.support.narrationLines.every((line) => !line.includes("roll was changed")), "Support narration does not imply automatic bonus application");
+    const publicNarration = sanitizeTravelV2PublicNarration(narration);
+    assertSmoke(!snap(publicNarration).includes("GM ONLY SECRET"), "public narration sanitizer omits GM-only Support notes");
     assertSmoke(sideEffects.length === 0, "Support assist flow has no actor/item/chat/journal/combat/socket side effects");
-    return { checked: ["creation", "critical value", "no failed records/backlash", "non-support/invalid target", "duplicate prevention", "stale cleanup", "action-change cleanup", "use/dismiss", "sanitization", "no side effects"] };
+    return { checked: ["creation", "critical value", "no failed records/backlash", "non-support/invalid target", "duplicate prevention", "stale cleanup", "action-change cleanup", "use/dismiss", "sanitization", "display text", "narration", "no side effects"] };
   } finally {
     Object.assign(globalThis, prior);
   }

@@ -106,7 +106,9 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Support Assist Records:** this pass creates session-local pending Support assist records from successful Support actions, adds GM Use/Dismiss controls, and keeps Support assists separate from main objective progress, Momentum awards, and Support backlash.
+**Current PR scope — Support Player Display / Narration:** this pass improves player-safe Support assist display and GM-readable Support narration. It shows source station, target station, assist value, status, and short public assist text while keeping GM notes private. This scope is display/narration only: it does not implement Support backlash, failed-Support consequences, automatic assist application, new Momentum spends, or actor/item/chat/journal/combat/socket mutation.
+
+**Previous PR scope — Support Assist Records:** this pass created session-local pending Support assist records from successful Support actions, added GM Use/Dismiss controls, and kept Support assists separate from main objective progress, Momentum awards, and Support backlash.
 
 **Previous PR scope — Support Action Targeting Foundation:** this pass made Support a formal station action, added target validation and minimal GM target UI, and kept Support contributors separate from main-objective success counting.
 
