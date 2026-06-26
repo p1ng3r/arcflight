@@ -7,7 +7,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Arkengine Surge",
     severity: "major",
-    source: "engine hazard, Engineer critical failure, Focus backlash",
+    source: ["engine-hazard", "engineer-critical-failure", "focus-backlash"],
     affectedTrack: "Strain",
     publicText: "The arkengine pulses out of rhythm, rattling braces and making the next beat feel unstable.",
     gmText: "Use this when the engine's instability should become a reviewed pressure candidate. Do not apply Strain or alter engine records automatically.",
@@ -27,7 +27,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Lifeveil Flicker",
     severity: "major",
-    source: "lifeveil hazard, Veilwarden critical failure, void environment",
+    source: ["lifeveil-hazard", "veilwarden-critical-failure", "void-environment"],
     affectedTrack: "Lifeveil",
     publicText: "The lifeveil flickers thin enough for the hostile void to feel close.",
     gmText: "Spotlight the Veilwarden and the ship's protective envelope. Persistent veil instability remains a future GM-reviewed apply choice only.",
@@ -47,7 +47,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Route Drift",
     severity: "major",
-    source: "navigation hazard, Navigator critical failure, unresolved Void Shear",
+    source: ["navigation-hazard", "navigator-critical-failure", "unresolved-void-shear"],
     affectedTrack: "Route",
     publicText: "The ship slips off the clean line, turning the route ahead uncertain.",
     gmText: "Use as a reviewed candidate to worsen a final outcome or seed an off-course follow-up. Do not change encounter state automatically.",
@@ -67,7 +67,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Hull Stress",
     severity: "minor",
-    source: "physical hazard, pressure overflow, missed Watchmaster warning",
+    source: ["physical-hazard", "pressure-overflow", "missed-watchmaster-warning"],
     affectedTrack: "Hull",
     publicText: "The hull takes a hard flex that leaves everyone listening for the next sound.",
     gmText: "Use for physical strain that may matter if repeated. No ship actor, item, or damage mutation occurs automatically.",
@@ -87,7 +87,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Crew Panic",
     severity: "minor",
-    source: "Captain failure, failed Support, frightening event",
+    source: ["captain-failure", "failed-support", "frightening-event"],
     affectedTrack: "Morale",
     publicText: "Fear moves faster than orders, and the crew hesitates at the wrong moment.",
     gmText: "Use when leadership pressure should become visible without changing Focus, Support, or Morale behavior automatically.",
@@ -107,7 +107,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Cargo Shift",
     severity: "minor",
-    source: "hard maneuver, hull shock, ignored cargo hazard",
+    source: ["hard-maneuver", "hull-shock", "ignored-cargo-hazard"],
     affectedTrack: "Cargo",
     publicText: "Cargo breaks loose below, turning stored weight into a new complication.",
     gmText: "Use for a reviewed cargo complication or later supply delay hook. Do not alter item stacks, inventories, or cargo records automatically.",
@@ -127,7 +127,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Supplies Delay",
     severity: "minor",
-    source: "low stores, blocked access, route delay",
+    source: ["low-stores", "blocked-access", "route-delay"],
     affectedTrack: "Supplies",
     publicText: "Essential stores are still aboard, but getting to them will take time the ship may not have.",
     gmText: "Use for temporary access trouble, ration confusion, or a follow-up delay. Do not mutate supplies or inventories automatically.",
@@ -147,7 +147,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Threat Attracted",
     severity: "major",
-    source: "loud arkengine signature, Lifeveil flare, failed stealth",
+    source: ["loud-arkengine-signature", "lifeveil-flare", "failed-stealth"],
     affectedTrack: "Threat",
     publicText: "Something notices the ship's signature and turns attention toward it.",
     gmText: "Use as a future encounter seed or threat follow-up candidate. Do not create scenes, combats, tokens, chat, or journal entries automatically.",
@@ -167,7 +167,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Hazard Escalation",
     severity: "major",
-    source: "unresolved hazard, failed response, countdown expiry",
+    source: ["unresolved-hazard", "failed-response", "countdown-expiry"],
     affectedTrack: "Hazard",
     publicText: "The active danger worsens before the crew can bring it under control.",
     gmText: "Use to offer a reviewed escalation of an existing hazard or draw a stronger one later. This catalog does not change hazard behavior automatically.",
@@ -187,7 +187,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     type: "consequence",
     title: "Ship Scar Candidate",
     severity: "severe",
-    source: "repeated severe pressure, final bad outcome, major hazard escalation",
+    source: ["repeated-severe-pressure", "final-bad-outcome", "major-hazard-escalation"],
     affectedTrack: "Ship Scar",
     publicText: "The voyage leaves a mark serious enough for the GM to consider after the encounter.",
     gmText: "This is only a handoff candidate for a future GM-reviewed ship scar. No actor, item, hull, room, or ship mutation happens automatically.",
@@ -216,7 +216,7 @@ export function getTravelV2ConsequenceById(id) {
 }
 
 export function getTravelV2ConsequencesBySource(source) {
-  return getTravelV2ConsequenceCatalog().filter((consequence) => consequence.source === source);
+  return getTravelV2ConsequenceCatalog().filter((consequence) => consequence.source.includes(source));
 }
 
 export function getTravelV2ConsequencesByAffectedTrack(affectedTrack) {
