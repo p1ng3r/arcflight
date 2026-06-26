@@ -54,12 +54,12 @@ export async function runTravelV2SupportActionTargetingSmokeChecks() {
     assertSmoke(summary.objectiveContributorCount === 1 && summary.objectiveContributors.includes("navigator"), "Support does not count as a main-objective contributor");
     assertSmoke(summary.supporterCount === 1 && summary.supporters[0].stationKey === "engineer" && summary.supporters[0].targetStationKey === "navigator", "Support is counted separately as a supporter");
     assertSmoke(session.travelV2Momentum.value === 0 && session.travelV2Momentum.records.length === 0, "Support critical success does not trigger Momentum objective awards");
-    assertSmoke(!session.supportBacklashRecords && !session.travelV2SupportBacklashRecords, "Support backlash records are not created");
+    assertSmoke(!session.supportBacklashRecords && session.travelV2SupportBacklashRecords.records.length === 0, "successful Support backlash records are not created");
     assertSmoke(sideEffects.length === 0, "Support targeting has no actor/item/chat/journal/combat/socket side effects");
   } finally {
     globalThis.ChatMessage = prior.ChatMessage; globalThis.JournalEntry = prior.JournalEntry; globalThis.game = prior.game; globalThis.Actor = prior.Actor; globalThis.Item = prior.Item; globalThis.socket = prior.socket;
   }
-  return { ok: true, checked: ["action-constant", "normalization", "target-required", "self-target-rejection", "inactive-target-rejection", "valid-target-storage", "session-normalization", "objective-separation", "no-backlash-records", "no-momentum-award", "no-side-effects"] };
+  return { ok: true, checked: ["action-constant", "normalization", "target-required", "self-target-rejection", "inactive-target-rejection", "valid-target-storage", "session-normalization", "objective-separation", "no-success-backlash-records", "no-momentum-award", "no-side-effects"] };
 }
 
 export default runTravelV2SupportActionTargetingSmokeChecks;

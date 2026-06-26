@@ -106,7 +106,9 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Support Player Display / Narration:** this pass improves player-safe Support assist display and GM-readable Support narration. It shows source station, target station, assist value, status, and short public assist text while keeping GM notes private. This scope is display/narration only: it does not implement Support backlash, failed-Support consequences, automatic assist application, new Momentum spends, or actor/item/chat/journal/combat/socket mutation.
+**Current PR scope — Support Backlash / Failed Support Consequences:** this pass creates session-local, GM-controlled consequence candidates for failed Support and stronger backlash candidates for critical failed Support. Apply/Dismiss only marks the candidate lifecycle in runner session state; it does not automatically apply consequences, change pressure, or mutate Foundry actors, items, chat, journals, combat, sockets, scenes, tokens, or persisted world data.
+
+**Previous PR scope — Support Player Display / Narration:** this pass improved player-safe Support assist display and GM-readable Support narration. It shows source station, target station, assist value, status, and short public assist text while keeping GM notes private. This scope was display/narration only: it did not implement Support backlash, failed-Support consequences, automatic assist application, new Momentum spends, or actor/item/chat/journal/combat/socket mutation.
 
 **Previous PR scope — Support Assist Records:** this pass created session-local pending Support assist records from successful Support actions, added GM Use/Dismiss controls, and kept Support assists separate from main objective progress, Momentum awards, and Support backlash.
 
