@@ -104,31 +104,25 @@ Possible momentum spends:
 
 Momentum should let players fight back against the travel event, not merely add another GM-admin resource.
 
+## Completed Travel v2 Alpha Systems
+
+This document reflects the roadmap state after the Focus + Support stack was completed. This documentation-only update does not change runtime behavior, player sanitization, objective math, Momentum awards, Support assist math, Focus backlash handling, or any Foundry document mutation rules.
+
+Completed Travel v2 alpha systems:
+
+- **Hazard deck foundation / mechanics:** shared hazard deck lifecycle, session-local active hazard modifiers, response-action injection, clear progress, unresolved consequences, player-safe hazard display, and no automatic actor/item/chat/journal/combat/socket/scene/token mutation.
+- **Narration engine:** station result vignettes, combined round summaries, and player-safe narration sanitization for authored encounter text and resolved station data.
+- **Stabilize / repair:** non-objective station action tradeoff, pressure/status deltas, and explicit GM Apply/Dismiss controls for any persistent handoff.
+- **Momentum:** session-local Momentum pool, auditable GM spend flow, earned/spent narration, and player-safe state display. Support does not award Momentum.
+- **Focus risk / suppression:** public Focus help text, public risk/backlash previews, hazard-based Focus suppression, and GM Focus risk summaries.
+- **Focus backlash records:** session-local backlash records, GM Apply/Dismiss lifecycle controls, and public-safe summaries only.
+- **Support targeting:** formal Support station action mode with target validation and GM target UI. Support does not count as main objective progress.
+- **Support assist records:** session-local pending assist records with GM Use/Dismiss controls. Support assists do not automatically mutate rolls.
+- **Support display / narration:** player-safe Support assist display and GM-readable Support narration that keep GM-only notes private.
+- **Support backlash:** failed Support creates GM-controlled consequence candidates only; critical failed Support can create stronger candidates, but nothing is applied automatically.
+- **Focus and Support completion polish:** wording, display, narration, sanitizer smoke coverage, and roadmap/doc alignment for the completed Focus + Support stack.
+
 ## Hazard Cards: Correct Design
-
-**Current PR scope — Final Focus + Support Polish:** this pass aligns Focus backlash, Support assist, and Support backlash wording across GM panels, player-safe summaries, narration, sanitizer smoke coverage, and docs. It is wording/display/sanitization/docs polish only and does not change Focus, Support, Support assist math, Support failure/backlash, Momentum, objective progress, or mutation behavior.
-
-**Completed Focus + Support stack summary:** Support targeting is complete; Support assist records are complete; Support display/narration is complete; Support backlash candidates are complete; Focus backlash review remains GM-controlled; and no automatic actor/item/chat/journal/combat/socket/scene/token mutation is part of this stack. Broad runner file splitting and larger refactors are reserved for alpha cleanup, not this polish PR.
-
-**Previous PR scope — Support Backlash / Failed Support Consequences:** this pass created session-local, GM-controlled consequence candidates for failed Support and stronger backlash candidates for critical failed Support. Apply/Dismiss only marks the candidate lifecycle in runner session state; it does not automatically apply consequences, change pressure, or mutate Foundry actors, items, chat, journals, combat, sockets, scenes, tokens, or persisted world data.
-
-**Previous PR scope — Support Player Display / Narration:** this pass improved player-safe Support assist display and GM-readable Support narration. It shows source station, target station, assist value, status, and short public assist text while keeping GM notes private. This scope was display/narration only: it did not implement automatic assist application, new Momentum spends, or actor/item/chat/journal/combat/socket mutation.
-
-**Previous PR scope — Support Assist Records:** this pass created session-local pending Support assist records from successful Support actions, added GM Use/Dismiss controls, and kept Support assists separate from main objective progress, Momentum awards, and Support backlash.
-
-**Previous PR scope — Support Action Targeting Foundation:** this pass made Support a formal station action, added target validation and minimal GM target UI, and kept Support contributors separate from main-objective success counting.
-
-**Previous PR scope — Focus Backlash Records:** this pass creates session-local Focus backlash records from failed Focus-backed station results, adds GM Apply/Dismiss controls, keeps pressure/consequence changes session-local, and exposes only public-safe Focus backlash summaries.
-
-**Previous PR scope — Momentum Pass:** this pass added a session-local Travel v2 Momentum pool, awards Momentum from strong play such as critical main-objective station results and critical hazard clears, adds an explicit GM-auditable failure downgrade spend, surfaces player-safe Momentum state, and folds earned/spent Momentum into narration. It does not add live AI/API generation or automatic actor/item/chat/journal/combat mutation. Later PRs should deepen additional Momentum spends and explicit GM Apply handoffs for persistent fallout.
-
-**Previous PR scope — Focus Risk / Suppression Foundation:** this pass added Focus option public help text, public risk/backlash preview text, hazard-based Focus suppression, player-safe Focus display sanitization, and GM Focus risk summaries without making backlash persistent or automatic.
-
-**Previous PR scope — Stabilize / Repair Action Pass:** this pass formalized Stabilize / Repair as a tradeoff action: stabilizing stations do not count toward main objective progress, their critical success / success / failure / critical failure results create session-local pressure deltas, and GM-facing apply/dismiss controls keep persistent changes under explicit GM control.
-
-**Previous PR scope — Narration Engine Pass:** the runner now provides session-local station result vignettes, combined round summaries, and player-safe narration sanitization for already-authored Travel v2 encounter text and resolved station data.
-
-**Previous PR scope — Hazard Encounter Mechanics:** the shared hazard deck now supports session-local gameplay modifiers: active hazards can change station DCs, suppress options or Focus, inject response actions, track clear progress, and record unresolved consequences without mutating actors/items/chat/journals/combat.
 
 Hazard cards are generic shared deck cards that work across Travel v2 events, but each card must create a real gameplay complication.
 
@@ -245,60 +239,53 @@ Recommended categories:
 
 ## Implementation Roadmap
 
-### Current PR #271: Hazard Deck UI Foundation
+This PR is documentation-only. The next roadmap work should make the runner easier to understand before adding broader gameplay polish. Keep scopes narrow, reviewable, and one subsystem per PR. Broad runner splitting belongs to alpha cleanup and should happen incrementally, not as a single sweeping rewrite.
 
-Keep PR #271 focused on the safe card lifecycle foundation:
+### Recommended Next 3 PRs
 
-- Draw/stage hazard.
-- Hold hazard.
-- Reveal hazard to players.
-- Activate hazard.
-- Clear hazard.
-- Hide GM-only text from player HUD.
-- Preserve session-local state.
+1. **Alpha roadmap cleanup / doc truth pass**
+   - Keep Travel v2 docs aligned with completed Focus + Support behavior.
+   - Remove stale PR-era labels and early hazard-planning language as implementation lands.
+   - Confirm the docs still state that mutation is explicit GM Apply only and that player-facing text is sanitized.
 
-Do not call this the finished mechanical hazard system.
+2. **Travel v2 runner alpha cleanup split planning**
+   - Map the current runner responsibilities into candidate extraction seams.
+   - Identify subsystem boundaries, test coverage, and file ownership before moving code.
+   - Explicitly sequence broad runner splitting as one subsystem per PR.
 
-### Next PR: Hazard Encounter Mechanics
+3. **Support record helper extraction**
+   - Extract Support record creation, lifecycle, display helpers, and summary formatting behind focused helper functions/modules.
+   - Preserve existing Support rules: Support does not count as main objective progress, does not award Momentum, does not automatically mutate rolls, and failed Support creates GM-controlled candidates only.
 
-Build the actual gameplay layer:
+### Later Alpha Cleanup PRs
 
-- Add hazard effect payloads for encounter modifiers, not pressure-only effects.
-- Add active hazard modifiers to runner state.
-- Show active hazard modifiers in GM and player UI.
-- Inject hazard response actions into affected station cards.
-- Modify station DCs/options/focus access based on active hazards.
-- Track clear conditions and unresolved consequences.
-- Add one meaningful GM button: Apply Hazard to Round / Reveal and Apply.
-- Prevent double application.
-- Add smoke tests for modifier application, response-action injection, clear conditions, player-safe visibility, and no actor mutation.
+4. **Focus backlash extraction**
+   - Move Focus backlash record creation, GM lifecycle controls, and player-safe summary shaping into a focused helper boundary.
+   - Preserve session-local behavior and explicit GM Apply for any persistent consequence.
 
-### Later PRs
+5. **Momentum extraction**
+   - Move Momentum award/spend/session summary logic into a focused helper boundary.
+   - Preserve current award rules, GM-auditable spend flow, and the rule that Support does not award Momentum.
 
-1. **Narration Engine Pass**
-   - Build individual station result vignettes.
-   - Build combined round narration from station outcomes.
-   - Keep text GM-readable and optional to post.
+6. **Player sanitizer extraction**
+   - Extract player-facing sanitization helpers so GM-only notes stay private across HUD, narration, Support, Focus, hazards, and final summaries.
+   - Do not change sanitizer behavior as part of the extraction; keep this as a behavior-preserving refactor.
 
-2. **Stabilize / Repair Action Pass**
-   - Formalize the non-help action tradeoff.
-   - Reduce main objective participant count when a station stabilizes instead.
-   - Add critical success/success/failure/critical failure pressure changes.
+7. **Runner library/session extraction**
+   - Separate runner library helpers from session-state orchestration.
+   - Keep persistent Foundry document mutation explicit and GM-initiated only.
 
-3. **Momentum Pass**
-   - Earn momentum from strong play.
-   - Spend momentum to assist rolls, reduce hazard countdowns, downgrade failures, or improve outcome.
+8. **Station row/action handling extraction**
+   - Move station row rendering/action handlers behind clearer helper boundaries.
+   - Preserve existing station action semantics, including Stabilize/Repair tradeoffs and Support exclusions from objective progress.
 
-4. **Focus / Support Backlash Pass**
-   - Focus spend with backlash by station.
-   - Clear player-facing risk text before commitment.
+### Revisit After Runner Cleanup
 
-5. **Ship Scar Escalation Pass**
-   - Severe unresolved hazards and pressure overflow create ship scar candidates.
-   - Actor mutation remains explicit GM Apply only.
+After the runner is easier to navigate, revisit gameplay polish in narrow PRs:
 
-6. **Final Outcome / Follow-up Polish**
-   - Convert pressure, unresolved hazards, and round results into clean final outcomes and follow-ups.
+- Deepen hazard variety, clear conditions, and unresolved consequence presentation.
+- Add ship scar candidate polish while keeping actor/item mutation explicit GM Apply only.
+- Improve final outcome and follow-up summaries from pressure, unresolved hazards, Momentum, and station results.
 
 ## Non-Negotiables
 
