@@ -569,6 +569,17 @@ export function dismissTravelV2FocusBacklash(session, recordId, options = {}) {
 }
 
 const SUPPORT_RECORD_STATUSES = Object.freeze(["pending", "used", "dismissed"]);
+const SUPPORT_RECORD_STATUS_LABELS = Object.freeze({ pending: "Pending", used: "Used", dismissed: "Dismissed" });
+
+export function formatTravelV2SupportAssistPublicText(record = {}) {
+  const supporting = record.supportingStationName || humanizeIdentifier(record.supportingStationKey || "supporting station");
+  const target = record.targetStationName || humanizeIdentifier(record.targetStationKey || "target station");
+  const assistValue = Math.max(0, Math.trunc(Number(record.assistValue) || 0));
+  if (record.status === "used") return `${target} used ${supporting}’s assist.`;
+  if (record.status === "dismissed") return `${supporting}’s assist was dismissed.`;
+  if (assistValue >= 2) return `${supporting} gives ${target} a strong opening. Pending assist: +${assistValue}.`;
+  return `${supporting} is helping ${target}. Pending assist: +${assistValue}.`;
+}
 
 function supportAssistRecordId(roundIndex, supportingStationKey, targetStationKey) { return ["support-assist", roundIndex, supportingStationKey, targetStationKey].map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).join(":"); }
 function supportAssistRecordsMatch(record, roundIndex, supportingStationKey, targetStationKey) { return Number(record?.roundIndex) === Number(roundIndex) && record?.supportingStationKey === supportingStationKey && record?.targetStationKey === targetStationKey; }
@@ -581,33 +592,39 @@ function nextSupportAssistRecordId(records = [], baseId = "") {
 
 export function normalizeTravelV2SupportRecords(recordsOrState = {}, options = {}) {
   const rawRecords = Array.isArray(recordsOrState) ? recordsOrState : (Array.isArray(recordsOrState?.records) ? recordsOrState.records : []);
-  const records = rawRecords.filter(isPlainObject).map((record, index) => ({
-    id: typeof record.id === "string" && record.id ? record.id : `support-assist:${index + 1}`,
-    roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
-    supportingStationKey: typeof record.supportingStationKey === "string" ? record.supportingStationKey : "",
-    supportingStationName: typeof record.supportingStationName === "string" ? record.supportingStationName : "",
-    targetStationKey: typeof record.targetStationKey === "string" ? record.targetStationKey : "",
-    targetStationName: typeof record.targetStationName === "string" ? record.targetStationName : "",
-    supportKey: typeof record.supportKey === "string" ? record.supportKey : (typeof record.supportMode === "string" ? record.supportMode : ""),
-    supportMode: typeof record.supportMode === "string" ? record.supportMode : (typeof record.supportKey === "string" ? record.supportKey : ""),
-    publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
-    publicAssistText: typeof record.publicAssistText === "string" ? record.publicAssistText : "",
-    assistValue: Number.isFinite(Number(record.assistValue)) ? Math.max(0, Math.trunc(Number(record.assistValue))) : 0,
-    gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
-    status: SUPPORT_RECORD_STATUSES.includes(record.status) ? record.status : "pending",
-    createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
-    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
-    resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
-    resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
-    resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : ""
-  })).filter((record) => record.id && record.supportingStationKey && record.targetStationKey);
+  const records = rawRecords.filter(isPlainObject).map((record, index) => {
+    const normalized = {
+      id: typeof record.id === "string" && record.id ? record.id : `support-assist:${index + 1}`,
+      roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
+      supportingStationKey: typeof record.supportingStationKey === "string" ? record.supportingStationKey : "",
+      supportingStationName: typeof record.supportingStationName === "string" ? record.supportingStationName : "",
+      targetStationKey: typeof record.targetStationKey === "string" ? record.targetStationKey : "",
+      targetStationName: typeof record.targetStationName === "string" ? record.targetStationName : "",
+      supportKey: typeof record.supportKey === "string" ? record.supportKey : (typeof record.supportMode === "string" ? record.supportMode : ""),
+      supportMode: typeof record.supportMode === "string" ? record.supportMode : (typeof record.supportKey === "string" ? record.supportKey : ""),
+      publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+      publicAssistText: typeof record.publicAssistText === "string" ? record.publicAssistText : "",
+      assistValue: Number.isFinite(Number(record.assistValue)) ? Math.max(0, Math.trunc(Number(record.assistValue))) : 0,
+      gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
+      status: SUPPORT_RECORD_STATUSES.includes(record.status) ? record.status : "pending",
+      createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+      resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+      resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+      resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+      resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : ""
+    };
+    normalized.statusLabel = SUPPORT_RECORD_STATUS_LABELS[normalized.status] ?? humanizeIdentifier(normalized.status);
+    if (!normalized.publicAssistText) normalized.publicAssistText = formatTravelV2SupportAssistPublicText(normalized);
+    if (!normalized.publicSummary) normalized.publicSummary = `${normalized.supportingStationName || humanizeIdentifier(normalized.supportingStationKey)} supports ${normalized.targetStationName || humanizeIdentifier(normalized.targetStationKey)} with a +${normalized.assistValue} assist.`;
+    return normalized;
+  }).filter((record) => record.id && record.supportingStationKey && record.targetStationKey);
   return { records: Array.from(new Map(records.map((record) => [record.id, record])).values()) };
 }
 
 export function prepareTravelV2SupportPanelState(session, options = {}) {
   const records = normalizeTravelV2SupportRecords(session?.travelV2SupportRecords, options).records.map((record) => ({
     ...record,
-    statusLabel: humanizeIdentifier(record.status),
+    statusLabel: record.statusLabel,
     isPending: record.status === "pending",
     isUsed: record.status === "used",
     isDismissed: record.status === "dismissed"
@@ -624,10 +641,10 @@ export function sanitizeTravelV2SupportForPlayers(recordsOrState = {}, options =
     targetStationKey: record.targetStationKey,
     targetStationName: record.targetStationName,
     publicSummary: record.publicSummary,
-    publicAssistText: record.publicAssistText,
+    publicAssistText: formatTravelV2SupportAssistPublicText(record),
     assistValue: record.assistValue,
     status: record.status,
-    statusLabel: humanizeIdentifier(record.status)
+    statusLabel: record.statusLabel
   }));
   return { records, pendingRecords: records.filter((record) => record.status === "pending"), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending").length };
 }
@@ -656,8 +673,8 @@ export function createTravelV2SupportRecord(session, roundIndex, supportingStati
     targetStationName,
     supportKey: action.supportKey || "support",
     supportMode: action.supportKey || "support",
-    publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${supportingStationName} creates a pending Support assist for ${targetStationName}.`,
-    publicAssistText: typeof options.publicAssistText === "string" ? options.publicAssistText : `${targetStationName} may receive a session-local Support assist (+${assistValue}) if the GM uses it.`,
+    publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${supportingStationName} supports ${targetStationName} with a +${assistValue} assist.`,
+    publicAssistText: typeof options.publicAssistText === "string" ? options.publicAssistText : "",
     assistValue,
     gmNote: typeof options.gmNote === "string" ? options.gmNote : "Session-local Support assist. Use/dismiss only; no automatic actor/item/chat/journal/combat/socket mutation and no automatic target roll change.",
     status: "pending",
@@ -667,6 +684,8 @@ export function createTravelV2SupportRecord(session, roundIndex, supportingStati
     resolvedByUserName: "",
     resolutionNote: ""
   };
+  record.statusLabel = SUPPORT_RECORD_STATUS_LABELS[record.status];
+  record.publicAssistText = record.publicAssistText || formatTravelV2SupportAssistPublicText(record);
   records.push(record);
   return { ok: true, duplicate: false, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportRecords: { records }, updatedAt: nowIso(options), summary: null }, record };
 }
