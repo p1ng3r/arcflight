@@ -17,7 +17,8 @@ import {
   normalizeTravelRoundPressureProfile,
   normalizeTravelStationAction,
   resolveTravelStabilizePressureDelta,
-  stabilize
+  stabilize,
+  support
 } from "./travel-pressure.js";
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
@@ -1474,8 +1475,22 @@ function normalizeSelectedStationOptionLabels(roundResult = {}, round = null) {
   return Object.fromEntries(activeKeys.map((stationKey) => [stationKey, typeof source[stationKey] === "string" ? source[stationKey] : ""]));
 }
 
+function validateTravelSupportTarget(round, stationKey, targetStationKey) {
+  const activeStations = Array.isArray(round?.activeStations) ? round.activeStations : [];
+  if (typeof targetStationKey !== "string" || !targetStationKey) return "Support requires a target station.";
+  if (targetStationKey === stationKey) return "Support cannot target its own station.";
+  if (!activeStations.includes(targetStationKey)) return `Support target "${targetStationKey}" is not active in this round.`;
+  return "";
+}
+
 function stationOptionKey(actionType, skill, pressureKey = "") {
   return [actionType, pressureKey, skill].filter(Boolean).join(":");
+}
+
+function stationNameForRound(round, stationKey) {
+  const station = getStation(stationKey) ?? {};
+  const prompt = round?.stationPrompts?.[stationKey] ?? {};
+  return prompt.stationName || station.displayName || station.name || humanizeIdentifier(stationKey);
 }
 
 function defaultStabilizeSkill(stationKey, assignedActor) {
@@ -2002,6 +2017,15 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       stabilizePressureKey: ""
     }));
     const stabilizeOptions = normalizeCustomStabilizeOptions(card, stationKey, round, assignedActor);
+    const supportOptions = [{
+      optionKey: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, "target"),
+      value: stationOptionKey(ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, "target"),
+      actionType: ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT,
+      label: "Support another station",
+      helpText: "Choose another active station to support. This does not count toward main objective progress in this pass.",
+      skill: "target",
+      dc: null
+    }];
     const hazardResponseOptions = hazardModifiers.responseActions
       .filter((action) => action.stationKey === stationKey || action.stationKey === "any")
       .map((action) => ({
@@ -2014,7 +2038,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
         hazardRecordId: action.hazardRecordId,
         hazardName: action.hazardName
       }));
-    const stationOptions = [...eventOptions, ...stabilizeOptions, ...hazardResponseOptions].map((option) => {
+    const stationOptions = [...eventOptions, ...stabilizeOptions, ...hazardResponseOptions, ...supportOptions].map((option) => {
       const hazardDc = hazardModifiers.dcModifiers
         .filter((modifier) => (!modifier.stationKey || modifier.stationKey === stationKey) && (!modifier.actionType || modifier.actionType === option.actionType))
         .reduce((sum, modifier) => sum + (Number(modifier.modifier) || 0), 0);
@@ -2064,7 +2088,10 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       selectedApproach,
       selectedAction,
       selectedActionType: selectedAction.type,
-      selectedActionLabel: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? "Stabilize" : (selectedAction.type === "hazardResponse" ? "Respond to Hazard" : "Push Forward"),
+      selectedActionLabel: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE ? "Stabilize" : (selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE ? "Respond to Hazard" : (selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT ? "Support" : "Push Forward")),
+      supportTargetStationKey: selectedAction.targetStationKey || "",
+      supportTargetStationName: selectedAction.targetStationKey ? stationNameForRound(round, selectedAction.targetStationKey) : "",
+      supportTargetOptions: round.activeStations.filter((key) => key !== stationKey).map((key) => ({ stationKey: key, stationName: stationNameForRound(round, key), selected: key === selectedAction.targetStationKey })),
       selectedStationOption,
       selectedStationOptionKey: selectedStationOption?.optionKey ?? "",
       selectedStationOptionLabel: roundResult?.selectedStationOptionLabels?.[stationKey] || selectedStationOption?.label || "",
@@ -2081,6 +2108,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       isEventApproach: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH,
       isStabilize: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE,
       isHazardResponse: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE,
+      isSupport: selectedAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT,
       stabilizePressureKey,
       stabilizePressureLabel: stabilizePressure?.label ?? humanizeIdentifier(stabilizePressureKey),
       pendingStabilize,
@@ -2177,6 +2205,7 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
   const objectiveRows = resolvedRows.filter((row) => row.isEventApproach);
   const stabilizeRows = resolvedRows.filter((row) => row.isStabilize);
   const hazardResponseRows = resolvedRows.filter((row) => row.isHazardResponse);
+  const supportRows = resolvedRows.filter((row) => row.isSupport);
   const unresolvedRows = stationRows.filter((row) => !row.result);
   const successCount = objectiveRows.filter((row) => ["success", "criticalSuccess"].includes(row.result)).length;
   const failureCount = objectiveRows.filter((row) => ["failure", "criticalFailure"].includes(row.result)).length;
@@ -2194,7 +2223,7 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
   const unresolvedStationNames = unresolvedRows.map((row) => row.stationName || humanizeIdentifier(row.stationKey));
   const unresolvedStationText = unresolvedStationNames.length > 0 ? `Unresolved: ${unresolvedStationNames.join(", ")}.` : "";
   const gmOnlyComplicationText = resolvedRows.filter((row) => row.hasGmOnlyConsequence).map((row) => `${row.stationName || humanizeIdentifier(row.stationKey)}: ${row.gmOnlyConsequence}`).join(" ");
-  if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} objective success-side results, ${failureCount} objective failure-side results, ${stabilizeRows.length} stabilizer${stabilizeRows.length === 1 ? "" : "s"}, ${hazardResponseRows.length} hazard responder${hazardResponseRows.length === 1 ? "" : "s"}, ${unresolvedStationCount} unresolved stations. Weighted objective score ${roundScore}: ${ROUND_RESULT_LABELS[roundOutcomeKey]}.`);
+  if (resolvedRows.length > 0) summaryLines.push(`Round state: ${successCount} objective success-side results, ${failureCount} objective failure-side results, ${stabilizeRows.length} stabilizer${stabilizeRows.length === 1 ? "" : "s"}, ${hazardResponseRows.length} hazard responder${hazardResponseRows.length === 1 ? "" : "s"}, ${supportRows.length} supporter${supportRows.length === 1 ? "" : "s"}, ${unresolvedStationCount} unresolved stations. Weighted objective score ${roundScore}: ${ROUND_RESULT_LABELS[roundOutcomeKey]}.`);
   return {
     hasResolvedStations: resolvedRows.length > 0,
     resolvedStationCount: resolvedRows.length,
@@ -2207,6 +2236,8 @@ export function prepareTravelEventRunnerRoundSummaryCard(session, round, roundRe
     stabilizers: stabilizeRows.map((row) => row.stationKey),
     hazardResponderCount: hazardResponseRows.length,
     hazardResponders: hazardResponseRows.map((row) => row.stationKey),
+    supporterCount: supportRows.length,
+    supporters: supportRows.map((row) => ({ stationKey: row.stationKey, targetStationKey: row.supportTargetStationKey, targetStationName: row.supportTargetStationName })),
     unresolvedStations: unresolvedRows.map((row) => row.stationKey),
     roundScore,
     roundOutcomeKey,
@@ -2594,6 +2625,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       selectedActionLabel: row.selectedActionLabel,
       stationOrderCommitted: row.stationOrderCommitted === true,
       isStabilize: row.isStabilize === true,
+      isSupport: row.isSupport === true,
+      supportTargetStationKey: row.supportTargetStationKey || "",
+      supportTargetStationName: row.supportTargetStationName || "",
       stabilizePressureKey: row.stabilizePressureKey || "",
       stabilizePressureLabel: row.stabilizePressureLabel || "",
       selectedFocusAbility: row.selectedFocusAbility || "",
@@ -2868,6 +2902,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     selectedStationOrderLabel: station.selectedActionLabel || "Push Forward",
     stationOrderCommitted: station.stationOrderCommitted === true,
     isStabilize: station.isStabilize === true,
+    isSupport: station.isSupport === true,
+    supportTargetStationName: station.supportTargetStationName || "",
     stabilizePressureKey: station.stabilizePressureKey || "",
     stabilizePressureLabel: station.stabilizePressureLabel || "",
     focusCapacity,
@@ -3158,14 +3194,20 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
   if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
   const round = normalized.session.event.rounds[index];
   if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
-  if (![ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE].includes(actionType)) {
+  if (![ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT].includes(actionType)) {
     return { ok: false, errors: [`Invalid travel runner station action "${actionType}".`], warnings: [], session: normalized.session };
+  }
+  if (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT) {
+    const error = validateTravelSupportTarget(round, stationKey, typeof options.targetStationKey === "string" ? options.targetStationKey : "");
+    if (error) return { ok: false, errors: [error], warnings: [], session: normalized.session };
   }
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationActions = normalizeStationActions(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationActions[stationKey] = actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
     ? stabilize(getTravelStationStabilizePressureKey(stationKey, round))
-    : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE ? hazardResponse() : eventApproach());
+    : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE
+      ? hazardResponse()
+      : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT ? support(options.targetStationKey, options) : eventApproach()));
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
@@ -3189,7 +3231,10 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   if (!stationOption) return { ok: false, errors: [`Station option "${optionKey}" is not available for ${stationKey}.`], warnings: [], session: normalized.session };
   if (stationOption.suppressedByHazard || stationOption.disabled || stationOption.unavailable) return { ok: false, errors: [`Station option "${stationOption.label}" is suppressed by an active hazard.`], warnings: [], session: normalized.session };
   const previousCommitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
-  const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, options);
+  const actionOptions = stationOption.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT
+    ? { ...options, targetStationKey: typeof options.targetStationKey === "string" ? options.targetStationKey : "" }
+    : options;
+  const actionUpdate = setTravelEventRunnerStationAction(normalized.session, index, stationKey, stationOption.actionType, actionOptions);
   if (!actionUpdate.ok) return actionUpdate;
   let nextSession = cloneData(actionUpdate.session);
   nextSession.roundResults[index].selectedStationSkills = normalizeSelectedStationSkills(nextSession.roundResults[index], round);

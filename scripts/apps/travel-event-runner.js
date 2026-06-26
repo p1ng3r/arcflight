@@ -39,6 +39,7 @@ import {
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   commitTravelEventRunnerStationOrder,
+  setTravelEventRunnerStationAction,
   setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
   clearTravelEventRunnerStationResult,
@@ -569,6 +570,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const controllerSelect = event.target?.closest?.("[data-arcflight-runner-npc-controller-select]");
     if (controllerSelect && this.element?.contains(controllerSelect)) {
       return this.#updateNpcStationController(controllerSelect);
+    }
+
+    const supportTargetSelect = event.target?.closest?.("[data-arcflight-runner-support-target-select]");
+    if (supportTargetSelect && this.element?.contains(supportTargetSelect)) {
+      return this.#updateStationSupportTarget(supportTargetSelect);
     }
 
     const approachSelect = event.target?.closest?.("[data-arcflight-runner-approach-select]");
@@ -1432,7 +1438,10 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const roundIndex = Number(select.dataset.roundIndex);
     const stationKey = select.dataset.stationKey ?? "";
     const optionKey = select.value ?? "";
-    const updated = commitTravelEventRunnerStationOrder(this.session, roundIndex, stationKey, optionKey);
+    const supportTarget = optionKey.startsWith("support:")
+      ? this.session?.roundResults?.[roundIndex]?.stationActions?.[stationKey]?.targetStationKey || this.session?.event?.rounds?.[roundIndex]?.activeStations?.find?.((key) => key !== stationKey) || ""
+      : "";
+    const updated = commitTravelEventRunnerStationOrder(this.session, roundIndex, stationKey, optionKey, supportTarget ? { targetStationKey: supportTarget } : {});
     if (!updated.ok) {
       this.statusMessage = updated.errors?.[0] ?? "Station skill approach was not updated.";
       ui.notifications?.warn?.(this.statusMessage);
@@ -1440,6 +1449,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = updated.session;
       this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
       this.statusMessage = `Selected station option for ${humanizeIdentifier(stationKey)}.`;
+    }
+    return this.render(true);
+  }
+
+  async #updateStationSupportTarget(select) {
+    const roundIndex = Number(select.dataset.roundIndex);
+    const stationKey = select.dataset.stationKey ?? "";
+    const targetStationKey = select.value ?? "";
+    const updated = setTravelEventRunnerStationAction(this.session, roundIndex, stationKey, "support", { targetStationKey });
+    if (!updated.ok) {
+      this.statusMessage = updated.errors?.[0] ?? "Support target was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+    } else {
+      this.session = updated.session;
+      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.statusMessage = `Selected Support target for ${humanizeIdentifier(stationKey)}.`;
     }
     return this.render(true);
   }

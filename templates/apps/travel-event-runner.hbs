@@ -602,7 +602,16 @@
                     </select>
                   </label>
                   <p><strong>Selected Option:</strong> {{selectedStationOptionLabel}}</p>
-                  <p><strong>Station Order:</strong> {{selectedActionLabel}}</p>
+                  <p><strong>Station Order:</strong> {{selectedActionLabel}}{{#if isSupport}}{{#if supportTargetStationName}} → {{supportTargetStationName}}{{/if}}{{/if}}</p>
+                  {{#if isSupport}}
+                    <label>
+                      <strong>Support Target:</strong>
+                      <select data-arcflight-runner-support-target-select data-round-index="{{../../state.session.currentRoundIndex}}" data-station-key="{{stationKey}}" {{#if ../../state.isCompleted}}disabled{{/if}}>
+                        <option value="">Choose target…</option>
+                        {{#each supportTargetOptions}}<option value="{{stationKey}}" {{#if selected}}selected{{/if}}>{{stationName}}</option>{{/each}}
+                      </select>
+                    </label>
+                  {{/if}}
                   {{#if selectedApproach.helpText}}<p><strong>How This Helps:</strong> {{selectedApproach.helpText}}</p>{{/if}}
                   {{#if qualityWarnings.length}}<p class="arcflight-travel-builder__warning"><strong>Quality Warning:</strong> {{#each qualityWarnings}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
                 </div>
@@ -743,6 +752,7 @@
               <div><span>Main objective contributors</span><strong>{{state.roundSummaryCard.objectiveContributorCount}}</strong></div>
               <div><span>Stabilize / Repair</span><strong>{{state.roundSummaryCard.stabilizerCount}}</strong></div>
               <div><span>Hazard response</span><strong>{{state.roundSummaryCard.hazardResponderCount}}</strong></div>
+              <div><span>Supporters</span><strong>{{state.roundSummaryCard.supporterCount}}</strong></div>
               <div><span>Unresolved / pending</span><strong>{{state.roundSummaryCard.unresolvedStationCount}}</strong></div>
             </div>
             <section class="arcflight-travel-runner-mvp__round-summary-section">

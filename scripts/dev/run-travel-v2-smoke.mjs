@@ -20,6 +20,7 @@ import runTravelV2NarrationSmokeChecks from "../helpers/travel-v2-narration.smok
 import runTravelV2StabilizeRepairSmokeChecks from "../helpers/travel-v2-stabilize-repair.smoke.js";
 import runTravelV2MomentumSmokeChecks from "../helpers/travel-v2-momentum.smoke.js";
 import runTravelV2FocusBacklashRecordsSmokeChecks from "../helpers/travel-v2-focus-backlash-records.smoke.js";
+import runTravelV2SupportActionTargetingSmokeChecks from "../helpers/travel-v2-support-action-targeting.smoke.js";
 import runTravelV2FocusRiskSuppressionSmokeChecks from "../helpers/travel-v2-focus-risk-suppression.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
@@ -56,6 +57,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 stabilize repair", runTravelV2StabilizeRepairSmokeChecks],
   ["Travel v2 momentum", runTravelV2MomentumSmokeChecks],
   ["Travel v2 focus backlash records", runTravelV2FocusBacklashRecordsSmokeChecks],
+  ["Travel v2 support action targeting", runTravelV2SupportActionTargetingSmokeChecks],
   ["Travel v2 focus risk suppression", runTravelV2FocusRiskSuppressionSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
