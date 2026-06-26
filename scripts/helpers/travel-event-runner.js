@@ -741,6 +741,131 @@ export function dismissTravelV2SupportRecord(session, recordId, options = {}) {
   return resolveTravelV2SupportRecord(session, recordId, "dismissed", options);
 }
 
+const SUPPORT_BACKLASH_RECORD_STATUSES = Object.freeze(["pending", "applied", "dismissed"]);
+const SUPPORT_BACKLASH_STATUS_LABELS = Object.freeze({ pending: "Pending", applied: "Applied", dismissed: "Dismissed" });
+
+function supportBacklashRecordId(roundIndex, supportingStationKey, targetStationKey, sourceResult) { return ["support-backlash", roundIndex, supportingStationKey, targetStationKey, sourceResult].map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).join(":"); }
+function supportBacklashRecordsMatch(record, roundIndex, supportingStationKey, targetStationKey, sourceResult) { return Number(record?.roundIndex) === Number(roundIndex) && record?.supportingStationKey === supportingStationKey && record?.targetStationKey === targetStationKey && record?.sourceResult === sourceResult; }
+
+export function formatTravelV2SupportBacklashPublicText(record = {}) {
+  const supporting = record.supportingStationName || humanizeIdentifier(record.supportingStationKey || "supporting station");
+  const target = record.targetStationName || humanizeIdentifier(record.targetStationKey || "target station");
+  if (record.status === "applied") return `The GM marked ${supporting}’s Support backlash as applied; any actual consequence remains manually handled.`;
+  if (record.status === "dismissed") return `${supporting}’s Support backlash was dismissed.`;
+  if (record.sourceResult === "criticalFailure" || record.severity === "major") return `${supporting}’s Support for ${target} backfires, creating a major backlash candidate.`;
+  return `${supporting}’s Support for ${target} falters, creating a minor complication candidate.`;
+}
+
+export function normalizeTravelV2SupportBacklashRecords(recordsOrState = {}, options = {}) {
+  const rawRecords = Array.isArray(recordsOrState) ? recordsOrState : (Array.isArray(recordsOrState?.records) ? recordsOrState.records : []);
+  const records = rawRecords.filter(isPlainObject).map((record, index) => {
+    const sourceResult = record.sourceResult === "criticalFailure" ? "criticalFailure" : "failure";
+    const severity = record.severity === "major" || sourceResult === "criticalFailure" ? "major" : "minor";
+    const normalized = {
+      id: typeof record.id === "string" && record.id ? record.id : `support-backlash:${index + 1}`,
+      roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
+      supportingStationKey: typeof record.supportingStationKey === "string" ? record.supportingStationKey : "",
+      supportingStationName: typeof record.supportingStationName === "string" ? record.supportingStationName : "",
+      targetStationKey: typeof record.targetStationKey === "string" ? record.targetStationKey : "",
+      targetStationName: typeof record.targetStationName === "string" ? record.targetStationName : "",
+      severity,
+      sourceResult,
+      publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "",
+      publicRiskText: typeof record.publicRiskText === "string" ? record.publicRiskText : "",
+      gmNote: typeof record.gmNote === "string" ? record.gmNote : "",
+      status: SUPPORT_BACKLASH_RECORD_STATUSES.includes(record.status) ? record.status : "pending",
+      createdAt: typeof record.createdAt === "string" ? record.createdAt : nowIso(options),
+      resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : "",
+      resolvedByUserId: typeof record.resolvedByUserId === "string" ? record.resolvedByUserId : "",
+      resolvedByUserName: typeof record.resolvedByUserName === "string" ? record.resolvedByUserName : "",
+      resolutionNote: typeof record.resolutionNote === "string" ? record.resolutionNote.trim().slice(0, 500) : ""
+    };
+    normalized.statusLabel = SUPPORT_BACKLASH_STATUS_LABELS[normalized.status] ?? humanizeIdentifier(normalized.status);
+    if (!normalized.publicRiskText) normalized.publicRiskText = formatTravelV2SupportBacklashPublicText(normalized);
+    if (!normalized.publicSummary) normalized.publicSummary = normalized.publicRiskText;
+    if (!normalized.gmNote) normalized.gmNote = normalized.sourceResult === "criticalFailure"
+      ? "Critical failed Support backlash candidate. GM may apply a stronger narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation."
+      : "Failed Support consequence candidate. GM may apply a narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation.";
+    return normalized;
+  }).filter((record) => record.id && record.supportingStationKey && record.targetStationKey);
+  return { records: Array.from(new Map(records.map((record) => [record.id, record])).values()) };
+}
+
+export function prepareTravelV2SupportBacklashPanelState(session, options = {}) {
+  const records = normalizeTravelV2SupportBacklashRecords(session?.travelV2SupportBacklashRecords, options).records.map((record) => ({ ...record, isPending: record.status === "pending", isApplied: record.status === "applied", isDismissed: record.status === "dismissed" }));
+  return { records, pendingRecords: records.filter((record) => record.isPending), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.isPending).length };
+}
+
+export function sanitizeTravelV2SupportBacklashForPlayers(recordsOrState = {}, options = {}) {
+  const records = normalizeTravelV2SupportBacklashRecords(recordsOrState, options).records.map((record) => ({ id: record.id, roundIndex: record.roundIndex, supportingStationKey: record.supportingStationKey, supportingStationName: record.supportingStationName, targetStationKey: record.targetStationKey, targetStationName: record.targetStationName, severity: record.severity, sourceResult: record.sourceResult, status: record.status, statusLabel: record.statusLabel, publicSummary: record.publicSummary, publicRiskText: formatTravelV2SupportBacklashPublicText(record) }));
+  return { records, pendingRecords: records.filter((record) => record.status === "pending"), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending").length };
+}
+
+export function createTravelV2SupportBacklashRecord(session, roundIndex, supportingStationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const action = normalizeTravelStationAction(normalized.session.roundResults?.[index]?.stationActions?.[supportingStationKey], supportingStationKey, round);
+  const result = options.result ?? normalized.session.roundResults?.[index]?.stationResults?.[supportingStationKey];
+  if (action.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT || !action.targetStationKey || !["failure", "criticalFailure"].includes(result)) return { ok: true, errors: [], warnings: [], session: normalized.session, record: null, skipped: true };
+  const baseId = supportBacklashRecordId(index, supportingStationKey, action.targetStationKey, result);
+  const records = normalizeTravelV2SupportBacklashRecords(normalized.session.travelV2SupportBacklashRecords, options).records;
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const record = records[i];
+    if (record.status === "pending" && Number(record.roundIndex) === Number(index) && record.supportingStationKey === supportingStationKey && (record.targetStationKey !== action.targetStationKey || record.sourceResult !== result)) records.splice(i, 1);
+  }
+  const existing = records.find((record) => record.status === "pending" && (record.id === baseId || supportBacklashRecordsMatch(record, index, supportingStationKey, action.targetStationKey, result)));
+  if (existing) return { ok: true, duplicate: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportBacklashRecords: { records } }, record: existing };
+  const supportingStationName = getStation(supportingStationKey)?.displayName || getStation(supportingStationKey)?.name || humanizeIdentifier(supportingStationKey);
+  const targetStationName = getStation(action.targetStationKey)?.displayName || getStation(action.targetStationKey)?.name || humanizeIdentifier(action.targetStationKey);
+  const severity = result === "criticalFailure" ? "major" : "minor";
+  const record = { id: baseId, roundIndex: index, supportingStationKey, supportingStationName, targetStationKey: action.targetStationKey, targetStationName, severity, sourceResult: result, publicSummary: "", publicRiskText: "", gmNote: "", status: "pending", createdAt: nowIso(options), resolvedAt: "", resolvedByUserId: "", resolvedByUserName: "", resolutionNote: "" };
+  record.statusLabel = SUPPORT_BACKLASH_STATUS_LABELS[record.status];
+  record.publicRiskText = formatTravelV2SupportBacklashPublicText(record);
+  record.publicSummary = record.publicRiskText;
+  record.gmNote = result === "criticalFailure" ? "Critical failed Support backlash candidate. GM may apply a stronger narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation." : "Failed Support consequence candidate. GM may apply a narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation.";
+  records.push(record);
+  return { ok: true, duplicate: false, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportBacklashRecords: { records }, updatedAt: nowIso(options), summary: null }, record };
+}
+
+export function syncTravelV2SupportBacklashRecordsForStationResult(session, roundIndex, supportingStationKey, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[index] ?? {};
+  const action = normalizeTravelStationAction(normalized.session.roundResults?.[index]?.stationActions?.[supportingStationKey], supportingStationKey, round);
+  const result = normalized.session.roundResults?.[index]?.stationResults?.[supportingStationKey] ?? null;
+  if (action.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT && action.targetStationKey && ["failure", "criticalFailure"].includes(result)) return createTravelV2SupportBacklashRecord(normalized.session, index, supportingStationKey, options);
+  const records = normalizeTravelV2SupportBacklashRecords(normalized.session.travelV2SupportBacklashRecords, options).records;
+  let changed = false;
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const record = records[i];
+    if (record.status !== "pending" || Number(record.roundIndex) !== Number(index) || record.supportingStationKey !== supportingStationKey) continue;
+    if (action.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT || !action.targetStationKey || !["failure", "criticalFailure"].includes(result) || record.targetStationKey !== action.targetStationKey || record.sourceResult !== result) {
+      records.splice(i, 1);
+      changed = true;
+    }
+  }
+  if (!changed) return { ok: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportBacklashRecords: { records } } };
+  return { ok: true, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportBacklashRecords: { records }, updatedAt: nowIso(options), summary: null } };
+}
+
+function resolveTravelV2SupportBacklashRecord(session, recordId, status, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok) return normalized;
+  const nextSession = cloneData(normalized.session);
+  const record = nextSession.travelV2SupportBacklashRecords.records.find((entry) => entry.id === recordId);
+  if (!record) return { ok: false, errors: [`Support backlash "${recordId}" was not found.`], warnings: [], session: nextSession };
+  if (record.status !== "pending") return { ok: false, errors: [`Support backlash "${recordId}" is already ${record.status}.`], warnings: [], session: nextSession };
+  record.status = status; record.statusLabel = SUPPORT_BACKLASH_STATUS_LABELS[status]; record.resolvedAt = nowIso(options); record.resolvedByUserId = options.userId ?? globalThis.game?.user?.id ?? ""; record.resolvedByUserName = options.userName ?? globalThis.game?.user?.name ?? ""; record.resolutionNote = typeof options.note === "string" ? options.note.trim().slice(0, 500) : record.resolutionNote;
+  nextSession.updatedAt = nowIso(options); nextSession.summary = null;
+  return { ok: true, errors: [], warnings: [], session: nextSession, record };
+}
+
+export function applyTravelV2SupportBacklashRecord(session, recordId, options = {}) { return resolveTravelV2SupportBacklashRecord(session, recordId, "applied", options); }
+export function dismissTravelV2SupportBacklashRecord(session, recordId, options = {}) { return resolveTravelV2SupportBacklashRecord(session, recordId, "dismissed", options); }
+
 
 export const TRAVEL_REACTION_DEFINITIONS = Object.freeze({
   "navigator.hard-correction": Object.freeze({
@@ -2122,6 +2247,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2Momentum: normalizeTravelV2MomentumState(session.travelV2Momentum),
     travelV2FocusBacklashRecords: normalizeTravelV2FocusBacklashRecords(session.travelV2FocusBacklashRecords, options),
     travelV2SupportRecords: normalizeTravelV2SupportRecords(session.travelV2SupportRecords, options),
+    travelV2SupportBacklashRecords: normalizeTravelV2SupportBacklashRecords(session.travelV2SupportBacklashRecords, options),
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
@@ -2682,6 +2808,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const focusEffectReview = prepareTravelFocusEffectReviewState(activeSession, options);
   const focusBacklashReview = prepareTravelV2FocusBacklashPanelState(activeSession, options);
   const supportAssistReview = prepareTravelV2SupportPanelState(activeSession, options);
+  const supportBacklashReview = prepareTravelV2SupportBacklashPanelState(activeSession, options);
   return {
     ok: normalized.ok,
     errors: normalized.errors,
@@ -2719,6 +2846,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     focusEffectReview,
     focusBacklashReview,
     supportAssistReview,
+    supportBacklashReview,
     focusRiskSummary: prepareTravelFocusRiskSummary(stations),
     travelV2Hazards: prepareTravelV2HazardPanelState(activeSession),
     travelV2Narration: activeSession ? prepareTravelV2RoundNarration(activeSession, activeSession.currentRoundIndex, options) : null,
@@ -3126,7 +3254,9 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords),
     hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(activeSession?.travelV2FocusBacklashRecords).hasRecords,
     supportAssists: sanitizeTravelV2SupportForPlayers(activeSession?.travelV2SupportRecords),
-    hasSupportAssists: sanitizeTravelV2SupportForPlayers(activeSession?.travelV2SupportRecords).hasRecords
+    supportBacklash: sanitizeTravelV2SupportBacklashForPlayers(activeSession?.travelV2SupportBacklashRecords),
+    hasSupportAssists: sanitizeTravelV2SupportForPlayers(activeSession?.travelV2SupportRecords).hasRecords,
+    hasSupportBacklash: sanitizeTravelV2SupportBacklashForPlayers(activeSession?.travelV2SupportBacklashRecords).hasRecords
   };
 }
 
@@ -3297,7 +3427,9 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords),
     hasFocusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords).hasRecords,
     supportAssists: sanitizeTravelV2SupportForPlayers(normalized.session?.travelV2SupportRecords),
+    supportBacklash: sanitizeTravelV2SupportBacklashForPlayers(normalized.session?.travelV2SupportBacklashRecords),
     hasSupportAssists: sanitizeTravelV2SupportForPlayers(normalized.session?.travelV2SupportRecords).hasRecords,
+    hasSupportBacklash: sanitizeTravelV2SupportBacklashForPlayers(normalized.session?.travelV2SupportBacklashRecords).hasRecords,
     partyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }),
     hasPartyAlerts: buildTravelPlayerPartyAlerts({ stations, publicHazards, publicShipScars, reactionRecords }).length > 0
   };
@@ -3327,6 +3459,9 @@ export function clearTravelEventRunnerStationResult(session, roundIndex, station
   const supportUpdate = syncTravelV2SupportRecordsForStationResult(nextSession, index, stationKey, { ...options, cleared: true });
   if (!supportUpdate.ok) return supportUpdate;
   Object.assign(nextSession, supportUpdate.session);
+  const supportBacklashUpdate = syncTravelV2SupportBacklashRecordsForStationResult(nextSession, index, stationKey, { ...options, cleared: true });
+  if (!supportBacklashUpdate.ok) return supportBacklashUpdate;
+  Object.assign(nextSession, supportBacklashUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -3363,6 +3498,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const supportUpdate = syncTravelV2SupportRecordsForStationResult(nextSession, index, stationKey, options);
   if (!supportUpdate.ok) return supportUpdate;
   Object.assign(nextSession, supportUpdate.session);
+  const supportBacklashUpdate = syncTravelV2SupportBacklashRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!supportBacklashUpdate.ok) return supportBacklashUpdate;
+  Object.assign(nextSession, supportBacklashUpdate.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -3429,6 +3567,9 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
   const supportUpdate = syncTravelV2SupportRecordsForStationResult(nextSession, index, stationKey, options);
   if (!supportUpdate.ok) return supportUpdate;
   Object.assign(nextSession, supportUpdate.session);
+  const supportBacklashUpdate = syncTravelV2SupportBacklashRecordsForStationResult(nextSession, index, stationKey, options);
+  if (!supportBacklashUpdate.ok) return supportBacklashUpdate;
+  Object.assign(nextSession, supportBacklashUpdate.session);
   if (
     previousAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT
     && previousAction.targetStationKey

@@ -62,7 +62,8 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
       failedSession = setSupport(failedSession);
       failedSession = okSession(setTravelEventRunnerStationResult(failedSession, 0, "engineer", result));
       assertSmoke(failedSession.travelV2SupportRecords.records.length === 0, `Support + ${result} creates no assist`);
-      assertSmoke(failedSession.travelV2FocusBacklashRecords.records.length === 0, `Support + ${result} creates no Support backlash`);
+      assertSmoke(failedSession.travelV2FocusBacklashRecords.records.length === 0, `Support + ${result} creates no Focus backlash`);
+      assertSmoke(failedSession.travelV2SupportBacklashRecords.records.length === 1, `Support + ${result} creates separate failed-Support consequence/backlash record`);
     }
 
     let nonSupport = okSession(createTravelEventRunnerSession(fixtureEvent()));

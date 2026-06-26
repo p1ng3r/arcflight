@@ -54,7 +54,7 @@ import {
   dismissTravelStabilizeResolution,
   updateTravelStabilizeResolutionNote,
   acceptTravelReactionPrompt, dismissTravelReactionPrompt, updateTravelReactionPromptNote,
-  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, spendTravelV2RunnerMomentumDowngrade, dismissTravelV2RunnerShipScar, applyTravelV2FocusBacklash, dismissTravelV2FocusBacklash, useTravelV2SupportRecord, dismissTravelV2SupportRecord
+  markTravelReactionPromptRerollResult, applyTravelReactionPromptBacklash, dismissTravelReactionPromptBacklash, drawTravelV2RunnerHazard, revealTravelV2RunnerHazard, holdTravelV2RunnerHazard, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, applyTravelV2RunnerHazardToRound, resolveTravelV2RunnerUnresolvedHazards, spendTravelV2RunnerMomentumDowngrade, dismissTravelV2RunnerShipScar, applyTravelV2FocusBacklash, dismissTravelV2FocusBacklash, useTravelV2SupportRecord, dismissTravelV2SupportRecord, applyTravelV2SupportBacklashRecord, dismissTravelV2SupportBacklashRecord
 } from "../helpers/travel-event-runner.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -672,6 +672,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-focus-backlash-dismiss")) return this.#resolveFocusBacklash(target, "dismissed");
     if (target.hasAttribute("data-arcflight-support-assist-use")) return this.#resolveSupportAssist(target, "used");
     if (target.hasAttribute("data-arcflight-support-assist-dismiss")) return this.#resolveSupportAssist(target, "dismissed");
+    if (target.hasAttribute("data-arcflight-support-backlash-apply")) return this.#resolveSupportBacklash(target, "applied");
+    if (target.hasAttribute("data-arcflight-support-backlash-dismiss")) return this.#resolveSupportBacklash(target, "dismissed");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-apply")) return this.#resolveStabilizeResolution(target, "applied");
     if (target.hasAttribute("data-arcflight-stabilize-resolution-dismiss")) return this.#resolveStabilizeResolution(target, "dismissed");
     if (target.hasAttribute("data-arcflight-reaction-accept")) return this.#resolveReaction(target, "accept");
@@ -847,6 +849,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const updated = status === "used" ? useTravelV2SupportRecord(this.session, recordId) : dismissTravelV2SupportRecord(this.session, recordId);
     if (updated.ok) { this.session = updated.session; this.#refreshPlayersQuietly(); }
     this.statusMessage = updated.ok ? (status === "used" ? "Support assist marked used." : "Support assist dismissed.") : (updated.errors?.[0] ?? "Could not update Support assist.");
+    return this.render(true);
+  }
+
+  async #resolveSupportBacklash(target, status) {
+    const recordId = target.dataset.supportBacklashId ?? "";
+    const updated = status === "applied" ? applyTravelV2SupportBacklashRecord(this.session, recordId) : dismissTravelV2SupportBacklashRecord(this.session, recordId);
+    if (updated.ok) { this.session = updated.session; this.#refreshPlayersQuietly(); }
+    this.statusMessage = updated.ok ? (status === "applied" ? "Support backlash marked applied for manual GM handling." : "Support backlash dismissed.") : (updated.errors?.[0] ?? "Could not update Support backlash.");
     return this.render(true);
   }
 
