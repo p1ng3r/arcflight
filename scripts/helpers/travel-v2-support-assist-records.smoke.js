@@ -45,7 +45,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     assertSmoke(session.travelV2SupportRecords.records[0].assistValue === 1, "Support success assist has value 1");
     const pendingPlayer = sanitizeTravelV2SupportForPlayers({ records: [{ ...session.travelV2SupportRecords.records[0], gmNote: "GM ONLY SECRET", actorId: "PRIVATE", hiddenHazardData: "SECRET", target: { raw: true }, resolverUserId: "gm-user" }] });
     const pendingRecord = pendingPlayer.records[0];
-    assertSmoke(pendingRecord.supportingStationKey === "engineer" && pendingRecord.supportingStationName === "Engineer" && pendingRecord.targetStationKey === "navigator" && pendingRecord.targetStationName === "Navigator" && pendingRecord.assistValue === 1 && pendingRecord.status === "pending" && pendingRecord.statusLabel === "Pending", "player sanitizer includes source, target, assist value, and status label");
+    assertSmoke(pendingRecord.supportingStationKey === "engineer" && pendingRecord.supportingStationName === "Engineer" && pendingRecord.targetStationKey === "navigator" && pendingRecord.targetStationName === "Navigator" && pendingRecord.assistValue === 1 && pendingRecord.status === "pending" && pendingRecord.statusLabel === "Pending assist", "player sanitizer includes source, target, assist value, and status label");
     assertSmoke(pendingRecord.publicAssistText === "Engineer is helping Navigator. Pending assist: +1.", "pending assist player text is clear");
     assertSmoke(!snap(pendingPlayer).includes("GM ONLY SECRET") && !snap(pendingPlayer).includes("PRIVATE") && !snap(pendingPlayer).includes("SECRET") && !snap(pendingPlayer).includes("gm-user") && !snap(pendingPlayer).includes("raw"), "player sanitizer omits GM-only/private/internal fields");
     const duplicate = createTravelV2SupportRecord(session, 0, "engineer");
@@ -123,7 +123,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
 
     const narrationSession = cloneSessionWithSecretSupport(session, "GM ONLY SECRET");
     const narration = prepareTravelV2RoundNarration(narrationSession, 0);
-    assertSmoke(narration.support.narrationLines.some((line) => line.includes("Engineer supports Navigator") && line.includes("+1 assist")), "round narration mentions Support assists");
+    assertSmoke(narration.support.narrationLines.some((line) => line === "Engineer is helping Navigator. Pending assist: +1."), "round narration mentions Support assists");
     assertSmoke(narration.stationVignettes.find((v) => v.stationKey === "engineer")?.mechanicalSummary.includes("does not count toward main-objective progress"), "Support station narration stays outside objective progress");
     assertSmoke(!snap(narration.support).includes("GM ONLY SECRET"), "Support narration does not leak GM-only notes");
     assertSmoke(!snap(narration.support).includes("automatically applied") && narration.support.narrationLines.every((line) => !line.includes("roll was changed")), "Support narration does not imply automatic bonus application");

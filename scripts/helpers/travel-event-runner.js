@@ -432,6 +432,7 @@ export function updateTravelFocusEffectNote(session, focusEffectId, note, option
 }
 
 const FOCUS_BACKLASH_STATUSES = Object.freeze(["pending", "applied", "dismissed"]);
+const FOCUS_BACKLASH_STATUS_LABELS = Object.freeze({ pending: "Pending risk", applied: "Applied", dismissed: "Dismissed" });
 
 function focusBacklashRecordId(roundIndex, stationKey, focusKey) { return ["focus-backlash", roundIndex, stationKey, focusKey].map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).join(":"); }
 function focusBacklashRecordsMatch(record, roundIndex, stationKey, focusKey) { return Number(record?.roundIndex) === Number(roundIndex) && record?.stationKey === stationKey && record?.focusKey === focusKey; }
@@ -475,14 +476,14 @@ export function normalizeTravelV2FocusBacklashRecords(recordsOrState = {}, optio
 
 export function prepareTravelV2FocusBacklashPanelState(session, options = {}) {
   const records = normalizeTravelV2FocusBacklashRecords(session?.travelV2FocusBacklashRecords, options).records.map((record) => ({
-    ...record, statusLabel: humanizeIdentifier(record.status), isPending: record.status === "pending", isApplied: record.status === "applied", isDismissed: record.status === "dismissed", hasPressure: record.pressureDelta > 0 && Boolean(record.pressureKey), hasConsequenceCandidate: Boolean(record.consequenceCandidate)
+    ...record, statusLabel: FOCUS_BACKLASH_STATUS_LABELS[record.status] ?? humanizeIdentifier(record.status), isPending: record.status === "pending", isApplied: record.status === "applied", isDismissed: record.status === "dismissed", hasPressure: record.pressureDelta > 0 && Boolean(record.pressureKey), hasConsequenceCandidate: Boolean(record.consequenceCandidate)
   }));
   return { records, pendingRecords: records.filter((record) => record.isPending), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.isPending).length };
 }
 
 export function sanitizeTravelV2FocusBacklashForPlayers(recordsOrState = {}, options = {}) {
   const records = normalizeTravelV2FocusBacklashRecords(recordsOrState, options).records.map((record) => ({
-    id: record.id, roundIndex: record.roundIndex, stationKey: record.stationKey, stationName: record.stationName, focusKey: record.focusKey, focusLabel: record.focusLabel, actorName: record.actorName, publicSummary: record.publicSummary, publicRiskText: record.publicRiskText, publicBacklashPreviewText: record.publicBacklashPreviewText, status: record.status, statusLabel: humanizeIdentifier(record.status)
+    id: record.id, roundIndex: record.roundIndex, stationKey: record.stationKey, stationName: record.stationName, focusKey: record.focusKey, focusLabel: record.focusLabel, actorName: record.actorName, publicSummary: record.publicSummary, publicRiskText: record.publicRiskText, publicBacklashPreviewText: record.publicBacklashPreviewText, status: record.status, statusLabel: FOCUS_BACKLASH_STATUS_LABELS[record.status] ?? humanizeIdentifier(record.status)
   }));
   return { records, pendingRecords: records.filter((record) => record.status === "pending"), recentRecords: records.slice(-5).reverse(), hasRecords: records.length > 0, pendingCount: records.filter((record) => record.status === "pending").length };
 }
@@ -508,7 +509,7 @@ export function createTravelV2FocusBacklashRecord(session, roundIndex, stationKe
   const assignment = normalized.session.stationAssignments?.[stationKey] ?? {};
   const pressureDelta = Number.isFinite(Number(options.pressureDelta)) ? Math.max(0, Math.trunc(Number(options.pressureDelta))) : (result === "criticalFailure" ? 2 : 1);
   // Conservative Part 2 mapping: failed Focus-backed results create pending session-local pressure/consequence candidates only after the roll resolves.
-  const record = { id, roundIndex: index, stationKey, stationName: getStation(stationKey)?.displayName || getStation(stationKey)?.name || humanizeIdentifier(stationKey), focusKey: spentFocusKey, focusLabel: ability.label || humanizeIdentifier(spentFocusKey), actorId: assignment.actorId || "", actorName: assignment.actorName || "", publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${humanizeIdentifier(stationKey)}'s Focus creates backlash pending GM review.`, publicRiskText: typeof options.publicRiskText === "string" ? options.publicRiskText : "Failed Focus can create session-local pressure after GM review.", publicBacklashPreviewText: typeof options.publicBacklashPreviewText === "string" ? options.publicBacklashPreviewText : `${pressure?.label || humanizeIdentifier(pressureKey)} pressure may increase by ${pressureDelta}.`, pressureKey, pressureLabel: pressure?.label || humanizeIdentifier(pressureKey), pressureDelta, consequenceCandidate: typeof options.consequenceCandidate === "string" ? options.consequenceCandidate : (result === "criticalFailure" ? "Critical Focus backlash consequence candidate; keep session-local unless the GM later converts it manually." : ""), gmNote: typeof options.gmNote === "string" ? options.gmNote : "Session-local Focus backlash candidate. Apply/dismiss only; no actor/item/chat/journal/combat/socket mutation.", status: "pending", createdAt: nowIso(options), resolvedAt: "", resolvedByUserId: "", resolvedByUserName: "", resolutionNote: "", pressureBefore: null, pressureAfter: null };
+  const record = { id, roundIndex: index, stationKey, stationName: getStation(stationKey)?.displayName || getStation(stationKey)?.name || humanizeIdentifier(stationKey), focusKey: spentFocusKey, focusLabel: ability.label || humanizeIdentifier(spentFocusKey), actorId: assignment.actorId || "", actorName: assignment.actorName || "", publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${humanizeIdentifier(stationKey)}’s Focus risk is pending GM review.`, publicRiskText: typeof options.publicRiskText === "string" ? options.publicRiskText : "Focus backlash is a GM-controlled consequence candidate.", publicBacklashPreviewText: typeof options.publicBacklashPreviewText === "string" ? options.publicBacklashPreviewText : `Pending risk: +${pressureDelta} ${pressure?.label || humanizeIdentifier(pressureKey)} pressure candidate.`, pressureKey, pressureLabel: pressure?.label || humanizeIdentifier(pressureKey), pressureDelta, consequenceCandidate: typeof options.consequenceCandidate === "string" ? options.consequenceCandidate : (result === "criticalFailure" ? "Critical Focus backlash consequence candidate; keep session-local unless the GM later converts it manually." : ""), gmNote: typeof options.gmNote === "string" ? options.gmNote : "GM-controlled Focus consequence candidate. The GM chooses Apply or Dismiss; no automatic actor/item/chat/journal/combat/socket/scene/token mutation.", status: "pending", createdAt: nowIso(options), resolvedAt: "", resolvedByUserId: "", resolvedByUserName: "", resolutionNote: "", pressureBefore: null, pressureAfter: null };
   records.push(record);
   const nextSession = { ...cloneData(normalized.session), travelV2FocusBacklashRecords: { records }, updatedAt: nowIso(options), summary: null };
   return { ok: true, duplicate: false, errors: [], warnings: [], session: nextSession, record };
@@ -569,7 +570,7 @@ export function dismissTravelV2FocusBacklash(session, recordId, options = {}) {
 }
 
 const SUPPORT_RECORD_STATUSES = Object.freeze(["pending", "used", "dismissed"]);
-const SUPPORT_RECORD_STATUS_LABELS = Object.freeze({ pending: "Pending", used: "Used", dismissed: "Dismissed" });
+const SUPPORT_RECORD_STATUS_LABELS = Object.freeze({ pending: "Pending assist", used: "Used", dismissed: "Dismissed" });
 
 export function formatTravelV2SupportAssistPublicText(record = {}) {
   const supporting = record.supportingStationName || humanizeIdentifier(record.supportingStationKey || "supporting station");
@@ -676,7 +677,7 @@ export function createTravelV2SupportRecord(session, roundIndex, supportingStati
     publicSummary: typeof options.publicSummary === "string" ? options.publicSummary : `${supportingStationName} supports ${targetStationName} with a +${assistValue} assist.`,
     publicAssistText: typeof options.publicAssistText === "string" ? options.publicAssistText : "",
     assistValue,
-    gmNote: typeof options.gmNote === "string" ? options.gmNote : "Session-local Support assist. Use/dismiss only; no automatic actor/item/chat/journal/combat/socket mutation and no automatic target roll change.",
+    gmNote: typeof options.gmNote === "string" ? options.gmNote : "Session-local Support assist, not an automatic roll mutation. The GM chooses Use or Dismiss; no actor/item/chat/journal/combat/socket/scene/token mutation.",
     status: "pending",
     createdAt: nowIso(options),
     resolvedAt: "",
@@ -742,7 +743,7 @@ export function dismissTravelV2SupportRecord(session, recordId, options = {}) {
 }
 
 const SUPPORT_BACKLASH_RECORD_STATUSES = Object.freeze(["pending", "applied", "dismissed"]);
-const SUPPORT_BACKLASH_STATUS_LABELS = Object.freeze({ pending: "Pending", applied: "Applied", dismissed: "Dismissed" });
+const SUPPORT_BACKLASH_STATUS_LABELS = Object.freeze({ pending: "Pending backlash", applied: "Applied", dismissed: "Dismissed" });
 
 function supportBacklashRecordId(roundIndex, supportingStationKey, targetStationKey, sourceResult) { return ["support-backlash", roundIndex, supportingStationKey, targetStationKey, sourceResult].map((part) => String(part ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")).join(":"); }
 function supportBacklashRecordsMatch(record, roundIndex, supportingStationKey, targetStationKey, sourceResult) { return Number(record?.roundIndex) === Number(roundIndex) && record?.supportingStationKey === supportingStationKey && record?.targetStationKey === targetStationKey && record?.sourceResult === sourceResult; }
@@ -784,8 +785,8 @@ export function normalizeTravelV2SupportBacklashRecords(recordsOrState = {}, opt
     if (!normalized.publicRiskText) normalized.publicRiskText = formatTravelV2SupportBacklashPublicText(normalized);
     if (!normalized.publicSummary) normalized.publicSummary = normalized.publicRiskText;
     if (!normalized.gmNote) normalized.gmNote = normalized.sourceResult === "criticalFailure"
-      ? "Critical failed Support backlash candidate. GM may apply a stronger narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation."
-      : "Failed Support consequence candidate. GM may apply a narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation.";
+      ? "GM-controlled failed-Support consequence candidate. The GM chooses Apply or Dismiss; no automatic pressure, damage, condition, roll, actor/item/chat/journal/combat/socket/scene/token mutation."
+      : "GM-controlled failed-Support consequence candidate. The GM chooses Apply or Dismiss; no automatic pressure, damage, condition, roll, actor/item/chat/journal/combat/socket/scene/token mutation.";
     return normalized;
   }).filter((record) => record.id && record.supportingStationKey && record.targetStationKey);
   return { records: Array.from(new Map(records.map((record) => [record.id, record])).values()) };
@@ -824,7 +825,7 @@ export function createTravelV2SupportBacklashRecord(session, roundIndex, support
   record.statusLabel = SUPPORT_BACKLASH_STATUS_LABELS[record.status];
   record.publicRiskText = formatTravelV2SupportBacklashPublicText(record);
   record.publicSummary = record.publicRiskText;
-  record.gmNote = result === "criticalFailure" ? "Critical failed Support backlash candidate. GM may apply a stronger narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation." : "Failed Support consequence candidate. GM may apply a narrative/pressure complication manually or dismiss it. No automatic actor/item/chat/journal/combat/socket mutation.";
+  record.gmNote = result === "criticalFailure" ? "GM-controlled failed-Support consequence candidate. The GM chooses Apply or Dismiss; no automatic pressure, damage, condition, roll, actor/item/chat/journal/combat/socket/scene/token mutation." : "GM-controlled failed-Support consequence candidate. The GM chooses Apply or Dismiss; no automatic pressure, damage, condition, roll, actor/item/chat/journal/combat/socket/scene/token mutation.";
   records.push(record);
   return { ok: true, duplicate: false, errors: [], warnings: [], session: { ...cloneData(normalized.session), travelV2SupportBacklashRecords: { records }, updatedAt: nowIso(options), summary: null }, record };
 }

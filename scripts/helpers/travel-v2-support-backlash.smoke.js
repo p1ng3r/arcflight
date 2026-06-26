@@ -97,7 +97,7 @@ export async function runTravelV2SupportBacklashSmokeChecks() {
     const secretState = { records: [{ ...minor, gmNote: "GM ONLY SECRET", actorId: "PRIVATE", hiddenHazardData: "SECRET", target: { raw: true }, resolvedByUserId: "gm-user", mutationInstructions: "mutate" }] };
     const player = sanitizeTravelV2SupportBacklashForPlayers(secretState);
     const playerRecord = player.records[0];
-    assertSmoke(playerRecord.id && playerRecord.roundIndex === 0 && playerRecord.supportingStationKey === "engineer" && playerRecord.targetStationKey === "navigator" && playerRecord.severity === "minor" && playerRecord.sourceResult === "failure" && playerRecord.statusLabel === "Pending" && playerRecord.publicRiskText, "player sanitizer includes public fields");
+    assertSmoke(playerRecord.id && playerRecord.roundIndex === 0 && playerRecord.supportingStationKey === "engineer" && playerRecord.targetStationKey === "navigator" && playerRecord.severity === "minor" && playerRecord.sourceResult === "failure" && playerRecord.statusLabel === "Pending backlash" && playerRecord.publicRiskText, "player sanitizer includes public fields");
     assertSmoke(!snap(player).includes("GM ONLY SECRET") && !snap(player).includes("PRIVATE") && !snap(player).includes("SECRET") && !snap(player).includes("gm-user") && !snap(player).includes("raw") && !snap(player).includes("mutate"), "player sanitizer omits GM-only/private/internal fields");
 
     const narrationSession = JSON.parse(JSON.stringify(failure));

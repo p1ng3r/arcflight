@@ -83,9 +83,10 @@ export async function runTravelV2FocusBacklashRecordsSmokeChecks() {
     clearSession = okSession(clearTravelEventRunnerStationResult(clearSession, 0, "navigator", { now: "2026-06-24T01:03:00.000Z" }));
     assertSmoke(clearSession.travelV2FocusBacklashRecords.records.find((record) => record.id === clearPendingId)?.resolvedAt === dismissedResolvedAt, "clearing again does not rewrite already-dismissed records");
 
-    const player = sanitizeTravelV2FocusBacklashForPlayers({ records: [{ ...session.travelV2FocusBacklashRecords.records[0], gmNote: "GM ONLY SECRET", consequenceCandidate: "SECRET CONSEQUENCE", actorId: "PRIVATE" }] });
+    const player = sanitizeTravelV2FocusBacklashForPlayers({ records: [{ ...session.travelV2FocusBacklashRecords.records[0], status: "pending", gmNote: "GM ONLY SECRET", consequenceCandidate: "SECRET CONSEQUENCE", actorId: "PRIVATE" }] });
+    assertSmoke(player.records[0]?.statusLabel === "Pending risk", "player sanitizer exposes consistent pending Focus status label");
     assertSmoke(!snap(player).includes("GM ONLY SECRET") && !snap(player).includes("SECRET CONSEQUENCE") && !snap(player).includes("PRIVATE"), "player sanitizer omits GM/private fields");
-    const narration = prepareTravelV2RoundNarration({ ...session, travelV2FocusBacklashRecords: { records: [{ ...session.travelV2FocusBacklashRecords.records[0], gmNote: "GM ONLY SECRET" }] } }, 0);
+    const narration = prepareTravelV2RoundNarration({ ...session, travelV2FocusBacklashRecords: { records: [{ ...session.travelV2FocusBacklashRecords.records[0], status: "pending", gmNote: "GM ONLY SECRET" }] } }, 0);
     const publicNarration = sanitizeTravelV2PublicNarration(narration);
     assertSmoke(!snap(publicNarration).includes("GM ONLY SECRET"), "public narration omits GM-only backlash notes");
     assertSmoke(sideEffects.length === 0, "focus backlash flow has no actor/item/chat/journal/combat/socket side effects");
