@@ -457,6 +457,8 @@ Future schema/import targets include:
 
 This PR does not implement schemas, importers, exporters, validators, compendia, or runtime data migrations. It only records that stable card schemas should come before broad runner cleanup so content and behavior targets are locked first.
 
+The permanent schema planning target is documented in [Travel v2 Card Schema Plan](TRAVEL_V2_CARD_SCHEMA_PLAN.md), which defines planned versioned shapes for hazards, consequences, station actions, risk bids, station benefits, and encounter templates without adding runtime implementation.
+
 ## Visible Stakes Card
 
 Every Travel v2 event should eventually show a clean player/GM-facing stakes summary so the table understands what they are trying to accomplish and why their choices matter.
@@ -550,6 +552,7 @@ This PR is documentation-only. The next roadmap work should lock the clean gamep
 
 2. **Permanent card schema planning**
    - Define stable schemas for hazards, consequences, station actions, risk bids, station benefits, and encounter templates.
+   - See [Travel v2 Card Schema Plan](TRAVEL_V2_CARD_SCHEMA_PLAN.md).
    - No broad runtime changes yet.
 
 3. **Applyable consequence catalog foundation**
