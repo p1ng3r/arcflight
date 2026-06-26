@@ -203,6 +203,19 @@ import {
   summarizeTravelEventRunnerSession
 } from "./helpers/travel-event-runner.js";
 import {
+  TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
+  prepareTravelV2PendingConsequenceQueue,
+  updateTravelV2PendingConsequenceQueueItem
+} from "./helpers/travel-v2-pending-consequence-queue.js";
+import {
+  TRAVEL_V2_CONSEQUENCE_CATALOG_VERSION,
+  getTravelV2ConsequenceById,
+  getTravelV2ConsequenceCatalog,
+  getTravelV2ConsequencesByAffectedTrack,
+  getTravelV2ConsequencesBySeverity,
+  getTravelV2ConsequencesBySource
+} from "../data/travel-events/travel-v2-consequence-catalog.js";
+import {
   EXAMPLE_SHIP_BUILD_KEYS,
   applyCleanExampleShipBuild,
   applyExampleShipBuild,
@@ -467,6 +480,15 @@ function buildArcflightApi() {
     ARKENGINE_VARIANT_KEYS,
     STATION_KEYS,
     CORE_STATION_ACTION_KEYS,
+    TRAVEL_V2_CONSEQUENCE_CATALOG_VERSION,
+    TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
+    getTravelV2ConsequenceCatalog,
+    getTravelV2ConsequenceById,
+    getTravelV2ConsequencesBySource,
+    getTravelV2ConsequencesByAffectedTrack,
+    getTravelV2ConsequencesBySeverity,
+    prepareTravelV2PendingConsequenceQueue,
+    updateTravelV2PendingConsequenceQueueItem,
     CORE_TRAVEL_EVENTS,
     CORE_TRAVEL_EVENT_KEYS,
     getCoreTravelEvent,
