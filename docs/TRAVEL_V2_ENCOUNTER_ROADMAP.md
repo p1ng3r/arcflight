@@ -106,7 +106,9 @@ Momentum should let players fight back against the travel event, not merely add 
 
 ## Hazard Cards: Correct Design
 
-**Current PR scope — Focus Backlash Records:** this pass creates session-local Focus backlash records from failed Focus-backed station results, adds GM Apply/Dismiss controls, keeps pressure/consequence changes session-local, and exposes only public-safe Focus backlash summaries.
+**Current PR scope — Support Action Targeting Foundation:** this pass adds a formal Support station action, target selection, validation, and objective-separate supporter counting. It does not create Support assist records, Support backlash, or failed-Support consequences.
+
+**Previous PR scope — Focus Backlash Records:** this pass creates session-local Focus backlash records from failed Focus-backed station results, adds GM Apply/Dismiss controls, keeps pressure/consequence changes session-local, and exposes only public-safe Focus backlash summaries.
 
 **Previous PR scope — Momentum Pass:** this pass added a session-local Travel v2 Momentum pool, awards Momentum from strong play such as critical main-objective station results and critical hazard clears, adds an explicit GM-auditable failure downgrade spend, surfaces player-safe Momentum state, and folds earned/spent Momentum into narration. It does not add live AI/API generation or automatic actor/item/chat/journal/combat mutation. Later PRs should deepen additional Momentum spends and explicit GM Apply handoffs for persistent fallout.
 

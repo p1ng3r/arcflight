@@ -10,7 +10,8 @@ export const ARCFLIGHT_TRAVEL_PRESSURE_KEYS = Object.freeze(Object.values(ARCFLI
 export const ARCFLIGHT_TRAVEL_STATION_ACTIONS = Object.freeze({
   EVENT_APPROACH: "eventApproach",
   STABILIZE: "stabilize",
-  HAZARD_RESPONSE: "hazardResponse"
+  HAZARD_RESPONSE: "hazardResponse",
+  SUPPORT: "support"
 });
 
 const STATION_STABILIZE_PRESSURE = Object.freeze({
@@ -126,6 +127,18 @@ export function getTravelStationStabilizePressureKey(stationKey, round = {}) {
     ?? (isTravelPressureKey(round?.primaryPressure) ? round.primaryPressure : "");
 }
 
+export function support(targetStationKey = "", options = {}) {
+  const source = isPlainObject(options) ? options : {};
+  return {
+    type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT,
+    targetStationKey: typeof targetStationKey === "string" ? targetStationKey : "",
+    supportMode: typeof source.supportMode === "string" ? source.supportMode : (typeof source.supportKey === "string" ? source.supportKey : ""),
+    supportKey: typeof source.supportKey === "string" ? source.supportKey : "",
+    label: typeof source.label === "string" ? source.label : "",
+    helpText: typeof source.helpText === "string" ? source.helpText : ""
+  };
+}
+
 export function hazardResponse(hazardRecordId = "", hazardName = "") {
   return {
     type: ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE,
@@ -138,6 +151,7 @@ export function hazardResponse(hazardRecordId = "", hazardName = "") {
 export function normalizeTravelStationAction(value = {}, stationKey = "", round = {}) {
   const source = isPlainObject(value) ? value : {};
   if (source.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE) return hazardResponse(source.hazardRecordId, source.hazardName);
+  if (source.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT) return support(source.targetStationKey, source);
   if (source.type !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE) return eventApproach();
   const pressureKey = isTravelPressureKey(source.stabilizePressureKey)
     ? source.stabilizePressureKey
