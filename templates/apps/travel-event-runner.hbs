@@ -672,7 +672,7 @@
         {{#if state.supportAssistReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
             <h2>Support Assists</h2>
-            <p class="arcflight-sheet__hint">Session-local only. Use/Dismiss records do not automatically mutate actors, items, chat, journals, combat, sockets, or target station results.</p>
+            <p class="arcflight-sheet__hint">Session-local assist, not automatic roll mutation. Use marks the assist used; Dismiss closes it. Neither action mutates actors, items, chat, journals, combat, sockets, scenes, tokens, pressure, or station results.</p>
             {{#each state.supportAssistReview.records}}
               <article>
                 <h3>{{supportingStationName}} → {{targetStationName}}</h3>
@@ -683,7 +683,7 @@
                 {{#if resolutionNote}}<p class="arcflight-sheet__hint"><strong>Resolution:</strong> {{resolutionNote}}</p>{{/if}}
                 {{#if isPending}}
                   <div class="arcflight-travel-runner-mvp__result-buttons">
-                    <button type="button" data-arcflight-support-assist-use data-support-assist-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Mark Used</button>
+                    <button type="button" data-arcflight-support-assist-use data-support-assist-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Use</button>
                     <button type="button" data-arcflight-support-assist-dismiss data-support-assist-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Dismiss</button>
                   </div>
                 {{/if}}
@@ -696,7 +696,7 @@
         {{#if state.supportBacklashReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
             <h2>Support Backlash</h2>
-            <p class="arcflight-sheet__hint">Session-local consequence candidates only. Apply/Dismiss marks GM intent; it does not automatically mutate actors, items, chat, journals, combat, sockets, scenes, tokens, pressure, or station results.</p>
+            <p class="arcflight-sheet__hint">GM-controlled failed-Support consequence candidates. Apply/Dismiss marks record status only; it does not automatically mutate actors, items, chat, journals, combat, sockets, scenes, tokens, pressure, damage, conditions, rolls, or station results.</p>
             {{#each state.supportBacklashReview.records}}
               <article>
                 <h3>{{supportingStationName}} → {{targetStationName}}</h3>
@@ -718,7 +718,7 @@
         {{#if state.focusBacklashReview.hasRecords}}
           <section class="arcflight-travel-runner-mvp__panel">
             <h2>Focus Backlash</h2>
-            <p class="arcflight-sheet__hint">Session-local only. Apply/Dismiss updates runner session pressure/consequence candidates only; no automatic actor, item, chat, journal, combat, or socket mutation.</p>
+            <p class="arcflight-sheet__hint">GM-controlled Focus consequence candidates. Apply/Dismiss requires explicit GM review; no automatic actor, item, chat, journal, combat, socket, scene, or token mutation occurs.</p>
             {{#each state.focusBacklashReview.records}}
               <article>
                 <h3>{{stationName}}{{#if actorName}} — {{actorName}}{{/if}}</h3>
@@ -731,7 +731,7 @@
                 {{#if gmNote}}<p class="arcflight-sheet__hint"><strong>GM note:</strong> {{gmNote}}</p>{{/if}}
                 {{#if isPending}}
                   <div class="arcflight-travel-runner-mvp__result-buttons">
-                    <button type="button" data-arcflight-focus-backlash-apply data-focus-backlash-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Apply Backlash</button>
+                    <button type="button" data-arcflight-focus-backlash-apply data-focus-backlash-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Apply</button>
                     <button type="button" data-arcflight-focus-backlash-dismiss data-focus-backlash-id="{{id}}" {{#if ../../state.isCompleted}}disabled{{/if}}>Dismiss</button>
                   </div>
                 {{/if}}
