@@ -145,6 +145,19 @@
         <p class="arcflight-sheet__hint">Total: {{state.pendingConsequenceQueue.applyStatusSummary.totalItems}} · Selected: {{state.pendingConsequenceQueue.applyStatusSummary.selectedCount}} · Executable: {{state.pendingConsequenceQueue.applyStatusSummary.executableCount}} · Already Applied: {{state.pendingConsequenceQueue.applyStatusSummary.alreadyAppliedCount}}</p>
         <p class="arcflight-sheet__hint">Unsupported: {{state.pendingConsequenceQueue.applyStatusSummary.unsupportedCount}} · Missing Selection: {{state.pendingConsequenceQueue.applyStatusSummary.missingSelectionCount}} · Missing Catalog: {{state.pendingConsequenceQueue.applyStatusSummary.missingCatalogCount}} · Session Pressure Only: {{state.pendingConsequenceQueue.applyStatusSummary.sessionPressureOnlyCount}}</p>
       </section>
+      {{#if state.session.travelV2ConsequenceFollowups.records}}
+        <section class="arcflight-travel-card arcflight-gm-only" aria-label="Follow-up Notes">
+          <strong>Follow-up Notes</strong>
+          {{#each state.session.travelV2ConsequenceFollowups.records}}
+            <article class="arcflight-travel-action-queue__item arcflight-gm-only">
+              <strong>{{title}}</strong>
+              <p class="arcflight-sheet__hint">Affected track: {{affectedTrack}} · Kind: {{kind}} · Mutation: {{mutation}}</p>
+              <p>{{summary}}</p>
+              <p class="arcflight-sheet__hint">Source: {{source}} · Created: {{createdAt}} · By: {{createdBy}}</p>
+            </article>
+          {{/each}}
+        </section>
+      {{/if}}
       {{#if state.pendingConsequenceQueue.items}}
         {{#each state.pendingConsequenceQueue.items}}
           <article class="arcflight-travel-action-queue__item arcflight-gm-only">
