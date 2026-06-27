@@ -74,6 +74,31 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, `data-status="applied"`, "template should keep the status-only Mark Applied button distinct");
   assertIncludes(template, "Apply Status", "template should render the GM-only apply status summary title");
   for (const field of ["totalItems","selectedCount","executableCount","alreadyAppliedCount","unsupportedCount","missingSelectionCount","missingCatalogCount","sessionPressureOnlyCount"]) assertIncludes(template, `pendingConsequenceQueue.applyStatusSummary.${field}`, `template should reference apply status summary ${field}`);
+  assertIncludes(template, "Follow-up Notes", "template should render the GM-only follow-up notes title");
+  assertIncludes(template, "state.session.travelV2ConsequenceFollowups.records", "template should read session-local follow-up records directly");
+  for (const field of ["title","affectedTrack","kind","mutation","summary","source","createdAt","createdBy"]) assertIncludes(template, `{{${field}}}`, `template should render follow-up ${field}`);
+  assertIncludes(template, "aria-label=\"Follow-up Notes\"", "template should include a follow-up notes panel");
+  assertSmoke(template.includes("aria-label=\"Follow-up Notes\"") && template.includes("arcflight-gm-only"), "follow-up panel should include arcflight-gm-only");
+  for (const forbidden of [
+    "Apply Follow-up",
+    "Clear Follow-up",
+    "Dismiss Follow-up",
+    "Delete Follow-up",
+    "Send to Chat",
+    "Create Journal",
+    "Create Encounter",
+    "Create Scene",
+    "Create Combat",
+    "Apply All",
+    "Undo Follow-up",
+    `data-action="apply-followup"`,
+    `data-action="clear-followup"`,
+    `data-action="delete-followup"`,
+    "data-arcflight-followup",
+    "data-arcflight-create-journal",
+    "data-arcflight-create-combat",
+    "data-arcflight-create-scene"
+  ]) assertSmoke(!template.includes(forbidden), `template should not include follow-up mutation/control text ${forbidden}`);
   for (const forbidden of ["Apply All","Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
