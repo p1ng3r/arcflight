@@ -9,6 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
+import { updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers, queueTravelPlayerMissionBoardRefreshToPlayers } from "./travel-player-station-card.js";
@@ -125,6 +126,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
+  "[data-arcflight-travel-v2-pending-consequence-status]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
   "[data-arcflight-stabilize-resolution-apply]",
@@ -666,6 +668,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
+    if (target.hasAttribute("data-arcflight-travel-v2-pending-consequence-status")) return this.#updatePendingConsequenceQueueItem(target);
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
     if (target.hasAttribute("data-arcflight-focus-backlash-apply")) return this.#resolveFocusBacklash(target, "applied");
@@ -686,6 +689,22 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   async #refreshTravelV2Narration() {
     this.statusMessage = "Round narration refreshed from the current local session state.";
+    return this.render(true);
+  }
+
+  async #updatePendingConsequenceQueueItem(target) {
+    const queueKey = target.dataset.queueKey ?? "";
+    const status = target.dataset.status ?? "";
+    const updated = updateTravelV2PendingConsequenceQueueItem(this.session, queueKey, status);
+    if (!updated.ok) {
+      this.statusMessage = updated.error ?? "Pending consequence queue item was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.session = updated.session;
+    this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+    this.statusMessage = `Pending consequence marked ${status} in the session-local queue only; no actor, item, chat, journal, combat, scene, token, socket, compendium, or world data was mutated.`;
+    ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }
 
