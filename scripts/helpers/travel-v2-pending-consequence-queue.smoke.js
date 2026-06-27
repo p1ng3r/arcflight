@@ -39,7 +39,7 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   const applied=updateTravelV2PendingConsequenceQueueItem(updated.session,"support-backlash:s1","applied",{now:"2026-06-26T00:02:00.000Z"});
   assertSmoke(applied.ok && applied.queue.appliedCount===1,"apply lifecycle is session-local and reflected in queue counts");
   const appliedItem=applied.queue.items.find((item)=>item.queueKey==="support-backlash:s1");
-  assertSmoke(applied.record.mutation==="none" && appliedItem?.mutation==="none" && appliedItem?.selectedConsequence?.id==="consequence-crew-panic" && appliedItem?.selectedConsequenceApplyPreview?.executable===true,"Mark Applied lifecycle keeps mutation none, preserves selection/preview, and does not execute selected consequence");
+  assertSmoke(applied.record.mutation==="none" && appliedItem?.mutation==="none" && appliedItem?.selectedConsequence?.id==="consequence-crew-panic" && appliedItem?.selectedConsequenceApplyPreview?.executable===true && appliedItem?.canApplySelectedConsequence===false,"Mark Applied lifecycle keeps mutation none, preserves selection/preview, does not execute selected consequence, and keeps manual Apply unavailable while status-applied");
   const executablePreview=updated.queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.selectedConsequenceApplyPreview;
   assertSmoke(executablePreview?.executable===true && executablePreview.previewOnly===false && executablePreview.mutation==="session-pressure-only" && executablePreview.pressureDelta===1,"supported selected consequence has executable session-pressure-only preview");
   const beforeApplySession=updated.session;
@@ -49,7 +49,12 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   const manualAppliedItem=manualApplied.queue.items.find((item)=>item.queueKey==="support-backlash:s1");
   assertSmoke(manualAppliedItem?.status==="applied" && manualAppliedItem.selectedConsequence?.id==="consequence-crew-panic","manual apply marks queue item applied and preserves selected consequence");
   assertSmoke(manualApplied.record.appliedEffect?.mutation==="session-pressure-only" && manualApplied.record.appliedEffect.beforeValue===1 && manualApplied.record.appliedEffect.afterValue===2,"manual apply record includes session-pressure-only mutation and correct before/after values");
-  assertSmoke(!JSON.stringify(prepareTravelV2PendingConsequenceQueue(manualApplied.session).playerSafeItems).includes("appliedEffect")&&!JSON.stringify(prepareTravelV2PendingConsequenceQueue(manualApplied.session).playerSafeItems).includes("selectedConsequenceApplyPreview"),"player-safe items omit GM manual apply records and previews after apply");
+  assertSmoke(manualAppliedItem?.appliedEffect?.mutation==="session-pressure-only" && manualAppliedItem.appliedEffect.beforeValue===1 && manualAppliedItem.appliedEffect.afterValue===2,"GM queue item exposes the cloned session-pressure-only applied effect after manual apply");
+  assertSmoke(manualAppliedItem?.hasAppliedEffect===true && manualAppliedItem?.canApplySelectedConsequence===false,"GM queue item marks applied-result state and prevents executable manual Apply after appliedEffect exists");
+  manualAppliedItem.appliedEffect.afterValue=999;
+  assertSmoke(manualApplied.record.appliedEffect.afterValue===2,"GM queue item appliedEffect is safely cloned from the queue override");
+  const playerSafeAfterApply=JSON.stringify(prepareTravelV2PendingConsequenceQueue(manualApplied.session).playerSafeItems);
+  assertSmoke(!playerSafeAfterApply.includes("appliedEffect")&&!playerSafeAfterApply.includes("hasAppliedEffect")&&!playerSafeAfterApply.includes("selectedConsequenceApplyPreview")&&!playerSafeAfterApply.includes("applyEffectSummary")&&!playerSafeAfterApply.includes("sourceRecord")&&!playerSafeAfterApply.includes("Crew Panic"),"player-safe items omit GM manual apply records, state flags, previews, summaries, notes, source records, and raw catalog fields after apply");
   const reapplied=applyTravelV2SelectedConsequenceToSession(manualApplied.session,"support-backlash:s1",{now:"2026-06-26T00:05:00.000Z"});
   assertSmoke(!reapplied.ok && reapplied.alreadyApplied===true && reapplied.session===manualApplied.session && manualApplied.session.pressure.morale.value===2,"applying again fails closed and does not double-apply pressure");
   const missingSelection=applyTravelV2SelectedConsequenceToSession(s,"focus-backlash:f1");
