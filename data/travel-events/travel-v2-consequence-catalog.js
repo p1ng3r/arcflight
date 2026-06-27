@@ -22,6 +22,26 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     tags: ["arkengine", "engineer", "strain", "focus", "pressure-candidate"]
   }),
   Object.freeze({
+    id: "consequence-arkengine-whine",
+    schemaVersion: 1,
+    type: "consequence",
+    title: "Arkengine Whine",
+    severity: "minor",
+    source: ["focus-backlash", "engineer-failure", "arkengine-noise"],
+    affectedTrack: "Strain",
+    publicText: "The arkengine takes up a thin, uneasy whine that sets the deck plates trembling.",
+    gmText: "Minor engine strain. No automatic strain mutation happens.",
+    playerSafeSummary: "A faint arkengine whine creates Strain pressure for GM review.",
+    applyEffectSummary: "Future GM Apply may record or review the Strain candidate after GM review; this PR does not apply it.",
+    sessionLocalEffect: { kind: "candidateOnly", suggestedTrack: "Strain", suggestedDelta: 1, expires: "gmDecision" },
+    explicitGmApplyEffect: { requiresGmApply: true, kind: "pressureCandidate", summary: "Future GM Apply may record or review minor Strain pressure from the arkengine whine.", mutation: "none" },
+    narration: {
+      onConsequenceCreated: "The arkengine whines beneath the floorboards.",
+      onFailure: "The ship moves on, but the engine keeps its worried note."
+    },
+    tags: ["arkengine", "strain", "engineer", "pressure-candidate"]
+  }),
+  Object.freeze({
     id: "consequence-lifeveil-flicker",
     schemaVersion: 1,
     type: "consequence",
@@ -42,6 +62,26 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     tags: ["lifeveil", "veilwarden", "void", "pressure-candidate"]
   }),
   Object.freeze({
+    id: "consequence-veil-draft",
+    schemaVersion: 1,
+    type: "consequence",
+    title: "Veil Draft",
+    severity: "minor",
+    source: ["unresolved-hazard", "void-environment", "veilwarden-failure"],
+    affectedTrack: "Lifeveil",
+    publicText: "A cold draft slips through the veil before the glow gathers close again.",
+    gmText: "Minor lifeveil weakness. No automatic lifeveil mutation happens.",
+    playerSafeSummary: "A passing veil draft creates Lifeveil pressure for GM review.",
+    applyEffectSummary: "Future GM Apply may record or review the Lifeveil candidate after GM review; this PR does not apply it.",
+    sessionLocalEffect: { kind: "candidateOnly", suggestedTrack: "Lifeveil", suggestedDelta: 1, expires: "gmDecision" },
+    explicitGmApplyEffect: { requiresGmApply: true, kind: "pressureCandidate", summary: "Future GM Apply may record or review minor Lifeveil pressure from the veil draft.", mutation: "none" },
+    narration: {
+      onConsequenceCreated: "A chill breath crosses the deck.",
+      onFailure: "The veil closes, but not before the cold is felt."
+    },
+    tags: ["lifeveil", "veilwarden", "pressure-candidate", "void"]
+  }),
+  Object.freeze({
     id: "consequence-route-drift",
     schemaVersion: 1,
     type: "consequence",
@@ -60,6 +100,26 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
       onFailure: "The helm finds purchase, but the route has already wandered."
     },
     tags: ["route", "navigator", "void-shear", "final-outcome", "follow-up"]
+  }),
+  Object.freeze({
+    id: "consequence-course-slip",
+    schemaVersion: 1,
+    type: "consequence",
+    title: "Course Slip",
+    severity: "minor",
+    source: ["final-bad-outcome", "navigator-failure", "route-delay"],
+    affectedTrack: "Route",
+    publicText: "The plotted course slips a little from the clean path, leaving a harder choice ahead.",
+    gmText: "Minor route/final outcome complication. No automatic route or final outcome mutation happens.",
+    playerSafeSummary: "A small course slip creates Route pressure for GM review.",
+    applyEffectSummary: "Future GM Apply may record or review the Route candidate after GM review; this PR does not apply it.",
+    sessionLocalEffect: { kind: "candidateOnly", suggestedTrack: "Route", suggestedDelta: 1, expires: "gmDecision" },
+    explicitGmApplyEffect: { requiresGmApply: true, kind: "finalOutcomeCandidate", summary: "Future GM Apply may record or review a minor Route or final outcome complication.", mutation: "none" },
+    narration: {
+      onConsequenceCreated: "The course line wavers from its mark.",
+      onFailure: "The ship holds together, but the way ahead bends."
+    },
+    tags: ["route", "navigator", "final-outcome-candidate", "delay"]
   }),
   Object.freeze({
     id: "consequence-hull-stress",
@@ -102,6 +162,26 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     tags: ["crew", "morale", "captain", "support", "pressure-candidate"]
   }),
   Object.freeze({
+    id: "consequence-watch-fatigue",
+    schemaVersion: 1,
+    type: "consequence",
+    title: "Watch Fatigue",
+    severity: "minor",
+    source: ["failed-support", "watchmaster-failure", "crew-fatigue"],
+    affectedTrack: "Morale",
+    publicText: "The watch grows heavy-eyed, and small orders take longer to answer.",
+    gmText: "Crew fatigue and morale strain. No automatic morale mutation happens.",
+    playerSafeSummary: "Tired watches create Morale pressure for GM review.",
+    applyEffectSummary: "Future GM Apply may record or review the Morale candidate after GM review; this PR does not apply it.",
+    sessionLocalEffect: { kind: "candidateOnly", suggestedTrack: "Morale", suggestedDelta: 1, expires: "gmDecision" },
+    explicitGmApplyEffect: { requiresGmApply: true, kind: "pressureCandidate", summary: "Future GM Apply may record or review minor Morale pressure from watch fatigue.", mutation: "none" },
+    narration: {
+      onConsequenceCreated: "The watch rubs sleep from weary eyes.",
+      onFailure: "No one breaks, but every answer comes late."
+    },
+    tags: ["morale", "crew", "watchmaster", "pressure-candidate"]
+  }),
+  Object.freeze({
     id: "consequence-cargo-shift",
     schemaVersion: 1,
     type: "consequence",
@@ -142,6 +222,26 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
     tags: ["supplies", "delay", "stores", "pressure-candidate"]
   }),
   Object.freeze({
+    id: "consequence-stores-tangle",
+    schemaVersion: 1,
+    type: "consequence",
+    title: "Stores Tangle",
+    severity: "minor",
+    source: ["failed-support", "low-stores", "cargo-access"],
+    affectedTrack: "Supplies",
+    publicText: "The needed stores are aboard, but straps, crates, and confusion slow the work.",
+    gmText: "Supplies access complication. No inventory or supplies mutation happens.",
+    playerSafeSummary: "Tangled stores create a Supplies complication for GM review.",
+    applyEffectSummary: "Future GM Apply may record or review the Supplies candidate after GM review; this PR does not apply it.",
+    sessionLocalEffect: { kind: "candidateOnly", suggestedTrack: "Supplies", suggestedDelta: 1, expires: "gmDecision" },
+    explicitGmApplyEffect: { requiresGmApply: true, kind: "complicationCandidate", summary: "Future GM Apply may record or review a minor Supplies access complication.", mutation: "none" },
+    narration: {
+      onConsequenceCreated: "Crates and straps snarl the path to stores.",
+      onFailure: "The stores remain, but reaching them costs time."
+    },
+    tags: ["supplies", "complication-candidate", "stores", "cargo"]
+  }),
+  Object.freeze({
     id: "consequence-threat-attracted",
     schemaVersion: 1,
     type: "consequence",
@@ -160,6 +260,26 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
       onFailure: "The silence after the flare feels less empty than before."
     },
     tags: ["threat", "encounter-seed", "arkengine", "lifeveil", "stealth"]
+  }),
+  Object.freeze({
+    id: "consequence-signal-echo",
+    schemaVersion: 1,
+    type: "consequence",
+    title: "Signal Echo",
+    severity: "minor",
+    source: ["unresolved-hazard", "failed-stealth", "threat-seed"],
+    affectedTrack: "Threat",
+    publicText: "A faint echo answers the ship from somewhere beyond the safe lights.",
+    gmText: "Minor future threat seed. No encounter, scene, combat, token, chat, or journal creation happens.",
+    playerSafeSummary: "A stray signal echo creates a future Threat seed for GM review.",
+    applyEffectSummary: "Future GM Apply may record or review the Threat candidate after GM review; this PR does not apply it.",
+    sessionLocalEffect: { kind: "candidateOnly", suggestedTrack: "Threat", suggestedDelta: 1, expires: "gmDecision" },
+    explicitGmApplyEffect: { requiresGmApply: true, kind: "encounterSeedCandidate", summary: "Future GM Apply may record or review a minor future Threat seed.", mutation: "none" },
+    narration: {
+      onConsequenceCreated: "A thin echo returns from the dark.",
+      onFailure: "The signal fades, but it may have been heard."
+    },
+    tags: ["threat", "encounter-seed-candidate", "stealth", "unresolved-hazard"]
   }),
   Object.freeze({
     id: "consequence-hazard-escalation",

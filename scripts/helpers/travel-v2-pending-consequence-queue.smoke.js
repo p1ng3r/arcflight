@@ -1,4 +1,5 @@
 import { applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { getTravelV2ConsequenceById, getTravelV2ConsequenceCatalog, getTravelV2ConsequencesBySource } from "../../data/travel-events/travel-v2-consequence-catalog.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -7,6 +8,27 @@ function assertSmoke(c,m){if(!c)throw new Error(`Travel v2 pending consequence q
 function session(){return {key:"queue",status:"completed",completed:true,completedAt:"2026-06-26T00:00:00.000Z",event:{rounds:[{roundNumber:1}],finalOutcomes:{failure:{losses:["The route leaves a hostile trace."]}}},travelV2EventCompletion:{completed:true},travelV2RoundResolutions:{records:[{roundIndex:0,roundNumber:1,effectiveOutcomeKey:"failure"}]},travelV2FocusBacklashRecords:{records:[{id:"f1",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders.",publicBacklashPreviewText:"Review Strain pressure."}]},travelV2SupportBacklashRecords:{records:[{id:"s1",roundIndex:0,supportingStationName:"Captain",status:"pending",severity:"minor",publicRiskText:"Crew hesitates."}]},hazards:{records:[{id:"h1",roundIndex:0,status:"active",name:"Void Shear",playerText:"The lane is still unstable."}]},shipScars:{pending:[{id:"scar1",roundIndex:0,name:"Scorched Conduits",status:"pending"}]}}}
 export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   const s={...session(),pressure:{morale:{value:1},strain:{value:0}}}; const queue=prepareTravelV2PendingConsequenceQueue(s);
+  const newMinorConsequenceIds=["consequence-arkengine-whine","consequence-veil-draft","consequence-watch-fatigue","consequence-course-slip","consequence-stores-tangle","consequence-signal-echo"];
+  const catalog=getTravelV2ConsequenceCatalog();
+  assertSmoke(new Set(catalog.map((entry)=>entry.id)).size===catalog.length,"catalog ids remain unique");
+  for (const id of newMinorConsequenceIds) {
+    const entry=getTravelV2ConsequenceById(id);
+    assertSmoke(entry?.id===id,`${id} resolves from the authored catalog`);
+    assertSmoke(entry.severity==="minor",`${id} has minor severity`);
+    assertSmoke(entry.explicitGmApplyEffect?.requiresGmApply===true,`${id} requires explicit GM Apply`);
+    assertSmoke(entry.explicitGmApplyEffect?.mutation==="none",`${id} keeps explicit GM Apply mutation none`);
+    assertSmoke(entry.sessionLocalEffect?.kind==="candidateOnly",`${id} keeps session-local effect candidate only`);
+    assertSmoke(entry.sessionLocalEffect?.suggestedDelta===1,`${id} suggests delta 1`);
+    assertSmoke(Boolean(entry.narration?.onConsequenceCreated)&&Boolean(entry.narration?.onFailure),`${id} has table narration hooks`);
+    assertSmoke(testTravelV2SelectedConsequencePressureApplySupport(entry).supported===false,`${id} is not session-pressure Apply supported`);
+  }
+  assertSmoke(getTravelV2ConsequencesBySource("focus-backlash").some((entry)=>entry.id==="consequence-arkengine-whine"),"focus-backlash includes Arkengine Whine");
+  const failedSupportIds=getTravelV2ConsequencesBySource("failed-support").map((entry)=>entry.id);
+  assertSmoke(failedSupportIds.includes("consequence-watch-fatigue")&&failedSupportIds.includes("consequence-stores-tangle"),"failed-support includes Watch Fatigue and Stores Tangle");
+  const unresolvedHazardIds=getTravelV2ConsequencesBySource("unresolved-hazard").map((entry)=>entry.id);
+  assertSmoke(unresolvedHazardIds.includes("consequence-veil-draft")&&unresolvedHazardIds.includes("consequence-signal-echo"),"unresolved-hazard includes Veil Draft and Signal Echo");
+  assertSmoke(getTravelV2ConsequencesBySource("final-bad-outcome").some((entry)=>entry.id==="consequence-course-slip"),"final-bad-outcome includes Course Slip");
+
   assertSmoke(queue.hasSession && queue.items.length===5,"queue gathers focus, support, hazard, ship scar, and final fallout candidates");
   assertSmoke(queue.pendingCount===5,"all gathered candidates begin pending");
   assertSmoke(queue.items.some((item)=>item.gmSummary==="Review Strain pressure." && item.sourceRecord?.id==="f1"),"GM queue contains full item summaries and source records");
@@ -34,10 +56,14 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(!JSON.stringify(statusSummaryQueue.playerSafeItems).includes("applyStatusSummary"),"player-safe items do not include applyStatusSummary");
   assertSmoke(queue.items.some((item)=>item.catalogSuggestions.length>0),"queue includes catalog suggestions");
   assertSmoke(queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-arkengine-surge"),"focus backlash still suggests focus-backlash catalog cards");
+  assertSmoke(queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-arkengine-whine"),"focus backlash suggests Arkengine Whine through existing source categories");
   assertSmoke(queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-crew-panic"),"failed support still suggests Crew Panic");
+  assertSmoke(["consequence-watch-fatigue","consequence-stores-tangle"].every((id)=>queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.catalogSuggestions.some((suggestion)=>suggestion.id===id)),"failed support suggests new minor support cards through existing source categories");
   assertSmoke(queue.items.find((item)=>item.queueKey==="hazard:h1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-hazard-escalation"),"unresolved hazards still suggest unresolved-hazard catalog cards");
+  assertSmoke(["consequence-veil-draft","consequence-signal-echo"].every((id)=>queue.items.find((item)=>item.queueKey==="hazard:h1")?.catalogSuggestions.some((suggestion)=>suggestion.id===id)),"unresolved hazards suggest new minor hazard cards through existing source categories");
   assertSmoke(queue.items.find((item)=>item.queueKey==="ship-scar:scar1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-ship-scar-candidate"),"ship scar candidates still suggest ship scar candidate cards");
   assertSmoke(queue.items.find((item)=>item.sourceType==="finalOutcomeFallout")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-ship-scar-candidate"),"final fallout still suggests final bad outcome cards");
+  assertSmoke(queue.items.find((item)=>item.sourceType==="finalOutcomeFallout")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-course-slip"),"final fallout suggests Course Slip through existing source categories");
   const hullQueue=prepareTravelV2PendingConsequenceQueue({...session(),hazards:{records:[{id:"hull1",roundIndex:0,status:"active",name:"Rib Collision",category:"physical",tags:["impact","bulkhead"],playerText:"The hull plates take damage."}]}});
   assertSmoke(hullQueue.items.find((item)=>item.queueKey==="hazard:hull1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-hull-stress"),"hull or physical unresolved hazards suggest Hull Stress");
   const suppliesSuggestions=catalogSummariesForPendingConsequence({sourceType:"unresolvedHazard",sourceStatus:"active",severity:"minor",publicSummary:"Blocked access to low stores delays water rations.",gmSummary:"Logistics trouble.",sourceRecord:{id:"sup1",category:"supplies",tags:["delay","stores"]},catalogSuggestions:[{id:"consequence-supplies-delay",title:"Duplicate Supplies Delay"}]});
@@ -57,6 +83,12 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(["pressure","ship scars","actor/item changes","chat","journals","combat","scenes","tokens","sockets","compendia","world data"].every((term)=>preview.warningText.includes(term)),"selected consequence preview warning lists forbidden mutation categories");
   assertSmoke(selected.record.mutation==="none" && selectedItem.mutation==="none","selection keeps mutation none");
   assertSmoke(!JSON.stringify(selected.queue.playerSafeItems).includes("selectedConsequence")&&!JSON.stringify(selected.queue.playerSafeItems).includes("selectedConsequenceApplyPreview")&&!JSON.stringify(selected.queue.playerSafeItems).includes("applyEffectSummary")&&!JSON.stringify(selected.queue.playerSafeItems).includes("Arkengine Surge"),"selected consequence and GM apply preview are not exposed through player-safe items");
+  const selectedNew=selectTravelV2PendingConsequenceCatalogCard(s,"focus-backlash:f1","consequence-arkengine-whine");
+  const selectedNewItem=selectedNew.queue.items.find((item)=>item.queueKey==="focus-backlash:f1");
+  const selectedNewPreview=selectedNewItem?.selectedConsequenceApplyPreview;
+  assertSmoke(selectedNew.ok && selectedNewPreview?.executable===false && selectedNewPreview.previewOnly===true && selectedNewPreview.mutation==="none","selecting a new minor consequence produces a preview-only non-executable preview");
+  const selectedNewPlayerSafe=JSON.stringify(selectedNew.queue.playerSafeItems);
+  assertSmoke(!selectedNewPlayerSafe.includes("gmText")&&!selectedNewPlayerSafe.includes("applyEffectSummary")&&!selectedNewPlayerSafe.includes("sourceRecord")&&!selectedNewPlayerSafe.includes("selectedConsequenceApplyPreview")&&!selectedNewPlayerSafe.includes("selectedConsequence")&&!selectedNewPlayerSafe.includes("catalogSuggestions")&&!selectedNewPlayerSafe.includes("Arkengine Whine"),"playerSafeItems do not expose GM text, apply summaries, source records, selected previews, or raw catalog internals for new cards");
   const unknownCard=selectTravelV2PendingConsequenceCatalogCard(s,"focus-backlash:f1","missing-card");
   assertSmoke(!unknownCard.ok,"selecting an unknown consequence id fails safely");
   const unknownQueue=selectTravelV2PendingConsequenceCatalogCard(s,"missing:key","consequence-arkengine-surge");
@@ -93,7 +125,7 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
     const duplicate=applyTravelV2SelectedConsequenceToSession(appliedSupported.session,"focus-backlash:f1");
     assertSmoke(!duplicate.ok && duplicate.alreadyApplied===true && duplicate.session===appliedSupported.session,`${supported.id} prevents re-apply`);
   }
-  for (const unsupportedId of ["consequence-arkengine-surge","consequence-lifeveil-flicker","consequence-route-drift","consequence-cargo-shift","consequence-threat-attracted","consequence-hazard-escalation","consequence-ship-scar-candidate"]) {
+  for (const unsupportedId of ["consequence-arkengine-surge","consequence-lifeveil-flicker","consequence-route-drift","consequence-cargo-shift","consequence-threat-attracted","consequence-hazard-escalation","consequence-ship-scar-candidate",...newMinorConsequenceIds]) {
     const unsupportedSession={...session(),pressure:{hull:{value:1},strain:{value:2},lifeveil:{value:3},morale:{value:4},supplies:{value:5}},travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:unsupportedId}}]}};
     const unsupportedPreview=prepareTravelV2PendingConsequenceQueue(unsupportedSession).items.find((item)=>item.queueKey==="focus-backlash:f1")?.selectedConsequenceApplyPreview;
     assertSmoke(unsupportedPreview?.executable===false && unsupportedPreview.previewOnly===true && unsupportedPreview.mutation==="none" && unsupportedPreview.warningText.includes("Manual Apply is not implemented for this consequence type yet"),`${unsupportedId} preview remains non-executable`);
