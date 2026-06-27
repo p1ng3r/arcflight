@@ -72,6 +72,9 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "appliedEffect.affectedTrack", "template should render applied result affected track");
   assertIncludes(template, "appliedEffect.pressureTrack", "template should render applied result pressure track");
   assertIncludes(template, `data-status="applied"`, "template should keep the status-only Mark Applied button distinct");
+  assertIncludes(template, "Apply Status", "template should render the GM-only apply status summary title");
+  for (const field of ["totalItems","selectedCount","executableCount","alreadyAppliedCount","unsupportedCount","missingSelectionCount","missingCatalogCount","sessionPressureOnlyCount"]) assertIncludes(template, `pendingConsequenceQueue.applyStatusSummary.${field}`, `template should reference apply status summary ${field}`);
+  for (const forbidden of ["Apply All","Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");

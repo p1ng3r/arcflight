@@ -12,6 +12,26 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(queue.items.some((item)=>item.gmSummary==="Review Strain pressure." && item.sourceRecord?.id==="f1"),"GM queue contains full item summaries and source records");
   const playerSafeSnapshot=JSON.stringify(queue.playerSafeItems);
   assertSmoke(!playerSafeSnapshot.includes("Review Strain pressure")&&!playerSafeSnapshot.includes("sourceRecord")&&!playerSafeSnapshot.includes("applyEffectSummary")&&!playerSafeSnapshot.includes("catalogSuggestions"),"player-safe items omit GM summaries, source records, apply summaries, and catalog suggestions");
+  assertSmoke(queue.applyStatusSummary && queue.applyStatusSummary.totalItems===queue.items.length,"queue exposes GM apply status summary with total item count");
+  assertSmoke(!playerSafeSnapshot.includes("applyStatusSummary"),"player-safe items omit the GM apply status summary");
+  const summarySession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[
+    {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-hull-stress"}},
+    {queueKey:"support-backlash:s1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-surge"}},
+    {queueKey:"ship-scar:scar1",status:"pending",mutation:"none",selectedConsequence:{id:"deleted-card",title:"Deleted Card"}},
+    {queueKey:"final-outcome:failure:0",status:"applied",mutation:"session-pressure-only",selectedConsequence:{id:"consequence-crew-panic"},appliedEffect:{mutation:"session-pressure-only",affectedTrack:"Morale",pressureTrack:"morale",pressureDelta:1,beforeValue:1,afterValue:2}}
+  ]}};
+  const statusSummaryQueue=prepareTravelV2PendingConsequenceQueue(summarySession);
+  const applyStatusSummary=statusSummaryQueue.applyStatusSummary;
+  assertSmoke(applyStatusSummary && Object.keys(applyStatusSummary).sort().join(",")===["alreadyAppliedCount","executableCount","missingCatalogCount","missingSelectionCount","selectedCount","sessionPressureOnlyCount","totalItems","unsupportedCount"].sort().join(","),"apply status summary contains exactly the required count fields");
+  assertSmoke(applyStatusSummary.totalItems===statusSummaryQueue.items.length,"apply status summary totalItems equals ordered item count");
+  assertSmoke(applyStatusSummary.selectedCount===4,"apply status summary counts selected consequence items");
+  assertSmoke(applyStatusSummary.executableCount===1,"apply status summary counts canApplySelectedConsequence true items");
+  assertSmoke(applyStatusSummary.alreadyAppliedCount===1,"apply status summary counts hasAppliedEffect true items");
+  assertSmoke(applyStatusSummary.unsupportedCount===1,"apply status summary counts selected unsupported preview-only items");
+  assertSmoke(applyStatusSummary.missingSelectionCount===1,"apply status summary counts items without selected consequence ids");
+  assertSmoke(applyStatusSummary.missingCatalogCount===1,"apply status summary counts selected missing catalog ids");
+  assertSmoke(applyStatusSummary.sessionPressureOnlyCount===2,"apply status summary counts selected previews with session-pressure-only mutation");
+  assertSmoke(!JSON.stringify(statusSummaryQueue.playerSafeItems).includes("applyStatusSummary"),"player-safe items do not include applyStatusSummary");
   assertSmoke(queue.items.some((item)=>item.catalogSuggestions.length>0),"queue includes catalog suggestions");
   assertSmoke(queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-arkengine-surge"),"focus backlash still suggests focus-backlash catalog cards");
   assertSmoke(queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-crew-panic"),"failed support still suggests Crew Panic");
