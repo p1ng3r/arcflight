@@ -37,8 +37,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "Apply Preview", "template should render selected consequence apply preview block");
   assertIncludes(template, "selectedConsequenceApplyPreview.applyEffectSummary", "template should render GM apply preview summary");
   assertIncludes(template, "selectedConsequenceApplyPreview.warningText", "template should render preview-only warning text");
-  assertIncludes(template, "<strong>Executable:</strong> no", "template should show preview is not executable");
-  assertSmoke(!template.includes('data-arcflight-travel-v2-pending-consequence-apply'), "template should not add a real selected consequence Apply button");
+  assertIncludes(template, "{{#if selectedConsequenceApplyPreview.executable}}", "template should gate Apply Selected Consequence on executable previews only");
+  assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should add the narrow selected consequence Apply button");
+  assertIncludes(template, "Apply Selected Consequence", "template should label the narrow selected consequence Apply button");
+  assertIncludes(template, `data-status="applied"`, "template should keep Mark Applied as a distinct status-only button");
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");
@@ -58,6 +60,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
       "template-read-only-footer",
       "template-tone-hook",
       "selected-consequence-apply-preview",
+      "selected-consequence-manual-apply-button",
       "css-panel-wrapper",
       "css-row-and-chip-hooks"
     ]

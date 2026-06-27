@@ -4,6 +4,9 @@ import { getTravelV2ConsequenceById, getTravelV2ConsequencesBySource } from "../
 export const TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION = 1;
 const QUEUE_STATUSES = Object.freeze(["pending", "applied", "dismissed", "deferred"]);
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING = "Preview only. This does not apply pressure, ship scars, actor/item changes, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
+export const TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED = "Manual Apply is not implemented for this consequence type yet.";
+const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_ID = "consequence-crew-panic";
+const PRESSURE_TRACK_BY_CATALOG_TRACK = Object.freeze({ Hull: "hull", Strain: "strain", Lifeveil: "lifeveil", Morale: "morale", Supplies: "supplies" });
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function cloneData(value) { if (value === null || value === undefined) return value; return JSON.parse(JSON.stringify(value)); }
@@ -23,6 +26,24 @@ function catalogSummaries(source) {
 }
 function selectedConsequenceDisplay(selectedConsequence, catalogEntry) {
   return consequenceSummary(catalogEntry) ?? cloneData(selectedConsequence ?? null);
+}
+function supportedSessionPressureEffect(catalogEntry) {
+  if (!isPlainObject(catalogEntry)) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  const effect = isPlainObject(catalogEntry.sessionLocalEffect) ? catalogEntry.sessionLocalEffect : {};
+  const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
+  const affectedTrack = text(catalogEntry.affectedTrack) || text(effect.suggestedTrack);
+  const pressureTrack = PRESSURE_TRACK_BY_CATALOG_TRACK[affectedTrack];
+  const pressureDelta = Number(effect.suggestedDelta);
+  if (catalogEntry.id !== SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_ID) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (text(catalogEntry.severity) !== "minor") return { supported: false, reason: "Manual Apply only supports minor session-local pressure consequences." };
+  if (text(explicitApply.kind) !== "pressureCandidate" || text(explicitApply.mutation) !== "none") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (text(effect.kind) !== "candidateOnly" || !pressureTrack || !Number.isInteger(pressureDelta) || pressureDelta <= 0) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  return { supported: true, affectedTrack, pressureTrack, pressureDelta };
+}
+function pressureValue(session, pressureTrack) {
+  const track = isPlainObject(session?.pressure?.[pressureTrack]) ? session.pressure[pressureTrack] : {};
+  const value = Number(track.value);
+  return Number.isInteger(value) ? value : 0;
 }
 export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey, options = {}) {
   if (!isPlainObject(session)) return null;
@@ -47,6 +68,7 @@ export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey
     };
   }
   const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
+  const supportedEffect = supportedSessionPressureEffect(catalogEntry);
   return {
     hasPreview: true,
     consequenceId: catalogEntry.id,
@@ -56,10 +78,11 @@ export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey
     affectedTrack: text(catalogEntry.affectedTrack) || text(catalogEntry.sessionLocalEffect?.suggestedTrack),
     playerSafeSummary: text(catalogEntry.playerSafeSummary) || text(catalogEntry.publicText) || text(selected.playerSafeSummary),
     applyEffectSummary: text(catalogEntry.applyEffectSummary) || text(explicitApply.summary) || text(selected.applyEffectSummary),
-    mutation: "none",
-    executable: false,
-    previewOnly: true,
-    warningText: TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING
+    mutation: supportedEffect.supported ? "session-pressure-only" : "none",
+    executable: supportedEffect.supported === true,
+    previewOnly: supportedEffect.supported !== true,
+    pressureDelta: supportedEffect.pressureDelta ?? null,
+    warningText: supportedEffect.supported ? "Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : `${TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING} ${supportedEffect.reason}`
   };
 }
 function makeQueueItem(input = {}, overrides = new Map()) {
@@ -136,6 +159,42 @@ export function updateTravelV2PendingConsequenceQueueItem(session, queueKey, sta
   const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status, decidedAt: timestamp(options), decisionNote: text(options.note), mutation: "none" };
   const nextSession = { ...cloneData(session), travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
   return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record };
+}
+
+export function applyTravelV2SelectedConsequenceToSession(session, queueKey, options = {}) {
+  if (!isPlainObject(session)) return { ok: false, session, error: "Travel v2 runner session is required." };
+  if (!text(queueKey)) return { ok: false, session, error: "Pending consequence queue key is required." };
+  const queue = prepareTravelV2PendingConsequenceQueue(session, options);
+  const item = queue.items.find((candidate) => candidate.queueKey === queueKey);
+  if (!item) return { ok: false, session, queue, error: "Pending consequence queue item was not found." };
+  const current = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).find((record) => record.queueKey === queueKey) ?? {};
+  if (!isPlainObject(current.selectedConsequence) || !text(current.selectedConsequence.id)) return { ok: false, session, queue, error: "Select a consequence catalog card before applying it." };
+  if (current.appliedEffect?.mutation === "session-pressure-only") return { ok: false, alreadyApplied: true, session, queue, error: "Selected consequence has already been applied to this queue item." };
+  const catalogEntry = getTravelV2ConsequenceById(current.selectedConsequence.id);
+  if (!catalogEntry) return { ok: false, session, queue, error: "Selected consequence catalog card was not found." };
+  const supportedEffect = supportedSessionPressureEffect(catalogEntry);
+  if (supportedEffect.supported !== true) return { ok: false, session, queue, error: supportedEffect.reason };
+  const beforeValue = pressureValue(session, supportedEffect.pressureTrack);
+  const afterValue = beforeValue + supportedEffect.pressureDelta;
+  const appliedRecord = {
+    queueKey,
+    consequenceId: catalogEntry.id,
+    appliedAt: timestamp(options),
+    appliedBy: "gm",
+    mutation: "session-pressure-only",
+    affectedTrack: supportedEffect.affectedTrack,
+    pressureTrack: supportedEffect.pressureTrack,
+    pressureDelta: supportedEffect.pressureDelta,
+    beforeValue,
+    afterValue,
+    note: text(options.note) || text(catalogEntry.applyEffectSummary)
+  };
+  const existing = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).filter((record) => record.queueKey !== queueKey);
+  const nextPressure = { ...cloneData(session.pressure ?? {}) };
+  nextPressure[supportedEffect.pressureTrack] = { ...(isPlainObject(nextPressure[supportedEffect.pressureTrack]) ? nextPressure[supportedEffect.pressureTrack] : {}), value: afterValue };
+  const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status: "applied", decidedAt: appliedRecord.appliedAt, mutation: "session-pressure-only", selectedConsequence: consequenceSummary(catalogEntry), selectedConsequenceApplyPreview: prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey, options), appliedEffect: appliedRecord };
+  const nextSession = { ...cloneData(session), pressure: nextPressure, travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record], appliedRecords: [...cloneData(session.travelV2PendingConsequenceQueue?.appliedRecords ?? []), appliedRecord] } };
+  return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record, appliedRecord };
 }
 
 export function selectTravelV2PendingConsequenceCatalogCard(session, queueKey, consequenceId, options = {}) {
