@@ -153,6 +153,16 @@
                 <p class="arcflight-sheet__hint">Severity: {{selectedConsequence.severity}} · Session-local selection only</p>
                 <p><strong>Player-safe:</strong> {{selectedConsequence.playerSafeSummary}}</p>
                 <p class="arcflight-gm-only"><strong>Apply summary:</strong> {{selectedConsequence.applyEffectSummary}}</p>
+                {{#if selectedConsequenceApplyPreview}}
+                  <section class="arcflight-travel-card arcflight-gm-only" aria-label="Selected Consequence Apply Preview">
+                    <strong>Apply Preview: {{selectedConsequenceApplyPreview.title}}</strong>
+                    <p class="arcflight-sheet__hint">Severity: {{selectedConsequenceApplyPreview.severity}}{{#if selectedConsequenceApplyPreview.source}} · Effect category: {{selectedConsequenceApplyPreview.source}}{{/if}}{{#if selectedConsequenceApplyPreview.affectedTrack}} · Affected track: {{selectedConsequenceApplyPreview.affectedTrack}}{{/if}}</p>
+                    <p><strong>Player-safe summary:</strong> {{selectedConsequenceApplyPreview.playerSafeSummary}}</p>
+                    <p class="arcflight-gm-only"><strong>GM apply summary:</strong> {{selectedConsequenceApplyPreview.applyEffectSummary}}</p>
+                    <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{selectedConsequenceApplyPreview.mutation}} · <strong>Executable:</strong> no · <strong>Preview only:</strong> yes</p>
+                    <p class="arcflight-sheet__hint"><strong>Warning:</strong> {{selectedConsequenceApplyPreview.warningText}}</p>
+                  </section>
+                {{/if}}
               </article>
             {{/if}}
             {{#if catalogSuggestions}}
