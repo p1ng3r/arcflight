@@ -69,8 +69,15 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should wire the manual selected consequence apply control");
   assertIncludes(template, "Apply Selected Consequence", "template should label the executable selected consequence apply button");
   assertIncludes(template, "Applied Result", "template should render the GM-only applied result block");
+  assertIncludes(template, "Follow-up Result", "template should render the follow-up applied result label");
+  assertIncludes(template, "session-followup-note-only", "template should branch on session-local follow-up note results");
   assertIncludes(template, "appliedEffect.affectedTrack", "template should render applied result affected track");
-  assertIncludes(template, "appliedEffect.pressureTrack", "template should render applied result pressure track");
+  assertIncludes(template, "appliedEffect.kind", "template should render follow-up applied result kind");
+  assertIncludes(template, "appliedEffect.consequenceId", "template should render follow-up applied result consequence id");
+  for (const field of ["title","summary","source","createdAt","createdBy"]) assertIncludes(template, `appliedEffect.followupRecord.${field}`, `template should render follow-up applied result ${field}`);
+  assertIncludes(template, "session-pressure-only", "template should branch on session-local pressure results");
+  for (const field of ["pressureTrack","pressureDelta","beforeValue","afterValue","note"]) assertIncludes(template, `appliedEffect.${field}`, `template should keep pressure applied result ${field}`);
+  assertSmoke(template.includes("Selected Consequence Applied Result") && template.includes("arcflight-gm-only") && template.includes("Follow-up Result"), "applied result follow-up branch should remain GM-only");
   assertIncludes(template, `data-status="applied"`, "template should keep the status-only Mark Applied button distinct");
   assertIncludes(template, "Apply Status", "template should render the GM-only apply status summary title");
   for (const field of ["totalItems","selectedCount","executableCount","alreadyAppliedCount","unsupportedCount","missingSelectionCount","missingCatalogCount","sessionPressureOnlyCount"]) assertIncludes(template, `pendingConsequenceQueue.applyStatusSummary.${field}`, `template should reference apply status summary ${field}`);

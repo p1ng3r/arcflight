@@ -182,10 +182,19 @@
                     {{#if hasAppliedEffect}}
                       <section class="arcflight-travel-card arcflight-gm-only" aria-label="Selected Consequence Applied Result">
                         <strong>Applied Result</strong>
-                        <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{appliedEffect.mutation}} · <strong>Affected track:</strong> {{appliedEffect.affectedTrack}} · <strong>Pressure track:</strong> {{appliedEffect.pressureTrack}}</p>
-                        <p class="arcflight-sheet__hint"><strong>Delta:</strong> {{appliedEffect.pressureDelta}} · <strong>Before → After:</strong> {{appliedEffect.beforeValue}} → {{appliedEffect.afterValue}}</p>
-                        <p class="arcflight-sheet__hint"><strong>Applied at:</strong> {{appliedEffect.appliedAt}} · <strong>Applied by:</strong> {{appliedEffect.appliedBy}}</p>
-                        <p><strong>Note:</strong> {{appliedEffect.note}}</p>
+                        {{#if (eq appliedEffect.mutation "session-pressure-only")}}
+                          <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{appliedEffect.mutation}} · <strong>Affected track:</strong> {{appliedEffect.affectedTrack}} · <strong>Pressure track:</strong> {{appliedEffect.pressureTrack}}</p>
+                          <p class="arcflight-sheet__hint"><strong>Delta:</strong> {{appliedEffect.pressureDelta}} · <strong>Before → After:</strong> {{appliedEffect.beforeValue}} → {{appliedEffect.afterValue}}</p>
+                          <p class="arcflight-sheet__hint"><strong>Applied at:</strong> {{appliedEffect.appliedAt}} · <strong>Applied by:</strong> {{appliedEffect.appliedBy}}</p>
+                          <p><strong>Note:</strong> {{appliedEffect.note}}</p>
+                        {{/if}}
+                        {{#if (eq appliedEffect.mutation "session-followup-note-only")}}
+                          <strong>Follow-up Result</strong>
+                          <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{appliedEffect.mutation}} · <strong>Affected track:</strong> {{appliedEffect.affectedTrack}} · <strong>Kind:</strong> {{appliedEffect.kind}}</p>
+                          <p class="arcflight-sheet__hint"><strong>Consequence:</strong> {{appliedEffect.consequenceId}} · <strong>Title:</strong> {{appliedEffect.followupRecord.title}}</p>
+                          <p><strong>Summary:</strong> {{appliedEffect.followupRecord.summary}}</p>
+                          <p class="arcflight-sheet__hint"><strong>Source:</strong> {{appliedEffect.followupRecord.source}} · <strong>Created:</strong> {{appliedEffect.followupRecord.createdAt}} · <strong>By:</strong> {{appliedEffect.followupRecord.createdBy}}</p>
+                        {{/if}}
                       </section>
                     {{/if}}
                     {{#if canApplySelectedConsequence}}
