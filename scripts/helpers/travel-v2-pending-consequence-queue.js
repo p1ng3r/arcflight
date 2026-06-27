@@ -5,8 +5,12 @@ export const TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION = 1;
 const QUEUE_STATUSES = Object.freeze(["pending", "applied", "dismissed", "deferred"]);
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING = "Preview only. This does not apply pressure, ship scars, actor/item changes, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED = "Manual Apply is not implemented for this consequence type yet.";
-const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_ID = "consequence-crew-panic";
-const PRESSURE_TRACK_BY_CATALOG_TRACK = Object.freeze({ Hull: "hull", Strain: "strain", Lifeveil: "lifeveil", Morale: "morale", Supplies: "supplies" });
+const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
+  "consequence-hull-stress": Object.freeze({ affectedTrack: "Hull", pressureTrack: "hull", pressureDelta: 1 }),
+  "consequence-crew-panic": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1 }),
+  "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1 })
+});
+const SAFE_SESSION_PRESSURE_TRACKS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function cloneData(value) { if (value === null || value === undefined) return value; return JSON.parse(JSON.stringify(value)); }
@@ -29,16 +33,23 @@ function selectedConsequenceDisplay(selectedConsequence, catalogEntry) {
 }
 function supportedSessionPressureEffect(catalogEntry) {
   if (!isPlainObject(catalogEntry)) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  const expected = SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES[text(catalogEntry.id)];
+  if (!expected) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   const effect = isPlainObject(catalogEntry.sessionLocalEffect) ? catalogEntry.sessionLocalEffect : {};
   const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
-  const affectedTrack = text(catalogEntry.affectedTrack) || text(effect.suggestedTrack);
-  const pressureTrack = PRESSURE_TRACK_BY_CATALOG_TRACK[affectedTrack];
+  const affectedTrack = text(catalogEntry.affectedTrack);
+  const suggestedTrack = text(effect.suggestedTrack);
   const pressureDelta = Number(effect.suggestedDelta);
-  if (catalogEntry.id !== SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_ID) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
-  if (text(catalogEntry.severity) !== "minor") return { supported: false, reason: "Manual Apply only supports minor session-local pressure consequences." };
+  if (text(catalogEntry.severity) !== "minor") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (text(explicitApply.kind) !== "pressureCandidate" || text(explicitApply.mutation) !== "none") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
-  if (text(effect.kind) !== "candidateOnly" || !pressureTrack || !Number.isInteger(pressureDelta) || pressureDelta <= 0) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
-  return { supported: true, affectedTrack, pressureTrack, pressureDelta };
+  if (text(effect.kind) !== "candidateOnly") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (affectedTrack !== expected.affectedTrack || suggestedTrack !== expected.affectedTrack) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (!SAFE_SESSION_PRESSURE_TRACKS.includes(expected.pressureTrack)) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (!Number.isInteger(pressureDelta) || pressureDelta !== expected.pressureDelta) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  return { supported: true, affectedTrack: expected.affectedTrack, pressureTrack: expected.pressureTrack, pressureDelta: expected.pressureDelta };
+}
+export function testTravelV2SelectedConsequencePressureApplySupport(catalogEntry) {
+  return supportedSessionPressureEffect(catalogEntry);
 }
 function pressureValue(session, pressureTrack) {
   const track = isPlainObject(session?.pressure?.[pressureTrack]) ? session.pressure[pressureTrack] : {};
