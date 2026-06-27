@@ -1,4 +1,4 @@
-import { applyTravelV2SelectedConsequenceToSession, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +13,18 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   const playerSafeSnapshot=JSON.stringify(queue.playerSafeItems);
   assertSmoke(!playerSafeSnapshot.includes("Review Strain pressure")&&!playerSafeSnapshot.includes("sourceRecord")&&!playerSafeSnapshot.includes("applyEffectSummary")&&!playerSafeSnapshot.includes("catalogSuggestions"),"player-safe items omit GM summaries, source records, apply summaries, and catalog suggestions");
   assertSmoke(queue.items.some((item)=>item.catalogSuggestions.length>0),"queue includes catalog suggestions");
+  assertSmoke(queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-arkengine-surge"),"focus backlash still suggests focus-backlash catalog cards");
+  assertSmoke(queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-crew-panic"),"failed support still suggests Crew Panic");
+  assertSmoke(queue.items.find((item)=>item.queueKey==="hazard:h1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-hazard-escalation"),"unresolved hazards still suggest unresolved-hazard catalog cards");
+  assertSmoke(queue.items.find((item)=>item.queueKey==="ship-scar:scar1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-ship-scar-candidate"),"ship scar candidates still suggest ship scar candidate cards");
+  assertSmoke(queue.items.find((item)=>item.sourceType==="finalOutcomeFallout")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-ship-scar-candidate"),"final fallout still suggests final bad outcome cards");
+  const hullQueue=prepareTravelV2PendingConsequenceQueue({...session(),hazards:{records:[{id:"hull1",roundIndex:0,status:"active",name:"Rib Collision",category:"physical",tags:["impact","bulkhead"],playerText:"The hull plates take damage."}]}});
+  assertSmoke(hullQueue.items.find((item)=>item.queueKey==="hazard:hull1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-hull-stress"),"hull or physical unresolved hazards suggest Hull Stress");
+  const suppliesSuggestions=catalogSummariesForPendingConsequence({sourceType:"unresolvedHazard",sourceStatus:"active",severity:"minor",publicSummary:"Blocked access to low stores delays water rations.",gmSummary:"Logistics trouble.",sourceRecord:{id:"sup1",category:"supplies",tags:["delay","stores"]},catalogSuggestions:[{id:"consequence-supplies-delay",title:"Duplicate Supplies Delay"}]});
+  assertSmoke(suppliesSuggestions.some((suggestion)=>suggestion.id==="consequence-supplies-delay"),"supplies, delay, or low-stores source records suggest Supplies Delay");
+  assertSmoke(suppliesSuggestions.filter((suggestion)=>suggestion.id==="consequence-supplies-delay").length===1,"catalog suggestions are de-duplicated by id");
+  const moraleSuggestions=catalogSummariesForPendingConsequence({sourceType:"failedSupport",sourceStatus:"pending",severity:"minor",publicSummary:"Morale falters as crew hesitation spreads fear.",sourceRecord:{category:"captain"}});
+  assertSmoke(moraleSuggestions.some((suggestion)=>suggestion.id==="consequence-crew-panic"),"failed support, morale, or crew hesitation suggests Crew Panic");
   const runnerState=prepareTravelEventRunnerAppStateWithTravelV2Preview({session:s});
   assertSmoke(runnerState.pendingConsequenceQueue.items.length===5 && runnerState.pendingConsequenceQueue.items[0].requiresGmApply===true,"runner state prepares a GM pending consequence queue from sample session records");
   const selected=selectTravelV2PendingConsequenceCatalogCard(s,"focus-backlash:f1","consequence-arkengine-surge");
@@ -106,6 +118,6 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(dismissed.ok && dismissed.queue.dismissedCount===1,"dismiss lifecycle is reflected in queue counts");
   const helperSource=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),"travel-v2-pending-consequence-queue.js"),"utf8");
   assertSmoke(!/(\bgame|Actor|ChatMessage|JournalEntry|Combat|Scene|Token|socket|compendium|updateEmbeddedDocuments|createEmbeddedDocuments|deleteEmbeddedDocuments)\s*[.([]/.test(helperSource),"pending consequence queue helper does not call Foundry mutation APIs");
-  return {ok:true,checked:["gather","gm-full-items","sanitize","catalog","select","select-preserves-status","selected-preview","preview-warning","status-preserves-select","unknown-select-failures","defer","mark-applied","dismiss","mutation-none","manual-apply","idempotency","fail-closed","no-foundry-mutation-api"]};
+  return {ok:true,checked:["gather","gm-full-items","sanitize","catalog","select","select-preserves-status","selected-preview","preview-warning","status-preserves-select","unknown-select-failures","defer","mark-applied","dismiss","mutation-none","manual-apply","idempotency","fail-closed","suggestion-categories","minor-pressure-suggestions","dedupe","no-foundry-mutation-api"]};
 }
 export default runTravelV2PendingConsequenceQueueSmokeChecks;

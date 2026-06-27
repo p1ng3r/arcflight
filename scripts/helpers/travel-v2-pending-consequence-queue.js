@@ -28,6 +28,37 @@ function consequenceSummary(entry) {
 function catalogSummaries(source) {
   return getTravelV2ConsequencesBySource(source).map((entry) => consequenceSummary(entry));
 }
+function addCatalogSummariesBySource(suggestions, source) {
+  for (const summary of catalogSummaries(source)) if (summary?.id && !suggestions.has(summary.id)) suggestions.set(summary.id, summary);
+}
+function addCatalogSummaryById(suggestions, id) {
+  const entry = getTravelV2ConsequenceById(id);
+  const summary = consequenceSummary(entry);
+  if (summary?.id && !suggestions.has(summary.id)) suggestions.set(summary.id, summary);
+}
+function searchablePendingConsequenceText(input = {}) {
+  const record = isPlainObject(input.sourceRecord) ? input.sourceRecord : {};
+  const parts = [input.sourceType, input.sourceStatus, input.severity, input.publicSummary, input.gmSummary, record.category, record.type, record.kind, record.source, record.sourceType, record.name, record.title, record.publicText, record.playerText, record.gmText, record.publicSummary, record.gmSummary];
+  for (const key of ["tags", "categories", "source", "sources"]) if (Array.isArray(record[key])) parts.push(...record[key]);
+  return parts.map((part) => text(String(part ?? "")).toLowerCase()).filter(Boolean).join(" ");
+}
+function hasAnyHint(haystack, hints) {
+  return hints.some((hint) => haystack.includes(hint));
+}
+export function catalogSummariesForPendingConsequence(input = {}) {
+  const suggestions = new Map();
+  for (const summary of input.catalogSuggestions ?? []) if (summary?.id && !suggestions.has(summary.id)) suggestions.set(summary.id, cloneData(summary));
+  if (input.sourceType === "focusBacklash") addCatalogSummariesBySource(suggestions, "focus-backlash");
+  if (["supportBacklash", "failedSupport", "supportFailure"].includes(input.sourceType)) addCatalogSummariesBySource(suggestions, "failed-support");
+  if (input.sourceType === "unresolvedHazard") addCatalogSummariesBySource(suggestions, "unresolved-hazard");
+  if (input.sourceType === "shipScarCandidate") addCatalogSummariesBySource(suggestions, "repeated-severe-pressure");
+  if (input.sourceType === "finalOutcomeFallout") addCatalogSummariesBySource(suggestions, "final-bad-outcome");
+  const haystack = searchablePendingConsequenceText(input);
+  if ((input.sourceType === "unresolvedHazard" && hasAnyHint(haystack, ["physical", "hull"])) || hasAnyHint(haystack, ["hull", "physical", "impact", "collision", "structure", "structural", "damage", "breach", "stress", "watchmaster", "plates", "ribs", "frame", "bulkhead"])) addCatalogSummaryById(suggestions, "consequence-hull-stress");
+  if (["supportBacklash", "failedSupport", "supportFailure"].includes(input.sourceType) || hasAnyHint(haystack, ["failed support", "support backlash", "captain", "morale", "crew hesitation", "hesitates", "hesitation", "fear", "panic"])) addCatalogSummaryById(suggestions, "consequence-crew-panic");
+  if (hasAnyHint(haystack, ["supplies", "stores", "ration", "rations", "food", "water", "delay", "blocked access", "low stores", "logistics"])) addCatalogSummaryById(suggestions, "consequence-supplies-delay");
+  return Array.from(suggestions.values());
+}
 function selectedConsequenceDisplay(selectedConsequence, catalogEntry) {
   return consequenceSummary(catalogEntry) ?? cloneData(selectedConsequence ?? null);
 }
@@ -121,7 +152,7 @@ function makeQueueItem(input = {}, overrides = new Map()) {
     deferLabel: "Defer",
     requiresGmApply: true,
     mutation: "none",
-    catalogSuggestions: cloneData(input.catalogSuggestions ?? []),
+    catalogSuggestions: catalogSummariesForPendingConsequence(input),
     sourceRecord: cloneData(input.sourceRecord ?? null),
     selectedConsequence: selectedConsequenceDisplay(override.selectedConsequence, override.selectedConsequence?.id ? getTravelV2ConsequenceById(override.selectedConsequence.id) : null),
     selectedConsequenceApplyPreview,
