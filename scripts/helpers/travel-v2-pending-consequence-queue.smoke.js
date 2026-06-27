@@ -1,4 +1,4 @@
-import { applyTravelV2SelectedConsequenceToSession, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { applyTravelV2SelectedConsequenceToSession, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,6 +42,42 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(applied.record.mutation==="none" && appliedItem?.mutation==="none" && appliedItem?.selectedConsequence?.id==="consequence-crew-panic" && appliedItem?.selectedConsequenceApplyPreview?.executable===true && appliedItem?.canApplySelectedConsequence===false,"Mark Applied lifecycle keeps mutation none, preserves selection/preview, does not execute selected consequence, and keeps manual Apply unavailable while status-applied");
   const executablePreview=updated.queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.selectedConsequenceApplyPreview;
   assertSmoke(executablePreview?.executable===true && executablePreview.previewOnly===false && executablePreview.mutation==="session-pressure-only" && executablePreview.pressureDelta===1,"supported selected consequence has executable session-pressure-only preview");
+
+  for (const supported of [
+    {id:"consequence-hull-stress",affectedTrack:"Hull",track:"hull"},
+    {id:"consequence-crew-panic",affectedTrack:"Morale",track:"morale"},
+    {id:"consequence-supplies-delay",affectedTrack:"Supplies",track:"supplies"}
+  ]) {
+    const base={...session(),pressure:{hull:{value:10},strain:{value:20},lifeveil:{value:30},morale:{value:40},supplies:{value:50}},travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:supported.id}}]}};
+    const previewItem=prepareTravelV2PendingConsequenceQueue(base).items.find((item)=>item.queueKey==="focus-backlash:f1");
+    const supportedPreview=previewItem?.selectedConsequenceApplyPreview;
+    assertSmoke(supportedPreview?.executable===true && supportedPreview.previewOnly===false && supportedPreview.mutation==="session-pressure-only" && supportedPreview.pressureDelta===1,`${supported.id} selected consequence has executable session-pressure-only preview`);
+    const appliedSupported=applyTravelV2SelectedConsequenceToSession(base,"focus-backlash:f1",{now:"2026-06-26T00:04:30.000Z"});
+    assertSmoke(appliedSupported.ok && appliedSupported.session.pressure[supported.track].value===base.pressure[supported.track].value+1,`${supported.id} apply increments only ${supported.track} pressure`);
+    for (const track of ["hull","strain","lifeveil","morale","supplies"].filter((track)=>track!==supported.track)) assertSmoke(appliedSupported.session.pressure[track].value===base.pressure[track].value,`${supported.id} apply leaves ${track} pressure unchanged`);
+    const effect=appliedSupported.record.appliedEffect;
+    assertSmoke(effect?.mutation==="session-pressure-only" && effect.affectedTrack===supported.affectedTrack && effect.pressureTrack===supported.track && effect.pressureDelta===1 && effect.beforeValue===base.pressure[supported.track].value && effect.afterValue===base.pressure[supported.track].value+1,`${supported.id} records session pressure apply details`);
+    assertSmoke(appliedSupported.queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.status==="applied",`${supported.id} apply marks status applied`);
+    const duplicate=applyTravelV2SelectedConsequenceToSession(appliedSupported.session,"focus-backlash:f1");
+    assertSmoke(!duplicate.ok && duplicate.alreadyApplied===true && duplicate.session===appliedSupported.session,`${supported.id} prevents re-apply`);
+  }
+  for (const unsupportedId of ["consequence-arkengine-surge","consequence-lifeveil-flicker","consequence-route-drift","consequence-cargo-shift","consequence-threat-attracted","consequence-hazard-escalation","consequence-ship-scar-candidate"]) {
+    const unsupportedSession={...session(),pressure:{hull:{value:1},strain:{value:2},lifeveil:{value:3},morale:{value:4},supplies:{value:5}},travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:unsupportedId}}]}};
+    const unsupportedPreview=prepareTravelV2PendingConsequenceQueue(unsupportedSession).items.find((item)=>item.queueKey==="focus-backlash:f1")?.selectedConsequenceApplyPreview;
+    assertSmoke(unsupportedPreview?.executable===false && unsupportedPreview.previewOnly===true && unsupportedPreview.mutation==="none" && unsupportedPreview.warningText.includes("Manual Apply is not implemented for this consequence type yet"),`${unsupportedId} preview remains non-executable`);
+    const failedUnsupported=applyTravelV2SelectedConsequenceToSession(unsupportedSession,"focus-backlash:f1");
+    assertSmoke(!failedUnsupported.ok && JSON.stringify(failedUnsupported.session.pressure)===JSON.stringify(unsupportedSession.pressure) && !JSON.stringify(failedUnsupported.session).includes("appliedEffect"),`${unsupportedId} apply fails closed without pressure or appliedEffect mutation`);
+  }
+  const validCatalog={id:"consequence-hull-stress",severity:"minor",affectedTrack:"Hull",sessionLocalEffect:{kind:"candidateOnly",suggestedTrack:"Hull",suggestedDelta:1},explicitGmApplyEffect:{kind:"pressureCandidate",mutation:"none"}};
+  for (const malformed of [
+    {...validCatalog,severity:"major"},
+    {...validCatalog,explicitGmApplyEffect:{kind:"finalOutcomeCandidate",mutation:"none"}},
+    {...validCatalog,explicitGmApplyEffect:{kind:"pressureCandidate",mutation:"session-pressure-only"}},
+    {...validCatalog,affectedTrack:"Strain"},
+    {...validCatalog,sessionLocalEffect:{kind:"candidateOnly",suggestedTrack:"Strain",suggestedDelta:1}},
+    {...validCatalog,sessionLocalEffect:{kind:"candidateOnly",suggestedTrack:"Hull",suggestedDelta:2}},
+    {...validCatalog,sessionLocalEffect:{kind:"pressureNow",suggestedTrack:"Hull",suggestedDelta:1}}
+  ]) assertSmoke(testTravelV2SelectedConsequencePressureApplySupport(malformed).supported===false,"whitelisted catalog card with mismatched apply shape fails closed");
   const beforeApplySession=updated.session;
   const manualApplied=applyTravelV2SelectedConsequenceToSession(beforeApplySession,"support-backlash:s1",{now:"2026-06-26T00:04:00.000Z"});
   assertSmoke(manualApplied.ok && manualApplied.session!==beforeApplySession,"applying supported selected consequence clones the session");
