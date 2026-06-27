@@ -34,6 +34,12 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "Read-only", "template should visibly mark the panel as read-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
 
+  assertIncludes(template, "Apply Preview", "template should render selected consequence apply preview block");
+  assertIncludes(template, "selectedConsequenceApplyPreview.applyEffectSummary", "template should render GM apply preview summary");
+  assertIncludes(template, "selectedConsequenceApplyPreview.warningText", "template should render preview-only warning text");
+  assertIncludes(template, "<strong>Executable:</strong> no", "template should show preview is not executable");
+  assertSmoke(!template.includes('data-arcflight-travel-v2-pending-consequence-apply'), "template should not add a real selected consequence Apply button");
+
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--safe", "css should include safe tone hook");
@@ -51,6 +57,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
       "template-chip-rendering",
       "template-read-only-footer",
       "template-tone-hook",
+      "selected-consequence-apply-preview",
       "css-panel-wrapper",
       "css-row-and-chip-hooks"
     ]

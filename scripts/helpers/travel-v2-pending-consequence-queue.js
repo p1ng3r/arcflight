@@ -3,6 +3,7 @@ import { getTravelV2ConsequenceById, getTravelV2ConsequencesBySource } from "../
 
 export const TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION = 1;
 const QUEUE_STATUSES = Object.freeze(["pending", "applied", "dismissed", "deferred"]);
+export const TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING = "Preview only. This does not apply pressure, ship scars, actor/item changes, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function cloneData(value) { if (value === null || value === undefined) return value; return JSON.parse(JSON.stringify(value)); }
@@ -19,6 +20,47 @@ function consequenceSummary(entry) {
 }
 function catalogSummaries(source) {
   return getTravelV2ConsequencesBySource(source).map((entry) => consequenceSummary(entry));
+}
+function selectedConsequenceDisplay(selectedConsequence, catalogEntry) {
+  return consequenceSummary(catalogEntry) ?? cloneData(selectedConsequence ?? null);
+}
+export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey, options = {}) {
+  if (!isPlainObject(session)) return null;
+  const selected = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).find((record) => record.queueKey === queueKey)?.selectedConsequence;
+  if (!isPlainObject(selected) || !text(selected.id)) return null;
+  const catalogEntry = getTravelV2ConsequenceById(selected.id);
+  const fallbackTitle = titleFrom(selected.title, "Selected consequence");
+  if (!catalogEntry) {
+    return {
+      hasPreview: true,
+      consequenceId: selected.id,
+      title: fallbackTitle,
+      severity: text(selected.severity) || "unknown",
+      source: "missing-catalog-card",
+      affectedTrack: text(selected.affectedTrack),
+      playerSafeSummary: text(selected.playerSafeSummary) || "Selected consequence catalog card could not be resolved.",
+      applyEffectSummary: "Catalog card could not be resolved. No future Apply payload is executable from this preview.",
+      mutation: "none",
+      executable: false,
+      previewOnly: true,
+      warningText: `${TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING} Catalog card could not be resolved from the authored consequence catalog.`
+    };
+  }
+  const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
+  return {
+    hasPreview: true,
+    consequenceId: catalogEntry.id,
+    title: titleFrom(catalogEntry.title, fallbackTitle),
+    severity: text(catalogEntry.severity) || text(selected.severity) || "unknown",
+    source: text(explicitApply.kind) || (Array.isArray(catalogEntry.source) ? catalogEntry.source.join(", ") : text(catalogEntry.source)),
+    affectedTrack: text(catalogEntry.affectedTrack) || text(catalogEntry.sessionLocalEffect?.suggestedTrack),
+    playerSafeSummary: text(catalogEntry.playerSafeSummary) || text(catalogEntry.publicText) || text(selected.playerSafeSummary),
+    applyEffectSummary: text(catalogEntry.applyEffectSummary) || text(explicitApply.summary) || text(selected.applyEffectSummary),
+    mutation: "none",
+    executable: false,
+    previewOnly: true,
+    warningText: TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING
+  };
 }
 function makeQueueItem(input = {}, overrides = new Map()) {
   const queueKey = input.queueKey;
@@ -44,7 +86,8 @@ function makeQueueItem(input = {}, overrides = new Map()) {
     mutation: "none",
     catalogSuggestions: cloneData(input.catalogSuggestions ?? []),
     sourceRecord: cloneData(input.sourceRecord ?? null),
-    selectedConsequence: cloneData(override.selectedConsequence ?? null),
+    selectedConsequence: selectedConsequenceDisplay(override.selectedConsequence, override.selectedConsequence?.id ? getTravelV2ConsequenceById(override.selectedConsequence.id) : null),
+    selectedConsequenceApplyPreview: prepareTravelV2SelectedConsequenceApplyPreview({ travelV2PendingConsequenceQueue: { records: [override] } }, queueKey, {}),
     decidedAt: override.decidedAt ?? null,
     decisionNote: text(override.decisionNote),
     playerSafe: { title: titleFrom(input.title, "Pending Consequence"), summary: text(input.publicSummary) || "A consequence candidate needs GM review.", status }
