@@ -10,6 +10,9 @@ const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-crew-panic": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1 }),
   "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1 })
 });
+const SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES = Object.freeze({
+  "consequence-course-slip": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" })
+});
 const SAFE_SESSION_PRESSURE_TRACKS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -82,6 +85,20 @@ function supportedSessionPressureEffect(catalogEntry) {
 export function testTravelV2SelectedConsequencePressureApplySupport(catalogEntry) {
   return supportedSessionPressureEffect(catalogEntry);
 }
+function supportedSessionFollowupEffect(catalogEntry) {
+  if (!isPlainObject(catalogEntry)) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  const expected = SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES[text(catalogEntry.id)];
+  if (!expected) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  const effect = isPlainObject(catalogEntry.sessionLocalEffect) ? catalogEntry.sessionLocalEffect : {};
+  const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
+  const affectedTrack = text(catalogEntry.affectedTrack);
+  if (text(catalogEntry.severity) !== "minor") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (text(explicitApply.kind) !== expected.kind || text(explicitApply.mutation) !== "none") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (text(effect.kind) !== "candidateOnly") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (affectedTrack !== expected.affectedTrack || text(effect.suggestedTrack) !== expected.affectedTrack) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (Number(effect.suggestedDelta) !== 1) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  return { supported: true, affectedTrack: expected.affectedTrack, kind: expected.kind };
+}
 function pressureValue(session, pressureTrack) {
   const track = isPlainObject(session?.pressure?.[pressureTrack]) ? session.pressure[pressureTrack] : {};
   const value = Number(track.value);
@@ -111,6 +128,9 @@ export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey
   }
   const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
   const supportedEffect = supportedSessionPressureEffect(catalogEntry);
+  const supportedFollowupEffect = supportedEffect.supported === true ? { supported: false } : supportedSessionFollowupEffect(catalogEntry);
+  const executableEffect = supportedEffect.supported === true ? supportedEffect : supportedFollowupEffect;
+  const mutation = supportedEffect.supported === true ? "session-pressure-only" : supportedFollowupEffect.supported === true ? "session-followup-note-only" : "none";
   return {
     hasPreview: true,
     consequenceId: catalogEntry.id,
@@ -120,11 +140,11 @@ export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey
     affectedTrack: text(catalogEntry.affectedTrack) || text(catalogEntry.sessionLocalEffect?.suggestedTrack),
     playerSafeSummary: text(catalogEntry.playerSafeSummary) || text(catalogEntry.publicText) || text(selected.playerSafeSummary),
     applyEffectSummary: text(catalogEntry.applyEffectSummary) || text(explicitApply.summary) || text(selected.applyEffectSummary),
-    mutation: supportedEffect.supported ? "session-pressure-only" : "none",
-    executable: supportedEffect.supported === true,
-    previewOnly: supportedEffect.supported !== true,
+    mutation,
+    executable: executableEffect.supported === true,
+    previewOnly: executableEffect.supported !== true,
     pressureDelta: supportedEffect.pressureDelta ?? null,
-    warningText: supportedEffect.supported ? "Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : `${TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING} ${supportedEffect.reason}`
+    warningText: supportedEffect.supported ? "Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : supportedFollowupEffect.supported ? "Applies this selected consequence by writing a session-local follow-up note only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : `${TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING} ${supportedEffect.reason}`
   };
 }
 function makeQueueItem(input = {}, overrides = new Map()) {
@@ -132,7 +152,7 @@ function makeQueueItem(input = {}, overrides = new Map()) {
   const override = overrides.get(queueKey) ?? {};
   const status = statusFrom(override.status ?? input.status);
   const appliedEffect = cloneData(override.appliedEffect ?? null);
-  const hasAppliedEffect = appliedEffect?.mutation === "session-pressure-only";
+  const hasAppliedEffect = ["session-pressure-only", "session-followup-note-only"].includes(appliedEffect?.mutation);
   const selectedConsequenceApplyPreview = prepareTravelV2SelectedConsequenceApplyPreview({ travelV2PendingConsequenceQueue: { records: [override] } }, queueKey, {});
   const item = {
     version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
@@ -233,11 +253,46 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
   if (!item) return { ok: false, session, queue, error: "Pending consequence queue item was not found." };
   const current = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).find((record) => record.queueKey === queueKey) ?? {};
   if (!isPlainObject(current.selectedConsequence) || !text(current.selectedConsequence.id)) return { ok: false, session, queue, error: "Select a consequence catalog card before applying it." };
-  if (current.appliedEffect?.mutation === "session-pressure-only") return { ok: false, alreadyApplied: true, session, queue, error: "Selected consequence has already been applied to this queue item." };
+  if (["session-pressure-only", "session-followup-note-only"].includes(current.appliedEffect?.mutation)) return { ok: false, alreadyApplied: true, session, queue, error: "Selected consequence has already been applied to this queue item." };
   const catalogEntry = getTravelV2ConsequenceById(current.selectedConsequence.id);
   if (!catalogEntry) return { ok: false, session, queue, error: "Selected consequence catalog card was not found." };
   const supportedEffect = supportedSessionPressureEffect(catalogEntry);
-  if (supportedEffect.supported !== true) return { ok: false, session, queue, error: supportedEffect.reason };
+  if (supportedEffect.supported !== true) {
+    const supportedFollowupEffect = supportedSessionFollowupEffect(catalogEntry);
+    if (supportedFollowupEffect.supported !== true) return { ok: false, session, queue, error: supportedEffect.reason };
+    const createdAt = timestamp(options);
+    const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
+    const preview = prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey, options);
+    const followupRecord = {
+      version: 1,
+      queueKey,
+      consequenceId: catalogEntry.id,
+      title: titleFrom(catalogEntry.title, "Course Slip"),
+      kind: supportedFollowupEffect.kind,
+      affectedTrack: supportedFollowupEffect.affectedTrack,
+      summary: text(catalogEntry.playerSafeSummary) || text(catalogEntry.applyEffectSummary) || text(explicitApply.summary),
+      source: text(preview?.source) || text(explicitApply.kind),
+      mutation: "session-followup-note-only",
+      createdAt,
+      createdBy: "gm"
+    };
+    const appliedRecord = {
+      queueKey,
+      consequenceId: catalogEntry.id,
+      appliedAt: createdAt,
+      appliedBy: "gm",
+      mutation: "session-followup-note-only",
+      kind: supportedFollowupEffect.kind,
+      affectedTrack: supportedFollowupEffect.affectedTrack,
+      followupRecord: cloneData(followupRecord)
+    };
+    const existing = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).filter((record) => record.queueKey !== queueKey);
+    const currentFollowups = isPlainObject(session.travelV2ConsequenceFollowups) ? session.travelV2ConsequenceFollowups : {};
+    const nextFollowups = { version: 1, records: [...cloneData(recordsFrom(currentFollowups)), followupRecord] };
+    const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status: "applied", decidedAt: createdAt, mutation: "session-followup-note-only", selectedConsequence: consequenceSummary(catalogEntry), selectedConsequenceApplyPreview: preview, appliedEffect: appliedRecord };
+    const nextSession = { ...cloneData(session), travelV2ConsequenceFollowups: nextFollowups, travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
+    return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record, appliedRecord, followupRecord };
+  }
   const beforeValue = pressureValue(session, supportedEffect.pressureTrack);
   const afterValue = beforeValue + supportedEffect.pressureDelta;
   const appliedRecord = {
