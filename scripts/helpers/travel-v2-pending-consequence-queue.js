@@ -1,5 +1,5 @@
 import { prepareTravelV2EventOutcomePackage } from "./travel-v2-event-outcome-package.js";
-import { getTravelV2ConsequencesBySource } from "../../data/travel-events/travel-v2-consequence-catalog.js";
+import { getTravelV2ConsequenceById, getTravelV2ConsequencesBySource } from "../../data/travel-events/travel-v2-consequence-catalog.js";
 
 export const TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION = 1;
 const QUEUE_STATUSES = Object.freeze(["pending", "applied", "dismissed", "deferred"]);
@@ -14,8 +14,11 @@ function queueOverrides(session = {}) {
   const records = recordsFrom(session.travelV2PendingConsequenceQueue);
   return new Map(records.filter(isPlainObject).map((record) => [record.queueKey, record]));
 }
+function consequenceSummary(entry) {
+  return entry ? { id: entry.id, title: entry.title, severity: entry.severity, playerSafeSummary: entry.playerSafeSummary, applyEffectSummary: entry.applyEffectSummary } : null;
+}
 function catalogSummaries(source) {
-  return getTravelV2ConsequencesBySource(source).map((entry) => ({ id: entry.id, title: entry.title, severity: entry.severity, playerSafeSummary: entry.playerSafeSummary, applyEffectSummary: entry.applyEffectSummary }));
+  return getTravelV2ConsequencesBySource(source).map((entry) => consequenceSummary(entry));
 }
 function makeQueueItem(input = {}, overrides = new Map()) {
   const queueKey = input.queueKey;
@@ -41,6 +44,7 @@ function makeQueueItem(input = {}, overrides = new Map()) {
     mutation: "none",
     catalogSuggestions: cloneData(input.catalogSuggestions ?? []),
     sourceRecord: cloneData(input.sourceRecord ?? null),
+    selectedConsequence: cloneData(override.selectedConsequence ?? null),
     decidedAt: override.decidedAt ?? null,
     decisionNote: text(override.decisionNote),
     playerSafe: { title: titleFrom(input.title, "Pending Consequence"), summary: text(input.publicSummary) || "A consequence candidate needs GM review.", status }
@@ -84,9 +88,35 @@ export function updateTravelV2PendingConsequenceQueueItem(session, queueKey, sta
   if (!["applied", "dismissed", "deferred", "pending"].includes(status)) return { ok: false, session, error: "Pending consequence status must be applied, dismissed, deferred, or pending." };
   const queue = prepareTravelV2PendingConsequenceQueue(session, options);
   if (!queue.items.some((item) => item.queueKey === queueKey)) return { ok: false, session, queue, error: "Pending consequence queue item was not found." };
+  const current = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).find((record) => record.queueKey === queueKey) ?? {};
   const existing = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).filter((record) => record.queueKey !== queueKey);
-  const record = { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status, decidedAt: timestamp(options), decisionNote: text(options.note), mutation: "none" };
+  const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status, decidedAt: timestamp(options), decisionNote: text(options.note), mutation: "none" };
   const nextSession = { ...cloneData(session), travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
   return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record };
 }
+
+export function selectTravelV2PendingConsequenceCatalogCard(session, queueKey, consequenceId, options = {}) {
+  if (!isPlainObject(session)) return { ok: false, session, error: "Travel v2 runner session is required." };
+  if (!text(queueKey)) return { ok: false, session, error: "Pending consequence queue key is required." };
+  if (!text(consequenceId)) return { ok: false, session, error: "Pending consequence catalog card id is required." };
+  const queue = prepareTravelV2PendingConsequenceQueue(session, options);
+  const item = queue.items.find((candidate) => candidate.queueKey === queueKey);
+  if (!item) return { ok: false, session, queue, error: "Pending consequence queue item was not found." };
+  const consequence = getTravelV2ConsequenceById(consequenceId);
+  if (!consequence) return { ok: false, session, queue, error: "Pending consequence catalog card was not found." };
+  if (!item.catalogSuggestions.some((suggestion) => suggestion.id === consequenceId)) return { ok: false, session, queue, error: "Pending consequence catalog card is not suggested for this queue item." };
+  const current = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).find((record) => record.queueKey === queueKey) ?? {};
+  const existing = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).filter((record) => record.queueKey !== queueKey);
+  const record = {
+    ...cloneData(current),
+    version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
+    queueKey,
+    status: statusFrom(current.status ?? item.status),
+    mutation: "none",
+    selectedConsequence: consequenceSummary(consequence)
+  };
+  const nextSession = { ...cloneData(session), travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
+  return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record };
+}
+
 export default prepareTravelV2PendingConsequenceQueue;

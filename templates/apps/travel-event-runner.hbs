@@ -147,6 +147,14 @@
             <p class="arcflight-sheet__hint">Severity: {{severity}} · Source: {{sourceType}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}} · Status: {{status}}</p>
             <p><strong>Public summary:</strong> {{publicSummary}}</p>
             <p class="arcflight-gm-only"><strong>GM summary:</strong> {{gmSummary}}</p>
+            {{#if selectedConsequence}}
+              <article class="arcflight-travel-card arcflight-gm-only">
+                <strong>Selected consequence: {{selectedConsequence.title}}</strong>
+                <p class="arcflight-sheet__hint">Severity: {{selectedConsequence.severity}} · Session-local selection only</p>
+                <p><strong>Player-safe:</strong> {{selectedConsequence.playerSafeSummary}}</p>
+                <p class="arcflight-gm-only"><strong>Apply summary:</strong> {{selectedConsequence.applyEffectSummary}}</p>
+              </article>
+            {{/if}}
             {{#if catalogSuggestions}}
               <details>
                 <summary>Catalog suggestions ({{catalogSuggestions.length}})</summary>
@@ -156,6 +164,7 @@
                     <p class="arcflight-sheet__hint">Severity: {{severity}}</p>
                     <p><strong>Player-safe:</strong> {{playerSafeSummary}}</p>
                     <p class="arcflight-gm-only"><strong>Apply summary:</strong> {{applyEffectSummary}}</p>
+                    <button type="button" data-arcflight-travel-v2-pending-consequence-select data-queue-key="{{../queueKey}}" data-consequence-id="{{id}}" title="Selects this authored consequence card for this queue item in the session only. Does not apply the effect or mutate world data.">Use This Card</button>
                   </article>
                 {{/each}}
               </details>
