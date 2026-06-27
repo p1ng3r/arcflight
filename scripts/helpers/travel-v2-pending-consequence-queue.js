@@ -165,6 +165,21 @@ function makeQueueItem(input = {}, overrides = new Map()) {
   };
   return item;
 }
+
+function hasSelectedConsequenceId(item) { return Boolean(text(item?.selectedConsequence?.id)); }
+function isMissingCatalogApplyPreview(item) { return item?.selectedConsequenceApplyPreview?.source === "missing-catalog-card"; }
+function prepareApplyStatusSummary(items = []) {
+  return {
+    totalItems: items.length,
+    selectedCount: items.filter((item) => hasSelectedConsequenceId(item)).length,
+    executableCount: items.filter((item) => item.canApplySelectedConsequence === true).length,
+    alreadyAppliedCount: items.filter((item) => item.hasAppliedEffect === true).length,
+    unsupportedCount: items.filter((item) => hasSelectedConsequenceId(item) && item.selectedConsequenceApplyPreview?.previewOnly === true && item.selectedConsequenceApplyPreview?.executable !== true && !isMissingCatalogApplyPreview(item)).length,
+    missingSelectionCount: items.filter((item) => !hasSelectedConsequenceId(item)).length,
+    missingCatalogCount: items.filter((item) => hasSelectedConsequenceId(item) && isMissingCatalogApplyPreview(item)).length,
+    sessionPressureOnlyCount: items.filter((item) => item.selectedConsequenceApplyPreview?.mutation === "session-pressure-only").length
+  };
+}
 function unresolvedHazard(record = {}) { return ["active", "revealed", "held", "pending"].includes(record.status) && record.status !== "cleared" && record.status !== "dismissed"; }
 function finalOutcomeConsequenceItems(session = {}, overrides) {
   const outcome = prepareTravelV2EventOutcomePackage(session, { now: session.completedAt ?? null });
@@ -193,7 +208,8 @@ export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
   items.push(...finalOutcomeConsequenceItems(session, overrides));
   const ordered = items.sort((a, b) => (a.roundNumber ?? 999) - (b.roundNumber ?? 999) || a.sourceType.localeCompare(b.sourceType) || a.queueKey.localeCompare(b.queueKey));
   const count = (status) => ordered.filter((item) => item.status === status).length;
-  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
+  const applyStatusSummary = prepareApplyStatusSummary(ordered);
+  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
 }
 function timestamp(options = {}) { const value = options.decidedAt ?? options.now; if (value instanceof Date) return value.toISOString(); if (typeof value === "string" && value.trim()) return value.trim(); return new Date().toISOString(); }
 export function updateTravelV2PendingConsequenceQueueItem(session, queueKey, status, options = {}) {

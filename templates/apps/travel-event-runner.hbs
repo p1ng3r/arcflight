@@ -140,6 +140,11 @@
       <h3>🔒 Pending Consequences</h3>
       <p class="arcflight-sheet__hint">{{state.pendingConsequenceQueue.summaryText}}</p>
       <p class="arcflight-sheet__hint">Pending: {{state.pendingConsequenceQueue.pendingCount}} · Applied/reviewed: {{state.pendingConsequenceQueue.appliedCount}} · Dismissed: {{state.pendingConsequenceQueue.dismissedCount}} · Deferred: {{state.pendingConsequenceQueue.deferredCount}}</p>
+      <section class="arcflight-travel-card arcflight-gm-only" aria-label="Apply Status">
+        <strong>Apply Status</strong>
+        <p class="arcflight-sheet__hint">Total: {{state.pendingConsequenceQueue.applyStatusSummary.totalItems}} · Selected: {{state.pendingConsequenceQueue.applyStatusSummary.selectedCount}} · Executable: {{state.pendingConsequenceQueue.applyStatusSummary.executableCount}} · Already Applied: {{state.pendingConsequenceQueue.applyStatusSummary.alreadyAppliedCount}}</p>
+        <p class="arcflight-sheet__hint">Unsupported: {{state.pendingConsequenceQueue.applyStatusSummary.unsupportedCount}} · Missing Selection: {{state.pendingConsequenceQueue.applyStatusSummary.missingSelectionCount}} · Missing Catalog: {{state.pendingConsequenceQueue.applyStatusSummary.missingCatalogCount}} · Session Pressure Only: {{state.pendingConsequenceQueue.applyStatusSummary.sessionPressureOnlyCount}}</p>
+      </section>
       {{#if state.pendingConsequenceQueue.items}}
         {{#each state.pendingConsequenceQueue.items}}
           <article class="arcflight-travel-action-queue__item arcflight-gm-only">
