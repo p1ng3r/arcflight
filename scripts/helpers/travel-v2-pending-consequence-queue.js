@@ -8,7 +8,10 @@ export const TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED = "Manual A
 const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-hull-stress": Object.freeze({ affectedTrack: "Hull", pressureTrack: "hull", pressureDelta: 1 }),
   "consequence-crew-panic": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1 }),
-  "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1 })
+  "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1 }),
+  "consequence-arkengine-whine": Object.freeze({ affectedTrack: "Strain", pressureTrack: "strain", pressureDelta: 1 }),
+  "consequence-veil-draft": Object.freeze({ affectedTrack: "Lifeveil", pressureTrack: "lifeveil", pressureDelta: 1 }),
+  "consequence-watch-fatigue": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1 })
 });
 const SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-course-slip": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" }),
