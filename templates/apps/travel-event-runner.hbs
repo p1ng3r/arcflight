@@ -159,8 +159,11 @@
                     <p class="arcflight-sheet__hint">Severity: {{selectedConsequenceApplyPreview.severity}}{{#if selectedConsequenceApplyPreview.source}} · Effect category: {{selectedConsequenceApplyPreview.source}}{{/if}}{{#if selectedConsequenceApplyPreview.affectedTrack}} · Affected track: {{selectedConsequenceApplyPreview.affectedTrack}}{{/if}}</p>
                     <p><strong>Player-safe summary:</strong> {{selectedConsequenceApplyPreview.playerSafeSummary}}</p>
                     <p class="arcflight-gm-only"><strong>GM apply summary:</strong> {{selectedConsequenceApplyPreview.applyEffectSummary}}</p>
-                    <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{selectedConsequenceApplyPreview.mutation}} · <strong>Executable:</strong> no · <strong>Preview only:</strong> yes</p>
+                    <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{selectedConsequenceApplyPreview.mutation}} · <strong>Executable:</strong> {{#if selectedConsequenceApplyPreview.executable}}yes{{else}}no{{/if}} · <strong>Preview only:</strong> {{#if selectedConsequenceApplyPreview.previewOnly}}yes{{else}}no{{/if}}</p>
                     <p class="arcflight-sheet__hint"><strong>Warning:</strong> {{selectedConsequenceApplyPreview.warningText}}</p>
+                    {{#if selectedConsequenceApplyPreview.executable}}
+                      <button type="button" data-arcflight-travel-v2-pending-consequence-apply-selected data-queue-key="{{queueKey}}" title="Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Apply Selected Consequence</button>
+                    {{/if}}
                   </section>
                 {{/if}}
               </article>

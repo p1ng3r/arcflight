@@ -9,7 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
-import { selectTravelV2PendingConsequenceCatalogCard, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
+import { applyTravelV2SelectedConsequenceToSession, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers, queueTravelPlayerMissionBoardRefreshToPlayers } from "./travel-player-station-card.js";
@@ -127,6 +127,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
   "[data-arcflight-travel-v2-pending-consequence-select]",
+  "[data-arcflight-travel-v2-pending-consequence-apply-selected]",
   "[data-arcflight-travel-v2-pending-consequence-status]",
   "[data-arcflight-focus-effect-apply]",
   "[data-arcflight-focus-effect-dismiss]",
@@ -670,6 +671,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.hasAttribute("data-arcflight-travel-v2-pending-consequence-select")) return this.#selectPendingConsequenceCatalogCard(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-pending-consequence-apply-selected")) return this.#applySelectedPendingConsequence(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pending-consequence-status")) return this.#updatePendingConsequenceQueueItem(target);
     if (target.hasAttribute("data-arcflight-focus-effect-apply")) return this.#resolveFocusEffect(target, "applied");
     if (target.hasAttribute("data-arcflight-focus-effect-dismiss")) return this.#resolveFocusEffect(target, "dismissed");
@@ -706,6 +708,23 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.session = updated.session;
     this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
     this.statusMessage = `Pending consequence marked ${status} in the session-local queue only; no actor, item, chat, journal, combat, scene, token, socket, compendium, or world data was mutated.`;
+    ui.notifications?.info?.(this.statusMessage);
+    return this.render(true);
+  }
+
+
+  async #applySelectedPendingConsequence(target) {
+    const queueKey = target.dataset.queueKey ?? "";
+    const updated = applyTravelV2SelectedConsequenceToSession(this.session, queueKey);
+    if (!updated.ok) {
+      this.statusMessage = updated.error ?? "Selected consequence was not applied.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.session = updated.session;
+    this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+    const effect = updated.appliedRecord ?? {};
+    this.statusMessage = `Applied selected consequence to session-local ${effect.affectedTrack ?? "pressure"} pressure only (${effect.beforeValue} → ${effect.afterValue}); no actor, item, chat, journal, combat, scene, token, socket, compendium, or world data was mutated.`;
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }

@@ -64,6 +64,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "Outcome Applied", "template should include applied outcome label");
   assertIncludes(template, "GM-only", "template should visibly mark the panel as GM-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
+  assertIncludes(template, "{{#if selectedConsequenceApplyPreview.executable}}", "template should gate Apply Selected Consequence on executable previews only");
+  assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should wire the manual selected consequence apply control");
+  assertIncludes(template, "Apply Selected Consequence", "template should label the executable selected consequence apply button");
+  assertIncludes(template, `data-status="applied"`, "template should keep the status-only Mark Applied button distinct");
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");
