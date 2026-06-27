@@ -13,6 +13,13 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
     {id:"consequence-veil-draft",queueKey:"hazard:h1",affectedTrack:"Lifeveil",track:"lifeveil",title:"Veil Draft"},
     {id:"consequence-watch-fatigue",queueKey:"support-backlash:s1",affectedTrack:"Morale",track:"morale",title:"Watch Fatigue"}
   ];
+  const newFollowupConsequenceApplies=[
+    {id:"consequence-route-drift",queueKey:"final-outcome:failure:0",affectedTrack:"Route",kind:"finalOutcomeCandidate",title:"Route Drift",severity:"major"},
+    {id:"consequence-cargo-shift",queueKey:"support-backlash:s1",affectedTrack:"Cargo",kind:"complicationCandidate",title:"Cargo Shift",severity:"minor"},
+    {id:"consequence-threat-attracted",queueKey:"hazard:h1",affectedTrack:"Threat",kind:"encounterSeedCandidate",title:"Threat Attracted",severity:"major"},
+    {id:"consequence-hazard-escalation",queueKey:"hazard:h2",affectedTrack:"Hazard",kind:"hazardEscalationCandidate",title:"Hazard Escalation",severity:"major"},
+    {id:"consequence-ship-scar-candidate",queueKey:"ship-scar:scar1",affectedTrack:"Ship Scar",kind:"shipScarHandoffCandidate",title:"Ship Scar Candidate",severity:"severe"}
+  ];
   const newMinorConsequenceIds=[...newPressureConsequenceApplies.map((entry)=>entry.id),"consequence-course-slip","consequence-stores-tangle","consequence-signal-echo"];
   const catalog=getTravelV2ConsequenceCatalog();
   assertSmoke(new Set(catalog.map((entry)=>entry.id)).size===catalog.length,"catalog ids remain unique");
@@ -40,6 +47,13 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   const storesTangle=getTravelV2ConsequenceById("consequence-stores-tangle");
   assertSmoke(storesTangle.affectedTrack==="Supplies"&&storesTangle.explicitGmApplyEffect?.kind==="complicationCandidate"&&storesTangle.explicitGmApplyEffect?.mutation==="none"&&storesTangle.sessionLocalEffect?.kind==="candidateOnly"&&storesTangle.sessionLocalEffect?.suggestedTrack==="Supplies"&&storesTangle.sessionLocalEffect?.suggestedDelta===1,"Stores Tangle keeps the expected catalog apply shape");
   assertSmoke(getTravelV2ConsequencesBySource("final-bad-outcome").some((entry)=>entry.id==="consequence-course-slip"),"final-bad-outcome includes Course Slip");
+  for (const followup of newFollowupConsequenceApplies) {
+    const entry=getTravelV2ConsequenceById(followup.id);
+    assertSmoke(entry?.id===followup.id,`${followup.id} resolves from the authored catalog`);
+    assertSmoke(entry.severity===followup.severity,`${followup.id} keeps its authored severity`);
+    assertSmoke(entry.affectedTrack===followup.affectedTrack&&entry.explicitGmApplyEffect?.kind===followup.kind&&entry.explicitGmApplyEffect?.mutation==="none"&&entry.sessionLocalEffect?.kind==="candidateOnly"&&entry.sessionLocalEffect?.suggestedTrack===followup.affectedTrack&&entry.sessionLocalEffect?.suggestedDelta===1,`${followup.id} keeps the expected follow-up catalog apply shape`);
+    assertSmoke(testTravelV2SelectedConsequencePressureApplySupport(entry).supported===false,`${followup.id} is not session-pressure Apply supported`);
+  }
 
   assertSmoke(queue.hasSession && queue.items.length===5,"queue gathers focus, support, hazard, ship scar, and final fallout candidates");
   assertSmoke(queue.pendingCount===5,"all gathered candidates begin pending");
@@ -231,7 +245,44 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
     const duplicate=applyTravelV2SelectedConsequenceToSession(appliedSupported.session,"focus-backlash:f1");
     assertSmoke(!duplicate.ok && duplicate.alreadyApplied===true && duplicate.session===appliedSupported.session,`${supported.id} prevents re-apply`);
   }
-  for (const unsupportedId of ["consequence-arkengine-surge","consequence-lifeveil-flicker","consequence-route-drift","consequence-cargo-shift","consequence-threat-attracted","consequence-hazard-escalation","consequence-ship-scar-candidate"]) {
+  for (const followup of newFollowupConsequenceApplies) {
+    const base={...session(),hazards:{records:[{id:"h1",roundIndex:0,status:"active",name:"Void Shear",playerText:"The lane is still unstable."},{id:"h2",roundIndex:0,status:"active",name:"Ash Wake",playerText:"The wake is still unstable."}]},pressure:{hull:{value:1},strain:{value:2},lifeveil:{value:3},morale:{value:4},supplies:{value:5}},outcomePackage:{locked:true},finalRoute:{id:"route-a"},cargo:{records:[{id:"cargo-a"}]},inventory:{slots:["rations"]},travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:followup.queueKey,status:"pending",mutation:"none",selectedConsequence:{id:followup.id}}]}};
+    const beforePressure=JSON.stringify(base.pressure);
+    const beforeOutcome=JSON.stringify(base.outcomePackage??null);
+    const beforeRoute=JSON.stringify(base.finalRoute??null);
+    const beforeCargo=JSON.stringify(base.cargo??null);
+    const beforeInventory=JSON.stringify(base.inventory??null);
+    const beforeHazards=JSON.stringify(base.hazards??null);
+    const beforeScars=JSON.stringify(base.shipScars??null);
+    const previewItem=prepareTravelV2PendingConsequenceQueue(base).items.find((item)=>item.queueKey===followup.queueKey);
+    const preview=previewItem?.selectedConsequenceApplyPreview;
+    assertSmoke(preview?.hasPreview===true&&preview.consequenceId===followup.id&&preview.title===followup.title&&preview.severity===followup.severity&&preview.affectedTrack===followup.affectedTrack&&preview.source===followup.kind&&preview.mutation==="session-followup-note-only"&&preview.executable===true&&preview.previewOnly===false&&preview.pressureDelta===null,`${followup.id} preview is executable session-followup-note-only with authored severity and mapped track/kind`);
+    assertSmoke(["session-local follow-up note only","route","cargo","hazards","ship scars","actors","items","inventories","chat","journals","combat","scenes","tokens","sockets","compendia","world data"].every((term)=>preview.warningText.includes(term)),`${followup.id} preview warning lists session-local-only and forbidden mutation categories`);
+    const appliedFollowup=applyTravelV2SelectedConsequenceToSession(base,followup.queueKey,{now:"2026-06-26T00:12:00.000Z"});
+    assertSmoke(appliedFollowup.ok&&appliedFollowup.session!==base,`${followup.id} apply succeeds and clones the session`);
+    assertSmoke(appliedFollowup.session.travelV2ConsequenceFollowups?.version===1&&appliedFollowup.session.travelV2ConsequenceFollowups.records.length===1,`${followup.id} creates exactly one follow-up container record`);
+    const record=appliedFollowup.session.travelV2ConsequenceFollowups.records[0];
+    assertSmoke(record.version===1&&record.queueKey===followup.queueKey&&record.mutation==="session-followup-note-only"&&record.consequenceId===followup.id&&record.title===followup.title&&record.kind===followup.kind&&record.affectedTrack===followup.affectedTrack&&record.source===followup.kind&&record.createdAt&&record.createdBy==="gm",`${followup.id} follow-up record has the required shape`);
+    const item=appliedFollowup.queue.items.find((candidate)=>candidate.queueKey===followup.queueKey);
+    assertSmoke(item?.status==="applied"&&item.selectedConsequence?.id===followup.id,`${followup.id} apply marks queue item applied and preserves selected consequence`);
+    assertSmoke(appliedFollowup.record.appliedEffect?.mutation==="session-followup-note-only"&&appliedFollowup.record.appliedEffect.kind===followup.kind&&appliedFollowup.record.appliedEffect.affectedTrack===followup.affectedTrack&&appliedFollowup.record.appliedEffect.consequenceId===followup.id,`${followup.id} appliedEffect stores follow-up apply details`);
+    assertSmoke(appliedFollowup.record.appliedEffect.followupRecord!==record&&JSON.stringify(appliedFollowup.record.appliedEffect.followupRecord)===JSON.stringify(record),`${followup.id} appliedEffect followupRecord is a cloned copy of the appended record`);
+    assertSmoke(JSON.stringify(appliedFollowup.session.pressure)===beforePressure,`${followup.id} apply leaves all pressure values unchanged`);
+    assertSmoke(JSON.stringify(appliedFollowup.session.outcomePackage??null)===beforeOutcome&&JSON.stringify(appliedFollowup.session.finalRoute??null)===beforeRoute,`${followup.id} apply leaves outcome and final route data unchanged`);
+    assertSmoke(JSON.stringify(appliedFollowup.session.cargo??null)===beforeCargo&&JSON.stringify(appliedFollowup.session.inventory??null)===beforeInventory,`${followup.id} apply leaves cargo and inventory data unchanged`);
+    assertSmoke(JSON.stringify(appliedFollowup.session.hazards??null)===beforeHazards&&JSON.stringify(appliedFollowup.session.shipScars??null)===beforeScars,`${followup.id} apply leaves hazards and ship scars unchanged`);
+    assertSmoke(!(["actors","items","world","scene","scenes","combat","combats","token","tokens","chat","chats","journal","journals","encounters"].some((key)=>key in appliedFollowup.session)),`${followup.id} apply adds no forbidden data containers`);
+    assertSmoke(prepareTravelV2PendingConsequenceQueue(appliedFollowup.session).applyStatusSummary.alreadyAppliedCount===1,`${followup.id} increases alreadyAppliedCount after apply`);
+    const duplicate=applyTravelV2SelectedConsequenceToSession(appliedFollowup.session,followup.queueKey,{now:"2026-06-26T00:13:00.000Z"});
+    assertSmoke(!duplicate.ok&&duplicate.alreadyApplied===true&&duplicate.session===appliedFollowup.session&&duplicate.session.travelV2ConsequenceFollowups.records.length===1,`${followup.id} second apply fails closed without appending a duplicate follow-up`);
+  }
+  const newFollowupSummarySession={...session(),hazards:{records:[{id:"h1",roundIndex:0,status:"active",name:"Void Shear",playerText:"The lane is still unstable."},{id:"h2",roundIndex:0,status:"active",name:"Ash Wake",playerText:"The wake is still unstable."}]},travelV2PendingConsequenceQueue:{version:1,records:newFollowupConsequenceApplies.map((entry)=>({queueKey:entry.queueKey,status:"pending",mutation:"none",selectedConsequence:{id:entry.id}}))}};
+  const newFollowupSummary=prepareTravelV2PendingConsequenceQueue(newFollowupSummarySession).applyStatusSummary;
+  assertSmoke(newFollowupSummary.executableCount===5&&newFollowupSummary.sessionPressureOnlyCount===0,"selected new follow-up cards count as executable without increasing sessionPressureOnlyCount");
+  const newFollowupPlayerSafe=JSON.stringify(prepareTravelV2PendingConsequenceQueue(newFollowupSummarySession).playerSafeItems);
+  assertSmoke(!["travelV2ConsequenceFollowups","followupRecord","appliedEffect","selectedConsequenceApplyPreview","applyEffectSummary","sourceRecord","Route Drift","Cargo Shift","Threat Attracted","Hazard Escalation","Ship Scar Candidate"].some((term)=>newFollowupPlayerSafe.includes(term)),"playerSafeItems omit new follow-up records, GM-only apply details, and titles");
+
+  for (const unsupportedId of ["consequence-arkengine-surge","consequence-lifeveil-flicker"]) {
     const unsupportedSession={...session(),pressure:{hull:{value:1},strain:{value:2},lifeveil:{value:3},morale:{value:4},supplies:{value:5}},travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:unsupportedId}}]}};
     const unsupportedPreview=prepareTravelV2PendingConsequenceQueue(unsupportedSession).items.find((item)=>item.queueKey==="focus-backlash:f1")?.selectedConsequenceApplyPreview;
     assertSmoke(unsupportedPreview?.executable===false && unsupportedPreview.previewOnly===true && unsupportedPreview.mutation==="none" && unsupportedPreview.warningText.includes("Manual Apply is not implemented for this consequence type yet"),`${unsupportedId} preview remains non-executable`);

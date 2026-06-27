@@ -16,7 +16,12 @@ const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
 const SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-course-slip": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" }),
   "consequence-signal-echo": Object.freeze({ affectedTrack: "Threat", kind: "encounterSeedCandidate" }),
-  "consequence-stores-tangle": Object.freeze({ affectedTrack: "Supplies", kind: "complicationCandidate" })
+  "consequence-stores-tangle": Object.freeze({ affectedTrack: "Supplies", kind: "complicationCandidate" }),
+  "consequence-route-drift": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" }),
+  "consequence-cargo-shift": Object.freeze({ affectedTrack: "Cargo", kind: "complicationCandidate" }),
+  "consequence-threat-attracted": Object.freeze({ affectedTrack: "Threat", kind: "encounterSeedCandidate" }),
+  "consequence-hazard-escalation": Object.freeze({ affectedTrack: "Hazard", kind: "hazardEscalationCandidate" }),
+  "consequence-ship-scar-candidate": Object.freeze({ affectedTrack: "Ship Scar", kind: "shipScarHandoffCandidate" })
 });
 const SAFE_SESSION_PRESSURE_TRACKS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
 
@@ -97,16 +102,14 @@ function supportedSessionFollowupEffect(catalogEntry) {
   const effect = isPlainObject(catalogEntry.sessionLocalEffect) ? catalogEntry.sessionLocalEffect : {};
   const explicitApply = isPlainObject(catalogEntry.explicitGmApplyEffect) ? catalogEntry.explicitGmApplyEffect : {};
   const affectedTrack = text(catalogEntry.affectedTrack);
-  if (text(catalogEntry.severity) !== "minor") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (text(explicitApply.kind) !== expected.kind || text(explicitApply.mutation) !== "none") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (text(effect.kind) !== "candidateOnly") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (affectedTrack !== expected.affectedTrack || text(effect.suggestedTrack) !== expected.affectedTrack) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (Number(effect.suggestedDelta) !== 1) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   return { supported: true, affectedTrack: expected.affectedTrack, kind: expected.kind };
 }
-function followupApplyWarningText(consequenceId) {
-  if (consequenceId === "consequence-stores-tangle") return "Applies this selected consequence by writing a session-local follow-up note only. Does not mutate inventories, supplies, actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
-  return "Applies this selected consequence by writing a session-local follow-up note only. Does not create or mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
+function followupApplyWarningText() {
+  return "Applies this selected consequence by writing a session-local follow-up note only. Does not mutate route, cargo, hazards, ship scars, actors, items, inventories, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
 }
 function pressureValue(session, pressureTrack) {
   const track = isPlainObject(session?.pressure?.[pressureTrack]) ? session.pressure[pressureTrack] : {};
