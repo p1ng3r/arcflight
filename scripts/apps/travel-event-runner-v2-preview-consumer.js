@@ -2,6 +2,7 @@ import { prepareTravelEventRunnerStateWithTravelV2Preview } from "../helpers/tra
 import { prepareTravelEventEffectApplicationState } from "../helpers/travel-event-runner.js";
 import { prepareTravelEventRunnerV2PreviewPanelState } from "./travel-event-runner-v2-preview-panel.js";
 import { prepareTravelV2CompletedSessionHistoryState } from "../helpers/travel-v2-dev-tools.js";
+import { prepareTravelV2PendingConsequenceQueue } from "../helpers/travel-v2-pending-consequence-queue.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 2;
 
@@ -129,6 +130,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2EventOutcomeApplicationResult: uiState.travelV2EventOutcomeApplicationResult ?? null,
     travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null,
     travelV2PressureRunnerSession: session,
+    pendingConsequenceQueue: prepareTravelV2PendingConsequenceQueue(session),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],

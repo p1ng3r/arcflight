@@ -136,6 +136,40 @@
       {{else}}<p class="arcflight-resolved">No GM attention items. Continue the voyage when ready.</p>{{/if}}
     </section>
 
+    <section class="arcflight-travel-action-queue arcflight-gm-only" aria-label="Pending Consequences">
+      <h3>🔒 Pending Consequences</h3>
+      <p class="arcflight-sheet__hint">{{state.pendingConsequenceQueue.summaryText}}</p>
+      <p class="arcflight-sheet__hint">Pending: {{state.pendingConsequenceQueue.pendingCount}} · Applied/reviewed: {{state.pendingConsequenceQueue.appliedCount}} · Dismissed: {{state.pendingConsequenceQueue.dismissedCount}} · Deferred: {{state.pendingConsequenceQueue.deferredCount}}</p>
+      {{#if state.pendingConsequenceQueue.items}}
+        {{#each state.pendingConsequenceQueue.items}}
+          <article class="arcflight-travel-action-queue__item arcflight-gm-only">
+            <strong>{{title}}</strong>
+            <p class="arcflight-sheet__hint">Severity: {{severity}} · Source: {{sourceType}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}} · Status: {{status}}</p>
+            <p><strong>Public summary:</strong> {{publicSummary}}</p>
+            <p class="arcflight-gm-only"><strong>GM summary:</strong> {{gmSummary}}</p>
+            {{#if catalogSuggestions}}
+              <details>
+                <summary>Catalog suggestions ({{catalogSuggestions.length}})</summary>
+                {{#each catalogSuggestions}}
+                  <article class="arcflight-travel-card arcflight-gm-only">
+                    <strong>{{title}}</strong>
+                    <p class="arcflight-sheet__hint">Severity: {{severity}}</p>
+                    <p><strong>Player-safe:</strong> {{playerSafeSummary}}</p>
+                    <p class="arcflight-gm-only"><strong>Apply summary:</strong> {{applyEffectSummary}}</p>
+                  </article>
+                {{/each}}
+              </details>
+            {{/if}}
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-travel-v2-pending-consequence-status data-queue-key="{{queueKey}}" data-status="applied" title="Marks this candidate in the session queue only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Mark Applied</button>
+              <button type="button" data-arcflight-travel-v2-pending-consequence-status data-queue-key="{{queueKey}}" data-status="dismissed" title="Marks this candidate in the session queue only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Dismiss</button>
+              <button type="button" data-arcflight-travel-v2-pending-consequence-status data-queue-key="{{queueKey}}" data-status="deferred" title="Marks this candidate in the session queue only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Defer</button>
+            </div>
+          </article>
+        {{/each}}
+      {{else}}<p class="arcflight-sheet__hint">No pending consequence candidates.</p>{{/if}}
+    </section>
+
     <div class="arcflight-travel-guided-drawers">
       <details id="arcflight-guided-reaction-console" class="arcflight-card-drawer" tabindex="-1"><summary>🧭 Reaction Console <span>{{state.guidedBridge.drawers.reactions}}</span></summary><p>Resolve Navigator Hard Correction and other pending reactions in the advanced Reaction Console drawer below.</p></details>
       <details id="arcflight-guided-hazard-deck" class="arcflight-card-drawer arcflight-card-stack" tabindex="-1"><summary>⚠️ Hazard Deck <span>{{state.guidedBridge.drawers.hazards}}</span></summary>
