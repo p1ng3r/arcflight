@@ -1,4 +1,4 @@
-import { prepareTravelV2PendingConsequenceQueue, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,8 +15,22 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(queue.items.some((item)=>item.catalogSuggestions.length>0),"queue includes catalog suggestions");
   const runnerState=prepareTravelEventRunnerAppStateWithTravelV2Preview({session:s});
   assertSmoke(runnerState.pendingConsequenceQueue.items.length===5 && runnerState.pendingConsequenceQueue.items[0].requiresGmApply===true,"runner state prepares a GM pending consequence queue from sample session records");
-  const updated=updateTravelV2PendingConsequenceQueueItem(s,"support-backlash:s1","deferred",{now:"2026-06-26T00:01:00.000Z",note:"Handle after next scene."});
-  assertSmoke(updated.ok && updated.session!==s,"status update clones session");
+  const selected=selectTravelV2PendingConsequenceCatalogCard(s,"focus-backlash:f1","consequence-arkengine-surge");
+  assertSmoke(selected.ok && selected.session!==s,"selecting a valid suggested catalog card clones the session");
+  const selectedItem=selected.queue.items.find((item)=>item.queueKey==="focus-backlash:f1");
+  assertSmoke(selectedItem?.selectedConsequence?.id==="consequence-arkengine-surge" && selectedItem.selectedConsequence.title==="Arkengine Surge","selected consequence appears on GM queue item");
+  assertSmoke(selected.record.mutation==="none" && selectedItem.mutation==="none","selection keeps mutation none");
+  assertSmoke(!JSON.stringify(selected.queue.playerSafeItems).includes("selectedConsequence")&&!JSON.stringify(selected.queue.playerSafeItems).includes("Arkengine Surge"),"selected consequence is not exposed through player-safe items");
+  const unknownCard=selectTravelV2PendingConsequenceCatalogCard(s,"focus-backlash:f1","missing-card");
+  assertSmoke(!unknownCard.ok,"selecting an unknown consequence id fails safely");
+  const unknownQueue=selectTravelV2PendingConsequenceCatalogCard(s,"missing:key","consequence-arkengine-surge");
+  assertSmoke(!unknownQueue.ok,"selecting for an unknown queue key fails safely");
+  const predeferred=updateTravelV2PendingConsequenceQueueItem(s,"support-backlash:s1","deferred",{now:"2026-06-26T00:00:30.000Z",note:"Handle after next scene."});
+  const selectedDeferred=selectTravelV2PendingConsequenceCatalogCard(predeferred.session,"support-backlash:s1","consequence-crew-panic");
+  assertSmoke(selectedDeferred.ok && selectedDeferred.record.status==="deferred" && selectedDeferred.record.decisionNote==="Handle after next scene.","selection preserves existing status override and note");
+  const updated=updateTravelV2PendingConsequenceQueueItem(selectedDeferred.session,"support-backlash:s1","deferred",{now:"2026-06-26T00:01:00.000Z",note:"Handle after next scene."});
+  assertSmoke(updated.ok && updated.session!==selectedDeferred.session,"status update clones session");
+  assertSmoke(updated.record.selectedConsequence?.id==="consequence-crew-panic" && updated.queue.items.find((item)=>item.queueKey==="support-backlash:s1")?.selectedConsequence?.id==="consequence-crew-panic","status update preserves selected consequence");
   assertSmoke(updated.queue.deferredCount===1 && updated.queue.pendingCount===4,"defer lifecycle is reflected in queue counts");
   const applied=updateTravelV2PendingConsequenceQueueItem(updated.session,"support-backlash:s1","applied",{now:"2026-06-26T00:02:00.000Z"});
   assertSmoke(applied.ok && applied.queue.appliedCount===1,"apply lifecycle is session-local and reflected in queue counts");
@@ -25,6 +39,6 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(dismissed.ok && dismissed.queue.dismissedCount===1,"dismiss lifecycle is reflected in queue counts");
   const helperSource=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),"travel-v2-pending-consequence-queue.js"),"utf8");
   assertSmoke(!/(\bgame|Actor|ChatMessage|JournalEntry|Combat|Scene|Token|socket|compendium|updateEmbeddedDocuments|createEmbeddedDocuments|deleteEmbeddedDocuments)\s*[.([]/.test(helperSource),"pending consequence queue helper does not call Foundry mutation APIs");
-  return {ok:true,checked:["gather","gm-full-items","sanitize","catalog","defer","apply","dismiss","mutation-none","no-foundry-mutation-api"]};
+  return {ok:true,checked:["gather","gm-full-items","sanitize","catalog","select","select-preserves-status","status-preserves-select","unknown-select-failures","defer","apply","dismiss","mutation-none","no-foundry-mutation-api"]};
 }
 export default runTravelV2PendingConsequenceQueueSmokeChecks;

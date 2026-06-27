@@ -205,6 +205,7 @@ import {
 import {
   TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
   prepareTravelV2PendingConsequenceQueue,
+  selectTravelV2PendingConsequenceCatalogCard,
   updateTravelV2PendingConsequenceQueueItem
 } from "./helpers/travel-v2-pending-consequence-queue.js";
 import {
@@ -488,6 +489,7 @@ function buildArcflightApi() {
     getTravelV2ConsequencesByAffectedTrack,
     getTravelV2ConsequencesBySeverity,
     prepareTravelV2PendingConsequenceQueue,
+    selectTravelV2PendingConsequenceCatalogCard,
     updateTravelV2PendingConsequenceQueueItem,
     CORE_TRAVEL_EVENTS,
     CORE_TRAVEL_EVENT_KEYS,
