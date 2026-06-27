@@ -37,9 +37,13 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "Apply Preview", "template should render selected consequence apply preview block");
   assertIncludes(template, "selectedConsequenceApplyPreview.applyEffectSummary", "template should render GM apply preview summary");
   assertIncludes(template, "selectedConsequenceApplyPreview.warningText", "template should render preview-only warning text");
-  assertIncludes(template, "{{#if selectedConsequenceApplyPreview.executable}}", "template should gate Apply Selected Consequence on executable previews only");
+  assertIncludes(template, "{{#if canApplySelectedConsequence}}", "template should gate Apply Selected Consequence on prepared item apply state");
+  assertSmoke(!template.includes("{{#if selectedConsequenceApplyPreview.executable}}"), "template should not gate Apply Selected Consequence directly only on preview executable");
   assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should add the narrow selected consequence Apply button");
   assertIncludes(template, "Apply Selected Consequence", "template should label the narrow selected consequence Apply button");
+  assertIncludes(template, "Applied Result", "template should render the GM-only applied result block");
+  assertIncludes(template, "appliedEffect.affectedTrack", "template should render applied result affected track");
+  assertIncludes(template, "appliedEffect.pressureTrack", "template should render applied result pressure track");
   assertIncludes(template, `data-status="applied"`, "template should keep Mark Applied as a distinct status-only button");
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");

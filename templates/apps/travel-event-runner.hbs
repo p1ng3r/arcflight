@@ -159,9 +159,18 @@
                     <p class="arcflight-sheet__hint">Severity: {{selectedConsequenceApplyPreview.severity}}{{#if selectedConsequenceApplyPreview.source}} · Effect category: {{selectedConsequenceApplyPreview.source}}{{/if}}{{#if selectedConsequenceApplyPreview.affectedTrack}} · Affected track: {{selectedConsequenceApplyPreview.affectedTrack}}{{/if}}</p>
                     <p><strong>Player-safe summary:</strong> {{selectedConsequenceApplyPreview.playerSafeSummary}}</p>
                     <p class="arcflight-gm-only"><strong>GM apply summary:</strong> {{selectedConsequenceApplyPreview.applyEffectSummary}}</p>
-                    <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{selectedConsequenceApplyPreview.mutation}} · <strong>Executable:</strong> {{#if selectedConsequenceApplyPreview.executable}}yes{{else}}no{{/if}} · <strong>Preview only:</strong> {{#if selectedConsequenceApplyPreview.previewOnly}}yes{{else}}no{{/if}}</p>
+                    <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{selectedConsequenceApplyPreview.mutation}} · <strong>Executable:</strong> {{#unless selectedConsequenceApplyPreview.executable}}no{{else}}yes{{/unless}} · <strong>Preview only:</strong> {{#if selectedConsequenceApplyPreview.previewOnly}}yes{{else}}no{{/if}}</p>
                     <p class="arcflight-sheet__hint"><strong>Warning:</strong> {{selectedConsequenceApplyPreview.warningText}}</p>
-                    {{#if selectedConsequenceApplyPreview.executable}}
+                    {{#if hasAppliedEffect}}
+                      <section class="arcflight-travel-card arcflight-gm-only" aria-label="Selected Consequence Applied Result">
+                        <strong>Applied Result</strong>
+                        <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{appliedEffect.mutation}} · <strong>Affected track:</strong> {{appliedEffect.affectedTrack}} · <strong>Pressure track:</strong> {{appliedEffect.pressureTrack}}</p>
+                        <p class="arcflight-sheet__hint"><strong>Delta:</strong> {{appliedEffect.pressureDelta}} · <strong>Before → After:</strong> {{appliedEffect.beforeValue}} → {{appliedEffect.afterValue}}</p>
+                        <p class="arcflight-sheet__hint"><strong>Applied at:</strong> {{appliedEffect.appliedAt}} · <strong>Applied by:</strong> {{appliedEffect.appliedBy}}</p>
+                        <p><strong>Note:</strong> {{appliedEffect.note}}</p>
+                      </section>
+                    {{/if}}
+                    {{#if canApplySelectedConsequence}}
                       <button type="button" data-arcflight-travel-v2-pending-consequence-apply-selected data-queue-key="{{queueKey}}" title="Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Apply Selected Consequence</button>
                     {{/if}}
                   </section>

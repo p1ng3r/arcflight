@@ -89,6 +89,9 @@ function makeQueueItem(input = {}, overrides = new Map()) {
   const queueKey = input.queueKey;
   const override = overrides.get(queueKey) ?? {};
   const status = statusFrom(override.status ?? input.status);
+  const appliedEffect = cloneData(override.appliedEffect ?? null);
+  const hasAppliedEffect = appliedEffect?.mutation === "session-pressure-only";
+  const selectedConsequenceApplyPreview = prepareTravelV2SelectedConsequenceApplyPreview({ travelV2PendingConsequenceQueue: { records: [override] } }, queueKey, {});
   const item = {
     version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
     queueKey,
@@ -110,7 +113,10 @@ function makeQueueItem(input = {}, overrides = new Map()) {
     catalogSuggestions: cloneData(input.catalogSuggestions ?? []),
     sourceRecord: cloneData(input.sourceRecord ?? null),
     selectedConsequence: selectedConsequenceDisplay(override.selectedConsequence, override.selectedConsequence?.id ? getTravelV2ConsequenceById(override.selectedConsequence.id) : null),
-    selectedConsequenceApplyPreview: prepareTravelV2SelectedConsequenceApplyPreview({ travelV2PendingConsequenceQueue: { records: [override] } }, queueKey, {}),
+    selectedConsequenceApplyPreview,
+    appliedEffect,
+    hasAppliedEffect,
+    canApplySelectedConsequence: selectedConsequenceApplyPreview?.executable === true && !hasAppliedEffect && status !== "applied",
     decidedAt: override.decidedAt ?? null,
     decisionNote: text(override.decisionNote),
     playerSafe: { title: titleFrom(input.title, "Pending Consequence"), summary: text(input.publicSummary) || "A consequence candidate needs GM review.", status }
