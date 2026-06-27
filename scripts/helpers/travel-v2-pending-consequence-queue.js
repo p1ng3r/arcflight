@@ -11,7 +11,9 @@ const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1 })
 });
 const SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES = Object.freeze({
-  "consequence-course-slip": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" })
+  "consequence-course-slip": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" }),
+  "consequence-signal-echo": Object.freeze({ affectedTrack: "Threat", kind: "encounterSeedCandidate" }),
+  "consequence-stores-tangle": Object.freeze({ affectedTrack: "Supplies", kind: "complicationCandidate" })
 });
 const SAFE_SESSION_PRESSURE_TRACKS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
 
@@ -99,6 +101,10 @@ function supportedSessionFollowupEffect(catalogEntry) {
   if (Number(effect.suggestedDelta) !== 1) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   return { supported: true, affectedTrack: expected.affectedTrack, kind: expected.kind };
 }
+function followupApplyWarningText(consequenceId) {
+  if (consequenceId === "consequence-stores-tangle") return "Applies this selected consequence by writing a session-local follow-up note only. Does not mutate inventories, supplies, actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
+  return "Applies this selected consequence by writing a session-local follow-up note only. Does not create or mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
+}
 function pressureValue(session, pressureTrack) {
   const track = isPlainObject(session?.pressure?.[pressureTrack]) ? session.pressure[pressureTrack] : {};
   const value = Number(track.value);
@@ -144,7 +150,7 @@ export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey
     executable: executableEffect.supported === true,
     previewOnly: executableEffect.supported !== true,
     pressureDelta: supportedEffect.pressureDelta ?? null,
-    warningText: supportedEffect.supported ? "Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : supportedFollowupEffect.supported ? "Applies this selected consequence by writing a session-local follow-up note only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : `${TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING} ${supportedEffect.reason}`
+    warningText: supportedEffect.supported ? "Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data." : supportedFollowupEffect.supported ? followupApplyWarningText(catalogEntry.id) : `${TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING} ${supportedEffect.reason}`
   };
 }
 function makeQueueItem(input = {}, overrides = new Map()) {
@@ -267,7 +273,7 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
       version: 1,
       queueKey,
       consequenceId: catalogEntry.id,
-      title: titleFrom(catalogEntry.title, "Course Slip"),
+      title: titleFrom(catalogEntry.title, "Follow-up Note"),
       kind: supportedFollowupEffect.kind,
       affectedTrack: supportedFollowupEffect.affectedTrack,
       summary: text(catalogEntry.playerSafeSummary) || text(catalogEntry.applyEffectSummary) || text(explicitApply.summary),
