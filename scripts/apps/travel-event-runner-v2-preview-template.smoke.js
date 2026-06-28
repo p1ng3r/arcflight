@@ -69,6 +69,13 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should wire the manual selected consequence apply control");
   assertIncludes(template, "Apply Selected Consequence", "template should label the executable selected consequence apply button");
   assertIncludes(template, "Apply All Executable Selected", "template should label the GM-only batch selected consequence apply button");
+  assertIncludes(template, "Clear All Selected", "template should label the GM-only batch clear selected consequence button");
+  assertIncludes(template, "Clear Selection", "template should label the GM-only per-card clear selected consequence button");
+  assertIncludes(template, "clearSelectionSummary", "template should reference clearSelectionSummary");
+  assertIncludes(template, "clearSelectionSummary.clearableCount", "template should reference clearSelectionSummary.clearableCount");
+  assertIncludes(template, `data-action="arcflight-travel-v2-clear-all-selected-consequences"`, "template should wire the GM-only clear all selected action");
+  assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-clear-selection", "template should wire the GM-only per-card clear selection action");
+  assertIncludes(template, "canClearSelectedConsequence", "template should gate per-card clear selection on prepared clearability");
   assertIncludes(template, "Select All Single Suggestions", "template should label the GM-only single-suggestion selection button");
   assertIncludes(template, "singleSuggestionSelectionSummary", "template should reference singleSuggestionSelectionSummary");
   assertIncludes(template, "singleSuggestionSelectionSummary.eligibleCount", "template should reference singleSuggestionSelectionSummary.eligibleCount");
