@@ -146,16 +146,33 @@
         <p class="arcflight-sheet__hint">Unsupported: {{state.pendingConsequenceQueue.applyStatusSummary.unsupportedCount}} · Missing Selection: {{state.pendingConsequenceQueue.applyStatusSummary.missingSelectionCount}} · Missing Catalog: {{state.pendingConsequenceQueue.applyStatusSummary.missingCatalogCount}} · Session Pressure Only: {{state.pendingConsequenceQueue.applyStatusSummary.sessionPressureOnlyCount}}</p>
         <button type="button" data-action="arcflight-travel-v2-apply-all-selected-consequences" {{#unless state.pendingConsequenceQueue.applyStatusSummary.executableCount}}disabled{{/unless}} title="Applies all currently executable selected consequences to the runner session only. Does not mutate actors, items, inventories, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Apply All Executable Selected</button>
       </section>
-      {{#if state.session.travelV2ConsequenceFollowups.records}}
+      {{#if state.consequenceFollowupReview.hasRecords}}
         <section class="arcflight-travel-card arcflight-gm-only" aria-label="Follow-up Notes">
           <strong>Follow-up Notes</strong>
-          {{#each state.session.travelV2ConsequenceFollowups.records}}
-            <article class="arcflight-travel-action-queue__item arcflight-gm-only">
-              <strong>{{title}}</strong>
-              <p class="arcflight-sheet__hint">Affected track: {{affectedTrack}} · Kind: {{kind}} · Mutation: {{mutation}}</p>
-              <p>{{summary}}</p>
-              <p class="arcflight-sheet__hint">Source: {{source}} · Created: {{createdAt}} · By: {{createdBy}}</p>
-            </article>
+          <p class="arcflight-sheet__hint">Total: {{state.consequenceFollowupReview.totalCount}} · Open: {{state.consequenceFollowupReview.openCount}} · Reviewed: {{state.consequenceFollowupReview.reviewedCount}} · Deferred: {{state.consequenceFollowupReview.deferredCount}} · Resolved: {{state.consequenceFollowupReview.resolvedCount}}</p>
+          {{#each state.consequenceFollowupReview.groups}}
+            {{#if records}}
+              <section class="arcflight-travel-card arcflight-gm-only" aria-label="Follow-up Notes {{label}}">
+                <strong>{{label}}</strong>
+                <p class="arcflight-sheet__hint">{{count}} note{{#unless (eq count 1)}}s{{/unless}}</p>
+                {{#each records}}
+                  <article class="arcflight-travel-action-queue__item arcflight-gm-only">
+                    <strong>{{title}}</strong>
+                    <p class="arcflight-sheet__hint">Affected track: {{affectedTrack}} · Kind: {{kind}} · Mutation: {{mutation}}</p>
+                    <p class="arcflight-sheet__hint">Status: {{statusLabel}}{{#if statusUpdatedAt}} · Status updated: {{statusUpdatedAt}}{{/if}}{{#if statusUpdatedBy}} · By: {{statusUpdatedBy}}{{/if}}</p>
+                    {{#if statusNote}}<p class="arcflight-sheet__hint">Status note: {{statusNote}}</p>{{/if}}
+                    <p>{{summary}}</p>
+                    <p class="arcflight-sheet__hint">Source: {{source}} · Created: {{createdAt}} · By: {{createdBy}}</p>
+                    <div class="arcflight-travel-action-queue__actions arcflight-gm-only">
+                      <button type="button" data-arcflight-travel-v2-followup-note-status data-followup-key="{{queueKey}}" data-status="open">Mark Open</button>
+                      <button type="button" data-arcflight-travel-v2-followup-note-status data-followup-key="{{queueKey}}" data-status="reviewed">Mark Reviewed</button>
+                      <button type="button" data-arcflight-travel-v2-followup-note-status data-followup-key="{{queueKey}}" data-status="deferred">Defer</button>
+                      <button type="button" data-arcflight-travel-v2-followup-note-status data-followup-key="{{queueKey}}" data-status="resolved">Resolve</button>
+                    </div>
+                  </article>
+                {{/each}}
+              </section>
+            {{/if}}
           {{/each}}
         </section>
       {{/if}}

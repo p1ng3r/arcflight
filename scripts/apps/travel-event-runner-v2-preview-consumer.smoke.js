@@ -100,17 +100,24 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       completedAt: "2026-06-26T00:00:00.000Z",
       event: { rounds: [{ roundNumber: 1 }] },
       travelV2FocusBacklashRecords: { records: [{ id: "f1", roundIndex: 0, stationName: "Engineer", status: "pending", publicRiskText: "The arkengine shudders.", publicBacklashPreviewText: "Review Strain pressure." }] },
-      travelV2PendingConsequenceQueue: { version: 1, records: [{ queueKey: "focus-backlash:f1", status: "pending", mutation: "none", selectedConsequence: { id: "consequence-arkengine-whine" } }] }
+      travelV2PendingConsequenceQueue: { version: 1, records: [{ queueKey: "focus-backlash:f1", status: "pending", mutation: "none", selectedConsequence: { id: "consequence-arkengine-whine" } }] },
+      travelV2ConsequenceFollowups: { version: 1, records: [{ queueKey: "followup:1", title: "Legacy", summary: "Review later." }, { queueKey: "followup:2", title: "Reviewed", status: "reviewed" }, { queueKey: "followup:3", title: "Deferred", status: "deferred" }, { queueKey: "followup:4", title: "Resolved", status: "resolved" }] }
     }
   });
   assertSmoke(queueState.pendingConsequenceQueue.applyStatusSummary.executableCount === 1, "app state exposes applyStatusSummary executableCount for the batch Apply button");
   assertSmoke(Array.isArray(queueState.pendingConsequenceQueue.gmItemGroups), "app state exposes pendingConsequenceQueue.gmItemGroups");
   assertSmoke(queueState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="readyToApply")?.count===1, "app state exposes readyToApply count when an executable selected item exists");
+  assertSmoke(queueState.consequenceFollowupReview?.hasRecords===true, "app state exposes consequenceFollowupReview.hasRecords");
+  assertSmoke(queueState.consequenceFollowupReview.openCount===1 && queueState.consequenceFollowupReview.reviewedCount===1 && queueState.consequenceFollowupReview.deferredCount===1 && queueState.consequenceFollowupReview.resolvedCount===1, "app state exposes follow-up review status counts");
   const needsSelectionState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { key:"consumer-queue-unselected", status:"completed", completed:true, event:{rounds:[{roundNumber:1}]}, travelV2FocusBacklashRecords:{records:[{id:"f2",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders."}]} } });
   assertSmoke(needsSelectionState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="needsSelection")?.count===1, "app state exposes needsSelection count when an unselected item exists");
   const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);
-  assertSmoke(!playerSafeQueue.includes("gmItemGroups") && !playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("applyEffectSummary") && !playerSafeQueue.includes("sourceRecord") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations"), "player-safe state does not expose batch applied summaries or GM-only apply details");
+  assertSmoke(!playerSafeQueue.includes("gmItemGroups") && !playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("applyEffectSummary") && !playerSafeQueue.includes("sourceRecord") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations") && !playerSafeQueue.includes("consequenceFollowupReview") && !playerSafeQueue.includes("travelV2ConsequenceFollowups") && !playerSafeQueue.includes("followupRecord"), "player-safe state does not expose batch applied summaries or GM-only apply details");
   const runnerSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "travel-event-runner.js"), "utf8");
+  assertSmoke(runnerSource.includes("updateTravelV2ConsequenceFollowupStatus"), "runner imports updateTravelV2ConsequenceFollowupStatus");
+  assertSmoke(runnerSource.includes("[data-arcflight-travel-v2-followup-note-status]"), "RUNNER_CLICK_SELECTOR includes follow-up note status selector");
+  assertSmoke(runnerSource.includes("updateTravelV2ConsequenceFollowupStatus(this.session, followupKey, status)"), "runner handler calls updateTravelV2ConsequenceFollowupStatus");
+  assertSmoke(!runnerSource.includes("createJournalEntry") && !runnerSource.includes("socket.emit") && !runnerSource.includes("fromCompendium") && !runnerSource.includes("game.settings.set"), "runner source does not add new journal/socket/compendium/world mutation calls for follow-up note status controls");
   assertSmoke(runnerSource.includes("applyAllExecutableTravelV2SelectedConsequencesToSession"), "runner imports or references the batch selected consequence helper");
   assertSmoke(runnerSource.includes(`[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`), "RUNNER_CLICK_SELECTOR includes the batch selected consequence data-action selector");
   assertSmoke(runnerSource.includes(`target.dataset.action === "arcflight-travel-v2-apply-all-selected-consequences"`), "runner keeps the exact batch selected consequence handler condition");

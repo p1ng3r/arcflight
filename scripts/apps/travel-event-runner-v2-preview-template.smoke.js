@@ -87,7 +87,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "Apply Status", "template should render the GM-only apply status summary title");
   for (const field of ["totalItems","selectedCount","executableCount","alreadyAppliedCount","unsupportedCount","missingSelectionCount","missingCatalogCount","sessionPressureOnlyCount"]) assertIncludes(template, `pendingConsequenceQueue.applyStatusSummary.${field}`, `template should reference apply status summary ${field}`);
   assertIncludes(template, "Follow-up Notes", "template should render the GM-only follow-up notes title");
-  assertIncludes(template, "state.session.travelV2ConsequenceFollowups.records", "template should read session-local follow-up records directly");
+  assertIncludes(template, "state.consequenceFollowupReview", "template should read prepared follow-up review state");
+  for (const text of ["Open","Reviewed","Deferred","Resolved","Mark Open","Mark Reviewed","Defer","Resolve","data-arcflight-travel-v2-followup-note-status","data-followup-key",`data-status="open"`,`data-status="reviewed"`,`data-status="deferred"`,`data-status="resolved"`]) assertIncludes(template, text, `template should include follow-up note status control text ${text}`);
   for (const field of ["title","affectedTrack","kind","mutation","summary","source","createdAt","createdBy"]) assertIncludes(template, `{{${field}}}`, `template should render follow-up ${field}`);
   assertIncludes(template, "aria-label=\"Follow-up Notes\"", "template should include a follow-up notes panel");
   assertSmoke(template.includes("aria-label=\"Follow-up Notes\"") && template.includes("arcflight-gm-only"), "follow-up panel should include arcflight-gm-only");
