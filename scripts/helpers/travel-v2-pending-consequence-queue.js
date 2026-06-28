@@ -6,12 +6,14 @@ const QUEUE_STATUSES = Object.freeze(["pending", "applied", "dismissed", "deferr
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING = "Preview only. This does not apply pressure, ship scars, actor/item changes, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED = "Manual Apply is not implemented for this consequence type yet.";
 const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
-  "consequence-hull-stress": Object.freeze({ affectedTrack: "Hull", pressureTrack: "hull", pressureDelta: 1 }),
-  "consequence-crew-panic": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1 }),
-  "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1 }),
-  "consequence-arkengine-whine": Object.freeze({ affectedTrack: "Strain", pressureTrack: "strain", pressureDelta: 1 }),
-  "consequence-veil-draft": Object.freeze({ affectedTrack: "Lifeveil", pressureTrack: "lifeveil", pressureDelta: 1 }),
-  "consequence-watch-fatigue": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1 })
+  "consequence-hull-stress": Object.freeze({ affectedTrack: "Hull", pressureTrack: "hull", pressureDelta: 1, severity: "minor" }),
+  "consequence-crew-panic": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1, severity: "minor" }),
+  "consequence-supplies-delay": Object.freeze({ affectedTrack: "Supplies", pressureTrack: "supplies", pressureDelta: 1, severity: "minor" }),
+  "consequence-arkengine-whine": Object.freeze({ affectedTrack: "Strain", pressureTrack: "strain", pressureDelta: 1, severity: "minor" }),
+  "consequence-veil-draft": Object.freeze({ affectedTrack: "Lifeveil", pressureTrack: "lifeveil", pressureDelta: 1, severity: "minor" }),
+  "consequence-watch-fatigue": Object.freeze({ affectedTrack: "Morale", pressureTrack: "morale", pressureDelta: 1, severity: "minor" }),
+  "consequence-arkengine-surge": Object.freeze({ affectedTrack: "Strain", pressureTrack: "strain", pressureDelta: 1, severity: "major" }),
+  "consequence-lifeveil-flicker": Object.freeze({ affectedTrack: "Lifeveil", pressureTrack: "lifeveil", pressureDelta: 1, severity: "major" })
 });
 const SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-course-slip": Object.freeze({ affectedTrack: "Route", kind: "finalOutcomeCandidate" }),
@@ -84,7 +86,7 @@ function supportedSessionPressureEffect(catalogEntry) {
   const affectedTrack = text(catalogEntry.affectedTrack);
   const suggestedTrack = text(effect.suggestedTrack);
   const pressureDelta = Number(effect.suggestedDelta);
-  if (text(catalogEntry.severity) !== "minor") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
+  if (text(catalogEntry.severity) !== expected.severity) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (text(explicitApply.kind) !== "pressureCandidate" || text(explicitApply.mutation) !== "none") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (text(effect.kind) !== "candidateOnly") return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
   if (affectedTrack !== expected.affectedTrack || suggestedTrack !== expected.affectedTrack) return { supported: false, reason: TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED };
