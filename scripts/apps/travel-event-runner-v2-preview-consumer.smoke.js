@@ -1,4 +1,7 @@
 import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   prepareTravelEventRunnerAppStateWithTravelV2Preview,
   TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION
@@ -87,6 +90,26 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(rolledState.guidedBridge.nextRequiredAction.title, "Round Pressure Ready", "rolled/skipped stations should unlock pressure review");
   assertSmoke(rolledState.guidedBridge.nextRequiredAction.buttons.some((button) => button.action === "round-apply" && button.label === "Apply Suggested Pressure"), "pressure-ready queue should expose real apply button");
   assertEqual(rolledState.stations.find((station) => station.stationKey === "engineer")?.stationStateLabel, "Skipped / Not Participating", "skipped stations should render a clear station state label");
+
+
+  const queueState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session: {
+      key: "consumer-queue",
+      status: "completed",
+      completed: true,
+      completedAt: "2026-06-26T00:00:00.000Z",
+      event: { rounds: [{ roundNumber: 1 }] },
+      travelV2FocusBacklashRecords: { records: [{ id: "f1", roundIndex: 0, stationName: "Engineer", status: "pending", publicRiskText: "The arkengine shudders.", publicBacklashPreviewText: "Review Strain pressure." }] },
+      travelV2PendingConsequenceQueue: { version: 1, records: [{ queueKey: "focus-backlash:f1", status: "pending", mutation: "none", selectedConsequence: { id: "consequence-arkengine-whine" } }] }
+    }
+  });
+  assertSmoke(queueState.pendingConsequenceQueue.applyStatusSummary.executableCount === 1, "app state exposes applyStatusSummary executableCount for the batch Apply button");
+  const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);
+  assertSmoke(!playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations"), "player-safe state does not expose batch applied summaries or GM-only apply details");
+  const runnerSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "travel-event-runner.js"), "utf8");
+  assertSmoke(runnerSource.includes("applyAllExecutableTravelV2SelectedConsequencesToSession"), "runner imports or references the batch selected consequence helper");
+  assertSmoke(runnerSource.includes(`[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`), "RUNNER_CLICK_SELECTOR includes the batch selected consequence data-action selector");
+  assertSmoke(runnerSource.includes(`target.dataset.action === "arcflight-travel-v2-apply-all-selected-consequences"`), "runner keeps the exact batch selected consequence handler condition");
 
   return {
     ok: true,

@@ -1,4 +1,4 @@
-import { applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { getTravelV2ConsequenceById, getTravelV2ConsequenceCatalog, getTravelV2ConsequencesBySource } from "../../data/travel-events/travel-v2-consequence-catalog.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
@@ -325,6 +325,31 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(missingPreview?.hasPreview===true && missingPreview.executable===false && missingPreview.warningText.includes("Catalog card could not be resolved"),"missing selected catalog id fails safely with non-executable warning");
   const dismissed=updateTravelV2PendingConsequenceQueueItem(applied.session,"focus-backlash:f1","dismissed",{now:"2026-06-26T00:03:00.000Z"});
   assertSmoke(dismissed.ok && dismissed.queue.dismissedCount===1,"dismiss lifecycle is reflected in queue counts");
+
+  const batchBase={...session(),hazards:{records:[{id:"h1",roundIndex:0,status:"active",name:"Void Shear",playerText:"The lane is still unstable."},{id:"h2",roundIndex:0,status:"active",name:"Unsupported Wake",playerText:"The wake is strange."}]},pressure:{hull:{value:1},strain:{value:2},lifeveil:{value:3},morale:{value:4},supplies:{value:5}},travelV2PendingConsequenceQueue:{version:1,records:[
+    {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-whine"}},
+    {queueKey:"final-outcome:failure:0",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-course-slip"}},
+    {queueKey:"support-backlash:s1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-not-supported",title:"Unsupported Card"}},
+    {queueKey:"hazard:h1",status:"pending",mutation:"none"},
+    {queueKey:"hazard:h2",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-not-supported",title:"Unsupported Card"}},
+    {queueKey:"ship-scar:scar1",status:"applied",mutation:"session-pressure-only",selectedConsequence:{id:"consequence-hull-stress"},appliedEffect:{mutation:"session-pressure-only",consequenceId:"consequence-hull-stress"}}
+  ]}};
+  const batchDeferred=updateTravelV2PendingConsequenceQueueItem(batchBase,"support-backlash:s1","deferred",{now:"2026-06-26T00:14:00.000Z"});
+  const batchResult=applyAllExecutableTravelV2SelectedConsequencesToSession(batchDeferred.session,{now:"2026-06-26T00:15:00.000Z"});
+  assertSmoke(batchResult.ok&&batchResult.appliedCount===2&&batchResult.attemptedCount===2,"batch Apply applies only eligible executable pending selected pressure and follow-up cards");
+  assertSmoke(batchResult.applied.some((entry)=>entry.queueKey==="focus-backlash:f1"&&entry.mutation==="session-pressure-only")&&batchResult.applied.some((entry)=>entry.queueKey==="final-outcome:failure:0"&&entry.mutation==="session-followup-note-only"),"batch Apply summaries include pressure and follow-up mutations");
+  assertSmoke(batchResult.appliedEffectMutations["session-pressure-only"]===1&&batchResult.appliedEffectMutations["session-followup-note-only"]===1,"batch Apply mutation summary counts pressure and follow-up effects");
+  assertSmoke(batchResult.session.pressure.strain.value===3&&batchResult.session.pressure.hull.value===1&&batchResult.session.pressure.morale.value===4,"batch Apply increments only the eligible mapped pressure track");
+  assertSmoke(batchResult.session.travelV2ConsequenceFollowups.records.length===1&&batchResult.session.travelV2ConsequenceFollowups.records[0].consequenceId==="consequence-course-slip","batch Apply appends the eligible follow-up exactly once");
+  assertSmoke(batchResult.skipped.some((entry)=>entry.queueKey==="support-backlash:s1"&&entry.reason.includes("status is deferred"))&&batchResult.skipped.some((entry)=>entry.queueKey==="hazard:h1"&&entry.reason.includes("No selected"))&&batchResult.skipped.some((entry)=>entry.queueKey==="ship-scar:scar1"&&entry.reason.includes("status is applied"))&&batchResult.skipped.some((entry)=>entry.queueKey==="hazard:h2"&&entry.reason.includes("preview-only")),"batch Apply records skipped deferred, missing-selection, and already-applied items");
+  const batchRepeat=applyAllExecutableTravelV2SelectedConsequencesToSession(batchResult.session,{now:"2026-06-26T00:16:00.000Z"});
+  assertSmoke(!batchRepeat.ok&&batchRepeat.appliedCount===0&&batchRepeat.session===batchResult.session&&batchResult.session.travelV2ConsequenceFollowups.records.length===1&&batchResult.session.pressure.strain.value===3,"repeated batch Apply is a no-op and does not duplicate effects");
+  assertSmoke(!(["actors","items","inventory","world","scene","scenes","combat","combats","token","tokens","chat","chats","journal","journals"].some((key)=>key in batchResult.session)),"batch Apply adds no actor/item/inventory/world/scene/combat/token/chat/journal containers");
+  const batchPlayerSafe=JSON.stringify(batchResult.queue.playerSafeItems);
+  assertSmoke(!["appliedEffect","selectedConsequenceApplyPreview","followupRecord","travelV2ConsequenceFollowups","Arkengine Whine","Course Slip"].some((term)=>batchPlayerSafe.includes(term)),"batch Apply playerSafeItems omit applied effects, previews, follow-ups, and selected consequence titles");
+  const noEligible=applyAllExecutableTravelV2SelectedConsequencesToSession(s,{now:"2026-06-26T00:17:00.000Z"});
+  assertSmoke(!noEligible.ok&&noEligible.attemptedCount===0&&noEligible.appliedCount===0&&noEligible.session===s,"batch Apply returns ok false and original session identity when no eligible items exist");
+
   const helperSource=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),"travel-v2-pending-consequence-queue.js"),"utf8");
   assertSmoke(!/(\bgame|Actor|ChatMessage|JournalEntry|Combat|Scene|Token|socket|compendium|updateEmbeddedDocuments|createEmbeddedDocuments|deleteEmbeddedDocuments)\s*[.([]/.test(helperSource),"pending consequence queue helper does not call Foundry mutation APIs");
   return {ok:true,checked:["course-slip-followup","gather","gm-full-items","sanitize","catalog","select","select-preserves-status","selected-preview","preview-warning","status-preserves-select","unknown-select-failures","defer","mark-applied","dismiss","mutation-none","manual-apply","idempotency","fail-closed","suggestion-categories","minor-pressure-suggestions","dedupe","no-foundry-mutation-api"]};
