@@ -3,6 +3,8 @@ import { getTravelV2ConsequenceById, getTravelV2ConsequencesBySource } from "../
 
 export const TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION = 1;
 const QUEUE_STATUSES = Object.freeze(["pending", "applied", "dismissed", "deferred"]);
+const FOLLOWUP_STATUSES = Object.freeze(["open", "reviewed", "deferred", "resolved"]);
+const FOLLOWUP_STATUS_LABELS = Object.freeze({ open: "Open", reviewed: "Reviewed", deferred: "Deferred", resolved: "Resolved" });
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_APPLY_PREVIEW_WARNING = "Preview only. This does not apply pressure, ship scars, actor/item changes, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.";
 export const TRAVEL_V2_SELECTED_CONSEQUENCE_MANUAL_APPLY_UNSUPPORTED = "Manual Apply is not implemented for this consequence type yet.";
 const SUPPORTED_SESSION_PRESSURE_CONSEQUENCE_APPLIES = Object.freeze({
@@ -33,6 +35,7 @@ function recordsFrom(container) { if (Array.isArray(container)) return container
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function titleFrom(value, fallback = "Consequence") { return text(value) || fallback; }
 function statusFrom(value) { return QUEUE_STATUSES.includes(value) ? value : "pending"; }
+function followupStatusFrom(value) { return FOLLOWUP_STATUSES.includes(value) ? value : "open"; }
 function queueOverrides(session = {}) {
   const records = recordsFrom(session.travelV2PendingConsequenceQueue);
   return new Map(records.filter(isPlainObject).map((record) => [record.queueKey, record]));
@@ -277,6 +280,53 @@ export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
   const gmItemGroups = prepareGmItemGroups(ordered);
   return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, gmItemGroups, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
 }
+export function prepareTravelV2ConsequenceFollowupReview(session) {
+  const emptyGroups = FOLLOWUP_STATUSES.map((key) => ({ key, label: FOLLOWUP_STATUS_LABELS[key], count: 0, records: [] }));
+  if (!isPlainObject(session)) return { hasRecords: false, totalCount: 0, openCount: 0, reviewedCount: 0, deferredCount: 0, resolvedCount: 0, records: [], groups: emptyGroups };
+  const records = recordsFrom(session.travelV2ConsequenceFollowups).filter(isPlainObject).map((record) => {
+    const status = followupStatusFrom(record.status);
+    return { ...cloneData(record), status, statusLabel: FOLLOWUP_STATUS_LABELS[status] };
+  });
+  const groups = FOLLOWUP_STATUSES.map((key) => {
+    const groupRecords = records.filter((record) => record.status === key);
+    return { key, label: FOLLOWUP_STATUS_LABELS[key], count: groupRecords.length, records: groupRecords };
+  });
+  const count = (status) => groups.find((group) => group.key === status)?.count ?? 0;
+  return {
+    hasRecords: records.length > 0,
+    totalCount: records.length,
+    openCount: count("open"),
+    reviewedCount: count("reviewed"),
+    deferredCount: count("deferred"),
+    resolvedCount: count("resolved"),
+    records,
+    groups
+  };
+}
+
+export function updateTravelV2ConsequenceFollowupStatus(session, followupRecordKey, status, options = {}) {
+  if (!isPlainObject(session)) return { ok: false, session, error: "Travel v2 runner session is required." };
+  const queueKey = text(followupRecordKey);
+  if (!queueKey) return { ok: false, session, error: "Follow-up note record key is required." };
+  const nextStatus = text(status);
+  if (!FOLLOWUP_STATUSES.includes(nextStatus)) return { ok: false, session, error: "Follow-up note status must be open, reviewed, deferred, or resolved." };
+  const currentFollowups = isPlainObject(session.travelV2ConsequenceFollowups) ? session.travelV2ConsequenceFollowups : {};
+  const sourceRecords = recordsFrom(currentFollowups).filter(isPlainObject);
+  if (!sourceRecords.some((record) => record.queueKey === queueKey)) return { ok: false, session, error: "Follow-up note record was not found." };
+  const statusUpdatedAt = timestamp(options);
+  let updatedRecord = null;
+  const records = sourceRecords.map((record) => {
+    if (record.queueKey !== queueKey) return cloneData(record);
+    updatedRecord = { ...cloneData(record), status: nextStatus, statusUpdatedAt, statusUpdatedBy: "gm" };
+    const note = text(options.note);
+    if (note) updatedRecord.statusNote = note;
+    return updatedRecord;
+  });
+  const nextFollowups = { ...cloneData(currentFollowups), records };
+  const nextSession = { ...cloneData(session), travelV2ConsequenceFollowups: nextFollowups };
+  return { ok: true, session: nextSession, record: updatedRecord, records };
+}
+
 function timestamp(options = {}) { const value = options.decidedAt ?? options.now; if (value instanceof Date) return value.toISOString(); if (typeof value === "string" && value.trim()) return value.trim(); return new Date().toISOString(); }
 export function updateTravelV2PendingConsequenceQueueItem(session, queueKey, status, options = {}) {
   if (!isPlainObject(session)) return { ok: false, session, error: "Travel v2 runner session is required." };
@@ -320,7 +370,8 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
       source: text(preview?.source) || text(explicitApply.kind),
       mutation: "session-followup-note-only",
       createdAt,
-      createdBy: "gm"
+      createdBy: "gm",
+      status: "open"
     };
     const appliedRecord = {
       queueKey,

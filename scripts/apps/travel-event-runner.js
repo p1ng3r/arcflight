@@ -9,7 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
-import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
+import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers, queueTravelPlayerMissionBoardRefreshToPlayers } from "./travel-player-station-card.js";
@@ -108,6 +108,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
+  "[data-arcflight-travel-v2-followup-note-status]",
   "[data-arcflight-travel-v2-hazard-draw]",
   "[data-arcflight-travel-v2-hazard-reveal]",
   "[data-arcflight-travel-v2-hazard-hold]",
@@ -653,6 +654,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-followup-note-status")) return this.#updateTravelV2ConsequenceFollowupStatus(target);
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-draw")) return this.#drawTravelV2Hazard();
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-reveal")) return this.#updateTravelV2Hazard(target, "revealed");
     if (target.hasAttribute("data-arcflight-travel-v2-hazard-hold")) return this.#updateTravelV2Hazard(target, "held");
@@ -1197,6 +1199,28 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     } else {
       this.statusMessage = result.blockedReasons?.[0] ?? result.error ?? "Travel v2 actor application was blocked.";
     }
+    return this.render(true);
+  }
+
+
+  async #updateTravelV2ConsequenceFollowupStatus(target) {
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can update follow-up note status.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const followupKey = target.dataset.followupKey ?? "";
+    const status = target.dataset.status ?? "";
+    const updated = updateTravelV2ConsequenceFollowupStatus(this.session, followupKey, status);
+    if (!updated.ok) {
+      this.statusMessage = updated.error ?? "Follow-up note status was not updated.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.session = updated.session;
+    this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+    this.statusMessage = `Follow-up note marked ${status} in session-local note status only; no actor, item, inventory, chat, journal, combat, scene, token, socket, compendium, or world data was mutated.`;
+    ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }
 
