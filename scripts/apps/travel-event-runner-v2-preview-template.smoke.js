@@ -68,6 +68,9 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertSmoke(!template.includes("{{#if selectedConsequenceApplyPreview.executable}}"), "template should not gate Apply Selected Consequence directly only on preview executable");
   assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should wire the manual selected consequence apply control");
   assertIncludes(template, "Apply Selected Consequence", "template should label the executable selected consequence apply button");
+  assertIncludes(template, "Apply All Executable Selected", "template should label the GM-only batch selected consequence apply button");
+  assertIncludes(template, `data-action="arcflight-travel-v2-apply-all-selected-consequences"`, "template should wire the GM-only batch selected consequence apply action");
+  assertSmoke(template.indexOf("arcflight-gm-only") < template.indexOf("Apply All Executable Selected"), "batch selected consequence apply button should be inside/near GM-only markup");
   assertIncludes(template, "Applied Result", "template should render the GM-only applied result block");
   assertIncludes(template, "Follow-up Result", "template should render the follow-up applied result label");
   assertIncludes(template, "session-followup-note-only", "template should branch on session-local follow-up note results");
@@ -96,7 +99,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
     "Create Encounter",
     "Create Scene",
     "Create Combat",
-    "Apply All",
+    "Apply Unsupported",
+    "Force Apply",
+    "Apply Preview Only",
+    "Apply Player",
     "Undo Follow-up",
     `data-action="apply-followup"`,
     `data-action="clear-followup"`,
@@ -106,7 +112,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
     "data-arcflight-create-combat",
     "data-arcflight-create-scene"
   ]) assertSmoke(!template.includes(forbidden), `template should not include follow-up mutation/control text ${forbidden}`);
-  for (const forbidden of ["Apply All","Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
+  for (const forbidden of ["Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`,`data-action="arcflight-travel-v2-force-apply"`,`data-action="arcflight-travel-v2-apply-unsupported"`,`data-action="arcflight-travel-v2-apply-preview-only"`,`data-action="arcflight-travel-v2-player-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");

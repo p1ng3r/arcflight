@@ -144,6 +144,7 @@
         <strong>Apply Status</strong>
         <p class="arcflight-sheet__hint">Total: {{state.pendingConsequenceQueue.applyStatusSummary.totalItems}} · Selected: {{state.pendingConsequenceQueue.applyStatusSummary.selectedCount}} · Executable: {{state.pendingConsequenceQueue.applyStatusSummary.executableCount}} · Already Applied: {{state.pendingConsequenceQueue.applyStatusSummary.alreadyAppliedCount}}</p>
         <p class="arcflight-sheet__hint">Unsupported: {{state.pendingConsequenceQueue.applyStatusSummary.unsupportedCount}} · Missing Selection: {{state.pendingConsequenceQueue.applyStatusSummary.missingSelectionCount}} · Missing Catalog: {{state.pendingConsequenceQueue.applyStatusSummary.missingCatalogCount}} · Session Pressure Only: {{state.pendingConsequenceQueue.applyStatusSummary.sessionPressureOnlyCount}}</p>
+        <button type="button" data-action="arcflight-travel-v2-apply-all-selected-consequences" {{#unless state.pendingConsequenceQueue.applyStatusSummary.executableCount}}disabled{{/unless}} title="Applies all currently executable selected consequences to the runner session only. Does not mutate actors, items, inventories, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Apply All Executable Selected</button>
       </section>
       {{#if state.session.travelV2ConsequenceFollowups.records}}
         <section class="arcflight-travel-card arcflight-gm-only" aria-label="Follow-up Notes">

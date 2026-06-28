@@ -330,6 +330,69 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
   return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record, appliedRecord };
 }
 
+function selectedConsequenceBatchApplyEligible(item = {}) {
+  return item.status === "pending" &&
+    isPlainObject(item.selectedConsequence) &&
+    isPlainObject(item.selectedConsequenceApplyPreview) &&
+    item.selectedConsequenceApplyPreview.executable === true &&
+    item.selectedConsequenceApplyPreview.previewOnly === false &&
+    item.canApplySelectedConsequence === true &&
+    !isPlainObject(item.appliedEffect);
+}
+function selectedConsequenceBatchSkipReason(item = {}) {
+  if (item.status !== "pending") return `Queue item status is ${item.status ?? "unknown"}.`;
+  if (!isPlainObject(item.selectedConsequence) || !text(item.selectedConsequence.id)) return "No selected consequence catalog card.";
+  if (isPlainObject(item.appliedEffect)) return "Selected consequence already has an applied effect.";
+  if (!isPlainObject(item.selectedConsequenceApplyPreview)) return "Selected consequence has no apply preview.";
+  if (item.selectedConsequenceApplyPreview.previewOnly === true) return "Selected consequence apply preview is preview-only.";
+  if (item.selectedConsequenceApplyPreview.executable !== true) return "Selected consequence is not executable.";
+  if (item.canApplySelectedConsequence !== true) return "Selected consequence cannot be applied.";
+  return "Queue item is not eligible for batch Apply.";
+}
+function selectedConsequenceBatchSummary(item = {}, reason = "") {
+  return { queueKey: item.queueKey, consequenceId: text(item.selectedConsequence?.id) || undefined, title: text(item.selectedConsequence?.title) || text(item.title) || undefined, reason };
+}
+function selectedConsequenceAppliedBatchSummary(item = {}, result = {}) {
+  const appliedEffect = cloneData(result.appliedRecord ?? result.record?.appliedEffect ?? item.appliedEffect ?? null);
+  return {
+    queueKey: item.queueKey,
+    consequenceId: text(appliedEffect?.consequenceId) || text(item.selectedConsequence?.id),
+    title: text(item.selectedConsequence?.title) || text(item.selectedConsequenceApplyPreview?.title) || text(item.title),
+    mutation: text(appliedEffect?.mutation) || text(item.selectedConsequenceApplyPreview?.mutation),
+    affectedTrack: text(appliedEffect?.affectedTrack) || text(item.selectedConsequenceApplyPreview?.affectedTrack),
+    appliedEffect
+  };
+}
+
+export function applyAllExecutableTravelV2SelectedConsequencesToSession(session, options = {}) {
+  const startedAt = timestamp(options);
+  const initialQueue = prepareTravelV2PendingConsequenceQueue(session, options);
+  const eligibleItems = initialQueue.items.filter((item) => selectedConsequenceBatchApplyEligible(item));
+  const skipped = initialQueue.items.filter((item) => !selectedConsequenceBatchApplyEligible(item)).map((item) => selectedConsequenceBatchSummary(item, selectedConsequenceBatchSkipReason(item)));
+  if (!eligibleItems.length) {
+    return { ok: false, reason: "No executable pending selected consequences are available to apply.", session, queue: initialQueue, applied: [], skipped: [], attemptedCount: 0, appliedCount: 0, skippedCount: 0, startedAt, completedAt: timestamp(options), appliedEffectMutations: {} };
+  }
+  let nextSession = session;
+  const applied = [];
+  const appliedEffectMutations = {};
+  for (const item of eligibleItems) {
+    const result = applyTravelV2SelectedConsequenceToSession(nextSession, item.queueKey, options);
+    if (!result.ok) {
+      skipped.push(selectedConsequenceBatchSummary(item, result.error ?? "Single-item Apply failed."));
+      continue;
+    }
+    nextSession = result.session;
+    const nextQueue = prepareTravelV2PendingConsequenceQueue(nextSession, options);
+    const appliedItem = nextQueue.items.find((candidate) => candidate.queueKey === item.queueKey) ?? item;
+    const summary = selectedConsequenceAppliedBatchSummary(appliedItem, result);
+    applied.push(summary);
+    if (summary.mutation) appliedEffectMutations[summary.mutation] = (appliedEffectMutations[summary.mutation] ?? 0) + 1;
+  }
+  const completedAt = timestamp(options);
+  const finalQueue = prepareTravelV2PendingConsequenceQueue(nextSession, options);
+  return { ok: applied.length > 0, ...(applied.length > 0 ? {} : { reason: "No executable pending selected consequences were applied." }), session: nextSession, queue: finalQueue, applied, skipped, attemptedCount: eligibleItems.length, appliedCount: applied.length, skippedCount: skipped.length, startedAt, completedAt, appliedEffectMutations };
+}
+
 export function selectTravelV2PendingConsequenceCatalogCard(session, queueKey, consequenceId, options = {}) {
   if (!isPlainObject(session)) return { ok: false, session, error: "Travel v2 runner session is required." };
   if (!text(queueKey)) return { ok: false, session, error: "Pending consequence queue key is required." };
