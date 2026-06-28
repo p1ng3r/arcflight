@@ -248,6 +248,37 @@ function prepareApplyStatusSummary(items = []) {
     sessionPressureOnlyCount: items.filter((item) => item.selectedConsequenceApplyPreview?.mutation === "session-pressure-only").length
   };
 }
+const EMPTY_SINGLE_SUGGESTION_SELECTION_SUMMARY = Object.freeze({
+  totalItems: 0,
+  eligibleCount: 0,
+  alreadySelectedCount: 0,
+  noSuggestionCount: 0,
+  multipleSuggestionCount: 0,
+  blockedStatusCount: 0
+});
+function isSingleSuggestionSelectionBlocked(item = {}) {
+  return item.status !== "pending" || item.hasAppliedEffect === true || isPlainObject(item.appliedEffect);
+}
+function isSingleSuggestionSelectionEligible(item = {}) {
+  return !isSingleSuggestionSelectionBlocked(item) &&
+    !hasSelectedConsequenceId(item) &&
+    Array.isArray(item.catalogSuggestions) &&
+    item.catalogSuggestions.length === 1 &&
+    Boolean(text(item.catalogSuggestions[0]?.id));
+}
+function prepareSingleSuggestionSelectionSummary(items = []) {
+  const summary = { ...EMPTY_SINGLE_SUGGESTION_SELECTION_SUMMARY, totalItems: items.length };
+  for (const item of items) {
+    if (isSingleSuggestionSelectionBlocked(item)) summary.blockedStatusCount += 1;
+    if (hasSelectedConsequenceId(item)) summary.alreadySelectedCount += 1;
+    if (isSingleSuggestionSelectionBlocked(item) || hasSelectedConsequenceId(item)) continue;
+    const suggestionCount = Array.isArray(item.catalogSuggestions) ? item.catalogSuggestions.length : 0;
+    if (suggestionCount === 0) summary.noSuggestionCount += 1;
+    else if (suggestionCount === 1 && text(item.catalogSuggestions[0]?.id)) summary.eligibleCount += 1;
+    else if (suggestionCount > 1) summary.multipleSuggestionCount += 1;
+  }
+  return summary;
+}
 function unresolvedHazard(record = {}) { return ["active", "revealed", "held", "pending"].includes(record.status) && record.status !== "cleared" && record.status !== "dismissed"; }
 function finalOutcomeConsequenceItems(session = {}, overrides) {
   const outcome = prepareTravelV2EventOutcomePackage(session, { now: session.completedAt ?? null });
@@ -266,7 +297,7 @@ function finalOutcomeConsequenceItems(session = {}, overrides) {
   }, overrides));
 }
 export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
-  if (!isPlainObject(session)) return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: false, items: [], pendingCount: 0, appliedCount: 0, dismissedCount: 0, deferredCount: 0, gmItemGroups: prepareGmItemGroups([]), playerSafeItems: [], summaryText: "Travel v2 pending consequence queue requires a runner session." };
+  if (!isPlainObject(session)) return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: false, items: [], pendingCount: 0, appliedCount: 0, dismissedCount: 0, deferredCount: 0, gmItemGroups: prepareGmItemGroups([]), singleSuggestionSelectionSummary: { ...EMPTY_SINGLE_SUGGESTION_SELECTION_SUMMARY }, playerSafeItems: [], summaryText: "Travel v2 pending consequence queue requires a runner session." };
   const overrides = queueOverrides(session);
   const items = [];
   for (const record of recordsFrom(session.travelV2FocusBacklashRecords)) if (isPlainObject(record) && ["pending", "applied", "dismissed"].includes(record.status)) items.push(makeQueueItem({ queueKey: `focus-backlash:${record.id}`, sourceType: "focusBacklash", sourceId: record.id, roundIndex: record.roundIndex, roundNumber: Number(record.roundIndex) + 1, title: record.publicSummary || `${record.stationName ?? "Station"} Focus backlash`, severity: "minor", status: record.status, sourceStatus: record.status, publicSummary: record.publicRiskText || record.publicSummary, gmSummary: record.publicBacklashPreviewText || record.publicRiskText || record.publicSummary, catalogSuggestions: catalogSummaries("focus-backlash"), sourceRecord: record }, overrides));
@@ -278,7 +309,8 @@ export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
   const count = (status) => ordered.filter((item) => item.status === status).length;
   const applyStatusSummary = prepareApplyStatusSummary(ordered);
   const gmItemGroups = prepareGmItemGroups(ordered);
-  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, gmItemGroups, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
+  const singleSuggestionSelectionSummary = prepareSingleSuggestionSelectionSummary(ordered);
+  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, gmItemGroups, singleSuggestionSelectionSummary, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
 }
 export function prepareTravelV2ConsequenceFollowupReview(session) {
   const emptyGroups = FOLLOWUP_STATUSES.map((key) => ({ key, label: FOLLOWUP_STATUS_LABELS[key], count: 0, records: [] }));
@@ -498,6 +530,74 @@ export function selectTravelV2PendingConsequenceCatalogCard(session, queueKey, c
   };
   const nextSession = { ...cloneData(session), travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
   return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record };
+}
+
+function singleSuggestionSelectionSkipReason(item = {}) {
+  if (item.status !== "pending") return `Queue item status is ${item.status ?? "unknown"}.`;
+  if (item.hasAppliedEffect === true || isPlainObject(item.appliedEffect)) return "Queue item already has an applied effect.";
+  if (hasSelectedConsequenceId(item)) return "Queue item already has a selected consequence.";
+  const suggestionCount = Array.isArray(item.catalogSuggestions) ? item.catalogSuggestions.length : 0;
+  if (suggestionCount === 0) return "Queue item has no catalog suggestions.";
+  if (suggestionCount > 1) return "Queue item has multiple catalog suggestions.";
+  if (!text(item.catalogSuggestions?.[0]?.id)) return "Queue item single catalog suggestion has no id.";
+  return "Queue item is not eligible for single-suggestion selection.";
+}
+function singleSuggestionSelectionSkippedSummary(item = {}) {
+  const selectedConsequenceId = text(item.selectedConsequence?.id);
+  return {
+    queueKey: item.queueKey,
+    reason: singleSuggestionSelectionSkipReason(item),
+    ...(selectedConsequenceId ? { selectedConsequenceId } : {}),
+    suggestionCount: Array.isArray(item.catalogSuggestions) ? item.catalogSuggestions.length : 0
+  };
+}
+function singleSuggestionSelectionSelectedSummary(item = {}) {
+  const suggestion = item.catalogSuggestions?.[0] ?? {};
+  return {
+    queueKey: item.queueKey,
+    consequenceId: text(suggestion.id),
+    title: text(suggestion.title) || text(item.title)
+  };
+}
+
+export function selectAllSingleSuggestionTravelV2PendingConsequences(session, options = {}) {
+  const startedAt = timestamp(options);
+  const initialQueue = prepareTravelV2PendingConsequenceQueue(session, options);
+  if (!isPlainObject(session)) {
+    return { ok: false, reason: "No pending consequence items have exactly one unselected catalog suggestion.", session, queue: initialQueue, selected: [], skipped: [], attemptedCount: 0, selectedCount: 0, skippedCount: 0 };
+  }
+  const eligibleItems = initialQueue.items.filter((item) => isSingleSuggestionSelectionEligible(item));
+  const skipped = initialQueue.items.filter((item) => !isSingleSuggestionSelectionEligible(item)).map((item) => singleSuggestionSelectionSkippedSummary(item));
+  if (!eligibleItems.length) {
+    return { ok: false, reason: "No pending consequence items have exactly one unselected catalog suggestion.", session, queue: initialQueue, selected: [], skipped: [], attemptedCount: 0, selectedCount: 0, skippedCount: 0 };
+  }
+  let currentSession = session;
+  const selected = [];
+  for (const item of eligibleItems) {
+    const suggestionId = text(item.catalogSuggestions?.[0]?.id);
+    const result = selectTravelV2PendingConsequenceCatalogCard(currentSession, item.queueKey, suggestionId, options);
+    if (!result.ok) {
+      skipped.push({ ...singleSuggestionSelectionSkippedSummary(item), reason: result.error ?? "Single-suggestion selection failed." });
+      continue;
+    }
+    currentSession = result.session;
+    selected.push(singleSuggestionSelectionSelectedSummary(item));
+  }
+  const completedAt = timestamp(options);
+  const finalQueue = prepareTravelV2PendingConsequenceQueue(currentSession, options);
+  return {
+    ok: selected.length > 0,
+    ...(selected.length > 0 ? {} : { reason: "No pending consequence items have exactly one unselected catalog suggestion." }),
+    session: currentSession,
+    queue: finalQueue,
+    selected,
+    skipped,
+    attemptedCount: eligibleItems.length,
+    selectedCount: selected.length,
+    skippedCount: skipped.length,
+    startedAt,
+    completedAt
+  };
 }
 
 export default prepareTravelV2PendingConsequenceQueue;

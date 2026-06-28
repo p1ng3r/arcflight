@@ -69,6 +69,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should wire the manual selected consequence apply control");
   assertIncludes(template, "Apply Selected Consequence", "template should label the executable selected consequence apply button");
   assertIncludes(template, "Apply All Executable Selected", "template should label the GM-only batch selected consequence apply button");
+  assertIncludes(template, "Select All Single Suggestions", "template should label the GM-only single-suggestion selection button");
+  assertIncludes(template, "singleSuggestionSelectionSummary", "template should reference singleSuggestionSelectionSummary");
+  assertIncludes(template, "singleSuggestionSelectionSummary.eligibleCount", "template should reference singleSuggestionSelectionSummary.eligibleCount");
+  assertIncludes(template, `data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"`, "template should wire the GM-only single-suggestion selection action");
   for (const text of ["state.pendingConsequenceQueue.gmItemGroups","Ready to Apply","Needs Selection","Unsupported / Preview Only","Applied / Reviewed","Deferred","Dismissed","Other Pending","Use This Card","Mark Applied","Dismiss","Defer"]) assertIncludes(template, text, `template should include grouped pending consequence queue text ${text}`);
   assertSmoke(!template.includes("{{#each state.pendingConsequenceQueue.items}}"), "template should no longer render the old flat pending consequence queue loop");
   assertIncludes(template, `data-action="arcflight-travel-v2-apply-all-selected-consequences"`, "template should wire the GM-only batch selected consequence apply action");
@@ -113,7 +117,11 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
     "data-arcflight-followup",
     "data-arcflight-create-journal",
     "data-arcflight-create-combat",
-    "data-arcflight-create-scene"
+    "data-arcflight-create-scene",
+    `data-action="arcflight-travel-v2-force-apply"`,
+    `data-action="arcflight-travel-v2-apply-unsupported"`,
+    `data-action="arcflight-travel-v2-apply-preview-only"`,
+    `data-action="arcflight-travel-v2-player-apply"`
   ]) assertSmoke(!template.includes(forbidden), `template should not include follow-up mutation/control text ${forbidden}`);
   for (const forbidden of ["Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`,`data-action="arcflight-travel-v2-force-apply"`,`data-action="arcflight-travel-v2-apply-unsupported"`,`data-action="arcflight-travel-v2-apply-preview-only"`,`data-action="arcflight-travel-v2-player-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
 

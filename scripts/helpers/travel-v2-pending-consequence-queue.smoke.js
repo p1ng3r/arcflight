@@ -1,4 +1,4 @@
-import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { getTravelV2ConsequenceById, getTravelV2ConsequenceCatalog, getTravelV2ConsequencesBySource } from "../../data/travel-events/travel-v2-consequence-catalog.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
@@ -69,6 +69,13 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(!playerSafeSnapshot.includes("Review Strain pressure")&&!playerSafeSnapshot.includes("sourceRecord")&&!playerSafeSnapshot.includes("applyEffectSummary")&&!playerSafeSnapshot.includes("catalogSuggestions"),"player-safe items omit GM summaries, source records, apply summaries, and catalog suggestions");
   assertSmoke(queue.applyStatusSummary && queue.applyStatusSummary.totalItems===queue.items.length,"queue exposes GM apply status summary with total item count");
   assertSmoke(!playerSafeSnapshot.includes("applyStatusSummary"),"player-safe items omit the GM apply status summary");
+  assertSmoke(queue.singleSuggestionSelectionSummary && queue.singleSuggestionSelectionSummary.totalItems===queue.items.length,"queue exposes singleSuggestionSelectionSummary with total item count");
+  assertSmoke(queue.singleSuggestionSelectionSummary.eligibleCount===1,"singleSuggestionSelectionSummary counts only pending unselected exactly-one-suggestion items as eligible");
+  assertSmoke(queue.singleSuggestionSelectionSummary.multipleSuggestionCount===4,"singleSuggestionSelectionSummary counts pending unselected multi-suggestion items");
+  assertSmoke(queue.singleSuggestionSelectionSummary.alreadySelectedCount===0 && queue.singleSuggestionSelectionSummary.noSuggestionCount===0 && queue.singleSuggestionSelectionSummary.blockedStatusCount===0,"singleSuggestionSelectionSummary starts with zero selected, no-suggestion, and blocked items");
+  const invalidSingleSummary=prepareTravelV2PendingConsequenceQueue(null).singleSuggestionSelectionSummary;
+  assertSmoke(invalidSingleSummary && invalidSingleSummary.totalItems===0 && invalidSingleSummary.eligibleCount===0 && invalidSingleSummary.alreadySelectedCount===0 && invalidSingleSummary.noSuggestionCount===0 && invalidSingleSummary.multipleSuggestionCount===0 && invalidSingleSummary.blockedStatusCount===0,"invalid/no-session queue returns an empty singleSuggestionSelectionSummary");
+  assertSmoke(!playerSafeSnapshot.includes("singleSuggestionSelectionSummary"),"player-safe items omit the single-suggestion selection summary");
   const summarySession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[
     {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-hull-stress"}},
     {queueKey:"ship-scar:scar1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-surge"}},
@@ -105,6 +112,9 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(mixedByKey.unsupported.items.some((item)=>item.queueKey==="hazard:h1"),"selected unsupported or preview-only item is grouped into unsupported");
   assertSmoke(mixedByKey.applied.items.some((item)=>item.queueKey==="ship-scar:scar1"&&item.hasAppliedEffect===true),"applied/appliedEffect item is grouped into applied");
   assertSmoke(mixedByKey.deferred.items.some((item)=>item.queueKey==="final-outcome:failure:0"),"deferred item is grouped into deferred");
+  assertSmoke(mixedQueue.singleSuggestionSelectionSummary.alreadySelectedCount===4,"singleSuggestionSelectionSummary counts selected items");
+  assertSmoke(mixedQueue.singleSuggestionSelectionSummary.blockedStatusCount===2,"singleSuggestionSelectionSummary counts applied/deferred items as blocked");
+  assertSmoke(mixedQueue.singleSuggestionSelectionSummary.multipleSuggestionCount===1,"singleSuggestionSelectionSummary counts pending unselected multi-suggestion items in mixed queues");
   const dismissedSession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"support-backlash:s1",status:"dismissed",mutation:"none"}]}};
   const dismissedQueue=prepareTravelV2PendingConsequenceQueue(dismissedSession);
   assertSmoke(dismissedQueue.gmItemGroups.find((group)=>group.key==="dismissed")?.items.some((item)=>item.queueKey==="support-backlash:s1"),"dismissed item is grouped into dismissed");
@@ -149,6 +159,33 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
 
   const runnerState=prepareTravelEventRunnerAppStateWithTravelV2Preview({session:s});
   assertSmoke(runnerState.pendingConsequenceQueue.items.length===5 && runnerState.pendingConsequenceQueue.items[0].requiresGmApply===true,"runner state prepares a GM pending consequence queue from sample session records");
+  const invalidBatchSelect=selectAllSingleSuggestionTravelV2PendingConsequences(null);
+  assertSmoke(!invalidBatchSelect.ok && invalidBatchSelect.session===null && invalidBatchSelect.attemptedCount===0 && invalidBatchSelect.selectedCount===0,"single-suggestion batch selection fails closed for invalid sessions");
+  const noEligibleSession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"ship-scar:scar1",status:"deferred",mutation:"none"}]}};
+  const noEligibleBatchSelect=selectAllSingleSuggestionTravelV2PendingConsequences(noEligibleSession);
+  assertSmoke(!noEligibleBatchSelect.ok && noEligibleBatchSelect.session===noEligibleSession && noEligibleBatchSelect.attemptedCount===0 && noEligibleBatchSelect.selectedCount===0,"single-suggestion batch selection returns ok false and original session identity when no eligible items exist");
+  const beforeBatchPressure={hull:{value:1},strain:{value:2},lifeveil:{value:3},morale:{value:4},supplies:{value:5}};
+  const batchSession={...session(),pressure:beforeBatchPressure,hazards:{records:[{id:"h1",roundIndex:0,status:"active",name:"Void Shear",playerText:"The lane is still unstable."}]},shipScars:{pending:[{id:"scar1",roundIndex:0,name:"Scorched Conduits",status:"pending"},{id:"scar2",roundIndex:0,name:"Deferred Scar",status:"pending"},{id:"scar3",roundIndex:0,name:"Applied Scar",status:"pending"}]},travelV2PendingConsequenceQueue:{version:1,records:[
+    {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-whine"}},
+    {queueKey:"ship-scar:scar2",status:"deferred",mutation:"none"},
+    {queueKey:"ship-scar:scar3",status:"pending",mutation:"session-followup-note-only",hasAppliedEffect:true,appliedEffect:{mutation:"session-followup-note-only",consequenceId:"consequence-ship-scar-candidate"}}
+  ]}};
+  const batchSelected=selectAllSingleSuggestionTravelV2PendingConsequences(batchSession,{now:"2026-06-26T00:10:00.000Z"});
+  assertSmoke(batchSelected.ok && batchSelected.session!==batchSession && batchSelected.attemptedCount===1 && batchSelected.selectedCount===1,"single-suggestion batch selection selects only eligible pending unselected exactly-one-suggestion items");
+  assertSmoke(batchSelected.selected[0].queueKey==="ship-scar:scar1" && batchSelected.selected[0].consequenceId==="consequence-ship-scar-candidate" && batchSelected.selected[0].title==="Ship Scar Candidate","single-suggestion batch selection reports selected queue key, consequence id, and title");
+  const batchByKey=Object.fromEntries(batchSelected.queue.items.map((item)=>[item.queueKey,item]));
+  assertSmoke(batchByKey["ship-scar:scar1"].selectedConsequence?.id==="consequence-ship-scar-candidate" && batchByKey["ship-scar:scar1"].selectedConsequenceApplyPreview?.consequenceId==="consequence-ship-scar-candidate","batch-selected queue items gain the normal selected consequence display and apply preview");
+  assertSmoke(batchByKey["focus-backlash:f1"].selectedConsequence?.id==="consequence-arkengine-whine","already selected items are skipped and not changed");
+  assertSmoke(!batchByKey["support-backlash:s1"].selectedConsequence?.id && batchByKey["support-backlash:s1"].catalogSuggestions.length>1,"multi-suggestion items are skipped and not changed");
+  assertSmoke(!batchByKey["hazard:h1"].selectedConsequence?.id && batchByKey["hazard:h1"].catalogSuggestions.length>1,"additional multi-suggestion hazard items are skipped and not changed");
+  assertSmoke(!batchByKey["ship-scar:scar2"].selectedConsequence?.id && batchByKey["ship-scar:scar2"].status==="deferred","deferred items are skipped and not changed");
+  assertSmoke(!batchByKey["ship-scar:scar3"].selectedConsequence?.id && batchByKey["ship-scar:scar3"].hasAppliedEffect===true,"appliedEffect/hasAppliedEffect items are skipped and not changed");
+  assertSmoke(JSON.stringify(batchSelected.session.pressure)===JSON.stringify(beforeBatchPressure),"single-suggestion batch selection makes no pressure changes");
+  assertSmoke(!("travelV2ConsequenceFollowups" in batchSelected.session),"single-suggestion batch selection creates no follow-up records");
+  assertSmoke(JSON.stringify(batchSelected.session.hazards)===JSON.stringify(batchSession.hazards) && JSON.stringify(batchSelected.session.shipScars)===JSON.stringify(batchSession.shipScars) && JSON.stringify(batchSelected.session.event)===JSON.stringify(batchSession.event),"single-suggestion batch selection leaves hazards, ship scars, and final outcome data unchanged");
+  assertSmoke(forbiddenContainers.every((key)=>!(key in batchSelected.session)),"single-suggestion batch selection adds no actor/item/inventory/world/scene/combat/token/chat/journal/socket/compendium containers");
+  const singleSuggestionBatchPlayerSafe=JSON.stringify(batchSelected.queue.playerSafeItems);
+  assertSmoke(!singleSuggestionBatchPlayerSafe.includes("selectedConsequence")&&!singleSuggestionBatchPlayerSafe.includes("selectedConsequenceApplyPreview")&&!singleSuggestionBatchPlayerSafe.includes("applyEffectSummary")&&!singleSuggestionBatchPlayerSafe.includes("sourceRecord")&&!singleSuggestionBatchPlayerSafe.includes("catalogSuggestions")&&!singleSuggestionBatchPlayerSafe.includes("singleSuggestionSelectionSummary")&&!singleSuggestionBatchPlayerSafe.includes("Ship Scar Candidate"),"playerSafeItems do not expose selected details, selected summaries, catalog suggestions, or selected card titles after batch selection");
   const selected=selectTravelV2PendingConsequenceCatalogCard(s,"focus-backlash:f1","consequence-arkengine-surge");
   assertSmoke(selected.ok && selected.session!==s,"selecting a valid suggested catalog card clones the session");
   const selectedItem=selected.queue.items.find((item)=>item.queueKey==="focus-backlash:f1");
