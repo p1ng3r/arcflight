@@ -1,4 +1,4 @@
-import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, catalogSummariesForPendingConsequence, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, testTravelV2SelectedConsequencePressureApplySupport, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { getTravelV2ConsequenceById, getTravelV2ConsequenceCatalog, getTravelV2ConsequencesBySource } from "../../data/travel-events/travel-v2-consequence-catalog.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import fs from "node:fs";
@@ -76,6 +76,9 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   const invalidSingleSummary=prepareTravelV2PendingConsequenceQueue(null).singleSuggestionSelectionSummary;
   assertSmoke(invalidSingleSummary && invalidSingleSummary.totalItems===0 && invalidSingleSummary.eligibleCount===0 && invalidSingleSummary.alreadySelectedCount===0 && invalidSingleSummary.noSuggestionCount===0 && invalidSingleSummary.multipleSuggestionCount===0 && invalidSingleSummary.blockedStatusCount===0,"invalid/no-session queue returns an empty singleSuggestionSelectionSummary");
   assertSmoke(!playerSafeSnapshot.includes("singleSuggestionSelectionSummary"),"player-safe items omit the single-suggestion selection summary");
+  assertSmoke(queue.clearSelectionSummary && queue.clearSelectionSummary.totalItems===queue.items.length,"queue exposes clearSelectionSummary with total item count");
+  assertSmoke(prepareTravelV2PendingConsequenceQueue(null).clearSelectionSummary?.clearableCount===0,"invalid/no-session queue returns empty clearSelectionSummary");
+  assertSmoke(!playerSafeSnapshot.includes("clearSelectionSummary"),"player-safe items omit clearSelectionSummary");
   const summarySession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[
     {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-hull-stress"}},
     {queueKey:"ship-scar:scar1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-surge"}},
@@ -115,6 +118,17 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(mixedQueue.singleSuggestionSelectionSummary.alreadySelectedCount===4,"singleSuggestionSelectionSummary counts selected items");
   assertSmoke(mixedQueue.singleSuggestionSelectionSummary.blockedStatusCount===2,"singleSuggestionSelectionSummary counts applied/deferred items as blocked");
   assertSmoke(mixedQueue.singleSuggestionSelectionSummary.multipleSuggestionCount===1,"singleSuggestionSelectionSummary counts pending unselected multi-suggestion items in mixed queues");
+  assertSmoke(mixedQueue.clearSelectionSummary.selectedCount===4,"clearSelectionSummary counts all selected items");
+  assertSmoke(mixedQueue.clearSelectionSummary.clearableCount===2,"clearSelectionSummary counts only pending selected items without appliedEffect/hasAppliedEffect");
+  assertSmoke(mixedQueue.clearSelectionSummary.appliedOrEffectCount===1,"clearSelectionSummary counts selected applied-effect items");
+  assertSmoke(mixedQueue.clearSelectionSummary.blockedStatusCount===2,"clearSelectionSummary counts selected non-pending items");
+  assertSmoke(mixedQueue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.canClearSelectedConsequence===true,"canClearSelectedConsequence is true for pending selected unapplied items");
+  assertSmoke(mixedQueue.items.find((item)=>item.queueKey==="support-backlash:s1")?.canClearSelectedConsequence===false,"canClearSelectedConsequence is false for unselected items");
+  assertSmoke(mixedQueue.items.find((item)=>item.queueKey==="ship-scar:scar1")?.canClearSelectedConsequence===false && mixedQueue.items.find((item)=>item.queueKey==="final-outcome:failure:0")?.canClearSelectedConsequence===false,"canClearSelectedConsequence is false for applied/deferred items");
+  const dismissedSelectedQueue=prepareTravelV2PendingConsequenceQueue({...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"support-backlash:s1",status:"dismissed",mutation:"none",selectedConsequence:{id:"consequence-crew-panic"}}]}});
+  assertSmoke(dismissedSelectedQueue.items.find((item)=>item.queueKey==="support-backlash:s1")?.canClearSelectedConsequence===false,"canClearSelectedConsequence is false for dismissed items");
+  const hasAppliedFlagQueue=prepareTravelV2PendingConsequenceQueue({...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"support-backlash:s1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-crew-panic"},hasAppliedEffect:true}]}});
+  assertSmoke(hasAppliedFlagQueue.items.find((item)=>item.queueKey==="support-backlash:s1")?.canClearSelectedConsequence===false,"canClearSelectedConsequence is false for hasAppliedEffect items");
   const dismissedSession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"support-backlash:s1",status:"dismissed",mutation:"none"}]}};
   const dismissedQueue=prepareTravelV2PendingConsequenceQueue(dismissedSession);
   assertSmoke(dismissedQueue.gmItemGroups.find((group)=>group.key==="dismissed")?.items.some((item)=>item.queueKey==="support-backlash:s1"),"dismissed item is grouped into dismissed");
@@ -156,6 +170,42 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(!updateTravelV2ConsequenceFollowupStatus(reviewSession,"q-reviewed","invalid").ok && !updateTravelV2ConsequenceFollowupStatus(reviewSession,"missing","open").ok && !updateTravelV2ConsequenceFollowupStatus(null,"q-reviewed","open").ok,"follow-up status update fails closed for invalid status, missing record, and invalid session");
   const forbiddenContainers=["actors","items","inventory","world","scenes","combat","tokens","chat","journals","sockets","compendia"];
   assertSmoke(forbiddenContainers.every((key)=>!(key in statusUpdate.session)),"follow-up status update adds no actor/item/inventory/world/scene/combat/token/chat/journal/socket/compendium containers");
+
+  const clearBase={...session(),pressure:{hull:{value:2}},travelV2ConsequenceFollowups:{version:1,records:[{queueKey:"existing",title:"Existing"}]},travelV2PendingConsequenceQueue:{version:1,records:[
+    {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-whine",title:"Arkengine Whine"},selectedConsequenceApplyPreview:{hasPreview:true},selectedAt:"before",selectedBy:"gm",decisionNote:"Keep note",decidedAt:"2026-01-01T00:00:00.000Z"},
+    {queueKey:"support-backlash:s1",status:"deferred",mutation:"none",selectedConsequence:{id:"consequence-crew-panic"}},
+    {queueKey:"hazard:h1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-veil-draft"},appliedEffect:{mutation:"session-pressure-only"}},
+    {queueKey:"ship-scar:scar1",status:"pending",mutation:"none"}
+  ]}};
+  assertSmoke(!clearTravelV2PendingConsequenceSelection(null,"focus-backlash:f1").ok,"clear selection fails closed for invalid session");
+  assertSmoke(!clearTravelV2PendingConsequenceSelection(clearBase,"").ok,"clear selection fails closed for missing queueKey");
+  assertSmoke(!clearTravelV2PendingConsequenceSelection(clearBase,"missing").ok,"clear selection fails closed for missing item");
+  assertSmoke(!clearTravelV2PendingConsequenceSelection(clearBase,"ship-scar:scar1").ok,"clear selection fails closed for unselected item");
+  assertSmoke(!clearTravelV2PendingConsequenceSelection(clearBase,"support-backlash:s1").ok,"clear selection fails closed for deferred selected item");
+  assertSmoke(!clearTravelV2PendingConsequenceSelection(clearBase,"hazard:h1").ok,"clear selection fails closed for appliedEffect item");
+  const clearedOne=clearTravelV2PendingConsequenceSelection(clearBase,"focus-backlash:f1",{now:"2026-06-26T01:00:00.000Z"});
+  assertSmoke(clearedOne.ok && clearedOne.session!==clearBase,"clear selection succeeds for pending selected item and clones session");
+  assertSmoke(clearedOne.record.status==="pending" && clearedOne.record.mutation==="none","clear selection keeps status pending and mutation none");
+  assertSmoke(!("selectedConsequence" in clearedOne.record) && !("selectedConsequenceApplyPreview" in clearedOne.record) && !("appliedEffect" in clearedOne.record) && !("hasAppliedEffect" in clearedOne.record),"clear selection removes selected consequence and applied effect metadata");
+  assertSmoke(clearedOne.record.selectionClearedAt==="2026-06-26T01:00:00.000Z" && clearedOne.record.selectionClearedBy==="gm","clear selection records audit timestamp and GM actor");
+  assertSmoke(clearedOne.record.decisionNote==="Keep note" && clearedOne.record.decidedAt==="2026-01-01T00:00:00.000Z","clear selection preserves decisionNote and decidedAt");
+  assertSmoke(JSON.stringify(clearedOne.session.pressure)===JSON.stringify(clearBase.pressure),"clear selection leaves pressure unchanged");
+  assertSmoke(JSON.stringify(clearedOne.session.travelV2ConsequenceFollowups)===JSON.stringify(clearBase.travelV2ConsequenceFollowups),"clear selection leaves follow-up records unchanged");
+  assertSmoke(JSON.stringify(clearedOne.session.hazards)===JSON.stringify(clearBase.hazards)&&JSON.stringify(clearedOne.session.shipScars)===JSON.stringify(clearBase.shipScars)&&JSON.stringify(clearedOne.session.event?.finalOutcomes)===JSON.stringify(clearBase.event?.finalOutcomes),"clear selection leaves hazards, ship scars, and final outcome data unchanged");
+  assertSmoke(forbiddenContainers.every((key)=>!(key in clearedOne.session)),"clear selection adds no actor/item/inventory/world/scene/combat/token/chat/journal/socket/compendium containers");
+  const clearedPlayerSafe=JSON.stringify(clearedOne.queue.playerSafeItems);
+  assertSmoke(!clearedPlayerSafe.includes("selectedConsequence")&&!clearedPlayerSafe.includes("selectedConsequenceApplyPreview")&&!clearedPlayerSafe.includes("applyEffectSummary")&&!clearedPlayerSafe.includes("sourceRecord")&&!clearedPlayerSafe.includes("catalogSuggestions")&&!clearedPlayerSafe.includes("Arkengine Whine")&&!clearedPlayerSafe.includes("clearSelectionSummary"),"playerSafeItems still omit selected details and clearSelectionSummary after clear");
+  const noClearEligible={...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"focus-backlash:f1",status:"pending",mutation:"none"}]}};
+  const clearNone=clearAllTravelV2PendingConsequenceSelections(noClearEligible);
+  assertSmoke(clearNone.ok===false && clearNone.session===noClearEligible && clearNone.attemptedCount===0,"clear all with no eligible items returns ok false and original session identity");
+  const clearAll=clearAllTravelV2PendingConsequenceSelections(clearBase,{now:"2026-06-26T01:05:00.000Z"});
+  assertSmoke(clearAll.ok && clearAll.clearedCount===1 && clearAll.attemptedCount===1,"clear all clears only pending selected unapplied items");
+  assertSmoke(clearAll.session.travelV2PendingConsequenceQueue.records.find((record)=>record.queueKey==="support-backlash:s1").selectedConsequence?.id==="consequence-crew-panic","clear all leaves deferred selected items unchanged");
+  assertSmoke(clearAll.session.travelV2PendingConsequenceQueue.records.find((record)=>record.queueKey==="hazard:h1").appliedEffect?.mutation==="session-pressure-only","clear all leaves appliedEffect selected items unchanged");
+  assertSmoke(!("selectedConsequence" in clearAll.session.travelV2PendingConsequenceQueue.records.find((record)=>record.queueKey==="focus-backlash:f1")),"clear all uses single-item clear behavior to remove selected metadata");
+  assertSmoke(JSON.stringify(clearAll.session.pressure)===JSON.stringify(clearBase.pressure),"clear all leaves pressure unchanged");
+  assertSmoke(JSON.stringify(clearAll.session.travelV2ConsequenceFollowups)===JSON.stringify(clearBase.travelV2ConsequenceFollowups),"clear all creates or deletes no follow-up records");
+  assertSmoke(JSON.stringify(clearAll.session.hazards)===JSON.stringify(clearBase.hazards)&&JSON.stringify(clearAll.session.shipScars)===JSON.stringify(clearBase.shipScars)&&JSON.stringify(clearAll.session.event?.finalOutcomes)===JSON.stringify(clearBase.event?.finalOutcomes),"clear all leaves hazards, ship scars, and final outcome data unchanged");
 
   const runnerState=prepareTravelEventRunnerAppStateWithTravelV2Preview({session:s});
   assertSmoke(runnerState.pendingConsequenceQueue.items.length===5 && runnerState.pendingConsequenceQueue.items[0].requiresGmApply===true,"runner state prepares a GM pending consequence queue from sample session records");

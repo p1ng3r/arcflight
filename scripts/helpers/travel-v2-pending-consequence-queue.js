@@ -169,7 +169,7 @@ function makeQueueItem(input = {}, overrides = new Map()) {
   const override = overrides.get(queueKey) ?? {};
   const status = statusFrom(override.status ?? input.status);
   const appliedEffect = cloneData(override.appliedEffect ?? null);
-  const hasAppliedEffect = ["session-pressure-only", "session-followup-note-only"].includes(appliedEffect?.mutation);
+  const hasAppliedEffect = override.hasAppliedEffect === true || ["session-pressure-only", "session-followup-note-only"].includes(appliedEffect?.mutation);
   const selectedConsequenceApplyPreview = prepareTravelV2SelectedConsequenceApplyPreview({ travelV2PendingConsequenceQueue: { records: [override] } }, queueKey, {});
   const item = {
     version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
@@ -195,6 +195,7 @@ function makeQueueItem(input = {}, overrides = new Map()) {
     selectedConsequenceApplyPreview,
     appliedEffect,
     hasAppliedEffect,
+    canClearSelectedConsequence: status === "pending" && Boolean(text(override.selectedConsequence?.id)) && hasAppliedEffect !== true && !isPlainObject(appliedEffect),
     canApplySelectedConsequence: selectedConsequenceApplyPreview?.executable === true && !hasAppliedEffect && status !== "applied",
     decidedAt: override.decidedAt ?? null,
     decisionNote: text(override.decisionNote),
@@ -248,6 +249,24 @@ function prepareApplyStatusSummary(items = []) {
     sessionPressureOnlyCount: items.filter((item) => item.selectedConsequenceApplyPreview?.mutation === "session-pressure-only").length
   };
 }
+const EMPTY_CLEAR_SELECTION_SUMMARY = Object.freeze({
+  totalItems: 0,
+  clearableCount: 0,
+  selectedCount: 0,
+  appliedOrEffectCount: 0,
+  blockedStatusCount: 0
+});
+function prepareClearSelectionSummary(items = []) {
+  const summary = { ...EMPTY_CLEAR_SELECTION_SUMMARY, totalItems: items.length };
+  for (const item of items) {
+    if (!hasSelectedConsequenceId(item)) continue;
+    summary.selectedCount += 1;
+    if (item.hasAppliedEffect === true || isPlainObject(item.appliedEffect)) summary.appliedOrEffectCount += 1;
+    if (item.status !== "pending") summary.blockedStatusCount += 1;
+    if (item.canClearSelectedConsequence === true) summary.clearableCount += 1;
+  }
+  return summary;
+}
 const EMPTY_SINGLE_SUGGESTION_SELECTION_SUMMARY = Object.freeze({
   totalItems: 0,
   eligibleCount: 0,
@@ -297,7 +316,7 @@ function finalOutcomeConsequenceItems(session = {}, overrides) {
   }, overrides));
 }
 export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
-  if (!isPlainObject(session)) return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: false, items: [], pendingCount: 0, appliedCount: 0, dismissedCount: 0, deferredCount: 0, gmItemGroups: prepareGmItemGroups([]), singleSuggestionSelectionSummary: { ...EMPTY_SINGLE_SUGGESTION_SELECTION_SUMMARY }, playerSafeItems: [], summaryText: "Travel v2 pending consequence queue requires a runner session." };
+  if (!isPlainObject(session)) return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: false, items: [], pendingCount: 0, appliedCount: 0, dismissedCount: 0, deferredCount: 0, gmItemGroups: prepareGmItemGroups([]), singleSuggestionSelectionSummary: { ...EMPTY_SINGLE_SUGGESTION_SELECTION_SUMMARY }, clearSelectionSummary: { ...EMPTY_CLEAR_SELECTION_SUMMARY }, playerSafeItems: [], summaryText: "Travel v2 pending consequence queue requires a runner session." };
   const overrides = queueOverrides(session);
   const items = [];
   for (const record of recordsFrom(session.travelV2FocusBacklashRecords)) if (isPlainObject(record) && ["pending", "applied", "dismissed"].includes(record.status)) items.push(makeQueueItem({ queueKey: `focus-backlash:${record.id}`, sourceType: "focusBacklash", sourceId: record.id, roundIndex: record.roundIndex, roundNumber: Number(record.roundIndex) + 1, title: record.publicSummary || `${record.stationName ?? "Station"} Focus backlash`, severity: "minor", status: record.status, sourceStatus: record.status, publicSummary: record.publicRiskText || record.publicSummary, gmSummary: record.publicBacklashPreviewText || record.publicRiskText || record.publicSummary, catalogSuggestions: catalogSummaries("focus-backlash"), sourceRecord: record }, overrides));
@@ -310,7 +329,8 @@ export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
   const applyStatusSummary = prepareApplyStatusSummary(ordered);
   const gmItemGroups = prepareGmItemGroups(ordered);
   const singleSuggestionSelectionSummary = prepareSingleSuggestionSelectionSummary(ordered);
-  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, gmItemGroups, singleSuggestionSelectionSummary, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
+  const clearSelectionSummary = prepareClearSelectionSummary(ordered);
+  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, gmItemGroups, singleSuggestionSelectionSummary, clearSelectionSummary, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
 }
 export function prepareTravelV2ConsequenceFollowupReview(session) {
   const emptyGroups = FOLLOWUP_STATUSES.map((key) => ({ key, label: FOLLOWUP_STATUS_LABELS[key], count: 0, records: [] }));
@@ -371,6 +391,69 @@ export function updateTravelV2PendingConsequenceQueueItem(session, queueKey, sta
   const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status, decidedAt: timestamp(options), decisionNote: text(options.note), mutation: "none" };
   const nextSession = { ...cloneData(session), travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
   return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record };
+}
+
+function canClearTravelV2PendingConsequenceSelectionItem(item = {}) {
+  return item.status === "pending" && hasSelectedConsequenceId(item) && item.hasAppliedEffect !== true && !isPlainObject(item.appliedEffect);
+}
+function clearTravelV2PendingConsequenceSelectionBlockedReason(item = {}) {
+  if (item.status !== "pending") return `Queue item status is ${item.status ?? "unknown"}.`;
+  if (!hasSelectedConsequenceId(item)) return "No selected consequence catalog card.";
+  if (item.hasAppliedEffect === true || isPlainObject(item.appliedEffect)) return "Selected consequence already has an applied effect.";
+  return "Selected consequence cannot be cleared.";
+}
+function clearTravelV2PendingConsequenceSelectionSummary(item = {}, reason = "") {
+  const selectedConsequenceId = text(item.selectedConsequence?.id);
+  return {
+    queueKey: item.queueKey,
+    ...(reason ? { reason } : {}),
+    ...(selectedConsequenceId ? { selectedConsequenceId } : {})
+  };
+}
+
+export function clearTravelV2PendingConsequenceSelection(session, queueKey, options = {}) {
+  if (!isPlainObject(session)) return { ok: false, session, error: "Travel v2 runner session is required." };
+  if (!text(queueKey)) return { ok: false, session, error: "Pending consequence queue key is required." };
+  const queue = prepareTravelV2PendingConsequenceQueue(session, options);
+  const item = queue.items.find((candidate) => candidate.queueKey === queueKey);
+  if (!item) return { ok: false, session, queue, error: "Pending consequence queue item was not found." };
+  if (!canClearTravelV2PendingConsequenceSelectionItem(item)) return { ok: false, session, queue, error: clearTravelV2PendingConsequenceSelectionBlockedReason(item) };
+  const currentRecords = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject);
+  const current = currentRecords.find((record) => record.queueKey === queueKey);
+  if (!isPlainObject(current)) return { ok: false, session, queue, error: "Pending consequence queue override record was not found." };
+  const existing = currentRecords.filter((record) => record.queueKey !== queueKey).map((record) => cloneData(record));
+  const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status: "pending", mutation: "none", selectionClearedAt: timestamp(options), selectionClearedBy: "gm" };
+  delete record.selectedConsequence;
+  delete record.selectedConsequenceApplyPreview;
+  delete record.appliedEffect;
+  delete record.hasAppliedEffect;
+  delete record.selectedAt;
+  delete record.selectedBy;
+  const nextQueue = { ...cloneData(session.travelV2PendingConsequenceQueue ?? {}), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] };
+  const nextSession = { ...cloneData(session), travelV2PendingConsequenceQueue: nextQueue };
+  return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record };
+}
+
+export function clearAllTravelV2PendingConsequenceSelections(session, options = {}) {
+  const startedAt = timestamp(options);
+  const initialQueue = prepareTravelV2PendingConsequenceQueue(session, options);
+  if (!isPlainObject(session)) return { ok: false, reason: "No pending selected consequence cards can be cleared.", session, queue: initialQueue, cleared: [], skipped: [], attemptedCount: 0, clearedCount: 0, skippedCount: 0 };
+  const eligibleItems = initialQueue.items.filter((item) => canClearTravelV2PendingConsequenceSelectionItem(item));
+  const skipped = initialQueue.items.filter((item) => !canClearTravelV2PendingConsequenceSelectionItem(item)).map((item) => clearTravelV2PendingConsequenceSelectionSummary(item, clearTravelV2PendingConsequenceSelectionBlockedReason(item)));
+  if (!eligibleItems.length) return { ok: false, reason: "No pending selected consequence cards can be cleared.", session, queue: initialQueue, cleared: [], skipped: [], attemptedCount: 0, clearedCount: 0, skippedCount: 0 };
+  let currentSession = session;
+  const cleared = [];
+  for (const item of eligibleItems) {
+    const result = clearTravelV2PendingConsequenceSelection(currentSession, item.queueKey, options);
+    if (!result.ok) {
+      skipped.push(clearTravelV2PendingConsequenceSelectionSummary(item, result.error ?? "Selected consequence clear failed."));
+      continue;
+    }
+    currentSession = result.session;
+    cleared.push({ queueKey: item.queueKey, consequenceId: text(item.selectedConsequence?.id), title: text(item.selectedConsequence?.title) || text(item.title) });
+  }
+  const completedAt = timestamp(options);
+  return { ok: cleared.length > 0, ...(cleared.length > 0 ? {} : { reason: "No pending selected consequence cards can be cleared." }), session: currentSession, queue: prepareTravelV2PendingConsequenceQueue(currentSession, options), cleared, skipped, attemptedCount: eligibleItems.length, clearedCount: cleared.length, skippedCount: skipped.length, startedAt, completedAt };
 }
 
 export function applyTravelV2SelectedConsequenceToSession(session, queueKey, options = {}) {
