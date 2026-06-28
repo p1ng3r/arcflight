@@ -126,6 +126,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
+  `[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`,
   "[data-arcflight-travel-v2-pending-consequence-select]",
   "[data-arcflight-travel-v2-pending-consequence-apply-selected]",
   "[data-arcflight-travel-v2-pending-consequence-status]",
