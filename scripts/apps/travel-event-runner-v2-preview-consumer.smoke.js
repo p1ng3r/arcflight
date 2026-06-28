@@ -104,8 +104,12 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     }
   });
   assertSmoke(queueState.pendingConsequenceQueue.applyStatusSummary.executableCount === 1, "app state exposes applyStatusSummary executableCount for the batch Apply button");
+  assertSmoke(Array.isArray(queueState.pendingConsequenceQueue.gmItemGroups), "app state exposes pendingConsequenceQueue.gmItemGroups");
+  assertSmoke(queueState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="readyToApply")?.count===1, "app state exposes readyToApply count when an executable selected item exists");
+  const needsSelectionState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { key:"consumer-queue-unselected", status:"completed", completed:true, event:{rounds:[{roundNumber:1}]}, travelV2FocusBacklashRecords:{records:[{id:"f2",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders."}]} } });
+  assertSmoke(needsSelectionState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="needsSelection")?.count===1, "app state exposes needsSelection count when an unselected item exists");
   const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);
-  assertSmoke(!playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations"), "player-safe state does not expose batch applied summaries or GM-only apply details");
+  assertSmoke(!playerSafeQueue.includes("gmItemGroups") && !playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("applyEffectSummary") && !playerSafeQueue.includes("sourceRecord") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations"), "player-safe state does not expose batch applied summaries or GM-only apply details");
   const runnerSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "travel-event-runner.js"), "utf8");
   assertSmoke(runnerSource.includes("applyAllExecutableTravelV2SelectedConsequencesToSession"), "runner imports or references the batch selected consequence helper");
   assertSmoke(runnerSource.includes(`[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`), "RUNNER_CLICK_SELECTOR includes the batch selected consequence data-action selector");

@@ -88,6 +88,31 @@ export function runTravelV2PendingConsequenceQueueSmokeChecks(){
   assertSmoke(applyStatusSummary.missingCatalogCount===0,"apply status summary counts selected missing catalog ids");
   assertSmoke(applyStatusSummary.sessionPressureOnlyCount===2,"apply status summary counts Hull Stress and Arkengine Surge as session-pressure-only");
   assertSmoke(!JSON.stringify(statusSummaryQueue.playerSafeItems).includes("applyStatusSummary"),"player-safe items do not include applyStatusSummary");
+  const expectedGmGroupKeys=["readyToApply","needsSelection","unsupported","otherPending","applied","deferred","dismissed"];
+  assertSmoke(Array.isArray(statusSummaryQueue.gmItemGroups),"prepareTravelV2PendingConsequenceQueue returns gmItemGroups");
+  assertSmoke(statusSummaryQueue.gmItemGroups.map((group)=>group.key).join(",")===expectedGmGroupKeys.join(","),"gmItemGroups keys are in the exact required order");
+  const mixedSession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[
+    {queueKey:"focus-backlash:f1",status:"pending",mutation:"none",selectedConsequence:{id:"consequence-arkengine-whine"}},
+    {queueKey:"support-backlash:s1",status:"pending",mutation:"none"},
+    {queueKey:"hazard:h1",status:"pending",mutation:"none",selectedConsequence:{id:"missing-card-preview-only"}},
+    {queueKey:"ship-scar:scar1",status:"applied",mutation:"none",selectedConsequence:{id:"consequence-ship-scar-candidate"},appliedEffect:{mutation:"session-followup-note-only",consequenceId:"consequence-ship-scar-candidate"}},
+    {queueKey:"final-outcome:failure:0",status:"deferred",mutation:"none",selectedConsequence:{id:"consequence-course-slip"}}
+  ]}};
+  const mixedQueue=prepareTravelV2PendingConsequenceQueue(mixedSession);
+  const mixedByKey=Object.fromEntries(mixedQueue.gmItemGroups.map((group)=>[group.key,group]));
+  assertSmoke(mixedByKey.readyToApply.items.some((item)=>item.queueKey==="focus-backlash:f1"),"executable selected pending item is grouped into readyToApply");
+  assertSmoke(mixedByKey.needsSelection.items.some((item)=>item.queueKey==="support-backlash:s1"),"pending item with no selected consequence is grouped into needsSelection");
+  assertSmoke(mixedByKey.unsupported.items.some((item)=>item.queueKey==="hazard:h1"),"selected unsupported or preview-only item is grouped into unsupported");
+  assertSmoke(mixedByKey.applied.items.some((item)=>item.queueKey==="ship-scar:scar1"&&item.hasAppliedEffect===true),"applied/appliedEffect item is grouped into applied");
+  assertSmoke(mixedByKey.deferred.items.some((item)=>item.queueKey==="final-outcome:failure:0"),"deferred item is grouped into deferred");
+  const dismissedSession={...session(),travelV2PendingConsequenceQueue:{version:1,records:[{queueKey:"support-backlash:s1",status:"dismissed",mutation:"none"}]}};
+  const dismissedQueue=prepareTravelV2PendingConsequenceQueue(dismissedSession);
+  assertSmoke(dismissedQueue.gmItemGroups.find((group)=>group.key==="dismissed")?.items.some((item)=>item.queueKey==="support-backlash:s1"),"dismissed item is grouped into dismissed");
+  const groupedKeys=mixedQueue.gmItemGroups.flatMap((group)=>group.items.map((item)=>item.queueKey));
+  assertSmoke(groupedKeys.length===mixedQueue.items.length&&new Set(groupedKeys).size===mixedQueue.items.length&&mixedQueue.items.every((item)=>groupedKeys.includes(item.queueKey)),"every queue item appears in exactly one gmItemGroups group");
+  assertSmoke(JSON.stringify(mixedQueue.items)===JSON.stringify(mixedQueue.gmItemGroups.flatMap((group)=>group.items).sort((a,b)=>mixedQueue.items.findIndex((item)=>item.queueKey===a.queueKey)-mixedQueue.items.findIndex((item)=>item.queueKey===b.queueKey))),"gmItemGroups preserve queue item objects exactly as prepared");
+  const mixedPlayerSafeSnapshot=JSON.stringify(mixedQueue.playerSafeItems);
+  assertSmoke(!mixedPlayerSafeSnapshot.includes("gmItemGroups")&&!mixedPlayerSafeSnapshot.includes("appliedEffect")&&!mixedPlayerSafeSnapshot.includes("selectedConsequenceApplyPreview")&&!mixedPlayerSafeSnapshot.includes("Arkengine Whine")&&!mixedPlayerSafeSnapshot.includes("Ship Scar Candidate"),"playerSafeItems omit gmItemGroups, appliedEffect, selectedConsequenceApplyPreview, and GM-only selected consequence titles");
   assertSmoke(queue.items.some((item)=>item.catalogSuggestions.length>0),"queue includes catalog suggestions");
   assertSmoke(queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-arkengine-surge"),"focus backlash still suggests focus-backlash catalog cards");
   assertSmoke(queue.items.find((item)=>item.queueKey==="focus-backlash:f1")?.catalogSuggestions.some((suggestion)=>suggestion.id==="consequence-arkengine-whine"),"focus backlash suggests Arkengine Whine through existing source categories");
