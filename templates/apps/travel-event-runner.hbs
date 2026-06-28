@@ -160,7 +160,12 @@
         </section>
       {{/if}}
       {{#if state.pendingConsequenceQueue.items}}
-        {{#each state.pendingConsequenceQueue.items}}
+        {{#each state.pendingConsequenceQueue.gmItemGroups}}
+          {{#if count}}
+            <section class="arcflight-travel-card arcflight-gm-only" aria-label="{{label}} Pending Consequences">
+              <h4>{{label}} ({{count}})</h4>
+              <p class="arcflight-sheet__hint">{{hint}}</p>
+              {{#each items}}
           <article class="arcflight-travel-action-queue__item arcflight-gm-only">
             <strong>{{title}}</strong>
             <p class="arcflight-sheet__hint">Severity: {{severity}} · Source: {{sourceType}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}} · Status: {{status}}</p>
@@ -225,6 +230,9 @@
               <button type="button" data-arcflight-travel-v2-pending-consequence-status data-queue-key="{{queueKey}}" data-status="deferred" title="Marks this candidate in the session queue only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Defer</button>
             </div>
           </article>
+              {{/each}}
+            </section>
+          {{/if}}
         {{/each}}
       {{else}}<p class="arcflight-sheet__hint">No pending consequence candidates.</p>{{/if}}
     </section>

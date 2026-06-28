@@ -202,6 +202,37 @@ function makeQueueItem(input = {}, overrides = new Map()) {
 
 function hasSelectedConsequenceId(item) { return Boolean(text(item?.selectedConsequence?.id)); }
 function isMissingCatalogApplyPreview(item) { return item?.selectedConsequenceApplyPreview?.source === "missing-catalog-card"; }
+
+const GM_ITEM_GROUP_DEFINITIONS = Object.freeze([
+  Object.freeze({ key: "readyToApply", label: "Ready to Apply", hint: "Pending selected consequences that can be applied to this runner session now." }),
+  Object.freeze({ key: "needsSelection", label: "Needs Selection", hint: "Pending consequence candidates that need the GM to choose an authored consequence card." }),
+  Object.freeze({ key: "unsupported", label: "Unsupported / Preview Only", hint: "Selected pending consequences that are read-only previews or are not executable by this queue." }),
+  Object.freeze({ key: "otherPending", label: "Other Pending", hint: "Pending consequence candidates that do not fit the other GM review groups." }),
+  Object.freeze({ key: "applied", label: "Applied / Reviewed", hint: "Consequences already marked applied or with a recorded session-local applied result." }),
+  Object.freeze({ key: "deferred", label: "Deferred", hint: "Consequences deferred for later GM review." }),
+  Object.freeze({ key: "dismissed", label: "Dismissed", hint: "Consequences dismissed from the current GM review queue." })
+]);
+function gmItemGroupKey(item) {
+  if (item?.status === "applied" || item?.hasAppliedEffect === true || item?.appliedEffect) return "applied";
+  if (item?.status === "deferred") return "deferred";
+  if (item?.status === "dismissed") return "dismissed";
+  if (item?.status === "pending" && item?.canApplySelectedConsequence === true && item?.selectedConsequenceApplyPreview?.executable === true && item?.selectedConsequenceApplyPreview?.previewOnly === false) return "readyToApply";
+  if (item?.status === "pending" && !hasSelectedConsequenceId(item)) return "needsSelection";
+  if (item?.status === "pending" && hasSelectedConsequenceId(item) && item?.selectedConsequenceApplyPreview && item?.canApplySelectedConsequence === false && (item.selectedConsequenceApplyPreview.executable !== true || item.selectedConsequenceApplyPreview.previewOnly === true)) return "unsupported";
+  return "otherPending";
+}
+function prepareGmItemGroups(items = []) {
+  const grouped = new Map(GM_ITEM_GROUP_DEFINITIONS.map((group) => [group.key, []]));
+  for (const item of items) grouped.get(gmItemGroupKey(item))?.push(item);
+  return GM_ITEM_GROUP_DEFINITIONS.map((group) => ({
+    key: group.key,
+    label: group.label,
+    hint: group.hint,
+    count: grouped.get(group.key)?.length ?? 0,
+    items: grouped.get(group.key) ?? []
+  }));
+}
+
 function prepareApplyStatusSummary(items = []) {
   return {
     totalItems: items.length,
@@ -232,7 +263,7 @@ function finalOutcomeConsequenceItems(session = {}, overrides) {
   }, overrides));
 }
 export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
-  if (!isPlainObject(session)) return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: false, items: [], pendingCount: 0, appliedCount: 0, dismissedCount: 0, deferredCount: 0, playerSafeItems: [], summaryText: "Travel v2 pending consequence queue requires a runner session." };
+  if (!isPlainObject(session)) return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: false, items: [], pendingCount: 0, appliedCount: 0, dismissedCount: 0, deferredCount: 0, gmItemGroups: prepareGmItemGroups([]), playerSafeItems: [], summaryText: "Travel v2 pending consequence queue requires a runner session." };
   const overrides = queueOverrides(session);
   const items = [];
   for (const record of recordsFrom(session.travelV2FocusBacklashRecords)) if (isPlainObject(record) && ["pending", "applied", "dismissed"].includes(record.status)) items.push(makeQueueItem({ queueKey: `focus-backlash:${record.id}`, sourceType: "focusBacklash", sourceId: record.id, roundIndex: record.roundIndex, roundNumber: Number(record.roundIndex) + 1, title: record.publicSummary || `${record.stationName ?? "Station"} Focus backlash`, severity: "minor", status: record.status, sourceStatus: record.status, publicSummary: record.publicRiskText || record.publicSummary, gmSummary: record.publicBacklashPreviewText || record.publicRiskText || record.publicSummary, catalogSuggestions: catalogSummaries("focus-backlash"), sourceRecord: record }, overrides));
@@ -243,7 +274,8 @@ export function prepareTravelV2PendingConsequenceQueue(session, options = {}) {
   const ordered = items.sort((a, b) => (a.roundNumber ?? 999) - (b.roundNumber ?? 999) || a.sourceType.localeCompare(b.sourceType) || a.queueKey.localeCompare(b.queueKey));
   const count = (status) => ordered.filter((item) => item.status === status).length;
   const applyStatusSummary = prepareApplyStatusSummary(ordered);
-  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
+  const gmItemGroups = prepareGmItemGroups(ordered);
+  return { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, hasSession: true, items: ordered, pendingCount: count("pending"), appliedCount: count("applied"), dismissedCount: count("dismissed"), deferredCount: count("deferred"), applyStatusSummary, gmItemGroups, playerSafeItems: ordered.map((item) => item.playerSafe), summaryText: ordered.length ? `${ordered.length} consequence candidate${ordered.length === 1 ? "" : "s"} queued for GM review.` : "No pending consequence candidates." };
 }
 function timestamp(options = {}) { const value = options.decidedAt ?? options.now; if (value instanceof Date) return value.toISOString(); if (typeof value === "string" && value.trim()) return value.trim(); return new Date().toISOString(); }
 export function updateTravelV2PendingConsequenceQueueItem(session, queueKey, status, options = {}) {

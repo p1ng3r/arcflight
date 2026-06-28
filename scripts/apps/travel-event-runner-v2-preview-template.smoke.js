@@ -69,6 +69,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "data-arcflight-travel-v2-pending-consequence-apply-selected", "template should wire the manual selected consequence apply control");
   assertIncludes(template, "Apply Selected Consequence", "template should label the executable selected consequence apply button");
   assertIncludes(template, "Apply All Executable Selected", "template should label the GM-only batch selected consequence apply button");
+  for (const text of ["state.pendingConsequenceQueue.gmItemGroups","Ready to Apply","Needs Selection","Unsupported / Preview Only","Applied / Reviewed","Deferred","Dismissed","Other Pending","Use This Card","Mark Applied","Dismiss","Defer"]) assertIncludes(template, text, `template should include grouped pending consequence queue text ${text}`);
+  assertSmoke(!template.includes("{{#each state.pendingConsequenceQueue.items}}"), "template should no longer render the old flat pending consequence queue loop");
   assertIncludes(template, `data-action="arcflight-travel-v2-apply-all-selected-consequences"`, "template should wire the GM-only batch selected consequence apply action");
   assertSmoke(template.indexOf("arcflight-gm-only") < template.indexOf("Apply All Executable Selected"), "batch selected consequence apply button should be inside/near GM-only markup");
   assertIncludes(template, "Applied Result", "template should render the GM-only applied result block");
