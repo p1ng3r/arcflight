@@ -9,7 +9,7 @@ import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-sessi
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
-import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
+import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
 import { sendTravelPlayerMissionBoardToPlayers, sendTravelPlayerReactionPromptToPlayers, queueTravelPlayerMissionBoardRefreshToPlayers } from "./travel-player-station-card.js";
@@ -127,6 +127,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
+  `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
   `[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`,
   "[data-arcflight-travel-v2-pending-consequence-select]",
   "[data-arcflight-travel-v2-pending-consequence-apply-selected]",
@@ -673,6 +674,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
+    if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();
     if (target.dataset.action === "arcflight-travel-v2-apply-all-selected-consequences") return this.#applyAllSelectedPendingConsequences();
     if (target.hasAttribute("data-arcflight-travel-v2-pending-consequence-select")) return this.#selectPendingConsequenceCatalogCard(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pending-consequence-apply-selected")) return this.#applySelectedPendingConsequence(target);
@@ -732,6 +734,25 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.session = updated.session;
     this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
     this.statusMessage = `Applied ${updated.appliedCount} executable selected consequence${updated.appliedCount === 1 ? "" : "s"} to session-local pressure/follow-up data only; no actor, item, inventory, chat, journal, combat, scene, token, socket, compendium, or world data was mutated.`;
+    ui.notifications?.info?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #selectAllSingleSuggestionPendingConsequences() {
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can select pending consequence catalog cards.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const updated = selectAllSingleSuggestionTravelV2PendingConsequences(this.session);
+    if (!updated.ok) {
+      this.statusMessage = updated.reason ?? "No pending consequence items have exactly one unselected catalog suggestion.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.session = updated.session;
+    this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+    this.statusMessage = `Selected ${updated.selectedCount} single-suggestion consequence card${updated.selectedCount === 1 ? "" : "s"} in the session-local queue only; no effects were applied and no actor/item/world data was mutated.`;
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }
