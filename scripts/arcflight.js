@@ -898,6 +898,16 @@ async function handleTravelPlayerStationRoll(payload = {}) {
     if (requestedSessionKey && !matched) console.warn("Arcflight | Player roll request did not match an active Travel v2 runner session.", { requestedSessionKey, activeSessionKey: session?.key ?? "" });
     return false;
   }
+  const preflightState = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
+  const preflightStation = (preflightState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
+  if (preflightStation?.hasResult === true) {
+    const reason = "This station already has a result. A new roll is only available after an accepted Focus reroll clears the result.";
+    console.warn("Arcflight | Duplicate player station roll request rejected.", { sessionKey: session?.key ?? "", roundIndex, stationKey, userId: payload.userId ?? "", reason });
+    ui.notifications?.warn?.(reason);
+    sendTravelPlayerMissionBoardStationUpdateToPlayers(session, stationKey, { actor: activeOverlay?.actor });
+    sendTravelPlayerStationCardToPlayers(session, stationKey, { actor: activeOverlay?.actor });
+    return false;
+  }
   const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
   const permissionStation = (permissionState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
   const permitted = Boolean(permissionStation?.permittedUserIds?.includes(payload.userId));
