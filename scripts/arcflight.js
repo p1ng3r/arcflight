@@ -478,7 +478,7 @@ async function inspectTravelPlayerFlow() {
         stationKey: station.stationKey,
         stationName: station.stationName ?? station.label ?? station.stationKey,
         hasResult: station.hasResult === true,
-        canRoll: station.canRollStation === true,
+        canRoll: station.canRollStationCheck === true && station.hasResult !== true,
         reactionPromptPending: records.some((record) => record.status === "pending"),
         focusAccepted: records.some((record) => record.status === "accepted"),
         rerollNeeded: station.focusRerollNeeded === true || records.some((record) => record.status === "accepted" && !record.rerollResult),
