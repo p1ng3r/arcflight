@@ -131,10 +131,15 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   assertSmoke(failed.ok === true && failed.session.key === started.session.key, "station result updates preserve the runner session key");
   const prompt = failed.session.reactionPrompts.records.find((record) => record.stationKey === "navigator" && record.status === "pending");
   assertSmoke(Boolean(prompt), "eligible station failure creates a reaction prompt");
+  const playerSafeResultState = helperModule.prepareTravelPlayerMissionBoardState(failed.session).stations.find((station) => station.stationKey === "navigator");
+  assertSmoke(playerSafeResultState?.hasResult === true && playerSafeResultState?.canRollStation === false && playerSafeResultState?.rollDetailText === "", "player-safe station result state marks completed station rolls as not rollable without leaking roll detail internals");
+  assertSmoke(playerSafeResultState?.focusReactionAvailable === true || playerSafeResultState?.statusKey === "reaction", "player-safe station result state exposes Focus reaction availability");
   const promptState = helperModule.prepareTravelPlayerReactionPromptState(failed.session, prompt.reactionPromptId, { userId: "player2", permittedUserIds: ["player2"] });
   assertSmoke(promptState.sessionKey === started.session.key, "reaction prompt delivery carries the same runner session key");
   const accepted = helperModule.acceptTravelReactionPrompt(failed.session, prompt.reactionPromptId, { userId: "player2", userName: "Player2", now: "2026-06-29T00:02:00.000Z" });
   assertSmoke(accepted.ok === true && accepted.session.key === started.session.key, "Focus reaction responses preserve the same runner session key");
+  const acceptedState = helperModule.prepareTravelPlayerMissionBoardState(accepted.session).stations.find((station) => station.stationKey === "navigator");
+  assertSmoke(acceptedState?.hasResult === false && acceptedState?.focusReactionAccepted === true && acceptedState?.focusRerollNeeded === true, "Focus acceptance clears the result and exposes the reroll-needed path");
   const rerolled = helperModule.markTravelReactionPromptRerollResult(accepted.session, prompt.reactionPromptId, "success", { now: "2026-06-29T00:03:00.000Z" });
   assertSmoke(rerolled.ok === true && rerolled.session.key === started.session.key, "reaction reroll resolution preserves the same runner session key");
 
@@ -145,8 +150,9 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   const arcflightSource = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../arcflight.js", import.meta.url), "utf8"));
   assertSmoke(arcflightSource.includes("const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);"), "player approach submit resolves sessions through the stable session-key helper");
   assertSmoke(arcflightSource.includes("Player station approach submission did not match an active Travel v2 runner session") && arcflightSource.includes("!matched"), "mismatched player approach-submit session keys are rejected instead of silently applied");
+  assertSmoke(arcflightSource.includes("Duplicate player station roll request rejected") && arcflightSource.includes("This station already has a result. A new roll is only available after an accepted Focus reroll clears the result."), "GM-side duplicate player roll requests are rejected before repeated permission validation");
 
-  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
+  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "player-safe-roll-result-state", "duplicate-roll-request-guard", "focus-reroll-allowed", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
 }
 
 export default runTravelPlayerMissionBoardBroadcastDebugSmokeChecks;

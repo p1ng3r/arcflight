@@ -3215,11 +3215,13 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   const publicShipScars = prepareTravelV2ShipScarsPanelState(activeSession).records
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status }));
-  const pendingReactionPrompt = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
+  const stationReactionRecords = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.filter((record) =>
     record.stationKey === station.stationKey
     && record.roundIndex === activeSession?.currentRoundIndex
-    && record.status === "pending"
-  ) ?? null;
+  );
+  const pendingReactionPrompt = stationReactionRecords.find((record) => record.status === "pending") ?? null;
+  const acceptedReactionPrompt = stationReactionRecords.find((record) => record.status === "accepted") ?? null;
+  const rerollReactionPrompt = stationReactionRecords.find((record) => record.rerollResult) ?? null;
   const reactionBacklash = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.find((record) =>
     record.stationKey === station.stationKey
     && record.roundIndex === activeSession?.currentRoundIndex
@@ -3263,6 +3265,15 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     resultLabel: station.hasResult ? station.resultLabel : "",
     resultFeedbackText: station.hasResult ? station.resultFeedback : "",
     hasResultFeedback: station.hasResult === true && Boolean(station.resultFeedback),
+    rollDetailText: activeSession?.playerMissionBoardRollDetails?.[station.stationKey] || station.rollDetailText || "",
+    canRollStation: station.canRollStationCheck === true && station.hasResult !== true,
+    rollDisabledReason: station.hasResult === true ? "This station already has a result." : (station.rollUnavailableReason || "Select an action card to roll."),
+    reactionStatusLabel: pendingReactionPrompt ? "Focus reaction available." : (acceptedReactionPrompt && !acceptedReactionPrompt.rerollResult ? "Focus accepted; reroll needed." : (rerollReactionPrompt ? `Reroll resolved: ${humanizeIdentifier(rerollReactionPrompt.rerollResult)}.` : "No Focus reaction is pending.")),
+    focusReactionAvailable: Boolean(pendingReactionPrompt),
+    focusReactionAccepted: Boolean(acceptedReactionPrompt),
+    focusRerollNeeded: Boolean(acceptedReactionPrompt && !acceptedReactionPrompt.rerollResult),
+    focusRerollResolved: Boolean(rerollReactionPrompt),
+    focusRerollResultLabel: rerollReactionPrompt ? humanizeIdentifier(rerollReactionPrompt.rerollResult) : "",
     waitingStateText,
     isResolved: station.hasResult === true,
     statusKey,
@@ -3312,9 +3323,11 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
 
 function buildTravelPlayerStationFlowState(station = {}, reactionRecords = []) {
   const pendingReaction = reactionRecords.some((record) => record.stationKey === station.stationKey && record.status === "pending");
+  const acceptedReaction = reactionRecords.some((record) => record.stationKey === station.stationKey && record.status === "accepted" && !record.rerollResult);
   let key = "waiting";
   let label = "Waiting";
   if (pendingReaction) { key = "reaction"; label = "Reaction Available"; }
+  else if (acceptedReaction) { key = "ready"; label = "Focus Accepted / Reroll Needed"; }
   else if (station.hasResult) { key = "rolled"; label = "Rolled / Waiting on GM"; }
   else if (!station.hasAssignment) { key = "waiting"; label = "Waiting"; }
   else if (!station.hasSelectedApproach) { key = "choosing"; label = "Choosing"; }
@@ -3426,6 +3439,10 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       resultFeedbackText: station.hasResult ? station.resultFeedback : "",
       hasResultFeedback: station.hasResultFeedback === true,
       hasResult: station.hasResult === true,
+      reactionStatusLabel: stationFlow.stateLabel === "Reaction Available" ? "Focus reaction available." : (stationFlow.stateLabel === "Focus Accepted / Reroll Needed" ? "Focus accepted; reroll needed." : ""),
+      focusReactionAvailable: stationFlow.stateLabel === "Reaction Available",
+      focusReactionAccepted: stationFlow.stateLabel === "Focus Accepted / Reroll Needed",
+      focusRerollNeeded: stationFlow.stateLabel === "Focus Accepted / Reroll Needed",
       result: station.result || "",
       isNpcAssignment: station.isNpcAssignment === true,
       npcControllerUserId: station.npcController?.userId || "",

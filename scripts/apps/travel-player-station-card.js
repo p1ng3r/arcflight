@@ -213,6 +213,15 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     resultLabel: sanitizeText(source.resultLabel),
     resultFeedbackText: sanitizeText(source.resultFeedbackText),
     hasResultFeedback: sanitizeBoolean(source.hasResultFeedback),
+    rollDetailText: sanitizeText(source.rollDetailText),
+    canRollStation: sanitizeBoolean(source.canRollStation),
+    rollDisabledReason: sanitizeText(source.rollDisabledReason),
+    reactionStatusLabel: sanitizeText(source.reactionStatusLabel),
+    focusReactionAvailable: sanitizeBoolean(source.focusReactionAvailable),
+    focusReactionAccepted: sanitizeBoolean(source.focusReactionAccepted),
+    focusRerollNeeded: sanitizeBoolean(source.focusRerollNeeded),
+    focusRerollResolved: sanitizeBoolean(source.focusRerollResolved),
+    focusRerollResultLabel: sanitizeText(source.focusRerollResultLabel),
     waitingStateText: sanitizeText(source.waitingStateText) || "Waiting for GM resolution",
     isResolved: sanitizeBoolean(source.isResolved),
     statusKey: sanitizeText(source.statusKey) || "waitingOnGm",
@@ -827,6 +836,8 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
       isStabilize: selectedOption?.actionType === "stabilize",
       stabilizePressureKey: selectedOption?.stabilizePressureKey || "",
       stabilizePressureLabel: selectedOption?.pressureLabel || "",
+      canRollStation: Number.isFinite(selectedOption?.modifier) && Number.isFinite(selectedOption?.dc) && this.playerCardState.isResolved !== true,
+      rollDisabledReason: this.playerCardState.isResolved === true ? "This station already has a result." : "",
       resultStatusLabel: "Ready to Roll",
       waitingStateText: `Ready to roll ${this.playerCardState.stationName}.`,
       statusKey: "readyToRoll"
@@ -843,6 +854,10 @@ export class ArcflightTravelPlayerStationCard extends HandlebarsApplicationMixin
     }
     if (!this.playerCardState) {
       ui.notifications?.warn?.("This player card cannot roll without socket state.");
+      return false;
+    }
+    if (this.playerCardState.canRollStation !== true) {
+      ui.notifications?.warn?.(this.playerCardState.rollDisabledReason || (this.playerCardState.isResolved ? "This station already has a result." : "You cannot roll this station yet."));
       return false;
     }
     const selectedApproach = this.playerCardState.approachOptions.find((entry) => entry.value === optionKey) ?? null;
@@ -1259,6 +1274,15 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
         resultLabel: station.resultLabel,
         resultFeedbackText: station.resultFeedbackText,
         hasResultFeedback: station.hasResultFeedback,
+        rollDetailText: station.rollDetailText,
+        canRollStation: station.canRollStation,
+        rollDisabledReason: station.disabledReason || station.permissionReason,
+        reactionStatusLabel: station.reactionStatusLabel,
+        focusReactionAvailable: station.focusReactionAvailable,
+        focusReactionAccepted: station.focusReactionAccepted,
+        focusRerollNeeded: station.focusRerollNeeded,
+        focusRerollResolved: station.focusRerollResolved,
+        focusRerollResultLabel: station.focusRerollResultLabel,
         waitingStateText: station.stateLabel,
         isResolved: station.hasResult,
         statusKey: station.hasResult ? "resolved" : "waitingOnGm",

@@ -69,13 +69,18 @@
   <section class="arcflight-roll-tray arcflight-travel-card arcflight-travel-card--station" aria-label="Dice Tray">
     <h2>Dice Tray</h2>
     {{#if state.hasSelectedApproach}}<p class="arcflight-roll-tray__formula"><strong>{{state.selectedApproachLabel}}</strong> — {{state.selectedApproachRollLabel}}</p>{{else}}<p class="arcflight-sheet__hint">Select an action card to ready your roll.</p>{{/if}}
-    <button type="button" class="arcflight-roll-tray__button" data-arcflight-player-card-roll {{#unless state.hasSelectedApproach}}disabled{{/unless}}>Roll {{state.stationName}}</button>
-    {{#if state.isResolved}}<p class="arcflight-roll-tray__result arcflight-resolved"><strong>{{state.resultLabel}}</strong>{{#if state.hasResultFeedback}} — {{state.resultFeedbackText}}{{/if}}</p><p class="arcflight-sheet__hint">Waiting for GM pressure resolution.</p>{{/if}}
+    <button type="button" class="arcflight-roll-tray__button" data-arcflight-player-card-roll {{#unless state.canRollStation}}disabled{{/unless}}>Roll {{state.stationName}}</button>
+    {{#unless state.canRollStation}}{{#if state.rollDisabledReason}}<p class="arcflight-sheet__hint">{{state.rollDisabledReason}}</p>{{/if}}{{/unless}}
+    {{#if state.isResolved}}<p class="arcflight-roll-tray__result arcflight-resolved"><strong>{{state.resultLabel}}</strong>{{#if state.hasResultFeedback}} — {{state.resultFeedbackText}}{{/if}}</p>{{#if state.rollDetailText}}<p class="arcflight-sheet__hint"><strong>Roll detail:</strong> {{state.rollDetailText}}</p>{{/if}}<p class="arcflight-sheet__hint">Waiting for GM pressure resolution.</p>{{/if}}
   </section>
 
   <section class="arcflight-travel-card arcflight-travel-card--reaction {{#if state.hasPendingReactionPrompt}}arcflight-needs-attention{{/if}}" aria-label="Reaction Prompt">
     <h2>Reaction</h2>
+    {{#if state.reactionStatusLabel}}<p class="arcflight-sheet__hint"><strong>Status:</strong> {{state.reactionStatusLabel}}</p>{{/if}}
     {{#if state.hasPendingReactionPrompt}}<p>{{state.pendingReactionPromptAbilityLabel}} is available.</p><button type="button" data-arcflight-player-card-reopen-reaction>Use Reaction / Pass</button>{{else}}<p class="arcflight-sheet__hint">No reaction is pending.</p>{{/if}}
+    {{#if state.focusReactionAccepted}}<p class="arcflight-sheet__hint">Focus has been accepted.</p>{{/if}}
+    {{#if state.focusRerollNeeded}}<p class="arcflight-travel-builder__warning">Reroll needed: roll this station again now.</p>{{/if}}
+    {{#if state.focusRerollResolved}}<p class="arcflight-roll-tray__result arcflight-resolved"><strong>Reroll:</strong> {{state.focusRerollResultLabel}}</p>{{/if}}
     {{#if state.hasPendingReactionBacklash}}<p class="arcflight-danger-attention">{{state.pendingReactionBacklashText}}</p>{{/if}}
   </section>
 
