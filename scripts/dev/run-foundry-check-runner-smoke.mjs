@@ -36,6 +36,78 @@ function getCheck(result, id) {
   return result.checks.find((check) => check.id === id);
 }
 
+class FakeElement {
+  constructor({ id = "", className = "", text = "", children = [] } = {}) {
+    this.id = id;
+    this.className = className;
+    this.localText = text;
+    this.children = [];
+    this.parentNode = null;
+    for (const child of children) this.appendChild(child);
+  }
+
+  appendChild(child) {
+    child.parentNode = this;
+    this.children.push(child);
+  }
+
+  get innerText() {
+    return [this.localText, ...this.children.map((child) => child.innerText)].filter(Boolean).join(" ");
+  }
+
+  get textContent() {
+    return this.innerText;
+  }
+
+  get innerHTML() {
+    return this.innerText;
+  }
+
+  get outerHTML() {
+    return this.innerText;
+  }
+
+  cloneNode(deep = false) {
+    return new FakeElement({
+      id: this.id,
+      className: this.className,
+      text: this.localText,
+      children: deep ? this.children.map((child) => child.cloneNode(true)) : []
+    });
+  }
+
+  remove() {
+    if (!this.parentNode) return;
+    this.parentNode.removeChild(this);
+  }
+
+  removeChild(child) {
+    this.children = this.children.filter((candidate) => candidate !== child);
+    child.parentNode = null;
+  }
+
+  matches(selector) {
+    if (selector.startsWith("#")) return this.id === selector.slice(1);
+    if (selector.startsWith(".")) return this.className.split(/\s+/).includes(selector.slice(1));
+    return false;
+  }
+
+  querySelectorAll(selectorList) {
+    const selectors = selectorList.split(",").map((selector) => selector.trim()).filter(Boolean);
+    const matches = [];
+    const visit = (node) => {
+      if (selectors.some((selector) => node.matches(selector))) matches.push(node);
+      for (const child of node.children) visit(child);
+    };
+    for (const child of this.children) visit(child);
+    return matches;
+  }
+}
+
+function fakeRoot(children) {
+  return new FakeElement({ children });
+}
+
 function readRunnerSourceWithoutBoundaryLists() {
   const runnerSource = fs.readFileSync(new URL("./foundry-check-runner.js", import.meta.url), "utf8");
   const travelChecksSource = fs.readFileSync(new URL("./foundry-checks/travel-v2-foundry-checks.js", import.meta.url), "utf8");
@@ -95,6 +167,28 @@ const playerNoState = runPlayerSafetyCheck({
   root: { innerText: "Event Overview", innerHTML: "" }
 });
 assertSmoke(getCheck(playerNoState, "travel-v2-player-state-scan")?.severity === "skip", "player safety check skips state scan when no state/session is provided");
+
+
+const playerChatOnlyRoot = fakeRoot([
+  new FakeElement({ id: "chat", text: "Pending Consequences / Rewards (Read-only Proposed Effects)" }),
+  new FakeElement({ className: "arcflight-travel-player-hud", text: "Event Overview Momentum" })
+]);
+const playerChatOnly = runPlayerSafetyCheck({
+  renderReport: false,
+  includeChatHistory: true,
+  root: playerChatOnlyRoot,
+  state: { eventOverview: "safe" }
+});
+assertSmoke(getCheck(playerChatOnly, "travel-v2-player-dom-forbidden-terms")?.severity === "pass", "chat/sidebar forbidden terms do not fail active UI scan");
+assertSmoke(getCheck(playerChatOnly, "travel-v2-player-chat-history-forbidden-terms")?.severity === "warn", "chat/sidebar forbidden terms produce warning chat-history check");
+
+const playerActiveLeak = runPlayerSafetyCheck({
+  renderReport: false,
+  includeChatHistory: true,
+  root: fakeRoot([new FakeElement({ className: "arcflight-travel-player-hud", text: "Pending Consequences" })]),
+  state: { eventOverview: "safe" }
+});
+assertSmoke(getCheck(playerActiveLeak, "travel-v2-player-dom-forbidden-terms")?.severity === "fail", "forbidden terms outside chat/sidebar still fail active UI scan");
 
 globalThis.game = { user: { id: "gm-smoke", isGM: true } };
 const gmAdvancedDom = runPlayerSafetyCheck({

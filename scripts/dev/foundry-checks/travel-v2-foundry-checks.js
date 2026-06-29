@@ -71,6 +71,17 @@ export const TRAVEL_V2_FORBIDDEN_PLAYER_TERMS = FORBIDDEN_PLAYER_STATE_TERMS;
 export const TRAVEL_V2_PLAYER_HUD_FORBIDDEN_TERMS = FORBIDDEN_PLAYER_HUD_TERMS;
 export const TRAVEL_V2_ADVANCED_DECK_CONTROL_TERMS = ADVANCED_DECK_CONTROL_TERMS;
 
+
+const CHAT_HISTORY_IGNORE_SELECTORS = Object.freeze([
+  "#chat",
+  "#sidebar",
+  ".chat-sidebar",
+  ".chat-log",
+  ".chat-message",
+  ".message-content"
+]);
+const CHAT_HISTORY_IGNORE_SELECTOR = CHAT_HISTORY_IGNORE_SELECTORS.join(", ");
+
 const CHECK_SEVERITIES = new Set(["pass", "fail", "warn", "skip"]);
 const KNOWN_GM_ONLY_HANDLER_NAMES = Object.freeze([
   "#updatePendingConsequenceQueueItem",
@@ -101,6 +112,50 @@ function addCheck(checks, id, label, severity, message, details = {}) {
   });
 }
 
+
+function readRootText(root) {
+  return root?.innerText ?? root?.textContent ?? "";
+}
+
+function readRootHtml(root) {
+  return root?.outerHTML ?? root?.innerHTML ?? "";
+}
+
+function queryIgnoredChatNodes(root) {
+  if (!root || typeof root.querySelectorAll !== "function") return [];
+  try {
+    return Array.from(root.querySelectorAll(CHAT_HISTORY_IGNORE_SELECTOR));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function removeIgnoredChatDescendants(root) {
+  const ignoredNodes = queryIgnoredChatNodes(root);
+  for (const node of ignoredNodes) {
+    if (typeof node.remove === "function") node.remove();
+    else if (node.parentNode && typeof node.parentNode.removeChild === "function") node.parentNode.removeChild(node);
+  }
+  return root;
+}
+
+function cloneRootWithoutIgnoredChat(root) {
+  if (!root) return null;
+  if (typeof root.cloneNode === "function") return removeIgnoredChatDescendants(root.cloneNode(true));
+  return root;
+}
+
+function getActiveRootText(root, { ignoreChatHistory = true } = {}) {
+  if (!ignoreChatHistory) return `${readRootText(root)} ${readRootHtml(root)}`;
+  const activeRoot = cloneRootWithoutIgnoredChat(root);
+  return `${readRootText(activeRoot)} ${readRootHtml(activeRoot)}`;
+}
+
+function getChatHistoryText(root) {
+  const ignoredNodes = queryIgnoredChatNodes(root);
+  return ignoredNodes.map((node) => `${readRootText(node)} ${readRootHtml(node)}`).join(" ");
+}
+
 function hasOwn(object, key) {
   return Object.prototype.hasOwnProperty.call(object ?? {}, key);
 }
@@ -118,13 +173,13 @@ export function scanForbiddenTermsInText(text = "", terms = FORBIDDEN_PLAYER_STA
   return terms.filter((term) => haystack.includes(term));
 }
 
-export function scanForbiddenTermsInRoot(root = globalThis.document?.body, terms = FORBIDDEN_PLAYER_STATE_TERMS) {
-  const text = root?.innerText ?? root?.textContent ?? "";
-  const html = root?.outerHTML ?? root?.innerHTML ?? "";
-  return [...new Set([
-    ...scanForbiddenTermsInText(text, terms),
-    ...scanForbiddenTermsInText(html, terms)
-  ])];
+export function scanForbiddenTermsInRoot(root = globalThis.document?.body, terms = FORBIDDEN_PLAYER_STATE_TERMS, options = {}) {
+  const text = getActiveRootText(root, { ignoreChatHistory: options.ignoreChatHistory !== false });
+  return [...new Set(scanForbiddenTermsInText(text, terms))];
+}
+
+export function scanForbiddenTermsInChatHistory(root = globalThis.document?.body, terms = FORBIDDEN_PLAYER_STATE_TERMS) {
+  return [...new Set(scanForbiddenTermsInText(getChatHistoryText(root), terms))];
 }
 
 export function buildArcflightFoundryCheckResult(suite, checks) {
@@ -274,7 +329,7 @@ function runStateChecks(checks) {
   );
 }
 
-function runDomChecks(checks, { root = null, currentUserIsGm = false, includePlayerSafetyChecks = true } = {}) {
+function runDomChecks(checks, { root = null, currentUserIsGm = false, includePlayerSafetyChecks = true, includeChatHistory = false } = {}) {
   if (!includePlayerSafetyChecks) return;
 
   const scanRoot = root ?? globalThis.document?.body ?? null;
@@ -330,6 +385,30 @@ function runDomChecks(checks, { root = null, currentUserIsGm = false, includePla
         : `${hudExposed.join(", ")} found.`),
     { exposed: hudExposed, currentUserIsGm }
   );
+
+
+  const chatHistoryExposed = scanForbiddenTermsInChatHistory(scanRoot, FORBIDDEN_PLAYER_STATE_TERMS);
+  if (includeChatHistory) {
+    addCheck(
+      checks,
+      "travel-v2-player-chat-history-forbidden-terms",
+      "Chat/sidebar history forbidden text scan",
+      chatHistoryExposed.length === 0 ? "pass" : "warn",
+      chatHistoryExposed.length === 0
+        ? "Chat/sidebar history does not contain known Travel v2 forbidden terms."
+        : "Historical chat/sidebar content contains forbidden Travel v2 terms. This may be old public chat history, not active player UI. Clear or delete the old chat message if players should not see it.",
+      { exposed: chatHistoryExposed, includeChatHistory }
+    );
+  } else {
+    addCheck(
+      checks,
+      "travel-v2-player-chat-history-forbidden-terms",
+      "Chat/sidebar history forbidden text scan",
+      "skip",
+      "Chat/sidebar history scan was not requested. Pass includeChatHistory: true to report historical chat/sidebar matches as warnings.",
+      { includeChatHistory }
+    );
+  }
 
   const advancedControls = scanForbiddenTermsInRoot(scanRoot, ADVANCED_DECK_CONTROL_TERMS);
   if (currentUserIsGm) {
@@ -468,7 +547,8 @@ export function runTravelV2FoundryChecks(options = {}) {
     runDomChecks(checks, {
       root: opts.root,
       currentUserIsGm: true,
-      includePlayerSafetyChecks: opts.includePlayerSafetyChecks
+      includePlayerSafetyChecks: opts.includePlayerSafetyChecks,
+      includeChatHistory: opts.includeChatHistory === true
     });
   }
   if (opts.includePermissionChecks) runPermissionAudit(checks, opts);
@@ -481,7 +561,8 @@ export function runTravelV2PlayerSafetyCheck(options = {}) {
   runDomChecks(checks, {
     root: options.root,
     currentUserIsGm: globalThis.game?.user?.isGM === true,
-    includePlayerSafetyChecks: true
+    includePlayerSafetyChecks: true,
+    includeChatHistory: options.includeChatHistory === true
   });
   runPlayerStateChecks(checks, options);
   return buildArcflightFoundryCheckResult("travel-v2", checks);

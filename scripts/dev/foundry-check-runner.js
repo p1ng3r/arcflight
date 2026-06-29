@@ -10,7 +10,8 @@ const DEFAULT_OPTIONS = Object.freeze({
   includeDomChecks: true,
   includePlayerSafetyChecks: true,
   includePermissionChecks: true,
-  renderReport: true
+  renderReport: true,
+  includeChatHistory: false
 });
 
 function normalizeOptions(options = {}) {
