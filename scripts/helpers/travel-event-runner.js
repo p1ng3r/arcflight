@@ -24,6 +24,7 @@ import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTrav
 import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
+import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -3579,6 +3580,96 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
+function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.ok || !normalized.session) return { ok: false, errors: normalized.errors ?? ["No active Travel v2 runner session."], warnings: [], report: null };
+  const activeSession = normalized.session;
+  const currentRoundIndex = Math.max(0, Number(activeSession.currentRoundIndex ?? 0) || 0);
+  const currentRound = activeSession.event?.rounds?.[currentRoundIndex] ?? null;
+  const activeStations = Array.isArray(currentRound?.activeStations) ? currentRound.activeStations : [];
+  const stationResults = activeSession.roundResults?.[currentRoundIndex]?.stationResults ?? {};
+  const reactionRecords = normalizeTravelReactionPromptRecords(activeSession.reactionPrompts, options).records
+    .filter((record) => Number(record.roundIndex) === currentRoundIndex);
+  const pendingReactionRecords = reactionRecords.filter((record) => record.status === "pending");
+  const acceptedFocusRecords = reactionRecords.filter((record) => record.status === "accepted");
+  const rerollNeededRecords = acceptedFocusRecords.filter((record) => !record.rerollResult);
+  const rerollResolvedRecords = reactionRecords.filter((record) => Boolean(record.rerollResult));
+  const unresolvedStations = activeStations.filter((stationKey) => !stationResults[stationKey]);
+  const roundFinalizationState = prepareTravelV2RoundFinalizationState(activeSession, options);
+  const roundOutcomeKey = roundFinalizationState.effectiveOutcomeKey
+    || (roundFinalizationState.pressureApplicationRecord?.outcomeKey ?? "")
+    || "";
+  const hasFinalizationRecord = Boolean(roundFinalizationState.finalizationRecord);
+  const errors = [];
+  const warnings = [];
+  if (unresolvedStations.length > 0) errors.push(`Current Travel v2 round has unresolved active stations: ${unresolvedStations.join(", ")}.`);
+  if (pendingReactionRecords.length > 0) errors.push(`Current Travel v2 round has ${pendingReactionRecords.length} pending Focus reaction prompt(s).`);
+  if (rerollNeededRecords.length > 0) errors.push(`Current Travel v2 round has ${rerollNeededRecords.length} accepted Focus reroll(s) without a reroll result.`);
+  for (const record of rerollNeededRecords) {
+    if (!stationResults[record.stationKey]) errors.push(`${record.stationKey} requires a Focus reroll result before round resolution.`);
+  }
+  if (hasFinalizationRecord) {
+    for (const stationKey of activeStations) {
+      const hasResult = Boolean(stationResults[stationKey]);
+      const hasResolvedReroll = rerollResolvedRecords.some((record) => record.stationKey === stationKey);
+      if (!hasResult && !hasResolvedReroll) errors.push(`${stationKey} has no result but the current round appears finalized.`);
+    }
+  }
+  const canResolveRound = errors.length === 0 && roundFinalizationState.canFinalize === true;
+  const canAdvanceRound = errors.length === 0 && hasFinalizationRecord && currentRoundIndex < (activeSession.event?.rounds?.length ?? 0) - 1 && activeSession.status !== "completed";
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    report: {
+      sessionKey: activeSession.key ?? "",
+      currentRoundIndex,
+      stationCount: activeStations.length,
+      resolvedStationCount: activeStations.length - unresolvedStations.length,
+      unresolvedStationCount: unresolvedStations.length,
+      pendingReactionCount: pendingReactionRecords.length,
+      acceptedFocusCount: acceptedFocusRecords.length,
+      rerollNeededCount: rerollNeededRecords.length,
+      rerollResolvedCount: rerollResolvedRecords.length,
+      canResolveRound,
+      canAdvanceRound,
+      roundOutcomeKey,
+      roundOutcomeLabel: roundOutcomeKey ? humanizeIdentifier(roundOutcomeKey) : "",
+      unresolvedStations,
+      notes: canResolveRound || canAdvanceRound ? ["Round resolution readiness checks passed."] : ["Resolve active stations, Focus prompts, and required rerolls before advancing."]
+    }
+  };
+}
+
+export function inspectTravelV2RoundResolutionReadiness(session = null, options = {}) {
+  const collected = collectTravelV2RoundResolutionBlockers(session, options);
+  if (!collected.report) return { ok: false, errors: collected.errors, warnings: collected.warnings, sessionKey: "", currentRoundIndex: -1, stationCount: 0, resolvedStationCount: 0, unresolvedStationCount: 0, pendingReactionCount: 0, acceptedFocusCount: 0, rerollNeededCount: 0, rerollResolvedCount: 0, canResolveRound: false, canAdvanceRound: false, roundOutcomeKey: "", roundOutcomeLabel: "", pendingConsequenceCount: 0, playerSummarySafe: false, notes: [] };
+  const playerSafeState = options.playerSafeState ?? {};
+  const pendingConsequenceCount = recordsFromTravelV2Container(session?.travelV2PendingConsequenceQueue).length
+    + recordsFromTravelV2Container(session?.travelV2ConsequenceFollowups).filter((record) => !["reviewed", "resolved", "dismissed"].includes(record.status)).length
+    + recordsFromTravelV2Container(session?.travelV2FocusBacklashRecords).filter((record) => ["pending", ""].includes(record.status ?? "")).length;
+  const playerSafeJson = JSON.stringify(playerSafeState ?? {});
+  const forbiddenTerms = ["pendingConsequenceQueue", "queueGroup", "consequenceCatalog", "gmOnly", "internalSeverity", "unrevealedHazard", "shipScarControls", "managementAction", "gmItemGroups", "catalogSuggestions", "selectedConsequenceApplyPreview"];
+  const leakedTerms = forbiddenTerms.filter((term) => playerSafeJson.includes(term));
+  const errors = [...collected.errors];
+  if (leakedTerms.length > 0) errors.push(`Player-safe Travel v2 state exposes GM-only round resolution term(s): ${leakedTerms.join(", ")}.`);
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings: collected.warnings,
+    ...collected.report,
+    pendingConsequenceCount,
+    playerSummarySafe: leakedTerms.length === 0,
+    notes: [...(collected.report.notes ?? []), ...(leakedTerms.length === 0 ? ["Player-safe round summary scan found no GM-only consequence queue terms."] : [])]
+  };
+}
+
+function recordsFromTravelV2Container(container) {
+  if (Array.isArray(container)) return container;
+  if (Array.isArray(container?.records)) return container.records;
+  return [];
+}
+
 export function setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
@@ -3742,6 +3833,10 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
 export function advanceTravelEventRunnerRound(session, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
+  const readiness = collectTravelV2RoundResolutionBlockers(normalized.session, options);
+  if (options.force !== true && readiness.errors.length > 0) {
+    return { ok: false, errors: readiness.errors, warnings: readiness.warnings, session: normalized.session, readiness: readiness.report };
+  }
   const nextSession = cloneData(normalized.session);
   nextSession.currentRoundIndex = Math.min(nextSession.currentRoundIndex + 1, nextSession.event.rounds.length - 1);
   nextSession.roundPhase = normalizeTravelRunnerRoundPhase();
