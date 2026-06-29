@@ -171,6 +171,7 @@ import {
   isTravelEventAppliedEffectUndoable,
   markTravelEventAppliedEffectUndone,
   buildTravelEventEffectUndoRecord,
+  TRAVEL_APPROACH_STATISTIC_DEBUG_SETTING,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
   cloneTravelEventRunnerSession,
@@ -740,11 +741,12 @@ function buildArcflightApi() {
     isTravelEventEffectApplied,
     markTravelEventEffectApplied,
     buildTravelEventAppliedEffectRecord,
-  undoTravelEventAppliedEffect,
-  prepareTravelEventAppliedEffectHistoryState,
-  isTravelEventAppliedEffectUndoable,
-  markTravelEventAppliedEffectUndone,
-  buildTravelEventEffectUndoRecord,
+    undoTravelEventAppliedEffect,
+    prepareTravelEventAppliedEffectHistoryState,
+    isTravelEventAppliedEffectUndoable,
+    markTravelEventAppliedEffectUndone,
+    buildTravelEventEffectUndoRecord,
+    TRAVEL_APPROACH_STATISTIC_DEBUG_SETTING,
     TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
     TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
     getTravelEventRunnerSessionLibrary,
@@ -1098,6 +1100,15 @@ Hooks.once("init", () => {
     default: false
   });
 
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_APPROACH_STATISTIC_DEBUG_SETTING, {
+    name: "Debug Travel Approach Statistics",
+    hint: "Log Travel approach statistic resolution details to the browser console. Disable during normal play and smoke tests.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
   game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, {
     name: "Travel Event Builder Library",
     hint: "World-local saved drafts for the Arcflight Travel Event Builder authoring shell.",
@@ -1421,6 +1432,7 @@ export {
   isTravelEventAppliedEffectUndoable,
   markTravelEventAppliedEffectUndone,
   buildTravelEventEffectUndoRecord,
+  TRAVEL_APPROACH_STATISTIC_DEBUG_SETTING,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING,
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
   getTravelEventRunnerSessionLibrary,

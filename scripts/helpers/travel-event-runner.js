@@ -29,6 +29,7 @@ export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_SETTING = "travelEventRunnerSessionLibrary";
 export const TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION = 1;
+export const TRAVEL_APPROACH_STATISTIC_DEBUG_SETTING = "debugTravelApproachStatistics";
 export const TRAVEL_EVENT_RUNNER_RESULT_VALUES = Object.freeze(["criticalFailure", "failure", "success", "criticalSuccess", "skipped"]);
 export const TRAVEL_EVENT_RUNNER_FINAL_OUTCOMES = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 
@@ -902,6 +903,21 @@ function debugTravelReaction(message, data = {}) {
   } catch (_error) {
     // Debug logging must never break travel helper flows.
   }
+}
+
+function isTravelApproachStatisticDebugEnabled(options = {}) {
+  if (options.debugTravelApproachStatistics === true || options.debugTravelApproachStatisticResolution === true) return true;
+  if (options.debugTravelApproachStatistics === false || options.debugTravelApproachStatisticResolution === false) return false;
+  try {
+    return globalThis.game?.settings?.get?.(ARCFLIGHT_MODULE_ID, TRAVEL_APPROACH_STATISTIC_DEBUG_SETTING) === true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function debugTravelApproachStatisticResolution(options = {}, data = {}) {
+  if (!isTravelApproachStatisticDebugEnabled(options)) return;
+  console.debug?.("Arcflight | Travel approach statistic resolution", data);
 }
 
 export function normalizeTravelReactionPromptRecords(value = {}, options = {}) {
@@ -2910,7 +2926,7 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const selectedStatistic = resolveActorStatisticDetails(assignedActor, row.selectedApproach?.skill);
     const selectedApproachModifier = selectedStatistic.modifier;
     const hasSelectedApproachModifier = Number.isFinite(selectedApproachModifier);
-    if (row.selectedApproach?.skill) console.debug?.("Arcflight | Travel approach statistic resolution", { stationKey: row.stationKey, actorName: assignedActor?.name ?? row.assignedActorName, skill: row.selectedApproach.skill, aliasesTried: selectedStatistic.aliasesTried, resolvedStatisticKey: selectedStatistic.statisticKey, modifier: selectedStatistic.modifier });
+    if (row.selectedApproach?.skill) debugTravelApproachStatisticResolution(options, { stationKey: row.stationKey, actorName: assignedActor?.name ?? row.assignedActorName, skill: row.selectedApproach.skill, aliasesTried: selectedStatistic.aliasesTried, resolvedStatisticKey: selectedStatistic.statisticKey, modifier: selectedStatistic.modifier });
     const rollUnavailableReason = !hasAssignment
       ? "Assign an actor before rolling."
       : (!hasSelectedApproach
