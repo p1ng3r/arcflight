@@ -1,5 +1,5 @@
 import { ARCFLIGHT } from "./config/constants.js";
-import { TRAVEL_V2_DEV_TOOLS_SETTING } from "./helpers/travel-v2-dev-tools.js";
+import { TRAVEL_V2_DEV_TOOLS_SETTING, isTravelV2DevToolsEnabled } from "./helpers/travel-v2-dev-tools.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog, updateActiveTravelEventRunnerSession } from "./apps/travel-event-runner.js";
@@ -398,6 +398,94 @@ const ARCFLIGHT_API_MARKER = "__arcflightApi";
 
 function isArcflightApi(value) {
   return Boolean(value && value[ARCFLIGHT_API_MARKER] === true);
+}
+
+function getActiveLocalTravelRunnerContext() {
+  const activeOverlay = getActiveTravelSceneOverlay();
+  const activeRunner = getActiveTravelEventRunner();
+  const sourceSession = activeOverlay?.session ?? activeRunner?.session ?? null;
+  const normalized = normalizeTravelEventRunnerSession(sourceSession);
+  return { activeOverlay, activeRunner, session: normalized.session ?? null, errors: normalized.errors ?? [] };
+}
+
+function normalizeForcedTravelStationResultArgs(input, maybeResult) {
+  if (typeof input === "string") return { stationKey: input, result: typeof maybeResult === "string" ? maybeResult : "" };
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  return {
+    stationKey: typeof options.stationKey === "string" ? options.stationKey : "",
+    result: typeof options.result === "string" ? options.result : ""
+  };
+}
+
+async function forceTravelStationResult(input = {}, maybeResult = "") {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["forceTravelStationResult is GM-only."], sessionKey: "", stationKey: "", result: "", reactionPromptId: "", promptSent: false };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], sessionKey: "", stationKey: "", result: "", reactionPromptId: "", promptSent: false };
+  const { activeOverlay, activeRunner, session, errors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: errors?.length ? errors : ["No active local Travel v2 runner session."], sessionKey: "", stationKey: "", result: "", reactionPromptId: "", promptSent: false };
+  const args = normalizeForcedTravelStationResultArgs(input, maybeResult);
+  const result = ["failure", "criticalFailure"].includes(args.result) ? args.result : "";
+  if (!result) return { ok: false, errors: ["Forced station result must be failure or criticalFailure."], sessionKey: session.key ?? "", stationKey: args.stationKey, result: args.result, reactionPromptId: "", promptSent: false };
+  const state = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
+  const stationKey = args.stationKey || (state.stations ?? []).find((station) => station.isActive !== false)?.stationKey || "";
+  if (!stationKey) return { ok: false, errors: ["No active player station is available to force."], sessionKey: session.key ?? "", stationKey: "", result, reactionPromptId: "", promptSent: false };
+  const roundIndex = Number(session.currentRoundIndex ?? 0);
+  const beforePromptIds = new Set((session.reactionPrompts?.records ?? []).map((record) => record.reactionPromptId).filter(Boolean));
+  const updated = setTravelEventRunnerStationResult(session, roundIndex, stationKey, result);
+  if (!updated?.ok || !updated.session) return { ok: false, errors: updated?.errors ?? ["Station result could not be forced."], sessionKey: session.key ?? "", stationKey, result, reactionPromptId: "", promptSent: false };
+  const prompt = (updated.session.reactionPrompts?.records ?? []).find((record) =>
+    record.roundIndex === roundIndex
+    && record.stationKey === stationKey
+    && record.status === "pending"
+    && (!beforePromptIds.has(record.reactionPromptId) || record.result === result)
+  ) ?? null;
+  if (activeOverlay) activeOverlay.session = updated.session;
+  await updateActiveTravelSceneOverlayContext({ session: updated.session }, { render: true });
+  await updateActiveTravelEventRunnerSession(updated.session, { statusMessage: `Dev forced ${stationKey} to ${result}.` });
+  if (activeRunner && activeRunner.session !== updated.session) activeRunner.session = updated.session;
+  const missionBoardUpdate = sendTravelPlayerMissionBoardStationUpdateToPlayers(updated.session, stationKey, { actor: activeOverlay?.actor });
+  const stationCardUpdate = sendTravelPlayerStationCardToPlayers(updated.session, stationKey, { actor: activeOverlay?.actor });
+  let promptDelivery = null;
+  if (prompt?.reactionPromptId) promptDelivery = sendTravelPlayerReactionPromptToPlayers(updated.session, prompt.reactionPromptId, { actor: activeOverlay?.actor });
+  return {
+    ok: true,
+    errors: [],
+    sessionKey: updated.session.key ?? "",
+    stationKey,
+    result,
+    reactionPromptId: prompt?.reactionPromptId ?? "",
+    promptSent: promptDelivery?.ok === true,
+    missionBoardUpdate,
+    stationCardUpdate,
+    promptDelivery
+  };
+}
+
+async function inspectTravelPlayerFlow() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelPlayerFlow is GM-only."] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."] };
+  const { activeOverlay, session, errors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: errors?.length ? errors : ["No active local Travel v2 runner session."] };
+  const state = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
+  const prompts = session.reactionPrompts?.records ?? [];
+  return {
+    ok: true,
+    errors: [],
+    sessionKey: session.key ?? "",
+    currentRoundIndex: Number(session.currentRoundIndex ?? 0),
+    activeStations: (state.stations ?? []).filter((station) => station.isActive !== false).map((station) => {
+      const records = prompts.filter((record) => record.stationKey === station.stationKey && Number(record.roundIndex) === Number(session.currentRoundIndex ?? 0));
+      return {
+        stationKey: station.stationKey,
+        stationName: station.stationName ?? station.label ?? station.stationKey,
+        hasResult: station.hasResult === true,
+        canRoll: station.canRollStationCheck === true && station.hasResult !== true,
+        reactionPromptPending: records.some((record) => record.status === "pending"),
+        focusAccepted: records.some((record) => record.status === "accepted"),
+        rerollNeeded: station.focusRerollNeeded === true || records.some((record) => record.status === "accepted" && !record.rerollResult),
+        rerollResolved: station.focusRerollResolved === true || records.some((record) => Boolean(record.rerollResult) || record.status === "resolved")
+      };
+    })
+  };
 }
 
 function buildArcflightApi() {
@@ -805,7 +893,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true

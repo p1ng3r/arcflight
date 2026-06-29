@@ -428,7 +428,7 @@ export function sendTravelPlayerStationCardSocketDiagnostic(options = {}) {
     sentAt: Date.now()
   };
 
-  console.warn("Arcflight | Sending socket diagnostic.", {
+  console.debug("Arcflight | Sending socket diagnostic.", {
     targetUserIds,
     users
   });
@@ -533,7 +533,7 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
     const targetUserIds = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
     const matched = Boolean(userId && targetUserIds.includes(userId));
 
-    console.warn("Arcflight | Socket diagnostic received.", {
+    console.debug("Arcflight | Socket diagnostic received.", {
       userId,
       targetUserIds,
       matched,
@@ -612,7 +612,7 @@ export function handleTravelPlayerStationCardSocketPayload(payload = {}) {
     matched
   });
   if (!matched) return true;
-  console.warn("Arcflight | Opening player station card from socket.", {
+  console.debug("Arcflight | Opening player station card from socket.", {
     userId,
     stationKey: payload?.state?.stationKey
   });
