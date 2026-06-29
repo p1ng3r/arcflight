@@ -27,6 +27,7 @@ import {
   sendTravelPlayerStationCardToPlayers
 } from "./apps/travel-player-station-card.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
+import { registerArcflightFoundryCheckRunner, runFoundryChecks, runPlayerSafetyCheck } from "./dev/foundry-check-runner.js";
 import {
   createArcflightItem,
   createArkengine,
@@ -800,6 +801,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
+    dev: { runFoundryChecks, runPlayerSafetyCheck },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true
@@ -1124,6 +1126,7 @@ Hooks.once("init", () => {
   });
 
   registerArcflightApi();
+  registerArcflightFoundryCheckRunner();
 
   registerArcflightSheets()
     .then((registeredSheets) => {
@@ -1136,6 +1139,7 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   registerArcflightApi();
+  registerArcflightFoundryCheckRunner();
   registerTravelPlayerStationApproachSubmitHandler(handleTravelPlayerStationApproachSubmit);
   registerTravelPlayerStationRollHandler(handleTravelPlayerStationRoll);
   registerTravelPlayerReactionResponseHandler(handleTravelPlayerReactionResponse);
