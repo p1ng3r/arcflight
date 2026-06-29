@@ -2852,6 +2852,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const summary = activeSession?.status === "completed" ? summarizeTravelEventRunnerSession(activeSession, options).summary : null;
   const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
+  const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -2903,6 +2904,14 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2ShipScars: prepareTravelV2ShipScarsPanelState(activeSession),
     travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
     roundSummaryCard,
+    roundResolutionReadiness,
+    roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
+    roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,
+    roundResolutionBlockers: roundResolutionReadiness?.roundResolutionBlockers ?? [],
+    roundResolutionWarningLabel: roundResolutionReadiness?.roundResolutionWarningLabel ?? "",
+    canFinalizeCurrentRound: roundResolutionReadiness?.canFinalizeCurrentRound === true,
+    canAdvanceCurrentRound: roundResolutionReadiness?.canAdvanceCurrentRound === true,
+    finalizationReadinessLabel: roundResolutionReadiness?.finalizationReadinessLabel ?? "",
     hasStations: Boolean(activeSession && currentRound && currentRound.activeStations.length > 0),
     canRetreat: Boolean(activeSession && activeSession.currentRoundIndex > 0 && activeSession.status !== "completed"),
     canAdvance: Boolean(activeSession && activeSession.currentRoundIndex < activeSession.event.rounds.length - 1 && activeSession.status !== "completed"),
@@ -3602,9 +3611,9 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
   const hasFinalizationRecord = Boolean(roundFinalizationState.finalizationRecord);
   const errors = [];
   const warnings = [];
-  if (unresolvedStations.length > 0) errors.push(`Current Travel v2 round has unresolved active stations: ${unresolvedStations.join(", ")}.`);
-  if (pendingReactionRecords.length > 0) errors.push(`Current Travel v2 round has ${pendingReactionRecords.length} pending Focus reaction prompt(s).`);
-  if (rerollNeededRecords.length > 0) errors.push(`Current Travel v2 round has ${rerollNeededRecords.length} accepted Focus reroll(s) without a reroll result.`);
+  if (unresolvedStations.length > 0) errors.push("Resolve active stations before finalizing this round.");
+  if (pendingReactionRecords.length > 0) errors.push("Resolve pending Focus reaction prompts before finalizing this round.");
+  if (rerollNeededRecords.length > 0) errors.push("Resolve accepted Focus rerolls before finalizing this round.");
   for (const record of rerollNeededRecords) {
     if (!stationResults[record.stationKey]) errors.push(`${record.stationKey} requires a Focus reroll result before round resolution.`);
   }
@@ -3636,6 +3645,13 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
       roundOutcomeKey,
       roundOutcomeLabel: roundOutcomeKey ? humanizeIdentifier(roundOutcomeKey) : "",
       unresolvedStations,
+      roundResolutionReady: errors.length === 0,
+      roundResolutionBlocked: errors.length > 0,
+      roundResolutionBlockers: errors,
+      roundResolutionWarningLabel: errors[0] ?? "Round can be finalized.",
+      canFinalizeCurrentRound: canResolveRound,
+      canAdvanceCurrentRound: canAdvanceRound,
+      finalizationReadinessLabel: errors[0] ?? "Ready to finalize this round.",
       notes: canResolveRound || canAdvanceRound ? ["Round resolution readiness checks passed."] : ["Resolve active stations, Focus prompts, and required rerolls before advancing."]
     }
   };

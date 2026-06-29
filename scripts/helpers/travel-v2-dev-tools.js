@@ -1,4 +1,4 @@
-import { createTravelEventRunnerSession, deleteTravelEventRunnerSessionFromLibrary, getTravelEventRunnerSessionLibrary, normalizeTravelEventRunnerSession, saveTravelEventRunnerSessionToLibrary } from "./travel-event-runner.js";
+import { createTravelEventRunnerSession, deleteTravelEventRunnerSessionFromLibrary, getTravelEventRunnerSessionLibrary, normalizeTravelEventRunnerSession, saveTravelEventRunnerSessionToLibrary, setTravelEventRunnerStationResult, inspectTravelV2RoundResolutionReadiness } from "./travel-event-runner.js";
 import { applyTravelV2PressureToRunnerSession } from "./travel-v2-session-pressure-application.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "./travel-v2-session-round-finalization.js";
 import { completeTravelV2EventOnRunnerSession } from "./travel-v2-session-event-completion.js";
@@ -11,6 +11,51 @@ export const TRAVEL_V2_DEV_TOOLS_VERSION = 1;
 export const TRAVEL_V2_FORCE_OUTCOME_KEYS = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 
 const RESULT_BY_OUTCOME = Object.freeze({ criticalSuccess: "criticalSuccess", success: "success", mixed: "success", failure: "failure", criticalFailure: "criticalFailure" });
+
+export const TRAVEL_V2_FORCE_ROUND_RESULT_VALUES = Object.freeze(["criticalFailure", "failure", "success", "criticalSuccess"]);
+
+function normalizeForceRoundResolvedOptions(input = {}) {
+  const options = isPlainObject(input) ? input : {};
+  const results = isPlainObject(options.results) ? options.results : {};
+  const defaultResult = TRAVEL_V2_FORCE_ROUND_RESULT_VALUES.includes(options.defaultResult) ? options.defaultResult : "success";
+  return { ...options, results, defaultResult, settleFocus: options.settleFocus === true };
+}
+
+export function forceTravelV2RoundResolved(session, input = {}, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  if (!normalized.session) return { ok: false, errors: normalized.errors?.length ? normalized.errors : ["Travel v2 runner session is required."], warnings: normalized.warnings ?? [], session: normalized.session ?? session, sessionKey: "", currentRoundIndex: -1, resolvedStationCount: 0, activeStationCount: 0, results: {}, readiness: null };
+  const forceOptions = normalizeForceRoundResolvedOptions(input);
+  const errors = [];
+  const warnings = [];
+  const activeSession = normalized.session;
+  const roundIndex = getCurrentRoundIndex(activeSession);
+  const round = activeSession.event?.rounds?.[roundIndex] ?? {};
+  const activeStations = Array.isArray(round.activeStations) ? round.activeStations : stationKeysForRoundResult(activeSession.roundResults?.[roundIndex] ?? {});
+  const requestedResults = {};
+  for (const stationKey of activeStations) {
+    const value = forceOptions.results[stationKey] ?? forceOptions.defaultResult;
+    if (!TRAVEL_V2_FORCE_ROUND_RESULT_VALUES.includes(value)) errors.push(`Invalid forced result for ${stationKey}: ${value}.`);
+    else requestedResults[stationKey] = value;
+  }
+  for (const stationKey of Object.keys(forceOptions.results)) {
+    if (!activeStations.includes(stationKey)) warnings.push(`Ignoring result for inactive station ${stationKey}.`);
+  }
+  if (errors.length) return { ok: false, errors, warnings, session: activeSession, sessionKey: activeSession.key ?? "", currentRoundIndex: roundIndex, resolvedStationCount: 0, activeStationCount: activeStations.length, results: requestedResults, readiness: inspectTravelV2RoundResolutionReadiness(activeSession, options) };
+  let nextSession = cloneData(activeSession);
+  for (const stationKey of activeStations) {
+    const updated = setTravelEventRunnerStationResult(nextSession, roundIndex, stationKey, requestedResults[stationKey], options);
+    if (!updated.ok || !updated.session) {
+      return { ok: false, errors: updated.errors ?? [`Could not force ${stationKey}.`], warnings: [...warnings, ...(updated.warnings ?? [])], session: nextSession, sessionKey: nextSession.key ?? "", currentRoundIndex: roundIndex, resolvedStationCount: Object.values(nextSession.roundResults?.[roundIndex]?.stationResults ?? {}).filter(Boolean).length, activeStationCount: activeStations.length, results: requestedResults, readiness: inspectTravelV2RoundResolutionReadiness(nextSession, options) };
+    }
+    warnings.push(...(updated.warnings ?? []));
+    nextSession = updated.session;
+  }
+  nextSession.travelV2DevForcedRound = { forcedAt: nowIso(options), mode: "round-resolved", results: cloneData(requestedResults), settleFocus: forceOptions.settleFocus };
+  nextSession.updatedAt = nowIso(options);
+  const readiness = inspectTravelV2RoundResolutionReadiness(nextSession, options);
+  const resolvedStationCount = activeStations.filter((stationKey) => Boolean(nextSession.roundResults?.[roundIndex]?.stationResults?.[stationKey])).length;
+  return { ok: errors.length === 0, errors, warnings, session: nextSession, sessionKey: nextSession.key ?? "", currentRoundIndex: roundIndex, resolvedStationCount, activeStationCount: activeStations.length, results: cloneData(requestedResults), readiness };
+}
 
 function cloneData(value) { if (value == null) return value; return JSON.parse(JSON.stringify(value)); }
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
