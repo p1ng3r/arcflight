@@ -989,6 +989,12 @@ function sanitizeMissionBoardStation(station = {}) {
     focusBlocked: sanitizeBoolean(source.focusBlocked),
     focusBlockedReason: sanitizeText(source.focusBlockedReason),
     focusBlockedHazardName: sanitizeText(source.focusBlockedHazardName),
+    reactionStatusLabel: sanitizeText(source.reactionStatusLabel),
+    focusReactionAvailable: sanitizeBoolean(source.focusReactionAvailable),
+    focusReactionAccepted: sanitizeBoolean(source.focusReactionAccepted),
+    focusRerollNeeded: sanitizeBoolean(source.focusRerollNeeded),
+    focusRerollResolved: sanitizeBoolean(source.focusRerollResolved),
+    focusRerollResultLabel: sanitizeText(source.focusRerollResultLabel),
     rollUnavailableReason: sanitizeText(source.rollUnavailableReason),
     canRollStation: sanitizeBoolean(source.canRollStation),
     permissionReason: sanitizeText(source.permissionReason) || "Not assigned to your actor."

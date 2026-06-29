@@ -79,7 +79,7 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   globalThis.game.user = { id: "player2", isGM: false };
   globalThis.game.users = [{ id: "player2", name: "Player2", active: true, isGM: false }];
   globalThis.game.actors = [{ id: "actor2", uuid: "Actor.actor2", name: "Player Two", ownership: { player2: 3 } }];
-  const { sendTravelPlayerMissionBoardToPlayers } = await import("./travel-player-station-card.js");
+  const { ArcflightTravelPlayerMissionBoard, sendTravelPlayerMissionBoardToPlayers } = await import("./travel-player-station-card.js");
   const publicSession = {
     key: "mission-board-player-safe-smoke",
     status: "active",
@@ -140,8 +140,15 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   assertSmoke(accepted.ok === true && accepted.session.key === started.session.key, "Focus reaction responses preserve the same runner session key");
   const acceptedState = helperModule.prepareTravelPlayerMissionBoardState(accepted.session).stations.find((station) => station.stationKey === "navigator");
   assertSmoke(acceptedState?.hasResult === false && acceptedState?.focusReactionAccepted === true && acceptedState?.focusRerollNeeded === true, "Focus acceptance clears the result and exposes the reroll-needed path");
+  const acceptedBoard = new ArcflightTravelPlayerMissionBoard({ state: { hasSession: true, sessionKey: started.session.key, currentRoundIndex: 0, stations: [acceptedState] } });
+  const acceptedBoardStation = acceptedBoard.boardState.stations.find((station) => station.stationKey === "navigator");
+  assertSmoke(acceptedBoardStation?.focusReactionAccepted === true && acceptedBoardStation?.focusRerollNeeded === true && acceptedBoardStation?.reactionStatusLabel === "Focus accepted; reroll needed.", "mission board sanitizer preserves Focus accepted and reroll-needed fields for station-card opening");
   const rerolled = helperModule.markTravelReactionPromptRerollResult(accepted.session, prompt.reactionPromptId, "success", { now: "2026-06-29T00:03:00.000Z" });
   assertSmoke(rerolled.ok === true && rerolled.session.key === started.session.key, "reaction reroll resolution preserves the same runner session key");
+  const rerolledState = { ...acceptedState, focusReactionAccepted: false, focusRerollNeeded: false, focusRerollResolved: true, focusRerollResultLabel: "Success", reactionStatusLabel: "Reroll resolved: Success." };
+  const rerolledBoard = new ArcflightTravelPlayerMissionBoard({ state: { hasSession: true, sessionKey: started.session.key, currentRoundIndex: 0, stations: [rerolledState] } });
+  const rerolledBoardStation = rerolledBoard.boardState.stations.find((station) => station.stationKey === "navigator");
+  assertSmoke(rerolledBoardStation?.focusRerollResolved === true && rerolledBoardStation?.focusRerollResultLabel === "Success", "mission board sanitizer preserves Focus reroll-resolved fields for station-card opening");
 
   const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("./travel-player-station-card.js", import.meta.url), "utf8"));
   assertSmoke(source.includes("if (globalThis.game?.user?.isGM !== true) return true;") && source.includes("TRAVEL_PLAYER_STATION_ROLL_ACTION"), "GM-only socket action handlers still require GM users");
@@ -152,7 +159,7 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   assertSmoke(arcflightSource.includes("Player station approach submission did not match an active Travel v2 runner session") && arcflightSource.includes("!matched"), "mismatched player approach-submit session keys are rejected instead of silently applied");
   assertSmoke(arcflightSource.includes("Duplicate player station roll request rejected") && arcflightSource.includes("This station already has a result. A new roll is only available after an accepted Focus reroll clears the result."), "GM-side duplicate player roll requests are rejected before repeated permission validation");
 
-  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "player-safe-roll-result-state", "duplicate-roll-request-guard", "focus-reroll-allowed", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
+  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "player-safe-roll-result-state", "duplicate-roll-request-guard", "focus-reroll-allowed", "mission-board-focus-fields-preserved", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
 }
 
 export default runTravelPlayerMissionBoardBroadcastDebugSmokeChecks;
