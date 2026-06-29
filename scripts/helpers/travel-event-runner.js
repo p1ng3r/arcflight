@@ -3322,12 +3322,15 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
 
 
 function buildTravelPlayerStationFlowState(station = {}, reactionRecords = []) {
-  const pendingReaction = reactionRecords.some((record) => record.stationKey === station.stationKey && record.status === "pending");
-  const acceptedReaction = reactionRecords.some((record) => record.stationKey === station.stationKey && record.status === "accepted" && !record.rerollResult);
+  const stationReactionRecords = reactionRecords.filter((record) => record.stationKey === station.stationKey);
+  const pendingReaction = stationReactionRecords.some((record) => record.status === "pending");
+  const acceptedReaction = stationReactionRecords.some((record) => record.status === "accepted" && !record.rerollResult);
+  const rerollReaction = stationReactionRecords.find((record) => record.rerollResult) ?? null;
   let key = "waiting";
   let label = "Waiting";
   if (pendingReaction) { key = "reaction"; label = "Reaction Available"; }
   else if (acceptedReaction) { key = "ready"; label = "Focus Accepted / Reroll Needed"; }
+  else if (rerollReaction) { key = "rolled"; label = `Reroll Resolved: ${humanizeIdentifier(rerollReaction.rerollResult)}`; }
   else if (station.hasResult) { key = "rolled"; label = "Rolled / Waiting on GM"; }
   else if (!station.hasAssignment) { key = "waiting"; label = "Waiting"; }
   else if (!station.hasSelectedApproach) { key = "choosing"; label = "Choosing"; }
@@ -3337,7 +3340,9 @@ function buildTravelPlayerStationFlowState(station = {}, reactionRecords = []) {
     statusKey: key,
     stateLabel: label,
     partyRowClass: `arcflight-party-row--${key === "waitingOnGm" ? "waiting" : key === "reaction" ? "ready" : key}`,
-    stationConsoleLabel: `${station.stationName || humanizeIdentifier(station.stationKey)} — ${label}`
+    stationConsoleLabel: `${station.stationName || humanizeIdentifier(station.stationKey)} — ${label}`,
+    focusRerollResolved: Boolean(rerollReaction),
+    focusRerollResultLabel: rerollReaction ? humanizeIdentifier(rerollReaction.rerollResult) : ""
   };
 }
 
@@ -3439,10 +3444,12 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
       resultFeedbackText: station.hasResult ? station.resultFeedback : "",
       hasResultFeedback: station.hasResultFeedback === true,
       hasResult: station.hasResult === true,
-      reactionStatusLabel: stationFlow.stateLabel === "Reaction Available" ? "Focus reaction available." : (stationFlow.stateLabel === "Focus Accepted / Reroll Needed" ? "Focus accepted; reroll needed." : ""),
+      reactionStatusLabel: stationFlow.stateLabel === "Reaction Available" ? "Focus reaction available." : (stationFlow.stateLabel === "Focus Accepted / Reroll Needed" ? "Focus accepted; reroll needed." : (stationFlow.focusRerollResolved ? `Reroll resolved: ${stationFlow.focusRerollResultLabel}.` : "")),
       focusReactionAvailable: stationFlow.stateLabel === "Reaction Available",
       focusReactionAccepted: stationFlow.stateLabel === "Focus Accepted / Reroll Needed",
       focusRerollNeeded: stationFlow.stateLabel === "Focus Accepted / Reroll Needed",
+      focusRerollResolved: stationFlow.focusRerollResolved === true,
+      focusRerollResultLabel: stationFlow.focusRerollResultLabel || "",
       result: station.result || "",
       isNpcAssignment: station.isNpcAssignment === true,
       npcControllerUserId: station.npcController?.userId || "",
