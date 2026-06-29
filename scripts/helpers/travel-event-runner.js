@@ -1379,6 +1379,37 @@ function slugifySessionKey(value) {
   return slug || "travel-event-runner-session";
 }
 
+function normalizeSessionKeyValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildStableRunnerSessionKeySeed(session = {}, options = {}) {
+  const event = isPlainObject(session.event) ? session.event : {};
+  const ship = isPlainObject(session.ship) ? session.ship : {};
+  const timestamp = normalizeSessionKeyValue(session.startedAt)
+    || normalizeSessionKeyValue(session.createdAt)
+    || normalizeSessionKeyValue(session.updatedAt)
+    || normalizeSessionKeyValue(session.completedAt)
+    || nowIso(options);
+  return [
+    event.key,
+    event.id,
+    event.name,
+    ship.actorUuid,
+    ship.actorId,
+    ship.name,
+    timestamp
+  ].filter((part) => normalizeSessionKeyValue(part)).join("-");
+}
+
+function createStableRunnerSessionKey(session = {}, options = {}) {
+  return slugifySessionKey(buildStableRunnerSessionKeySeed(session, options) || `travel-event-runner-session-${nowIso(options)}`);
+}
+
+function resolveTravelEventRunnerSessionKey(session = {}, options = {}) {
+  return normalizeSessionKeyValue(session.key) || normalizeSessionKeyValue(session.sessionKey) || normalizeSessionKeyValue(session.id) || createStableRunnerSessionKey(session, options);
+}
+
 function humanizeIdentifier(value) {
   return String(value ?? "")
     .replace(/[-_]+/g, " ")
@@ -2192,6 +2223,7 @@ export function createTravelEventRunnerSession(event, options = {}) {
   const timestamp = nowIso(options);
   const session = {
     version: TRAVEL_EVENT_RUNNER_SESSION_VERSION,
+    key: resolveTravelEventRunnerSessionKey({ ...options, event: normalizedEvent, ship: shipSelection, startedAt: timestamp }, options),
     status: "active",
     event: normalizedEvent,
     currentRoundIndex: 0,
@@ -2237,7 +2269,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     };
   });
   const normalized = {
-    key: typeof session.key === "string" ? session.key : "",
+    key: resolveTravelEventRunnerSessionKey({ ...session, event, startedAt: typeof session.startedAt === "string" ? session.startedAt : "" }, options),
     name: typeof session.name === "string" ? session.name : "",
     version: TRAVEL_EVENT_RUNNER_SESSION_VERSION,
     status: ["active", "completed"].includes(session.status) ? session.status : "active",

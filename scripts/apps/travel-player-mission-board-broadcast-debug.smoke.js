@@ -106,11 +106,47 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
     assertSmoke(!playerSafeSnapshot.includes(forbidden), `Player2 payload omits GM-only/internal field ${forbidden}`);
   }
 
+
+  const helperModule = await import("../helpers/travel-event-runner.js");
+  const feedback = { criticalSuccess: "Clean route.", success: "Route holds.", failure: "Route slips.", criticalFailure: "Route collapses." };
+  const started = helperModule.createTravelEventRunnerSession({
+    key: "socket-flow-event",
+    name: "Socket Flow Event",
+    category: "navigation",
+    baseDC: 15,
+    roundCount: 1,
+    tags: ["smoke"],
+    activeResources: ["strain"],
+    travelStations: ["navigator"],
+    rounds: [{ roundNumber: 1, title: "Socket Round", activeStations: ["navigator"], primaryPressure: "strain", outcomeBranches: { dominantSuccess: "Win.", mixed: "Mixed.", dominantFailure: "Fail.", catastrophicFailure: "Crash." }, stationPrompts: { navigator: { stationKey: "navigator", playerAction: "Plot the route.", suggestedSkills: ["perception"], rollFeedback: feedback } }, stationCards: [{ stationKey: "navigator", rollFeedback: feedback, skillApproaches: [{ label: "Plot", skill: "perception", helpText: "Plot safely.", boardResultFeedback: feedback, gmNarrationFeedback: feedback }] }] }],
+    finalOutcomes: { majorVictory: { text: "Great." }, victory: { text: "Good." }, costlySuccess: { text: "Costly." }, failure: { text: "Bad." }, catastrophicFailure: { text: "Worst." } }
+  }, { now: "2026-06-29T00:00:00.000Z", ship: { actorId: "ship1", actorUuid: "Actor.ship1", name: "Arc Runner" } });
+  assertSmoke(started.ok === true && typeof started.session.key === "string" && started.session.key.length > 0, "new local runner sessions receive a non-empty session key");
+  const missionState = helperModule.prepareTravelPlayerMissionBoardState(started.session);
+  assertSmoke(missionState.sessionKey === started.session.key, "player mission board carries the runner session key");
+  const normalizedLegacyA = helperModule.normalizeTravelEventRunnerSession({ ...started.session, key: "" }, { now: "2026-06-29T00:00:00.000Z" }).session;
+  const normalizedLegacyB = helperModule.normalizeTravelEventRunnerSession({ ...started.session, key: "" }, { now: "2026-06-30T00:00:00.000Z" }).session;
+  assertSmoke(normalizedLegacyA.key && normalizedLegacyA.key === normalizedLegacyB.key, "legacy keyless runner sessions normalize to a stable non-empty key");
+  const failed = helperModule.setTravelEventRunnerStationResult(started.session, 0, "navigator", "failure", { now: "2026-06-29T00:01:00.000Z" });
+  assertSmoke(failed.ok === true && failed.session.key === started.session.key, "station result updates preserve the runner session key");
+  const prompt = failed.session.reactionPrompts.records.find((record) => record.stationKey === "navigator" && record.status === "pending");
+  assertSmoke(Boolean(prompt), "eligible station failure creates a reaction prompt");
+  const promptState = helperModule.prepareTravelPlayerReactionPromptState(failed.session, prompt.reactionPromptId, { userId: "player2", permittedUserIds: ["player2"] });
+  assertSmoke(promptState.sessionKey === started.session.key, "reaction prompt delivery carries the same runner session key");
+  const accepted = helperModule.acceptTravelReactionPrompt(failed.session, prompt.reactionPromptId, { userId: "player2", userName: "Player2", now: "2026-06-29T00:02:00.000Z" });
+  assertSmoke(accepted.ok === true && accepted.session.key === started.session.key, "Focus reaction responses preserve the same runner session key");
+  const rerolled = helperModule.markTravelReactionPromptRerollResult(accepted.session, prompt.reactionPromptId, "success", { now: "2026-06-29T00:03:00.000Z" });
+  assertSmoke(rerolled.ok === true && rerolled.session.key === started.session.key, "reaction reroll resolution preserves the same runner session key");
+
   const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("./travel-player-station-card.js", import.meta.url), "utf8"));
   assertSmoke(source.includes("if (globalThis.game?.user?.isGM !== true) return true;") && source.includes("TRAVEL_PLAYER_STATION_ROLL_ACTION"), "GM-only socket action handlers still require GM users");
   assertSmoke(source.includes("optionKey, selectedFocusAbility: station.selectedFocusAbility"), "mission board roll routing includes the selected option key and Focus selection");
 
-  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "gm-only-handler-gates", "mission-board-roll-routing"] };
+  const arcflightSource = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../arcflight.js", import.meta.url), "utf8"));
+  assertSmoke(arcflightSource.includes("const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);"), "player approach submit resolves sessions through the stable session-key helper");
+  assertSmoke(arcflightSource.includes("Player station approach submission did not match an active Travel v2 runner session") && arcflightSource.includes("!matched"), "mismatched player approach-submit session keys are rejected instead of silently applied");
+
+  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
 }
 
 export default runTravelPlayerMissionBoardBroadcastDebugSmokeChecks;
