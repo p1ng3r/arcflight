@@ -195,6 +195,7 @@ import {
   getTravelEventRunnerShipStationAssignments,
   startTravelEventRunnerFromPublishedEvent,
   prepareTravelEventRunnerState,
+  inspectTravelV2RoundResolutionReadiness,
   prepareTravelSceneOverlayState,
   prepareTravelPlayerStationCardState,
   prepareTravelPlayerReactionPromptState,
@@ -540,6 +541,15 @@ async function validateTravelPlayerFlow() {
   };
 }
 
+async function inspectTravelRoundResolution() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelRoundResolution is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session."], warnings: [] };
+  const playerSafeState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  return inspectTravelV2RoundResolutionReadiness(session, { actor: activeOverlay?.actor, playerSafeState });
+}
+
 function buildArcflightApi() {
   if (isArcflightApi(globalThis.CONFIG?.arcflight)) return globalThis.CONFIG.arcflight;
   return Object.freeze({
@@ -848,6 +858,7 @@ function buildArcflightApi() {
     createTravelEventRunnerSession,
     normalizeTravelEventRunnerSession,
     prepareTravelEventRunnerState,
+    inspectTravelV2RoundResolutionReadiness,
     prepareTravelSceneOverlayState,
     prepareTravelPlayerStationCardState,
     prepareTravelPlayerReactionPromptState,
@@ -945,7 +956,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true
@@ -1574,6 +1585,7 @@ export {
   createTravelEventRunnerSession,
   normalizeTravelEventRunnerSession,
   prepareTravelEventRunnerState,
+  inspectTravelV2RoundResolutionReadiness,
   prepareTravelSceneOverlayState,
   prepareTravelPlayerStationCardState,
   setTravelEventRunnerStationResult,
