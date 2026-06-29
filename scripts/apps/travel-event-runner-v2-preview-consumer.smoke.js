@@ -42,7 +42,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 2, "consumer version should be 2");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 3, "consumer version should be 3");
 
   const emptyState = prepareTravelEventRunnerAppStateWithTravelV2Preview();
   assertSmoke(!emptyState.hasSession, "empty app state should have no session");
@@ -93,6 +93,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
 
 
   const queueState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    user: { isGM: true },
     session: {
       key: "consumer-queue",
       status: "completed",
@@ -111,8 +112,15 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(queueState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="readyToApply")?.count===1, "app state exposes readyToApply count when an executable selected item exists");
   assertSmoke(queueState.consequenceFollowupReview?.hasRecords===true, "app state exposes consequenceFollowupReview.hasRecords");
   assertSmoke(queueState.consequenceFollowupReview.openCount===1 && queueState.consequenceFollowupReview.reviewedCount===1 && queueState.consequenceFollowupReview.deferredCount===1 && queueState.consequenceFollowupReview.resolvedCount===1, "app state exposes follow-up review status counts");
-  const needsSelectionState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { key:"consumer-queue-unselected", status:"completed", completed:true, event:{rounds:[{roundNumber:1}]}, travelV2FocusBacklashRecords:{records:[{id:"f2",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders."}]} } });
+  const needsSelectionState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ user: { isGM: true }, session: { key:"consumer-queue-unselected", status:"completed", completed:true, event:{rounds:[{roundNumber:1}]}, travelV2FocusBacklashRecords:{records:[{id:"f2",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders."}]} } });
   assertSmoke(needsSelectionState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="needsSelection")?.count===1, "app state exposes needsSelection count when an unselected item exists");
+  const nonGmQueueState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session: queueState.session,
+    user: { isGM: false }
+  });
+  assertSmoke(nonGmQueueState.isGM === false && nonGmQueueState.canManageTravelV2Consequences === false, "non-GM app state explicitly blocks consequence queue management");
+  const nonGmQueueStateJson = JSON.stringify(nonGmQueueState);
+  for (const forbidden of ["gmItemGroups","singleSuggestionSelectionSummary","clearSelectionSummary","applyStatusSummary","consequenceFollowupReview","catalogSuggestions","selectedConsequenceApplyPreview","applyEffectSummary","sourceRecord"]) assertSmoke(!nonGmQueueStateJson.includes(forbidden), `non-GM app state does not expose GM-only queue field ${forbidden}`);
   const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);
   assertSmoke(!playerSafeQueue.includes("gmItemGroups") && !playerSafeQueue.includes("singleSuggestionSelectionSummary") && !playerSafeQueue.includes("clearSelectionSummary") && !playerSafeQueue.includes("canClearSelectedConsequence") && !playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("applyEffectSummary") && !playerSafeQueue.includes("sourceRecord") && !playerSafeQueue.includes("catalogSuggestions") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations") && !playerSafeQueue.includes("consequenceFollowupReview") && !playerSafeQueue.includes("travelV2ConsequenceFollowups") && !playerSafeQueue.includes("followupRecord"), "player-safe state does not expose selection summaries or GM-only apply details");
   const runnerSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "travel-event-runner.js"), "utf8");

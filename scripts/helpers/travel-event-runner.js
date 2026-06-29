@@ -4168,7 +4168,7 @@ export function renderTravelEventRunnerSummaryMarkdown(session, options = {}) {
     lines.push("", `### Round ${round.roundNumber}: ${round.title}`);
     for (const row of round.stationRows) lines.push(`- **${row.stationName}** (${row.stationKey}): ${row.resultLabel}`);
   }
-  lines.push("", "## Pending Consequences / Rewards (Read-only Proposed Effects)", `**${r.proposedEffectsNotice}**`);
+  lines.push("", "## Proposed Travel Effects / Rewards", `**${r.proposedEffectsNotice}**`);
   if (r.proposedEffectRows.length) for (const effect of r.proposedEffectRows) lines.push("", `### ${effect.label}`, "```json", effect.json, "```");
   else lines.push("", "No proposed effects are attached to the suggested final outcome.");
   return { ...prepared, markdown: lines.join("\n") };
@@ -4182,7 +4182,7 @@ export function renderTravelEventRunnerSummaryHtml(session, options = {}) {
   const effectsHtml = r.proposedEffectRows.length
     ? r.proposedEffectRows.map((effect) => `<h3>${escapeHtml(effect.label)}</h3><pre>${escapeHtml(effect.json)}</pre>`).join("")
     : "<p>No proposed effects are attached to the suggested final outcome.</p>";
-  const html = `<section class="arcflight-travel-runner-summary"><h1>Travel Event Summary — ${escapeHtml(r.eventName)}</h1><ul><li><strong>Event Category:</strong> ${escapeHtml(r.eventCategory || "Uncategorized")}</li><li><strong>Base DC:</strong> ${escapeHtml(r.baseDC)}</li><li><strong>Started At:</strong> ${escapeHtml(r.startedAt)}</li><li><strong>Completed At:</strong> ${escapeHtml(r.completedAt)}</li><li><strong>Total Score:</strong> ${escapeHtml(r.totalScore)}</li><li><strong>Suggested Final Outcome:</strong> ${escapeHtml(humanizeIdentifier(r.suggestedFinalOutcome))}</li><li><strong>Final Outcome Label:</strong> ${escapeHtml(r.finalOutcomeLabel)}</li></ul><h2>Final Outcome Narrative</h2><p>${escapeHtml(r.finalOutcomeNarrativeText || "No final outcome narrative text provided.")}</p><h2>Round-by-Round Station Results</h2>${roundHtml}<h2>Pending Consequences / Rewards (Read-only Proposed Effects)</h2><p><strong>${escapeHtml(r.proposedEffectsNotice)}</strong></p>${effectsHtml}</section>`;
+  const html = `<section class="arcflight-travel-runner-summary"><h1>Travel Event Summary — ${escapeHtml(r.eventName)}</h1><ul><li><strong>Event Category:</strong> ${escapeHtml(r.eventCategory || "Uncategorized")}</li><li><strong>Base DC:</strong> ${escapeHtml(r.baseDC)}</li><li><strong>Started At:</strong> ${escapeHtml(r.startedAt)}</li><li><strong>Completed At:</strong> ${escapeHtml(r.completedAt)}</li><li><strong>Total Score:</strong> ${escapeHtml(r.totalScore)}</li><li><strong>Suggested Final Outcome:</strong> ${escapeHtml(humanizeIdentifier(r.suggestedFinalOutcome))}</li><li><strong>Final Outcome Label:</strong> ${escapeHtml(r.finalOutcomeLabel)}</li></ul><h2>Final Outcome Narrative</h2><p>${escapeHtml(r.finalOutcomeNarrativeText || "No final outcome narrative text provided.")}</p><h2>Round-by-Round Station Results</h2>${roundHtml}<h2>Proposed Travel Effects / Rewards</h2><p><strong>${escapeHtml(r.proposedEffectsNotice)}</strong></p>${effectsHtml}</section>`;
   return { ...prepared, html };
 }
 

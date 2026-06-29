@@ -136,10 +136,21 @@
       {{else}}<p class="arcflight-resolved">No GM attention items. Continue the voyage when ready.</p>{{/if}}
     </section>
 
-    <section class="arcflight-travel-action-queue arcflight-gm-only" aria-label="Pending Consequences">
+    {{#if state.canManageTravelV2Consequences}}
+    <section id="arcflight-travel-v2-pending-consequences" class="arcflight-travel-action-queue arcflight-gm-only" aria-label="Pending Consequences">
       <h3>🔒 Pending Consequences</h3>
+      <div class="arcflight-travel-card arcflight-gm-only arcflight-travel-pending-consequences__summary-bar">
+        <strong>Queue Summary</strong>
+        <p class="arcflight-sheet__hint">Pending: {{state.pendingConsequenceQueue.pendingCount}} · Selected: {{state.pendingConsequenceQueue.applyStatusSummary.selectedCount}} · Executable: {{state.pendingConsequenceQueue.applyStatusSummary.executableCount}} · Clearable: {{state.pendingConsequenceQueue.clearSelectionSummary.clearableCount}} · Applied/reviewed: {{state.pendingConsequenceQueue.appliedCount}}</p>
+        <div class="arcflight-travel-runner-mvp__actions">
+          <a href="#arcflight-travel-v2-pending-readyToApply">Ready to Apply</a>
+          <a href="#arcflight-travel-v2-pending-needsSelection">Needs Selection</a>
+          <a href="#arcflight-travel-v2-pending-applied">Applied / Reviewed</a>
+          <a href="#arcflight-travel-v2-followup-notes">Follow-up Notes</a>
+        </div>
+      </div>
       <p class="arcflight-sheet__hint">{{state.pendingConsequenceQueue.summaryText}}</p>
-      <p class="arcflight-sheet__hint">Pending: {{state.pendingConsequenceQueue.pendingCount}} · Applied/reviewed: {{state.pendingConsequenceQueue.appliedCount}} · Dismissed: {{state.pendingConsequenceQueue.dismissedCount}} · Deferred: {{state.pendingConsequenceQueue.deferredCount}}</p>
+      <p class="arcflight-sheet__hint">Dismissed: {{state.pendingConsequenceQueue.dismissedCount}} · Deferred: {{state.pendingConsequenceQueue.deferredCount}}</p>
       <section class="arcflight-travel-card arcflight-gm-only" aria-label="Apply Status">
         <strong>Apply Status</strong>
         <p class="arcflight-sheet__hint">Total: {{state.pendingConsequenceQueue.applyStatusSummary.totalItems}} · Selected: {{state.pendingConsequenceQueue.applyStatusSummary.selectedCount}} · Executable: {{state.pendingConsequenceQueue.applyStatusSummary.executableCount}} · Already Applied: {{state.pendingConsequenceQueue.applyStatusSummary.alreadyAppliedCount}}</p>
@@ -151,7 +162,7 @@
         <p class="arcflight-sheet__hint">Clearable selected: {{state.pendingConsequenceQueue.clearSelectionSummary.clearableCount}} · Selected total: {{state.pendingConsequenceQueue.clearSelectionSummary.selectedCount}} · Applied/effect locked: {{state.pendingConsequenceQueue.clearSelectionSummary.appliedOrEffectCount}} · Blocked status: {{state.pendingConsequenceQueue.clearSelectionSummary.blockedStatusCount}}</p>
       </section>
       {{#if state.consequenceFollowupReview.hasRecords}}
-        <section class="arcflight-travel-card arcflight-gm-only" aria-label="Follow-up Notes">
+        <section id="arcflight-travel-v2-followup-notes" class="arcflight-travel-card arcflight-gm-only" aria-label="Follow-up Notes">
           <strong>Follow-up Notes</strong>
           <p class="arcflight-sheet__hint">Total: {{state.consequenceFollowupReview.totalCount}} · Open: {{state.consequenceFollowupReview.openCount}} · Reviewed: {{state.consequenceFollowupReview.reviewedCount}} · Deferred: {{state.consequenceFollowupReview.deferredCount}} · Resolved: {{state.consequenceFollowupReview.resolvedCount}}</p>
           {{#each state.consequenceFollowupReview.groups}}
@@ -183,7 +194,7 @@
       {{#if state.pendingConsequenceQueue.items}}
         {{#each state.pendingConsequenceQueue.gmItemGroups}}
           {{#if count}}
-            <section class="arcflight-travel-card arcflight-gm-only" aria-label="{{label}} Pending Consequences">
+            <section id="arcflight-travel-v2-pending-{{key}}" class="arcflight-travel-card arcflight-gm-only" aria-label="{{label}} Pending Consequences">
               <h4>{{label}} ({{count}})</h4>
               <p class="arcflight-sheet__hint">{{hint}}</p>
               {{#each items}}
@@ -191,22 +202,20 @@
             <strong>{{title}}</strong>
             <p class="arcflight-sheet__hint">Severity: {{severity}} · Source: {{sourceType}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}} · Status: {{status}}</p>
             <p><strong>Public summary:</strong> {{publicSummary}}</p>
-            <p class="arcflight-gm-only"><strong>GM summary:</strong> {{gmSummary}}</p>
+            <details class="arcflight-gm-only"><summary>GM summary</summary><p>{{gmSummary}}</p></details>
             {{#if selectedConsequence}}
               <article class="arcflight-travel-card arcflight-gm-only">
                 <strong>Selected consequence: {{selectedConsequence.title}}</strong>
                 <p class="arcflight-sheet__hint">Severity: {{selectedConsequence.severity}} · Session-local selection only</p>
-                {{#if canClearSelectedConsequence}}
-                  <button type="button" data-arcflight-travel-v2-pending-consequence-clear-selection data-queue-key="{{queueKey}}" title="Clears the selected card from this pending queue item only; does not apply effects or mutate world data.">Clear Selection</button>
-                {{/if}}
+
                 <p><strong>Player-safe:</strong> {{selectedConsequence.playerSafeSummary}}</p>
-                <p class="arcflight-gm-only"><strong>Apply summary:</strong> {{selectedConsequence.applyEffectSummary}}</p>
+                <details class="arcflight-gm-only"><summary>Apply summary</summary><p>{{selectedConsequence.applyEffectSummary}}</p></details>
                 {{#if selectedConsequenceApplyPreview}}
                   <section class="arcflight-travel-card arcflight-gm-only" aria-label="Selected Consequence Apply Preview">
                     <strong>Apply Preview: {{selectedConsequenceApplyPreview.title}}</strong>
                     <p class="arcflight-sheet__hint">Severity: {{selectedConsequenceApplyPreview.severity}}{{#if selectedConsequenceApplyPreview.source}} · Effect category: {{selectedConsequenceApplyPreview.source}}{{/if}}{{#if selectedConsequenceApplyPreview.affectedTrack}} · Affected track: {{selectedConsequenceApplyPreview.affectedTrack}}{{/if}}</p>
                     <p><strong>Player-safe summary:</strong> {{selectedConsequenceApplyPreview.playerSafeSummary}}</p>
-                    <p class="arcflight-gm-only"><strong>GM apply summary:</strong> {{selectedConsequenceApplyPreview.applyEffectSummary}}</p>
+                    <details class="arcflight-gm-only"><summary>GM apply summary</summary><p>{{selectedConsequenceApplyPreview.applyEffectSummary}}</p></details>
                     <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{selectedConsequenceApplyPreview.mutation}} · <strong>Executable:</strong> {{#unless selectedConsequenceApplyPreview.executable}}no{{else}}yes{{/unless}} · <strong>Preview only:</strong> {{#if selectedConsequenceApplyPreview.previewOnly}}yes{{else}}no{{/if}}</p>
                     <p class="arcflight-sheet__hint"><strong>Warning:</strong> {{selectedConsequenceApplyPreview.warningText}}</p>
                     {{#if hasAppliedEffect}}
@@ -227,22 +236,23 @@
                         {{/if}}
                       </section>
                     {{/if}}
-                    {{#if canApplySelectedConsequence}}
-                      <button type="button" data-arcflight-travel-v2-pending-consequence-apply-selected data-queue-key="{{queueKey}}" title="Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Apply Selected Consequence</button>
-                    {{/if}}
+                    <div class="arcflight-travel-runner-mvp__actions">
+                      {{#if canClearSelectedConsequence}}<button type="button" data-arcflight-travel-v2-pending-consequence-clear-selection data-queue-key="{{queueKey}}" title="Clears the selected card from this pending queue item only; does not apply effects or mutate world data.">Clear Selection</button>{{/if}}
+                      {{#if canApplySelectedConsequence}}<button type="button" data-arcflight-travel-v2-pending-consequence-apply-selected data-queue-key="{{queueKey}}" title="Applies this selected consequence to the runner session only. Does not mutate actors, items, chat, journals, combat, scenes, tokens, sockets, compendia, or world data.">Apply Selected Consequence</button>{{/if}}
+                    </div>
                   </section>
                 {{/if}}
               </article>
             {{/if}}
             {{#if catalogSuggestions}}
               <details>
-                <summary>Catalog suggestions ({{catalogSuggestions.length}})</summary>
+                <summary>Catalog suggestions ({{catalogSuggestions.length}}) — scan and choose a card</summary>
                 {{#each catalogSuggestions}}
                   <article class="arcflight-travel-card arcflight-gm-only">
                     <strong>{{title}}</strong>
                     <p class="arcflight-sheet__hint">Severity: {{severity}}</p>
                     <p><strong>Player-safe:</strong> {{playerSafeSummary}}</p>
-                    <p class="arcflight-gm-only"><strong>Apply summary:</strong> {{applyEffectSummary}}</p>
+                    <details class="arcflight-gm-only"><summary>Apply summary</summary><p>{{applyEffectSummary}}</p></details>
                     <button type="button" data-arcflight-travel-v2-pending-consequence-select data-queue-key="{{../queueKey}}" data-consequence-id="{{id}}" title="Selects this authored consequence card for this queue item in the session only. Does not apply the effect or mutate world data.">Use This Card</button>
                   </article>
                 {{/each}}
@@ -260,6 +270,7 @@
         {{/each}}
       {{else}}<p class="arcflight-sheet__hint">No pending consequence candidates.</p>{{/if}}
     </section>
+    {{/if}}
 
     <div class="arcflight-travel-guided-drawers">
       <details id="arcflight-guided-reaction-console" class="arcflight-card-drawer" tabindex="-1"><summary>🧭 Reaction Console <span>{{state.guidedBridge.drawers.reactions}}</span></summary><p>Resolve Navigator Hard Correction and other pending reactions in the advanced Reaction Console drawer below.</p></details>
