@@ -6,6 +6,7 @@ import {
   inspectTravelV2RoundResolutionReadiness,
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
+import { forceTravelV2RoundResolved } from "./travel-v2-dev-tools.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 
 function assertSmoke(condition, message) {
@@ -19,10 +20,14 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   assertSmoke(created.ok, "runner session starts from fixture data");
   let session = created.session;
 
-  let readiness = inspectTravelV2RoundResolutionReadiness(session, { playerSafeState: {} });
+  let readiness = inspectTravelV2RoundResolutionReadiness(null, { playerSafeState: {} });
+  assertSmoke(!readiness.ok && readiness.errors.length > 0, "no-session readiness reports a clear error instead of passing");
+
+  readiness = inspectTravelV2RoundResolutionReadiness(session, { playerSafeState: {} });
   assertSmoke(!readiness.ok && readiness.unresolvedStationCount > 1, "fresh round reports unresolved active stations");
+  assertSmoke(readiness.roundResolutionBlocked === true && readiness.finalizationReadinessLabel.includes("Resolve active stations"), "GM finalization readiness includes active-station blocker labels");
   const blockedAdvance = advanceTravelEventRunnerRound(session);
-  assertSmoke(!blockedAdvance.ok && blockedAdvance.errors.some((error) => error.includes("unresolved active stations")), "round advance is blocked with unresolved active stations");
+  assertSmoke(!blockedAdvance.ok && blockedAdvance.errors.some((error) => error.includes("Resolve active stations") || error.includes("unresolved active stations")), "round advance is blocked with unresolved active stations");
 
   let updated = setTravelEventRunnerStationResult(session, 0, "navigator", "failure", { now: "2026-06-29T00:01:00.000Z" });
   assertSmoke(updated.ok, "navigator failure result records through existing station result logic");
@@ -47,6 +52,11 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
     session = updated.session;
   }
 
+  const forcedCreated = createTravelEventRunnerSession(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { key: "round-resolution-force-helper-session", now: "2026-06-29T00:00:00.000Z" });
+  const forcedRound = forceTravelV2RoundResolved(forcedCreated.session, {}, { playerSafeState: {} });
+  assertSmoke(forcedRound.ok && forcedRound.resolvedStationCount === forcedRound.activeStationCount, "forceTravelV2RoundResolved resolves all active stations through station result logic");
+  assertSmoke(forcedRound.readiness.ok === true && forcedRound.readiness.unresolvedStationCount === 0, "forced success round is readiness-clean by default");
+
   session = {
     ...session,
     travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "success", requestCount: 1, createdAt: "2026-06-29T00:05:00.000Z" }] },
@@ -57,6 +67,7 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   assertSmoke(readiness.ok && readiness.unresolvedStationCount === 0, "resolved round passes readiness inspection");
   assertSmoke(readiness.pendingReactionCount === 0 && readiness.rerollNeededCount === 0 && readiness.rerollResolvedCount === 1, "Focus reroll path is settled before round resolution");
   assertSmoke(readiness.canResolveRound === true, "round outcome can be prepared for GM finalization after pressure application exists");
+  assertSmoke(readiness.roundResolutionReady === true && readiness.finalizationReadinessLabel.includes("Ready"), "GM finalization readiness reports ready when all blockers are clear");
   assertSmoke(readiness.pendingConsequenceCount >= 1, "GM pending consequence queue can be prepared/countable without mutating gameplay state");
   assertSmoke(readiness.playerSummarySafe === true, "player-facing round state scan remains sanitized");
 
@@ -83,6 +94,8 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
       "accepted-focus-reroll-needed-detection",
       "settled-focus-reroll-readiness",
       "gm-pending-consequence-readiness",
+      "force-round-resolved-helper",
+      "gm-finalization-readiness-labels",
       "player-safe-round-summary-scan",
       "gm-override-preserved"
     ]
