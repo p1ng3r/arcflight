@@ -868,10 +868,21 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
   return true;
 }
 
-async function handleTravelPlayerStationRoll(payload = {}) {
+function getActiveTravelRunnerSessionForPayload(payload = {}) {
   const activeOverlay = getActiveTravelSceneOverlay();
   const activeRunner = getActiveTravelEventRunner();
-  const session = activeOverlay?.session ?? activeRunner?.session ?? null;
+  const requestedSessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey.trim() : "";
+  const candidates = [activeOverlay?.session, activeRunner?.session].filter(Boolean);
+  if (requestedSessionKey) {
+    const matched = candidates.find((candidate) => normalizeTravelEventRunnerSession(candidate).session?.key === requestedSessionKey) ?? null;
+    if (matched) return { activeOverlay, activeRunner, session: normalizeTravelEventRunnerSession(matched).session, requestedSessionKey, matched: true };
+  }
+  const session = candidates[0] ? normalizeTravelEventRunnerSession(candidates[0]).session : null;
+  return { activeOverlay, activeRunner, session, requestedSessionKey, matched: !requestedSessionKey || session?.key === requestedSessionKey };
+}
+
+async function handleTravelPlayerStationRoll(payload = {}) {
+  const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
   console.debug("Arcflight | Player roll request received by GM.", { payload });
@@ -884,7 +895,10 @@ async function handleTravelPlayerStationRoll(payload = {}) {
     skill: payload.skill ?? "",
     payload
   });
-  if (!session || !Number.isInteger(roundIndex) || !stationKey) return false;
+  if (!session || !Number.isInteger(roundIndex) || !stationKey || !matched) {
+    if (requestedSessionKey && !matched) console.warn("Arcflight | Player roll request did not match an active Travel v2 runner session.", { requestedSessionKey, activeSessionKey: session?.key ?? "" });
+    return false;
+  }
   const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
   const permissionStation = (permissionState.stations ?? []).find((candidate) => candidate.stationKey === stationKey);
   const permitted = Boolean(permissionStation?.permittedUserIds?.includes(payload.userId));
@@ -1018,9 +1032,7 @@ async function handleTravelPlayerStationRoll(payload = {}) {
 }
 
 async function handleTravelPlayerReactionResponse(payload = {}) {
-  const activeOverlay = getActiveTravelSceneOverlay();
-  const activeRunner = getActiveTravelEventRunner();
-  const session = activeOverlay?.session ?? activeRunner?.session ?? null;
+  const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);
   const reactionPromptId = typeof payload.reactionPromptId === "string" ? payload.reactionPromptId : "";
   const response = typeof payload.response === "string" ? payload.response : "";
   const record = session?.reactionPrompts?.records?.find((entry) => entry.reactionPromptId === reactionPromptId) ?? null;
@@ -1034,8 +1046,10 @@ async function handleTravelPlayerReactionResponse(payload = {}) {
     record: record ? { ...record } : null,
     payload
   });
-  if (!session || !record) return false;
-  if (payload.sessionKey && payload.sessionKey !== session.key) return false;
+  if (!session || !record || !matched) {
+    if (requestedSessionKey && !matched) console.warn("Arcflight | Player reaction response did not match an active Travel v2 runner session.", { requestedSessionKey, activeSessionKey: session?.key ?? "" });
+    return false;
+  }
   if (!["accept", "dismiss", "reopen"].includes(response)) return false;
   const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
   const permissionStation = permissionState.stations?.find((station) => station.stationKey === record.stationKey);
