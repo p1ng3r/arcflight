@@ -13,6 +13,7 @@ const TRAVEL_PLAYER_MISSION_BOARD_STATION_UPDATE_ACTION = "updateTravelPlayerMis
 const TRAVEL_PLAYER_STATION_ROLL_ACTION = "rollTravelPlayerStation";
 const TRAVEL_PLAYER_REACTION_PROMPT_ACTION = "openTravelPlayerReactionPrompt";
 const TRAVEL_PLAYER_REACTION_RESPONSE_ACTION = "resolveTravelPlayerReactionPrompt";
+export const TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING = "debugTravelMissionBoardBroadcasts";
 
 let travelPlayerStationApproachSubmitHandler = null;
 let travelPlayerStationRollHandler = null;
@@ -26,6 +27,35 @@ function debugTravelReaction(message, data = {}) {
     console.debug(`Arcflight | Travel Reaction | ${message}`, data);
   } catch (_error) {
     // Debug logging must never break player flows.
+  }
+}
+
+function isExpectedNoRecipientMissionBoardResult(result = {}) {
+  return result?.ok === false
+    && Number(result?.sentRecipients ?? 0) === 0
+    && Array.isArray(result?.targetUserIds)
+    && result.targetUserIds.length === 0
+    && Array.isArray(result?.errors)
+    && result.errors.includes("No active non-GM users found.");
+}
+
+function shouldDebugMissionBoardBroadcast(options = {}) {
+  if (options.debugMissionBoardBroadcasts === true || options.debugTravelMissionBoardBroadcasts === true) return true;
+  if (options.debugMissionBoardBroadcasts === false || options.debugTravelMissionBoardBroadcasts === false) return false;
+  try {
+    return globalThis.game?.settings?.get?.("arcflight", TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING) === true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function logDebouncedMissionBoardRefreshResult(result, options = {}) {
+  if (shouldDebugMissionBoardBroadcast(options)) {
+    console.debug?.("Arcflight | Debounced mission board refresh broadcast result.", result);
+    return;
+  }
+  if (result?.ok === false && !isExpectedNoRecipientMissionBoardResult(result)) {
+    console.warn?.("Arcflight | Debounced mission board refresh broadcast failed.", result);
   }
 }
 
@@ -1047,8 +1077,9 @@ export function queueTravelPlayerMissionBoardRefreshToPlayers(session, options =
   if (existing) globalThis.clearTimeout?.(existing.timerId);
   const timerId = globalThis.setTimeout?.(() => {
     missionBoardRefreshTimers.delete(sessionKey);
-    const result = sendTravelPlayerMissionBoardToPlayers(normalized.session, { ...options, refresh: true, debounce: false });
-    console.debug("Arcflight | Debounced mission board refresh broadcast result.", result);
+    const refreshOptions = { ...options, refresh: true, debounce: false };
+    const result = sendTravelPlayerMissionBoardToPlayers(normalized.session, refreshOptions);
+    logDebouncedMissionBoardRefreshResult(result, refreshOptions);
   }, delayMs);
   if (!timerId) return sendTravelPlayerMissionBoardToPlayers(normalized.session, { ...options, refresh: true });
   missionBoardRefreshTimers.set(sessionKey, { timerId, session: normalized.session, options: { ...options } });

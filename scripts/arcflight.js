@@ -6,6 +6,7 @@ import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEvent
 import { ArcflightTravelSceneOverlay, getActiveTravelSceneOverlay, openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./apps/travel-scene-overlay.js";
 import {
   ArcflightTravelPlayerMissionBoard,
+  TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING,
   ArcflightTravelPlayerReactionPrompt,
   ArcflightTravelPlayerStationCard,
   broadcastTravelPlayerStationCardToAllPlayers,
@@ -691,6 +692,7 @@ function buildArcflightApi() {
     ArcflightTravelSceneOverlay,
     openTravelSceneOverlay,
     ArcflightTravelPlayerMissionBoard,
+    TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING,
     openTravelPlayerMissionBoard,
     ArcflightTravelPlayerReactionPrompt,
     openTravelPlayerReactionPrompt,
@@ -1109,6 +1111,15 @@ Hooks.once("init", () => {
     default: false
   });
 
+  game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING, {
+    name: "Debug Travel Mission Board Broadcasts",
+    hint: "Log debounced Travel mission board refresh broadcast results to the browser console. Disable during normal play and smoke tests.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
   game.settings.register(ARCFLIGHT.MODULE_ID, TRAVEL_EVENT_BUILDER_LIBRARY_SETTING, {
     name: "Travel Event Builder Library",
     hint: "World-local saved drafts for the Arcflight Travel Event Builder authoring shell.",
@@ -1387,6 +1398,7 @@ export {
   ArcflightTravelSceneOverlay,
   openTravelSceneOverlay,
   ArcflightTravelPlayerMissionBoard,
+  TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING,
   openTravelPlayerMissionBoard,
   ArcflightTravelPlayerStationCard,
   openTravelPlayerStationCard,
