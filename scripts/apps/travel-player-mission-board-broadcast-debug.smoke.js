@@ -142,7 +142,11 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   assertSmoke(source.includes("if (globalThis.game?.user?.isGM !== true) return true;") && source.includes("TRAVEL_PLAYER_STATION_ROLL_ACTION"), "GM-only socket action handlers still require GM users");
   assertSmoke(source.includes("optionKey, selectedFocusAbility: station.selectedFocusAbility"), "mission board roll routing includes the selected option key and Focus selection");
 
-  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "gm-only-handler-gates", "mission-board-roll-routing"] };
+  const arcflightSource = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../arcflight.js", import.meta.url), "utf8"));
+  assertSmoke(arcflightSource.includes("const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);"), "player approach submit resolves sessions through the stable session-key helper");
+  assertSmoke(arcflightSource.includes("Player station approach submission did not match an active Travel v2 runner session") && arcflightSource.includes("!matched"), "mismatched player approach-submit session keys are rejected instead of silently applied");
+
+  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
 }
 
 export default runTravelPlayerMissionBoardBroadcastDebugSmokeChecks;

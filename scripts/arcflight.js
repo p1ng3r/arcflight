@@ -831,9 +831,7 @@ function registerArcflightApi() {
 }
 
 async function handleTravelPlayerStationApproachSubmit(payload = {}) {
-  const activeOverlay = getActiveTravelSceneOverlay();
-  const activeRunner = getActiveTravelEventRunner();
-  const session = activeOverlay?.session ?? activeRunner?.session ?? null;
+  const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);
   const roundIndex = Number(payload.roundIndex);
   const stationKey = typeof payload.stationKey === "string" ? payload.stationKey : "";
   const legacySkill = typeof payload.skill === "string" ? payload.skill : "";
@@ -841,8 +839,9 @@ async function handleTravelPlayerStationApproachSubmit(payload = {}) {
     ? payload.optionKey
     : (legacySkill ? `eventApproach:${legacySkill}` : "");
   console.debug("Arcflight | Player Station Order commit received by GM.", { payload });
-  if (!session || !Number.isInteger(roundIndex) || !stationKey || !optionKey) {
-    console.warn("Arcflight | Player station approach submission could not be applied.", { payload, hasSession: Boolean(session) });
+  if (!session || !Number.isInteger(roundIndex) || !stationKey || !optionKey || !matched) {
+    if (requestedSessionKey && !matched) console.warn("Arcflight | Player station approach submission did not match an active Travel v2 runner session.", { requestedSessionKey, activeSessionKey: session?.key ?? "" });
+    else console.warn("Arcflight | Player station approach submission could not be applied.", { payload, hasSession: Boolean(session) });
     ui.notifications?.warn?.("Player approach submission could not be applied to the active travel session.");
     return false;
   }
