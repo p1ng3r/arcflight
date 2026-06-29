@@ -145,6 +145,20 @@ function sanitizePressureGauges(value = []) {
     .filter((entry) => entry.key && entry.label);
 }
 
+function sanitizePublicMomentum(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const numericValue = Math.max(0, sanitizeInteger(source.value, 0));
+  const earnedTotal = Math.max(0, sanitizeInteger(source.earnedTotal, 0));
+  const spentTotal = Math.max(0, sanitizeInteger(source.spentTotal, 0));
+  return {
+    value: numericValue,
+    max: Math.max(numericValue, sanitizeInteger(source.max, numericValue)),
+    earnedTotal,
+    spentTotal,
+    helpText: sanitizeText(source.helpText) || "Momentum is a shared player-facing resource the GM awards from strong station results."
+  };
+}
+
 function sanitizePartyAlerts(value = []) {
   return (Array.isArray(value) ? value : [])
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
@@ -231,7 +245,9 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     publicShipScars: sanitizePublicShipScars(source.publicShipScars),
     hasPendingReactionBacklash: sanitizeBoolean(source.hasPendingReactionBacklash),
     pendingReactionBacklashText: sanitizeText(source.pendingReactionBacklashText),
-    currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1)
+    currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1),
+    momentum: sanitizePublicMomentum(source.momentum),
+    hasMomentum: sanitizeBoolean(source.hasMomentum) || sanitizePublicMomentum(source.momentum).value > 0
   };
 }
 
@@ -1016,7 +1032,9 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
     partyAlerts: sanitizePartyAlerts(source.partyAlerts),
     hasPartyAlerts: sanitizeBoolean(source.hasPartyAlerts) || sanitizePartyAlerts(source.partyAlerts).length > 0,
     hudMode: sanitizeText(source.hudMode) || "expanded",
-    isCompactHud: sanitizeText(source.hudMode) === "compact"
+    isCompactHud: sanitizeText(source.hudMode) === "compact",
+    momentum: sanitizePublicMomentum(source.momentum),
+    hasMomentum: sanitizeBoolean(source.hasMomentum) || sanitizePublicMomentum(source.momentum).value > 0
   };
 }
 
@@ -1365,10 +1383,11 @@ export class ArcflightTravelPlayerMissionBoard extends HandlebarsApplicationMixi
     this.#markStationRolling(stationKey);
     const select = this.element?.querySelector?.(`[data-arcflight-mission-board-approach][data-station-key="${stationKey}"]`);
     const optionKey = sanitizeText(select?.value || station.selectedApproachValue);
-    const skill = station.approachOptions.find((entry) => entry.value === optionKey)?.skill || station.selectedApproachSkillLabel || "";
-    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
-    debugTravelReaction("Player station roll request emitted.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
-    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, skill, userId: globalThis.game?.user?.id ?? "" });
+    const approach = station.approachOptions.find((entry) => entry.value === optionKey) ?? null;
+    const skill = approach?.skill || station.selectedApproachSkillLabel || "";
+    console.debug("Arcflight | Player roll request.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, optionKey, skill, userId: globalThis.game?.user?.id ?? "" });
+    debugTravelReaction("Player station roll request emitted.", { sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, optionKey, skill, userId: globalThis.game?.user?.id ?? "" });
+    globalThis.game?.socket?.emit?.("module.arcflight", { action: TRAVEL_PLAYER_STATION_ROLL_ACTION, sessionKey: this.boardState.sessionKey, stationKey, roundIndex: this.boardState.currentRoundIndex, optionKey, selectedFocusAbility: station.selectedFocusAbility || "", skill, userId: globalThis.game?.user?.id ?? "" });
     ui.notifications?.info?.("Station roll requested.");
     return true;
   }
