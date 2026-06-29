@@ -460,31 +460,83 @@ async function forceTravelStationResult(input = {}, maybeResult = "") {
   };
 }
 
+function getTravelPlayerFlowStationReport(session, activeOverlay = null) {
+  const currentRoundIndex = Number(session?.currentRoundIndex ?? 0);
+  const state = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
+  const permissionState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  const permissionStations = new Map((permissionState?.stations ?? []).map((station) => [station.stationKey, station]));
+  const userNamesById = new Map((globalThis.game?.users ?? []).map((user) => [user.id, user.name ?? user.id]));
+  const prompts = session?.reactionPrompts?.records ?? [];
+  return (state.stations ?? []).filter((station) => station.isActive !== false).map((station) => {
+    const records = prompts.filter((record) => record.stationKey === station.stationKey && Number(record.roundIndex) === currentRoundIndex);
+    const pendingRecord = records.find((record) => record.status === "pending") ?? null;
+    const acceptedRecord = records.find((record) => record.status === "accepted") ?? null;
+    const rerollRecord = records.find((record) => Boolean(record.rerollResult) || record.status === "resolved") ?? null;
+    const permissionStation = permissionStations.get(station.stationKey) ?? {};
+    const permittedUserIds = Array.isArray(permissionStation.permittedUserIds) ? permissionStation.permittedUserIds : [];
+    return {
+      stationKey: station.stationKey,
+      stationName: station.stationName ?? station.label ?? station.stationKey,
+      hasAssignment: station.hasAssignment === true,
+      hasSelectedApproach: station.hasSelectedApproach === true,
+      hasResult: station.hasResult === true,
+      result: station.result || "",
+      resultLabel: station.hasResult === true ? (station.resultLabel || "") : "",
+      canRoll: station.canRollStationCheck === true && station.hasResult !== true,
+      rollUnavailableReason: station.hasResult === true ? "This station already has a result." : (station.rollUnavailableReason || ""),
+      reactionPromptPending: Boolean(pendingRecord),
+      reactionPromptId: pendingRecord?.reactionPromptId ?? acceptedRecord?.reactionPromptId ?? rerollRecord?.reactionPromptId ?? "",
+      focusAccepted: Boolean(acceptedRecord || station.focusReactionAccepted === true),
+      rerollNeeded: station.focusRerollNeeded === true || Boolean(acceptedRecord && !acceptedRecord.rerollResult),
+      rerollResolved: station.focusRerollResolved === true || Boolean(rerollRecord),
+      rerollResult: rerollRecord?.rerollResult || "",
+      permittedUserIds,
+      permittedUserNames: permittedUserIds.map((id) => userNamesById.get(id) ?? id)
+    };
+  });
+}
+
 async function inspectTravelPlayerFlow() {
   if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelPlayerFlow is GM-only."] };
   if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."] };
   const { activeOverlay, session, errors } = getActiveLocalTravelRunnerContext();
   if (!session) return { ok: false, errors: errors?.length ? errors : ["No active local Travel v2 runner session."] };
-  const state = prepareTravelSceneOverlayState(session, { actor: activeOverlay?.actor });
+  return { ok: true, errors: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), activeStations: getTravelPlayerFlowStationReport(session, activeOverlay) };
+}
+
+async function validateTravelPlayerFlow() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["validateTravelPlayerFlow is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session."], warnings: [], sessionKey: "", currentRoundIndex: -1, stationCount: 0, activeStationCount: 0, pendingReactionCount: 0, acceptedFocusCount: 0, rerollNeededCount: 0, rerollResolvedCount: 0, duplicateRollGuardPresent: true, playerSafetyNotes: [] };
+  const currentRoundIndex = Number(session.currentRoundIndex ?? 0);
+  const stationReports = getTravelPlayerFlowStationReport(session, activeOverlay);
   const prompts = session.reactionPrompts?.records ?? [];
+  const errors = [];
+  const warnings = [];
+  for (const record of prompts) {
+    if (!record.stationKey) errors.push(`Reaction prompt ${record.reactionPromptId || "(missing id)"} is missing a station key.`);
+    if (Number(record.roundIndex) !== currentRoundIndex) warnings.push(`Reaction prompt ${record.reactionPromptId || "(missing id)"} belongs to round ${record.roundIndex}, not active round ${currentRoundIndex}.`);
+  }
+  for (const station of stationReports) {
+    if (station.focusAccepted && !station.rerollNeeded && !station.rerollResolved) errors.push(`${station.stationKey} has accepted Focus without reroll-needed or reroll-resolved state.`);
+    if (station.rerollResolved && station.reactionPromptPending) errors.push(`${station.stationKey} has a resolved reroll while a reaction prompt is still pending.`);
+    if (station.hasResult && station.canRoll && !station.rerollNeeded) errors.push(`${station.stationKey} has a result but is still rollable outside an accepted reroll path.`);
+  }
   return {
-    ok: true,
-    errors: [],
+    ok: errors.length === 0,
+    errors,
+    warnings,
     sessionKey: session.key ?? "",
-    currentRoundIndex: Number(session.currentRoundIndex ?? 0),
-    activeStations: (state.stations ?? []).filter((station) => station.isActive !== false).map((station) => {
-      const records = prompts.filter((record) => record.stationKey === station.stationKey && Number(record.roundIndex) === Number(session.currentRoundIndex ?? 0));
-      return {
-        stationKey: station.stationKey,
-        stationName: station.stationName ?? station.label ?? station.stationKey,
-        hasResult: station.hasResult === true,
-        canRoll: station.canRollStationCheck === true && station.hasResult !== true,
-        reactionPromptPending: records.some((record) => record.status === "pending"),
-        focusAccepted: records.some((record) => record.status === "accepted"),
-        rerollNeeded: station.focusRerollNeeded === true || records.some((record) => record.status === "accepted" && !record.rerollResult),
-        rerollResolved: station.focusRerollResolved === true || records.some((record) => Boolean(record.rerollResult) || record.status === "resolved")
-      };
-    })
+    currentRoundIndex,
+    stationCount: stationReports.length,
+    activeStationCount: stationReports.length,
+    pendingReactionCount: stationReports.filter((station) => station.reactionPromptPending).length,
+    acceptedFocusCount: stationReports.filter((station) => station.focusAccepted).length,
+    rerollNeededCount: stationReports.filter((station) => station.rerollNeeded).length,
+    rerollResolvedCount: stationReports.filter((station) => station.rerollResolved).length,
+    duplicateRollGuardPresent: true,
+    playerSafetyNotes: ["Uses player mission-board permission state only for permitted users.", "Does not include consequence queues, unrevealed hazard internals, or ship scar internals."]
   };
 }
 
@@ -893,7 +945,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true
