@@ -153,13 +153,18 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("./travel-player-station-card.js", import.meta.url), "utf8"));
   assertSmoke(source.includes("if (globalThis.game?.user?.isGM !== true) return true;") && source.includes("TRAVEL_PLAYER_STATION_ROLL_ACTION"), "GM-only socket action handlers still require GM users");
   assertSmoke(source.includes("optionKey, selectedFocusAbility: station.selectedFocusAbility"), "mission board roll routing includes the selected option key and Focus selection");
+  assertSmoke(source.includes('console.debug("Arcflight | Player station card socket payload received."') && source.includes('console.debug("Arcflight | Opening player station card from socket."'), "benign player station card socket success diagnostics use debug logging");
+  assertSmoke(!source.includes('console.warn("Arcflight | Opening player station card from socket."') && !source.includes('console.warn("Arcflight | Socket diagnostic received."'), "benign socket diagnostic success logs are not warning-level");
 
   const arcflightSource = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../arcflight.js", import.meta.url), "utf8"));
   assertSmoke(arcflightSource.includes("const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);"), "player approach submit resolves sessions through the stable session-key helper");
   assertSmoke(arcflightSource.includes("Player station approach submission did not match an active Travel v2 runner session") && arcflightSource.includes("!matched"), "mismatched player approach-submit session keys are rejected instead of silently applied");
   assertSmoke(arcflightSource.includes("Duplicate player station roll request rejected") && arcflightSource.includes("This station already has a result. A new roll is only available after an accepted Focus reroll clears the result."), "GM-side duplicate player roll requests are rejected before repeated permission validation");
+  assertSmoke(arcflightSource.includes("forceTravelStationResult") && arcflightSource.includes("inspectTravelPlayerFlow") && arcflightSource.includes("dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow }"), "Travel player-flow dev helpers are exposed through CONFIG.arcflight.dev");
+  assertSmoke(arcflightSource.includes('globalThis.game?.user?.isGM !== true') && arcflightSource.includes("isTravelV2DevToolsEnabled() !== true"), "Travel player-flow dev helpers are GM/dev gated");
+  assertSmoke(arcflightSource.includes("setTravelEventRunnerStationResult(session, roundIndex, stationKey, result)") && arcflightSource.includes("sendTravelPlayerReactionPromptToPlayers(updated.session, prompt.reactionPromptId"), "forced station result helper reuses station-result logic and existing reaction prompt delivery");
 
-  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "player-safe-roll-result-state", "duplicate-roll-request-guard", "focus-reroll-allowed", "mission-board-focus-fields-preserved", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing"] };
+  return { ok: true, checked: ["default-no-recipient-quiet", "debug-setting-enabled", "explicit-debug-option", "player2-safe-mission-board", "stable-session-key-flow", "player-safe-roll-result-state", "duplicate-roll-request-guard", "focus-reroll-allowed", "mission-board-focus-fields-preserved", "approach-submit-session-key-guard", "gm-only-handler-gates", "mission-board-roll-routing", "benign-socket-debug-logging", "travel-player-flow-dev-helper-source"] };
 }
 
 export default runTravelPlayerMissionBoardBroadcastDebugSmokeChecks;
