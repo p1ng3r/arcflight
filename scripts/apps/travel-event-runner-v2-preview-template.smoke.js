@@ -63,6 +63,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "applyButtonLabel", "template should render outcome apply label from model");
   assertIncludes(template, "Outcome Applied", "template should include applied outcome label");
   assertIncludes(template, "GM-only", "template should visibly mark the panel as GM-only");
+  assertIncludes(template, "{{#if state.canManageTravelV2Consequences}}", "template should explicitly gate the GM pending consequence queue by management permission");
+  assertSmoke(template.indexOf("{{#if state.canManageTravelV2Consequences}}") < template.indexOf("Pending Consequences"), "GM permission gate should wrap Pending Consequences before its title renders");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
   assertIncludes(template, "{{#if canApplySelectedConsequence}}", "template should gate Apply Selected Consequence on prepared item apply state");
   assertSmoke(!template.includes("{{#if selectedConsequenceApplyPreview.executable}}"), "template should not gate Apply Selected Consequence directly only on preview executable");

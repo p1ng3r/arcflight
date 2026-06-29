@@ -4,7 +4,7 @@ import { prepareTravelEventRunnerV2PreviewPanelState } from "./travel-event-runn
 import { prepareTravelV2CompletedSessionHistoryState } from "../helpers/travel-v2-dev-tools.js";
 import { prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue } from "../helpers/travel-v2-pending-consequence-queue.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 2;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
 function guidedQueueButtons(action, { canApply = false, canSend = false, noDismiss = false } = {}) {
   const buttons = [];
@@ -114,8 +114,11 @@ function buildTravelV2GuidedState(state = {}) {
   };
 }
 
-export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false } = {}) {
+export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false, user = globalThis.game?.user } = {}) {
   const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor });
+  const canManageTravelV2Consequences = user?.isGM !== false;
+  const preparedPendingConsequenceQueue = prepareTravelV2PendingConsequenceQueue(session);
+  const preparedConsequenceFollowupReview = prepareTravelV2ConsequenceFollowupReview(session);
   const appState = {
     ...state,
     actor,
@@ -130,8 +133,10 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2EventOutcomeApplicationResult: uiState.travelV2EventOutcomeApplicationResult ?? null,
     travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null,
     travelV2PressureRunnerSession: session,
-    pendingConsequenceQueue: prepareTravelV2PendingConsequenceQueue(session),
-    consequenceFollowupReview: prepareTravelV2ConsequenceFollowupReview(session),
+    isGM: canManageTravelV2Consequences,
+    canManageTravelV2Consequences,
+    pendingConsequenceQueue: canManageTravelV2Consequences ? preparedPendingConsequenceQueue : { playerSafeItems: preparedPendingConsequenceQueue.playerSafeItems ?? [] },
+    ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],

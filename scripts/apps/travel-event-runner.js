@@ -522,7 +522,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       selectedSessionKey: this.selectedSessionKey,
       actor: targetActor,
       uiState: this.uiState,
-      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled()
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled(),
+      user: game?.user
     });
     const startupDiagnostics = prepareTravelEventRunnerStartupDiagnostics({
       session: this.session,
@@ -707,6 +708,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #updatePendingConsequenceQueueItem(target) {
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can update pending consequences.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
     const queueKey = target.dataset.queueKey ?? "";
     const status = target.dataset.status ?? "";
     const updated = updateTravelV2PendingConsequenceQueueItem(this.session, queueKey, status);
@@ -801,6 +807,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #applySelectedPendingConsequence(target) {
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can apply selected consequences.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
     const queueKey = target.dataset.queueKey ?? "";
     const updated = applyTravelV2SelectedConsequenceToSession(this.session, queueKey);
     if (!updated.ok) {
@@ -817,6 +828,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #selectPendingConsequenceCatalogCard(target) {
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can select pending consequence catalog cards.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
     const queueKey = target.dataset.queueKey ?? "";
     const consequenceId = target.dataset.consequenceId ?? "";
     const updated = selectTravelV2PendingConsequenceCatalogCard(this.session, queueKey, consequenceId);
@@ -875,7 +891,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       selectedSessionKey: this.selectedSessionKey,
       actor: this.#getSelectedShipActor(),
       uiState: this.uiState,
-      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled()
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled(),
+      user: game?.user
     });
     const suggestedOutcomeKey = normalizeGuidedRoundOutcomeKey(state.roundSummaryCard?.roundOutcomeKey);
     const preferred = state.travelV2PreviewPanel?.rows?.find((row) => row.outcomeKey === suggestedOutcomeKey && !row.pressureApplyDisabled)
