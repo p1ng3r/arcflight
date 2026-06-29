@@ -93,6 +93,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
 
 
   const queueState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    user: { isGM: true },
     session: {
       key: "consumer-queue",
       status: "completed",
@@ -111,7 +112,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(queueState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="readyToApply")?.count===1, "app state exposes readyToApply count when an executable selected item exists");
   assertSmoke(queueState.consequenceFollowupReview?.hasRecords===true, "app state exposes consequenceFollowupReview.hasRecords");
   assertSmoke(queueState.consequenceFollowupReview.openCount===1 && queueState.consequenceFollowupReview.reviewedCount===1 && queueState.consequenceFollowupReview.deferredCount===1 && queueState.consequenceFollowupReview.resolvedCount===1, "app state exposes follow-up review status counts");
-  const needsSelectionState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { key:"consumer-queue-unselected", status:"completed", completed:true, event:{rounds:[{roundNumber:1}]}, travelV2FocusBacklashRecords:{records:[{id:"f2",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders."}]} } });
+  const needsSelectionState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ user: { isGM: true }, session: { key:"consumer-queue-unselected", status:"completed", completed:true, event:{rounds:[{roundNumber:1}]}, travelV2FocusBacklashRecords:{records:[{id:"f2",roundIndex:0,stationName:"Engineer",status:"pending",publicRiskText:"The arkengine shudders."}]} } });
   assertSmoke(needsSelectionState.pendingConsequenceQueue.gmItemGroups.find((group)=>group.key==="needsSelection")?.count===1, "app state exposes needsSelection count when an unselected item exists");
   const nonGmQueueState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
     session: queueState.session,
