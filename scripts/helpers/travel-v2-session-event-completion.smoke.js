@@ -23,7 +23,7 @@ export function runTravelV2SessionEventCompletionSmokeChecks() {
   const already = completeTravelV2EventOnRunnerSession(sessionFixture({ status: "completed", completedAt: "2026-06-19T00:00:00.000Z" }));
   assertSmoke(!already.ok && already.blockedReasons.includes("Travel v2 runner session is already completed."), "already completed session blocks");
 
-  const ready = sessionFixture({ roundResults: [{ stationResults: { helm: "success", engineer: "criticalFailure" } }, { stationResults: { scout: "success" } }], travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, totalsByPressureType: { hull: 1, strain: 2 } }] }, travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, effectiveOutcomeKey: "success" }, { roundIndex: 1, roundNumber: 2, effectiveOutcomeKey: "failure" }] }, travelV2PendingConsequenceQueue: { records: [{ queueKey: "q1", status: "applied" }, { queueKey: "q2", status: "dismissed" }] } });
+  const ready = sessionFixture({ roundResults: [{ stationResults: { helm: "success", engineer: "criticalFailure" } }, { stationResults: { scout: "success" } }], travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, totalsByPressureType: { hull: 1, strain: 2 } }] }, travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, effectiveOutcomeKey: "success" }, { roundIndex: 1, roundNumber: 2, effectiveOutcomeKey: "failure" }] }, travelV2PendingConsequenceQueue: { records: [{ queueKey: "q1", status: "applied" }, { queueKey: "q2", status: "dismissed" }] }, travelV2ConsequenceApplicationHistory: { records: [{ queueKey: "q1", mutation: "session-pressure-only", resource: "hull", delta: 1, beforeValue: 1, afterValue: 2 }] } });
   const readyBefore = snapshot(ready);
   const summary = buildTravelV2EventCompletionSummary(ready, { now: "2026-06-20T01:00:00.000Z" });
   assertEqual(summary.eventTitle, "Travel Event", "summary has event title fallback");
@@ -31,7 +31,8 @@ export function runTravelV2SessionEventCompletionSmokeChecks() {
   assertEqual(summary.completedRoundCount, 2, "summary has completed round count");
   assertEqual(summary.totals.stationsResolved, 3, "summary counts station results");
   assertEqual(summary.totals.criticalFailures, 1, "summary counts critical failures");
-  assertEqual(summary.totals.resourceDeltas.hull, 1, "summary aggregates hull pressure");
+  assertEqual(summary.totals.resourceDeltas.hull, 2, "summary aggregates hull pressure and applied consequence deltas");
+  assertEqual(summary.totals.consequencesApplied, 1, "summary dedupes applied queue and history records by queue key");
   assertEqual(summary.totals.consequencesDismissed, 1, "summary counts dismissed consequences");
   const completed = completeTravelV2EventOnRunnerSession(ready, { now: "2026-06-20T01:02:03.000Z" });
   assertSmoke(completed.ok && completed.completed, "ready event completes");

@@ -68,6 +68,24 @@ function emptyResourceDeltas() {
   return { hull: 0, strain: 0, lifeveil: 0, morale: 0, supplies: 0 };
 }
 
+function consequenceAppliedIdentity(record = {}, fallback = "") {
+  const explicit = record?.queueKey ?? record?.consequenceItemKey ?? record?.applicationId ?? record?.id;
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  return fallback;
+}
+
+function countUniqueAppliedConsequences(queueRecords = [], applicationRecords = []) {
+  const keys = new Set();
+  queueRecords.forEach((record, index) => {
+    if (record?.status !== "applied") return;
+    keys.add(consequenceAppliedIdentity(record, `queue:${index}`));
+  });
+  applicationRecords.forEach((record, index) => {
+    keys.add(consequenceAppliedIdentity(record, `application:${index}`));
+  });
+  return keys.size;
+}
+
 export function buildTravelV2EventCompletionSummary(session, options = {}) {
   const now = timestampFromOptions(options);
   const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
@@ -84,7 +102,7 @@ export function buildTravelV2EventCompletionSummary(session, options = {}) {
     focusUses: 0,
     rerollsAccepted: 0,
     consequencesPending: consequenceQueue.filter((record) => record?.status === "pending").length,
-    consequencesApplied: consequenceQueue.filter((record) => record?.status === "applied").length + consequenceApplications.length,
+    consequencesApplied: countUniqueAppliedConsequences(consequenceQueue, consequenceApplications),
     consequencesDismissed: consequenceQueue.filter((record) => record?.status === "dismissed").length,
     resourceDeltas: emptyResourceDeltas()
   };
