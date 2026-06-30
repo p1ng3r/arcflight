@@ -119,6 +119,11 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const canManageTravelV2Consequences = user?.isGM === true;
   const preparedPendingConsequenceQueue = prepareTravelV2PendingConsequenceQueue(session);
   const preparedConsequenceFollowupReview = prepareTravelV2ConsequenceFollowupReview(session);
+  const pendingConsequenceCount = Number(preparedPendingConsequenceQueue.pendingCount) || 0;
+  const consequenceFlowReady = state.roundFinalization?.isFinalized === true && pendingConsequenceCount === 0;
+  const consequenceFlowBlocked = state.roundFinalization?.isFinalized === true && pendingConsequenceCount > 0;
+  const consequenceFlowBlockers = consequenceFlowBlocked ? ["Pending consequences require GM review."] : [];
+  const consequenceFlowWarningLabel = consequenceFlowBlocked ? "Round finalized. Review pending consequences before advancing." : (consequenceFlowReady ? "No pending consequences. Ready to advance." : (state.roundFinalization?.canFinalize === true ? "Ready to finalize this round." : "Resolve active stations before finalizing this round."));
   const appState = {
     ...state,
     actor,
@@ -135,6 +140,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2PressureRunnerSession: session,
     isGM: canManageTravelV2Consequences,
     canManageTravelV2Consequences,
+    ...(canManageTravelV2Consequences ? { consequenceFlowReady, consequenceFlowBlocked, consequenceFlowBlockers, consequenceFlowWarningLabel, canReviewConsequences: pendingConsequenceCount > 0, canApplyPendingConsequences: pendingConsequenceCount > 0, canDismissPendingConsequences: pendingConsequenceCount > 0, canAdvanceAfterConsequences: consequenceFlowReady } : {}),
     pendingConsequenceQueue: canManageTravelV2Consequences ? preparedPendingConsequenceQueue : { playerSafeItems: preparedPendingConsequenceQueue.playerSafeItems ?? [] },
     ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
