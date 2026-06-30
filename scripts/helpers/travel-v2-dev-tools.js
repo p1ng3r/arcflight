@@ -166,7 +166,99 @@ export async function deleteTravelV2CompletedSessionFromLibrary(sessionKey, opti
   return deleteTravelEventRunnerSessionFromLibrary(key, { ...options, library });
 }
 
+
+function asArray(value) { return Array.isArray(value) ? value : []; }
+function cleanText(value) { return typeof value === "string" ? value.trim() : (value == null ? "" : String(value).trim()); }
+function resourceDeltaRows(resourceDeltas = {}) {
+  if (!isPlainObject(resourceDeltas)) return [];
+  return Object.entries(resourceDeltas).map(([key, amount]) => {
+    const numeric = Number(amount) || 0;
+    return { key, label: humanizeIdentifier(key), amount: numeric, displayAmount: `${numeric > 0 ? "+" : ""}${numeric}` };
+  }).filter((row) => row.amount !== 0);
+}
+function humanizeIdentifier(value) { return String(value ?? "").replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function consequenceCounts(summary = {}) {
+  const totals = isPlainObject(summary.totals) ? summary.totals : {};
+  return {
+    applied: Math.max(0, Number(totals.consequencesApplied) || 0),
+    dismissed: Math.max(0, Number(totals.consequencesDismissed) || 0),
+    pending: Math.max(0, Number(totals.consequencesPending) || 0)
+  };
+}
+
+export function prepareTravelV2CompletedSessionSummaryRows(summary = {}, options = {}) {
+  const includeGm = options.includeGmSummary !== false;
+  const rounds = asArray(summary?.rounds).map((round, index) => ({
+    roundIndex: Number.isFinite(Number(round?.roundIndex)) ? Number(round.roundIndex) : index,
+    roundNumber: Number.isFinite(Number(round?.roundNumber)) ? Number(round.roundNumber) : index + 1,
+    title: cleanText(round?.title) || `Round ${index + 1}`,
+    status: cleanText(round?.status) || "unknown",
+    stationResults: asArray(round?.stationResults).map((station) => ({
+      stationKey: cleanText(station?.stationKey),
+      stationName: cleanText(station?.stationName) || cleanText(station?.stationKey) || "Station",
+      approachLabel: cleanText(station?.approachLabel),
+      resultLabel: cleanText(station?.resultLabel) || humanizeIdentifier(station?.degreeOfSuccess),
+      degreeOfSuccess: cleanText(station?.degreeOfSuccess),
+      actorName: cleanText(station?.actorName),
+      playerName: cleanText(station?.playerName),
+      total: station?.total ?? null,
+      dc: station?.dc ?? null,
+      focusUsed: station?.focusUsed === true,
+      rerollUsed: station?.rerollUsed === true,
+      publicSummary: cleanText(station?.publicSummary)
+    })),
+    pressureApplication: cloneData(round?.pressureApplication ?? null),
+    roundOutcome: cloneData(round?.roundOutcome ?? null),
+    consequencesGeneratedCount: asArray(round?.consequencesGenerated).length,
+    consequencesHandledCount: asArray(round?.consequencesHandled).length
+  }));
+  return Object.freeze({
+    rounds,
+    hasRounds: rounds.length > 0,
+    stationResults: rounds.flatMap((round) => round.stationResults.map((station) => ({ ...station, roundNumber: round.roundNumber, roundTitle: round.title }))),
+    resourceDeltas: resourceDeltaRows(summary?.totals?.resourceDeltas),
+    consequenceCounts: consequenceCounts(summary),
+    followups: asArray(summary?.followups).map((followup, index) => ({ key: cleanText(followup?.key ?? followup?.id) || `followup-${index + 1}`, title: cleanText(followup?.title ?? followup?.name) || `Follow-up ${index + 1}`, status: cleanText(followup?.status) || "pending", publicSummary: cleanText(followup?.publicSummary ?? followup?.summary ?? followup?.text), ...(includeGm ? { gmSummary: cleanText(followup?.gmSummary ?? followup?.gmText) } : {}) })),
+    includeGm
+  });
+}
+
+export function prepareTravelV2CompletedSessionSummaryViewState(session, options = {}) {
+  const includeGm = options.includeGmSummary !== false;
+  const summary = isPlainObject(session?.travelV2CompletionSummary) ? session.travelV2CompletionSummary : (isPlainObject(session?.travelV2EventCompletion?.summary) ? session.travelV2EventCompletion.summary : {});
+  const rows = prepareTravelV2CompletedSessionSummaryRows(summary, { ...options, includeGmSummary: includeGm });
+  const publicSummary = isPlainObject(summary.publicSummary) ? summary.publicSummary : {};
+  const gmSummary = isPlainObject(summary.gmSummary) ? summary.gmSummary : {};
+  const completedBy = cleanText(session?.completedByUserName) || cleanText(session?.travelV2EventCompletion?.completedByUserName);
+  return Object.freeze({
+    available: Object.keys(summary).length > 0,
+    readOnly: true,
+    sessionKey: cleanText(session?.key ?? summary.sessionKey),
+    eventTitle: cleanText(summary.eventTitle ?? session?.event?.title ?? session?.event?.name ?? session?.name) || "Travel Event",
+    shipName: cleanText(summary.actorName ?? session?.ship?.actorName ?? session?.ship?.name ?? session?.shipName),
+    completedAt: cleanText(summary.completedAt ?? session?.completedAt),
+    completedAtLabel: formatDateTime(summary.completedAt ?? session?.completedAt) || "Missing timestamp",
+    completedBy,
+    outcomeLabel: cleanText(summary.finalOutcomeLabel),
+    outcomeTone: cleanText(summary.finalOutcomeTone),
+    publicSummary: { title: cleanText(publicSummary.title) || cleanText(summary.finalOutcomeLabel) || "Travel complete", paragraphs: asArray(publicSummary.paragraphs).map(cleanText).filter(Boolean), chips: asArray(publicSummary.chips).map(cleanText).filter(Boolean) },
+    ...(includeGm ? { gmSummary: { paragraphs: asArray(gmSummary.paragraphs).map(cleanText).filter(Boolean), nextSteps: asArray(gmSummary.nextSteps).map(cleanText).filter(Boolean), warnings: asArray(gmSummary.warnings).map(cleanText).filter(Boolean) } } : {}),
+    totals: cloneData(summary.totals ?? {}),
+    rounds: rows.rounds,
+    hasRounds: rows.hasRounds,
+    stationResults: rows.stationResults,
+    hasStationResults: rows.stationResults.length > 0,
+    resourceDeltas: rows.resourceDeltas,
+    hasResourceDeltas: rows.resourceDeltas.length > 0,
+    consequenceCounts: rows.consequenceCounts,
+    followups: rows.followups,
+    followupCount: rows.followups.length,
+    hasFollowups: rows.followups.length > 0
+  });
+}
+
 export function prepareTravelV2CompletedSessionHistoryState(libraryStateOrSessions = {}, options = {}) {
+  const includeGm = options.includeGmSummary !== false;
   const rows = filterTravelV2CompletedSessionEntries(libraryStateOrSessions).map(({ entry, session }) => {
     const outcome = prepareTravelV2EventOutcomePackage(session, options);
     const followUps = prepareTravelV2FollowUpState(options.actor ?? null, session?.travelV2ActorApplication ?? outcome.packageRecord, { session });
@@ -178,7 +270,7 @@ export function prepareTravelV2CompletedSessionHistoryState(libraryStateOrSessio
     const applicationStatusKey = followUpsSaved ? "followUpsSaved" : (actorAppliedAt ? "actorApplied" : (outcomeAppliedAt ? "outcomeApplied" : "completedNotApplied"));
     const applicationStatusLabel = followUpsSaved ? "Follow-ups saved to ship" : (actorAppliedAt ? "Actor applied" : (outcomeAppliedAt ? "Outcome applied" : "Completed / not applied"));
     const key = entry?.key ?? session?.key ?? "";
-    return { key, name: entry?.name ?? session?.name ?? "", eventName: entry?.eventName ?? session?.event?.name ?? session?.event?.title ?? "Travel Event", shipName: entry?.shipName ?? session?.ship?.actorName ?? session?.ship?.name ?? "Unknown ship", outcome: outcome.eventOutcomeLabel ?? "", outcomeKey: outcome.eventOutcomeKey ?? "", completedAt, completedAtLabel: formatDateTime(completedAt) || "Missing timestamp", completedDateTime: formatDateTime(completedAt) || "Missing timestamp", appliedAt, appliedAtLabel: appliedAt ? formatDateTime(appliedAt) : "Not applied", appliedDateTime: appliedAt ? formatDateTime(appliedAt) : "Not applied", applicationStatusKey, applicationStatusLabel, followUpCount: followUps.recordCount ?? followUps.records?.length ?? 0, canReopen: Boolean(key) && entry?.isMalformed !== true && Boolean(session), canDelete: Boolean(key), isMalformed: entry?.isMalformed === true, session: cloneData(session) };
+    return { key, name: entry?.name ?? session?.name ?? "", eventName: entry?.eventName ?? session?.event?.name ?? session?.event?.title ?? "Travel Event", shipName: entry?.shipName ?? session?.ship?.actorName ?? session?.ship?.name ?? "Unknown ship", completedBy: session?.completedByUserName ?? session?.travelV2EventCompletion?.completedByUserName ?? "", outcome: outcome.eventOutcomeLabel ?? "", outcomeKey: outcome.eventOutcomeKey ?? "", completedAt, completedAtLabel: formatDateTime(completedAt) || "Missing timestamp", completedDateTime: formatDateTime(completedAt) || "Missing timestamp", appliedAt, appliedAtLabel: appliedAt ? formatDateTime(appliedAt) : "Not applied", appliedDateTime: appliedAt ? formatDateTime(appliedAt) : "Not applied", applicationStatusKey, applicationStatusLabel, followUpCount: followUps.recordCount ?? followUps.records?.length ?? 0, canReopen: includeGm && Boolean(key) && entry?.isMalformed !== true && Boolean(session), canDelete: includeGm && Boolean(key), isMalformed: entry?.isMalformed === true, summaryView: prepareTravelV2CompletedSessionSummaryViewState(session, { ...options, includeGmSummary: includeGm }), session: includeGm ? cloneData(session) : null };
   }).sort((a, b) => String(b.completedAt || "0000").localeCompare(String(a.completedAt || "0000")) || String(b.key).localeCompare(String(a.key)));
   return Object.freeze({ version: TRAVEL_V2_DEV_TOOLS_VERSION, rows, count: rows.length, hasRows: rows.length > 0, isEmpty: rows.length === 0, newestFirst: true });
 }

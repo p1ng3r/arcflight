@@ -248,7 +248,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],
-    travelV2CompletedSessionHistory: prepareTravelV2CompletedSessionHistoryState(state.sessionLibrary, { actor }),
+    travelV2CompletedSessionHistory: prepareTravelV2CompletedSessionHistoryState(state.sessionLibrary, { actor, includeGmSummary: canManageTravelV2Consequences }),
     compactRoundLabel: state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round"
   };
   const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appState);
