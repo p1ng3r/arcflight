@@ -610,12 +610,44 @@ async function inspectTravelEventCompletionFlow() {
   const currentRoundIndex = Number(session.currentRoundIndex ?? 0);
   const currentRoundNumber = currentRoundIndex + 1;
   const hasNextRound = currentRoundIndex < totalRounds - 1;
-  const consequenceFlow = inspectTravelV2ConsequenceFlowForSession(session, { actor: activeOverlay?.actor });
-  const applicationFlow = inspectTravelV2ConsequenceApplicationFlow(session, { actor: activeOverlay?.actor });
   const playerSafeState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
   const playerJson = JSON.stringify(playerSafeState ?? {});
   const forbiddenTerms = ["pendingConsequenceQueue", "gmItemGroups", "catalogSuggestions", "selectedConsequenceApplyPreview", "applicationRecord", "internalSeverity", "managementAction", "GM-only queue label"];
   const leakedTerms = forbiddenTerms.filter((term) => playerJson.includes(term));
+  const isCompleted = session.status === "completed" || session.completed === true;
+  const storedSummary = session.travelV2CompletionSummary ?? session.travelV2EventCompletion?.summary ?? null;
+  if (isCompleted) {
+    const summaryPreview = storedSummary ?? buildTravelV2EventCompletionSummary(session, { actor: activeOverlay?.actor });
+    return {
+      ok: leakedTerms.length === 0,
+      alreadyCompleted: true,
+      errors: leakedTerms.length ? ["Player-safe state exposes GM-only completion data."] : [],
+      warnings: [],
+      sessionKey: session.key ?? "",
+      eventTitle: summaryPreview.eventTitle,
+      actorName: summaryPreview.actorName,
+      currentRoundIndex,
+      currentRoundNumber,
+      totalRounds,
+      isFinalRound: totalRounds > 0 && currentRoundIndex >= totalRounds - 1,
+      hasNextRound,
+      roundFinalized: true,
+      pressureApplied: true,
+      stationsResolved: true,
+      focusClear: true,
+      consequencesClear: true,
+      completionReady: false,
+      canCompleteEvent: false,
+      playerStateSafe: leakedTerms.length === 0,
+      gmStateHasManagementControls: JSON.stringify(appState ?? {}).includes("pendingConsequenceQueue"),
+      summaryPreview,
+      blockers: [],
+      nextActionLabel: "Travel event completed.",
+      notes: ["The Travel v2 event is completed."]
+    };
+  }
+  const consequenceFlow = inspectTravelV2ConsequenceFlowForSession(session, { actor: activeOverlay?.actor });
+  const applicationFlow = inspectTravelV2ConsequenceApplicationFlow(session, { actor: activeOverlay?.actor });
   const stations = Array.isArray(appState.stations) ? appState.stations : [];
   const stationsResolved = stations.length === 0 || stations.every((station) => Boolean(station.result));
   const focusClear = stations.every((station) => station.focusRerollNeeded !== true && station.needsFocusReroll !== true) && (appState.reactionPromptReview?.records ?? []).every((record) => record?.status !== "pending" && record?.isPending !== true);

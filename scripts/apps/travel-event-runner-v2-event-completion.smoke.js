@@ -47,6 +47,15 @@ export async function runTravelEventRunnerV2EventCompletionSmokeChecks() {
     assertEqual(app.uiState.travelV2EventCompletionResult.completed, true, "app stores success result");
     assertEqual(app.session.status, "completed", "app replaces session with completed clone");
     assertEqual(app.selectedSessionKey, "runner-completion-fixture", "app preserves selected session key");
+    const storedSummaryBeforeDuplicate = snapshot(app.session.travelV2CompletionSummary);
+    const completedState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { ...app.session, travelV2PendingConsequenceQueue: { records: [{ queueKey: "late-pending", status: "pending" }] } }, user: { isGM: true } });
+    assertEqual(completedState.travelV2GmFlowStatus.nextActionLabel, "Travel event completed.", "completed GM flow reports terminal next action");
+    assertEqual(completedState.travelV2GmFlowStatus.advanceLabel, "Advance: event completed", "completed GM flow reports terminal advance label");
+    assertEqual(completedState.travelV2GmFlowStatus.blockers.length, 0, "completed GM flow suppresses consequence and advance blockers");
+    assertSmoke(!completedState.travelV2GmFlowStatus.consequenceLabel.includes("pending"), "completed GM flow does not report pending consequences");
+    const duplicateUpdate = prepareTravelV2EventCompletionRunnerUpdate(app.session, { now: "2026-06-20T00:02:30.000Z" });
+    assertSmoke(!duplicateUpdate.shouldUpdateSession && duplicateUpdate.result?.completed === false, "duplicate app completion remains blocked");
+    assertEqual(snapshot(app.session.travelV2CompletionSummary), storedSummaryBeforeDuplicate, "duplicate completion leaves stored summary unchanged");
 
     const blockedApp = new ArcflightTravelEventRunner({ session: blockedSession });
     const blockedAppResult = await blockedApp.completeTravelV2Event({ now: "2026-06-20T00:03:00.000Z" });
@@ -63,7 +72,7 @@ export async function runTravelEventRunnerV2EventCompletionSmokeChecks() {
     if (previousGame === undefined) delete globalThis.game; else globalThis.game = previousGame;
     if (previousChatMessage === undefined) delete globalThis.ChatMessage; else globalThis.ChatMessage = previousChatMessage;
   }
-  return { ok: true, checked: ["runner-helper-exported", "blocked-no-update", "success-update", "app-success-state", "app-blocked-state", "no-side-effects", "state-prep-inert"] };
+  return { ok: true, checked: ["runner-helper-exported", "blocked-no-update", "success-update", "app-success-state", "completed-gm-flow-terminal", "duplicate-summary-unchanged", "app-blocked-state", "no-side-effects", "state-prep-inert"] };
 }
 
 export default runTravelEventRunnerV2EventCompletionSmokeChecks;

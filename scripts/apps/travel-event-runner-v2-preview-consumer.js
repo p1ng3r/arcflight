@@ -82,6 +82,30 @@ function buildTravelV2GmFlowStatus(state = {}) {
   const hasNextRound = hasSession && currentRoundNumber > 0 && totalRounds > 0 && currentRoundNumber < totalRounds;
   const isCompleted = state.isCompleted === true || state.session?.status === "completed" || state.session?.completed === true;
   const isFinalRound = hasSession && totalRounds > 0 && currentRoundNumber >= totalRounds;
+  if (isCompleted) {
+    return {
+      currentRoundLabel: hasSession ? "Completed" : "No active round",
+      stationResolutionLabel: hasSession ? `Stations: ${resolvedStations} / ${totalStations} resolved` : "Stations: none",
+      focusReadinessLabel: "Focus: clear",
+      finalizationLabel: "Finalization: completed",
+      pressureLabel: "Pressure: applied",
+      consequenceLabel: "Consequences: clear",
+      advanceLabel: "Advance: event completed",
+      playerSyncLabel: hasSession ? "Player sync: current" : "Player sync: unavailable",
+      nextActionLabel: "Travel event completed.",
+      nextActionHelpText: "The Travel v2 event is completed.",
+      stateTone: "ready",
+      blockers: [],
+      disabledActions: {
+        finalizeRound: "Travel event already completed.",
+        applyPressure: "Travel event already completed.",
+        applyConsequence: "Travel event already completed.",
+        advanceRound: "Travel event already completed.",
+        completeEvent: "Travel event already completed.",
+        syncPlayers: hasSession ? "" : "No active Travel v2 runner."
+      }
+    };
+  }
   const blockers = [];
   if (!hasSession) blockers.push("Open or start a Travel Event Runner first.");
   if (hasSession && resolvedStations < totalStations) blockers.push("Resolve all active stations first.");
