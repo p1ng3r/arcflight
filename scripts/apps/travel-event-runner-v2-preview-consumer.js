@@ -80,6 +80,8 @@ function buildTravelV2GmFlowStatus(state = {}) {
   const isFinalized = finalization.isFinalized === true || finalization.lifecycleState === "finalized" || finalization.lifecycleState === "event-complete-ready";
   const pressureApplied = pressure.alreadyApplied === true || finalization.isPressureApplied === true || Boolean(finalization.pressureApplicationRecord);
   const hasNextRound = hasSession && currentRoundNumber > 0 && totalRounds > 0 && currentRoundNumber < totalRounds;
+  const isCompleted = state.isCompleted === true || state.session?.status === "completed" || state.session?.completed === true;
+  const isFinalRound = hasSession && totalRounds > 0 && currentRoundNumber >= totalRounds;
   const blockers = [];
   if (!hasSession) blockers.push("Open or start a Travel Event Runner first.");
   if (hasSession && resolvedStations < totalStations) blockers.push("Resolve all active stations first.");
@@ -88,11 +90,14 @@ function buildTravelV2GmFlowStatus(state = {}) {
   if (hasSession && !pressureApplied) blockers.push("Apply pressure/finalization before advancing.");
   if (hasSession && !isFinalized) blockers.push("Finalize this round before advancing.");
   if (pendingConsequences > 0 || deferredConsequences > 0) blockers.push("Apply or dismiss pending consequences before advancing.");
-  if (hasSession && !hasNextRound) blockers.push("No next round exists.");
+  if (hasSession && !hasNextRound && !isFinalRound) blockers.push("No next round exists.");
   const canFinalize = finalization.canFinalize === true;
-  const canAdvance = hasSession && blockers.length === 0;
+  const completionBlockers = blockers.filter((reason) => reason !== "No next round exists.");
+  const canCompleteEvent = hasSession && isFinalRound && !isCompleted && completionBlockers.length === 0;
+  const canAdvance = hasSession && !isFinalRound && blockers.length === 0;
   let nextActionLabel = "No active Travel v2 runner.";
-  if (hasSession) {
+  if (isCompleted) nextActionLabel = "Travel event completed.";
+  else if (hasSession) {
     if (resolvedStations < totalStations) nextActionLabel = totalStations === 0 ? "Choose station approaches." : "Resolve active station rolls.";
     else if (pendingReactions > 0) nextActionLabel = "Resolve pending Focus reaction.";
     else if (focusRerollNeeded > 0) nextActionLabel = "Resolve accepted Focus reroll.";
@@ -101,13 +106,14 @@ function buildTravelV2GmFlowStatus(state = {}) {
     else if (pendingConsequences > 0) nextActionLabel = "Apply or dismiss pending consequence.";
     else if (deferredConsequences > 0) nextActionLabel = "Review pending consequences.";
     else if (hasNextRound) nextActionLabel = `Advance to Round ${currentRoundNumber + 1}.`;
-    else nextActionLabel = "Travel event ready for completion.";
+    else nextActionLabel = "Complete Travel Event.";
   }
   const disabledActions = {
     finalizeRound: canFinalize ? "" : firstText([finalization.blockedReason, ...(finalization.blockedReasons ?? [])], isFinalized ? "Round already finalized." : "Resolve all active stations and apply pressure first."),
     applyPressure: pressure.alreadyApplied ? "Pressure already applied." : firstText([pressure.blockedReason, ...(pressure.blockedReasons ?? [])], resolvedStations < totalStations ? "Resolve all active stations first." : "Review round pressure before applying."),
     applyConsequence: pendingConsequences > 0 ? "" : "No pending consequence exists.",
     advanceRound: canAdvance ? "" : (blockers[0] ?? "Round cannot advance yet."),
+    completeEvent: canCompleteEvent ? "" : (isCompleted ? "Travel event already completed." : (completionBlockers[0] ?? "Event cannot be completed yet.")),
     syncPlayers: hasSession ? "" : "No active Travel v2 runner."
   };
   const consequenceLabel = pendingConsequences > 0 ? `pending (${pendingConsequences})` : (deferredConsequences > 0 ? `deferred (${deferredConsequences})` : (appliedConsequences > 0 ? `applied (${appliedConsequences})` : (dismissedConsequences > 0 ? `dismissed (${dismissedConsequences})` : "clear")));
@@ -118,12 +124,12 @@ function buildTravelV2GmFlowStatus(state = {}) {
     finalizationLabel: isFinalized ? "Finalization: finalized" : (canFinalize ? "Finalization: ready" : "Finalization: not ready"),
     pressureLabel: pressureApplied ? "Pressure: applied" : "Pressure: not applied",
     consequenceLabel: `Consequences: ${consequenceLabel}`,
-    advanceLabel: canAdvance ? "Advance: ready" : "Advance: blocked",
+    advanceLabel: isCompleted ? "Advance: event completed" : (isFinalRound ? (canCompleteEvent ? "Advance: complete" : "Advance: event ready to complete") : (canAdvance ? "Advance: ready" : "Advance: blocked")),
     playerSyncLabel: hasSession ? (state.statusMessage?.includes?.("Sent") || state.statusMessage?.includes?.("refresh") || state.statusMessage?.includes?.("Advanced") ? "Player sync: refresh sent" : "Player sync: current") : "Player sync: unavailable",
     nextActionLabel,
-    nextActionHelpText: blockers[0] ?? (canAdvance ? "All displayed blockers are clear for the next GM action." : "Open or start a Travel Event Runner."),
-    stateTone: canAdvance ? "ready" : (isFinalized || pressureApplied ? "warning" : (hasSession ? "blocked" : "neutral")),
-    blockers: [...new Set(blockers)],
+    nextActionHelpText: isCompleted ? "The Travel v2 event is completed." : (completionBlockers[0] ?? blockers[0] ?? ((canAdvance || canCompleteEvent) ? "All displayed blockers are clear for the next GM action." : "Open or start a Travel Event Runner.")),
+    stateTone: (canAdvance || canCompleteEvent || isCompleted) ? "ready" : (isFinalized || pressureApplied ? "warning" : (hasSession ? "blocked" : "neutral")),
+    blockers: [...new Set(isFinalRound ? completionBlockers : blockers)],
     disabledActions
   };
 }

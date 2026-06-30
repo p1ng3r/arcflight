@@ -2,6 +2,7 @@ import { ARCFLIGHT } from "./config/constants.js";
 import { TRAVEL_V2_DEV_TOOLS_SETTING, forceTravelV2RoundResolved, isTravelV2DevToolsEnabled } from "./helpers/travel-v2-dev-tools.js";
 import { applyTravelV2PressureToRunnerSession } from "./helpers/travel-v2-session-pressure-application.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "./helpers/travel-v2-session-round-finalization.js";
+import { buildTravelV2EventCompletionSummary, completeTravelV2EventOnRunnerSession } from "./helpers/travel-v2-session-event-completion.js";
 import { prepareTravelV2RoundFinalizationState } from "./helpers/travel-v2-round-finalization-state.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
@@ -597,6 +598,86 @@ async function inspectTravelGmUiFlow() {
     gmStateHasManagementControls,
     notes: [statusStrip?.nextActionHelpText ?? ""].filter(Boolean)
   };
+}
+
+async function inspectTravelEventCompletionFlow() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelEventCompletionFlow is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", eventTitle: "", actorName: "", currentRoundIndex: -1, currentRoundNumber: 0, totalRounds: 0, completionReady: false, canCompleteEvent: false, playerStateSafe: false, gmStateHasManagementControls: false, blockers: ["Open or start a Travel Event Runner first."], nextActionLabel: "No active Travel v2 runner.", notes: [] };
+  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, actor: activeOverlay?.actor, user: globalThis.game?.user, travelV2DevToolsEnabled: true });
+  const totalRounds = session.event?.rounds?.length ?? 0;
+  const currentRoundIndex = Number(session.currentRoundIndex ?? 0);
+  const currentRoundNumber = currentRoundIndex + 1;
+  const hasNextRound = currentRoundIndex < totalRounds - 1;
+  const consequenceFlow = inspectTravelV2ConsequenceFlowForSession(session, { actor: activeOverlay?.actor });
+  const applicationFlow = inspectTravelV2ConsequenceApplicationFlow(session, { actor: activeOverlay?.actor });
+  const playerSafeState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  const playerJson = JSON.stringify(playerSafeState ?? {});
+  const forbiddenTerms = ["pendingConsequenceQueue", "gmItemGroups", "catalogSuggestions", "selectedConsequenceApplyPreview", "applicationRecord", "internalSeverity", "managementAction", "GM-only queue label"];
+  const leakedTerms = forbiddenTerms.filter((term) => playerJson.includes(term));
+  const stations = Array.isArray(appState.stations) ? appState.stations : [];
+  const stationsResolved = stations.length === 0 || stations.every((station) => Boolean(station.result));
+  const focusClear = stations.every((station) => station.focusRerollNeeded !== true && station.needsFocusReroll !== true) && (appState.reactionPromptReview?.records ?? []).every((record) => record?.status !== "pending" && record?.isPending !== true);
+  const consequencesClear = (consequenceFlow.pendingConsequenceCount ?? 0) === 0 && (consequenceFlow.unappliedConsequenceCount ?? 0) === 0 && (applicationFlow.invalidResourceMutationCount ?? 0) === 0 && (applicationFlow.duplicateApplicationRecordCount ?? 0) === 0;
+  const roundFinalized = consequenceFlow.roundFinalized === true;
+  const pressureApplied = consequenceFlow.pressureApplied === true;
+  const isFinalRound = totalRounds > 0 && currentRoundIndex >= totalRounds - 1;
+  const blockers = [];
+  if (!isFinalRound && hasNextRound) blockers.push("Advance through all Travel v2 rounds first.");
+  if (!stationsResolved) blockers.push("Resolve all active stations first.");
+  if (!focusClear) blockers.push("Resolve pending Focus reactions or accepted rerolls first.");
+  if (!roundFinalized) blockers.push("Finalize the final Travel v2 round first.");
+  if (!pressureApplied) blockers.push("Apply pressure/finalization before completing.");
+  if (!consequencesClear) blockers.push("Apply, dismiss, or repair pending consequence records first.");
+  if (leakedTerms.length) blockers.push("Player-safe state exposes GM-only completion data.");
+  const completionReady = blockers.length === 0;
+  const summaryPreview = buildTravelV2EventCompletionSummary(session, { actor: activeOverlay?.actor });
+  return {
+    ok: completionReady,
+    errors: completionReady ? [] : blockers,
+    warnings: [...(consequenceFlow.warnings ?? []), ...(applicationFlow.warnings ?? [])],
+    sessionKey: session.key ?? "",
+    eventTitle: summaryPreview.eventTitle,
+    actorName: summaryPreview.actorName,
+    currentRoundIndex,
+    currentRoundNumber,
+    totalRounds,
+    isFinalRound,
+    hasNextRound,
+    roundFinalized,
+    pressureApplied,
+    stationsResolved,
+    focusClear,
+    consequencesClear,
+    completionReady,
+    canCompleteEvent: completionReady,
+    playerStateSafe: leakedTerms.length === 0 && consequenceFlow.playerStateSafe !== false,
+    gmStateHasManagementControls: JSON.stringify(appState ?? {}).includes("pendingConsequenceQueue"),
+    summaryPreview,
+    blockers,
+    nextActionLabel: completionReady ? "Complete Travel Event." : (blockers[0] ?? "Complete Travel Event."),
+    notes: [appState.travelV2GmFlowStatus?.nextActionHelpText ?? ""].filter(Boolean)
+  };
+}
+
+async function forceTravelEventCompleted(input = {}) {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["forceTravelEventCompleted is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, activeRunner, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], completed: false, sessionKey: "" };
+  const inspection = await inspectTravelEventCompletionFlow();
+  if (input.previewOnly === true) return { ...inspection, completed: false, summary: inspection.summaryPreview, notes: [...(inspection.notes ?? []), "Preview only; session was not mutated."] };
+  if (session.status === "completed" || session.completed === true) return { ok: false, alreadyCompleted: true, completed: false, errors: ["Travel v2 event is already completed."], warnings: [], sessionKey: session.key ?? "", completionReady: false, summary: session.travelV2CompletionSummary ?? session.travelV2EventCompletion?.summary ?? null, playerStateSafe: inspection.playerStateSafe === true, notes: ["Duplicate completion blocked; existing summary was left unchanged."] };
+  if (inspection.completionReady !== true && input.force !== true) return { ok: false, completed: false, errors: inspection.blockers ?? ["Travel v2 event completion is blocked."], warnings: inspection.warnings ?? [], sessionKey: session.key ?? "", completionReady: false, summary: inspection.summaryPreview, playerStateSafe: inspection.playerStateSafe === true, notes: inspection.notes ?? [] };
+  const completed = completeTravelV2EventOnRunnerSession(session, { ...input, actor: activeOverlay?.actor, completedByUserId: globalThis.game?.user?.id ?? "", completedByUserName: globalThis.game?.user?.name ?? "" });
+  if (!completed.ok || !completed.session) return { ok: false, completed: false, errors: completed.blockedReasons ?? ["Travel v2 event completion was blocked."], warnings: [], sessionKey: session.key ?? "", completionReady: inspection.completionReady === true, summary: completed.summary ?? inspection.summaryPreview, playerStateSafe: inspection.playerStateSafe === true, notes: [] };
+  if (activeOverlay) activeOverlay.session = completed.session;
+  if (activeRunner) activeRunner.session = completed.session;
+  await updateActiveTravelSceneOverlayContext({ session: completed.session }, { render: true });
+  await updateActiveTravelEventRunnerSession(completed.session, { statusMessage: "Travel v2 event completed. Summary is stored on the runner session." });
+  await queueTravelPlayerMissionBoardRefreshToPlayers(completed.session, { actor: activeOverlay?.actor });
+  return { ok: true, errors: [], warnings: input.postChat === true || input.createJournal === true ? ["Chat and Journal export are not implemented by this helper; no document was created."] : [], sessionKey: completed.session.key ?? "", completed: true, completedAt: completed.completedAt, completedByUserId: completed.completionRecord?.completedByUserId ?? "", completedByUserName: completed.completionRecord?.completedByUserName ?? "", completionReady: true, summary: completed.summary, playerStateSafe: inspection.playerStateSafe === true, notes: ["No actors, items, chat messages, journals, or combats were mutated by default."] };
 }
 
 async function inspectTravelAdvanceRoundFlow() {
@@ -1245,7 +1326,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelGmUiFlow, inspectTravelAdvanceRoundFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelGmUiFlow, inspectTravelAdvanceRoundFlow, inspectTravelEventCompletionFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced, forceTravelEventCompleted },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true
