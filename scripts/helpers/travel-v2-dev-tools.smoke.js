@@ -9,6 +9,7 @@ import {
   forceTravelV2Outcome,
   filterTravelV2CompletedSessionEntries,
   prepareTravelV2CompletedSessionHistoryState,
+  prepareTravelV2CompletedSessionSummaryViewState,
   prepareTravelV2EndOfEventResolutionDialogState,
   prepareTravelV2RoundResolutionDialogState
 } from "./travel-v2-dev-tools.js";
@@ -53,15 +54,26 @@ export default async function runTravelV2DevToolsSmokeChecks() {
   assert(emptyRoundDialog.notRun === true && emptyRoundDialog.outcomeLabel.includes("Not run"), "empty station-result maps are treated as not run");
   checked.push("empty station not-run handling");
 
-  const completed = { ...forced.session, status: "completed", completed: true, completedAt: "2026-01-02T00:00:00.000Z", summary: { eventOutcomeKey: "failure" } };
+  const completed = { ...forced.session, status: "completed", completed: true, completedAt: "2026-01-02T00:00:00.000Z", completedByUserName: "GM Ada", summary: { eventOutcomeKey: "failure" }, travelV2CompletionSummary: { eventTitle: "Lantern", actorName: "Aster", completedAt: "2026-01-02T00:00:00.000Z", finalOutcomeLabel: "Costly passage", publicSummary: { title: "Public Win", paragraphs: ["Crew endured the route."], chips: ["Travel complete"] }, gmSummary: { paragraphs: ["GM only clue."], nextSteps: ["Review privately."], warnings: ["Do not show players."] }, rounds: [{ roundIndex: 0, roundNumber: 1, title: "Static", status: "finalized", stationResults: [{ stationKey: "navigator", stationName: "Navigator", resultLabel: "Failure", degreeOfSuccess: "failure", publicSummary: "Navigator: Failure." }], pressureApplication: { secret: "GM_PRESSURE_SECRET" }, roundOutcome: { secret: "GM_ROUND_SECRET" }, consequencesGenerated: [{ id: "c1" }], consequencesHandled: [] }], totals: { consequencesApplied: 1, consequencesDismissed: 2, consequencesPending: 3, resourceDeltas: { fuel: -1, strain: 2, supplies: 0 } }, followups: [{ id: "f1", title: "Repair beacon", status: "pending", publicSummary: "Fix it.", text: "GM_FOLLOWUP_TEXT_SECRET", gmSummary: "GM_FOLLOWUP_SECRET" }] } };
   const endDialog = prepareTravelV2EndOfEventResolutionDialogState(completed);
   assert(endDialog.tabs.includes("debug") && endDialog.tabs.includes("followUps"), "end-of-event dialog exposes required tabs");
   checked.push("end-of-event dialog state");
 
+
+  const summaryView = prepareTravelV2CompletedSessionSummaryViewState(completed, { includeGmSummary: true });
+  assert(summaryView.readOnly === true && summaryView.publicSummary.paragraphs[0] === "Crew endured the route." && summaryView.gmSummary.paragraphs[0] === "GM only clue." && summaryView.rounds.length === 1 && summaryView.rounds[0].pressureApplication?.secret === "GM_PRESSURE_SECRET" && summaryView.rounds[0].roundOutcome?.secret === "GM_ROUND_SECRET" && summaryView.followups[0].gmSummary === "GM_FOLLOWUP_SECRET" && summaryView.stationResults.length === 1 && summaryView.resourceDeltas.length === 2 && summaryView.consequenceCounts.pending === 3 && summaryView.followupCount === 1, "completed summary view exposes public, GM, rounds, raw GM records, station results, resource deltas, consequence counts, and followups read-only");
+  const playerSafeSummaryView = prepareTravelV2CompletedSessionSummaryViewState(completed, { includeGmSummary: false });
+  const playerSafeJson = JSON.stringify(playerSafeSummaryView);
+  assert(playerSafeSummaryView.publicSummary.title === "Public Win" && playerSafeSummaryView.stationResults.length === 1 && playerSafeSummaryView.resourceDeltas.length === 2 && playerSafeSummaryView.consequenceCounts.pending === 3 && !("gmSummary" in playerSafeSummaryView) && !("pressureApplication" in playerSafeSummaryView.rounds[0]) && !("roundOutcome" in playerSafeSummaryView.rounds[0]) && playerSafeJson.includes("GM only clue") === false && playerSafeJson.includes("GM_PRESSURE_SECRET") === false && playerSafeJson.includes("GM_ROUND_SECRET") === false && playerSafeJson.includes("GM_FOLLOWUP_TEXT_SECRET") === false && playerSafeJson.includes("GM_FOLLOWUP_SECRET") === false, "public summary view is readable, keeps safe fields, and strips GM-only raw/followup fields");
+  const beforeCompleted = JSON.stringify(completed);
+  prepareTravelV2CompletedSessionSummaryViewState(completed, { includeGmSummary: true });
+  assert(JSON.stringify(completed) === beforeCompleted, "completed summary view preparation does not mutate session data");
+  checked.push("completed summary view state");
+
   const older = { ...completed, key: "older", completedAt: "2026-01-01T00:00:00.000Z" };
   const newer = { ...completed, key: "newer", completedAt: "2026-01-03T00:00:00.000Z", travelV2EventOutcomeApplication: { appliedAt: "2026-01-03T00:15:00.000Z" } };
   const history = prepareTravelV2CompletedSessionHistoryState([{ session: older, key: "older" }, { session: newer, key: "newer" }]);
-  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].applicationStatusKey === "outcomeApplied" && history.rows[1].applicationStatusKey === "completedNotApplied" && history.rows[0].canReopen === true && history.rows[0].canDelete === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel, "completed history sorts newest first with date/time labels, application states, reopen, and delete");
+  assert(history.rows.length === 2 && history.rows[0].key === "newer" && history.rows[0].applicationStatusKey === "outcomeApplied" && history.rows[1].applicationStatusKey === "completedNotApplied" && history.rows[0].canReopen === true && history.rows[0].canDelete === true && history.rows[0].completedAtLabel && history.rows[0].appliedAtLabel && history.rows[0].summaryView.publicSummary.title === "Public Win" && history.rows[0].session.travelV2CompletionSummary, "completed history sorts newest first with stored summary, date/time labels, application states, reopen, and delete");
   checked.push("completed history state");
 
   const libraryStateRows = prepareTravelV2CompletedSessionHistoryState({ entries: [{ ...newer, session: undefined, status: "completed", completedAt: newer.completedAt, eventName: "Old Saved", key: "old-entry" }, { key: "bad", status: "completed", completedAt: "", isMalformed: true }] });

@@ -325,7 +325,26 @@
       <details class="arcflight-card-drawer arcflight-fortune-drawer"><summary>🃏 Void Fortune Hand</summary><p title="Future system. Special cards drawn, held, and spent during travel.">Future placeholder — Void Fortune: 0 Cards</p><button type="button" disabled>Open Fortune Hand</button></details>
       <details class="arcflight-card-drawer"><summary>🛠️ Ship Upgrade Effects</summary><p title="Future system. Installed ship upgrades may add travel actions, reactions, or passive effects.">Future placeholder — Smuggler Engine: Low-Burn Route Option · Reinforced Hull: Reduce Hull Pressure Once</p></details>
       <details id="arcflight-guided-followups" class="arcflight-card-drawer" tabindex="-1"><summary>📜 Outcome & Follow-ups</summary><p>Follow-ups: {{state.guidedBridge.drawers.followUps}}</p></details>
-      <details id="arcflight-guided-completed" class="arcflight-card-drawer" tabindex="-1"><summary>💾 Completed Sessions</summary><p>Saved and completed session controls are available in Advanced Runner Details below.</p></details>
+      <details id="arcflight-guided-completed" class="arcflight-card-drawer arcflight-travel-runner-mvp__completed-history" tabindex="-1"><summary>💾 Completed Sessions <span>{{state.travelV2CompletedSessionHistory.count}}</span></summary>
+        <p class="arcflight-sheet__hint"><strong>Read-only history.</strong> Newest completed Travel v2 runner sessions first. Viewing history never applies outcomes, follow-ups, or actor changes.</p>
+        {{#if state.travelV2CompletedSessionHistory.hasRows}}
+          {{#each state.travelV2CompletedSessionHistory.rows}}
+            <article class="arcflight-travel-runner-mvp__completed-card">
+              <header><strong>{{eventName}}</strong><span>{{completedAtLabel}}</span></header>
+              <p>{{shipName}}{{#if completedBy}} · Completed by {{completedBy}}{{/if}}</p>
+              <p class="arcflight-sheet__hint">Outcome: {{#if outcome}}{{outcome}}{{else}}{{outcomeKey}}{{/if}} · Status: {{applicationStatusLabel}} · Follow-ups: {{followUpCount}}</p>
+              {{#if summaryView.available}}
+                <section class="arcflight-travel-runner-mvp__completed-summary">
+                  <h4>{{summaryView.publicSummary.title}}</h4>
+                  {{#each summaryView.publicSummary.paragraphs}}<p>{{this}}</p>{{/each}}
+                  {{#if summaryView.publicSummary.chips.length}}<p class="arcflight-travel-runner-mvp__chips">{{#each summaryView.publicSummary.chips}}<span>{{this}}</span>{{/each}}</p>{{/if}}
+                  <p class="arcflight-sheet__hint">Rounds: {{summaryView.rounds.length}} · Station results: {{summaryView.stationResults.length}} · Consequences applied/dismissed/pending: {{summaryView.consequenceCounts.applied}}/{{summaryView.consequenceCounts.dismissed}}/{{summaryView.consequenceCounts.pending}}</p>
+                </section>
+              {{else}}<p class="arcflight-sheet__hint">No stored completion summary is available for this legacy entry.</p>{{/if}}
+            </article>
+          {{/each}}
+        {{else}}<p class="arcflight-sheet__hint">No completed Travel v2 runner sessions are saved in the runner library yet.</p>{{/if}}
+      </details>
       {{#if state.travelV2DevToolsEnabled}}<details id="arcflight-guided-devtools" class="arcflight-card-drawer arcflight-gm-only" tabindex="-1"><summary>🧪 Dev Tools</summary><p>GM-only dev tools are gated by travelV2DevToolsEnabled below.</p></details>{{/if}}
       <details class="arcflight-card-drawer arcflight-gm-only"><summary>🔒 Event Schema</summary><p>Future authoring/schema support. GM-only. Category: {{state.guidedBridge.tags.category}} · Level: {{state.guidedBridge.tags.level}} · Severity: {{state.guidedBridge.tags.severity}} · Stations: {{state.guidedBridge.stationSummary.total}} · Pressure Suggestions / Hazards / Follow-ups prepared from event schema.</p></details>
     </div>
@@ -1232,11 +1251,33 @@
               </header>
               <dl class="arcflight-travel-runner-mvp__completed-grid">
                 <dt>Ship</dt><dd>{{shipName}}</dd>
-                <dt>Outcome</dt><dd>{{outcome}}</dd>
                 <dt>Completed</dt><dd>{{completedAtLabel}}</dd>
-                <dt>Applied</dt><dd>{{appliedAtLabel}} — {{applicationStatusLabel}}</dd>
+                <dt>Completed By</dt><dd>{{#if completedBy}}{{completedBy}}{{else}}—{{/if}}</dd>
+                <dt>Outcome</dt><dd>{{#if outcome}}{{outcome}}{{else}}{{outcomeKey}}{{/if}}</dd>
+                <dt>Application Status</dt><dd>{{applicationStatusLabel}}</dd>
+                <dt>Applied</dt><dd>{{appliedAtLabel}}</dd>
                 <dt>Follow-ups</dt><dd>{{followUpCount}}</dd>
               </dl>
+              {{#if summaryView.available}}
+                <details class="arcflight-travel-runner-mvp__completed-summary" open>
+                  <summary><strong>Read-only Stored Summary</strong></summary>
+                  <section>
+                    <h4>Public Summary — {{summaryView.publicSummary.title}}</h4>
+                    {{#each summaryView.publicSummary.paragraphs}}<p>{{this}}</p>{{/each}}
+                    {{#if summaryView.publicSummary.chips.length}}<p class="arcflight-travel-runner-mvp__chips">{{#each summaryView.publicSummary.chips}}<span>{{this}}</span>{{/each}}</p>{{/if}}
+                  </section>
+                  <section class="arcflight-gm-only">
+                    <h4>GM Summary</h4>
+                    {{#each summaryView.gmSummary.paragraphs}}<p>{{this}}</p>{{/each}}
+                    {{#if summaryView.gmSummary.nextSteps.length}}<h5>Next Steps</h5><ul>{{#each summaryView.gmSummary.nextSteps}}<li>{{this}}</li>{{/each}}</ul>{{/if}}
+                    {{#if summaryView.gmSummary.warnings.length}}<h5>Warnings</h5><ul>{{#each summaryView.gmSummary.warnings}}<li>{{this}}</li>{{/each}}</ul>{{/if}}
+                  </section>
+                  <section><h4>Round Summaries</h4>{{#each summaryView.rounds}}<article class="arcflight-travel-card"><strong>Round {{roundNumber}} — {{title}}</strong><p class="arcflight-sheet__hint">{{status}} · Generated consequences: {{consequencesGeneratedCount}} · Handled: {{consequencesHandledCount}}</p>{{#if stationResults.length}}<ul>{{#each stationResults}}<li>{{stationName}}: {{resultLabel}}{{#if actorName}} ({{actorName}}){{/if}}{{#if approachLabel}} via {{approachLabel}}{{/if}}</li>{{/each}}</ul>{{/if}}</article>{{/each}}</section>
+                  <section><h4>Station Result Summaries</h4>{{#if summaryView.hasStationResults}}<ul>{{#each summaryView.stationResults}}<li>Round {{roundNumber}} {{stationName}} — {{resultLabel}}{{#if publicSummary}}: {{publicSummary}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">No station results stored.</p>{{/if}}</section>
+                  <section><h4>Resource Deltas</h4>{{#if summaryView.hasResourceDeltas}}<ul>{{#each summaryView.resourceDeltas}}<li>{{label}}: {{displayAmount}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">No resource deltas were recorded.</p>{{/if}}</section>
+                  <section><h4>Consequences & Follow-ups</h4><p>Applied: {{summaryView.consequenceCounts.applied}} · Dismissed: {{summaryView.consequenceCounts.dismissed}} · Pending: {{summaryView.consequenceCounts.pending}}</p><p>Follow-ups: {{summaryView.followupCount}}</p>{{#if summaryView.hasFollowups}}<ul>{{#each summaryView.followups}}<li>{{title}} — {{status}}{{#if publicSummary}}: {{publicSummary}}{{/if}}</li>{{/each}}</ul>{{/if}}</section>
+                </details>
+              {{else}}<p class="arcflight-sheet__hint">No stored completion summary is available for this legacy entry.</p>{{/if}}
               {{#if isMalformed}}<p class="arcflight-sheet__hint"><strong>Warning:</strong> This completed session entry is malformed and cannot be reopened, but it can be deleted from runner history.</p>{{/if}}
               <div class="arcflight-travel-runner-mvp__actions">
                 <button type="button" data-arcflight-runner-load-session="{{key}}" {{#unless canReopen}}disabled{{/unless}}>Reopen Completed Session</button>
