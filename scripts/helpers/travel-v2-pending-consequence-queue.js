@@ -28,6 +28,7 @@ const SUPPORTED_SESSION_FOLLOWUP_CONSEQUENCE_APPLIES = Object.freeze({
   "consequence-ship-scar-candidate": Object.freeze({ affectedTrack: "Ship Scar", kind: "shipScarHandoffCandidate" })
 });
 const SAFE_SESSION_PRESSURE_TRACKS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
+const RESOLVED_QUEUE_STATUSES = Object.freeze(["applied", "dismissed"]);
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function cloneData(value) { if (value === null || value === undefined) return value; return JSON.parse(JSON.stringify(value)); }
@@ -120,6 +121,27 @@ function pressureValue(session, pressureTrack) {
   const track = isPlainObject(session?.pressure?.[pressureTrack]) ? session.pressure[pressureTrack] : {};
   const value = Number(track.value);
   return Number.isInteger(value) ? value : 0;
+}
+function finiteNumber(value) { return Number.isFinite(Number(value)) ? Number(value) : null; }
+function applicationRecordsFrom(session = {}) {
+  const merged = recordsFrom(session.travelV2ConsequenceApplicationHistory)
+    .concat(recordsFrom(session.travelV2PendingConsequenceQueue?.appliedRecords))
+    .filter(isPlainObject);
+  const seen = new Set();
+  const deduped = [];
+  for (const record of merged) {
+    const key = text(record.applicationId) || `${text(record.queueKey) || text(record.consequenceItemKey)}:${text(record.appliedAt)}`;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    deduped.push(record);
+  }
+  return deduped;
+}
+function hasApplicationRecordForQueueItem(session = {}, queueKey = "") {
+  return applicationRecordsFrom(session).some((record) => record.queueKey === queueKey || record.consequenceItemKey === queueKey);
+}
+function makeApplicationId(queueKey, appliedAt) {
+  return `travel-v2-consequence:${queueKey}:${String(appliedAt ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
 }
 export function prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey, options = {}) {
   if (!isPlainObject(session)) return null;
@@ -463,6 +485,8 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
   const item = queue.items.find((candidate) => candidate.queueKey === queueKey);
   if (!item) return { ok: false, session, queue, error: "Pending consequence queue item was not found." };
   const current = recordsFrom(session.travelV2PendingConsequenceQueue).filter(isPlainObject).find((record) => record.queueKey === queueKey) ?? {};
+  if (RESOLVED_QUEUE_STATUSES.includes(item.status) || RESOLVED_QUEUE_STATUSES.includes(current.status)) return { ok: false, alreadyApplied: item.status === "applied" || current.status === "applied", session, queue, error: `Pending consequence queue item is already ${current.status ?? item.status}.` };
+  if (hasApplicationRecordForQueueItem(session, queueKey) && options.force !== true) return { ok: false, alreadyApplied: true, session, queue, error: "Selected consequence already has an application history record." };
   if (!isPlainObject(current.selectedConsequence) || !text(current.selectedConsequence.id)) return { ok: false, session, queue, error: "Select a consequence catalog card before applying it." };
   if (["session-pressure-only", "session-followup-note-only"].includes(current.appliedEffect?.mutation)) return { ok: false, alreadyApplied: true, session, queue, error: "Selected consequence has already been applied to this queue item." };
   const catalogEntry = getTravelV2ConsequenceById(current.selectedConsequence.id);
@@ -488,12 +512,21 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
       createdBy: "gm",
       status: "open"
     };
+    const applicationId = makeApplicationId(queueKey, createdAt);
     const appliedRecord = {
+      applicationId,
       queueKey,
+      consequenceItemKey: queueKey,
       consequenceId: catalogEntry.id,
+      roundIndex: Number.isInteger(Number(item.roundIndex)) ? Number(item.roundIndex) : (Number.isInteger(Number(session.currentRoundIndex)) ? Number(session.currentRoundIndex) : null),
+      statusBefore: item.status,
+      statusAfter: "applied",
       appliedAt: createdAt,
       appliedBy: "gm",
+      appliedByUserId: text(options.appliedByUserId) || text(globalThis.game?.user?.id) || "gm",
+      appliedByUserName: text(options.appliedByUserName) || text(globalThis.game?.user?.name) || "GM",
       mutation: "session-followup-note-only",
+      mode: "session-only",
       kind: supportedFollowupEffect.kind,
       affectedTrack: supportedFollowupEffect.affectedTrack,
       followupRecord: cloneData(followupRecord)
@@ -502,20 +535,34 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
     const currentFollowups = isPlainObject(session.travelV2ConsequenceFollowups) ? session.travelV2ConsequenceFollowups : {};
     const nextFollowups = { version: 1, records: [...cloneData(recordsFrom(currentFollowups)), followupRecord] };
     const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status: "applied", decidedAt: createdAt, mutation: "session-followup-note-only", selectedConsequence: consequenceSummary(catalogEntry), selectedConsequenceApplyPreview: preview, appliedEffect: appliedRecord };
-    const nextSession = { ...cloneData(session), travelV2ConsequenceFollowups: nextFollowups, travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
+    const nextSession = { ...cloneData(session), travelV2ConsequenceFollowups: nextFollowups, travelV2ConsequenceApplicationHistory: { version: 1, records: [...applicationRecordsFrom(session), appliedRecord] }, travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record] } };
     return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record, appliedRecord, followupRecord };
   }
+  if (!SAFE_SESSION_PRESSURE_TRACKS.includes(supportedEffect.pressureTrack)) return { ok: false, session, queue, error: `Invalid Travel v2 pressure resource key: ${supportedEffect.pressureTrack}.` };
   const beforeValue = pressureValue(session, supportedEffect.pressureTrack);
   const afterValue = beforeValue + supportedEffect.pressureDelta;
+  if (finiteNumber(beforeValue) === null || finiteNumber(afterValue) === null || finiteNumber(supportedEffect.pressureDelta) === null) return { ok: false, session, queue, error: "Selected consequence would create a non-finite Travel v2 resource value." };
+  const appliedAt = timestamp(options);
+  const applicationId = makeApplicationId(queueKey, appliedAt);
   const appliedRecord = {
+    applicationId,
     queueKey,
+    consequenceItemKey: queueKey,
     consequenceId: catalogEntry.id,
-    appliedAt: timestamp(options),
+    roundIndex: Number.isInteger(Number(item.roundIndex)) ? Number(item.roundIndex) : (Number.isInteger(Number(session.currentRoundIndex)) ? Number(session.currentRoundIndex) : null),
+    statusBefore: item.status,
+    statusAfter: "applied",
+    appliedAt,
     appliedBy: "gm",
+    appliedByUserId: text(options.appliedByUserId) || text(globalThis.game?.user?.id) || "gm",
+    appliedByUserName: text(options.appliedByUserName) || text(globalThis.game?.user?.name) || "GM",
     mutation: "session-pressure-only",
     affectedTrack: supportedEffect.affectedTrack,
+    resource: supportedEffect.pressureTrack,
     pressureTrack: supportedEffect.pressureTrack,
     pressureDelta: supportedEffect.pressureDelta,
+    delta: supportedEffect.pressureDelta,
+    mode: "add",
     beforeValue,
     afterValue,
     note: text(options.note) || text(catalogEntry.applyEffectSummary)
@@ -524,8 +571,62 @@ export function applyTravelV2SelectedConsequenceToSession(session, queueKey, opt
   const nextPressure = { ...cloneData(session.pressure ?? {}) };
   nextPressure[supportedEffect.pressureTrack] = { ...(isPlainObject(nextPressure[supportedEffect.pressureTrack]) ? nextPressure[supportedEffect.pressureTrack] : {}), value: afterValue };
   const record = { ...cloneData(current), version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, queueKey, status: "applied", decidedAt: appliedRecord.appliedAt, mutation: "session-pressure-only", selectedConsequence: consequenceSummary(catalogEntry), selectedConsequenceApplyPreview: prepareTravelV2SelectedConsequenceApplyPreview(session, queueKey, options), appliedEffect: appliedRecord };
-  const nextSession = { ...cloneData(session), pressure: nextPressure, travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record], appliedRecords: [...cloneData(session.travelV2PendingConsequenceQueue?.appliedRecords ?? []), appliedRecord] } };
+  const nextSession = { ...cloneData(session), pressure: nextPressure, travelV2ConsequenceApplicationHistory: { version: 1, records: [...applicationRecordsFrom(session), appliedRecord] }, travelV2PendingConsequenceQueue: { version: TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION, records: [...existing, record], appliedRecords: [...cloneData(session.travelV2PendingConsequenceQueue?.appliedRecords ?? []), appliedRecord] } };
   return { ok: true, session: nextSession, queue: prepareTravelV2PendingConsequenceQueue(nextSession, options), record, appliedRecord };
+}
+
+export function inspectTravelV2ConsequenceApplicationFlow(session, options = {}) {
+  const errors = [];
+  const warnings = [];
+  const notes = [];
+  if (!isPlainObject(session)) errors.push("No active local Travel v2 runner session. Open or start a Travel Event Runner first.");
+  const queue = prepareTravelV2PendingConsequenceQueue(session, options);
+  const records = applicationRecordsFrom(session);
+  const seen = new Set();
+  let duplicateApplicationRecordCount = 0;
+  for (const record of records) {
+    const key = text(record.queueKey) || text(record.consequenceItemKey);
+    if (key && seen.has(key)) duplicateApplicationRecordCount += 1;
+    if (key) seen.add(key);
+  }
+  const invalidResourceMutationErrors = [];
+  for (const record of records) {
+    if (record.mutation !== "session-pressure-only") continue;
+    const resource = text(record.resource) || text(record.pressureTrack);
+    if (!SAFE_SESSION_PRESSURE_TRACKS.includes(resource)) invalidResourceMutationErrors.push(`Invalid resource key ${resource || "(blank)"} for ${record.applicationId ?? record.queueKey ?? "application record"}.`);
+    if (finiteNumber(record.beforeValue) === null || finiteNumber(record.afterValue) === null) invalidResourceMutationErrors.push(`Non-finite before/after value for ${record.applicationId ?? record.queueKey ?? "application record"}.`);
+  }
+  const appliedStillPending = queue.items.filter((item) => item.status === "pending" && hasApplicationRecordForQueueItem(session, item.queueKey)).length;
+  if (appliedStillPending > 0) errors.push("One or more applied consequence records still appear pending.");
+  if (duplicateApplicationRecordCount > 0) errors.push("Duplicate consequence application records were found.");
+  if (invalidResourceMutationErrors.length > 0) errors.push("Invalid consequence resource mutation records were found.");
+  if (!queue.hasSession) errors.push("No pending consequence queue can be prepared for this session.");
+  const pendingReviewable = queue.items.filter((item) => item.status === "pending");
+  const canAdvanceRound = queue.pendingCount === 0 && queue.deferredCount === 0;
+  if (!queue.items.length) notes.push("No pending consequence queue items are currently generated.");
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    sessionKey: text(session?.key),
+    currentRoundIndex: Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : -1,
+    currentRoundNumber: Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) + 1 : 0,
+    pendingConsequenceCount: queue.pendingCount,
+    unappliedConsequenceCount: queue.items.filter((item) => item.status === "pending" && !hasApplicationRecordForQueueItem(session, item.queueKey)).length,
+    appliedConsequenceCount: queue.appliedCount,
+    dismissedConsequenceCount: queue.dismissedCount,
+    resolvedConsequenceCount: queue.appliedCount + queue.dismissedCount,
+    reviewedConsequenceCount: queue.appliedCount + queue.dismissedCount + queue.deferredCount,
+    canApplyConsequences: pendingReviewable.some((item) => item.canApplySelectedConsequence === true),
+    canDismissConsequences: pendingReviewable.length > 0,
+    canAdvanceRound,
+    applicationRecordCount: records.length,
+    duplicateApplicationRecordCount,
+    invalidResourceMutationCount: invalidResourceMutationErrors.length,
+    invalidResourceMutationErrors,
+    appliedStillPendingCount: appliedStillPending,
+    notes
+  };
 }
 
 function selectedConsequenceBatchApplyEligible(item = {}) {

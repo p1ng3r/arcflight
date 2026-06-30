@@ -211,6 +211,8 @@ import {
 } from "./helpers/travel-event-runner.js";
 import {
   TRAVEL_V2_PENDING_CONSEQUENCE_QUEUE_VERSION,
+  applyTravelV2SelectedConsequenceToSession,
+  inspectTravelV2ConsequenceApplicationFlow,
   prepareTravelV2PendingConsequenceQueue,
   selectTravelV2PendingConsequenceCatalogCard,
   updateTravelV2PendingConsequenceQueueItem
@@ -604,6 +606,60 @@ async function inspectTravelConsequenceFlow() {
   const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
   if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", currentRoundIndex: -1, notes: [] };
   return inspectTravelV2ConsequenceFlowForSession(session, { actor: activeOverlay?.actor });
+}
+
+async function inspectTravelConsequenceApplicationFlow() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelConsequenceApplicationFlow is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", currentRoundIndex: -1, notes: [] };
+  const finalization = prepareTravelV2RoundFinalizationState(session, { actor: activeOverlay?.actor });
+  const playerSafeState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  const playerJson = JSON.stringify(playerSafeState ?? {});
+  const forbiddenTerms = ["pendingConsequenceQueue", "gmItemGroups", "catalogSuggestions", "selectedConsequenceApplyPreview", "unrevealedHazard", "internalSeverity", "managementAction", "applyEffectSummary", "GM-only queue label"];
+  const playerConsequenceLeakCount = forbiddenTerms.filter((term) => playerJson.includes(term)).length;
+  const applicationFlow = inspectTravelV2ConsequenceApplicationFlow(session, { actor: activeOverlay?.actor });
+  const advanceFlow = inspectTravelAdvanceRoundFlowForSession(session, { actor: activeOverlay?.actor });
+  const errors = [...(applicationFlow.errors ?? [])];
+  if (playerConsequenceLeakCount > 0) errors.push("Player-safe Travel v2 state exposes GM-only consequence application details.");
+  const roundFinalized = finalization.isFinalized === true || finalization.isEventCompleteReady === true;
+  const pressureApplied = finalization.isPressureApplied === true || Boolean(finalization.pressureApplicationRecord);
+  if (!roundFinalized) errors.push("Current round is not finalized yet.");
+  if (!pressureApplied) errors.push("Current round pressure/finalization has not been applied yet.");
+  return { ...applicationFlow, ok: errors.length === 0, errors: [...new Set(errors)], roundFinalized, pressureApplied, canAdvanceRound: advanceFlow.ok === true, playerStateSafe: playerConsequenceLeakCount === 0, playerConsequenceLeakCount };
+}
+
+async function forceTravelConsequenceApplied(input = {}) {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["forceTravelConsequenceApplied is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, activeRunner, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", currentRoundIndex: -1 };
+  const queue = prepareTravelV2PendingConsequenceQueue(session, { actor: activeOverlay?.actor });
+  if (!queue.items.length || queue.pendingCount < 1) return { ok: false, errors: ["No pending Travel v2 consequence queue item is available to apply."], warnings: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), pendingConsequenceCount: queue.pendingCount ?? 0 };
+  const itemId = typeof input.itemId === "string" ? input.itemId : "";
+  const itemIndex = Number.isInteger(Number(input.itemIndex)) ? Number(input.itemIndex) : 0;
+  const item = itemId ? queue.items.find((candidate) => candidate.queueKey === itemId || candidate.sourceId === itemId || candidate.selectedConsequence?.id === itemId) : queue.items.filter((candidate) => candidate.status === "pending")[itemIndex];
+  if (!item) return { ok: false, errors: ["Selected pending consequence queue item was not found."], warnings: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), pendingConsequenceCount: queue.pendingCount ?? 0 };
+  if (item.status !== "pending" && input.force !== true) return { ok: false, errors: [`Selected consequence is already ${item.status}.`], warnings: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), appliedItemId: item.queueKey };
+  let nextSession = session;
+  if (!item.selectedConsequence?.id) {
+    if (item.catalogSuggestions?.length !== 1) return { ok: false, errors: ["Selected pending consequence needs a GM catalog-card selection before it can be applied."], warnings: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), appliedItemId: item.queueKey };
+    const selected = selectTravelV2PendingConsequenceCatalogCard(nextSession, item.queueKey, item.catalogSuggestions[0].id, { actor: activeOverlay?.actor });
+    if (!selected.ok) return { ok: false, errors: [selected.error ?? "Could not select the single suggested consequence catalog card."], warnings: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), appliedItemId: item.queueKey };
+    nextSession = selected.session;
+  }
+  const applied = applyTravelV2SelectedConsequenceToSession(nextSession, item.queueKey, { actor: activeOverlay?.actor, force: input.force === true, appliedByUserId: globalThis.game?.user?.id, appliedByUserName: globalThis.game?.user?.name });
+  if (!applied.ok) return { ok: false, errors: [applied.error ?? "Selected consequence was not applied."], warnings: [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), appliedItemId: item.queueKey, applicationFlow: inspectTravelV2ConsequenceApplicationFlow(nextSession, { actor: activeOverlay?.actor }) };
+  nextSession = applied.session;
+  if (activeOverlay) activeOverlay.session = nextSession;
+  await updateActiveTravelSceneOverlayContext({ session: nextSession }, { render: true });
+  await updateActiveTravelEventRunnerSession(nextSession, { statusMessage: "Dev applied one Travel v2 consequence." });
+  if (activeRunner && activeRunner.session !== nextSession) activeRunner.session = nextSession;
+  await queueTravelPlayerMissionBoardRefreshToPlayers(nextSession, { actor: activeOverlay?.actor });
+  sendAllTravelPlayerStationCardsToPlayers(nextSession, { actor: activeOverlay?.actor });
+  const applicationFlow = await inspectTravelConsequenceApplicationFlow();
+  const mutation = applied.appliedRecord?.mutation === "session-pressure-only" ? [{ resource: applied.appliedRecord.resource ?? applied.appliedRecord.pressureTrack, beforeValue: applied.appliedRecord.beforeValue, afterValue: applied.appliedRecord.afterValue, delta: applied.appliedRecord.delta ?? applied.appliedRecord.pressureDelta, mode: applied.appliedRecord.mode ?? "add" }] : [];
+  return { ok: true, errors: [], warnings: input.force === true ? ["Forced consequence application was explicitly requested."] : [], sessionKey: nextSession.key ?? "", currentRoundIndex: Number(nextSession.currentRoundIndex ?? 0), appliedItemId: item.queueKey, appliedItemLabel: item.title ?? "", applicationId: applied.appliedRecord?.applicationId ?? "", resourceMutations: mutation, pendingConsequenceCount: applicationFlow.pendingConsequenceCount, unappliedConsequenceCount: applicationFlow.unappliedConsequenceCount, canAdvanceRound: applicationFlow.canAdvanceRound === true, playerStateSafe: applicationFlow.playerStateSafe === true, applicationFlow };
 }
 
 async function forceTravelRoundFinalized(input = {}) {
@@ -1154,7 +1210,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelAdvanceRoundFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelRoundAdvanced },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelAdvanceRoundFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true

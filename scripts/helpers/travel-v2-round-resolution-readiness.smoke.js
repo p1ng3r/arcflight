@@ -11,7 +11,7 @@ import {
 import { forceTravelV2RoundResolved } from "./travel-v2-dev-tools.js";
 import { applyTravelV2PressureToRunnerSession } from "./travel-v2-session-pressure-application.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "./travel-v2-session-round-finalization.js";
-import { prepareTravelV2PendingConsequenceQueue, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
+import { applyTravelV2SelectedConsequenceToSession, inspectTravelV2ConsequenceApplicationFlow, prepareTravelV2PendingConsequenceQueue, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 
 function assertSmoke(condition, message) {
@@ -96,6 +96,31 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   assertSmoke(finalized.ok && finalized.finalized && finalized.effectiveOutcomeKey, "full finalize/consequence flow finalizes through the real session helper and records an outcome");
   const finalizedQueue = prepareTravelV2PendingConsequenceQueue(finalized.session);
   assertSmoke(finalizedQueue.hasSession && Number.isInteger(finalizedQueue.pendingCount), "finalized session prepares a consequence queue or explicit no-consequence count");
+  let applicationSession = {
+    ...finalized.session,
+    travelV2SupportBacklashRecords: { records: [{ id: "smoke-support-backlash", roundIndex: 0, status: "pending", severity: "minor", supportingStationName: "Captain", publicRiskText: "Crew panic may spread through the watch." }] }
+  };
+  let applicationQueue = prepareTravelV2PendingConsequenceQueue(applicationSession);
+  const applicationItem = applicationQueue.items.find((item) => item.queueKey === "support-backlash:smoke-support-backlash");
+  assertSmoke(applicationItem?.status === "pending", "controlled pending consequence fixture creates a pending queue item");
+  const selectedApplication = selectTravelV2PendingConsequenceCatalogCard(applicationSession, applicationItem.queueKey, "consequence-crew-panic", { now: "2026-06-29T00:07:30.000Z" });
+  assertSmoke(selectedApplication.ok, "controlled pending consequence selects an executable catalog card through existing queue selection logic");
+  applicationSession = selectedApplication.session;
+  const beforePressure = Number(applicationSession.pressure?.morale?.value ?? 0);
+  let applicationFlow = inspectTravelV2ConsequenceApplicationFlow(applicationSession);
+  assertSmoke(applicationFlow.pendingConsequenceCount >= 1 && applicationFlow.duplicateApplicationRecordCount === 0 && applicationFlow.invalidResourceMutationCount === 0, "consequence application inspection reports clean pending application state");
+  const appliedConsequence = applyTravelV2SelectedConsequenceToSession(applicationSession, applicationItem.queueKey, { now: "2026-06-29T00:08:00.000Z", appliedByUserId: "gm1", appliedByUserName: "GM" });
+  assertSmoke(appliedConsequence.ok && appliedConsequence.appliedRecord?.applicationId, "single consequence applies through the real selected-consequence apply path and records an application id");
+  assertSmoke(appliedConsequence.appliedRecord.resource === "morale" && Number.isFinite(appliedConsequence.appliedRecord.beforeValue) && Number.isFinite(appliedConsequence.appliedRecord.afterValue), "application record uses an allowed finite travel resource mutation");
+  assertSmoke(appliedConsequence.appliedRecord.beforeValue === beforePressure && appliedConsequence.appliedRecord.afterValue === beforePressure + 1, "resource mutation records finite before/after values exactly once");
+  applicationSession = appliedConsequence.session;
+  applicationFlow = inspectTravelV2ConsequenceApplicationFlow(applicationSession);
+  assertSmoke(applicationFlow.applicationRecordCount >= 1 && applicationFlow.duplicateApplicationRecordCount === 0 && applicationFlow.invalidResourceMutationCount === 0, "application inspection sees one auditable record with no duplicates or invalid mutations");
+  const secondApply = applyTravelV2SelectedConsequenceToSession(applicationSession, applicationItem.queueKey, { now: "2026-06-29T00:08:01.000Z", appliedByUserId: "gm1", appliedByUserName: "GM" });
+  assertSmoke(!secondApply.ok && secondApply.alreadyApplied === true, "double-apply attempt is rejected as already applied");
+  assertSmoke(Number(applicationSession.pressure?.morale?.value ?? 0) === beforePressure + 1, "double-apply rejection does not mutate the resource a second time");
+  const secondFlow = inspectTravelV2ConsequenceApplicationFlow(applicationSession);
+  assertSmoke(secondFlow.applicationRecordCount === applicationFlow.applicationRecordCount && secondFlow.duplicateApplicationRecordCount === 0, "double-apply rejection does not create duplicate application history");
   const finalizedGmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: finalized.session, user: { isGM: true } });
   assertSmoke(finalizedGmState.canManageTravelV2Consequences === true && Array.isArray(finalizedGmState.pendingConsequenceQueue.gmItemGroups), "GM state includes consequence management controls after finalization");
   const finalizedPlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: finalized.session, user: { isGM: false } });
