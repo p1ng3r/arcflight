@@ -7,6 +7,9 @@ import {
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
 import { forceTravelV2RoundResolved } from "./travel-v2-dev-tools.js";
+import { applyTravelV2PressureToRunnerSession } from "./travel-v2-session-pressure-application.js";
+import { finalizeTravelV2RoundOnRunnerSession } from "./travel-v2-session-round-finalization.js";
+import { prepareTravelV2PendingConsequenceQueue, updateTravelV2PendingConsequenceQueueItem } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 
 function assertSmoke(condition, message) {
@@ -82,7 +85,34 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   }
   const gmAppState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } });
   assertSmoke(gmAppState.canManageTravelV2Consequences === true && Array.isArray(gmAppState.pendingConsequenceQueue.items), "GM app state retains pending consequence queue readiness controls");
-  const advanced = advanceTravelEventRunnerRound(session, { force: true });
+  const flowCreated = createTravelEventRunnerSession(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { key: "round-resolution-finalize-flow-session", now: "2026-06-29T00:00:00.000Z" });
+  const flowResolved = forceTravelV2RoundResolved(flowCreated.session, { defaultResult: "failure" }, { playerSafeState: {} });
+  assertSmoke(flowResolved.ok, "full finalize/consequence flow resolves stations through the force helper before finalization");
+  const pressureApplied = applyTravelV2PressureToRunnerSession(flowResolved.session, { selectedOutcomeKey: "failure", now: "2026-06-29T00:06:00.000Z" });
+  assertSmoke(pressureApplied.ok && pressureApplied.applied, "full finalize/consequence flow applies pressure through the real session helper");
+  const finalized = finalizeTravelV2RoundOnRunnerSession(pressureApplied.session, { now: "2026-06-29T00:07:00.000Z" });
+  assertSmoke(finalized.ok && finalized.finalized && finalized.effectiveOutcomeKey, "full finalize/consequence flow finalizes through the real session helper and records an outcome");
+  const finalizedQueue = prepareTravelV2PendingConsequenceQueue(finalized.session);
+  assertSmoke(finalizedQueue.hasSession && Number.isInteger(finalizedQueue.pendingCount), "finalized session prepares a consequence queue or explicit no-consequence count");
+  const finalizedGmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: finalized.session, user: { isGM: true } });
+  assertSmoke(finalizedGmState.canManageTravelV2Consequences === true && Array.isArray(finalizedGmState.pendingConsequenceQueue.gmItemGroups), "GM state includes consequence management controls after finalization");
+  const finalizedPlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: finalized.session, user: { isGM: false } });
+  const finalizedPlayerJson = JSON.stringify(finalizedPlayerState.pendingConsequenceQueue?.playerSafeItems ?? []);
+  for (const forbidden of ["pendingConsequenceQueue","queueGroup","consequenceCatalog","gmOnly","internalSeverity","unrevealedHazard","shipScarControls","managementAction","gmItemGroups","catalogSuggestions","selectedConsequenceApplyPreview","unrevealed consequence","unrevealed hazard"]) {
+    assertSmoke(!finalizedPlayerJson.includes(forbidden), `post-finalization player-safe state does not expose ${forbidden}`);
+  }
+  if (finalizedQueue.items.length > 0) {
+    const first = finalizedQueue.items[0];
+    const blockedByConsequence = advanceTravelEventRunnerRound(finalized.session);
+    assertSmoke(!blockedByConsequence.ok && blockedByConsequence.errors.some((error) => error.includes("Review pending consequences")), "round advance remains blocked while finalized consequence queue has pending items");
+    const dismissed = updateTravelV2PendingConsequenceQueueItem(finalized.session, first.queueKey, "dismissed", { now: "2026-06-29T00:08:00.000Z" });
+    assertSmoke(dismissed.ok && dismissed.queue.dismissedCount >= 1, "consequence dismiss path updates queue state through existing logic");
+    const dismissedGmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: dismissed.session, user: { isGM: true } });
+    assertSmoke(dismissedGmState.pendingConsequenceQueue.dismissedCount >= 1, "GM state updates after consequence item state change");
+    const dismissedPlayerJson = JSON.stringify(prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: dismissed.session, user: { isGM: false } }).pendingConsequenceQueue?.playerSafeItems ?? []);
+    assertSmoke(!dismissedPlayerJson.includes("gmItemGroups") && !dismissedPlayerJson.includes("catalogSuggestions"), "player-safe state stays sanitized after consequence queue state change");
+  }
+  const advanced = advanceTravelEventRunnerRound(finalized.session, { force: true });
   assertSmoke(advanced.ok && advanced.session.currentRoundIndex === 1, "explicit force override remains available for intentional GM override behavior");
 
   return {
@@ -97,6 +127,8 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
       "force-round-resolved-helper",
       "gm-finalization-readiness-labels",
       "player-safe-round-summary-scan",
+      "finalize-consequence-queue-flow",
+      "consequence-state-change-player-safety",
       "gm-override-preserved"
     ]
   };

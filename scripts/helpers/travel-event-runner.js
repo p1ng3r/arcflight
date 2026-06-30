@@ -25,6 +25,7 @@ import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setT
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
+import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -3624,6 +3625,10 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
       if (!hasResult && !hasResolvedReroll) errors.push(`${stationKey} has no result but the current round appears finalized.`);
     }
   }
+  const preparedConsequenceQueue = prepareTravelV2PendingConsequenceQueue(activeSession, options);
+  const pendingConsequenceCount = (preparedConsequenceQueue.pendingCount ?? 0)
+    + recordsFromTravelV2Container(activeSession.travelV2ConsequenceFollowups).filter((record) => !["reviewed", "resolved", "dismissed"].includes(record?.status)).length;
+  if (hasFinalizationRecord && pendingConsequenceCount > 0) errors.push("Review pending consequences before advancing this round.");
   const canResolveRound = errors.length === 0 && roundFinalizationState.canFinalize === true;
   const canAdvanceRound = errors.length === 0 && hasFinalizationRecord && currentRoundIndex < (activeSession.event?.rounds?.length ?? 0) - 1 && activeSession.status !== "completed";
   return {
@@ -3652,7 +3657,15 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
       canFinalizeCurrentRound: canResolveRound,
       canAdvanceCurrentRound: canAdvanceRound,
       finalizationReadinessLabel: errors[0] ?? "Ready to finalize this round.",
-      notes: canResolveRound || canAdvanceRound ? ["Round resolution readiness checks passed."] : ["Resolve active stations, Focus prompts, and required rerolls before advancing."]
+      consequenceFlowReady: hasFinalizationRecord && pendingConsequenceCount === 0,
+      consequenceFlowBlocked: hasFinalizationRecord && pendingConsequenceCount > 0,
+      consequenceFlowBlockers: hasFinalizationRecord && pendingConsequenceCount > 0 ? ["Pending consequences require GM review."] : [],
+      consequenceFlowWarningLabel: hasFinalizationRecord ? (pendingConsequenceCount > 0 ? "Round finalized. Review pending consequences before advancing." : "No pending consequences. Ready to advance.") : (errors[0] ?? "Ready to finalize this round."),
+      canReviewConsequences: hasFinalizationRecord && pendingConsequenceCount > 0,
+      canApplyPendingConsequences: hasFinalizationRecord && pendingConsequenceCount > 0,
+      canDismissPendingConsequences: hasFinalizationRecord && pendingConsequenceCount > 0,
+      canAdvanceAfterConsequences: canAdvanceRound,
+      notes: canResolveRound || canAdvanceRound ? ["Round resolution readiness checks passed."] : ["Resolve active stations, Focus prompts, required rerolls, and pending consequences before advancing."]
     }
   };
 }
