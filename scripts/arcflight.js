@@ -497,6 +497,107 @@ function inspectTravelV2ConsequenceFlowForSession(session, options = {}) {
   return { ok: errors.length === 0, errors, warnings, sessionKey: session?.key ?? "", currentRoundIndex: Number(session?.currentRoundIndex ?? -1), roundResolved: readiness.ok === true, roundFinalized, roundOutcomeKey: finalization.effectiveOutcomeKey ?? readiness.roundOutcomeKey ?? "", roundOutcomeLabel: readiness.roundOutcomeLabel || (finalization.effectiveOutcomeKey ? String(finalization.effectiveOutcomeKey) : ""), pressureApplied, pendingConsequenceCount, unappliedConsequenceCount, reviewedConsequenceCount, resolvedConsequenceCount, dismissedConsequenceCount, canFinalizeRound, canApplyConsequences, canAdvanceRound, playerStateSafe: leakedTerms.length === 0 && readiness.playerSummarySafe !== false, notes };
 }
 
+
+function inspectTravelAdvanceRoundFlowForSession(session, options = {}) {
+  const playerSafeState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: options.actor });
+  const consequenceFlow = inspectTravelV2ConsequenceFlowForSession(session, { actor: options.actor, playerSafeState });
+  const currentRoundIndex = Number(session?.currentRoundIndex ?? -1);
+  const totalRounds = session?.event?.rounds?.length ?? 0;
+  const currentRoundNumber = currentRoundIndex >= 0 ? currentRoundIndex + 1 : 0;
+  const nextRound = session?.event?.rounds?.[currentRoundIndex + 1] ?? null;
+  const nextRoundActiveStations = Array.isArray(nextRound?.activeStations) ? [...nextRound.activeStations] : [];
+  const playerStations = Array.isArray(playerSafeState?.stations) ? playerSafeState.stations : [];
+  const playerStationCards = playerStations.map((station) => prepareTravelPlayerStationCardState(session, station.stationKey, { actor: options.actor }));
+  const playerJson = JSON.stringify(playerSafeState ?? {});
+  const forbiddenTerms = ["pendingConsequenceQueue", "gmItemGroups", "catalogSuggestions", "selectedConsequenceApplyPreview", "unrevealedHazard", "GM-only queue label"];
+  const staleConsequenceLeakCount = forbiddenTerms.filter((term) => playerJson.includes(term)).length;
+  const staleCurrentRoundResultCount = playerStations.filter((station) => station.hasResult === true || station.resultLabel && station.resultLabel !== "Unrecorded").length;
+  const staleCurrentRoundReactionPromptCount = playerStations.filter((station) => station.focusReactionAvailable === true || station.hasPendingReactionPrompt === true).length
+    + playerStationCards.filter((card) => card.focusReactionAvailable === true || card.hasPendingReactionPrompt === true).length;
+  const staleCurrentRoundRerollNeededCount = playerStations.filter((station) => station.focusRerollNeeded === true).length
+    + playerStationCards.filter((card) => card.focusRerollNeeded === true).length;
+  const errors = [...(consequenceFlow.errors ?? [])];
+  const warnings = [...(consequenceFlow.warnings ?? [])];
+  const notes = [...(consequenceFlow.notes ?? [])];
+  const hasNextRound = Boolean(nextRound);
+  const playerCurrentRoundIndex = Number(playerSafeState?.currentRoundIndex ?? -1);
+  const playerCurrentRoundNumber = playerCurrentRoundIndex >= 0 ? playerCurrentRoundIndex + 1 : 0;
+  const playerActiveStationCount = playerStations.length;
+  const playerMissionBoardSafe = playerSafeState?.hasSession === true && playerCurrentRoundIndex === currentRoundIndex && staleConsequenceLeakCount === 0;
+  if (consequenceFlow.roundFinalized !== true) errors.push("Finalize this round before advancing.");
+  if (consequenceFlow.pressureApplied !== true) errors.push("Apply pressure/finalization before advancing.");
+  if ((consequenceFlow.pendingConsequenceCount ?? 0) > 0 || (consequenceFlow.unappliedConsequenceCount ?? 0) > 0) errors.push("Review pending consequences before advancing.");
+  if (!hasNextRound) errors.push("No next round is available.");
+  if (!playerMissionBoardSafe) errors.push("Player mission board current round or safety scan does not match the active runner round.");
+  if (staleConsequenceLeakCount > 0) errors.push("Player-safe state exposes stale GM-only consequence data.");
+  if (staleCurrentRoundReactionPromptCount > 0) errors.push("Player-safe station state still has a pending previous-round reaction prompt.");
+  if (staleCurrentRoundRerollNeededCount > 0) errors.push("Player-safe station state still has a previous-round Focus reroll needed.");
+  if (errors.length === 0) notes.push(`Ready to advance to Round ${currentRoundIndex + 2}.`);
+  return {
+    ok: errors.length === 0,
+    errors: [...new Set(errors)],
+    warnings,
+    sessionKey: session?.key ?? "",
+    currentRoundIndex,
+    currentRoundNumber,
+    totalRounds,
+    canAdvanceRound: errors.length === 0,
+    hasNextRound,
+    currentRoundFinalized: consequenceFlow.roundFinalized === true,
+    currentRoundPressureApplied: consequenceFlow.pressureApplied === true,
+    consequenceFlowClean: (consequenceFlow.pendingConsequenceCount ?? 0) === 0 && (consequenceFlow.unappliedConsequenceCount ?? 0) === 0 && consequenceFlow.playerStateSafe !== false,
+    pendingConsequenceCount: consequenceFlow.pendingConsequenceCount ?? 0,
+    unappliedConsequenceCount: consequenceFlow.unappliedConsequenceCount ?? 0,
+    nextRoundActiveStationCount: nextRoundActiveStations.length,
+    nextRoundActiveStations,
+    playerMissionBoardSafe,
+    playerCurrentRoundIndex,
+    playerCurrentRoundNumber,
+    playerActiveStationCount,
+    staleCurrentRoundResultCount,
+    staleCurrentRoundReactionPromptCount,
+    staleCurrentRoundRerollNeededCount,
+    staleConsequenceLeakCount,
+    notes
+  };
+}
+
+async function inspectTravelAdvanceRoundFlow() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelAdvanceRoundFlow is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", currentRoundIndex: -1, notes: [] };
+  return inspectTravelAdvanceRoundFlowForSession(session, { actor: activeOverlay?.actor });
+}
+
+async function forceTravelRoundAdvanced(input = {}) {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["forceTravelRoundAdvanced is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, activeRunner, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", currentRoundIndex: -1 };
+  let nextSession = session;
+  const warnings = [];
+  if (input.finalizeCurrentRound === true) {
+    const finalized = await forceTravelRoundFinalized({ ...input, resolveStations: input.resolveStations !== false });
+    if (!finalized.ok) return { ok: false, errors: finalized.errors ?? ["Could not finalize current round before advancing."], warnings: finalized.warnings ?? [], sessionKey: session.key ?? "", currentRoundIndex: Number(session.currentRoundIndex ?? 0), advanceFlow: finalized };
+    warnings.push(...(finalized.warnings ?? []));
+    nextSession = getActiveLocalTravelRunnerContext().session ?? nextSession;
+  }
+  const previousRoundIndex = Number(nextSession.currentRoundIndex ?? 0);
+  const advanced = advanceTravelEventRunnerRound(nextSession, { force: input.force === true });
+  if (!advanced.ok) return { ok: false, errors: advanced.errors ?? ["Could not advance Travel round."], warnings, sessionKey: nextSession.key ?? "", previousRoundIndex, currentRoundIndex: previousRoundIndex, advanceFlow: inspectTravelAdvanceRoundFlowForSession(nextSession, { actor: activeOverlay?.actor }) };
+  nextSession = advanced.session;
+  if (activeOverlay) activeOverlay.session = nextSession;
+  await updateActiveTravelSceneOverlayContext({ session: nextSession }, { render: true });
+  await updateActiveTravelEventRunnerSession(nextSession, { statusMessage: `Advanced to Round ${Number(nextSession.currentRoundIndex ?? 0) + 1}. Players may choose station approaches.` });
+  if (activeRunner && activeRunner.session !== nextSession) activeRunner.session = nextSession;
+  await queueTravelPlayerMissionBoardRefreshToPlayers(nextSession, { actor: activeOverlay?.actor });
+  const stationCards = sendAllTravelPlayerStationCardsToPlayers(nextSession, { actor: activeOverlay?.actor });
+  const advanceFlow = inspectTravelAdvanceRoundFlowForSession(nextSession, { actor: activeOverlay?.actor });
+  const activeStations = nextSession.event?.rounds?.[nextSession.currentRoundIndex]?.activeStations ?? [];
+  return { ok: true, errors: [], warnings, sessionKey: nextSession.key ?? "", previousRoundIndex, currentRoundIndex: Number(nextSession.currentRoundIndex ?? 0), previousRoundNumber: previousRoundIndex + 1, currentRoundNumber: Number(nextSession.currentRoundIndex ?? 0) + 1, activeStationCount: activeStations.length, activeStations, playerMissionBoardSafe: advanceFlow.playerMissionBoardSafe === true, advanceFlow, stationCards };
+}
+
 async function inspectTravelConsequenceFlow() {
   if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelConsequenceFlow is GM-only."], warnings: [] };
   if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
@@ -1053,7 +1154,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, forceTravelRoundResolved, forceTravelRoundFinalized },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelAdvanceRoundFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelRoundAdvanced },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true

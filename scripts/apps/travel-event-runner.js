@@ -1776,7 +1776,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const updated = advanceTravelEventRunnerRound(this.session);
     this.session = updated.session ?? this.session;
     this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
-    this.statusMessage = updated.ok ? "Advanced to the next round." : (updated.errors?.[0] ?? "Could not advance the runner round.");
+    this.statusMessage = updated.ok ? `Advanced to Round ${Number(this.session?.currentRoundIndex ?? 0) + 1}. Players may choose station approaches.` : (updated.errors?.[0] ?? "Could not advance the runner round.");
     if (!updated.ok) ui.notifications?.warn?.(this.statusMessage);
     this.#refreshPlayersQuietly();
     return this.render(true);
