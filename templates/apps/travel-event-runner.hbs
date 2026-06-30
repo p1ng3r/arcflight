@@ -5,7 +5,7 @@
       <div class="arcflight-travel-runner-mvp__actions">
         <button type="button" data-arcflight-runner-toggle-compact>{{#if state.compactRunner}}Expand Runner{{else}}Compact Runner{{/if}}</button>
         <button type="button" data-arcflight-open-travel-scene-overlay>Open Travel Scene Overlay</button>
-        {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board>Send / Refresh Player HUD</button>{{/if}}
+        {{#if state.hasSession}}<button type="button" data-arcflight-runner-send-mission-board title="{{#if state.travelV2GmFlowStatus}}{{state.travelV2GmFlowStatus.disabledActions.syncPlayers}}{{else}}Send or refresh player HUD and station cards.{{/if}}">Send / Refresh Player HUD</button>{{/if}}
       </div>
     </div>
     {{#unless state.compactRunner}}<span class="arcflight-travel-safety-chip" title="No automatic actor/item/chat/journal/combat mutation. Actor changes require explicit GM Apply.">Manual GM Apply only</span>{{/unless}}
@@ -56,8 +56,29 @@
           <span>Status: {{state.session.status}}</span>
         </div>
       </div>
-      <button type="button" data-arcflight-runner-send-mission-board>Send / Refresh Player HUD</button>
+      <button type="button" data-arcflight-runner-send-mission-board title="{{#if state.travelV2GmFlowStatus}}{{state.travelV2GmFlowStatus.disabledActions.syncPlayers}}{{else}}Send or refresh player HUD and station cards.{{/if}}">Send / Refresh Player HUD</button>
     </header>
+
+    {{#if state.travelV2GmFlowStatus}}
+    <section class="arcflight-travel-gm-flow-strip arcflight-{{state.travelV2GmFlowStatus.stateTone}} arcflight-gm-only" aria-label="Travel v2 GM flow status">
+      <header>
+        <strong>GM Flow Status</strong>
+        <span>{{state.travelV2GmFlowStatus.nextActionLabel}}</span>
+      </header>
+      <div class="arcflight-travel-gm-flow-strip__chips">
+        <span>{{state.travelV2GmFlowStatus.currentRoundLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.stationResolutionLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.focusReadinessLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.finalizationLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.pressureLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.consequenceLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.advanceLabel}}</span>
+        <span>{{state.travelV2GmFlowStatus.playerSyncLabel}}</span>
+      </div>
+      <p class="arcflight-sheet__hint"><strong>Next:</strong> {{state.travelV2GmFlowStatus.nextActionLabel}} — {{state.travelV2GmFlowStatus.nextActionHelpText}}</p>
+      {{#if state.travelV2GmFlowStatus.blockers}}<p class="arcflight-sheet__hint"><strong>Blocked by:</strong> {{#each state.travelV2GmFlowStatus.blockers}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
+    </section>
+    {{/if}}
 
     <article class="arcflight-travel-next-action arcflight-{{state.guidedBridge.nextRequiredAction.tone}}">
       <span class="arcflight-travel-next-action__icon">{{state.guidedBridge.nextRequiredAction.icon}}</span>
@@ -221,10 +242,10 @@
                     {{#if hasAppliedEffect}}
                       <section class="arcflight-travel-card arcflight-gm-only" aria-label="Selected Consequence Applied Result">
                         <strong>Applied Result</strong>
+                        <p class="arcflight-sheet__hint"><strong>Application:</strong> {{appliedEffect.applicationId}} · <strong>Applied at:</strong> {{appliedEffect.appliedAt}} · <strong>Applied by:</strong> {{appliedEffect.appliedBy}}</p>
                         {{#if (eq appliedEffect.mutation "session-pressure-only")}}
                           <p class="arcflight-sheet__hint"><strong>Mutation:</strong> {{appliedEffect.mutation}} · <strong>Affected track:</strong> {{appliedEffect.affectedTrack}} · <strong>Pressure track:</strong> {{appliedEffect.pressureTrack}}</p>
                           <p class="arcflight-sheet__hint"><strong>Delta:</strong> {{appliedEffect.pressureDelta}} · <strong>Before → After:</strong> {{appliedEffect.beforeValue}} → {{appliedEffect.afterValue}}</p>
-                          <p class="arcflight-sheet__hint"><strong>Applied at:</strong> {{appliedEffect.appliedAt}} · <strong>Applied by:</strong> {{appliedEffect.appliedBy}}</p>
                           <p><strong>Note:</strong> {{appliedEffect.note}}</p>
                         {{/if}}
                         {{#if (eq appliedEffect.mutation "session-followup-note-only")}}
@@ -233,6 +254,7 @@
                           <p class="arcflight-sheet__hint"><strong>Consequence:</strong> {{appliedEffect.consequenceId}} · <strong>Title:</strong> {{appliedEffect.followupRecord.title}}</p>
                           <p><strong>Summary:</strong> {{appliedEffect.followupRecord.summary}}</p>
                           <p class="arcflight-sheet__hint"><strong>Source:</strong> {{appliedEffect.followupRecord.source}} · <strong>Created:</strong> {{appliedEffect.followupRecord.createdAt}} · <strong>By:</strong> {{appliedEffect.followupRecord.createdBy}}</p>
+                          <p class="arcflight-sheet__hint">Session-only note; no actor/resource mutation was applied.</p>
                         {{/if}}
                       </section>
                     {{/if}}
@@ -452,7 +474,7 @@
                       <span class="arcflight-travel-runner-mvp__v2-preview-chip"><strong>{{displayAmount}}</strong> {{label}}</span>
                     {{/each}}
                   </div>
-                  <button type="button" class="arcflight-travel-runner-mvp__v2-preview-apply" data-arcflight-travel-v2-pressure-apply="{{outcomeKey}}" {{#if pressureApplyDisabled}}disabled{{/if}}>{{pressureApplyLabel}}</button>
+                  <button type="button" class="arcflight-travel-runner-mvp__v2-preview-apply" data-arcflight-travel-v2-pressure-apply="{{outcomeKey}}" {{#if pressureApplyDisabled}}disabled{{/if}} title="{{#if pressureApplyDisabled}}{{pressureApplyBlockedReason}}{{else}}Apply this pressure outcome.{{/if}}">{{pressureApplyLabel}}</button>
                   {{#if canCorrectPressure}}<button type="button" class="arcflight-travel-runner-mvp__v2-preview-correct" data-arcflight-travel-v2-pressure-correct="{{outcomeKey}}" {{#if pressureCorrectionDisabled}}disabled{{/if}}>{{pressureCorrectionLabel}}</button>{{/if}}
                   {{#if isEffectiveAppliedOutcome}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">Effective applied outcome</p>{{/if}}
                   {{#if pressureApplyBlockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{pressureApplyBlockedReason}}</p>{{/if}}
@@ -476,11 +498,11 @@
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.footerText}}</p>
           </div>
           <button type="button" data-arcflight-travel-v2-round-review>Review Round Resolution</button>
-          <button type="button" class="arcflight-travel-runner-mvp__v2-finalize-button" data-arcflight-travel-v2-round-finalize {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.buttonLabel}}</button>
+          <button type="button" class="arcflight-travel-runner-mvp__v2-finalize-button" data-arcflight-travel-v2-round-finalize {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}disabled{{/if}} title="{{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}{{state.travelV2GmFlowStatus.disabledActions.finalizeRound}}{{else}}Finalize this Travel v2 round.{{/if}}">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.buttonLabel}}</button>
         </div>
         {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.blockedReason}}
           <p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.blockedReason}}</p>
-        {{/if}}
+        {{else}}{{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.finalizeDisabled}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2GmFlowStatus.disabledActions.finalizeRound}}</p>{{/if}}{{/if}}
         {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.hasFeedback}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.feedbackText}}</p>
         {{/if}}
@@ -506,7 +528,7 @@
               <strong>Event Outcome Package</strong>
               <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.summaryText}}</p>
             </div>
-            <button type="button" class="arcflight-travel-runner-mvp__v2-outcome-apply-button" data-arcflight-travel-v2-outcome-apply {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}disabled{{/if}}>{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyButtonLabel}}</button>
+            <button type="button" class="arcflight-travel-runner-mvp__v2-outcome-apply-button" data-arcflight-travel-v2-outcome-apply {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}disabled{{/if}} title="{{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.blockedReason}}{{else}}Apply the prepared outcome package.{{/if}}">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyButtonLabel}}</button>
           </div>
           <p><strong>Outcome:</strong> {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.eventOutcomeLabel}}</p>
           <p>{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.nextStepText}}</p>

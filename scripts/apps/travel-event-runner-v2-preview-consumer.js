@@ -56,6 +56,78 @@ function buildPressureGauges(state = {}, pendingScars = []) {
   });
 }
 
+function firstText(values = [], fallback = "") {
+  const found = values.find((value) => typeof value === "string" && value.trim());
+  return found ? found.trim() : fallback;
+}
+
+function buildTravelV2GmFlowStatus(state = {}) {
+  const hasSession = state.hasSession === true;
+  const stations = Array.isArray(state.stations) ? state.stations : [];
+  const totalRounds = Number(state.event?.roundCount ?? state.session?.event?.rounds?.length ?? state.event?.rounds?.length ?? 0) || 0;
+  const currentRoundNumber = Number(state.currentRoundNumber ?? (Number(state.session?.currentRoundIndex ?? -1) + 1)) || 0;
+  const resolvedStations = stations.filter((station) => Boolean(station.result)).length;
+  const totalStations = stations.length;
+  const pendingReactions = (state.reactionPromptReview?.records ?? []).filter((record) => record?.isPending || record?.status === "pending").length;
+  const focusRerollNeeded = stations.filter((station) => station.focusRerollNeeded === true || station.needsFocusReroll === true).length;
+  const pressure = state.travelV2PreviewPanel?.pressureApplication ?? {};
+  const finalization = state.travelV2PreviewPanel?.travelV2RoundFinalizationState ?? state.roundFinalization ?? {};
+  const queue = state.pendingConsequenceQueue ?? {};
+  const pendingConsequences = Number(queue.pendingCount ?? 0) || 0;
+  const appliedConsequences = Number(queue.appliedCount ?? 0) || 0;
+  const dismissedConsequences = Number(queue.dismissedCount ?? 0) || 0;
+  const deferredConsequences = Number(queue.deferredCount ?? 0) || 0;
+  const isFinalized = finalization.isFinalized === true || finalization.lifecycleState === "finalized" || finalization.lifecycleState === "event-complete-ready";
+  const pressureApplied = pressure.alreadyApplied === true || finalization.isPressureApplied === true || Boolean(finalization.pressureApplicationRecord);
+  const hasNextRound = hasSession && currentRoundNumber > 0 && totalRounds > 0 && currentRoundNumber < totalRounds;
+  const blockers = [];
+  if (!hasSession) blockers.push("Open or start a Travel Event Runner first.");
+  if (hasSession && resolvedStations < totalStations) blockers.push("Resolve all active stations first.");
+  if (pendingReactions > 0) blockers.push("A Focus reaction is still pending.");
+  if (focusRerollNeeded > 0) blockers.push("A Focus reroll is accepted but unresolved.");
+  if (hasSession && !pressureApplied) blockers.push("Apply pressure/finalization before advancing.");
+  if (hasSession && !isFinalized) blockers.push("Finalize this round before advancing.");
+  if (pendingConsequences > 0 || deferredConsequences > 0) blockers.push("Apply or dismiss pending consequences before advancing.");
+  if (hasSession && !hasNextRound) blockers.push("No next round exists.");
+  const canFinalize = finalization.canFinalize === true;
+  const canAdvance = hasSession && blockers.length === 0;
+  let nextActionLabel = "No active Travel v2 runner.";
+  if (hasSession) {
+    if (resolvedStations < totalStations) nextActionLabel = totalStations === 0 ? "Choose station approaches." : "Resolve active station rolls.";
+    else if (pendingReactions > 0) nextActionLabel = "Resolve pending Focus reaction.";
+    else if (focusRerollNeeded > 0) nextActionLabel = "Resolve accepted Focus reroll.";
+    else if (!pressureApplied) nextActionLabel = "Apply pressure/finalization.";
+    else if (!isFinalized) nextActionLabel = "Finalize this round.";
+    else if (pendingConsequences > 0) nextActionLabel = "Apply or dismiss pending consequence.";
+    else if (deferredConsequences > 0) nextActionLabel = "Review pending consequences.";
+    else if (hasNextRound) nextActionLabel = `Advance to Round ${currentRoundNumber + 1}.`;
+    else nextActionLabel = "Travel event ready for completion.";
+  }
+  const disabledActions = {
+    finalizeRound: canFinalize ? "" : firstText([finalization.blockedReason, ...(finalization.blockedReasons ?? [])], isFinalized ? "Round already finalized." : "Resolve all active stations and apply pressure first."),
+    applyPressure: pressure.alreadyApplied ? "Pressure already applied." : firstText([pressure.blockedReason, ...(pressure.blockedReasons ?? [])], resolvedStations < totalStations ? "Resolve all active stations first." : "Review round pressure before applying."),
+    applyConsequence: pendingConsequences > 0 ? "" : "No pending consequence exists.",
+    advanceRound: canAdvance ? "" : (blockers[0] ?? "Round cannot advance yet."),
+    syncPlayers: hasSession ? "" : "No active Travel v2 runner."
+  };
+  const consequenceLabel = pendingConsequences > 0 ? `pending (${pendingConsequences})` : (deferredConsequences > 0 ? `deferred (${deferredConsequences})` : (appliedConsequences > 0 ? `applied (${appliedConsequences})` : (dismissedConsequences > 0 ? `dismissed (${dismissedConsequences})` : "clear")));
+  return {
+    currentRoundLabel: hasSession ? `Round ${currentRoundNumber}${totalRounds ? ` of ${totalRounds}` : ""}` : "No active round",
+    stationResolutionLabel: hasSession ? `Stations: ${resolvedStations} / ${totalStations} resolved` : "Stations: none",
+    focusReadinessLabel: focusRerollNeeded > 0 ? "Focus: reroll needed" : (pendingReactions > 0 ? "Focus: pending reaction" : "Focus: clear"),
+    finalizationLabel: isFinalized ? "Finalization: finalized" : (canFinalize ? "Finalization: ready" : "Finalization: not ready"),
+    pressureLabel: pressureApplied ? "Pressure: applied" : "Pressure: not applied",
+    consequenceLabel: `Consequences: ${consequenceLabel}`,
+    advanceLabel: canAdvance ? "Advance: ready" : "Advance: blocked",
+    playerSyncLabel: hasSession ? (state.statusMessage?.includes?.("Sent") || state.statusMessage?.includes?.("refresh") || state.statusMessage?.includes?.("Advanced") ? "Player sync: refresh sent" : "Player sync: current") : "Player sync: unavailable",
+    nextActionLabel,
+    nextActionHelpText: blockers[0] ?? (canAdvance ? "All displayed blockers are clear for the next GM action." : "Open or start a Travel Event Runner."),
+    stateTone: canAdvance ? "ready" : (isFinalized || pressureApplied ? "warning" : (hasSession ? "blocked" : "neutral")),
+    blockers: [...new Set(blockers)],
+    disabledActions
+  };
+}
+
 function buildTravelV2GuidedState(state = {}) {
   const stations = Array.isArray(state.stations) ? state.stations : [];
   const hazards = state.travelV2Hazards ?? { records: [] };
@@ -151,9 +223,11 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   };
   const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appState);
   const appStateWithPreview = { ...appState, travelV2PreviewPanel: previewPanel };
+  const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
+  const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   return {
-    ...appStateWithPreview,
-    guidedBridge: buildTravelV2GuidedState(appStateWithPreview)
+    ...appStateWithGmFlowStatus,
+    guidedBridge: buildTravelV2GuidedState(appStateWithGmFlowStatus)
   };
 }
 
