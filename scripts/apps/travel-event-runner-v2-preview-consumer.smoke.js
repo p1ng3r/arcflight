@@ -118,7 +118,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       travelV2ConsequenceFollowups: { version: 1, records: [{ queueKey: "followup:1", title: "Legacy", summary: "Review later." }, { queueKey: "followup:2", title: "Reviewed", status: "reviewed" }, { queueKey: "followup:3", title: "Deferred", status: "deferred" }, { queueKey: "followup:4", title: "Resolved", status: "resolved" }] }
     }
   });
-  assertSmoke(queueState.travelV2GmFlowStatus?.consequenceLabel.includes("pending"), "GM flow status reports pending consequences");
+  assertSmoke(!queueState.travelV2GmFlowStatus?.consequenceLabel.includes("pending") && queueState.travelV2GmFlowStatus?.nextActionLabel === "Travel event completed.", "completed GM flow status suppresses pending consequence blockers");
   assertSmoke(queueState.pendingConsequenceQueue.applyStatusSummary.executableCount === 1, "app state exposes applyStatusSummary executableCount for the batch Apply button");
   assertSmoke(queueState.pendingConsequenceQueue.clearSelectionSummary && Number.isInteger(queueState.pendingConsequenceQueue.clearSelectionSummary.clearableCount), "app state exposes pendingConsequenceQueue.clearSelectionSummary.clearableCount");
   assertSmoke(queueState.pendingConsequenceQueue.singleSuggestionSelectionSummary && Number.isInteger(queueState.pendingConsequenceQueue.singleSuggestionSelectionSummary.eligibleCount), "app state exposes pendingConsequenceQueue.singleSuggestionSelectionSummary.eligibleCount");
