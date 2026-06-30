@@ -3628,9 +3628,10 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
   const preparedConsequenceQueue = prepareTravelV2PendingConsequenceQueue(activeSession, options);
   const pendingConsequenceCount = (preparedConsequenceQueue.pendingCount ?? 0)
     + recordsFromTravelV2Container(activeSession.travelV2ConsequenceFollowups).filter((record) => !["reviewed", "resolved", "dismissed"].includes(record?.status)).length;
-  if (hasFinalizationRecord && pendingConsequenceCount > 0) errors.push("Review pending consequences before advancing this round.");
+  if (hasFinalizationRecord && pendingConsequenceCount > 0) errors.push("Review pending consequences before advancing.");
   const canResolveRound = errors.length === 0 && roundFinalizationState.canFinalize === true;
   const canAdvanceRound = errors.length === 0 && hasFinalizationRecord && currentRoundIndex < (activeSession.event?.rounds?.length ?? 0) - 1 && activeSession.status !== "completed";
+  const nextRoundNumber = currentRoundIndex + 2;
   return {
     ok: errors.length === 0,
     errors,
@@ -3660,7 +3661,7 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
       consequenceFlowReady: hasFinalizationRecord && pendingConsequenceCount === 0,
       consequenceFlowBlocked: hasFinalizationRecord && pendingConsequenceCount > 0,
       consequenceFlowBlockers: hasFinalizationRecord && pendingConsequenceCount > 0 ? ["Pending consequences require GM review."] : [],
-      consequenceFlowWarningLabel: hasFinalizationRecord ? (pendingConsequenceCount > 0 ? "Round finalized. Review pending consequences before advancing." : "No pending consequences. Ready to advance.") : (errors[0] ?? "Ready to finalize this round."),
+      consequenceFlowWarningLabel: hasFinalizationRecord ? (pendingConsequenceCount > 0 ? "Review pending consequences before advancing." : (canAdvanceRound ? `Ready to advance to Round ${nextRoundNumber}.` : (errors[0] ?? "No pending consequences. Ready to advance."))) : (errors[0] ?? "Finalize this round before advancing."),
       canReviewConsequences: hasFinalizationRecord && pendingConsequenceCount > 0,
       canApplyPendingConsequences: hasFinalizationRecord && pendingConsequenceCount > 0,
       canDismissPendingConsequences: hasFinalizationRecord && pendingConsequenceCount > 0,
@@ -3863,8 +3864,14 @@ export function advanceTravelEventRunnerRound(session, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
   const readiness = collectTravelV2RoundResolutionBlockers(normalized.session, options);
-  if (options.force !== true && readiness.errors.length > 0) {
-    return { ok: false, errors: readiness.errors, warnings: readiness.warnings, session: normalized.session, readiness: readiness.report };
+  if (options.force !== true) {
+    const roundFinalizationState = prepareTravelV2RoundFinalizationState(normalized.session, options);
+    const currentRoundIndex = Number(normalized.session.currentRoundIndex ?? 0);
+    const advanceErrors = [...readiness.errors];
+    if (!roundFinalizationState.finalizationRecord) advanceErrors.push("Finalize this round before advancing.");
+    if (roundFinalizationState.finalizationRecord && roundFinalizationState.isPressureApplied !== true && !roundFinalizationState.pressureApplicationRecord) advanceErrors.push("Apply pressure/finalization before advancing.");
+    if (currentRoundIndex >= (normalized.session.event?.rounds?.length ?? 0) - 1) advanceErrors.push("No next round is available.");
+    if (advanceErrors.length > 0) return { ok: false, errors: advanceErrors, warnings: readiness.warnings, session: normalized.session, readiness: readiness.report };
   }
   const nextSession = cloneData(normalized.session);
   nextSession.currentRoundIndex = Math.min(nextSession.currentRoundIndex + 1, nextSession.event.rounds.length - 1);

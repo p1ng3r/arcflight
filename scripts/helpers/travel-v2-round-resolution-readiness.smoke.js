@@ -4,6 +4,8 @@ import {
   advanceTravelEventRunnerRound,
   createTravelEventRunnerSession,
   inspectTravelV2RoundResolutionReadiness,
+  prepareTravelPlayerMissionBoardState,
+  prepareTravelPlayerStationCardState,
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
 import { forceTravelV2RoundResolved } from "./travel-v2-dev-tools.js";
@@ -86,9 +88,9 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   const gmAppState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } });
   assertSmoke(gmAppState.canManageTravelV2Consequences === true && Array.isArray(gmAppState.pendingConsequenceQueue.items), "GM app state retains pending consequence queue readiness controls");
   const flowCreated = createTravelEventRunnerSession(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { key: "round-resolution-finalize-flow-session", now: "2026-06-29T00:00:00.000Z" });
-  const flowResolved = forceTravelV2RoundResolved(flowCreated.session, { defaultResult: "failure" }, { playerSafeState: {} });
+  const flowResolved = forceTravelV2RoundResolved(flowCreated.session, { defaultResult: "success" }, { playerSafeState: {} });
   assertSmoke(flowResolved.ok, "full finalize/consequence flow resolves stations through the force helper before finalization");
-  const pressureApplied = applyTravelV2PressureToRunnerSession(flowResolved.session, { selectedOutcomeKey: "failure", now: "2026-06-29T00:06:00.000Z" });
+  const pressureApplied = applyTravelV2PressureToRunnerSession(flowResolved.session, { selectedOutcomeKey: "success", now: "2026-06-29T00:06:00.000Z" });
   assertSmoke(pressureApplied.ok && pressureApplied.applied, "full finalize/consequence flow applies pressure through the real session helper");
   const finalized = finalizeTravelV2RoundOnRunnerSession(pressureApplied.session, { now: "2026-06-29T00:07:00.000Z" });
   assertSmoke(finalized.ok && finalized.finalized && finalized.effectiveOutcomeKey, "full finalize/consequence flow finalizes through the real session helper and records an outcome");
@@ -101,6 +103,7 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   for (const forbidden of ["pendingConsequenceQueue","queueGroup","consequenceCatalog","gmOnly","internalSeverity","unrevealedHazard","shipScarControls","managementAction","gmItemGroups","catalogSuggestions","selectedConsequenceApplyPreview","unrevealed consequence","unrevealed hazard"]) {
     assertSmoke(!finalizedPlayerJson.includes(forbidden), `post-finalization player-safe state does not expose ${forbidden}`);
   }
+  let cleanFinalizedSession = finalized.session;
   if (finalizedQueue.items.length > 0) {
     const first = finalizedQueue.items[0];
     const blockedByConsequence = advanceTravelEventRunnerRound(finalized.session);
@@ -111,7 +114,26 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
     assertSmoke(dismissedGmState.pendingConsequenceQueue.dismissedCount >= 1, "GM state updates after consequence item state change");
     const dismissedPlayerJson = JSON.stringify(prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: dismissed.session, user: { isGM: false } }).pendingConsequenceQueue?.playerSafeItems ?? []);
     assertSmoke(!dismissedPlayerJson.includes("gmItemGroups") && !dismissedPlayerJson.includes("catalogSuggestions"), "player-safe state stays sanitized after consequence queue state change");
+    cleanFinalizedSession = dismissed.session;
   }
+
+  const cleanAdvance = advanceTravelEventRunnerRound(cleanFinalizedSession);
+  assertSmoke(cleanAdvance.ok && cleanAdvance.session.currentRoundIndex === 1, "clean finalized round advances normally to round 1");
+  const roundOne = cleanAdvance.session.event.rounds[1];
+  assertSmoke(Array.isArray(roundOne?.activeStations) && roundOne.activeStations.length > 0, "round 1 exists and has active stations after advancement");
+  assertSmoke(Object.keys(cleanAdvance.session.roundResults[0]?.stationResults ?? {}).length > 0, "round 0 results remain stored as history after advancement");
+  const roundOneResults = cleanAdvance.session.roundResults[1]?.stationResults ?? {};
+  assertSmoke(roundOne.activeStations.every((stationKey) => !roundOneResults[stationKey]), "round 1 active station results are fresh and not pre-filled from round 0");
+  const advancedPlayerState = prepareTravelPlayerMissionBoardState(cleanAdvance.session);
+  assertSmoke(advancedPlayerState.currentRoundIndex === 1 && advancedPlayerState.roundLabel === "Round 2", "player mission board reports the advanced current round");
+  assertSmoke((advancedPlayerState.stations ?? []).length === roundOne.activeStations.length && (advancedPlayerState.stations ?? []).every((station) => roundOne.activeStations.includes(station.stationKey)), "player mission board exposes only round 1 actionable stations");
+  const advancedPlayerJson = JSON.stringify(advancedPlayerState);
+  for (const forbidden of ["pendingConsequenceQueue","gmItemGroups","catalogSuggestions","selectedConsequenceApplyPreview","unrevealedHazard","GM-only queue label"]) {
+    assertSmoke(!advancedPlayerJson.includes(forbidden), `advanced player mission-board state does not expose ${forbidden}`);
+  }
+  const advancedStationCards = roundOne.activeStations.map((stationKey) => prepareTravelPlayerStationCardState(cleanAdvance.session, stationKey));
+  assertSmoke(advancedStationCards.every((card) => card.currentRoundIndex === 1 && card.canRollStation === false && card.resultLabel === "" && card.focusReactionAvailable === false && card.focusRerollNeeded === false), "round 1 player station cards do not carry stale round 0 result, Focus, or reroll state");
+
   const advanced = advanceTravelEventRunnerRound(finalized.session, { force: true });
   assertSmoke(advanced.ok && advanced.session.currentRoundIndex === 1, "explicit force override remains available for intentional GM override behavior");
 
@@ -129,6 +151,7 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
       "player-safe-round-summary-scan",
       "finalize-consequence-queue-flow",
       "consequence-state-change-player-safety",
+      "finalized-round-advance-player-sync",
       "gm-override-preserved"
     ]
   };
