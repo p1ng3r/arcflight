@@ -7,6 +7,7 @@ import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "./apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog, updateActiveTravelEventRunnerSession } from "./apps/travel-event-runner.js";
 import { ArcflightTravelSceneOverlay, getActiveTravelSceneOverlay, openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./apps/travel-scene-overlay.js";
+import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./apps/travel-event-runner-v2-preview-consumer.js";
 import {
   ArcflightTravelPlayerMissionBoard,
   TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING,
@@ -561,6 +562,40 @@ function inspectTravelAdvanceRoundFlowForSession(session, options = {}) {
     staleCurrentRoundRerollNeededCount,
     staleConsequenceLeakCount,
     notes
+  };
+}
+
+async function inspectTravelGmUiFlow() {
+  if (globalThis.game?.user?.isGM !== true) return { ok: false, errors: ["inspectTravelGmUiFlow is GM-only."], warnings: [] };
+  if (isTravelV2DevToolsEnabled() !== true) return { ok: false, errors: ["Travel v2 dev tools must be enabled."], warnings: [] };
+  const { activeOverlay, session, errors: contextErrors } = getActiveLocalTravelRunnerContext();
+  if (!session) return { ok: false, errors: contextErrors?.length ? contextErrors : ["No active local Travel v2 runner session. Open or start a Travel Event Runner first."], warnings: [], sessionKey: "", currentRoundIndex: -1, currentRoundNumber: 0, statusStrip: null, nextActionLabel: "No active Travel v2 runner.", blockers: [], disabledActions: {}, playerStateSafe: false, gmStateHasManagementControls: false, notes: [] };
+  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, actor: activeOverlay?.actor, user: globalThis.game?.user, travelV2DevToolsEnabled: true });
+  const statusStrip = appState.travelV2GmFlowStatus ?? null;
+  const playerSafeState = prepareTravelPlayerMissionBoardStateForPlayers(session, { actor: activeOverlay?.actor });
+  const playerJson = JSON.stringify(playerSafeState ?? {});
+  const forbiddenTerms = ["pendingConsequenceQueue", "gmItemGroups", "catalogSuggestions", "selectedConsequenceApplyPreview", "applicationRecord", "application id", "internalSeverity", "managementAction", "applyEffectSummary", "GM-only labels"];
+  const leakedTerms = forbiddenTerms.filter((term) => playerJson.includes(term));
+  const gmJson = JSON.stringify(appState ?? {});
+  const gmStateHasManagementControls = gmJson.includes("pendingConsequenceQueue") && gmJson.includes("gmItemGroups");
+  const warnings = [];
+  if (!statusStrip) warnings.push("GM flow status strip was not prepared.");
+  if (!gmStateHasManagementControls) warnings.push("GM management controls were not present in GM app state.");
+  const errors = leakedTerms.length > 0 ? [`Player-safe state exposes GM-only UI term(s): ${leakedTerms.join(", ")}.`] : [];
+  return {
+    ok: errors.length === 0 && Boolean(statusStrip),
+    errors,
+    warnings,
+    sessionKey: session.key ?? "",
+    currentRoundIndex: Number(session.currentRoundIndex ?? 0),
+    currentRoundNumber: Number(session.currentRoundIndex ?? 0) + 1,
+    statusStrip,
+    nextActionLabel: statusStrip?.nextActionLabel ?? "",
+    blockers: statusStrip?.blockers ?? [],
+    disabledActions: statusStrip?.disabledActions ?? {},
+    playerStateSafe: leakedTerms.length === 0,
+    gmStateHasManagementControls,
+    notes: [statusStrip?.nextActionHelpText ?? ""].filter(Boolean)
   };
 }
 
@@ -1210,7 +1245,7 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelAdvanceRoundFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced },
+    dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelGmUiFlow, inspectTravelAdvanceRoundFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true

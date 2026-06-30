@@ -51,6 +51,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(!emptyState.travelV2PreviewPanel.available, "empty preview panel should be unavailable");
   assertEqual(emptyState.compactRoundLabel, "No active round", "empty app state should keep compact label fallback");
   assertEqual(emptyState.guidedBridge.nextRequiredAction.title, "Start Travel Session", "empty guided bridge should require starting a session");
+  assertSmoke(!Object.hasOwn(emptyState, "travelV2GmFlowStatus"), "non-GM empty app state should not expose GM flow status");
 
   const state = prepareTravelEventRunnerAppStateWithTravelV2Preview({
     session: { event: createRunnerEventFixture() },
@@ -67,6 +68,16 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(state.compactRunner, true, "app state should preserve compact UI setting");
   assertEqual(state.compactRoundLabel, "Round 1", "app state should preserve compact round label behavior");
   assertEqual(state.guidedBridge.nextRequiredAction.title, "Send / Refresh Player HUD", "fresh session should guide GM to refresh player HUD/cards");
+
+  const gmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true } });
+  assertSmoke(gmState.travelV2GmFlowStatus, "GM app state includes Travel v2 flow status strip");
+  assertSmoke(gmState.travelV2GmFlowStatus.currentRoundLabel.includes("Round 1"), "GM flow status has current round label");
+  assertSmoke(gmState.travelV2GmFlowStatus.stationResolutionLabel.includes("Stations:"), "GM flow status has station readiness label");
+  assertSmoke(gmState.travelV2GmFlowStatus.finalizationLabel.includes("Finalization:"), "GM flow status has finalization readiness label");
+  assertSmoke(gmState.travelV2GmFlowStatus.consequenceLabel.includes("Consequences:"), "GM flow status has consequence readiness label");
+  assertSmoke(gmState.travelV2GmFlowStatus.advanceLabel.includes("Advance:"), "GM flow status has advance readiness label");
+  assertSmoke(gmState.travelV2GmFlowStatus.nextActionLabel, "GM flow status includes next action label");
+  assertSmoke(gmState.travelV2GmFlowStatus.disabledActions.advanceRound, "GM flow status includes blocked advance disabled reason");
 
   const criticalFailure = state.travelV2Preview.rows.find((row) => row.outcomeKey === "criticalFailure");
   assertSmoke(criticalFailure, "critical failure preview row should exist");
@@ -88,6 +99,8 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     }
   });
   assertEqual(rolledState.guidedBridge.nextRequiredAction.title, "Round Pressure Ready", "rolled/skipped stations should unlock pressure review");
+  const rolledGmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: rolledState.session, user: { isGM: true } });
+  assertSmoke(rolledGmState.travelV2GmFlowStatus.nextActionLabel.includes("pressure") || rolledGmState.travelV2GmFlowStatus.nextActionLabel.includes("Finalize"), "GM next action changes once stations are resolved");
   assertSmoke(rolledState.guidedBridge.nextRequiredAction.buttons.some((button) => button.action === "round-apply" && button.label === "Apply Suggested Pressure"), "pressure-ready queue should expose real apply button");
   assertEqual(rolledState.stations.find((station) => station.stationKey === "engineer")?.stationStateLabel, "Skipped / Not Participating", "skipped stations should render a clear station state label");
 
@@ -105,6 +118,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       travelV2ConsequenceFollowups: { version: 1, records: [{ queueKey: "followup:1", title: "Legacy", summary: "Review later." }, { queueKey: "followup:2", title: "Reviewed", status: "reviewed" }, { queueKey: "followup:3", title: "Deferred", status: "deferred" }, { queueKey: "followup:4", title: "Resolved", status: "resolved" }] }
     }
   });
+  assertSmoke(queueState.travelV2GmFlowStatus?.consequenceLabel.includes("pending"), "GM flow status reports pending consequences");
   assertSmoke(queueState.pendingConsequenceQueue.applyStatusSummary.executableCount === 1, "app state exposes applyStatusSummary executableCount for the batch Apply button");
   assertSmoke(queueState.pendingConsequenceQueue.clearSelectionSummary && Number.isInteger(queueState.pendingConsequenceQueue.clearSelectionSummary.clearableCount), "app state exposes pendingConsequenceQueue.clearSelectionSummary.clearableCount");
   assertSmoke(queueState.pendingConsequenceQueue.singleSuggestionSelectionSummary && Number.isInteger(queueState.pendingConsequenceQueue.singleSuggestionSelectionSummary.eligibleCount), "app state exposes pendingConsequenceQueue.singleSuggestionSelectionSummary.eligibleCount");
@@ -155,7 +169,9 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "preview-only-pressure",
       "guided-empty-start",
       "guided-send-refresh",
-      "pressure-ready-after-skipped"
+      "pressure-ready-after-skipped",
+      "gm-flow-status-strip",
+      "gm-disabled-action-reasons"
     ]
   };
 }
