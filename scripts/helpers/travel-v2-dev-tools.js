@@ -207,10 +207,9 @@ export function prepareTravelV2CompletedSessionSummaryRows(summary = {}, options
       rerollUsed: station?.rerollUsed === true,
       publicSummary: cleanText(station?.publicSummary)
     })),
-    pressureApplication: cloneData(round?.pressureApplication ?? null),
-    roundOutcome: cloneData(round?.roundOutcome ?? null),
     consequencesGeneratedCount: asArray(round?.consequencesGenerated).length,
-    consequencesHandledCount: asArray(round?.consequencesHandled).length
+    consequencesHandledCount: asArray(round?.consequencesHandled).length,
+    ...(includeGm ? { pressureApplication: cloneData(round?.pressureApplication ?? null), roundOutcome: cloneData(round?.roundOutcome ?? null) } : {})
   }));
   return Object.freeze({
     rounds,
@@ -218,7 +217,7 @@ export function prepareTravelV2CompletedSessionSummaryRows(summary = {}, options
     stationResults: rounds.flatMap((round) => round.stationResults.map((station) => ({ ...station, roundNumber: round.roundNumber, roundTitle: round.title }))),
     resourceDeltas: resourceDeltaRows(summary?.totals?.resourceDeltas),
     consequenceCounts: consequenceCounts(summary),
-    followups: asArray(summary?.followups).map((followup, index) => ({ key: cleanText(followup?.key ?? followup?.id) || `followup-${index + 1}`, title: cleanText(followup?.title ?? followup?.name) || `Follow-up ${index + 1}`, status: cleanText(followup?.status) || "pending", publicSummary: cleanText(followup?.publicSummary ?? followup?.summary ?? followup?.text), ...(includeGm ? { gmSummary: cleanText(followup?.gmSummary ?? followup?.gmText) } : {}) })),
+    followups: asArray(summary?.followups).map((followup, index) => ({ key: cleanText(followup?.key ?? followup?.id) || `followup-${index + 1}`, title: cleanText(followup?.title ?? followup?.name) || `Follow-up ${index + 1}`, status: cleanText(followup?.status) || "pending", publicSummary: includeGm ? cleanText(followup?.publicSummary ?? followup?.summary ?? followup?.text) : cleanText(followup?.publicSummary ?? followup?.publicText ?? followup?.playerText), ...(includeGm ? { gmSummary: cleanText(followup?.gmSummary ?? followup?.gmText) } : {}) })),
     includeGm
   });
 }
@@ -243,7 +242,15 @@ export function prepareTravelV2CompletedSessionSummaryViewState(session, options
     outcomeTone: cleanText(summary.finalOutcomeTone),
     publicSummary: { title: cleanText(publicSummary.title) || cleanText(summary.finalOutcomeLabel) || "Travel complete", paragraphs: asArray(publicSummary.paragraphs).map(cleanText).filter(Boolean), chips: asArray(publicSummary.chips).map(cleanText).filter(Boolean) },
     ...(includeGm ? { gmSummary: { paragraphs: asArray(gmSummary.paragraphs).map(cleanText).filter(Boolean), nextSteps: asArray(gmSummary.nextSteps).map(cleanText).filter(Boolean), warnings: asArray(gmSummary.warnings).map(cleanText).filter(Boolean) } } : {}),
-    totals: cloneData(summary.totals ?? {}),
+    totals: includeGm ? cloneData(summary.totals ?? {}) : {
+      consequenceCounts: rows.consequenceCounts,
+      resourceDeltas: rows.resourceDeltas,
+      stationsResolved: Math.max(0, Number(summary?.totals?.stationsResolved) || 0),
+      criticalSuccesses: Math.max(0, Number(summary?.totals?.criticalSuccesses) || 0),
+      successes: Math.max(0, Number(summary?.totals?.successes) || 0),
+      failures: Math.max(0, Number(summary?.totals?.failures) || 0),
+      criticalFailures: Math.max(0, Number(summary?.totals?.criticalFailures) || 0)
+    },
     rounds: rows.rounds,
     hasRounds: rows.hasRounds,
     stationResults: rows.stationResults,
