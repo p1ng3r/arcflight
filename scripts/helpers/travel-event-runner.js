@@ -26,7 +26,7 @@ import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, se
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
-import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml } from "./travel-v2-completed-summary-export.js";
+import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -4393,32 +4393,21 @@ export function renderTravelEventRunnerSummaryHtml(session, options = {}) {
 }
 
 export function prepareTravelEventRunnerSummaryOutputState(session, options = {}) {
-  const report = prepareTravelEventRunnerSummaryReport(session, options);
+  const isTravelV2CompletedSummary = isPlainObject(session?.travelV2CompletionSummary) || isPlainObject(session?.travelV2EventCompletion?.summary);
+  const report = isTravelV2CompletedSummary ? buildTravelV2CompletedSummaryExportState(session) : prepareTravelEventRunnerSummaryReport(session, options);
   const markdown = report.available ? renderTravelEventRunnerSummaryMarkdown(session, options).markdown : "";
   const html = report.available ? renderTravelEventRunnerSummaryHtml(session, options).html : "";
-  return { ...report, markdown, html, canCopyMarkdown: report.available, canCopyHtml: report.available, canPostChat: false, canCreateJournal: false, lastResultMessage: options.summaryOutputStatusMessage ?? "" };
+  const canUseCompletedSummarySideEffects = isTravelV2CompletedSummary && report.available === true && options.user?.isGM === true;
+  const unavailableReason = !isTravelV2CompletedSummary || !report.available ? (report.reason ?? "A completed Travel v2 summary is unavailable.") : "Only GMs can post completed Travel v2 summaries.";
+  return { ...report, markdown, html, canCopyMarkdown: report.available, canCopyHtml: report.available, canPostChat: canUseCompletedSummarySideEffects, canCreateJournal: canUseCompletedSummarySideEffects, postChatTitle: canUseCompletedSummarySideEffects ? "Post one player-safe Travel v2 summary to public chat." : unavailableReason, createJournalTitle: canUseCompletedSummarySideEffects ? "Create one player-safe Travel v2 summary journal entry." : unavailableReason, lastResultMessage: options.summaryOutputStatusMessage ?? "" };
 }
 
 export async function postTravelEventRunnerSummaryToChat(session, options = {}) {
-  const rendered = renderTravelEventRunnerSummaryHtml(session, options);
-  if (!rendered.available || !rendered.html) return { ...rendered, created: false, message: null };
-  const data = { content: rendered.html };
-  if (options.whisper === "gm" || options.gmOnly === true) data.whisper = globalThis.ChatMessage?.getWhisperRecipients?.("GM")?.map((u) => u.id) ?? [];
-  if (options.dryRun === true) return { ...rendered, created: false, messageData: data, message: null };
-  if (!globalThis.ChatMessage?.create) return { ...rendered, ok: false, errors: ["ChatMessage.create is not available."], created: false, message: null };
-  const message = await ChatMessage.create(data);
-  return { ...rendered, created: true, message };
+  return postTravelV2CompletedSummaryToChat(session, options);
 }
 
 export async function createTravelEventRunnerSummaryJournalEntry(session, options = {}) {
-  const rendered = renderTravelEventRunnerSummaryHtml(session, options);
-  if (!rendered.available || !rendered.html) return { ...rendered, created: false, journalEntry: null };
-  const title = typeof options.title === "string" && options.title.trim() ? options.title.trim() : `Travel Event Summary — ${rendered.report.eventName}`;
-  const data = { name: title, pages: [{ name: "Summary", type: "text", text: { format: 1, content: rendered.html } }] };
-  if (options.dryRun === true) return { ...rendered, created: false, journalData: data, journalEntry: null };
-  if (!globalThis.JournalEntry?.create) return { ...rendered, ok: false, errors: ["JournalEntry.create is not available."], created: false, journalEntry: null };
-  const journalEntry = await JournalEntry.create(data);
-  return { ...rendered, created: true, journalEntry };
+  return createTravelV2CompletedSummaryJournalEntry(session, options);
 }
 
 export function completeTravelEventRunnerSession(session, options = {}) {

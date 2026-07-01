@@ -76,6 +76,11 @@
         <span>{{state.travelV2GmFlowStatus.playerSyncLabel}}</span>
       </div>
       <p class="arcflight-sheet__hint"><strong>Next:</strong> {{state.travelV2GmFlowStatus.nextActionLabel}} — {{state.travelV2GmFlowStatus.nextActionHelpText}}</p>
+      {{#if state.travelV2GmFlowStatus.showFinalizeRoundAction}}
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-travel-v2-round-finalize title="{{state.travelV2GmFlowStatus.finalizeRoundActionTitle}}">{{state.travelV2GmFlowStatus.finalizeRoundActionLabel}}</button>
+        </div>
+      {{/if}}
       {{#if state.travelV2GmFlowStatus.blockers}}<p class="arcflight-sheet__hint"><strong>Blocked by:</strong> {{#each state.travelV2GmFlowStatus.blockers}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
     </section>
     {{/if}}
@@ -1199,12 +1204,20 @@
         <div class="arcflight-travel-runner-mvp__actions">
           <button type="button" data-arcflight-runner-copy-markdown>Copy Markdown Summary</button>
           <button type="button" data-arcflight-runner-copy-html>Copy HTML Summary</button>
-          <button type="button" data-arcflight-runner-post-chat disabled title="Coming in #329">Post Summary to Chat (coming in #329)</button>
-          <button type="button" data-arcflight-runner-create-journal disabled title="Coming in #329">Create Journal Entry (coming in #329)</button>
+          {{#if state.summaryOutput.canPostChat}}
+            <button type="button" data-arcflight-runner-post-chat title="{{state.summaryOutput.postChatTitle}}">Post Summary to Chat</button>
+          {{else}}
+            <button type="button" data-arcflight-runner-post-chat disabled title="{{state.summaryOutput.postChatTitle}}">Post Summary to Chat</button>
+          {{/if}}
+          {{#if state.summaryOutput.canCreateJournal}}
+            <button type="button" data-arcflight-runner-create-journal title="{{state.summaryOutput.createJournalTitle}}">Create Journal Entry</button>
+          {{else}}
+            <button type="button" data-arcflight-runner-create-journal disabled title="{{state.summaryOutput.createJournalTitle}}">Create Journal Entry</button>
+          {{/if}}
           <button type="button" data-arcflight-runner-refresh-summary>Refresh Summary</button>
         </div>
         {{#if state.summaryOutput.lastResultMessage}}
-          <p class="arcflight-sheet__hint"><strong>Last copy/export result:</strong> {{state.summaryOutput.lastResultMessage}}</p>
+          <p class="arcflight-sheet__hint"><strong>Last post/export result:</strong> {{state.summaryOutput.lastResultMessage}}</p>
         {{/if}}
         <label class="arcflight-sheet__field">
           <span>Markdown Summary Output</span>
@@ -1215,8 +1228,8 @@
         <div class="arcflight-travel-runner-mvp__actions">
           <button type="button" data-arcflight-runner-copy-markdown disabled>Copy Markdown Summary</button>
           <button type="button" data-arcflight-runner-copy-html disabled>Copy HTML Summary</button>
-          <button type="button" data-arcflight-runner-post-chat disabled>Post Summary to Chat</button>
-          <button type="button" data-arcflight-runner-create-journal disabled>Create Journal Entry</button>
+          <button type="button" data-arcflight-runner-post-chat disabled title="{{state.summaryOutput.postChatTitle}}">Post Summary to Chat</button>
+          <button type="button" data-arcflight-runner-create-journal disabled title="{{state.summaryOutput.createJournalTitle}}">Create Journal Entry</button>
           <button type="button" data-arcflight-runner-refresh-summary>Refresh Summary</button>
         </div>
       {{/if}}

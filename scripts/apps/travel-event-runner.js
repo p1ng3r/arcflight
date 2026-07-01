@@ -27,6 +27,8 @@ import {
   saveImportedTravelEventRunnerSessionToLibrary,
   renderTravelEventRunnerSummaryHtml,
   renderTravelEventRunnerSummaryMarkdown,
+  postTravelEventRunnerSummaryToChat,
+  createTravelEventRunnerSummaryJournalEntry,
   renderTravelEventStagedEffectReviewHtml,
   renderTravelEventStagedEffectReviewMarkdown,
   applyTravelEventRunnerSelectedEffects,
@@ -1965,14 +1967,36 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
   async #postSummaryToChat() {
-    this.statusMessage = "Post Summary to Chat is deferred to PR #329; no chat messages were created.";
-    ui.notifications?.warn?.(this.statusMessage);
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can post completed Travel v2 summaries to chat.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const result = await postTravelEventRunnerSummaryToChat(this.session, { includeGmSummary: false });
+    if (!result.created) {
+      this.statusMessage = result.errors?.[0] ?? result.reason ?? "Completed Travel v2 summary was not posted to chat.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = "Posted one player-safe Travel v2 summary to public chat.";
+    ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }
 
   async #createSummaryJournal() {
-    this.statusMessage = "Create Journal Entry is deferred to PR #329; no journal entries were created.";
-    ui.notifications?.warn?.(this.statusMessage);
+    if (game?.user?.isGM !== true) {
+      this.statusMessage = "Only GMs can create completed Travel v2 summary journal entries.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const result = await createTravelEventRunnerSummaryJournalEntry(this.session, { includeGmSummary: false });
+    if (!result.created) {
+      this.statusMessage = result.errors?.[0] ?? result.reason ?? "Completed Travel v2 summary journal entry was not created.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = `Created one player-safe Travel v2 summary journal entry: ${result.name ?? "Travel v2 Summary"}.`;
+    ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
   }
 

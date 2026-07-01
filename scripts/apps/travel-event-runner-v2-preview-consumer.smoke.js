@@ -104,6 +104,17 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(rolledState.guidedBridge.nextRequiredAction.buttons.some((button) => button.action === "round-apply" && button.label === "Apply Suggested Pressure"), "pressure-ready queue should expose real apply button");
   assertEqual(rolledState.stations.find((station) => station.stationKey === "engineer")?.stationStateLabel, "Skipped / Not Participating", "skipped stations should render a clear station state label");
 
+  const finalizeReadyState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session: {
+      event: { ...createRunnerEventFixture(), rounds: [{ ...createRunnerEventFixture().rounds[0], pressureApplication: { roundIndex: 0, roundNumber: 1, outcomeKey: "mixed" } }] },
+      roundResults: [{ stationResults: { navigator: "success", engineer: "skipped" } }]
+    },
+    user: { isGM: true }
+  });
+  assertSmoke(finalizeReadyState.travelV2GmFlowStatus.blockers.includes("Finalize this round before advancing."), "GM flow status exposes finalization-only advance blocker");
+  assertSmoke(finalizeReadyState.travelV2GmFlowStatus.showFinalizeRoundAction === true, "GM flow status exposes visible finalize-round action when blocked only by finalization");
+  assertEqual(finalizeReadyState.travelV2GmFlowStatus.finalizeRoundActionLabel, "Finalize Round", "visible finalize-round action has clear label");
+
 
   const queueState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
     user: { isGM: true },
@@ -147,6 +158,9 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(runnerSource.includes(`target.dataset.action === "arcflight-travel-v2-apply-all-selected-consequences"`), "runner keeps the exact batch selected consequence handler condition");
   assertSmoke(runnerSource.includes("selectAllSingleSuggestionTravelV2PendingConsequences"), "runner imports selectAllSingleSuggestionTravelV2PendingConsequences");
   assertSmoke(runnerSource.includes(`[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`), "RUNNER_CLICK_SELECTOR includes the single-suggestion selection data-action selector");
+  const templateSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../templates/apps/travel-event-runner.hbs"), "utf8");
+  assertSmoke(templateSource.includes("state.travelV2GmFlowStatus.showFinalizeRoundAction"), "template gates the GM flow finalize-round button from UI state");
+  assertSmoke(templateSource.includes("data-arcflight-travel-v2-round-finalize"), "template renders a button wired to the existing finalize round handler");
   assertSmoke(runnerSource.includes(`target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences"`), "runner keeps the exact single-suggestion selection handler condition");
   assertSmoke(runnerSource.includes("selectAllSingleSuggestionTravelV2PendingConsequences(this.session)"), "runner handler calls selectAllSingleSuggestionTravelV2PendingConsequences(this.session)");
   assertSmoke(runnerSource.includes("clearTravelV2PendingConsequenceSelection"), "runner imports clearTravelV2PendingConsequenceSelection");
@@ -171,7 +185,8 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "guided-send-refresh",
       "pressure-ready-after-skipped",
       "gm-flow-status-strip",
-      "gm-disabled-action-reasons"
+      "gm-disabled-action-reasons",
+      "gm-visible-finalize-round-action"
     ]
   };
 }
