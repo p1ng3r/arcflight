@@ -119,6 +119,7 @@ function buildTravelV2GmFlowStatus(state = {}) {
   const completionBlockers = blockers.filter((reason) => reason !== "No next round exists.");
   const canCompleteEvent = hasSession && isFinalRound && !isCompleted && completionBlockers.length === 0;
   const canAdvance = hasSession && !isFinalRound && blockers.length === 0;
+  const uniqueBlockers = [...new Set(isFinalRound ? completionBlockers : blockers)];
   let nextActionLabel = "No active Travel v2 runner.";
   if (isCompleted) nextActionLabel = "Travel event completed.";
   else if (hasSession) {
@@ -132,6 +133,8 @@ function buildTravelV2GmFlowStatus(state = {}) {
     else if (hasNextRound) nextActionLabel = `Advance to Round ${currentRoundNumber + 1}.`;
     else nextActionLabel = "Complete Travel Event.";
   }
+  const blockedOnlyByFinalization = uniqueBlockers.length === 1 && uniqueBlockers[0] === "Finalize this round before advancing.";
+  const showFinalizeRoundAction = hasSession && !isCompleted && !isFinalized && canFinalize && (blockedOnlyByFinalization || nextActionLabel === "Finalize this round.");
   const disabledActions = {
     finalizeRound: canFinalize ? "" : firstText([finalization.blockedReason, ...(finalization.blockedReasons ?? [])], isFinalized ? "Round already finalized." : "Resolve all active stations and apply pressure first."),
     applyPressure: pressure.alreadyApplied ? "Pressure already applied." : firstText([pressure.blockedReason, ...(pressure.blockedReasons ?? [])], resolvedStations < totalStations ? "Resolve all active stations first." : "Review round pressure before applying."),
@@ -153,7 +156,10 @@ function buildTravelV2GmFlowStatus(state = {}) {
     nextActionLabel,
     nextActionHelpText: isCompleted ? "The Travel v2 event is completed." : (completionBlockers[0] ?? blockers[0] ?? ((canAdvance || canCompleteEvent) ? "All displayed blockers are clear for the next GM action." : "Open or start a Travel Event Runner.")),
     stateTone: (canAdvance || canCompleteEvent || isCompleted) ? "ready" : (isFinalized || pressureApplied ? "warning" : (hasSession ? "blocked" : "neutral")),
-    blockers: [...new Set(isFinalRound ? completionBlockers : blockers)],
+    blockers: uniqueBlockers,
+    showFinalizeRoundAction,
+    finalizeRoundActionLabel: showFinalizeRoundAction ? "Finalize Round" : "",
+    finalizeRoundActionTitle: showFinalizeRoundAction ? "Open the Travel v2 round finalization dialog." : disabledActions.finalizeRound,
     disabledActions
   };
 }

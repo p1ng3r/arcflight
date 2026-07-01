@@ -76,6 +76,11 @@
         <span>{{state.travelV2GmFlowStatus.playerSyncLabel}}</span>
       </div>
       <p class="arcflight-sheet__hint"><strong>Next:</strong> {{state.travelV2GmFlowStatus.nextActionLabel}} — {{state.travelV2GmFlowStatus.nextActionHelpText}}</p>
+      {{#if state.travelV2GmFlowStatus.showFinalizeRoundAction}}
+        <div class="arcflight-travel-runner-mvp__actions">
+          <button type="button" data-arcflight-travel-v2-round-finalize title="{{state.travelV2GmFlowStatus.finalizeRoundActionTitle}}">{{state.travelV2GmFlowStatus.finalizeRoundActionLabel}}</button>
+        </div>
+      {{/if}}
       {{#if state.travelV2GmFlowStatus.blockers}}<p class="arcflight-sheet__hint"><strong>Blocked by:</strong> {{#each state.travelV2GmFlowStatus.blockers}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
     </section>
     {{/if}}
