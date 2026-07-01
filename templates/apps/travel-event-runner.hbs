@@ -1267,6 +1267,8 @@
             <p class="arcflight-sheet__hint">Explicit GM-only action. Applies only supported travel resource updates; scars, fortunes, hazards, rewards, and consequences remain review-only/deferred.</p>
             <dl>
               <dt>Target Ship</dt><dd>{{#if state.finalOutcomeApply.targetActorName}}{{state.finalOutcomeApply.targetActorName}}{{else}}No target ship resolved{{/if}}</dd>
+              <dt>Package Apply Status</dt><dd>{{#if state.finalOutcomeApply.packageAlreadyApplied}}Package-level outcome applied{{else}}Package-level outcome pending{{/if}}</dd>
+              <dt>Ship Apply Status</dt><dd>{{#if state.finalOutcomeApply.shipAlreadyApplied}}Ship updates already applied{{else}}Ship updates pending{{/if}}</dd>
               <dt>Status</dt><dd>{{state.finalOutcomeApply.disabledReason}}</dd>
             </dl>
             <div class="arcflight-travel-runner-mvp__actions">

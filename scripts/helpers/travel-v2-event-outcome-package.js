@@ -220,6 +220,7 @@ function baseReviewState(session, options = {}) {
 
 const APPLY_RESOURCE_KEYS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
 const APPLY_RESOURCE_MODES = Object.freeze(["add", "set"]);
+const SHIP_APPLICATION_SESSION_KEY = "travelV2FinalOutcomeShipApplication";
 function nowIso(options = {}) { return options.now ?? new Date().toISOString(); }
 function resolveApplyActor(session = {}, options = {}) {
   const explicit = options.actor ?? options.targetActor ?? null;
@@ -277,12 +278,14 @@ export function prepareTravelV2FinalOutcomeShipUpdatePreview(session, options = 
   const deferredRows = deferredRowsFromPackage(outcomePackage);
   const reasons = [];
   if (!outcomePackage.isCompleted) reasons.push("Travel v2 runner session must be completed before applying final outcome ship updates.");
-  if (outcomePackage.alreadyApplied) reasons.push("This final outcome package has already been applied to a ship.");
+  const shipApplicationRecord = isPlainObject(session?.[SHIP_APPLICATION_SESSION_KEY]) ? session[SHIP_APPLICATION_SESSION_KEY] : null;
+  const shipAlreadyApplied = shipApplicationRecord?.applied === true;
+  if (shipAlreadyApplied) reasons.push("This final outcome ship update has already been applied to a ship.");
   if (!actor) reasons.push("Select or resolve a target ship actor before applying final outcome updates.");
   else { try { getShipTravelResources(actor); } catch (_e) { reasons.push("Target actor is not an Arcflight ship/PF2E vehicle actor."); } }
   if (!supportedRows.length) reasons.push("No supported ship resource updates are present in the final outcome package.");
   const changes = supportedRows.reduce((acc, row) => { acc[row.resource] = (Number(acc[row.resource]) || 0) + row.delta; return acc; }, {});
-  return deepFreeze({ isGM: true, available: outcomePackage.isCompleted, canApply: reasons.length === 0, disabled: reasons.length > 0, disabledReason: reasons[0] ?? "Ready to apply supported ship resource updates.", targetActorId: actor?.id ?? "", targetActorName: actor?.name ?? "", packageVersion: outcomePackage.version, reviewVersion: outcomePackage.version, alreadyApplied: outcomePackage.alreadyApplied, rows, supportedRows, unsupportedRows, deferredRows, changes });
+  return deepFreeze({ isGM: true, available: outcomePackage.isCompleted, canApply: reasons.length === 0, disabled: reasons.length > 0, disabledReason: reasons[0] ?? "Ready to apply supported ship resource updates.", targetActorId: actor?.id ?? "", targetActorName: actor?.name ?? "", packageVersion: outcomePackage.version, reviewVersion: outcomePackage.version, alreadyApplied: shipAlreadyApplied, shipAlreadyApplied, packageAlreadyApplied: outcomePackage.alreadyApplied, applicationRecord: cloneData(shipApplicationRecord), rows, supportedRows, unsupportedRows, deferredRows, changes });
 }
 export function prepareTravelV2FinalOutcomeApplyState(session, options = {}) { return prepareTravelV2FinalOutcomeShipUpdatePreview(session, options); }
 export function buildTravelV2FinalOutcomeApplicationRecord(session, preview, options = {}) {
@@ -297,7 +300,7 @@ export async function applyTravelV2FinalOutcomeToShip(session, options = {}) {
   if (!options.dryRun) await updateShipTravelResources(actor, preview.changes, options.resourceOptions ?? {});
   const record = buildTravelV2FinalOutcomeApplicationRecord(session, preview, options);
   const nextSession = cloneData(session);
-  if (!options.dryRun) { nextSession.travelV2EventOutcomeApplication = record; nextSession.updatedAt = nowIso(options); }
+  if (!options.dryRun) { nextSession[SHIP_APPLICATION_SESSION_KEY] = record; nextSession.updatedAt = nowIso(options); }
   return { ok: true, applied: !options.dryRun, dryRun: options.dryRun === true, blocked: false, blockedReasons: [], preview, record, session: nextSession };
 }
 

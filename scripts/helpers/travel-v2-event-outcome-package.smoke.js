@@ -89,14 +89,27 @@ export async function runTravelV2EventOutcomePackageSmokeChecks(){
   try { globalThis.game = { user: { isGM: true } }; assertSmoke(!prepareTravelV2FinalOutcomeApplyState(applySession, { actor: ship, user: { isGM: false } }).canApply, "explicit non-GM blocks apply state even when global GM"); }
   finally { if (previousGameForApply === undefined) delete globalThis.game; else globalThis.game = previousGameForApply; }
   const dryRun = await applyTravelV2FinalOutcomeToShip(applySession, { actor: ship, user: { isGM: true }, dryRun: true, now: "2026-06-20T01:00:00.000Z" });
-  assertSmoke(dryRun.ok && dryRun.dryRun && ship.updates.length === 0 && !dryRun.session.travelV2EventOutcomeApplication, "dry run returns plan without mutating actor/session");
+  assertSmoke(dryRun.ok && dryRun.dryRun && ship.updates.length === 0 && !dryRun.session.travelV2FinalOutcomeShipApplication, "dry run returns plan without mutating actor/session");
   const applied = await applyTravelV2FinalOutcomeToShip(applySession, { actor: ship, user: { isGM: true }, now: "2026-06-20T01:00:00.000Z" });
-  assertSmoke(applied.ok && applied.session.travelV2EventOutcomeApplication?.applied === true, "actual apply creates a session-local application record");
+  assertSmoke(applied.ok && applied.session.travelV2FinalOutcomeShipApplication?.applied === true, "actual apply creates a session-local ship application record");
+  assertSmoke(!applied.session.travelV2EventOutcomeApplication?.applied, "ship apply does not write the package-level application record");
   assertEqual(ship.getFlag("arcflight", "system").current.hull, 3, "actual apply mutates supported hull resource only");
   assertEqual(ship.getFlag("arcflight", "system").current.morale, 5, "actual apply mutates supported morale resource only");
   assertSmoke(!Object.keys(ship.updates[0]).some((key) => key.includes("storedSpellRanks")), "unsupported rows are not applied");
   const second = await applyTravelV2FinalOutcomeToShip(applied.session, { actor: ship, user: { isGM: true } });
   assertSmoke(!second.ok && second.blocked && ship.updates.length === 1, "applying twice is blocked without second mutation");
+
+  const packageAppliedFirstSession = completed(["success"]);
+  packageAppliedFirstSession.event.finalOutcomes = applySession.event.finalOutcomes;
+  packageAppliedFirstSession.travelV2EventOutcomeApplication = { applied: true, appliedAt: "2026-06-20T00:30:00.000Z" };
+  const packageAppliedFirstShip = mockShip("Package Applied First Ship");
+  const packageAppliedFirstPreview = prepareTravelV2FinalOutcomeApplyState(packageAppliedFirstSession, { actor: packageAppliedFirstShip, user: { isGM: true } });
+  assertSmoke(packageAppliedFirstPreview.canApply && packageAppliedFirstPreview.packageAlreadyApplied === true && packageAppliedFirstPreview.shipAlreadyApplied === false, "package-level apply does not block first ship-resource apply");
+  const packageAppliedFirstResult = await applyTravelV2FinalOutcomeToShip(packageAppliedFirstSession, { actor: packageAppliedFirstShip, user: { isGM: true } });
+  assertSmoke(packageAppliedFirstResult.ok && packageAppliedFirstResult.session.travelV2FinalOutcomeShipApplication?.applied === true, "ship apply writes separate ship-application record after package-level apply");
+  const packageAppliedFirstSecond = await applyTravelV2FinalOutcomeToShip(packageAppliedFirstResult.session, { actor: packageAppliedFirstShip, user: { isGM: true } });
+  assertSmoke(!packageAppliedFirstSecond.ok && packageAppliedFirstSecond.blocked && packageAppliedFirstShip.updates.length === 1, "separate ship application record blocks second ship apply");
+
 
   if (previousFoundryForApply === undefined) delete globalThis.foundry; else globalThis.foundry = previousFoundryForApply;
   const runnerState = prepareTravelEventRunnerState(reviewSession, { user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
