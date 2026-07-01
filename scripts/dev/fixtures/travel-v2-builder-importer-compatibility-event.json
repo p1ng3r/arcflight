@@ -1,0 +1,443 @@
+{
+  "key": "builder-importer-compatibility-drift",
+  "name": "Compatibility Drift Check",
+  "category": "navigation",
+  "tags": [
+    "travel-v2",
+    "fixture",
+    "navigation",
+    "strain"
+  ],
+  "roundCount": 2,
+  "baseDC": 18,
+  "activeResources": [
+    "strain"
+  ],
+  "travelStations": [
+    "captain",
+    "navigator",
+    "engineer",
+    "veilwarden",
+    "watchmaster"
+  ],
+  "openingVignette": "A pressure seam opens across the route and makes every instrument disagree. The crew can cross it safely only by sharing clear station reports and refusing guesses that sound too certain.",
+  "gmSummary": "Read-only compatibility fixture for builder/importer audit smoke. It must not create or update actors, items, chat, journals, sockets, scenes, tokens, compendia, or world data.",
+  "pressureTracks": [
+    {
+      "key": "strain",
+      "label": "Strain",
+      "value": 0,
+      "max": 6
+    }
+  ],
+  "hazards": [
+    {
+      "key": "pressure-seam-placeholder",
+      "label": "Pressure Seam",
+      "source": "placeholder-reference"
+    }
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "title": "False Bearings",
+      "openingVignette": "The seam bends sound and compass-light until the ship seems to have three headings at once.",
+      "activeStations": [
+        "captain",
+        "navigator",
+        "engineer",
+        "veilwarden",
+        "watchmaster"
+      ],
+      "stationCards": [
+        {
+          "stationKey": "captain",
+          "problem": "The crew needs one clear command before the false bearings become panic.",
+          "skillApproaches": [
+            {
+              "skill": "diplomacy",
+              "statistic": "diplomacy",
+              "dc": 18,
+              "label": "Steady the reports",
+              "helpText": "Ask each station for one confirmed fact and forbid speculation.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The command rhythm clears the deck.",
+            "success": "The crew follows the chain of reports.",
+            "failure": "Rumors compete with orders.",
+            "criticalFailure": "A false order spreads before it can be checked."
+          }
+        },
+        {
+          "stationKey": "navigator",
+          "problem": "The route keeps splitting into plausible but incompatible lines.",
+          "skillApproaches": [
+            {
+              "skill": "survival",
+              "statistic": "survival",
+              "dc": 18,
+              "label": "Trust drift signs",
+              "helpText": "Use pressure, debris, and sail response instead of the confused compass.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The true path becomes obvious.",
+            "success": "The ship keeps a workable line.",
+            "failure": "The course wavers.",
+            "criticalFailure": "The ship commits to a bad angle."
+          }
+        },
+        {
+          "stationKey": "engineer",
+          "problem": "The arkengine strains when the seam pulls against its rhythm.",
+          "skillApproaches": [
+            {
+              "skill": "crafting",
+              "statistic": "crafting",
+              "dc": 18,
+              "label": "Balance the drive",
+              "helpText": "Tune the engine by hand before the pressure spike lands.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The engine absorbs the seam cleanly.",
+            "success": "The drive holds steady.",
+            "failure": "The engine knocks hard.",
+            "criticalFailure": "The drive echoes the seam's pull."
+          }
+        },
+        {
+          "stationKey": "veilwarden",
+          "problem": "The Lifeveil carries anxious echoes from places the ship has not reached.",
+          "skillApproaches": [
+            {
+              "skill": "occultism",
+              "statistic": "occultism",
+              "dc": 18,
+              "label": "Quiet the echoes",
+              "helpText": "Separate crew fear from the seam's reflected voices.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The veil goes calm.",
+            "success": "The echoes fade to background noise.",
+            "failure": "A few fears cling to the deck.",
+            "criticalFailure": "The echoes sound like trusted crew."
+          }
+        },
+        {
+          "stationKey": "watchmaster",
+          "problem": "Real hazards and reflected hazards appear in the same lookout sweep.",
+          "skillApproaches": [
+            {
+              "skill": "perception",
+              "statistic": "perception",
+              "dc": 18,
+              "label": "Mark only confirmed danger",
+              "helpText": "Call out hazards that move independently of the seam's reflections.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "Every false contact is discarded.",
+            "success": "The dangerous contacts are marked.",
+            "failure": "One false contact distracts the deck.",
+            "criticalFailure": "The real hazard hides behind a reflection."
+          }
+        }
+      ],
+      "outcomeBranches": {
+        "dominantSuccess": {
+          "vignette": "The crew rejects the false bearings and enters the seam under control.",
+          "proposedEffects": []
+        },
+        "mixed": {
+          "vignette": "The ship enters the seam safely, but a few bad reports travel with it.",
+          "proposedEffects": []
+        },
+        "dominantFailure": {
+          "vignette": "The ship crosses the first edge at a poor angle and pressure starts to build.",
+          "proposedEffects": []
+        },
+        "catastrophicFailure": {
+          "vignette": "The false bearing wins a crucial minute and the seam bites into the route.",
+          "proposedEffects": []
+        }
+      }
+    },
+    {
+      "round": 2,
+      "title": "Clean Exit",
+      "openingVignette": "The far edge of the seam flashes ahead, bright and narrow, while strain rolls through the hull.",
+      "activeStations": [
+        "captain",
+        "navigator",
+        "engineer",
+        "veilwarden",
+        "watchmaster"
+      ],
+      "stationCards": [
+        {
+          "stationKey": "captain",
+          "problem": "The last order must commit everyone to the same exit beat.",
+          "skillApproaches": [
+            {
+              "skill": "intimidation",
+              "statistic": "intimidation",
+              "dc": 19,
+              "label": "Command the exit",
+              "helpText": "Make hesitation more frightening than the seam.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "Every hand moves as one.",
+            "success": "The exit command lands.",
+            "failure": "A moment of doubt costs position.",
+            "criticalFailure": "The order fractures across the deck."
+          }
+        },
+        {
+          "stationKey": "navigator",
+          "problem": "The exit line closes as the ship approaches it.",
+          "skillApproaches": [
+            {
+              "skill": "sailing-lore",
+              "statistic": "sailing-lore",
+              "dc": 19,
+              "label": "Slip the closing line",
+              "helpText": "Use practical void-sailing to take the gap before it folds.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The ship slips through perfectly.",
+            "success": "The course clears the seam.",
+            "failure": "The exit scrapes the route.",
+            "criticalFailure": "The ship misses the clean line."
+          }
+        },
+        {
+          "stationKey": "engineer",
+          "problem": "The arkengine needs one controlled surge without carrying the seam home.",
+          "skillApproaches": [
+            {
+              "skill": "arcana",
+              "statistic": "arcana",
+              "dc": 19,
+              "label": "Shape the surge",
+              "helpText": "Release power in a clean pulse and cut resonance afterward.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The surge rings clean.",
+            "success": "The engine powers the exit.",
+            "failure": "Resonance lingers.",
+            "criticalFailure": "The seam rides the surge."
+          }
+        },
+        {
+          "stationKey": "veilwarden",
+          "problem": "The Lifeveil must shed borrowed fear before open sky returns.",
+          "skillApproaches": [
+            {
+              "skill": "religion",
+              "statistic": "religion",
+              "dc": 19,
+              "label": "Name the boundary",
+              "helpText": "Give the crew a rite of return that leaves the seam behind.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The boundary feels sacred and final.",
+            "success": "The crew breathes as themselves again.",
+            "failure": "A chill follows the ship out.",
+            "criticalFailure": "The seam keeps a voice aboard."
+          }
+        },
+        {
+          "stationKey": "watchmaster",
+          "problem": "The real exit beacon appears only between waves of reflected light.",
+          "skillApproaches": [
+            {
+              "skill": "survival",
+              "statistic": "survival",
+              "dc": 19,
+              "label": "Call the true flash",
+              "helpText": "Read the timing of light and pressure to call the exit.",
+              "boardResultFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              },
+              "gmNarrationFeedback": {
+                "criticalSuccess": "The approach creates a clean advantage.",
+                "success": "The approach works well enough to continue.",
+                "failure": "The approach leaves a visible complication.",
+                "criticalFailure": "The approach creates a hard opening for trouble."
+              }
+            }
+          ],
+          "rollFeedback": {
+            "criticalSuccess": "The true flash is called early.",
+            "success": "The crew catches the opening.",
+            "failure": "The call comes late.",
+            "criticalFailure": "A false flash draws attention."
+          }
+        }
+      ],
+      "outcomeBranches": {
+        "dominantSuccess": {
+          "vignette": "The ship clears the seam with a strong report discipline the crew can trust later.",
+          "proposedEffects": []
+        },
+        "mixed": {
+          "vignette": "The ship clears the seam, carrying only a small cautionary bruise in the logs.",
+          "proposedEffects": []
+        },
+        "dominantFailure": {
+          "vignette": "The ship exits off line and the GM may carry that pressure into later narration.",
+          "proposedEffects": []
+        },
+        "catastrophicFailure": {
+          "vignette": "The ship tears free, but the seam leaves a dangerous memory for GM review only.",
+          "proposedEffects": []
+        }
+      }
+    }
+  ],
+  "finalOutcomes": {
+    "criticalSuccess": {
+      "label": "Clean Crossing",
+      "vignette": "The seam falls behind and the crew's logs agree for once.",
+      "proposedEffects": []
+    },
+    "success": {
+      "label": "Safe Crossing",
+      "vignette": "The ship clears the seam with its course intact.",
+      "proposedEffects": []
+    },
+    "mixed": {
+      "label": "Costly Crossing",
+      "vignette": "The ship clears the seam, though the GM may mention lingering strain.",
+      "proposedEffects": []
+    },
+    "failure": {
+      "label": "Hard Crossing",
+      "vignette": "The ship escapes off course and under pressure, with no automatic effect applied.",
+      "proposedEffects": []
+    },
+    "criticalFailure": {
+      "label": "Marked Crossing",
+      "vignette": "The seam lets the ship go only after leaving a GM-reviewed future problem.",
+      "proposedEffects": []
+    }
+  }
+}

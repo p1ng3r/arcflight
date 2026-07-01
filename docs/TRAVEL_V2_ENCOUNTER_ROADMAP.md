@@ -8,6 +8,10 @@ A travel event should feel like a short dramatic scene that interrupts days of v
 
 The system should reduce GM workload by turning player choices and roll results into clear station feedback, round narration, pressure changes, hazard escalation, and final outcomes.
 
+## Roadmap Alignment Notes
+
+- PR #335 audits the existing Travel Event Builder/importer compatibility before implementing permanent Travel v2 card schemas, so the content-authoring/import lane can align with the current runner without replacing the v1-compatible builder path.
+
 ## Core Table Flow
 
 1. **GM launches a Travel v2 event.**
