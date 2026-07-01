@@ -7,6 +7,7 @@ import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/tr
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
 import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-session-event-completion.js";
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
+import { applyTravelV2FinalOutcomeToShip } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
 import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
@@ -106,6 +107,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-finalize]",
   "[data-arcflight-travel-v2-event-complete]",
   "[data-arcflight-travel-v2-outcome-apply]",
+  "[data-arcflight-travel-v2-final-outcome-apply]",
+  "[data-arcflight-travel-v2-final-outcome-refresh-apply]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
   "[data-arcflight-travel-v2-followup-note-status]",
@@ -657,6 +660,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
     if (target.hasAttribute("data-arcflight-travel-v2-event-complete")) return this.completeTravelV2Event();
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
+    if (target.hasAttribute("data-arcflight-travel-v2-final-outcome-refresh-apply")) return this.render(true);
+    if (target.hasAttribute("data-arcflight-travel-v2-final-outcome-apply")) return this.applyTravelV2FinalOutcomeToShip();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
     if (target.hasAttribute("data-arcflight-travel-v2-followup-note-status")) return this.#updateTravelV2ConsequenceFollowupStatus(target);
@@ -1266,6 +1271,28 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return update.shouldRerender ? this.render(true) : update;
   }
 
+
+
+  async applyTravelV2FinalOutcomeToShip(options = {}) {
+    if (globalThis.game?.user?.isGM !== true) {
+      this.statusMessage = "Only a GM can apply final outcome ship updates.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const actor = this.#getSessionShipActor();
+    const result = await applyTravelV2FinalOutcomeToShip(this.session, { ...options, actor, user: globalThis.game?.user });
+    this.uiState.travelV2FinalOutcomeApplyResult = result;
+    if (result.ok && result.session && !result.dryRun) {
+      this.session = result.session;
+      const saved = await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = saved.ok ? "Applied final outcome ship updates and saved the application record." : "Applied final outcome ship updates, but saving the completed-session update is unavailable.";
+      ui.notifications?.info?.(this.statusMessage);
+    } else {
+      this.statusMessage = result.blockedReasons?.[0] ?? result.error ?? "Final outcome ship update application was blocked.";
+      ui.notifications?.warn?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
 
   async applyTravelV2ActorApplication(options = {}) {
     const actor = this.#getSessionShipActor();

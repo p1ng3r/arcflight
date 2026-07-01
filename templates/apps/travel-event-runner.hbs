@@ -1261,6 +1261,41 @@
           <h3>Review Status</h3>
           <p>{{state.finalOutcomePackageReview.reviewOnlyLabel}} · {{state.finalOutcomePackageReview.deferredLabel}} · {{state.finalOutcomePackageReview.gmOnlyLabel}} · {{state.finalOutcomePackageReview.publicSafeLabel}}</p>
         </section>
+        {{#if state.finalOutcomeApply.isGM}}
+          <section class="arcflight-travel-runner-mvp__final-outcome-apply">
+            <h3>Apply Final Outcome to Ship</h3>
+            <p class="arcflight-sheet__hint">Explicit GM-only action. Applies only supported travel resource updates; scars, fortunes, hazards, rewards, and consequences remain review-only/deferred.</p>
+            <dl>
+              <dt>Target Ship</dt><dd>{{#if state.finalOutcomeApply.targetActorName}}{{state.finalOutcomeApply.targetActorName}}{{else}}No target ship resolved{{/if}}</dd>
+              <dt>Status</dt><dd>{{state.finalOutcomeApply.disabledReason}}</dd>
+            </dl>
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-travel-v2-final-outcome-refresh-apply>Refresh Apply Preview</button>
+              {{#if state.finalOutcomeApply.canApply}}
+                <button type="button" data-arcflight-travel-v2-final-outcome-apply title="Apply supported final outcome ship resource updates">Apply Final Outcome to Ship</button>
+              {{else}}
+                <button type="button" data-arcflight-travel-v2-final-outcome-apply disabled title="{{state.finalOutcomeApply.disabledReason}}">Apply Final Outcome to Ship</button>
+              {{/if}}
+            </div>
+            {{#if state.finalOutcomeApply.supportedRows.length}}
+              <h4>Supported Ship Resource Updates</h4>
+              <table>
+                <thead><tr><th>Resource</th><th>Current</th><th>Delta / Set</th><th>Preview</th><th>Status</th></tr></thead>
+                <tbody>{{#each state.finalOutcomeApply.supportedRows}}<tr><td>{{resource}}</td><td>{{currentValue}}</td><td>{{#if mode}}{{mode}} {{value}}{{else}}{{delta}}{{/if}}</td><td>{{previewValue}}</td><td>{{status}}</td></tr>{{/each}}</tbody>
+              </table>
+            {{else}}
+              <p class="arcflight-sheet__hint">No supported ship resource updates are ready to apply.</p>
+            {{/if}}
+            {{#if state.finalOutcomeApply.unsupportedRows.length}}
+              <h4>Unsupported Rows</h4>
+              <ul>{{#each state.finalOutcomeApply.unsupportedRows}}<li>{{label}} — {{reason}}</li>{{/each}}</ul>
+            {{/if}}
+            {{#if state.finalOutcomeApply.deferredRows.length}}
+              <h4>Deferred / Review-only Package Parts</h4>
+              <ul>{{#each state.finalOutcomeApply.deferredRows}}<li>{{label}} — {{statusLabel}}</li>{{/each}}</ul>
+            {{/if}}
+          </section>
+        {{/if}}
       {{/if}}
     </section>
 
