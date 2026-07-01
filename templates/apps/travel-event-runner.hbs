@@ -1044,6 +1044,28 @@
       </footer>
     </section>
 
+    {{#if state.completionChecklist.visible}}
+      <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__completion-checklist arcflight-gm-only" data-arcflight-travel-v2-completion-checklist aria-label="GM Completion Checklist">
+        <h2>{{state.completionChecklist.title}}</h2>
+        <p class="arcflight-sheet__hint"><strong>Status:</strong> {{state.completionChecklist.statusLabel}} · <strong>Event:</strong> {{state.completionChecklist.eventName}} · <strong>Final Outcome:</strong> {{state.completionChecklist.finalOutcomeLabel}}</p>
+        <div class="arcflight-travel-runner-mvp__stats">
+          <div><span>Completed</span><strong>{{#if state.completionChecklist.isCompleted}}Completed{{else}}Not completed{{/if}}</strong></div>
+          <div><span>Completed At</span><strong>{{#if state.completionChecklist.completedAt}}{{state.completionChecklist.completedAt}}{{else}}Not recorded{{/if}}</strong></div>
+          <div><span>Target Ship</span><strong>{{#if state.completionChecklist.targetShipName}}{{state.completionChecklist.targetShipName}}{{else}}No target ship resolved{{/if}}</strong></div>
+        </div>
+        <div class="arcflight-travel-runner-mvp__effects">
+          {{#each state.completionChecklist.rows}}
+            <article class="arcflight-travel-runner-mvp__effect-row arcflight-travel-runner-mvp__completion-checklist-row arcflight-{{status}}">
+              <h3>{{label}} — {{statusLabel}}</h3>
+              <p class="arcflight-sheet__hint">{{reason}}</p>
+              {{#if targetHeading}}<p class="arcflight-sheet__hint"><strong>Related section:</strong> {{targetHeading}}</p>{{/if}}
+            </article>
+          {{/each}}
+        </div>
+        <p class="arcflight-travel-builder__warning"><strong>Safety:</strong> {{state.completionChecklist.safetyNote}}</p>
+      </section>
+    {{/if}}
+
     {{#if state.summary}}
       <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__summary">
         <h2>Final Summary</h2>

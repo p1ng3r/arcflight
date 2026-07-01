@@ -2844,6 +2844,74 @@ function prepareTravelFocusRiskSummary(stations = []) {
   return { rows, hasRows: rows.length > 0, blockedRows: rows.filter((row) => row.blocked), hasBlockedRows: rows.some((row) => row.blocked), mutationNote: DEFAULT_FOCUS_BACKLASH_PREVIEW_TEXT };
 }
 
+
+function makeCompletionChecklistRow({ key, label, status = "blocked", statusLabel = "Blocked", reason = "", targetHeading = "" } = {}) {
+  return {
+    key,
+    label,
+    status,
+    statusLabel,
+    ready: status === "ready",
+    blocked: status === "blocked",
+    done: status === "done",
+    deferred: status === "deferred" || status === "reviewOnly",
+    reason,
+    targetHeading
+  };
+}
+
+function hasReviewEntries(section = {}) {
+  return section?.hasEntries === true || (Array.isArray(section?.entries) && section.entries.length > 0);
+}
+
+export function prepareTravelV2CompletionChecklistState(session = null, options = {}) {
+  const isGM = options.user?.isGM === true;
+  const hasSession = isPlainObject(session);
+  if (!isGM) return { isGM: false, hasSession, visible: false, rows: [], safetyNote: "" };
+
+  const isCompleted = hasSession && session.status === "completed";
+  const summaryOutput = options.summaryOutput ?? prepareTravelEventRunnerSummaryOutputState(session, options);
+  const finalOutcomePackageReview = options.finalOutcomePackageReview ?? prepareTravelV2FinalOutcomePackageReviewState(session, options);
+  const finalOutcomeApply = options.finalOutcomeApply ?? prepareTravelV2FinalOutcomeApplyState(session, options);
+  const summary = isCompleted ? (session.summary ?? summarizeTravelEventRunnerSession(session, options).summary) : null;
+  const eventName = session?.event?.name ?? session?.travelV2CompletionSummary?.eventTitle ?? "No active event";
+  const finalOutcomeLabel = summary?.suggestedFinalOutcomeLabel ?? session?.travelV2CompletionSummary?.finalOutcomeLabel ?? finalOutcomePackageReview?.eventOutcomeLabel ?? "Not determined";
+  const completedAt = session?.completedAt ?? session?.travelV2CompletionSummary?.completedAt ?? "";
+
+  const packageApplied = session?.travelV2EventOutcomeApplication?.applied === true || finalOutcomePackageReview?.alreadyApplied === true;
+  const shipApplied = session?.travelV2FinalOutcomeShipApplication?.applied === true || finalOutcomeApply?.shipAlreadyApplied === true || finalOutcomeApply?.alreadyApplied === true;
+  const hasDeferredParts = ["hazards", "shipScars", "fortunes", "rewards", "consequences"].some((key) => hasReviewEntries(finalOutcomePackageReview?.sections?.[key])) || (Array.isArray(finalOutcomeApply?.deferredRows) && finalOutcomeApply.deferredRows.length > 0);
+
+  const rows = [
+    makeCompletionChecklistRow({ key: "session-completed", label: "Session completion", status: isCompleted ? "done" : "blocked", statusLabel: isCompleted ? "Completed" : "Blocked", reason: isCompleted ? (completedAt ? `Completed at ${completedAt}.` : "Session is completed.") : (hasSession ? "Complete the Travel event before final completion actions are available." : "No Travel Event Runner session is active."), targetHeading: "Final Summary" }),
+    makeCompletionChecklistRow({ key: "final-summary", label: "Final Summary", status: summary ? "ready" : "blocked", statusLabel: summary ? "Ready" : "Blocked", reason: summary ? "Final summary is available for review and copy/export." : "Final summary is not available until the session is completed.", targetHeading: "Final Summary" }),
+    makeCompletionChecklistRow({ key: "final-outcome-package-review", label: "Final Outcome Package Review", status: finalOutcomePackageReview?.canPreparePackage ? "reviewOnly" : "blocked", statusLabel: finalOutcomePackageReview?.canPreparePackage ? "Review only" : "Blocked", reason: finalOutcomePackageReview?.canPreparePackage ? "Package can be reviewed; this does not update ship resources." : (finalOutcomePackageReview?.blockedReasons?.[0] ?? "Complete the session before reviewing the outcome package."), targetHeading: "Final Outcome Package Review" }),
+    makeCompletionChecklistRow({ key: "package-level-application", label: "Package-level application", status: packageApplied ? "done" : (finalOutcomePackageReview?.canPreparePackage ? "deferred" : "blocked"), statusLabel: packageApplied ? "Already done" : (finalOutcomePackageReview?.canPreparePackage ? "Deferred" : "Blocked"), reason: packageApplied ? "Package-level outcome application record exists. This does not mean ship resources were updated." : (finalOutcomePackageReview?.canPreparePackage ? "Only the separate package-level Apply Outcome Package action can mark this done." : "Outcome package is not ready."), targetHeading: "Final Outcome Package Review" }),
+    makeCompletionChecklistRow({ key: "final-outcome-ship-apply", label: "Final Outcome Ship Apply", status: shipApplied ? "done" : (finalOutcomeApply?.canApply ? "ready" : "blocked"), statusLabel: shipApplied ? "Already done" : (finalOutcomeApply?.canApply ? "Ready" : "Blocked"), reason: shipApplied ? "travelV2FinalOutcomeShipApplication.applied is true for ship resource updates." : (finalOutcomeApply?.canApply ? `Ready for ${finalOutcomeApply.targetActorName || "resolved target ship"}.` : (finalOutcomeApply?.disabledReason ?? "Ship application is unavailable.")), targetHeading: "Apply Final Outcome to Ship" }),
+    makeCompletionChecklistRow({ key: "completed-summary-output", label: "Completed Summary Output", status: summaryOutput?.available ? "ready" : "blocked", statusLabel: summaryOutput?.available ? "Ready" : "Blocked", reason: summaryOutput?.available ? "Markdown/HTML copy controls are available." : (summaryOutput?.reason ?? "Completed summary output is unavailable."), targetHeading: "Completed Summary Output" }),
+    makeCompletionChecklistRow({ key: "chat-export", label: "Post Summary to Chat", status: summaryOutput?.canPostChat ? "ready" : "blocked", statusLabel: summaryOutput?.canPostChat ? "Ready" : "Blocked", reason: summaryOutput?.postChatTitle ?? "Only GMs can post completed summaries when available.", targetHeading: "Completed Summary Output" }),
+    makeCompletionChecklistRow({ key: "journal-export", label: "Create Journal Entry", status: summaryOutput?.canCreateJournal ? "ready" : "blocked", statusLabel: summaryOutput?.canCreateJournal ? "Ready" : "Blocked", reason: summaryOutput?.createJournalTitle ?? "Only GMs can create completed-summary journal entries when available.", targetHeading: "Completed Summary Output" }),
+    makeCompletionChecklistRow({ key: "deferred-package-parts", label: "Deferred package parts", status: hasDeferredParts ? "deferred" : "ready", statusLabel: hasDeferredParts ? "Deferred" : "Ready", reason: hasDeferredParts ? "Ship scars, fortunes, hazards, rewards, or consequences remain review-only/deferred." : "No deferred package parts are currently listed.", targetHeading: "Final Outcome Package Review" })
+  ];
+
+  return {
+    isGM,
+    hasSession,
+    visible: true,
+    isCompleted,
+    title: "GM Completion Checklist",
+    statusLabel: !hasSession ? "No Session" : (isCompleted ? "Completed / Reopened Review" : "Active Session"),
+    completedAt,
+    eventName,
+    finalOutcomeLabel,
+    targetShipName: finalOutcomeApply?.targetActorName ?? session?.ship?.actorName ?? session?.ship?.name ?? "",
+    shipApplyDisabledReason: finalOutcomeApply?.disabledReason ?? "",
+    rows,
+    hasRows: rows.length > 0,
+    safetyNote: "No actor, item, chat, journal, combat, active-effect, socket, scene, token, compendium, or world changes occur unless the GM clicks a specific action button."
+  };
+}
+
 export function prepareTravelEventRunnerState(session = null, options = {}) {
   const libraryState = prepareTravelEventRunnerLibraryState(options);
   const sessionLibraryOptions = Object.hasOwn(options, "runnerSessionLibrary") ? { ...options, library: options.runnerSessionLibrary } : options;
@@ -2863,6 +2931,11 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const focusBacklashReview = prepareTravelV2FocusBacklashPanelState(activeSession, options);
   const supportAssistReview = prepareTravelV2SupportPanelState(activeSession, options);
   const supportBacklashReview = prepareTravelV2SupportBacklashPanelState(activeSession, options);
+  const summaryOutput = prepareTravelEventRunnerSummaryOutputState(activeSession, options);
+  const finalOutcomePackageReview = prepareTravelV2FinalOutcomePackageReviewState(activeSession, options);
+  const finalOutcomeApply = prepareTravelV2FinalOutcomeApplyState(activeSession, options);
+  const stagedEffectReview = prepareTravelEventStagedEffectReviewState(activeSession, options);
+  const completionChecklist = prepareTravelV2CompletionChecklistState(activeSession, { ...options, summaryOutput, finalOutcomePackageReview, finalOutcomeApply, stagedEffectReview });
   return {
     ok: normalized.ok,
     errors: normalized.errors,
@@ -2920,10 +2993,11 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     canAdvance: Boolean(activeSession && activeSession.currentRoundIndex < activeSession.event.rounds.length - 1 && activeSession.status !== "completed"),
     canComplete: Boolean(activeSession && activeSession.status !== "completed"),
     summary,
-    summaryOutput: prepareTravelEventRunnerSummaryOutputState(activeSession, options),
-    finalOutcomePackageReview: prepareTravelV2FinalOutcomePackageReviewState(activeSession, options),
-    finalOutcomeApply: prepareTravelV2FinalOutcomeApplyState(activeSession, options),
-    stagedEffectReview: prepareTravelEventStagedEffectReviewState(activeSession, options),
+    summaryOutput,
+    finalOutcomePackageReview,
+    finalOutcomeApply,
+    stagedEffectReview,
+    completionChecklist,
     summaryJson: summary ? exportTravelEventRunnerSessionToJson(activeSession, options).json : ""
   };
 }
