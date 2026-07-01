@@ -79,7 +79,7 @@ The existing builder/importer can safely create and import data-only Travel Even
 
 ## Compatibility Gaps
 
-- Permanent card schema for Travel v2 content.
+- Permanent card schema for Travel v2 content: introduced by #336 as the data-only Travel v2 Card Schema v0 contract; builder/importer adaptation remains future #337.
 - Hazard cards that can be authored/imported independently of the current foundation deck.
 - Consequence cards that connect catalog entries, review text, and explicit GM Apply metadata.
 - Station action cards that are reusable instead of embedded per event.
@@ -103,7 +103,7 @@ The existing builder/importer can safely create and import data-only Travel Even
 
 ## Recommended Next PRs
 
-1. #336 Permanent Travel v2 Card Schema v0.
+1. #336 Permanent Travel v2 Card Schema v0 (introduced as a data-only schema contract, validator skeleton, fixture pack, and smoke coverage).
 2. #337 Builder/Importer v2 Validate Adapter.
 3. #338 Applyable Consequence Catalog Foundation.
 4. #339 First 12 Gold-Standard Hazard Cards.

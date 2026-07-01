@@ -41,6 +41,7 @@ import runTravelPlayerMissionBoardBroadcastDebugSmokeChecks from "../apps/travel
 import runTravelV2RoundResolutionReadinessSmokeChecks from "../helpers/travel-v2-round-resolution-readiness.smoke.js";
 import runTravelV2CompletionChecklistSmokeChecks from "../helpers/travel-v2-completion-checklist.smoke.js";
 import runTravelV2BuilderImporterCompatibilitySmokeChecks from "../helpers/travel-v2-builder-importer-compatibility.smoke.js";
+import runTravelV2CardSchemaSmokeChecks from "../helpers/travel-v2-card-schema.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -85,7 +86,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel player mission board broadcast debug", runTravelPlayerMissionBoardBroadcastDebugSmokeChecks],
   ["Travel v2 round resolution readiness", runTravelV2RoundResolutionReadinessSmokeChecks],
   ["Travel v2 completion checklist", runTravelV2CompletionChecklistSmokeChecks],
-  ["Travel v2 builder/importer compatibility", runTravelV2BuilderImporterCompatibilitySmokeChecks]
+  ["Travel v2 builder/importer compatibility", runTravelV2BuilderImporterCompatibilitySmokeChecks],
+  ["Travel v2 card schema", runTravelV2CardSchemaSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
