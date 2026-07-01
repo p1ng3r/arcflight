@@ -552,7 +552,7 @@
               <strong>Event Outcome Package</strong>
               <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.summaryText}}</p>
             </div>
-            <button type="button" class="arcflight-travel-runner-mvp__v2-outcome-apply-button" data-arcflight-travel-v2-outcome-apply {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}disabled{{/if}} title="{{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.blockedReason}}{{else}}Apply the prepared outcome package.{{/if}}">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyButtonLabel}}</button>
+            <button type="button" class="arcflight-travel-runner-mvp__v2-outcome-apply-button" data-arcflight-travel-v2-outcome-apply {{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}disabled{{/if}} title="{{#if state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyDisabled}}{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.blockedReason}}{{else}}Apply the prepared outcome package. Outcome Applied status remains explicit and session-local.{{/if}}">{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.applyButtonLabel}}</button>
           </div>
           <p><strong>Outcome:</strong> {{state.travelV2PreviewPanel.travelV2EventOutcomePackage.eventOutcomeLabel}}</p>
           <p>{{state.travelV2PreviewPanel.travelV2EventOutcomePackage.nextStepText}}</p>
@@ -1194,6 +1194,73 @@
           <button type="button" data-arcflight-runner-copy-review-markdown disabled>Copy Review Markdown</button>
           <button type="button" data-arcflight-runner-copy-review-html disabled>Copy Review HTML</button>
         </div>
+      {{/if}}
+    </section>
+
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome-package-review" aria-label="Final Outcome Package Review">
+      <h2>Final Outcome Package Review</h2>
+      <p class="arcflight-sheet__hint"><strong>{{state.finalOutcomePackageReview.reviewOnlyLabel}}:</strong> This panel is read-only. Actor, item, combat, effect, chat, journal, and socket mutation is deferred to later PRs unless a GM explicitly uses an existing safe session-local action elsewhere.</p>
+      <div class="arcflight-travel-runner-mvp__v2-review-status-chips">
+        <span>{{state.finalOutcomePackageReview.statusLabel}}</span>
+        <span>{{state.finalOutcomePackageReview.gmOnlyLabel}}</span>
+        <span>{{state.finalOutcomePackageReview.publicSafeLabel}}</span>
+        <span>{{state.finalOutcomePackageReview.applyStatusLabel}}</span>
+      </div>
+      {{#if state.finalOutcomePackageReview.hasBlockedReasons}}
+        <h3>Blocked Package State</h3>
+        <ul>
+          {{#each state.finalOutcomePackageReview.blockedReasons}}
+            <li>{{this}}</li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <section>
+          <h3>Outcome</h3>
+          <p><strong>{{state.finalOutcomePackageReview.eventOutcomeLabel}}</strong></p>
+          <p>{{state.finalOutcomePackageReview.summaryText}}</p>
+          <dl>
+            <dt>Completed At</dt><dd>{{state.finalOutcomePackageReview.completedAt}}</dd>
+            <dt>Event Round Count</dt><dd>{{state.finalOutcomePackageReview.eventRoundCount}}</dd>
+            <dt>Finalized Round Count</dt><dd>{{state.finalOutcomePackageReview.finalizedRoundCount}}</dd>
+            <dt>Already Applied</dt><dd>{{#if state.finalOutcomePackageReview.alreadyApplied}}{{state.finalOutcomePackageReview.alreadyAppliedLabel}}{{else}}{{state.finalOutcomePackageReview.pendingLabel}}{{/if}}</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>Round Summary</h3>
+          {{#if state.finalOutcomePackageReview.sections.rounds.hasEntries}}
+            <ul>{{#each state.finalOutcomePackageReview.sections.rounds.entries}}<li>Round {{roundNumber}} — {{outcomeKey}} {{#if finalizedAt}}({{finalizedAt}}){{/if}}</li>{{/each}}</ul>
+          {{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.rounds.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Pressure Summary</h3>
+          {{#if state.finalOutcomePackageReview.sections.pressure.hasEntries}}
+            <ul>{{#each state.finalOutcomePackageReview.sections.pressure.totalsByPressureType}}<li>{{label}}: {{value}}</li>{{/each}}</ul>
+          {{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.pressure.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Hazards</h3>
+          {{#if state.finalOutcomePackageReview.sections.hazards.hasEntries}}<ul>{{#each state.finalOutcomePackageReview.sections.hazards.entries}}<li>{{#if name}}{{name}}{{else}}{{label}}{{/if}}{{#if text}} — {{text}}{{/if}}{{#if summary}} — {{summary}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.hazards.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Ship Scars</h3>
+          {{#if state.finalOutcomePackageReview.sections.shipScars.hasEntries}}<ul>{{#each state.finalOutcomePackageReview.sections.shipScars.entries}}<li>{{#if name}}{{name}}{{else}}{{label}}{{/if}}{{#if text}} — {{text}}{{/if}}{{#if summary}} — {{summary}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.shipScars.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Fortunes</h3>
+          {{#if state.finalOutcomePackageReview.sections.fortunes.hasEntries}}<ul>{{#each state.finalOutcomePackageReview.sections.fortunes.entries}}<li>{{#if name}}{{name}}{{else}}{{label}}{{/if}}{{#if text}} — {{text}}{{/if}}{{#if summary}} — {{summary}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.fortunes.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Rewards</h3>
+          {{#if state.finalOutcomePackageReview.sections.rewards.hasEntries}}<ul>{{#each state.finalOutcomePackageReview.sections.rewards.entries}}<li>{{#if name}}{{name}}{{else}}{{label}}{{/if}}{{#if text}} — {{text}}{{/if}}{{#if summary}} — {{summary}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.rewards.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Consequences</h3>
+          {{#if state.finalOutcomePackageReview.sections.consequences.hasEntries}}<ul>{{#each state.finalOutcomePackageReview.sections.consequences.entries}}<li>{{#if name}}{{name}}{{else}}{{label}}{{/if}}{{#if text}} — {{text}}{{/if}}{{#if summary}} — {{summary}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-sheet__hint">{{state.finalOutcomePackageReview.sections.consequences.emptyText}}</p>{{/if}}
+        </section>
+        <section>
+          <h3>Review Status</h3>
+          <p>{{state.finalOutcomePackageReview.reviewOnlyLabel}} · {{state.finalOutcomePackageReview.deferredLabel}} · {{state.finalOutcomePackageReview.gmOnlyLabel}} · {{state.finalOutcomePackageReview.publicSafeLabel}}</p>
+        </section>
       {{/if}}
     </section>
 

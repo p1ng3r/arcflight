@@ -175,4 +175,45 @@ export function prepareTravelV2EventOutcomePackage(session, options = {}) {
   const packageRecord = { version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, preparedAt: options.preparedAt ?? options.now ?? null, eventOutcomeKey, eventOutcomeLabel, completedAt: session.completedAt ?? session.travelV2EventCompletion?.completedAt ?? null, roundSummaries: cloneData(roundSummaries), pressureSummary: cloneData(pressureSummary), hazardSummary: cloneData(hazardSummary), shipScarCandidates: cloneData(shipScarCandidates), fortuneCandidates: cloneData(fortuneCandidates), rewardCandidates: cloneData(rewardCandidates), consequenceCandidates: cloneData(consequenceCandidates), summaryText, nextStepText };
   return deepFreeze({ version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, hasSession: true, canPreparePackage: true, blockedReasons: [], status: "ready", isCompleted: true, alreadyApplied: Boolean(session.travelV2EventOutcomeApplication?.applied), completedAt: packageRecord.completedAt, eventRoundCount: rounds.length, finalizedRoundCount: finalizationRecords.length, roundSummaries, pressureSummary, hazardSummary, shipScarCandidates, fortuneCandidates, rewardCandidates, consequenceCandidates, eventOutcomeKey, eventOutcomeLabel, summaryText, nextStepText, packageRecord });
 }
+
+const PUBLIC_ENTRY_KEYS = Object.freeze(["id", "key", "name", "label", "title", "text", "summary", "description", "sourceType", "status", "roundIndex", "roundNumber", "outcomeKey", "finalizedAt", "playerText", "publicText", "displayText"]);
+function userIsGm(options = {}) { return options.user?.isGM === true || options.isGM === true || globalThis.game?.user?.isGM === true; }
+function publicEntry(value = {}) {
+  if (!isPlainObject(value)) return value;
+  const output = {};
+  for (const key of PUBLIC_ENTRY_KEYS) {
+    if (value[key] !== undefined) output[key] = cloneData(value[key]);
+  }
+  if (!Object.keys(output).length) output.text = String(value.name ?? value.label ?? value.title ?? value.text ?? value.summary ?? "").trim();
+  return output;
+}
+function publicEntries(values = []) { return (Array.isArray(values) ? values : []).map(publicEntry).filter((entry) => !isPlainObject(entry) || Object.values(entry).some((value) => String(value ?? "").trim())); }
+function reviewSection(key, label, entries = [], options = {}) {
+  const safeEntries = options.publicSafe ? publicEntries(entries) : cloneData(Array.isArray(entries) ? entries : []);
+  return { key, label, entries: safeEntries, count: safeEntries.length, hasEntries: safeEntries.length > 0, emptyText: `No ${label.toLowerCase()} in this outcome package.`, visibilityLabel: options.gmOnly ? "GM-only" : "Public-safe", statusLabel: options.deferred ? "Deferred to later PR" : "Review only" };
+}
+function pressureReviewSummary(pressureSummary = {}, options = {}) {
+  const totals = isPlainObject(pressureSummary.totalsByPressureType) ? Object.entries(pressureSummary.totalsByPressureType).map(([key, value]) => ({ key, label: humanizeIdentifier(key), value })) : [];
+  return { current: options.publicSafe ? {} : cloneData(pressureSummary.current ?? {}), totalsByPressureType: totals, applicationRecordCount: Array.isArray(pressureSummary.applicationRecords) ? pressureSummary.applicationRecords.length : 0, applicationRecords: options.includeManagementDetails ? cloneData(pressureSummary.applicationRecords ?? []) : [] };
+}
+function baseReviewState(session, options = {}) {
+  const outcomePackage = prepareTravelV2EventOutcomePackage(session, options);
+  const publicSafe = options.publicSafe === true;
+  const includeManagementDetails = options.includeManagementDetails === true;
+  const statusLabel = outcomePackage.alreadyApplied ? "Already applied" : (outcomePackage.canPreparePackage ? "Pending" : "Review only");
+  const sections = {
+    rounds: reviewSection("rounds", "Round Summary", outcomePackage.roundSummaries, { publicSafe }),
+    pressure: { key: "pressure", label: "Pressure Summary", ...pressureReviewSummary(outcomePackage.pressureSummary, { publicSafe, includeManagementDetails }), visibilityLabel: publicSafe ? "Public-safe" : "GM-only", statusLabel: "Review only", hasEntries: Boolean(Object.keys(outcomePackage.pressureSummary?.totalsByPressureType ?? {}).length), emptyText: "No pressure applications in this outcome package." },
+    hazards: reviewSection("hazards", "Hazards", outcomePackage.hazardSummary, { publicSafe }),
+    shipScars: reviewSection("shipScars", "Ship Scars", outcomePackage.shipScarCandidates, { publicSafe, gmOnly: !publicSafe, deferred: true }),
+    fortunes: reviewSection("fortunes", "Fortunes", outcomePackage.fortuneCandidates, { publicSafe, deferred: true }),
+    rewards: reviewSection("rewards", "Rewards", outcomePackage.rewardCandidates, { publicSafe, deferred: true }),
+    consequences: reviewSection("consequences", "Consequences", outcomePackage.consequenceCandidates, { publicSafe, gmOnly: !publicSafe, deferred: true })
+  };
+  return deepFreeze({ version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, title: "Final Outcome Package Review", status: outcomePackage.status, canPreparePackage: outcomePackage.canPreparePackage, blockedReasons: cloneData(outcomePackage.blockedReasons), hasBlockedReasons: outcomePackage.blockedReasons.length > 0, isCompleted: outcomePackage.isCompleted, alreadyApplied: outcomePackage.alreadyApplied, completedAt: outcomePackage.completedAt, eventRoundCount: outcomePackage.eventRoundCount, finalizedRoundCount: outcomePackage.finalizedRoundCount, eventOutcomeKey: outcomePackage.eventOutcomeKey, eventOutcomeLabel: outcomePackage.eventOutcomeLabel, summaryText: outcomePackage.summaryText, nextStepText: outcomePackage.nextStepText, reviewOnlyLabel: "Review only", pendingLabel: "Pending", alreadyAppliedLabel: "Already applied", deferredLabel: "Deferred to later PR", gmOnlyLabel: "GM-only", publicSafeLabel: "Public-safe", statusLabel, applyStatusLabel: outcomePackage.alreadyApplied ? "Already applied" : "Deferred to later PR", sections, roundSummaries: sections.rounds.entries, pressureSummary: sections.pressure, hazardSummary: sections.hazards.entries, shipScarCandidates: sections.shipScars.entries, fortuneCandidates: sections.fortunes.entries, rewardCandidates: sections.rewards.entries, consequenceCandidates: sections.consequences.entries, managementDetails: includeManagementDetails ? { packageRecord: cloneData(outcomePackage.packageRecord), rawApplicationRecord: cloneData(session?.travelV2EventOutcomeApplication ?? null), marker: "GM-only management details" } : null });
+}
+export function prepareTravelV2FinalOutcomePackagePublicState(session, options = {}) { return baseReviewState(session, { ...options, publicSafe: true, includeManagementDetails: false }); }
+export function prepareTravelV2FinalOutcomePackageGmState(session, options = {}) { return userIsGm(options) ? baseReviewState(session, { ...options, publicSafe: false, includeManagementDetails: true }) : prepareTravelV2FinalOutcomePackagePublicState(session, options); }
+export function prepareTravelV2FinalOutcomePackageReviewState(session, options = {}) { return userIsGm(options) ? prepareTravelV2FinalOutcomePackageGmState(session, options) : prepareTravelV2FinalOutcomePackagePublicState(session, options); }
+
 export default prepareTravelV2EventOutcomePackage;

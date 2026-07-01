@@ -26,6 +26,7 @@ import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, se
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
+import { prepareTravelV2FinalOutcomePackageReviewState } from "./travel-v2-event-outcome-package.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -2920,6 +2921,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     canComplete: Boolean(activeSession && activeSession.status !== "completed"),
     summary,
     summaryOutput: prepareTravelEventRunnerSummaryOutputState(activeSession, options),
+    finalOutcomePackageReview: prepareTravelV2FinalOutcomePackageReviewState(activeSession, options),
     stagedEffectReview: prepareTravelEventStagedEffectReviewState(activeSession, options),
     summaryJson: summary ? exportTravelEventRunnerSessionToJson(activeSession, options).json : ""
   };

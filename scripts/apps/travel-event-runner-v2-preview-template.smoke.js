@@ -58,6 +58,9 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "completeButtonLabel", "template should render completion button label from model");
   assertIncludes(template, "Event Completed", "template should include completed state label");
   assertIncludes(template, "state.travelV2PreviewPanel.travelV2EventOutcomePackage", "template should render outcome package state");
+  assertIncludes(template, "Final Outcome Package Review", "template should include final outcome package review panel");
+  assertIncludes(template, "state.finalOutcomePackageReview", "template should render final outcome package review state");
+  for (const control of ["data-arcflight-runner-copy-markdown", "data-arcflight-runner-copy-html", "data-arcflight-runner-post-chat", "data-arcflight-runner-create-journal"]) assertIncludes(template, control, `template should keep completed summary output control ${control}`);
   assertIncludes(template, "Event Outcome Package", "template should render outcome package label");
   assertIncludes(template, "data-arcflight-travel-v2-outcome-apply", "template should wire outcome application control");
   assertIncludes(template, "applyButtonLabel", "template should render outcome apply label from model");
