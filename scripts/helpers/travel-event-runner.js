@@ -26,6 +26,7 @@ import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, se
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
+import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml } from "./travel-v2-completed-summary-export.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -4348,6 +4349,7 @@ export function prepareTravelEventRunnerSummaryReport(session, options = {}) {
 }
 
 export function renderTravelEventRunnerSummaryMarkdown(session, options = {}) {
+  if (isPlainObject(session?.travelV2CompletionSummary) || isPlainObject(session?.travelV2EventCompletion?.summary)) return buildTravelV2CompletedSummaryMarkdown(session, options);
   const prepared = prepareTravelEventRunnerSummaryReport(session, options);
   if (!prepared.available || !prepared.report) return { ...prepared, markdown: "" };
   const r = prepared.report;
@@ -4378,6 +4380,7 @@ export function renderTravelEventRunnerSummaryMarkdown(session, options = {}) {
 }
 
 export function renderTravelEventRunnerSummaryHtml(session, options = {}) {
+  if (isPlainObject(session?.travelV2CompletionSummary) || isPlainObject(session?.travelV2EventCompletion?.summary)) return buildTravelV2CompletedSummaryHtml(session, options);
   const prepared = prepareTravelEventRunnerSummaryReport(session, options);
   if (!prepared.available || !prepared.report) return { ...prepared, html: "" };
   const r = prepared.report;
@@ -4393,7 +4396,7 @@ export function prepareTravelEventRunnerSummaryOutputState(session, options = {}
   const report = prepareTravelEventRunnerSummaryReport(session, options);
   const markdown = report.available ? renderTravelEventRunnerSummaryMarkdown(session, options).markdown : "";
   const html = report.available ? renderTravelEventRunnerSummaryHtml(session, options).html : "";
-  return { ...report, markdown, html, canCopyMarkdown: report.available, canCopyHtml: report.available, canPostChat: report.available, canCreateJournal: report.available };
+  return { ...report, markdown, html, canCopyMarkdown: report.available, canCopyHtml: report.available, canPostChat: false, canCreateJournal: false, lastResultMessage: options.summaryOutputStatusMessage ?? "" };
 }
 
 export async function postTravelEventRunnerSummaryToChat(session, options = {}) {

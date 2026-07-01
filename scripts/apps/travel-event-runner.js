@@ -18,14 +18,12 @@ import {
   advanceTravelEventRunnerRound,
   completeTravelEventRunnerSession,
   exportTravelEventRunnerSessionToJson,
-  createTravelEventRunnerSummaryJournalEntry,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
   importTravelEventRunnerSessionFromJson,
   preparePublishedTravelEventRunnerLaunchState,
   prepareTravelEventRunnerStartupDiagnostics,
   startTravelEventRunnerFromPublishedEvent,
-  postTravelEventRunnerSummaryToChat,
   saveImportedTravelEventRunnerSessionToLibrary,
   renderTravelEventRunnerSummaryHtml,
   renderTravelEventRunnerSummaryMarkdown,
@@ -523,7 +521,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       actor: targetActor,
       uiState: this.uiState,
       travelV2DevToolsEnabled: isTravelV2DevToolsEnabled(),
-      user: game?.user
+      user: game?.user,
+      summaryOutputStatusMessage: this.statusMessage
     });
     const startupDiagnostics = prepareTravelEventRunnerStartupDiagnostics({
       session: this.session,
@@ -892,7 +891,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       actor: this.#getSelectedShipActor(),
       uiState: this.uiState,
       travelV2DevToolsEnabled: isTravelV2DevToolsEnabled(),
-      user: game?.user
+      user: game?.user,
+      summaryOutputStatusMessage: this.statusMessage
     });
     const suggestedOutcomeKey = normalizeGuidedRoundOutcomeKey(state.roundSummaryCard?.roundOutcomeKey);
     const preferred = state.travelV2PreviewPanel?.rows?.find((row) => row.outcomeKey === suggestedOutcomeKey && !row.pressureApplyDisabled)
@@ -1929,11 +1929,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
 
   async #copyOrFallback(text, successMessage) {
+    if (!globalThis.navigator?.clipboard?.writeText) {
+      this.statusMessage = "Clipboard unavailable; player-safe export generated and shown in the textarea below for manual copy.";
+      ui.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
     try {
       await copyTextToClipboard(text);
       this.statusMessage = successMessage;
     } catch (_error) {
-      this.statusMessage = "Clipboard unavailable; summary output is shown in the textarea below.";
+      this.statusMessage = "Clipboard unavailable; player-safe export generated and shown in the textarea below for manual copy.";
     }
     ui.notifications?.info?.(this.statusMessage);
     return this.render(true);
@@ -1946,7 +1951,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
-    return this.#copyOrFallback(rendered.markdown, "Markdown summary copied to clipboard.");
+    return this.#copyOrFallback(rendered.markdown, "Markdown summary copied to clipboard; player-safe export generated.");
   }
 
   async #copySummaryHtml() {
@@ -1956,20 +1961,18 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ui.notifications?.warn?.(this.statusMessage);
       return this.render(true);
     }
-    return this.#copyOrFallback(rendered.html, "HTML summary copied to clipboard.");
+    return this.#copyOrFallback(rendered.html, "HTML summary copied to clipboard; player-safe export generated.");
   }
 
   async #postSummaryToChat() {
-    const posted = await postTravelEventRunnerSummaryToChat(this.session);
-    this.statusMessage = posted.created ? "Posted completed runner summary to chat." : (posted.reason ?? posted.errors?.[0] ?? "Summary was not posted to chat.");
-    if (posted.created) ui.notifications?.info?.(this.statusMessage); else ui.notifications?.warn?.(this.statusMessage);
+    this.statusMessage = "Post Summary to Chat is deferred to PR #329; no chat messages were created.";
+    ui.notifications?.warn?.(this.statusMessage);
     return this.render(true);
   }
 
   async #createSummaryJournal() {
-    const created = await createTravelEventRunnerSummaryJournalEntry(this.session);
-    this.statusMessage = created.created ? "Created JournalEntry for completed runner summary." : (created.reason ?? created.errors?.[0] ?? "Summary JournalEntry was not created.");
-    if (created.created) ui.notifications?.info?.(this.statusMessage); else ui.notifications?.warn?.(this.statusMessage);
+    this.statusMessage = "Create Journal Entry is deferred to PR #329; no journal entries were created.";
+    ui.notifications?.warn?.(this.statusMessage);
     return this.render(true);
   }
 
