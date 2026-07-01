@@ -1,3 +1,4 @@
+import { getShipTravelResources, previewShipTravelResourceChange, updateShipTravelResources } from "../documents/ships.js";
 export const TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION = 1;
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -99,7 +100,7 @@ function collectCandidates(session = {}, keys = []) {
 }
 
 function finalOutcomeFor(session = {}, outcomeKey = "") {
-  const finalOutcomes = isPlainObject(session.event?.finalOutcomes) ? session.event.finalOutcomes : {};
+  const finalOutcomes = isPlainObject(session?.event?.finalOutcomes) ? session.event.finalOutcomes : {};
   const aliases = {
     "critical-success": ["criticalSuccess", "critical-success", "critical_success"],
     "critical-failure": ["criticalFailure", "critical-failure", "critical_failure"]
@@ -214,8 +215,102 @@ function baseReviewState(session, options = {}) {
     rewards: reviewSection("rewards", "Rewards", outcomePackage.rewardCandidates, { publicSafe, deferred: true }),
     consequences: reviewSection("consequences", "Consequences", outcomePackage.consequenceCandidates, { publicSafe, gmOnly: !publicSafe, deferred: true })
   };
-  return deepFreeze({ version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, title: "Final Outcome Package Review", status: outcomePackage.status, canPreparePackage: outcomePackage.canPreparePackage, blockedReasons: cloneData(outcomePackage.blockedReasons), hasBlockedReasons: outcomePackage.blockedReasons.length > 0, isCompleted: outcomePackage.isCompleted, alreadyApplied: outcomePackage.alreadyApplied, completedAt: outcomePackage.completedAt, eventRoundCount: outcomePackage.eventRoundCount, finalizedRoundCount: outcomePackage.finalizedRoundCount, eventOutcomeKey: outcomePackage.eventOutcomeKey, eventOutcomeLabel: outcomePackage.eventOutcomeLabel, summaryText: outcomePackage.summaryText, nextStepText: outcomePackage.nextStepText, reviewOnlyLabel: "Review only", pendingLabel: "Pending", alreadyAppliedLabel: "Already applied", deferredLabel: "Deferred to later PR", gmOnlyLabel: "GM-only", publicSafeLabel: "Public-safe", statusLabel, applyStatusLabel: outcomePackage.alreadyApplied ? "Already applied" : "Deferred to later PR", sections, roundSummaries: sections.rounds.entries, pressureSummary: sections.pressure, hazardSummary: sections.hazards.entries, shipScarCandidates: sections.shipScars.entries, fortuneCandidates: sections.fortunes.entries, rewardCandidates: sections.rewards.entries, consequenceCandidates: sections.consequences.entries, managementDetails: includeManagementDetails ? { packageRecord: cloneData(outcomePackage.packageRecord), rawApplicationRecord: cloneData(session?.travelV2EventOutcomeApplication ?? null), marker: "GM-only management details" } : null });
+  return deepFreeze({ version: TRAVEL_V2_EVENT_OUTCOME_PACKAGE_VERSION, title: "Final Outcome Package Review", status: outcomePackage.status, canPreparePackage: outcomePackage.canPreparePackage, blockedReasons: cloneData(outcomePackage.blockedReasons), hasBlockedReasons: outcomePackage.blockedReasons.length > 0, isCompleted: outcomePackage.isCompleted, alreadyApplied: outcomePackage.alreadyApplied, completedAt: outcomePackage.completedAt, eventRoundCount: outcomePackage.eventRoundCount, finalizedRoundCount: outcomePackage.finalizedRoundCount, eventOutcomeKey: outcomePackage.eventOutcomeKey, eventOutcomeLabel: outcomePackage.eventOutcomeLabel, summaryText: outcomePackage.summaryText, nextStepText: outcomePackage.nextStepText, reviewOnlyLabel: "Review only", pendingLabel: "Pending", alreadyAppliedLabel: "Already applied", deferredLabel: "Deferred to later PR", gmOnlyLabel: "GM-only", publicSafeLabel: "Public-safe", statusLabel, applyStatusLabel: outcomePackage.alreadyApplied ? "Already applied" : "Deferred to later PR", sections, roundSummaries: sections.rounds.entries, pressureSummary: sections.pressure, hazardSummary: sections.hazards.entries, shipScarCandidates: sections.shipScars.entries, fortuneCandidates: sections.fortunes.entries, rewardCandidates: sections.rewards.entries, consequenceCandidates: sections.consequences.entries, applyState: includeManagementDetails ? prepareTravelV2FinalOutcomeApplyState(session, options) : playerSafeApplyState(), managementDetails: includeManagementDetails ? { packageRecord: cloneData(outcomePackage.packageRecord), rawApplicationRecord: cloneData(session?.travelV2EventOutcomeApplication ?? null), marker: "GM-only management details" } : null });
 }
+
+const APPLY_RESOURCE_KEYS = Object.freeze(["hull", "strain", "lifeveil", "morale", "supplies"]);
+const APPLY_RESOURCE_MODES = Object.freeze(["add", "set"]);
+const SHIP_APPLICATION_SESSION_KEY = "travelV2FinalOutcomeShipApplication";
+function nowIso(options = {}) { return options.now ?? new Date().toISOString(); }
+function resolveApplyActor(session = {}, options = {}) {
+  const explicit = options.actor ?? options.targetActor ?? null;
+  if (explicit) return explicit;
+  const id = options.actorId ?? options.targetActorId ?? session?.ship?.actorId ?? "";
+  const uuid = options.actorUuid ?? options.targetActorUuid ?? session?.ship?.actorUuid ?? "";
+  if (id) return globalThis.game?.actors?.get?.(String(id)) ?? null;
+  if (uuid && globalThis.fromUuidSync) { try { return globalThis.fromUuidSync(uuid); } catch (_error) { return null; } }
+  return null;
+}
+function stagedEffectsForApply(session = {}, options = {}) {
+  if (!isPlainObject(session)) return [];
+  const outcomePackage = prepareTravelV2EventOutcomePackage(session, options);
+  if (!outcomePackage.canPreparePackage) return [];
+  const eventOutcome = finalOutcomeFor(session, outcomePackage.eventOutcomeKey);
+  const summaryEffects = Array.isArray(session?.summary?.stagedProposedEffects) ? session.summary.stagedProposedEffects : [];
+  const eventEffects = Array.isArray(eventOutcome?.proposedEffects) ? eventOutcome.proposedEffects : [];
+  return summaryEffects.length ? cloneData(summaryEffects) : cloneData(eventEffects);
+}
+function normalizeApplyEffect(effect = {}, index = 0, actor = null) {
+  const label = typeof effect?.label === "string" && effect.label.trim() ? effect.label.trim() : `Final Outcome Effect ${index + 1}`;
+  const base = { index, label, type: effect?.type ?? "unsupported", resource: effect?.resource ?? "", mode: effect?.mode ?? "", value: effect?.value ?? null, currentValue: null, delta: null, previewValue: null, status: "unsupported", supported: false, reason: "Unsupported final outcome package part.", deferredLabel: "Review only", raw: cloneData(effect) };
+  if (!isPlainObject(effect)) return { ...base, reason: "Effect is not a data object." };
+  if (effect.type !== "resource") return base;
+  const value = Number(effect.value);
+  if (!APPLY_RESOURCE_KEYS.includes(effect.resource)) return { ...base, status: "unsupported", reason: `Unsupported resource ${effect.resource ?? "<missing>"}.` };
+  if (!APPLY_RESOURCE_MODES.includes(effect.mode)) return { ...base, status: "unsupported", reason: `Unsupported resource mode ${effect.mode ?? "<missing>"}.` };
+  if (!Number.isFinite(value)) return { ...base, status: "unsupported", reason: "Resource value must be numeric." };
+  if (!actor) return { ...base, value, status: "blocked", reason: "Target ship actor is required for preview." };
+  try {
+    const before = getShipTravelResources(actor);
+    const delta = effect.mode === "set" ? value - before[effect.resource] : value;
+    const helperPreview = previewShipTravelResourceChange(actor, { [effect.resource]: delta });
+    return { ...base, value, currentValue: helperPreview.before[effect.resource], delta, previewValue: helperPreview.after[effect.resource], status: "ready", supported: true, reason: "Supported ship resource update.", warnings: helperPreview.warnings ?? [] };
+  } catch (_error) {
+    return { ...base, value, status: "blocked", reason: "Target actor is not an Arcflight ship/PF2E vehicle actor." };
+  }
+}
+function deferredRowsFromPackage(pkg = {}) {
+  const map = [
+    ["shipScars", "Ship Scars", pkg.shipScarCandidates, "Deferred to later PR"],
+    ["fortunes", "Fortunes", pkg.fortuneCandidates, "Deferred to later PR"],
+    ["hazards", "Hazards", pkg.hazardSummary, "Review only"],
+    ["rewards", "Rewards", pkg.rewardCandidates, "Review only / Deferred to later PR"],
+    ["consequences", "Consequences", pkg.consequenceCandidates, "Review only / Deferred to later PR"]
+  ];
+  return map.flatMap(([key, label, values, statusLabel]) => (Array.isArray(values) ? values : []).map((entry, index) => ({ key, label, index, status: "deferred", statusLabel, supported: false, reason: statusLabel, entry: cloneData(entry) })));
+}
+function playerSafeApplyState(reason = "Only GMs can preview or apply final outcome ship updates.") { return deepFreeze({ isGM: false, available: false, canApply: false, disabled: true, disabledReason: reason, rows: [], supportedRows: [], unsupportedRows: [], deferredRows: [], records: [], changes: {} }); }
+function blockedGmApplyState(outcomePackage = {}, reason = "Travel v2 runner session must be completed before applying final outcome ship updates.") {
+  const disabledReason = outcomePackage.blockedReasons?.[0] ?? reason;
+  return deepFreeze({ isGM: true, available: false, canApply: false, disabled: true, disabledReason, rows: [], supportedRows: [], unsupportedRows: [], deferredRows: [], changes: {}, packageAlreadyApplied: outcomePackage.alreadyApplied === true, shipAlreadyApplied: false, alreadyApplied: false });
+}
+export function prepareTravelV2FinalOutcomeShipUpdatePreview(session, options = {}) {
+  if (!userIsGm(options)) return playerSafeApplyState();
+  const outcomePackage = prepareTravelV2EventOutcomePackage(session, options);
+  if (!outcomePackage.canPreparePackage) return blockedGmApplyState(outcomePackage);
+  const actor = resolveApplyActor(session, options);
+  const rows = stagedEffectsForApply(session, options).map((effect, index) => normalizeApplyEffect(effect, index, actor));
+  const supportedRows = rows.filter((row) => row.supported);
+  const unsupportedRows = rows.filter((row) => !row.supported);
+  const deferredRows = deferredRowsFromPackage(outcomePackage);
+  const reasons = [];
+  if (!outcomePackage.isCompleted) reasons.push("Travel v2 runner session must be completed before applying final outcome ship updates.");
+  const shipApplicationRecord = isPlainObject(session?.[SHIP_APPLICATION_SESSION_KEY]) ? session[SHIP_APPLICATION_SESSION_KEY] : null;
+  const shipAlreadyApplied = shipApplicationRecord?.applied === true;
+  if (shipAlreadyApplied) reasons.push("This final outcome ship update has already been applied to a ship.");
+  if (!actor) reasons.push("Select or resolve a target ship actor before applying final outcome updates.");
+  else { try { getShipTravelResources(actor); } catch (_e) { reasons.push("Target actor is not an Arcflight ship/PF2E vehicle actor."); } }
+  if (!supportedRows.length) reasons.push("No supported ship resource updates are present in the final outcome package.");
+  const changes = supportedRows.reduce((acc, row) => { acc[row.resource] = (Number(acc[row.resource]) || 0) + row.delta; return acc; }, {});
+  return deepFreeze({ isGM: true, available: outcomePackage.isCompleted, canApply: reasons.length === 0, disabled: reasons.length > 0, disabledReason: reasons[0] ?? "Ready to apply supported ship resource updates.", targetActorId: actor?.id ?? "", targetActorName: actor?.name ?? "", packageVersion: outcomePackage.version, reviewVersion: outcomePackage.version, alreadyApplied: shipAlreadyApplied, shipAlreadyApplied, packageAlreadyApplied: outcomePackage.alreadyApplied, applicationRecord: cloneData(shipApplicationRecord), rows, supportedRows, unsupportedRows, deferredRows, changes });
+}
+export function prepareTravelV2FinalOutcomeApplyState(session, options = {}) { return prepareTravelV2FinalOutcomeShipUpdatePreview(session, options); }
+export function buildTravelV2FinalOutcomeApplicationRecord(session, preview, options = {}) {
+  return { applied: true, appliedAt: nowIso(options), appliedBy: options.user?.id ?? options.user?.name ?? globalThis.game?.user?.id ?? globalThis.game?.user?.name ?? "", targetActorId: preview.targetActorId, targetActorName: preview.targetActorName, packageVersion: preview.packageVersion, reviewVersion: preview.reviewVersion, rowsApplied: cloneData(preview.supportedRows), before: Object.fromEntries(preview.supportedRows.map((row) => [row.resource, row.currentValue])), after: Object.fromEntries(preview.supportedRows.map((row) => [row.resource, row.previewValue])), unsupportedRows: cloneData(preview.unsupportedRows), deferredRows: cloneData(preview.deferredRows) };
+}
+export async function applyTravelV2FinalOutcomeToShip(session, options = {}) {
+  const preview = prepareTravelV2FinalOutcomeShipUpdatePreview(session, options);
+  if (!preview.isGM) return { ok: false, applied: false, blocked: true, blockedReasons: [preview.disabledReason], session: cloneData(session) };
+  if (!preview.canApply) return { ok: false, applied: false, blocked: true, blockedReasons: [preview.disabledReason], preview, session: cloneData(session) };
+  const actor = resolveApplyActor(session, options);
+  if (!actor?.update) return { ok: false, applied: false, blocked: true, blockedReasons: ["Target ship actor update API is unavailable."], preview, session: cloneData(session) };
+  if (!options.dryRun) await updateShipTravelResources(actor, preview.changes, options.resourceOptions ?? {});
+  const record = buildTravelV2FinalOutcomeApplicationRecord(session, preview, options);
+  const nextSession = cloneData(session);
+  if (!options.dryRun) { nextSession[SHIP_APPLICATION_SESSION_KEY] = record; nextSession.updatedAt = nowIso(options); }
+  return { ok: true, applied: !options.dryRun, dryRun: options.dryRun === true, blocked: false, blockedReasons: [], preview, record, session: nextSession };
+}
+
 export function prepareTravelV2FinalOutcomePackagePublicState(session, options = {}) { return baseReviewState(session, { ...options, publicSafe: true, includeManagementDetails: false }); }
 export function prepareTravelV2FinalOutcomePackageGmState(session, options = {}) { return userIsGm(options) ? baseReviewState(session, { ...options, publicSafe: false, includeManagementDetails: true }) : prepareTravelV2FinalOutcomePackagePublicState(session, options); }
 export function prepareTravelV2FinalOutcomePackageReviewState(session, options = {}) { return userIsGm(options) ? prepareTravelV2FinalOutcomePackageGmState(session, options) : prepareTravelV2FinalOutcomePackagePublicState(session, options); }
