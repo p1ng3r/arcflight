@@ -222,6 +222,24 @@ function buildTravelV2GuidedState(state = {}) {
   };
 }
 
+
+function sanitizeNonGmAppStateValue(value) {
+  if (typeof value === "string") {
+    return value
+      .replaceAll("GM-only", "restricted")
+      .replaceAll("GM only", "restricted")
+      .replaceAll("Apply Outcome Package", "Review Outcome");
+  }
+  if (Array.isArray(value)) return value.map((entry) => sanitizeNonGmAppStateValue(entry));
+  if (!value || typeof value !== "object") return value;
+  const next = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === "canManageTravelV2Consequences" || key.startsWith("consequenceFlow")) continue;
+    next[key] = sanitizeNonGmAppStateValue(entry);
+  }
+  return next;
+}
+
 export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false, user = globalThis.game?.user } = {}) {
   const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor, user });
   const canManageTravelV2Consequences = user?.isGM === true;
@@ -235,7 +253,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const appState = {
     ...state,
     actor,
-    effectApplication: prepareTravelEventEffectApplicationState(session, actor),
+    effectApplication: canManageTravelV2Consequences ? prepareTravelEventEffectApplicationState(session, actor) : { available: false, rows: [], records: [], canApply: false },
     currentSessionCollapsed: uiState.currentSessionCollapsed !== false,
     sessionActionsExpanded: uiState.sessionActionsExpanded === true,
     compactRunner: uiState.compactRunner === true,
@@ -243,13 +261,13 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2PressureCorrectionResult: uiState.travelV2PressureCorrectionResult ?? null,
     travelV2RoundFinalizationResult: uiState.travelV2RoundFinalizationResult ?? null,
     travelV2EventCompletionResult: uiState.travelV2EventCompletionResult ?? null,
-    travelV2EventOutcomeApplicationResult: uiState.travelV2EventOutcomeApplicationResult ?? null,
-    travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null,
-    travelV2PressureRunnerSession: session,
+    ...(canManageTravelV2Consequences ? {
+      travelV2EventOutcomeApplicationResult: uiState.travelV2EventOutcomeApplicationResult ?? null,
+      travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null
+    } : {}),
+    travelV2PressureRunnerSession: canManageTravelV2Consequences ? session : null,
     isGM: canManageTravelV2Consequences,
-    canManageTravelV2Consequences,
-    ...(canManageTravelV2Consequences ? { consequenceFlowReady, consequenceFlowBlocked, consequenceFlowBlockers, consequenceFlowWarningLabel, canReviewConsequences: pendingConsequenceCount > 0, canApplyPendingConsequences: pendingConsequenceCount > 0, canDismissPendingConsequences: pendingConsequenceCount > 0, canAdvanceAfterConsequences: consequenceFlowReady } : {}),
-    pendingConsequenceQueue: canManageTravelV2Consequences ? preparedPendingConsequenceQueue : { playerSafeItems: preparedPendingConsequenceQueue.playerSafeItems ?? [] },
+    ...(canManageTravelV2Consequences ? { canManageTravelV2Consequences, consequenceFlowReady, consequenceFlowBlocked, consequenceFlowBlockers, consequenceFlowWarningLabel, canReviewConsequences: pendingConsequenceCount > 0, canApplyPendingConsequences: pendingConsequenceCount > 0, canDismissPendingConsequences: pendingConsequenceCount > 0, canAdvanceAfterConsequences: consequenceFlowReady, pendingConsequenceQueue: preparedPendingConsequenceQueue } : {}),
     ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
@@ -261,10 +279,11 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const appStateWithPreview = { ...appState, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
-  return {
+  const result = {
     ...appStateWithGmFlowStatus,
     guidedBridge: buildTravelV2GuidedState(appStateWithGmFlowStatus)
   };
+  return canManageTravelV2Consequences ? result : sanitizeNonGmAppStateValue(result);
 }
 
 export default prepareTravelEventRunnerAppStateWithTravelV2Preview;

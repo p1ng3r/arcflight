@@ -1,4 +1,5 @@
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../../apps/travel-event-runner-v2-preview-consumer.js";
+import { prepareTravelEventRunnerState } from "../../helpers/travel-event-runner.js";
 
 export const FORBIDDEN_PLAYER_STATE_TERMS = Object.freeze([
   "Pending Consequences",
@@ -23,8 +24,42 @@ export const FORBIDDEN_PLAYER_STATE_TERMS = Object.freeze([
   "applyStatusSummary",
   "clearSelectionSummary",
   "singleSuggestionSelectionSummary",
-  "consequenceFollowupReview"
+  "consequenceFollowupReview",
+  "GM-only",
+  "GM only",
+  "management details",
+  "rawApplicationRecord",
+  "packageRecord",
+  "travelV2EventOutcomeApplication",
+  "travelV2FinalOutcomeShipApplication",
+  "Final Outcome Package Review",
+  "Apply Final Outcome to Ship",
+  "Apply Outcome Package",
+  "Apply Suggested Pressure",
+  "Finalize Round",
+  "Apply Pending Consequences",
+  "Dismiss Pending Consequences",
+  "Ship Scar candidate",
+  "Hazard Card Pending",
+  "deferredRows",
+  "unsupportedRows",
+  "supportedRows",
+  "before",
+  "after",
+  "packageAlreadyApplied",
+  "shipAlreadyApplied",
+  "canManageTravelV2Consequences",
+  "consequenceFlow",
+  "pendingConsequenceQueue",
+  "completionChecklist",
+  "actor internals",
+  "targetActorId",
+  "targetActorUuid",
+  "resourceOptions",
+  "debugReport"
 ]);
+
+export const FORBIDDEN_PLAYER_DOM_TERMS = Object.freeze(FORBIDDEN_PLAYER_STATE_TERMS.filter((term) => !["before", "after"].includes(term)));
 
 export const FORBIDDEN_PLAYER_HUD_TERMS = Object.freeze([
   "Pending Consequence",
@@ -40,7 +75,11 @@ export const FORBIDDEN_PLAYER_HUD_TERMS = Object.freeze([
   "Apply Selected Consequence",
   "Follow-up Notes",
   "GM summary",
-  "Apply Preview"
+  "Apply Preview",
+  "consequenceFlow",
+  "pendingConsequenceQueue",
+  "completionChecklist",
+  "debugReport"
 ]);
 
 export const ADVANCED_DECK_CONTROL_TERMS = Object.freeze([
@@ -68,12 +107,14 @@ export const FORBIDDEN_WORLD_MUTATION_STRINGS = Object.freeze([
 ]);
 
 export const TRAVEL_V2_FORBIDDEN_PLAYER_TERMS = FORBIDDEN_PLAYER_STATE_TERMS;
+export const TRAVEL_V2_FORBIDDEN_PLAYER_DOM_TERMS = FORBIDDEN_PLAYER_DOM_TERMS;
 export const TRAVEL_V2_PLAYER_HUD_FORBIDDEN_TERMS = FORBIDDEN_PLAYER_HUD_TERMS;
 export const TRAVEL_V2_ADVANCED_DECK_CONTROL_TERMS = ADVANCED_DECK_CONTROL_TERMS;
 
 
 const CHAT_HISTORY_IGNORE_SELECTORS = Object.freeze([
   "#chat",
+  "#chat-log",
   "#sidebar",
   ".chat-sidebar",
   ".chat-log",
@@ -156,6 +197,46 @@ function getChatHistoryText(root) {
   return ignoredNodes.map((node) => `${readRootText(node)} ${readRootHtml(node)}`).join(" ");
 }
 
+
+function getNodeSelector(node) {
+  if (!node) return "document.body";
+  if (node.id) return `#${node.id}`;
+  if (typeof node.className === "string" && node.className.trim()) {
+    return `.${node.className.trim().split(/\s+/).slice(0, 3).join(".")}`;
+  }
+  return String(node.tagName || node.nodeName || "node").toLowerCase();
+}
+
+function snippetAround(text, term) {
+  const haystack = String(text ?? "");
+  const index = haystack.indexOf(term);
+  if (index < 0) return haystack.slice(0, 160);
+  return haystack.slice(Math.max(0, index - 60), Math.min(haystack.length, index + term.length + 60)).replace(/\s+/g, " ").trim();
+}
+
+function scanForbiddenTermEvidenceInRoot(root = globalThis.document?.body, terms = FORBIDDEN_PLAYER_STATE_TERMS, options = {}) {
+  const nodes = [];
+  if (root) nodes.push(root);
+  if (root && typeof root.querySelectorAll === "function") {
+    try {
+      nodes.push(...Array.from(root.querySelectorAll("*")));
+    } catch (_error) {
+      // Fake DOMs used by smoke tests may not implement wildcard selection.
+    }
+  }
+
+  const evidence = [];
+  const ignored = options.ignoreChatHistory !== false ? new Set(queryIgnoredChatNodes(root)) : new Set();
+  for (const node of nodes) {
+    if (ignored.has(node)) continue;
+    const text = `${readRootText(node)} ${readRootHtml(node)}`;
+    for (const term of scanForbiddenTermsInText(text, terms)) {
+      evidence.push({ term, selector: getNodeSelector(node), snippet: snippetAround(text, term) });
+    }
+  }
+  return evidence.filter((entry, index, list) => list.findIndex((candidate) => candidate.term === entry.term && candidate.selector === entry.selector) === index);
+}
+
 function hasOwn(object, key) {
   return Object.prototype.hasOwnProperty.call(object ?? {}, key);
 }
@@ -170,7 +251,10 @@ function safeSerialize(value) {
 
 export function scanForbiddenTermsInText(text = "", terms = FORBIDDEN_PLAYER_STATE_TERMS) {
   const haystack = String(text ?? "");
-  return terms.filter((term) => haystack.includes(term));
+  return terms.filter((term) => {
+    if (term === "before" || term === "after") return haystack.includes(`"${term}"`);
+    return haystack.includes(term);
+  });
 }
 
 export function scanForbiddenTermsInRoot(root = globalThis.document?.body, terms = FORBIDDEN_PLAYER_STATE_TERMS, options = {}) {
@@ -193,13 +277,22 @@ export function buildArcflightFoundryCheckResult(suite, checks) {
     ...checks.map((check) => `${check.severity.toUpperCase()} — ${check.label}: ${check.message}`)
   ].join("\n");
 
+  const errors = checks.filter((check) => check.severity === "fail");
+  const warnings = checks.filter((check) => check.severity === "warn");
+  const userIsGM = globalThis.game?.user?.isGM === true;
+  const scannedSelectors = [...new Set(checks.flatMap((check) => Array.isArray(check.details?.scannedSelectors) ? check.details.scannedSelectors : []))];
   return {
     suite,
     ok: failed === 0,
     passed,
     failed,
     warned,
-    checks,
+    warnings,
+    errors,
+    checks: checks.map((check) => ({ ...check, status: check.severity, detail: check.message, matches: check.details?.matches ?? check.details?.exposed ?? [] })),
+    userIsGM,
+    scannedAsPlayer: userIsGM !== true,
+    scannedSelectors,
     markdown
   };
 }
@@ -220,6 +313,9 @@ function createCheckSession() {
   return {
     key: "foundry-check-runner-session",
     status: "completed",
+    completedAt: "2026-07-01T00:00:00.000Z",
+    travelV2EventOutcomeApplication: { applied: true, before: { hull: 1 }, after: { hull: 2 }, rawApplicationRecord: true },
+    travelV2FinalOutcomeShipApplication: { applied: true, targetActorId: "ship-secret", targetActorUuid: "Actor.ship-secret", before: { supplies: 1 }, after: { supplies: 2 }, supportedRows: [{ key: "supplies" }], unsupportedRows: [], deferredRows: [] },
     completed: true,
     pressure: {
       strain: { value: 1 },
@@ -275,6 +371,7 @@ function runStateChecks(checks) {
     session,
     user: { id: "gm-check", isGM: true }
   });
+  const nonGmRunnerState = prepareTravelEventRunnerState(session, { user: { id: "player-check", isGM: false } });
   const nonGmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
     session,
     user: { id: "player-check", isGM: false }
@@ -282,9 +379,26 @@ function runStateChecks(checks) {
 
   addStateExposureCheck(
     checks,
-    "travel-v2-non-gm-forbidden-state",
-    "Non-GM state exposes forbidden terms",
+    "travel-v2-non-gm-runner-state-forbidden-state",
+    "Non-GM runner state exposes forbidden terms",
+    nonGmRunnerState
+  );
+
+  addStateExposureCheck(
+    checks,
+    "travel-v2-non-gm-app-state-forbidden-state",
+    "Non-GM app/preview state exposes forbidden terms",
     nonGmState
+  );
+
+  const checklistSafe = nonGmRunnerState.completionChecklist?.visible !== true;
+  addCheck(
+    checks,
+    "travel-v2-non-gm-completion-checklist-hidden",
+    "Non-GM completion checklist hidden/player-safe",
+    checklistSafe ? "pass" : "fail",
+    checklistSafe ? "Non-GM completion checklist is hidden." : "Non-GM completion checklist is visible.",
+    { visible: nonGmRunnerState.completionChecklist?.visible === true }
   );
 
   const gmManagementOk = gmState.isGM === true && gmState.canManageTravelV2Consequences === true;
@@ -358,36 +472,38 @@ function runDomChecks(checks, { root = null, currentUserIsGm = false, includePla
     return;
   }
 
-  const exposed = scanForbiddenTermsInRoot(scanRoot, FORBIDDEN_PLAYER_STATE_TERMS);
+  const exposed = scanForbiddenTermsInRoot(scanRoot, FORBIDDEN_PLAYER_DOM_TERMS);
+  const domEvidence = scanForbiddenTermEvidenceInRoot(scanRoot, FORBIDDEN_PLAYER_DOM_TERMS).filter((entry) => exposed.includes(entry.term));
   addCheck(
     checks,
     "travel-v2-player-dom-forbidden-terms",
     "Player DOM forbidden text scan",
-    currentUserIsGm || exposed.length === 0 ? "pass" : "fail",
+    currentUserIsGm ? "skip" : (exposed.length === 0 ? "pass" : "fail"),
     currentUserIsGm
-      ? "GM DOM was scanned; GM-only terms visible to the GM do not prove player exposure."
+      ? "GM DOM was scanned; GM-only terms visible to the GM do not prove player exposure. Run runPlayerSafetyCheck from Player2 to verify player DOM."
       : (exposed.length === 0
-        ? "Current DOM does not contain known player-forbidden terms."
-        : `${exposed.join(", ")} found.`),
-    { exposed, currentUserIsGm }
+        ? "Current player DOM does not contain known player-forbidden Travel v2 workflow/internal terms."
+        : `${exposed.join(", ")} found in current player DOM.`),
+    { exposed, matches: domEvidence, currentUserIsGm, scannedSelectors: [getNodeSelector(scanRoot)] }
   );
 
   const hudExposed = scanForbiddenTermsInRoot(scanRoot, FORBIDDEN_PLAYER_HUD_TERMS);
+  const hudEvidence = scanForbiddenTermEvidenceInRoot(scanRoot, FORBIDDEN_PLAYER_HUD_TERMS).filter((entry) => hudExposed.includes(entry.term));
   addCheck(
     checks,
     "travel-v2-player-hud-safety",
     "Player HUD safety",
-    currentUserIsGm || hudExposed.length === 0 ? "pass" : "fail",
+    currentUserIsGm ? "skip" : (hudExposed.length === 0 ? "pass" : "fail"),
     currentUserIsGm
-      ? "GM DOM was scanned; GM queue/control terms visible to the GM do not prove player HUD exposure."
+      ? "GM DOM was scanned; GM queue/control terms visible to the GM do not prove player HUD exposure. Run as Player2/non-GM for proof."
       : (hudExposed.length === 0
         ? "Player-facing DOM does not show known GM queue/control terms."
         : `${hudExposed.join(", ")} found.`),
-    { exposed: hudExposed, currentUserIsGm }
+    { exposed: hudExposed, matches: hudEvidence, currentUserIsGm, scannedSelectors: [getNodeSelector(scanRoot)] }
   );
 
 
-  const chatHistoryExposed = scanForbiddenTermsInChatHistory(scanRoot, FORBIDDEN_PLAYER_STATE_TERMS);
+  const chatHistoryExposed = scanForbiddenTermsInChatHistory(scanRoot, FORBIDDEN_PLAYER_DOM_TERMS);
   if (includeChatHistory) {
     addCheck(
       checks,
@@ -503,7 +619,7 @@ function runPlayerStateChecks(checks, options = {}) {
   if (hasOwn(options, "session")) {
     const preparedState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: options.session,
-      user: globalThis.game?.user
+      user: options.user ?? { id: globalThis.game?.user?.id ?? "player-check", isGM: false }
     });
     addStateExposureCheck(
       checks,
@@ -556,7 +672,7 @@ export function runTravelV2FoundryChecks(options = {}) {
   return buildArcflightFoundryCheckResult("travel-v2", checks);
 }
 
-export function runTravelV2PlayerSafetyCheck(options = {}) {
+export function runPlayerTravelV2DomSafetyCheck(options = {}) {
   const checks = [];
   runDomChecks(checks, {
     root: options.root,
@@ -567,6 +683,8 @@ export function runTravelV2PlayerSafetyCheck(options = {}) {
   runPlayerStateChecks(checks, options);
   return buildArcflightFoundryCheckResult("travel-v2", checks);
 }
+
+export const runTravelV2PlayerSafetyCheck = runPlayerTravelV2DomSafetyCheck;
 
 export const __test = {
   addCheck,
