@@ -2864,8 +2864,14 @@ function hasReviewEntries(section = {}) {
   return section?.hasEntries === true || (Array.isArray(section?.entries) && section.entries.length > 0);
 }
 
+function completionChecklistUserIsGm(options = {}) {
+  if (typeof options.user?.isGM === "boolean") return options.user.isGM === true;
+  if (typeof options.isGM === "boolean") return options.isGM === true;
+  return globalThis.game?.user?.isGM === true;
+}
+
 export function prepareTravelV2CompletionChecklistState(session = null, options = {}) {
-  const isGM = options.user?.isGM === true;
+  const isGM = completionChecklistUserIsGm(options);
   const hasSession = isPlainObject(session);
   if (!isGM) return { isGM: false, hasSession, visible: false, rows: [], safetyNote: "" };
 

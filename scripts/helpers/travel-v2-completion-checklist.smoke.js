@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { prepareTravelEventRunnerState, prepareTravelV2CompletionChecklistState } from "./travel-event-runner.js";
+import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 
 function session(extra = {}) {
   return {
@@ -75,9 +76,23 @@ export default async function runTravelV2CompletionChecklistSmokeChecks() {
   const shipApplied = prepareTravelV2CompletionChecklistState(completed({ travelV2FinalOutcomeShipApplication: { applied: true } }), { user: { isGM: true } });
   assert.equal(shipApplied.rows.find((row) => row.key === "final-outcome-ship-apply")?.done, true, "ship application is done from ship application record");
 
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { isGM: true } };
+  try {
+    const explicitNonGmChecklist = prepareTravelV2CompletionChecklistState(completed(), { user: { isGM: false } });
+    assert.equal(explicitNonGmChecklist.visible, false, "explicit non-GM user overrides GM global fallback");
+    const fallbackGmChecklist = prepareTravelV2CompletionChecklistState(completed());
+    assert.equal(fallbackGmChecklist.visible, true, "missing user falls back to global GM user");
+  } finally {
+    globalThis.game = previousGame;
+  }
+
   const nonGmState = prepareTravelEventRunnerState(completed({ travelV2EventOutcomeApplication: { applied: true, before: { hull: 1 }, marker: "GM-only management details" }, travelV2FinalOutcomeShipApplication: { applied: true, before: { strain: 2 }, after: { strain: 1 } } }), { user: { isGM: false }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
   const nonGmChecklistBlob = JSON.stringify(nonGmState.completionChecklist);
   for (const secret of ["GM-only management details", "before", "after", "travelV2EventOutcomeApplication", "travelV2FinalOutcomeShipApplication"]) assert.equal(nonGmChecklistBlob.includes(secret), false, `non-GM checklist excludes ${secret}`);
+
+  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: completed(), user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+  assert.equal(appState.completionChecklist.visible, true, "real app preview consumer path passes GM user into runner state");
 
   const template = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
   for (const token of ["arcflight-travel-runner-mvp__completion-checklist", "data-arcflight-runner-copy-markdown", "data-arcflight-runner-copy-html", "data-arcflight-runner-post-chat", "data-arcflight-runner-create-journal", "data-arcflight-travel-v2-final-outcome-apply", "arcflight-travel-runner-mvp__final-outcome-package-review", "arcflight-travel-runner-mvp__final-outcome-apply"]) assert.ok(template.includes(token), `template contains ${token}`);
