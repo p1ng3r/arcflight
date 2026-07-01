@@ -1,4 +1,5 @@
-import { prepareTravelV2EventOutcomePackage } from "./travel-v2-event-outcome-package.js";
+import { prepareTravelV2EventOutcomePackage, prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomePackagePublicState, prepareTravelV2FinalOutcomePackageGmState } from "./travel-v2-event-outcome-package.js";
+import { prepareTravelEventRunnerState } from "./travel-event-runner.js";
 function assertSmoke(c,m){if(!c)throw new Error(`Travel v2 event outcome package smoke check failed: ${m}`)}
 function assertEqual(a,e,m){if(a!==e)throw new Error(`Travel v2 event outcome package smoke check failed: ${m}. Expected ${e}, got ${a}.`)}
 function snap(v){return JSON.stringify(v)}
@@ -38,6 +39,34 @@ export function runTravelV2EventOutcomePackageSmokeChecks(){
   assertEqual(snap(session),before,"helper does not mutate input");
   assertEqual(prepareTravelV2EventOutcomePackage(completed(["success","failure"])).eventOutcomeKey,"mixed","mixed summarizes conservatively");
   assertEqual(prepareTravelV2EventOutcomePackage(completed(["failure","failure","success"])).eventOutcomeKey,"failure","failure majority summarizes");
-  return {ok:true, checked:["blocks","prepares","summarizes","clones","final-outcome-candidates","live-session-shape","inert"]};
+  const gmMarker = "GM_ONLY_MARKER_STRING";
+  const reviewSession = completed(["success"]);
+  reviewSession.rewardCandidates = [{ id: "reward", name: "Public Reward", gmNotes: gmMarker, internalSeverity: gmMarker, mutationPreview: { marker: gmMarker } }];
+  const reviewBefore = snap(reviewSession);
+  const review = prepareTravelV2FinalOutcomePackageReviewState(reviewSession, { user: { isGM: true } });
+  assertSmoke(review.canPreparePackage, "completed session prepares final outcome package review state");
+  assertEqual(review.title, "Final Outcome Package Review", "review state has panel title");
+  assertEqual(review.sections.rewards.entries[0].gmNotes, gmMarker, "GM review state includes GM-only details for GMs");
+  const blockedReview = prepareTravelV2FinalOutcomePackageReviewState({ status: "active", event: { rounds: [] } }, { user: { isGM: true } });
+  assertSmoke(!blockedReview.canPreparePackage && blockedReview.hasBlockedReasons, "non-completed review state is blocked");
+  const reopenedReview = prepareTravelV2FinalOutcomePackageReviewState(liveCompleted(), { user: { isGM: true } });
+  assertSmoke(reopenedReview.canPreparePackage && reopenedReview.sections.rounds.hasEntries, "reopened completed-session shape renders review state");
+  const publicReview = prepareTravelV2FinalOutcomePackagePublicState(reviewSession, { user: { isGM: false } });
+  assertSmoke(!snap(publicReview).includes(gmMarker), "public review state excludes GM-only marker strings");
+  assertSmoke(!snap(prepareTravelV2FinalOutcomePackageGmState(reviewSession, { user: { isGM: false } })).includes(gmMarker), "GM state falls back to public state when user is not GM");
+  assertSmoke(snap(prepareTravelV2FinalOutcomePackageGmState(reviewSession, { user: { isGM: true } })).includes(gmMarker), "GM state includes management details only when user is GM");
+  const previousGame = globalThis.game;
+  try {
+    globalThis.game = { user: { isGM: true } };
+    assertSmoke(!snap(prepareTravelV2FinalOutcomePackageGmState(reviewSession, { user: { isGM: false } })).includes(gmMarker), "explicit non-GM user blocks GM state even when global game user is GM");
+    assertSmoke(!snap(prepareTravelV2FinalOutcomePackageReviewState(reviewSession, { user: { isGM: false } })).includes(gmMarker), "explicit non-GM user blocks review GM state even when global game user is GM");
+  } finally {
+    if (previousGame === undefined) delete globalThis.game;
+    else globalThis.game = previousGame;
+  }
+  assertEqual(snap(reviewSession), reviewBefore, "review helper does not mutate input");
+  const runnerState = prepareTravelEventRunnerState(reviewSession, { user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+  assertSmoke(runnerState.finalOutcomePackageReview?.title === "Final Outcome Package Review", "runner app state includes final outcome package review state");
+  return {ok:true, checked:["blocks","prepares","summarizes","clones","final-outcome-candidates","live-session-shape","inert","review-state","public-safe-review","gm-gated-review","runner-state"]};
 }
 export default runTravelV2EventOutcomePackageSmokeChecks;
