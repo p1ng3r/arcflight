@@ -153,3 +153,53 @@ export async function copyTravelV2CompletedSummaryHtml(session, options = {}) {
   if (!built.available || !built.html) return { ...built, copied: false, fallbackText: "" };
   return { ...built, ...(await copyText(built.html, options.clipboard)) };
 }
+
+function safeSlugPart(value, fallback = "Unrecorded") {
+  return text(value, fallback).replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function completedSummaryTitle(state) {
+  return `Travel v2 Summary - ${safeSlugPart(state?.eventTitle, "Travel Event")} - ${safeSlugPart(state?.shipName, "Ship")}`;
+}
+
+export function prepareTravelV2CompletedSummaryChatData(session, options = {}) {
+  const rendered = buildTravelV2CompletedSummaryHtml(session, { ...options, includeGmSummary: false });
+  if (!rendered.available || !rendered.html) return { ...rendered, chatData: null };
+  const title = options.title ? text(options.title, completedSummaryTitle(rendered)) : completedSummaryTitle(rendered);
+  const content = `<section class="arcflight-travel-v2-summary-chat"><h2>${escapeHtml(title)}</h2>${rendered.html}</section>`;
+  return { ...rendered, title, playerSafe: true, includeGmSummary: false, chatData: { content } };
+}
+
+export async function postTravelV2CompletedSummaryToChat(session, options = {}) {
+  const prepared = prepareTravelV2CompletedSummaryChatData(session, options);
+  if (!prepared.available || !prepared.chatData) return { ...prepared, created: false, message: null };
+  if (options.dryRun === true) return { ...prepared, created: false, messageData: cloneData(prepared.chatData), message: null };
+  if (typeof globalThis.ChatMessage?.create !== "function") return { ...prepared, ok: false, errors: ["ChatMessage.create is not available."], created: false, message: null };
+  const message = await globalThis.ChatMessage.create(cloneData(prepared.chatData));
+  return { ...prepared, created: true, message };
+}
+
+export function prepareTravelV2CompletedSummaryJournalData(session, options = {}) {
+  const rendered = buildTravelV2CompletedSummaryHtml(session, { ...options, includeGmSummary: false });
+  if (!rendered.available || !rendered.html) return { ...rendered, journalData: null };
+  const name = options.name ? text(options.name, completedSummaryTitle(rendered)) : completedSummaryTitle(rendered);
+  const pageName = options.pageName ? text(options.pageName, "Summary") : "Summary";
+  const format = globalThis.CONST?.JOURNAL_ENTRY_PAGE_FORMATS?.HTML ?? 1;
+  const content = `<section class="arcflight-travel-v2-summary-journal"><h2>${escapeHtml(name)}</h2>${rendered.html}</section>`;
+  return {
+    ...rendered,
+    name,
+    playerSafe: true,
+    includeGmSummary: false,
+    journalData: { name, pages: [{ name: pageName, type: "text", text: { format, content } }] }
+  };
+}
+
+export async function createTravelV2CompletedSummaryJournalEntry(session, options = {}) {
+  const prepared = prepareTravelV2CompletedSummaryJournalData(session, options);
+  if (!prepared.available || !prepared.journalData) return { ...prepared, created: false, journalEntry: null };
+  if (options.dryRun === true) return { ...prepared, created: false, journalData: cloneData(prepared.journalData), journalEntry: null };
+  if (typeof globalThis.JournalEntry?.create !== "function") return { ...prepared, ok: false, errors: ["JournalEntry.create is not available."], created: false, journalEntry: null };
+  const journalEntry = await globalThis.JournalEntry.create(cloneData(prepared.journalData));
+  return { ...prepared, created: true, journalEntry };
+}
