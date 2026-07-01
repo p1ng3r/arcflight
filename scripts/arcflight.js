@@ -1359,8 +1359,26 @@ function buildArcflightApi() {
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
     devTools: createArcflightDevTools(),
-    // Compatibility smoke anchor: dev: { runFoundryChecks, runPlayerSafetyCheck, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelGmUiFlow, inspectTravelAdvanceRoundFlow, inspectTravelEventCompletionFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced, forceTravelEventCompleted }
-    dev: { runFoundryChecks, runPlayerSafetyCheck, validateTravelV2CardSchemaPack: validateTravelV2CardSchemaImportPayload, prepareTravelV2CardSchemaImportPreview, forceTravelStationResult, inspectTravelPlayerFlow, validateTravelPlayerFlow, inspectTravelRoundResolution, inspectTravelConsequenceFlow, inspectTravelConsequenceApplicationFlow, inspectTravelGmUiFlow, inspectTravelAdvanceRoundFlow, inspectTravelEventCompletionFlow, forceTravelRoundResolved, forceTravelRoundFinalized, forceTravelConsequenceApplied, forceTravelRoundAdvanced, forceTravelEventCompleted },
+    dev: {
+      runFoundryChecks,
+      runPlayerSafetyCheck,
+      validateTravelV2CardSchemaPack: validateTravelV2CardSchemaImportPayload,
+      prepareTravelV2CardSchemaImportPreview,
+      forceTravelStationResult,
+      inspectTravelPlayerFlow,
+      validateTravelPlayerFlow,
+      inspectTravelRoundResolution,
+      inspectTravelConsequenceFlow,
+      inspectTravelConsequenceApplicationFlow,
+      inspectTravelGmUiFlow,
+      inspectTravelAdvanceRoundFlow,
+      inspectTravelEventCompletionFlow,
+      forceTravelRoundResolved,
+      forceTravelRoundFinalized,
+      forceTravelConsequenceApplied,
+      forceTravelRoundAdvanced,
+      forceTravelEventCompleted
+    },
     get ArcflightItemSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightItemSheet ?? null; },
     get ArcflightShipSheet() { return globalThis.CONFIG?.arcflightSheets?.ArcflightShipSheet ?? null; },
     [ARCFLIGHT_API_MARKER]: true
