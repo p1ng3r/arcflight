@@ -555,8 +555,9 @@ This PR is documentation-only. The next roadmap work should lock the clean gamep
    - Docs only.
 
 2. **Permanent card schema planning**
-   - Define stable schemas for hazards, consequences, station actions, risk bids, station benefits, and encounter templates.
-   - See [Travel v2 Card Schema Plan](TRAVEL_V2_CARD_SCHEMA_PLAN.md).
+   - PR #336 defines permanent Travel v2 Card Schema v0 as a data-only contract for hazards, consequences, station actions, risk bids, station benefits, and encounter templates.
+   - See [Travel v2 Card Schema v0](travel-v2-card-schema-v0.md) and [Travel v2 Card Schema Plan](TRAVEL_V2_CARD_SCHEMA_PLAN.md).
+   - Future PR #337 should adapt builder/import validation to this schema without rewriting the builder.
    - No broad runtime changes yet.
 
 3. **Applyable consequence catalog foundation**
