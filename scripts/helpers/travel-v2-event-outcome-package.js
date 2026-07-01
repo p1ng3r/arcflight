@@ -177,7 +177,11 @@ export function prepareTravelV2EventOutcomePackage(session, options = {}) {
 }
 
 const PUBLIC_ENTRY_KEYS = Object.freeze(["id", "key", "name", "label", "title", "text", "summary", "description", "sourceType", "status", "roundIndex", "roundNumber", "outcomeKey", "finalizedAt", "playerText", "publicText", "displayText"]);
-function userIsGm(options = {}) { return options.user?.isGM === true || options.isGM === true || globalThis.game?.user?.isGM === true; }
+function userIsGm(options = {}) {
+  if (typeof options.user?.isGM === "boolean") return options.user.isGM === true;
+  if (typeof options.isGM === "boolean") return options.isGM === true;
+  return globalThis.game?.user?.isGM === true;
+}
 function publicEntry(value = {}) {
   if (!isPlainObject(value)) return value;
   const output = {};

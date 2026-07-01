@@ -55,6 +55,15 @@ export function runTravelV2EventOutcomePackageSmokeChecks(){
   assertSmoke(!snap(publicReview).includes(gmMarker), "public review state excludes GM-only marker strings");
   assertSmoke(!snap(prepareTravelV2FinalOutcomePackageGmState(reviewSession, { user: { isGM: false } })).includes(gmMarker), "GM state falls back to public state when user is not GM");
   assertSmoke(snap(prepareTravelV2FinalOutcomePackageGmState(reviewSession, { user: { isGM: true } })).includes(gmMarker), "GM state includes management details only when user is GM");
+  const previousGame = globalThis.game;
+  try {
+    globalThis.game = { user: { isGM: true } };
+    assertSmoke(!snap(prepareTravelV2FinalOutcomePackageGmState(reviewSession, { user: { isGM: false } })).includes(gmMarker), "explicit non-GM user blocks GM state even when global game user is GM");
+    assertSmoke(!snap(prepareTravelV2FinalOutcomePackageReviewState(reviewSession, { user: { isGM: false } })).includes(gmMarker), "explicit non-GM user blocks review GM state even when global game user is GM");
+  } finally {
+    if (previousGame === undefined) delete globalThis.game;
+    else globalThis.game = previousGame;
+  }
   assertEqual(snap(reviewSession), reviewBefore, "review helper does not mutate input");
   const runnerState = prepareTravelEventRunnerState(reviewSession, { user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
   assertSmoke(runnerState.finalOutcomePackageReview?.title === "Final Outcome Package Review", "runner app state includes final outcome package review state");
