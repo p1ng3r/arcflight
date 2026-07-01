@@ -10,6 +10,7 @@ import runTravelV2RoundFinalizationStateSmokeChecks from "../helpers/travel-v2-r
 import runTravelV2SessionRoundFinalizationSmokeChecks from "../helpers/travel-v2-session-round-finalization.smoke.js";
 import runTravelV2EventCompletionReadinessSmokeChecks from "../helpers/travel-v2-event-completion-readiness.smoke.js";
 import runTravelV2SessionEventCompletionSmokeChecks from "../helpers/travel-v2-session-event-completion.smoke.js";
+import runTravelV2CompletedSummaryExportSmokeChecks from "../helpers/travel-v2-completed-summary-export.smoke.js";
 import runTravelV2EventOutcomePackageSmokeChecks from "../helpers/travel-v2-event-outcome-package.smoke.js";
 import runTravelV2SessionEventOutcomeApplicationSmokeChecks from "../helpers/travel-v2-session-event-outcome-application.smoke.js";
 import runTravelV2ActorApplicationBridgeSmokeChecks from "../helpers/travel-v2-actor-application-bridge.smoke.js";
@@ -52,6 +53,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 session round finalization", runTravelV2SessionRoundFinalizationSmokeChecks],
   ["Travel v2 event completion readiness", runTravelV2EventCompletionReadinessSmokeChecks],
   ["Travel v2 session event completion", runTravelV2SessionEventCompletionSmokeChecks],
+  ["Travel v2 completed summary export", runTravelV2CompletedSummaryExportSmokeChecks],
   ["Travel v2 event outcome package", runTravelV2EventOutcomePackageSmokeChecks],
   ["Travel v2 session event outcome application", runTravelV2SessionEventOutcomeApplicationSmokeChecks],
   ["Travel v2 actor application bridge", runTravelV2ActorApplicationBridgeSmokeChecks],
