@@ -19,46 +19,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "navigator": {
-        "publicText": "Navigator has a clear reason to respond to Void Shear.",
-        "gmText": "Invite the navigator to describe a table-facing response; this is guidance only."
+        "publicText": "The Navigator sees split bearings and must chart against lateral drift before the plotted route slides off-line.",
+        "gmText": "Ask which fixed point or old bearing the Navigator trusts when the instruments disagree."
       },
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Void Shear.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster needs fixed visual references so the helm can tell drift from real course change.",
+        "gmText": "Offer external cues: star-pricks sliding sideways, hull shadow movement, or rigging tension."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "chart-countercurrent",
+        "label": "Chart the Countercurrent",
         "stationKeys": [
           "navigator"
         ],
-        "publicText": "The navigator identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Navigator marks the shear line and plots a crossing angle that fights the sideways pull.",
+        "gmText": "A success should make the route feel recoverable without revealing any hidden escalation choice.",
         "suggestedSkills": [
+          "Navigation",
           "Survey",
-          "Sense",
-          "Command"
+          "Astronomy"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "A bad chart points the ship deeper into the shear."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "lock-the-watchlines",
+        "label": "Lock the Watchlines",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Watchmaster calls fixed points and drift marks so every correction has a shared reference.",
+        "gmText": "Use this to make the table picture concrete: who watches which point, and what counts as drift.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Vigilance",
+          "Perception",
+          "Coordination"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "Missed references let the ship mistake sideways motion for forward travel."
       }
     ],
     "clearCondition": {
@@ -79,10 +79,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hazard-escalation"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Void Shear.",
-      "onSuccess": "Void Shear loosens its grip.",
-      "onFailure": "Void Shear presses harder.",
-      "onHazardCleared": "Void Shear is brought under control."
+      "onDeclare": "The course line forks into two trembling bearings as the void shoves the ship sideways.",
+      "onSuccess": "A clean counter-angle bites, and the false bearing peels away from the true route.",
+      "onFailure": "The fixed points crawl across the glass; the shear is carrying the ship faster than the helm admits.",
+      "onHazardCleared": "The last sideways pull snaps loose, leaving one honest route line ahead."
     },
     "tags": [
       "travel-v2",
@@ -111,46 +111,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "engineer": {
-        "publicText": "Engineer has a clear reason to respond to Arkengine Cough.",
-        "gmText": "Invite the engineer to describe a table-facing response; this is guidance only."
+        "publicText": "The Engineer hears the drivebeat skip and must vent heat before the cough becomes Strain pressure.",
+        "gmText": "Keep this a Strain candidate only; describe heat, rhythm, and pressure without changing records."
       },
       "captain": {
-        "publicText": "Captain has a clear reason to respond to Arkengine Cough.",
-        "gmText": "Invite the captain to describe a table-facing response; this is guidance only."
+        "publicText": "The Captain must hold crew timing steady while the engine lurches out of rhythm.",
+        "gmText": "Give the Captain a leadership beat: who freezes, who needs an order, and what sound returns confidence."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "vent-the-surge",
+        "label": "Vent the Surge",
         "stationKeys": [
           "engineer"
         ],
-        "publicText": "The engineer identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Engineer bleeds excess heat and pressure before the blue cough rolls back through the housings.",
+        "gmText": "On success, the engine remains loud but controllable. Do not apply Strain automatically.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Engineering",
+          "Repair",
+          "Endurance"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The vent comes late and leaves a stronger Strain candidate for review."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "dampen-the-drivebeat",
+        "label": "Dampen the Drivebeat",
         "stationKeys": [
           "captain"
         ],
-        "publicText": "The captain buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Captain sets a work rhythm the crew can follow until the arkengine finds its beat again.",
+        "gmText": "Use shouted cadence, bell taps, or crew drills; this is coordination, not mechanical mutation.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Command",
+          "Performance",
+          "Discipline"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "Confused timing makes the next engine response riskier."
       }
     ],
     "clearCondition": {
@@ -171,10 +171,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-threat-attracted"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Arkengine Cough.",
-      "onSuccess": "Arkengine Cough loosens its grip.",
-      "onFailure": "Arkengine Cough presses harder.",
-      "onHazardCleared": "Arkengine Cough is brought under control."
+      "onDeclare": "The arkengine coughs blue-white heat, then comes back a half-beat too loud.",
+      "onSuccess": "Pressure hisses through the vents, and the drivebeat settles into a bruised but usable rhythm.",
+      "onFailure": "The cough rebounds through the deck plates, hotter and sharper than before.",
+      "onHazardCleared": "The engine catches its cadence, leaving only the smell of hot metal behind."
     },
     "tags": [
       "travel-v2",
@@ -203,46 +203,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "veilwarden": {
-        "publicText": "Veilwarden has a clear reason to respond to Lifeveil Thinspot.",
-        "gmText": "Invite the veilwarden to describe a table-facing response; this is guidance only."
+        "publicText": "The Veilwarden can see the Lifeveil shimmer thinning into a cold seam along the breathable envelope.",
+        "gmText": "Invite ritual, craft, or sensory detail about reinforcing the veil; no Lifeveil value changes."
       },
       "engineer": {
-        "publicText": "Engineer has a clear reason to respond to Lifeveil Thinspot.",
-        "gmText": "Invite the engineer to describe a table-facing response; this is guidance only."
+        "publicText": "The Engineer can reduce vibration and heat bleed that keep tugging the seam open.",
+        "gmText": "Tie machinery choices to the veil without making the engine solve everything alone."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "braid-the-veil",
+        "label": "Braid the Veil",
         "stationKeys": [
           "veilwarden"
         ],
-        "publicText": "The veilwarden identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Veilwarden draws neighboring strands of Lifeveil across the thinspot until the shimmer overlaps.",
+        "gmText": "A success should feel protective and visible, not like an automatic resource repair.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Lifeveil",
+          "Occult",
+          "Focus"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The braid slips and leaves a Lifeveil pressure candidate."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "seal-the-cold-seam",
+        "label": "Seal the Cold Seam",
         "stationKeys": [
           "engineer"
         ],
-        "publicText": "The engineer buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Engineer steadies the fittings nearest the seam so cold air stops finding a path inward.",
+        "gmText": "Describe braces, shutters, and vibration control; keep any future pressure for GM review.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Engineering",
+          "Craft",
+          "Repair"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "A loose fitting keeps breathing cold into the ship."
       }
     ],
     "clearCondition": {
@@ -263,10 +263,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hazard-escalation"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Lifeveil Thinspot.",
-      "onSuccess": "Lifeveil Thinspot loosens its grip.",
-      "onFailure": "Lifeveil Thinspot presses harder.",
-      "onHazardCleared": "Lifeveil Thinspot is brought under control."
+      "onDeclare": "Frost beads at the edge of a pale seam where the Lifeveil should be whole.",
+      "onSuccess": "The shimmer braids over itself, and the breath of the void recedes from the deck.",
+      "onFailure": "The seam opens by a finger-width of light, and every breath tastes thinner.",
+      "onHazardCleared": "Warm air presses back against the cold as the Lifeveil closes cleanly."
     },
     "tags": [
       "travel-v2",
@@ -295,46 +295,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Hull-Song Stress.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster must locate which frame is singing before the resonance spreads through the Hull.",
+        "gmText": "Make listening and triangulation matter; this is Hull pressure only if unresolved."
       },
       "engineer": {
-        "publicText": "Engineer has a clear reason to respond to Hull-Song Stress.",
-        "gmText": "Invite the engineer to describe a table-facing response; this is guidance only."
+        "publicText": "The Engineer can dampen the resonant braces before the song turns into a hard flex.",
+        "gmText": "Describe clamps, wedges, counter-vibration, or power redistribution without applying damage."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "find-the-singing-frame",
+        "label": "Find the Singing Frame",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Watchmaster follows the rising note through bulkheads to name the stressed frame.",
+        "gmText": "Reward precise fictional positioning: deck, brace, cargo bay, or keel-line.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Perception",
+          "Vigilance",
+          "Hullcraft"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The wrong frame is braced while the real note climbs."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "set-counterbraces",
+        "label": "Set Counterbraces",
         "stationKeys": [
           "engineer"
         ],
-        "publicText": "The engineer buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Engineer wedges and tunes counterbraces to break the resonance before it peaks.",
+        "gmText": "Keep the result descriptive; future ship scars remain reviewed candidates only.",
         "suggestedSkills": [
+          "Engineering",
           "Repair",
-          "Coordinate",
-          "Endure"
+          "Craft"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "The brace holds briefly, then transfers stress elsewhere."
       }
     ],
     "clearCondition": {
@@ -355,10 +355,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-ship-scar-candidate"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Hull-Song Stress.",
-      "onSuccess": "Hull-Song Stress loosens its grip.",
-      "onFailure": "Hull-Song Stress presses harder.",
-      "onHazardCleared": "Hull-Song Stress is brought under control."
+      "onDeclare": "A thin note climbs through the Hull, making cups tremble and teeth ache.",
+      "onSuccess": "A counterbrace bites down, and the song drops from a shriek to a tired hum.",
+      "onFailure": "The note doubles back through the frame, louder and closer to pain.",
+      "onHazardCleared": "The Hull falls quiet except for the ordinary creak of travel."
     },
     "tags": [
       "travel-v2",
@@ -387,46 +387,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "captain": {
-        "publicText": "Captain has a clear reason to respond to Crew on Edge.",
-        "gmText": "Invite the captain to describe a table-facing response; this is guidance only."
+        "publicText": "The Captain must turn fear into orders before hesitation spreads across the crew.",
+        "gmText": "Ask what the Captain says publicly, and who visibly steadies because of it."
       },
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Crew on Edge.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster can separate real warnings from rumor before anxious reports flood the deck.",
+        "gmText": "Use this to filter signals and prevent panic from becoming the scene’s loudest fact."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "name-the-fear",
+        "label": "Name the Fear",
         "stationKeys": [
           "captain"
         ],
-        "publicText": "The captain identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Captain names the danger plainly and gives the crew one immediate job to trust.",
+        "gmText": "A grounded speech or quiet command both work; do not adjust Morale automatically.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Command",
+          "Empathy",
+          "Presence"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "Vague reassurance sounds like denial and lets fear keep moving."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "sort-the-rumors",
+        "label": "Sort the Rumors",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Watchmaster checks reports against actual signs so the crew knows what is real.",
+        "gmText": "Offer two rumors and one useful observation if the table wants texture.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Insight",
+          "Vigilance",
+          "Investigation"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "A false report becomes the thing everyone repeats."
       }
     ],
     "clearCondition": {
@@ -447,10 +447,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hazard-escalation"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Crew on Edge.",
-      "onSuccess": "Crew on Edge loosens its grip.",
-      "onFailure": "Crew on Edge presses harder.",
-      "onHazardCleared": "Crew on Edge is brought under control."
+      "onDeclare": "Whispers outrun orders, and every ordinary knock sounds like an omen.",
+      "onSuccess": "The crew exhales together as fear is given a name and a task.",
+      "onFailure": "Someone repeats the wrong warning, and a dozen eyes turn from their posts.",
+      "onHazardCleared": "The watch returns to work with pale faces but steady hands."
     },
     "tags": [
       "travel-v2",
@@ -479,46 +479,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Cargo Break-Loose.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster must track the loose weight before it crushes a passage or blocks a station.",
+        "gmText": "Make the moving cargo a spatial hazard, not an inventory change."
       },
       "engineer": {
-        "publicText": "Engineer has a clear reason to respond to Cargo Break-Loose.",
-        "gmText": "Invite the engineer to describe a table-facing response; this is guidance only."
+        "publicText": "The Engineer can rig restraints or alter motion so the loose Cargo stops hammering the Hull.",
+        "gmText": "Tie the fix to straps, hoists, gravity, or ship motion without mutating items."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "call-the-roll",
+        "label": "Call the Roll",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Watchmaster tracks the cargo’s swing and calls when it is safe to move in.",
+        "gmText": "Use timing and line of sight; a success creates an opening for securing work.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Vigilance",
+          "Athletics",
+          "Tactics"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The next swing catches someone or blocks the wrong hatch."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "lash-the-weight",
+        "label": "Lash the Weight",
         "stationKeys": [
           "engineer"
         ],
-        "publicText": "The engineer buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Engineer throws lines, clamps, or wedges into place to stop the loose mass.",
+        "gmText": "A success secures the fictional hazard only; no cargo record changes.",
         "suggestedSkills": [
           "Repair",
-          "Coordinate",
-          "Endure"
+          "Athletics",
+          "Engineering"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "A line parts and turns the cargo into a pendulum."
       }
     ],
     "clearCondition": {
@@ -539,10 +539,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hull-stress"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Cargo Break-Loose.",
-      "onSuccess": "Cargo Break-Loose loosens its grip.",
-      "onFailure": "Cargo Break-Loose presses harder.",
-      "onHazardCleared": "Cargo Break-Loose is brought under control."
+      "onDeclare": "A heavy crash rolls below decks, followed by the scrape of something too large moving free.",
+      "onSuccess": "Lines snap taut around the weight, and the next impact becomes a dull shudder.",
+      "onFailure": "The cargo slams the bulkhead hard enough to make the Hull answer.",
+      "onHazardCleared": "The hold settles into strained silence around the newly lashed mass."
     },
     "tags": [
       "travel-v2",
@@ -571,46 +571,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "captain": {
-        "publicText": "Captain has a clear reason to respond to Stores Jam.",
-        "gmText": "Invite the captain to describe a table-facing response; this is guidance only."
+        "publicText": "The Captain must prioritize who gets delayed supplies first while the stores path is blocked.",
+        "gmText": "Frame this as triage and timing, not a supplies loss."
       },
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Stores Jam.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster can clear a safe route through straps, crates, and bad footing.",
+        "gmText": "Keep attention on access and crew movement; inventories remain untouched."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "triage-the-manifest",
+        "label": "Triage the Manifest",
         "stationKeys": [
           "captain"
         ],
-        "publicText": "The captain identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Captain names the one supply need that matters now and redirects hands to it.",
+        "gmText": "A success reduces confusion and gives the clearing crew a precise target.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Command",
+          "Logistics",
+          "Insight"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "Two teams reach for different crates and block each other."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "clear-the-rack",
+        "label": "Clear the Rack",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Watchmaster cuts a safe path through jammed racks and tangled straps.",
+        "gmText": "Describe noise, footing, and time pressure. Do not change supply totals.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Athletics",
+          "Vigilance",
+          "Craft"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "The rack shifts and buries the needed stores deeper."
       }
     ],
     "clearCondition": {
@@ -631,10 +631,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-cargo-shift"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Stores Jam.",
-      "onSuccess": "Stores Jam loosens its grip.",
-      "onFailure": "Stores Jam presses harder.",
-      "onHazardCleared": "Stores Jam is brought under control."
+      "onDeclare": "The manifest says the stores are aboard; the jammed rack says they are not yet useful.",
+      "onSuccess": "A clear path opens just wide enough for the right crate to come free.",
+      "onFailure": "Straps snarl tighter, and the needed label vanishes behind shifting boxes.",
+      "onHazardCleared": "The stores reach waiting hands late, but intact."
     },
     "tags": [
       "travel-v2",
@@ -663,46 +663,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "navigator": {
-        "publicText": "Navigator has a clear reason to respond to Phantom Beacon.",
-        "gmText": "Invite the navigator to describe a table-facing response; this is guidance only."
+        "publicText": "The Navigator must compare the beacon against the Route before its friendly cadence pulls the ship aside.",
+        "gmText": "Keep the beacon’s truth hidden; the public issue is verification before commitment."
       },
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Phantom Beacon.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster listens for repeats, echoes, or predatory timing in the signal.",
+        "gmText": "Give signal texture without confirming who or what sent it unless the table earns that reveal."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "triangulate-the-beacon",
+        "label": "Triangulate the Beacon",
         "stationKeys": [
           "navigator"
         ],
-        "publicText": "The navigator identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Navigator fixes the beacon’s position against the route instead of following its cadence.",
+        "gmText": "A success can show it is off-route, moving oddly, or too clean to trust.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Navigation",
+          "Astronomy",
+          "Survey"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The plotted correction starts bending toward the lure."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "mask-the-reply",
+        "label": "Mask the Reply",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Watchmaster keeps the ship from answering plainly while the signal is tested.",
+        "gmText": "No socket/chat/combat creation; this is fictional stealth and review only.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Stealth",
+          "Signals",
+          "Vigilance"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "A careless echo may become a Threat seed."
       }
     ],
     "clearCondition": {
@@ -723,10 +723,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-signal-echo"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Phantom Beacon.",
-      "onSuccess": "Phantom Beacon loosens its grip.",
-      "onFailure": "Phantom Beacon presses harder.",
-      "onHazardCleared": "Phantom Beacon is brought under control."
+      "onDeclare": "The beacon repeats a welcome pattern with nobody aboard willing to call it familiar.",
+      "onSuccess": "Its friendly rhythm falls out of step with the true route, exposed as something to refuse.",
+      "onFailure": "The signal brightens when the ship listens, as if pleased to be noticed.",
+      "onHazardCleared": "The beacon fades astern, still calling to the course the crew chose not to take."
     },
     "tags": [
       "travel-v2",
@@ -755,46 +755,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "navigator": {
-        "publicText": "Navigator has a clear reason to respond to Aether Current Snare.",
-        "gmText": "Invite the navigator to describe a table-facing response; this is guidance only."
+        "publicText": "The Navigator must find the current’s edge before every efficient course loops back into delay.",
+        "gmText": "Make route geometry the problem: arcs, eddies, and false shortcuts."
       },
       "engineer": {
-        "publicText": "Engineer has a clear reason to respond to Aether Current Snare.",
-        "gmText": "Invite the engineer to describe a table-facing response; this is guidance only."
+        "publicText": "The Engineer can pulse the arkengine at the right moments to break the current’s grip.",
+        "gmText": "This changes fictional momentum only; do not alter clocks or route state."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "sound-the-eddy-edge",
+        "label": "Sound the Eddy Edge",
         "stationKeys": [
           "navigator"
         ],
-        "publicText": "The navigator identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Navigator maps where the current curls back on itself and marks the exit angle.",
+        "gmText": "On success, give a concrete route around the snare; on failure, show lost time pressure.",
         "suggestedSkills": [
+          "Navigation",
           "Survey",
-          "Sense",
-          "Command"
+          "Mathematics"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The chosen line looks shorter because it is part of the loop."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "pulse-through-the-snare",
+        "label": "Pulse Through the Snare",
         "stationKeys": [
           "engineer"
         ],
-        "publicText": "The engineer buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Engineer times short drive pulses to push the ship across the current instead of along it.",
+        "gmText": "Keep the arkengine effort descriptive and consequence refs reviewable.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Engineering",
+          "Timing",
+          "Endurance"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "A mistimed pulse feeds the current and costs more time."
       }
     ],
     "clearCondition": {
@@ -815,10 +815,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hazard-escalation"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Aether Current Snare.",
-      "onSuccess": "Aether Current Snare loosens its grip.",
-      "onFailure": "Aether Current Snare presses harder.",
-      "onHazardCleared": "Aether Current Snare is brought under control."
+      "onDeclare": "The aether current curls around the hull like a slow hand closing.",
+      "onSuccess": "A timed pulse catches the eddy’s edge, and the ship slides toward open flow.",
+      "onFailure": "The route marker comes around again, proving the ship has been moving in a beautiful circle.",
+      "onHazardCleared": "The current falls behind as a dark curl on the chart."
     },
     "tags": [
       "travel-v2",
@@ -847,46 +847,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "veilwarden": {
-        "publicText": "Veilwarden has a clear reason to respond to Starlit Static.",
-        "gmText": "Invite the veilwarden to describe a table-facing response; this is guidance only."
+        "publicText": "The Veilwarden must ground the Lifeveil before star-like static turns sensation and memory unreliable.",
+        "gmText": "Keep mental interference evocative and consent-safe; do not impose character thoughts as facts."
       },
       "captain": {
-        "publicText": "Captain has a clear reason to respond to Starlit Static.",
-        "gmText": "Invite the captain to describe a table-facing response; this is guidance only."
+        "publicText": "The Captain must simplify orders so the crew can act through broken voices and half-heard echoes.",
+        "gmText": "Use short commands, hand signs, or repeated calls. Avoid GM-only reveals in public text."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "ground-the-star-noise",
+        "label": "Ground the Star-Noise",
         "stationKeys": [
           "veilwarden"
         ],
-        "publicText": "The veilwarden identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Veilwarden anchors the Lifeveil so the static has somewhere harmless to go.",
+        "gmText": "Success can clear sensory distortion while leaving any consequence application reviewed.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Occult",
+          "Lifeveil",
+          "Meditation"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The static finds a sharper path through the breathable envelope."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "cut-orders-to-signals",
+        "label": "Cut Orders to Signals",
         "stationKeys": [
           "captain"
         ],
-        "publicText": "The captain buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Captain reduces commands to gestures, bells, and repeated phrases the static cannot easily twist.",
+        "gmText": "This is a coordination response; no Focus, Morale, or chat state changes.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Command",
+          "Discipline",
+          "Performance"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "A misunderstood order sends help to the wrong station."
       }
     ],
     "clearCondition": {
@@ -908,10 +908,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-ship-scar-candidate"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Starlit Static.",
-      "onSuccess": "Starlit Static loosens its grip.",
-      "onFailure": "Starlit Static presses harder.",
-      "onHazardCleared": "Starlit Static is brought under control."
+      "onDeclare": "Starlight crackles through the speaking tubes, and familiar voices arrive wearing the wrong memories.",
+      "onSuccess": "The static drains into the veil in silver threads, leaving orders plain again.",
+      "onFailure": "A command returns in someone else’s voice, and the deck hesitates.",
+      "onHazardCleared": "The last star-spark gutters out, and the ship’s own sounds become trustworthy."
     },
     "tags": [
       "travel-v2",
@@ -940,46 +940,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "watchmaster": {
-        "publicText": "Watchmaster has a clear reason to respond to Predator Wake.",
-        "gmText": "Invite the watchmaster to describe a table-facing response; this is guidance only."
+        "publicText": "The Watchmaster can read the wake to tell whether the predator is gone, circling, or following.",
+        "gmText": "Do not create combat; this is threat assessment and possible future seed only."
       },
       "navigator": {
-        "publicText": "Navigator has a clear reason to respond to Predator Wake.",
-        "gmText": "Invite the navigator to describe a table-facing response; this is guidance only."
+        "publicText": "The Navigator can choose a line that crosses the wake quietly instead of running along it.",
+        "gmText": "Make route choice matter without spawning scenes, tokens, or encounters."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "read-the-wake",
+        "label": "Read the Wake",
         "stationKeys": [
           "watchmaster"
         ],
-        "publicText": "The watchmaster identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Watchmaster studies bent dust, warped light, and instrument drag for the predator’s direction.",
+        "gmText": "A success reveals behavior, not a stat block or combat start.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Tracking",
+          "Vigilance",
+          "Survival"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "The wake is misread as old when it is still being made."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "cut-the-signature",
+        "label": "Cut the Signature",
         "stationKeys": [
           "navigator"
         ],
-        "publicText": "The navigator buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Navigator plots a quiet crossing that keeps the ship’s signature out of the wake’s strongest pull.",
+        "gmText": "Use this to avoid being interesting; any Threat consequence remains a review candidate.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Navigation",
+          "Stealth",
+          "Survey"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "The ship travels exactly where a hunter expects noise."
       }
     ],
     "clearCondition": {
@@ -1000,10 +1000,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hazard-escalation"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Predator Wake.",
-      "onSuccess": "Predator Wake loosens its grip.",
-      "onFailure": "Predator Wake presses harder.",
-      "onHazardCleared": "Predator Wake is brought under control."
+      "onDeclare": "Dust and light bend in the shape of something huge that passed too recently.",
+      "onSuccess": "The ship slips across the wake at an angle too quiet to follow easily.",
+      "onFailure": "The wake trembles in answer, as if something ahead just turned its head.",
+      "onHazardCleared": "The last distortion straightens behind the ship, leaving no obvious trail."
     },
     "tags": [
       "travel-v2",
@@ -1032,46 +1032,46 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
     ],
     "stationImpacts": {
       "navigator": {
-        "publicText": "Navigator has a clear reason to respond to Dead-Air Pocket.",
-        "gmText": "Invite the navigator to describe a table-facing response; this is guidance only."
+        "publicText": "The Navigator loses helm feel and must find the pocket’s edge without trusting dead instruments.",
+        "gmText": "Make absence the signal: no pull, no drift, no reassuring response."
       },
       "veilwarden": {
-        "publicText": "Veilwarden has a clear reason to respond to Dead-Air Pocket.",
-        "gmText": "Invite the veilwarden to describe a table-facing response; this is guidance only."
+        "publicText": "The Veilwarden can test the Lifeveil’s dull shimmer to keep the breathable envelope centered.",
+        "gmText": "Frame the veil as muted rather than broken; pressure only follows if unresolved."
       }
     },
     "responseActions": [
       {
-        "id": "read-the-danger",
-        "label": "Read the Danger",
+        "id": "feel-for-the-edge",
+        "label": "Feel for the Edge",
         "stationKeys": [
           "navigator"
         ],
-        "publicText": "The navigator identifies what must be handled first.",
-        "gmText": "Use to reveal practical handling details without exposing hidden notes.",
+        "publicText": "The Navigator uses tiny course tests and delayed responses to feel where dead air gives way.",
+        "gmText": "A success gives direction through absence; do not adjust route state automatically.",
         "suggestedSkills": [
-          "Survey",
-          "Sense",
-          "Command"
+          "Navigation",
+          "Piloting",
+          "Patience"
         ],
         "clearProgress": 1,
-        "risk": "A weak read leaves the hazard active."
+        "risk": "A correction vanishes into the pocket and returns too late."
       },
       {
-        "id": "steady-the-ship",
-        "label": "Steady the Ship",
+        "id": "sound-the-muted-veil",
+        "label": "Sound the Muted Veil",
         "stationKeys": [
           "veilwarden"
         ],
-        "publicText": "The veilwarden buys time or stability for the response.",
-        "gmText": "Support a clear attempt or reduce fictional pressure; do not apply mechanics automatically.",
+        "publicText": "The Veilwarden checks the Lifeveil by touch and breath when sight and instruments go dull.",
+        "gmText": "Keep it sensory and safe: warmth, pressure, breath, and shimmer.",
         "suggestedSkills": [
-          "Repair",
-          "Coordinate",
-          "Endure"
+          "Lifeveil",
+          "Sense",
+          "Occult"
         ],
         "clearProgress": 1,
-        "risk": "Delay may point to an unresolved consequence."
+        "risk": "The veil feels centered until the ship discovers it has drifted."
       }
     ],
     "clearCondition": {
@@ -1093,10 +1093,10 @@ export const TRAVEL_V2_GOLD_STANDARD_HAZARD_CARDS = Object.freeze(
       "consequence-hazard-escalation"
     ],
     "narration": {
-      "onDeclare": "The crew turns toward Dead-Air Pocket.",
-      "onSuccess": "Dead-Air Pocket loosens its grip.",
-      "onFailure": "Dead-Air Pocket presses harder.",
-      "onHazardCleared": "Dead-Air Pocket is brought under control."
+      "onDeclare": "Sound falls flat, the helm goes numb, and the Lifeveil glow dulls to a tired blur.",
+      "onSuccess": "A delayed tug answers from one side, enough to find the pocket’s edge.",
+      "onFailure": "The ship moves, but nothing in the dead air admits which way.",
+      "onHazardCleared": "Noise and helm-feel return together, startling in their warmth."
     },
     "tags": [
       "travel-v2",
