@@ -52,3 +52,7 @@ Expected fixture results are `ok: true`, `detected: true`, `cardCount: 6`, and o
 - #338 Applyable Consequence Catalog Foundation or card-pack content foundation, depending on roadmap choice.
 - #339 First 12 Gold-Standard Hazard Cards.
 - Later: UI import/export for card packs only after this validation adapter is stable.
+
+## Consequence Catalog Alignment
+
+The Travel v2 consequence catalog foundation authors consequence cards as schema-aligned data where practical. Catalog validation may pass normalized consequence cards through the schema helper, but the import adapter remains validation-only and does not import, publish, apply, or make the runner consume arbitrary card packs.

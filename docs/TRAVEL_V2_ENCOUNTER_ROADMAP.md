@@ -108,6 +108,10 @@ Possible momentum spends:
 
 Momentum should let players fight back against the travel event, not merely add another GM-admin resource.
 
+## Applyable Consequence Catalog Foundation
+
+- PR #338 adds a data-only Travel v2 consequence catalog foundation, validation/normalization helpers, GM review summaries, and player-safe summaries. It does not add automatic application, actor/item/world mutation, card-pack import UI, or runtime consumption of arbitrary imported card packs.
+
 ## Completed Travel v2 Alpha Systems
 
 This document reflects the roadmap state after the Focus + Support stack was completed. This documentation-only update does not change runtime behavior, player sanitization, objective math, Momentum awards, Support assist math, Focus backlash handling, or any Foundry document mutation rules.
