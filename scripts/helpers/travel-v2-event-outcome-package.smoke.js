@@ -11,6 +11,14 @@ export async function runTravelV2EventOutcomePackageSmokeChecks(){
   assertSmoke(!prepareTravelV2EventOutcomePackage(null).canPreparePackage,"missing session blocks");
   assertSmoke(!prepareTravelV2EventOutcomePackage({status:"active", event:{rounds:[]}}).canPreparePackage,"active session blocks");
   assertSmoke(!prepareTravelV2EventOutcomePackage({status:"completed", event:{rounds:[]}}).canPreparePackage,"missing completion summary blocks");
+  const nullApplyState = prepareTravelV2FinalOutcomeApplyState(null, { user: { isGM: true } });
+  assertSmoke(!nullApplyState.canApply && nullApplyState.disabled && nullApplyState.rows.length === 0, "null session returns blocked GM apply state without throwing");
+  const nullReviewState = prepareTravelV2FinalOutcomePackageReviewState(null, { user: { isGM: true } });
+  assertSmoke(!nullReviewState.canPreparePackage && nullReviewState.applyState?.canApply === false, "null session review state returns blocked apply state without throwing");
+  const nullRunnerState = prepareTravelEventRunnerState(null, { user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
+  assertSmoke(!nullRunnerState.hasSession && nullRunnerState.finalOutcomeApply?.canApply === false, "null runner state prepares blocked apply state without throwing");
+  const activeApplyState = prepareTravelV2FinalOutcomeApplyState({ status: "active", event: { rounds: [] } }, { user: { isGM: true } });
+  assertSmoke(!activeApplyState.canApply && activeApplyState.rows.length === 0, "active session returns blocked apply state without throwing");
   const session=completed(["success","criticalSuccess"]); const before=snap(session); const pkg=prepareTravelV2EventOutcomePackage(session);
   assertSmoke(pkg.canPreparePackage,"completed session prepares package");
   assertEqual(pkg.eventOutcomeKey,"critical-success","critical success majority summarizes");

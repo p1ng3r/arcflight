@@ -100,7 +100,7 @@ function collectCandidates(session = {}, keys = []) {
 }
 
 function finalOutcomeFor(session = {}, outcomeKey = "") {
-  const finalOutcomes = isPlainObject(session.event?.finalOutcomes) ? session.event.finalOutcomes : {};
+  const finalOutcomes = isPlainObject(session?.event?.finalOutcomes) ? session.event.finalOutcomes : {};
   const aliases = {
     "critical-success": ["criticalSuccess", "critical-success", "critical_success"],
     "critical-failure": ["criticalFailure", "critical-failure", "critical_failure"]
@@ -232,7 +232,9 @@ function resolveApplyActor(session = {}, options = {}) {
   return null;
 }
 function stagedEffectsForApply(session = {}, options = {}) {
+  if (!isPlainObject(session)) return [];
   const outcomePackage = prepareTravelV2EventOutcomePackage(session, options);
+  if (!outcomePackage.canPreparePackage) return [];
   const eventOutcome = finalOutcomeFor(session, outcomePackage.eventOutcomeKey);
   const summaryEffects = Array.isArray(session?.summary?.stagedProposedEffects) ? session.summary.stagedProposedEffects : [];
   const eventEffects = Array.isArray(eventOutcome?.proposedEffects) ? eventOutcome.proposedEffects : [];
@@ -267,10 +269,15 @@ function deferredRowsFromPackage(pkg = {}) {
   ];
   return map.flatMap(([key, label, values, statusLabel]) => (Array.isArray(values) ? values : []).map((entry, index) => ({ key, label, index, status: "deferred", statusLabel, supported: false, reason: statusLabel, entry: cloneData(entry) })));
 }
-function playerSafeApplyState(reason = "Only GMs can preview or apply final outcome ship updates.") { return deepFreeze({ isGM: false, available: false, canApply: false, disabled: true, disabledReason: reason, rows: [], supportedRows: [], unsupportedRows: [], deferredRows: [], records: [] }); }
+function playerSafeApplyState(reason = "Only GMs can preview or apply final outcome ship updates.") { return deepFreeze({ isGM: false, available: false, canApply: false, disabled: true, disabledReason: reason, rows: [], supportedRows: [], unsupportedRows: [], deferredRows: [], records: [], changes: {} }); }
+function blockedGmApplyState(outcomePackage = {}, reason = "Travel v2 runner session must be completed before applying final outcome ship updates.") {
+  const disabledReason = outcomePackage.blockedReasons?.[0] ?? reason;
+  return deepFreeze({ isGM: true, available: false, canApply: false, disabled: true, disabledReason, rows: [], supportedRows: [], unsupportedRows: [], deferredRows: [], changes: {}, packageAlreadyApplied: outcomePackage.alreadyApplied === true, shipAlreadyApplied: false, alreadyApplied: false });
+}
 export function prepareTravelV2FinalOutcomeShipUpdatePreview(session, options = {}) {
   if (!userIsGm(options)) return playerSafeApplyState();
   const outcomePackage = prepareTravelV2EventOutcomePackage(session, options);
+  if (!outcomePackage.canPreparePackage) return blockedGmApplyState(outcomePackage);
   const actor = resolveApplyActor(session, options);
   const rows = stagedEffectsForApply(session, options).map((effect, index) => normalizeApplyEffect(effect, index, actor));
   const supportedRows = rows.filter((row) => row.supported);
