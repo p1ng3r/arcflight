@@ -1,9 +1,12 @@
 export const TRAVEL_V2_CONSEQUENCE_CATALOG_VERSION = 1;
+export const TRAVEL_V2_CONSEQUENCE_SEVERITIES = Object.freeze(["minor", "major", "severe"]);
+export const TRAVEL_V2_CONSEQUENCE_AFFECTED_TRACKS = Object.freeze(["Strain", "Lifeveil", "Route", "Hull", "Morale", "Cargo", "Supplies", "Threat", "Hazard", "Ship Scar"]);
+export const TRAVEL_V2_CONSEQUENCE_SOURCES = Object.freeze(["engine-hazard", "engineer-critical-failure", "focus-backlash", "engineer-failure", "arkengine-noise", "lifeveil-hazard", "veilwarden-critical-failure", "void-environment", "unresolved-hazard", "veilwarden-failure", "navigation-hazard", "navigator-critical-failure", "unresolved-void-shear", "final-bad-outcome", "navigator-failure", "route-delay", "physical-hazard", "pressure-overflow", "missed-watchmaster-warning", "captain-failure", "failed-support", "frightening-event", "watchmaster-failure", "crew-fatigue", "hard-maneuver", "hull-shock", "ignored-cargo-hazard", "low-stores", "blocked-access", "cargo-access", "loud-arkengine-signature", "lifeveil-flare", "failed-stealth", "threat-seed", "failed-response", "countdown-expiry", "repeated-severe-pressure", "major-hazard-escalation", "stationFailure", "criticalFailure", "unresolvedHazard", "pressureOverflow", "focusBacklash", "supportBacklash", "finalOutcome", "manual"]);
 
 export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   Object.freeze({
     id: "consequence-arkengine-surge",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Arkengine Surge",
     severity: "major",
@@ -23,7 +26,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-arkengine-whine",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Arkengine Whine",
     severity: "minor",
@@ -43,7 +46,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-lifeveil-flicker",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Lifeveil Flicker",
     severity: "major",
@@ -63,7 +66,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-veil-draft",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Veil Draft",
     severity: "minor",
@@ -83,7 +86,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-route-drift",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Route Drift",
     severity: "major",
@@ -103,7 +106,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-course-slip",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Course Slip",
     severity: "minor",
@@ -123,7 +126,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-hull-stress",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Hull Stress",
     severity: "minor",
@@ -143,7 +146,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-crew-panic",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Crew Panic",
     severity: "minor",
@@ -163,7 +166,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-watch-fatigue",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Watch Fatigue",
     severity: "minor",
@@ -183,7 +186,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-cargo-shift",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Cargo Shift",
     severity: "minor",
@@ -203,7 +206,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-supplies-delay",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Supplies Delay",
     severity: "minor",
@@ -223,7 +226,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-stores-tangle",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Stores Tangle",
     severity: "minor",
@@ -243,7 +246,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-threat-attracted",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Threat Attracted",
     severity: "major",
@@ -263,7 +266,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-signal-echo",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Signal Echo",
     severity: "minor",
@@ -283,7 +286,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-hazard-escalation",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Hazard Escalation",
     severity: "major",
@@ -303,7 +306,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
   }),
   Object.freeze({
     id: "consequence-ship-scar-candidate",
-    schemaVersion: 1,
+    schemaVersion: "travel-v2-card-schema-v0",
     type: "consequence",
     title: "Ship Scar Candidate",
     severity: "severe",
@@ -324,6 +327,7 @@ export const TRAVEL_V2_CONSEQUENCE_CATALOG = Object.freeze([
 ]);
 
 function cloneTravelV2Consequence(consequence) {
+  if (consequence === undefined) return undefined;
   return JSON.parse(JSON.stringify(consequence));
 }
 
@@ -345,4 +349,45 @@ export function getTravelV2ConsequencesByAffectedTrack(affectedTrack) {
 
 export function getTravelV2ConsequencesBySeverity(severity) {
   return getTravelV2ConsequenceCatalog().filter((consequence) => consequence.severity === severity);
+}
+
+
+export function normalizeTravelV2ConsequenceCatalogEntry(entry) {
+  const normalized = cloneTravelV2Consequence(entry);
+  if (typeof normalized?.id === "string") normalized.id = normalized.id.trim();
+  if (typeof normalized?.title === "string") normalized.title = normalized.title.trim();
+  if (normalized && normalized.status === undefined) normalized.status = "candidate";
+  return normalized;
+}
+
+export function prepareTravelV2ConsequencePlayerSafeSummary(entry) {
+  const normalized = normalizeTravelV2ConsequenceCatalogEntry(entry);
+  return {
+    id: normalized.id,
+    title: normalized.title,
+    severity: normalized.severity,
+    affectedTrack: normalized.affectedTrack,
+    publicText: normalized.publicText,
+    playerSafeSummary: normalized.playerSafeSummary,
+    source: Array.isArray(normalized.source) ? normalized.source.slice() : normalized.source,
+    applyEffectSummary: normalized.applyEffectSummary
+  };
+}
+
+export function prepareTravelV2ConsequenceGmReview(entry) {
+  const normalized = normalizeTravelV2ConsequenceCatalogEntry(entry);
+  return {
+    id: normalized.id,
+    title: normalized.title,
+    severity: normalized.severity,
+    source: Array.isArray(normalized.source) ? normalized.source.slice() : normalized.source,
+    affectedTrack: normalized.affectedTrack,
+    publicText: normalized.publicText,
+    playerSafeSummary: normalized.playerSafeSummary,
+    gmText: normalized.gmText,
+    applyEffectSummary: normalized.applyEffectSummary,
+    status: normalized.status,
+    sessionLocalEffect: cloneTravelV2Consequence(normalized.sessionLocalEffect),
+    explicitGmApplyEffect: cloneTravelV2Consequence(normalized.explicitGmApplyEffect)
+  };
 }

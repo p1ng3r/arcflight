@@ -43,6 +43,7 @@ import runTravelV2CompletionChecklistSmokeChecks from "../helpers/travel-v2-comp
 import runTravelV2BuilderImporterCompatibilitySmokeChecks from "../helpers/travel-v2-builder-importer-compatibility.smoke.js";
 import runTravelV2CardSchemaSmokeChecks from "../helpers/travel-v2-card-schema.smoke.js";
 import runTravelV2CardSchemaImportAdapterSmokeChecks from "../helpers/travel-v2-card-schema-import-adapter.smoke.js";
+import runTravelV2ConsequenceCatalogSmokeChecks from "../helpers/travel-v2-consequence-catalog.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -89,7 +90,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 completion checklist", runTravelV2CompletionChecklistSmokeChecks],
   ["Travel v2 builder/importer compatibility", runTravelV2BuilderImporterCompatibilitySmokeChecks],
   ["Travel v2 card schema", runTravelV2CardSchemaSmokeChecks],
-  ["Travel v2 card schema import adapter", runTravelV2CardSchemaImportAdapterSmokeChecks]
+  ["Travel v2 card schema import adapter", runTravelV2CardSchemaImportAdapterSmokeChecks],
+  ["Travel v2 consequence catalog", runTravelV2ConsequenceCatalogSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
