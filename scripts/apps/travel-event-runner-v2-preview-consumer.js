@@ -223,7 +223,7 @@ function buildTravelV2GuidedState(state = {}) {
 }
 
 export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false, user = globalThis.game?.user } = {}) {
-  const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor });
+  const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor, user });
   const canManageTravelV2Consequences = user?.isGM === true;
   const preparedPendingConsequenceQueue = prepareTravelV2PendingConsequenceQueue(session);
   const preparedConsequenceFollowupReview = prepareTravelV2ConsequenceFollowupReview(session);
