@@ -615,3 +615,7 @@ After the schema, consequence, hazard, and sample encounter direction is validat
 - Failed Support creates GM-controlled candidates only.
 - Consequences should be premade, fast to apply, and meaningful.
 - Card content should be data-driven and importable long-term.
+
+## PR #339 Gold-Standard Hazard Cards Note
+
+PR #339 adds the first 12 Travel v2 gold-standard hazard cards as data-only, schema-v0 validated authoring examples. This does not add runtime hazard draw, arbitrary card-pack import, automatic hazard activation, or automatic consequence application.
