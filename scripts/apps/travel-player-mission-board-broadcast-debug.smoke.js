@@ -165,7 +165,7 @@ export async function runTravelPlayerMissionBoardBroadcastDebugSmokeChecks() {
   assertSmoke(arcflightSource.includes("const { activeOverlay, session, requestedSessionKey, matched } = getActiveTravelRunnerSessionForPayload(payload);"), "player approach submit resolves sessions through the stable session-key helper");
   assertSmoke(arcflightSource.includes("Player station approach submission did not match an active Travel v2 runner session") && arcflightSource.includes("!matched"), "mismatched player approach-submit session keys are rejected instead of silently applied");
   assertSmoke(arcflightSource.includes("Duplicate player station roll request rejected") && arcflightSource.includes("This station already has a result. A new roll is only available after an accepted Focus reroll clears the result."), "GM-side duplicate player roll requests are rejected before repeated permission validation");
-  const devBlockMatch = arcflightSource.match(/dev:\s*\{[\s\S]*?\n\s*\},\n\s*get ArcflightItemSheet/);
+  const devBlockMatch = arcflightSource.match(/dev:\s*\{[\s\S]*?\r?\n\s*\},\r?\n\s*get ArcflightItemSheet/);
   const devBlockSource = devBlockMatch?.[0] ?? "";
   const requiredDevHelpers = [
     "runFoundryChecks",
