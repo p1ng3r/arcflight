@@ -254,3 +254,7 @@ The v0 validator must check targeted contract safety without making the schema o
 ## Non-Goals
 
 This PR does not implement gameplay changes, runtime card consumption, builder UI changes, card pack import UI, compendia, migrations, actor/item/chat/journal/world mutation, or Player2 sanitizer changes.
+
+## Gold-Standard Hazard Authoring Examples
+
+The data-only pack in `data/travel-events/travel-v2-gold-standard-hazard-cards.js` provides the first 12 polished Travel v2 hazard examples using this schema version. Use those cards as authoring references for public premise, GM notes, player-safe summaries, response paths, narration hooks, tags, and consequence catalog references.
