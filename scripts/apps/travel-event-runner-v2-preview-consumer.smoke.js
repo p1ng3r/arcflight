@@ -143,7 +143,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     session: queueState.session,
     user: { isGM: false }
   });
-  assertSmoke(nonGmQueueState.isGM === false && nonGmQueueState.canManageTravelV2Consequences === false, "non-GM app state explicitly blocks consequence queue management");
+  assertSmoke(nonGmQueueState.isGM === false && !Object.hasOwn(nonGmQueueState, "canManageTravelV2Consequences"), "non-GM app state omits consequence queue management flag");
   const nonGmQueueStateJson = JSON.stringify(nonGmQueueState);
   for (const forbidden of ["gmItemGroups","singleSuggestionSelectionSummary","clearSelectionSummary","applyStatusSummary","consequenceFollowupReview","catalogSuggestions","selectedConsequenceApplyPreview","applyEffectSummary","sourceRecord"]) assertSmoke(!nonGmQueueStateJson.includes(forbidden), `non-GM app state does not expose GM-only queue field ${forbidden}`);
   const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);

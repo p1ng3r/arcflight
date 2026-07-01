@@ -3,6 +3,8 @@ import {
   runFoundryChecks,
   runPlayerSafetyCheck
 } from "./foundry-check-runner.js";
+import { prepareTravelEventRunnerState } from "../helpers/travel-event-runner.js";
+import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import {
   ADVANCED_DECK_CONTROL_TERMS,
   FORBIDDEN_WORLD_MUTATION_STRINGS,
@@ -168,6 +170,33 @@ const playerNoState = runPlayerSafetyCheck({
 });
 assertSmoke(getCheck(playerNoState, "travel-v2-player-state-scan")?.severity === "skip", "player safety check skips state scan when no state/session is provided");
 
+const completedCheckSession = __test.createCheckSession();
+const nonGmRunnerState = prepareTravelEventRunnerState(completedCheckSession, { user: { id: "player-smoke", isGM: false } });
+const nonGmRunnerStateJson = JSON.stringify(nonGmRunnerState);
+assertSmoke(!nonGmRunnerStateJson.includes("completionChecklist"), "non-GM prepareTravelEventRunnerState omits completionChecklist");
+
+const nonGmAppState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: completedCheckSession, user: { id: "player-smoke", isGM: false } });
+const nonGmAppStateJson = JSON.stringify(nonGmAppState);
+for (const forbidden of ["travelV2EventOutcomeApplication", "travelV2FinalOutcomeShipApplication", "targetActorId", "targetActorUuid", "supportedRows", "unsupportedRows", "deferredRows"]) {
+  assertSmoke(!nonGmAppStateJson.includes(forbidden), `non-GM app state excludes ${forbidden}`);
+}
+for (const forbiddenKey of ["before", "after"]) {
+  assertSmoke(!nonGmAppStateJson.includes(`"${forbiddenKey}"`), `non-GM app state excludes ${forbiddenKey} record key`);
+}
+
+const playerHarmlessBeforeAfter = runPlayerSafetyCheck({
+  renderReport: false,
+  root: { innerText: "Review the route before departure and after arrival.", innerHTML: "" },
+  state: { eventOverview: "safe" }
+});
+assertSmoke(getCheck(playerHarmlessBeforeAfter, "travel-v2-player-dom-forbidden-terms")?.severity === "pass", "harmless before/after text does not fail player DOM scan");
+
+const playerFinalOutcomeLeak = runPlayerSafetyCheck({
+  renderReport: false,
+  root: { innerText: "Apply Final Outcome to Ship", innerHTML: "" },
+  state: { eventOverview: "safe" }
+});
+assertSmoke(getCheck(playerFinalOutcomeLeak, "travel-v2-player-dom-forbidden-terms")?.severity === "fail", "Apply Final Outcome to Ship fails player DOM scan");
 
 const playerChatOnlyRoot = fakeRoot([
   new FakeElement({ id: "chat", text: "Pending Consequences / Rewards (Read-only Proposed Effects)" }),

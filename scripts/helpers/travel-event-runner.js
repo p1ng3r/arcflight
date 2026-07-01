@@ -2919,9 +2919,53 @@ export function prepareTravelV2CompletionChecklistState(session = null, options 
 }
 
 
+
+const PLAYER_SAFE_RUNNER_OMIT_KEYS = new Set([
+  "travelV2EventOutcomeApplication",
+  "travelV2FinalOutcomeShipApplication",
+  "travelV2ActorApplication",
+  "travelV2PressureApplications",
+  "travelV2RoundResolutions",
+  "rawApplicationRecord",
+  "packageRecord",
+  "applicationRecord",
+  "before",
+  "after",
+  "targetActorId",
+  "targetActorUuid",
+  "supportedRows",
+  "unsupportedRows",
+  "deferredRows",
+  "resourceOptions",
+  "debugReport"
+]);
+
+function sanitizePlayerSafeRunnerStateValue(value) {
+  if (typeof value === "string") {
+    return value
+      .replaceAll("GM-only", "restricted")
+      .replaceAll("GM only", "restricted")
+      .replaceAll("Apply Outcome Package", "Review Outcome");
+  }
+  if (Array.isArray(value)) return value.map((entry) => sanitizePlayerSafeRunnerStateValue(entry));
+  if (!value || typeof value !== "object") return value;
+  const next = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (PLAYER_SAFE_RUNNER_OMIT_KEYS.has(key) || key === "canManageTravelV2Consequences" || key.startsWith("consequenceFlow")) continue;
+    next[key] = sanitizePlayerSafeRunnerStateValue(entry);
+  }
+  return next;
+}
+
+function runnerStateUserIsExplicitNonGm(options = {}) {
+  if (options.user?.isGM === false) return true;
+  if (options.isGM === false) return true;
+  return globalThis.game?.user?.isGM === false;
+}
+
 function preparePlayerSafeRunnerSession(session = null, options = {}) {
   if (!session || typeof session !== "object") return session;
-  if (completionChecklistUserIsGm(options)) return session;
+  if (!runnerStateUserIsExplicitNonGm(options)) return session;
   const safe = cloneData(session);
   delete safe.travelV2EventOutcomeApplication;
   delete safe.travelV2FinalOutcomeShipApplication;
@@ -2957,7 +3001,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const completionChecklist = prepareTravelV2CompletionChecklistState(activeSession, { ...options, summaryOutput, finalOutcomePackageReview, finalOutcomeApply, stagedEffectReview });
   const playerSafeSession = preparePlayerSafeRunnerSession(activeSession, options);
   const currentUserIsGm = completionChecklistUserIsGm(options);
-  return {
+  const runnerState = {
     ok: normalized.ok,
     errors: normalized.errors,
     warnings: normalized.warnings,
@@ -3018,9 +3062,10 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     finalOutcomePackageReview,
     finalOutcomeApply,
     stagedEffectReview,
-    completionChecklist,
+    ...(currentUserIsGm ? { completionChecklist } : {}),
     summaryJson: currentUserIsGm && summary ? exportTravelEventRunnerSessionToJson(activeSession, options).json : ""
   };
+  return runnerStateUserIsExplicitNonGm(options) ? sanitizePlayerSafeRunnerStateValue(runnerState) : runnerState;
 }
 
 export function prepareTravelSceneOverlayState(session = null, options = {}) {

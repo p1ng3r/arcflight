@@ -88,8 +88,10 @@ export default async function runTravelV2CompletionChecklistSmokeChecks() {
   }
 
   const nonGmState = prepareTravelEventRunnerState(completed({ travelV2EventOutcomeApplication: { applied: true, before: { hull: 1 }, marker: "GM-only management details" }, travelV2FinalOutcomeShipApplication: { applied: true, before: { strain: 2 }, after: { strain: 1 } } }), { user: { isGM: false }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
-  const nonGmChecklistBlob = JSON.stringify(nonGmState.completionChecklist);
-  for (const secret of ["GM-only management details", "before", "after", "travelV2EventOutcomeApplication", "travelV2FinalOutcomeShipApplication"]) assert.equal(nonGmChecklistBlob.includes(secret), false, `non-GM checklist excludes ${secret}`);
+  const nonGmStateBlob = JSON.stringify(nonGmState);
+  assert.equal(nonGmStateBlob.includes("completionChecklist"), false, "non-GM runner state omits completionChecklist entirely");
+  for (const secret of ["GM-only management details", "travelV2EventOutcomeApplication", "travelV2FinalOutcomeShipApplication"]) assert.equal(nonGmStateBlob.includes(secret), false, `non-GM runner state excludes ${secret}`);
+  for (const secretKey of ["before", "after"]) assert.equal(nonGmStateBlob.includes(`"${secretKey}"`), false, `non-GM runner state excludes ${secretKey} record key`);
 
   const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: completed(), user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} } });
   assert.equal(appState.completionChecklist.visible, true, "real app preview consumer path passes GM user into runner state");

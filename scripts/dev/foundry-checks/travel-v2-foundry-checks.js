@@ -59,6 +59,8 @@ export const FORBIDDEN_PLAYER_STATE_TERMS = Object.freeze([
   "debugReport"
 ]);
 
+export const FORBIDDEN_PLAYER_DOM_TERMS = Object.freeze(FORBIDDEN_PLAYER_STATE_TERMS.filter((term) => !["before", "after"].includes(term)));
+
 export const FORBIDDEN_PLAYER_HUD_TERMS = Object.freeze([
   "Pending Consequence",
   "Queue Summary",
@@ -105,6 +107,7 @@ export const FORBIDDEN_WORLD_MUTATION_STRINGS = Object.freeze([
 ]);
 
 export const TRAVEL_V2_FORBIDDEN_PLAYER_TERMS = FORBIDDEN_PLAYER_STATE_TERMS;
+export const TRAVEL_V2_FORBIDDEN_PLAYER_DOM_TERMS = FORBIDDEN_PLAYER_DOM_TERMS;
 export const TRAVEL_V2_PLAYER_HUD_FORBIDDEN_TERMS = FORBIDDEN_PLAYER_HUD_TERMS;
 export const TRAVEL_V2_ADVANCED_DECK_CONTROL_TERMS = ADVANCED_DECK_CONTROL_TERMS;
 
@@ -248,7 +251,10 @@ function safeSerialize(value) {
 
 export function scanForbiddenTermsInText(text = "", terms = FORBIDDEN_PLAYER_STATE_TERMS) {
   const haystack = String(text ?? "");
-  return terms.filter((term) => haystack.includes(term));
+  return terms.filter((term) => {
+    if (term === "before" || term === "after") return haystack.includes(`"${term}"`);
+    return haystack.includes(term);
+  });
 }
 
 export function scanForbiddenTermsInRoot(root = globalThis.document?.body, terms = FORBIDDEN_PLAYER_STATE_TERMS, options = {}) {
@@ -466,8 +472,8 @@ function runDomChecks(checks, { root = null, currentUserIsGm = false, includePla
     return;
   }
 
-  const exposed = scanForbiddenTermsInRoot(scanRoot, FORBIDDEN_PLAYER_STATE_TERMS);
-  const domEvidence = scanForbiddenTermEvidenceInRoot(scanRoot, FORBIDDEN_PLAYER_STATE_TERMS).filter((entry) => exposed.includes(entry.term));
+  const exposed = scanForbiddenTermsInRoot(scanRoot, FORBIDDEN_PLAYER_DOM_TERMS);
+  const domEvidence = scanForbiddenTermEvidenceInRoot(scanRoot, FORBIDDEN_PLAYER_DOM_TERMS).filter((entry) => exposed.includes(entry.term));
   addCheck(
     checks,
     "travel-v2-player-dom-forbidden-terms",
@@ -497,7 +503,7 @@ function runDomChecks(checks, { root = null, currentUserIsGm = false, includePla
   );
 
 
-  const chatHistoryExposed = scanForbiddenTermsInChatHistory(scanRoot, FORBIDDEN_PLAYER_STATE_TERMS);
+  const chatHistoryExposed = scanForbiddenTermsInChatHistory(scanRoot, FORBIDDEN_PLAYER_DOM_TERMS);
   if (includeChatHistory) {
     addCheck(
       checks,
