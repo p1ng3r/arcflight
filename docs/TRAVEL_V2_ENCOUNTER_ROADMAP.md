@@ -623,3 +623,7 @@ PR #339 adds the first 12 Travel v2 gold-standard hazard cards as data-only, sch
 PR #340 adds a built-in hazard deck registry for known, validated decks only. It does not draw or activate hazards, and it does not consume arbitrary imports.
 
 PR #341 adds the GM hazard deck picker/review UI foundation fed by that registry. It still does not persist runtime deck selection, draw hazards, activate hazards, import card packs, apply consequences, or mutate actor/item/world/chat/journal/scene/token/combat/settings/socket/compendium data.
+
+## Runtime Safe Deck Selection
+
+- PR #342 adds safe runtime/render/session-local selected-deck state for known built-in Travel v2 hazard decks. The selected deck id is validated against the built-in hazard deck registry and can feed the GM picker state, but it still does not draw hazards, activate hazards, import card packs, persist to settings/world data, or apply hazards/consequences.
