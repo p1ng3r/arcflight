@@ -627,3 +627,7 @@ PR #341 adds the GM hazard deck picker/review UI foundation fed by that registry
 ## Runtime Safe Deck Selection
 
 - PR #342 adds safe runtime/render/session-local selected-deck state for known built-in Travel v2 hazard decks. The selected deck id is validated against the built-in hazard deck registry and can feed the GM picker state, but it still does not draw hazards, activate hazards, import card packs, persist to settings/world data, or apply hazards/consequences.
+
+## PR #343 — Explicit GM Hazard Draw / Review Candidates
+
+PR #343 adds an explicit GM-only hazard draw/review candidate flow from the selected built-in hazard deck. The draw result is inert review state only: it does not activate hazards, create active hazard records, import arbitrary packs, persist to settings/world data, or apply hazards/consequences.

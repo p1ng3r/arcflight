@@ -5,6 +5,7 @@ import { prepareTravelV2CompletedSessionHistoryState } from "../helpers/travel-v
 import { prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2HazardDeckPickerUiState } from "../helpers/travel-v2-hazard-deck-picker-ui.js";
 import { prepareTravelV2RuntimeHazardDeckSelectionGmState } from "../helpers/travel-v2-runtime-hazard-deck-selection.js";
+import { prepareTravelV2HazardDrawReviewState } from "../helpers/travel-v2-hazard-draw-review.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
@@ -249,6 +250,16 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const preparedConsequenceFollowupReview = prepareTravelV2ConsequenceFollowupReview(session);
   const travelV2RuntimeHazardDeckSelection = canManageTravelV2Consequences ? prepareTravelV2RuntimeHazardDeckSelectionGmState({ selectedDeckId: uiState.travelV2HazardDeckPickerSelectedDeckId ?? null }, { defaultToGoldStandard: true, includeGmReview: canManageTravelV2Consequences, user }) : null;
   const travelV2HazardDeckPicker = prepareTravelV2HazardDeckPickerUiState({ selectedDeckId: travelV2RuntimeHazardDeckSelection?.selectedDeckId ?? null, includeGmReview: canManageTravelV2Consequences, user });
+  const travelV2HazardDrawReview = canManageTravelV2Consequences ? prepareTravelV2HazardDrawReviewState({
+    selectedDeckId: travelV2RuntimeHazardDeckSelection?.selectedDeckId ?? null,
+    requestedDeckId: travelV2RuntimeHazardDeckSelection?.requestedDeckId ?? null,
+    travelV2HazardDrawRequested: uiState.travelV2HazardDrawRequested === true,
+    travelV2HazardDrawRequest: uiState.travelV2HazardDrawRequest ?? null,
+    travelV2HazardDrawMode: uiState.travelV2HazardDrawMode ?? null,
+    travelV2HazardDrawCardId: uiState.travelV2HazardDrawCardId ?? null,
+    travelV2HazardDrawIndex: uiState.travelV2HazardDrawIndex ?? null,
+    travelV2HazardDrawSeed: uiState.travelV2HazardDrawSeed ?? null
+  }, { user, includeGmReview: true }) : null;
   const pendingConsequenceCount = Number(preparedPendingConsequenceQueue.pendingCount) || 0;
   const consequenceFlowReady = state.roundFinalization?.isFinalized === true && pendingConsequenceCount === 0;
   const consequenceFlowBlocked = state.roundFinalization?.isFinalized === true && pendingConsequenceCount > 0;
@@ -272,7 +283,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2PressureRunnerSession: canManageTravelV2Consequences ? session : null,
     isGM: canManageTravelV2Consequences,
     ...(canManageTravelV2Consequences ? { canManageTravelV2Consequences, consequenceFlowReady, consequenceFlowBlocked, consequenceFlowBlockers, consequenceFlowWarningLabel, canReviewConsequences: pendingConsequenceCount > 0, canApplyPendingConsequences: pendingConsequenceCount > 0, canDismissPendingConsequences: pendingConsequenceCount > 0, canAdvanceAfterConsequences: consequenceFlowReady, pendingConsequenceQueue: preparedPendingConsequenceQueue } : {}),
-    ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview, travelV2RuntimeHazardDeckSelection, travelV2HazardDeckPicker } : {}),
+    ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview, travelV2RuntimeHazardDeckSelection, travelV2HazardDeckPicker, travelV2HazardDrawReview } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],
