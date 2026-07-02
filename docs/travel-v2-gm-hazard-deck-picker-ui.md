@@ -30,6 +30,10 @@ Default picker state is player-safe: deck and card rows include public titles, p
 
 GM review data is only included when a GM-facing caller explicitly requests it with `includeGmReview: true` and provides a GM user/flag. In that review mode, `gmText` may appear in the selected deck review and GM card rows so the GM can inspect author notes. Non-GM callers receive hidden/disabled picker state and no GM-only text even if they request review data.
 
+## Runtime Selection Integration
+
+The picker UI state now feeds and reflects the safe runtime/render selected-deck state. The runtime selection helper validates the selected built-in deck id before the picker treats it as selected, and the integration remains selection-only: it does not draw cards, activate hazards, persist settings/world data, or apply consequences.
+
 ## Future PRs
 
 - Runtime safe deck selection.

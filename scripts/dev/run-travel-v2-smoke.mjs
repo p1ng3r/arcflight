@@ -47,6 +47,7 @@ import runTravelV2ConsequenceCatalogSmokeChecks from "../helpers/travel-v2-conse
 import runTravelV2GoldStandardHazardCardsSmokeChecks from "../helpers/travel-v2-gold-standard-hazard-cards.smoke.js";
 import runTravelV2HazardDeckRegistrySmokeChecks from "../helpers/travel-v2-hazard-deck-registry.smoke.js";
 import runTravelV2HazardDeckPickerUiSmokeChecks from "../helpers/travel-v2-hazard-deck-picker-ui.smoke.js";
+import runTravelV2RuntimeHazardDeckSelectionSmokeChecks from "../helpers/travel-v2-runtime-hazard-deck-selection.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -97,7 +98,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 consequence catalog", runTravelV2ConsequenceCatalogSmokeChecks],
   ["Travel v2 gold-standard hazard cards", runTravelV2GoldStandardHazardCardsSmokeChecks],
   ["Travel v2 built-in hazard deck registry", runTravelV2HazardDeckRegistrySmokeChecks],
-  ["Travel v2 hazard deck picker UI", runTravelV2HazardDeckPickerUiSmokeChecks]
+  ["Travel v2 hazard deck picker UI", runTravelV2HazardDeckPickerUiSmokeChecks],
+  ["Travel v2 runtime hazard deck selection", runTravelV2RuntimeHazardDeckSelectionSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
