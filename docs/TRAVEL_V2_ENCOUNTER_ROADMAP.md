@@ -619,3 +619,5 @@ After the schema, consequence, hazard, and sample encounter direction is validat
 ## PR #339 Gold-Standard Hazard Cards Note
 
 PR #339 adds the first 12 Travel v2 gold-standard hazard cards as data-only, schema-v0 validated authoring examples. This does not add runtime hazard draw, arbitrary card-pack import, automatic hazard activation, or automatic consequence application.
+
+PR #340 adds a built-in hazard deck registry for known, validated decks only. It does not draw or activate hazards, and it does not consume arbitrary imports.

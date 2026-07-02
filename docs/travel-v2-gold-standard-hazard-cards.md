@@ -4,6 +4,9 @@
 
 This document describes the first 12 high-quality, data-only Travel v2 hazard cards. They are authoring examples for future hazard packs: playable at the table, schema-aligned, player-safe, and easy for a GM to review before using any consequence handoff.
 
+
+The pack is now registered through the built-in hazard deck registry as `travel-v2-gold-standard-hazards` for safe review and later picker-state use. The registry does not draw, activate, import, or apply these cards at runtime.
+
 ## What This Adds
 
 - 12 schema-aligned hazard cards in `data/travel-events/travel-v2-gold-standard-hazard-cards.js`.
