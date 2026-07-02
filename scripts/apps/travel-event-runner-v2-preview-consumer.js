@@ -3,6 +3,7 @@ import { prepareTravelEventEffectApplicationState } from "../helpers/travel-even
 import { prepareTravelEventRunnerV2PreviewPanelState } from "./travel-event-runner-v2-preview-panel.js";
 import { prepareTravelV2CompletedSessionHistoryState } from "../helpers/travel-v2-dev-tools.js";
 import { prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue } from "../helpers/travel-v2-pending-consequence-queue.js";
+import { prepareTravelV2HazardDeckPickerUiState } from "../helpers/travel-v2-hazard-deck-picker-ui.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
@@ -245,6 +246,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const canManageTravelV2Consequences = user?.isGM === true;
   const preparedPendingConsequenceQueue = prepareTravelV2PendingConsequenceQueue(session);
   const preparedConsequenceFollowupReview = prepareTravelV2ConsequenceFollowupReview(session);
+  const travelV2HazardDeckPicker = prepareTravelV2HazardDeckPickerUiState({ selectedDeckId: uiState.travelV2HazardDeckPickerSelectedDeckId ?? null, includeGmReview: canManageTravelV2Consequences, user });
   const pendingConsequenceCount = Number(preparedPendingConsequenceQueue.pendingCount) || 0;
   const consequenceFlowReady = state.roundFinalization?.isFinalized === true && pendingConsequenceCount === 0;
   const consequenceFlowBlocked = state.roundFinalization?.isFinalized === true && pendingConsequenceCount > 0;
@@ -268,7 +270,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2PressureRunnerSession: canManageTravelV2Consequences ? session : null,
     isGM: canManageTravelV2Consequences,
     ...(canManageTravelV2Consequences ? { canManageTravelV2Consequences, consequenceFlowReady, consequenceFlowBlocked, consequenceFlowBlockers, consequenceFlowWarningLabel, canReviewConsequences: pendingConsequenceCount > 0, canApplyPendingConsequences: pendingConsequenceCount > 0, canDismissPendingConsequences: pendingConsequenceCount > 0, canAdvanceAfterConsequences: consequenceFlowReady, pendingConsequenceQueue: preparedPendingConsequenceQueue } : {}),
-    ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview } : {}),
+    ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview, travelV2HazardDeckPicker } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],
