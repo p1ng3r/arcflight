@@ -13,6 +13,7 @@ This is a registry, review, and picker-state foundation only. It gives later UI 
 - Validation and review helpers for built-in hazard decks.
 - Player-safe picker and review summaries that redact GM-only/internal fields.
 - Smoke coverage for registry listing, lookup, validation, picker state, clone safety, and mutation-call source scanning.
+- A registry-fed GM-only picker/review UI-state helper can now consume the known deck list without adding runtime selection, draw, or activation behavior.
 
 ## What This Does Not Add
 
@@ -55,7 +56,8 @@ Default picker state uses safe deck summaries and does not include raw GM text. 
 
 ## Future PRs
 
-- GM hazard deck picker UI.
+- GM hazard deck picker UI-state/render foundation.
+- GM hazard deck picker template interaction polish.
 - Runtime safe deck selection.
 - Explicit GM draw/review flow.
 - Card pack import/export.
