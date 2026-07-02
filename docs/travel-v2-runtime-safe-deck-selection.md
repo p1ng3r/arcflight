@@ -45,3 +45,7 @@ Player-safe state contains only redacted deck summary data. GM review data is ga
 - Active hazard handoff review.
 - Card pack import/export.
 - Expanded hazard packs.
+
+## Explicit Draw / Review Follow-up
+
+The selected built-in deck state now feeds explicit GM hazard draw/review candidate generation. That follow-up remains session-local and inert: it can prepare a review candidate only after an explicit GM request, and it still does not activate hazards, create active hazard records, persist settings/world data, or apply consequences.
