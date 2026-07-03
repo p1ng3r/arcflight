@@ -47,3 +47,5 @@ GM review rows may include GM review information only when the user is a GM and 
 - Hazard clear/resolve lifecycle.
 - Card pack import/export.
 - Expanded hazard packs.
+
+Station impact previews can now feed Travel v2 station-impact behavior guidance. That guidance remains review-only and still does not apply modifiers, execute response actions, or persist data.

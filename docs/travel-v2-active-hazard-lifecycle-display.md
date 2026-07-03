@@ -53,3 +53,5 @@ GM review data is only included when the requesting user is a GM and `includeGmR
 ## Response Action Wiring Note
 
 Response action previews can now feed response action wiring as player-safe, session-local display choices. This remains non-executing and non-persistent: it does not roll checks, apply station effects, advance clear progress, resolve hazards, apply consequences, or mutate Foundry documents.
+
+Station impact previews emitted by active hazard lifecycle/player HUD rows can now feed review-only station impact guidance. The guidance is display/session-local only and does not apply station effects.
