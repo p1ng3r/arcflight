@@ -13,6 +13,7 @@ import { applyTravelV2ResponseActionWiringToRenderState } from "../helpers/trave
 import { applyTravelV2StationImpactBehaviorToRenderState } from "../helpers/travel-v2-station-impact-behavior.js";
 import { applyTravelV2ResponseActionResolutionReviewToRenderState } from "../helpers/travel-v2-response-action-resolution-review.js";
 import { applyTravelV2StationImpactModifierReviewToRenderState } from "../helpers/travel-v2-station-impact-modifier-review.js";
+import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
@@ -320,8 +321,9 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2ResponseActionResolutionNote: uiState.travelV2ResponseActionResolutionNote ?? null
   }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithStationImpactModifierReview = applyTravelV2StationImpactModifierReviewToRenderState(appStateWithResponseActionResolutionReview, { user, stations: appStateWithResponseActionResolutionReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
-  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationImpactModifierReview);
-  const appStateWithPreview = { ...appStateWithStationImpactModifierReview, travelV2PreviewPanel: previewPanel };
+  const appStateWithPendingStationBenefitQueue = applyTravelV2PendingStationBenefitQueueToRenderState(appStateWithStationImpactModifierReview, { user, stations: appStateWithStationImpactModifierReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
+  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithPendingStationBenefitQueue);
+  const appStateWithPreview = { ...appStateWithPendingStationBenefitQueue, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {
