@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, prepareTravelV2RoundActionOrderState } from "./travel-v2-round-action-order-state.js";
+import { TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2RoundActionOrderState } from "./travel-v2-round-action-order-state.js";
 
 const json = (value) => JSON.stringify(value);
 const forbidden = ["gmText", "gmSummary", "gmMechanicalNotes", "applyPayload", "internalMutation", "socketPayload", "targetActorUuid"];
@@ -49,7 +49,8 @@ function fixture(overrides = {}) {
 
 export default async function runTravelV2RoundActionOrderStateSmokeChecks() {
   const checked = [];
-  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, 1);
+  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, 2);
+  assert.equal(typeof normalizeTravelV2ProposedRoundActionOrder, "function");
   assert.equal(typeof prepareTravelV2RoundActionOrderState, "function");
   checked.push("exports and version");
 
@@ -94,6 +95,27 @@ export default async function runTravelV2RoundActionOrderStateSmokeChecks() {
   assert.deepEqual(customOrder.orderedStationKeys, ["watchmaster", "navigator", "engineer"]);
   assert.equal(customOrder.rows[0].stationKey, "watchmaster");
   checked.push("explicit order projection preserves active stations and appends omitted stations");
+
+  const validation = normalizeTravelV2ProposedRoundActionOrder(["engineer", "navigator", "watchmaster"], ["navigator", "engineer", "watchmaster"]);
+  assert.equal(validation.ready, true);
+  const invalidValidation = normalizeTravelV2ProposedRoundActionOrder(["engineer", "engineer", "bogus"], ["navigator", "engineer", "watchmaster"]);
+  assert.equal(invalidValidation.ready, false);
+  assert.deepEqual(invalidValidation.duplicateKeys, ["engineer"]);
+  assert.deepEqual(invalidValidation.unknownKeys, ["bogus"]);
+  assert.deepEqual(invalidValidation.missingKeys, ["navigator", "watchmaster"]);
+  checked.push("proposed reorder validation requires exactly the active station set");
+
+  const reorder = prepareTravelV2RoundActionOrderState(fixture(), { user: { isGM: true }, travelV2RoundActionOrderReorderRequested: true, proposedOrder: ["engineer", "navigator", "watchmaster"] });
+  assert.equal(reorder.reorderRequest.ready, true);
+  assert.deepEqual(reorder.reorderRequest.currentStationKeys, ["navigator", "engineer", "watchmaster"]);
+  assert.deepEqual(reorder.reorderRequest.proposedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  assert.equal(reorder.reorderRequest.reviewOnly, true);
+  const nonGmReorder = prepareTravelV2RoundActionOrderState(fixture(), { user: { isGM: false }, travelV2RoundActionOrderReorderRequested: true, proposedOrder: ["engineer", "navigator", "watchmaster"] });
+  assert.equal(nonGmReorder.reorderRequest.ready, false);
+  assert.equal(nonGmReorder.reorderRequest.playerSafe, true);
+  assert.equal(nonGmReorder.reorderRequest.proposedRows.length, 0);
+  assertPlayerSafe(nonGmReorder);
+  checked.push("GM reorder requests are review-only and non-GM requests are redacted");
 
   const completedRound = prepareTravelV2RoundActionOrderState(fixture({ travelV2RoundResolutions: { records: [{ roundIndex: 0, outcomeKey: "success" }] } }));
   assert.equal(completedRound.blocked, true);

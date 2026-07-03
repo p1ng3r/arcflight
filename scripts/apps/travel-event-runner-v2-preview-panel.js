@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 9;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 10;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -211,6 +211,28 @@ function normalizeStationBenefitDisplay(state = null) {
   };
 }
 
+function normalizeRoundActionOrderReorderRequest(request = null) {
+  const currentRows = Array.isArray(request?.currentRows) ? request.currentRows : [];
+  const proposedRows = Array.isArray(request?.proposedRows) ? request.proposedRows : [];
+  const blockedReasons = Array.isArray(request?.blockedReasons) ? request.blockedReasons : [];
+  return {
+    requested: request?.requested === true,
+    ready: request?.ready === true,
+    blocked: request?.blocked !== false,
+    status: request?.status ?? "not-requested",
+    feedbackText: request?.feedbackText ?? "No GM reorder review requested.",
+    hasFeedback: Boolean(request?.requested === true || request?.feedbackText),
+    showComparison: request?.requested === true,
+    currentRows,
+    proposedRows,
+    hasComparisonRows: currentRows.length > 0 || proposedRows.length > 0,
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    mutationNote: request?.mutationNote ?? "Review-only reorder candidate. No order is persisted or applied.",
+    reviewOnly: true
+  };
+}
+
 function normalizeRoundActionOrderDisplay(state = null) {
   const rows = Array.isArray(state?.rows) ? state.rows.map((row) => ({
     stationKey: row?.stationKey ?? "",
@@ -226,6 +248,7 @@ function normalizeRoundActionOrderDisplay(state = null) {
   })) : [];
   const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
   const blockedText = blockedReasons[0] ?? "";
+  const proposedShellOrder = rows.map((row) => row.stationKey).reverse();
   return {
     available: rows.length > 0,
     title: "Round Action Order",
@@ -243,7 +266,11 @@ function normalizeRoundActionOrderDisplay(state = null) {
     blockedReasons,
     blockedText,
     hasBlockedText: Boolean(blockedText),
+    canRequestReorderReview: rows.length > 1,
+    proposedShellOrder,
+    proposedShellOrderCsv: proposedShellOrder.join(","),
     footerText: state?.footerText || (rows.length > 0 ? "Round action order is display-only." : "No round action-order rows are available."),
+    reorderRequest: normalizeRoundActionOrderReorderRequest(state?.reorderRequest),
     readOnly: true
   };
 }
@@ -348,7 +375,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
   const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
   const stationBenefitDisplay = normalizeStationBenefitDisplay(appState.travelV2StationBenefitUseReviewPlayerState);
-  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession) : null);
+  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null);
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,

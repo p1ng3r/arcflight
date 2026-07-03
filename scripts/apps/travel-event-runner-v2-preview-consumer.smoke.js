@@ -42,7 +42,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 3, "consumer version should be 3");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 4, "consumer version should be 4");
 
   const emptyState = prepareTravelEventRunnerAppStateWithTravelV2Preview();
   assertSmoke(!emptyState.hasSession, "empty app state should have no session");
@@ -65,6 +65,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(state.travelV2PreviewPanel.available, "app state should expose available preview panel");
   assertSmoke(state.travelV2PreviewPanel.roundActionOrderDisplay.hasRows, "app state should expose round action order display rows");
   assertEqual(state.travelV2PreviewPanel.roundActionOrderDisplay.rows[0].stationName, "Navigator", "app state round action order should include station name");
+  assertSmoke(!state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.requested, "reorder comparison should not appear without explicit request");
   assertEqual(state.currentSessionCollapsed, false, "app state should preserve expanded current session UI setting");
   assertEqual(state.sessionActionsExpanded, true, "app state should preserve session actions UI setting");
   assertEqual(state.compactRunner, true, "app state should preserve compact UI setting");
@@ -96,6 +97,13 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(requestedBenefitState.travelV2StationBenefitUseReviewPlayerState.selectedCandidate.status, "ready", "ephemeral UI request should prepare a ready review-only station benefit candidate");
   assertEqual(requestedBenefitState.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.ready, true, "preview panel should expose ready review request feedback");
   assertSmoke(requestedBenefitState.travelV2StationBenefitUseReview.gmReview.reviewRequested === true, "GM review state should be available for GM-like users after request");
+
+  const reorderState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, uiState: { travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] }, user: { isGM: true } });
+  assertSmoke(reorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready, "GM explicit reorder request should produce ready review-only candidate");
+  assertEqual(reorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.proposedRows[0].stationName, "Engineer", "proposed order should be visible after explicit GM request");
+  const nonGmReorderState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, uiState: { travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] }, user: { isGM: false } });
+  assertSmoke(!nonGmReorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready, "non-GM reorder request should be blocked");
+  assertEqual(nonGmReorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.proposedRows.length, 0, "non-GM reorder request should redact proposed rows");
 
   const gmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true } });
   assertSmoke(gmState.travelV2GmFlowStatus, "GM app state includes Travel v2 flow status strip");

@@ -40,6 +40,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "{{selectedActionLabel}}", "template should render selected action label");
   assertIncludes(template, "{{currentMarker}}", "template should render current marker");
   assertIncludes(template, "state.travelV2PreviewPanel.roundActionOrderDisplay.footerText", "template should render action order footer text");
+  assertIncludes(template, "data-arcflight-travel-v2-order-reorder-request", "template should add explicit GM reorder review request shell");
+  assertIncludes(template, "Request Reorder Review", "template should label reorder review shell");
+  assertIncludes(template, "roundActionOrderDisplay.reorderRequest.requested", "template should only show reorder comparison after explicit request");
+  assertIncludes(template, "Proposed Order", "template should render proposed order comparison only in requested shell");
   assertIncludes(template, "state.travelV2PreviewPanel.stationBenefitDisplay.hasRows", "template should gate pending station benefit display rows");
   assertIncludes(template, "state.travelV2PreviewPanel.stationBenefitDisplay.rows", "template should iterate pending station benefit rows");
   assertIncludes(template, "{{sourceStationLabel}} → {{targetStationLabel}}", "template should render source and target station labels");
@@ -88,7 +92,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
       "selected-consequence-manual-apply-button",
       "css-panel-wrapper",
       "css-row-and-chip-hooks",
-      "css-station-benefit-display"
+      "css-station-benefit-display",
+      "round-action-order-reorder-request-shell"
     ]
   };
 }

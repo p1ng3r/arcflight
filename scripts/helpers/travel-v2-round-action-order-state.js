@@ -1,7 +1,7 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { normalizeTravelRoundSegmentKey } from "./travel-round-segments.js";
 
-export const TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION = 1;
+export const TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION = 2;
 
 const RESULT_LABELS = Object.freeze({
   criticalFailure: "Critical Failure",
@@ -96,6 +96,24 @@ function sourceOrderFrom(value) {
   return [];
 }
 
+export function normalizeTravelV2ProposedRoundActionOrder(sourceOrder = [], fallbackStations = []) {
+  const active = activeStationKeys({ activeStations: fallbackStations }, {});
+  const proposed = sourceOrderFrom(sourceOrder)
+    .map((entry) => typeof entry === "string" ? entry : entry?.stationKey)
+    .filter(Boolean);
+  const duplicateKeys = proposed.filter((stationKey, index) => proposed.indexOf(stationKey) !== index);
+  const unknownKeys = proposed.filter((stationKey) => !active.includes(stationKey));
+  const missingKeys = active.filter((stationKey) => !proposed.includes(stationKey));
+  const valid = active.length > 0 && proposed.length === active.length && duplicateKeys.length === 0 && unknownKeys.length === 0 && missingKeys.length === 0;
+  const blockedReasons = [];
+  if (active.length === 0) blockedReasons.push("Current Travel v2 round has no active stations to reorder.");
+  if (proposed.length === 0) blockedReasons.push("A proposed station order is required.");
+  if (duplicateKeys.length > 0) blockedReasons.push(`Proposed order repeats station keys: ${Array.from(new Set(duplicateKeys)).join(", ")}.`);
+  if (unknownKeys.length > 0) blockedReasons.push(`Proposed order includes inactive station keys: ${Array.from(new Set(unknownKeys)).join(", ")}.`);
+  if (missingKeys.length > 0) blockedReasons.push(`Proposed order is missing active station keys: ${missingKeys.join(", ")}.`);
+  return deepFreeze({ valid, ready: valid, proposedStationKeys: proposed, activeStationKeys: active, missingKeys, unknownKeys: Array.from(new Set(unknownKeys)), duplicateKeys: Array.from(new Set(duplicateKeys)), blockedReasons });
+}
+
 function normalizeStationOrder(sourceOrder = [], fallbackStations = []) {
   const fallback = activeStationKeys({ activeStations: fallbackStations }, {});
   const ordered = sourceOrderFrom(sourceOrder)
@@ -167,6 +185,23 @@ function footerTextFor(blockedReasons = [], rows = [], pointer = {}) {
   return "No round action-order rows are available.";
 }
 
+function prepareReorderRequestState({ sessionState, currentRows, currentOrder, activeStations, options = {} }) {
+  const requested = options.travelV2RoundActionOrderReorderRequested === true || options.reorderRequested === true;
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const proposedInput = options.proposedOrder ?? options.proposedStationOrder ?? options.travelV2ProposedRoundActionOrder ?? [];
+  if (!requested) return { requested: false, ready: false, blocked: true, playerSafe: true, status: "not-requested", feedbackText: "No GM reorder review requested.", currentRows: [], proposedRows: [], blockedReasons: ["No GM reorder review requested."], reviewOnly: true };
+  if (!isGm) return { requested: true, ready: false, blocked: true, playerSafe: true, status: "blocked", feedbackText: "Only the GM can request round action-order reorder review.", currentRows: [], proposedRows: [], blockedReasons: ["Only the GM can request round action-order reorder review."], reviewOnly: true };
+  const validation = normalizeTravelV2ProposedRoundActionOrder(proposedInput, activeStations);
+  const blockedReasons = [...(Array.isArray(sessionState.blockedReasons) ? sessionState.blockedReasons : []), ...validation.blockedReasons];
+  const rowByKey = new Map(currentRows.map((row) => [row.stationKey, row]));
+  const rowFor = (stationKey, index) => {
+    const row = rowByKey.get(stationKey) ?? {};
+    return { stationKey, stationName: row.stationName || stationLabel({}, stationKey), orderNumber: index + 1, orderLabel: `#${index + 1}`, selectedActionLabel: row.selectedActionLabel || "Station order", statusLabel: row.statusLabel || "Needs Order", resultLabel: row.resultLabel || "Unresolved" };
+  };
+  const ready = blockedReasons.length === 0 && validation.ready === true;
+  return deepFreeze({ requested: true, ready, blocked: !ready, playerSafe: false, status: ready ? "ready" : "blocked", feedbackText: ready ? "Reorder candidate is ready for GM review only. It has not been applied, saved, or persisted." : (blockedReasons[0] ?? "Reorder candidate is blocked."), currentStationKeys: currentOrder, proposedStationKeys: validation.proposedStationKeys, currentRows: currentOrder.map(rowFor), proposedRows: validation.proposedStationKeys.map(rowFor), blockedReasons, missingKeys: validation.missingKeys, unknownKeys: validation.unknownKeys, duplicateKeys: validation.duplicateKeys, reviewOnly: true, mutationNote: "Review-only reorder candidate. No session write, persistence, round advancement, station result change, roll, DC, socket, actor, item, chat, or journal mutation is performed." });
+}
+
 export function prepareTravelV2RoundActionOrderState(session = null, options = {}) {
   const hasSession = isPlainObject(session);
   const isCompleted = hasSession ? isCompletedSession(session) : false;
@@ -218,6 +253,8 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
   const pointer = currentPointerFor(rows, phase, blocked);
   const rowsWithCurrent = rows.map((row) => ({ ...row, current: row.stationKey === pointer.currentStationKey }));
 
+  const reorderRequest = prepareReorderRequestState({ sessionState: { blockedReasons }, currentRows: rowsWithCurrent, currentOrder: orderedStationKeys, activeStations, options });
+
   return deepFreeze({
     version: TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION,
     hasSession,
@@ -246,7 +283,8 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
     roundResolutionRecord: roundResolutionRecord ? cloneData(roundResolutionRecord) : null,
     footerText: footerTextFor(blockedReasons, rowsWithCurrent, pointer),
     stateOnly: true,
-    mutationNote: "Round action order state is read-only in #353A. It does not commit order, advance rounds, roll checks, change DCs, or persist session data."
+    reorderRequest,
+    mutationNote: "Round action order state is read-only. It does not commit order, advance rounds, roll checks, change DCs, or persist session data."
   });
 }
 
