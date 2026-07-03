@@ -31,23 +31,29 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
   assertPlayerSafe(rows);
   checked.push("display rows are prepared from PR #351 pending queue state");
 
-  const ready = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedPendingBenefitQueueKey: "benefit-1" });
+  const selectedWithoutRequest = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedPendingBenefitQueueKey: "benefit-1" });
+  assert.equal(selectedWithoutRequest.selectedCandidate.status, "blocked");
+  assert.equal(selectedWithoutRequest.selectedCandidate.ready, false);
+  assert.match(selectedWithoutRequest.selectedCandidate.reason, /not requested/);
+  checked.push("selected queue key without explicit request stays blocked");
+
+  const ready = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedPendingBenefitQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
   assert.equal(ready.selectedCandidate.status, "ready");
   assert.equal(ready.selectedCandidate.candidate.reviewOnly, true);
   assert.equal(ready.selectedCandidate.useAvailable, false);
-  checked.push("valid pending selected row becomes ready review-only candidate");
+  checked.push("valid pending selected row plus explicit request becomes ready review-only candidate");
 
   for (const status of ["used", "dismissed", "expired", "blocked"]) {
-    const blocked = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(status), { selectedQueueKey: "benefit-1" });
+    const blocked = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(status), { selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
     assert.equal(blocked.selectedCandidate.status, "blocked");
     assert.match(blocked.selectedCandidate.reason, new RegExp(status));
   }
-  const unknown = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedQueueKey: "missing" });
+  const unknown = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedQueueKey: "missing", travelV2StationBenefitUseReviewRequested: true });
   assert.equal(unknown.selectedCandidate.status, "blocked");
-  const hidden = prepareTravelV2StationBenefitUseReviewPlayerState({ pendingStationBenefits: [{ ...fixture().travelV2PendingStationBenefitQueue.rows[0], hidden: true }] }, { selectedQueueKey: "benefit-1" });
+  const hidden = prepareTravelV2StationBenefitUseReviewPlayerState({ pendingStationBenefits: [{ ...fixture().travelV2PendingStationBenefitQueue.rows[0], hidden: true }] }, { selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
   assert.equal(hidden.selectedCandidate.status, "blocked");
   assert.match(hidden.selectedCandidate.reason, /hidden/);
-  const malformed = prepareTravelV2StationBenefitUseReviewPlayerState({ pendingStationBenefits: [{}] }, { selectedQueueKey: "none:none:none:none:none:unknown:0" });
+  const malformed = prepareTravelV2StationBenefitUseReviewPlayerState({ pendingStationBenefits: [{}] }, { selectedQueueKey: "none:none:none:none:none:unknown:0", travelV2StationBenefitUseReviewRequested: true });
   assert.equal(malformed.selectedCandidate.status, "blocked");
   checked.push("invalid selections block safely for missing, unknown, hidden, malformed, used, dismissed, expired, and non-pending rows");
 
@@ -58,15 +64,21 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
 
   const gmNoFlag = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: true }, selectedQueueKey: "benefit-1" });
   assert.equal(gmNoFlag.gmReview, undefined);
-  const gmWithFlag = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: true }, selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
+  const gmWithGenericIncludeOnly = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: true }, selectedQueueKey: "benefit-1", includeGmReview: true });
+  assert.equal(gmWithGenericIncludeOnly.gmReview, undefined);
+  const gmWithRequestNoVisibility = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: true }, selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
+  assert.equal(gmWithRequestNoVisibility.gmReview, undefined);
+  const gmWithFlag = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: true }, selectedQueueKey: "benefit-1", includeGmReview: true, travelV2StationBenefitUseReviewRequested: true });
   assert.equal(gmWithFlag.gmReview.selectedRow.queueKey, "benefit-1");
-  const nonGm = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: false }, selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
+  const nonGm = prepareTravelV2StationBenefitUseReviewGmState(fixture(), { user: { isGM: false }, selectedQueueKey: "benefit-1", includeGmReview: true, travelV2StationBenefitUseReviewRequested: true });
   assert.equal(nonGm.gmReview, undefined);
-  checked.push("GM review state is gated to GM-like users with a review flag");
+  checked.push("GM review state requires GM-like user, visibility permission, and explicit station-benefit review flag");
 
   const renderState = { marker: { ok: true }, ...fixture() };
   const before = json(renderState);
-  const applied = applyTravelV2StationBenefitUseReviewToRenderState(renderState, { selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true }, { user: { isGM: true } });
+  const genericGmRender = applyTravelV2StationBenefitUseReviewToRenderState(renderState, { selectedQueueKey: "benefit-1" }, { user: { isGM: true }, includeGmReview: true });
+  assert.equal(genericGmRender.travelV2StationBenefitUseReview, undefined);
+  const applied = applyTravelV2StationBenefitUseReviewToRenderState(renderState, { selectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true }, { user: { isGM: true }, includeGmReview: true });
   assert.equal(json(renderState), before);
   assert.equal(applied.travelV2StationBenefitUseReviewPlayerState.selectedCandidate.status, "ready");
   assert.equal(applied.travelV2StationBenefitUseReview.gmReview.selectedQueueKey, "benefit-1");
