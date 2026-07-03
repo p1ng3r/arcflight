@@ -635,3 +635,8 @@ PR #343 adds an explicit GM-only hazard draw/review candidate flow from the sele
 ## PR #344 Active Hazard Handoff Review Note
 
 PR #344 adds GM-only active hazard handoff review candidates that can describe what a drawn hazard would look like as a proposed active hazard. This remains review-only: it does not activate hazards, append active hazard records, import arbitrary packs, persist to settings/world/session state, or apply hazards/consequences.
+
+
+## PR #345 GM Hazard Candidate Controls Note
+
+PR #345 adds explicit GM activate/hold/dismiss controls for reviewed active-hazard handoff candidates. These controls still do not mutate Foundry documents, apply consequences, or automatically apply station effects. The activate result is a session-local/render-state object only and remains marked non-persistent.

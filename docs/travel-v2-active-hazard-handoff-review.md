@@ -41,3 +41,7 @@ Handoff review is GM-only and requires an explicit handoff review request. Playe
 - active hazard lifecycle and player HUD display polish
 - card pack import/export
 - expanded hazard packs
+
+## Follow-up: GM Candidate Controls
+
+Handoff candidates can now feed explicit GM activate/hold/dismiss candidate controls. Those controls still keep lifecycle results session-local/render-state only and do not mutate Foundry documents, apply consequences, or apply station effects automatically.
