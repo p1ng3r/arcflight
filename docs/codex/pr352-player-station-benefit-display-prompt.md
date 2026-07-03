@@ -7,53 +7,63 @@ Target PR: #352
 Working branch: codex/pr352-player-station-benefit-display
 Suggested PR title: Travel v2: Add player-facing pending station benefit display and use review
 
-Context
+## Context
 
-Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaigns. It uses PF2E vehicle actors as Arcflight ships and PF2E equipment items as Arcflight components. Arcflight data lives under flags.arcflight.*.
+Arcflight is a Foundry VTT module for PF2E-compatible fantasy voidfaring campaigns.
 
-PR #351 is merged into dev. It added the Travel v2 pending station benefit queue foundation:
+Core Arcflight assumptions:
 
-- docs/agents/* agent workflow docs
-- AGENTS.md root agent entrypoint
-- docs/codex/pr351-roadmap-benefit-queue-prompt.md
-- docs/travel-v2-pending-station-benefit-queue.md
-- scripts/helpers/travel-v2-pending-station-benefit-queue.js
-- scripts/helpers/travel-v2-pending-station-benefit-queue.smoke.js
-- integration into scripts/apps/travel-event-runner-v2-preview-consumer.js
-- helper exports in scripts/arcflight.js and scripts/dev/dev-tools.js
-- aggregate smoke wiring in scripts/dev/run-travel-v2-smoke.mjs
+- PF2E vehicle actors = Arcflight ships.
+- PF2E equipment items = Arcflight components.
+- Arcflight-specific state lives under `flags.arcflight.*`.
+- Pure helper modules must stay Node-smoke-safe.
+- Foundry runtime/global API usage belongs in app/runtime layers unless explicitly guarded.
 
-PR #351 was intentionally inert. It normalized pending station benefit rows and produced player-safe/GM review state, but it did not add player-facing use controls, direct use review, roll mutation, check preview mutation, station modifier application, GM Apply, or persistent Foundry document mutation.
+PR #351 is merged into `dev`. It added the Travel v2 pending station benefit queue foundation:
 
-Current roadmap slice
+- `docs/agents/*` agent workflow docs
+- `AGENTS.md` root agent entrypoint
+- `docs/codex/pr351-roadmap-benefit-queue-prompt.md`
+- `docs/travel-v2-pending-station-benefit-queue.md`
+- `scripts/helpers/travel-v2-pending-station-benefit-queue.js`
+- `scripts/helpers/travel-v2-pending-station-benefit-queue.smoke.js`
+- integration into `scripts/apps/travel-event-runner-v2-preview-consumer.js`
+- helper exports in `scripts/arcflight.js` and `scripts/dev/dev-tools.js`
+- aggregate smoke wiring in `scripts/dev/run-travel-v2-smoke.mjs`
 
-PR #352 is the next slice:
+PR #351 was intentionally inert. It normalized pending station benefit rows and produced player-safe / GM review state, but it did not add player-facing use controls, direct use review, roll mutation, check preview mutation, station modifier application, GM Apply, or persistent Foundry document mutation.
+
+## Current roadmap slice
+
+PR #352 is:
 
 Player-Facing Station Benefit Display / Direct Player Use Review
 
-This means players should be able to see pending station benefits clearly and request/use-review a selected pending benefit through a safe player-facing flow.
-
-Important: this PR should NOT actually apply the benefit to a roll, station check, check preview, DC, hazard, Momentum, consequence, actor, item, chat, journal, scene, token, combat, settings, socket, compendium, world data, or persistent flag.
+Players should be able to see pending station benefits clearly and request/use-review a selected pending benefit through a safe player-facing flow.
 
 This PR creates a display and request/review layer only. Actual check-preview application belongs to PR #356 or a later explicit apply slice.
 
-Required agent workflow
+Do NOT apply the benefit to a roll, station check, check preview, DC, hazard, Momentum, consequence, actor, item, chat, journal, scene, token, combat, setting, socket, compendium, world data, or persistent flag.
+
+## Required agent workflow
 
 Before making changes, read and follow:
 
-- AGENTS.md
-- docs/agents/README.md
-- docs/agents/roadmap-scope-agent.md
-- docs/agents/helper-runtime-agent.md
-- docs/agents/ui-player-flow-agent.md
-- docs/agents/safety-leak-audit-agent.md
-- docs/agents/smoke-test-agent.md
+- `AGENTS.md`
+- `docs/agents/README.md`
+- `docs/agents/roadmap-scope-agent.md`
+- `docs/agents/helper-runtime-agent.md`
+- `docs/agents/ui-player-flow-agent.md`
+- `docs/agents/foundry-pf2e-api-agent.md`
+- `docs/agents/safety-leak-audit-agent.md`
+- `docs/agents/smoke-test-agent.md`
 
 Required agents for PR #352:
 
 - Roadmap / Scope Agent
 - Helper / Runtime Agent
 - UI / Player Flow Agent
+- Foundry / PF2E System Compatibility Agent
 - Safety / Leak Audit Agent
 - Smoke Test Agent
 
@@ -64,30 +74,48 @@ Add an Agent Checks section to the PR body with:
 - Roadmap / Scope Agent: PASS / FAIL / WATCH
 - Helper / Runtime Agent: PASS / FAIL / WATCH
 - UI / Player Flow Agent: PASS / FAIL / WATCH
+- Foundry / PF2E System Compatibility Agent: PASS / FAIL / WATCH
 - Safety / Leak Audit Agent: PASS / FAIL / WATCH
 - Smoke Test Agent: PASS / FAIL / WATCH
 
 Do not mark complete unless all required agents are PASS or any WATCH item is clearly explained, safe, and deferred to a named later PR.
 
-Non-negotiable safety rules
+## Foundry / PF2E compatibility expectations
+
+Because PR #352 may touch app/render state, `docs/agents/foundry-pf2e-api-agent.md` is required.
+
+Expected PASS conditions:
+
+- Helper files remain pure and Node-smoke-safe.
+- Any Foundry globals remain in app/runtime files only.
+- UI/render state consumes #351 queue data without relying on PF2E private internals.
+- PF2E vehicle/equipment assumptions remain guarded and unchanged.
+- Arcflight state remains under `flags.arcflight.*`.
+- No roll/check/DC/PF2E document mutation is introduced.
+- Any visible control is request/review-only and wired to existing app-state patterns.
+- Version-sensitive Foundry/PF2E assumptions are documented as WATCH, not guessed.
+
+When uncertain about PF2E actor/item/roll/check patterns, inspect the public `foundryvtt/pf2e` repository for API and structure reference only. Do not copy PF2E pack/content data into Arcflight.
+
+## Non-negotiable safety rules
 
 Never automatically mutate Foundry actors, items, chat, journals, scenes, tokens, combats, settings, sockets, compendia, world data, or persistent flags in this PR.
 
 Player-safe state must never leak these fields at any depth:
 
-- gmText
-- gmSummary
-- gmMechanicalNotes
-- gmReview
-- explicitGmApplyEffect
-- sessionLocalEffect
-- internalMutation
-- targetActorId
-- targetActorUuid
-- applyPayload
-- before
-- after
-- queueInternals
+- `gmText`
+- `gmSummary`
+- `gmMechanicalNotes`
+- `gmReview`
+- `explicitGmApplyEffect`
+- `sessionLocalEffect`
+- `internalMutation`
+- `targetActorId`
+- `targetActorUuid`
+- `applyPayload`
+- `before`
+- `after`
+- `queueInternals`
 
 Do not add live AI generation.
 Do not implement import/export.
@@ -98,11 +126,11 @@ Do not implement station combo creation runtime.
 Do not implement roll/check/DC mutation.
 Do not implement GM Apply.
 
-Primary feature goal
+## Primary feature goal
 
 Build the first player-facing station benefit display and direct use-review layer on top of the #351 pending station benefit queue.
 
-A player-safe display row should clearly answer:
+A player-safe display row should answer:
 
 - What benefit is pending?
 - Who created it / source station?
@@ -114,7 +142,7 @@ A player-safe display row should clearly answer:
 - Can the player request use review now?
 - If not, why not?
 
-A use-review candidate should clearly answer:
+A use-review candidate should answer:
 
 - Which pending benefit did the player select?
 - Is the selected benefit valid and pending?
@@ -123,133 +151,125 @@ A use-review candidate should clearly answer:
 - What would this request be asking the GM/future apply layer to consider?
 - Why is it blocked if it cannot be reviewed?
 
-Recommended helper
+## Recommended helper
 
-Add a helper:
+Add:
 
-scripts/helpers/travel-v2-station-benefit-use-review.js
+`scripts/helpers/travel-v2-station-benefit-use-review.js`
 
 Recommended exports:
 
-- TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION
-- normalizeTravelV2StationBenefitUseReviewInput(input = {}, options = {})
-- prepareTravelV2StationBenefitDisplayRows(input = {}, options = {})
-- prepareTravelV2StationBenefitUseReviewPlayerState(input = {}, options = {})
-- prepareTravelV2StationBenefitUseReviewGmState(input = {}, options = {})
-- applyTravelV2StationBenefitUseReviewToRenderState(renderState = {}, input = {}, options = {})
+- `TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION`
+- `normalizeTravelV2StationBenefitUseReviewInput(input = {}, options = {})`
+- `prepareTravelV2StationBenefitDisplayRows(input = {}, options = {})`
+- `prepareTravelV2StationBenefitUseReviewPlayerState(input = {}, options = {})`
+- `prepareTravelV2StationBenefitUseReviewGmState(input = {}, options = {})`
+- `applyTravelV2StationBenefitUseReviewToRenderState(renderState = {}, input = {}, options = {})`
 
 Use names that fit existing repo style, but keep display rows, player state, GM state, and render-state integration clearly separated.
 
-Inputs to support
+## Inputs to support
 
-The helper should consume existing #351 queue state from any of these shapes when present:
+Consume #351 queue state from any of these shapes when present:
 
-- input.travelV2PendingStationBenefitPlayerState
-- input.travelV2PendingStationBenefitQueue
-- input.pendingStationBenefits
-- input.travelV2PendingStationBenefits
-- input.travelV2PendingStationBenefitQueue
-- input.session?.pendingStationBenefits
-- input.session?.travelV2PendingStationBenefits
-- renderState.travelV2PendingStationBenefitPlayerState
-- renderState.travelV2PendingStationBenefitQueue
+- `input.travelV2PendingStationBenefitPlayerState`
+- `input.travelV2PendingStationBenefitQueue`
+- `input.pendingStationBenefits`
+- `input.travelV2PendingStationBenefits`
+- `input.travelV2PendingStationBenefitQueue`
+- `input.session?.pendingStationBenefits`
+- `input.session?.travelV2PendingStationBenefits`
+- `renderState.travelV2PendingStationBenefitPlayerState`
+- `renderState.travelV2PendingStationBenefitQueue`
 
-The helper should accept a selected/requested queue key from UI state using names like:
+Accept a selected/requested queue key from UI state using names like:
 
-- input.selectedQueueKey
-- input.queueKey
-- input.travelV2SelectedStationBenefitQueueKey
-- input.travelV2StationBenefitUseSelectedQueueKey
-- input.uiState?.travelV2StationBenefitUseSelectedQueueKey
+- `input.selectedQueueKey`
+- `input.queueKey`
+- `input.travelV2SelectedStationBenefitQueueKey`
+- `input.travelV2StationBenefitUseSelectedQueueKey`
+- `input.uiState?.travelV2StationBenefitUseSelectedQueueKey`
 
-The helper should accept an explicit request boolean using names like:
+Accept an explicit request boolean using names like:
 
-- input.useRequested
-- input.travelV2StationBenefitUseRequested
-- input.uiState?.travelV2StationBenefitUseRequested
+- `input.useRequested`
+- `input.travelV2StationBenefitUseRequested`
+- `input.uiState?.travelV2StationBenefitUseRequested`
 
-This PR should not require a request by default. Without an explicit request, the helper should still return display rows but no ready use-review candidate.
+Without an explicit request, the helper should still return display rows but no ready use-review candidate.
 
-Display row shape
+## Display row shape
 
 Suggested player-safe display row fields:
 
-- stationBenefitUseReviewVersion
-- queueKey
-- title
-- sourceStation
-- sourceStationLabel
-- targetStation
-- targetStationLabel
-- benefitKind
-- magnitude
-- expires
-- status
-- publicText
-- playerSafeSummary
-- displaySummary
-- displayStatusLabel
-- canRequestUse
-- requestUseLabel
-- requestUseDisabledReason
-- reviewOnly
-- playerVisible
-- gmOnly
-- applyAvailable: false
-- useApplied: false
-- stationCheckMutated: false
-- rollMutated: false
-- checkPreviewMutated: false
-- persistentMutation: { available: false, reason: string }
+- `stationBenefitUseReviewVersion`
+- `queueKey`
+- `title`
+- `sourceStation`
+- `sourceStationLabel`
+- `targetStation`
+- `targetStationLabel`
+- `benefitKind`
+- `magnitude`
+- `expires`
+- `status`
+- `publicText`
+- `playerSafeSummary`
+- `displaySummary`
+- `displayStatusLabel`
+- `canRequestUse`
+- `requestUseLabel`
+- `requestUseDisabledReason`
+- `reviewOnly`
+- `playerVisible`
+- `gmOnly`
+- `applyAvailable: false`
+- `useApplied: false`
+- `stationCheckMutated: false`
+- `rollMutated: false`
+- `checkPreviewMutated: false`
+- `persistentMutation: { available: false, reason: string }`
 
-Use-review candidate shape
-
-Suggested player-safe candidate fields:
-
-- stationBenefitUseReviewVersion
-- status: empty | ready | blocked
-- queueKey
-- title
-- benefitKind
-- sourceStationLabel
-- targetStationLabel
-- publicText
-- playerSafeSummary
-- displaySummary
-- selected: true
-- reviewOnly: true
-- applyAvailable: false
-- useApplied: false
-- stationCheckMutated: false
-- rollMutated: false
-- checkPreviewMutated: false
-- persistentMutation: { available: false, reason: string }
-- blockedReason when blocked
-
-GM state may include a GM review wrapper for the requested use-review candidate, but it must remain review-only and must not include an apply payload that looks executable.
-
-Player display behavior
-
-For pending rows:
-
-- canRequestUse should be true only when the row is player-visible, status is pending, and enough safe display data exists.
-- requestUseLabel can be "Request Use" or similar.
-- requestUseDisabledReason should explain blocked/expired/used/dismissed/malformed rows.
+For pending rows, `canRequestUse` should be true only when the row is player-visible, status is pending, and enough safe display data exists.
 
 For blocked, expired, used, dismissed, or malformed rows:
 
-- canRequestUse false
+- `canRequestUse: false`
 - stable disabled reason
 - no hidden GM fields
 - no apply behavior
 
-Render-state integration
+## Use-review candidate shape
+
+Suggested player-safe candidate fields:
+
+- `stationBenefitUseReviewVersion`
+- `status: empty | ready | blocked`
+- `queueKey`
+- `title`
+- `benefitKind`
+- `sourceStationLabel`
+- `targetStationLabel`
+- `publicText`
+- `playerSafeSummary`
+- `displaySummary`
+- `selected: true`
+- `reviewOnly: true`
+- `applyAvailable: false`
+- `useApplied: false`
+- `stationCheckMutated: false`
+- `rollMutated: false`
+- `checkPreviewMutated: false`
+- `persistentMutation: { available: false, reason: string }`
+- `blockedReason` when blocked
+
+GM state may include a GM review wrapper for the requested use-review candidate, but it must remain review-only and must not include an apply payload that looks executable.
+
+## Render-state integration
 
 Integrate into:
 
-scripts/apps/travel-event-runner-v2-preview-consumer.js
-
-Use the existing render-state pipeline style.
+`scripts/apps/travel-event-runner-v2-preview-consumer.js`
 
 Recommended order:
 
@@ -262,19 +282,19 @@ Recommended order:
 7. New station benefit display/use-review layer.
 8. Preview panel / GM flow status.
 
-The app state should expose a player-safe state for all users, for example:
+Expose a player-safe state for all users, for example:
 
-- travelV2StationBenefitUseReviewPlayerState
+- `travelV2StationBenefitUseReviewPlayerState`
 
 GM-like users may also receive a GM-only review state, for example:
 
-- travelV2StationBenefitUseReview
+- `travelV2StationBenefitUseReview`
 
-Do not add a real apply button. If visible control metadata is added, it must clearly be a request/review action only.
+Do not add a real apply button. If visible control metadata is added, it must clearly be request/review only.
 
-Visible UI guidance
+## Visible UI guidance
 
-If the repository has templates or UI rows for Travel v2 guided queues / preview panel / player mission board, add the smallest display needed to make pending station benefits visible.
+If the repository has a narrow existing surface for Travel v2 guided queues, preview panel, or player mission board, add the smallest display needed to make pending station benefits visible.
 
 If there is no appropriate template surface in this slice, add render-state rows and docs only, and mark UI / Player Flow Agent as WATCH with a clear explanation. Do not force a broad template rewrite.
 
@@ -282,24 +302,24 @@ Do not expose GM-only review details to players.
 Do not let a disabled request look clickable.
 Do not make review-only state look already applied.
 
-Exports
+## Exports
 
 If existing style requires helper exports, add safe read-only exports to:
 
-- scripts/arcflight.js
-- scripts/dev/dev-tools.js
+- `scripts/arcflight.js`
+- `scripts/dev/dev-tools.js`
 
 Do not create a broad public API beyond existing pattern.
 
-Documentation
+## Documentation
 
 Add:
 
-- docs/travel-v2-station-benefit-display-use-review.md
+- `docs/travel-v2-station-benefit-display-use-review.md`
 
 Update:
 
-- docs/TRAVEL_V2_ENCOUNTER_ROADMAP.md
+- `docs/TRAVEL_V2_ENCOUNTER_ROADMAP.md`
 
 The docs should explain:
 
@@ -311,15 +331,15 @@ The docs should explain:
 - PR #356 remains Risk Bid Apply to Check Preview.
 - Actual station benefit application/check-preview mutation is deferred to a later explicit apply slice.
 
-Smoke tests
+## Smoke tests
 
 Add focused smoke:
 
-scripts/helpers/travel-v2-station-benefit-use-review.smoke.js
+`scripts/helpers/travel-v2-station-benefit-use-review.smoke.js`
 
 Wire it into:
 
-scripts/dev/run-travel-v2-smoke.mjs
+`scripts/dev/run-travel-v2-smoke.mjs`
 
 Required smoke coverage:
 
@@ -338,9 +358,10 @@ Required smoke coverage:
 13. Render-state integration adds expected keys without mutating the original render state.
 14. All use/apply/check/roll/persistent mutation flags remain unavailable/inert.
 15. Source scan has no obvious Foundry mutation calls.
-16. Aggregate Travel v2 smoke runner includes the new suite.
+16. Foundry/PF2E agent checks pass or document WATCH items.
+17. Aggregate Travel v2 smoke runner includes the new suite.
 
-Expected local commands
+## Expected local commands
 
 Run before marking complete:
 
@@ -354,40 +375,45 @@ node scripts/dev/run-travel-v2-smoke.mjs
 node scripts/dev/run-foundry-check-runner-smoke.mjs
 ```
 
-Expected changed files
+## Expected changed files
 
 Likely files:
 
-- docs/codex/pr352-player-station-benefit-display-prompt.md
-- docs/TRAVEL_V2_ENCOUNTER_ROADMAP.md
-- docs/travel-v2-station-benefit-display-use-review.md
-- scripts/apps/travel-event-runner-v2-preview-consumer.js
-- scripts/helpers/travel-v2-station-benefit-use-review.js
-- scripts/helpers/travel-v2-station-benefit-use-review.smoke.js
-- scripts/dev/run-travel-v2-smoke.mjs
-- scripts/arcflight.js
-- scripts/dev/dev-tools.js
+- `docs/codex/pr352-player-station-benefit-display-prompt.md`
+- `docs/agents/foundry-pf2e-api-agent.md`
+- `docs/agents/README.md`
+- `AGENTS.md`
+- `docs/TRAVEL_V2_ENCOUNTER_ROADMAP.md`
+- `docs/travel-v2-station-benefit-display-use-review.md`
+- `scripts/apps/travel-event-runner-v2-preview-consumer.js`
+- `scripts/helpers/travel-v2-station-benefit-use-review.js`
+- `scripts/helpers/travel-v2-station-benefit-use-review.smoke.js`
+- `scripts/dev/run-travel-v2-smoke.mjs`
+- `scripts/arcflight.js`
+- `scripts/dev/dev-tools.js`
 
 Only add template/style files if there is a narrow existing surface for pending station benefit display.
 
-Acceptance criteria
+## Acceptance criteria
 
 The PR is acceptable only if:
 
-- It is based on dev.
+- It is based on `dev`.
 - It builds on #351 pending station benefit queue state.
 - Pending station benefits have a player-safe display state.
 - A selected pending benefit can produce a review-only use-review candidate.
 - Invalid/missing/non-pending selections block safely.
+- Foundry / PF2E System Compatibility Agent is included in the PR body.
 - No actual benefit application occurs.
 - No check preview, roll, DC, station result, hazard, Momentum, consequence, or Foundry document is mutated.
 - Player-safe state strips forbidden fields.
 - GM review is gated.
 - Helper outputs are clone-safe.
+- Pure helpers remain Node-smoke-safe and free of unguarded Foundry globals.
 - Focused smoke and aggregate smoke pass.
 - PR body includes Agent Checks.
 
-PR body requirement
+## PR body requirement
 
 Include:
 
@@ -396,34 +422,35 @@ Include:
 - Adds player-facing pending station benefit display state.
 - Adds review-only station benefit use-request candidate state.
 - Integrates the display/use-review layer into the Travel v2 render pipeline.
-- Preserves no-mutation and player-safe boundaries.
+- Preserves Foundry/PF2E compatibility, no-mutation, and player-safe boundaries.
 
 ### Agent Checks
 
 - Roadmap / Scope Agent: PASS / FAIL / WATCH
 - Helper / Runtime Agent: PASS / FAIL / WATCH
 - UI / Player Flow Agent: PASS / FAIL / WATCH
+- Foundry / PF2E System Compatibility Agent: PASS / FAIL / WATCH
 - Safety / Leak Audit Agent: PASS / FAIL / WATCH
 - Smoke Test Agent: PASS / FAIL / WATCH
 
 ### Tests
 
-- git diff --check
-- node --check scripts/helpers/travel-v2-station-benefit-use-review.js
-- node --check scripts/helpers/travel-v2-station-benefit-use-review.smoke.js
-- node --check scripts/apps/travel-event-runner-v2-preview-consumer.js
-- node scripts/helpers/travel-v2-station-benefit-use-review.smoke.js
-- node scripts/dev/run-travel-v2-smoke.mjs
-- node scripts/dev/run-foundry-check-runner-smoke.mjs
+- `git diff --check`
+- `node --check scripts/helpers/travel-v2-station-benefit-use-review.js`
+- `node --check scripts/helpers/travel-v2-station-benefit-use-review.smoke.js`
+- `node --check scripts/apps/travel-event-runner-v2-preview-consumer.js`
+- `node scripts/helpers/travel-v2-station-benefit-use-review.smoke.js`
+- `node scripts/dev/run-travel-v2-smoke.mjs`
+- `node scripts/dev/run-foundry-check-runner-smoke.mjs`
 
-End state
+## End state
 
 Open a PR from:
 
-codex/pr352-player-station-benefit-display
+`codex/pr352-player-station-benefit-display`
 
 into:
 
-dev
+`dev`
 
 Do not merge. The PR will be reviewed before local testing and merge.
