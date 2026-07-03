@@ -33,6 +33,13 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "state.travelV2PreviewPanel.footerText", "template should render read-only footer text");
   assertIncludes(template, "Read-only", "template should visibly mark the panel as read-only");
   assertIncludes(template, "arcflight-travel-runner-mvp__v2-preview-row--{{tone}}", "template should use tone as a CSS class hook only");
+  assertIncludes(template, "state.travelV2PreviewPanel.roundActionOrderDisplay.hasRows", "template should gate round action order display rows");
+  assertIncludes(template, "state.travelV2PreviewPanel.roundActionOrderDisplay.rows", "template should iterate round action order display rows");
+  assertIncludes(template, "state.travelV2PreviewPanel.roundActionOrderDisplay.title", "template should render round action order title");
+  assertIncludes(template, "{{orderLabel}} · {{stationName}}", "template should render order number and station name");
+  assertIncludes(template, "{{selectedActionLabel}}", "template should render selected action label");
+  assertIncludes(template, "{{currentMarker}}", "template should render current marker");
+  assertIncludes(template, "state.travelV2PreviewPanel.roundActionOrderDisplay.footerText", "template should render action order footer text");
   assertIncludes(template, "state.travelV2PreviewPanel.stationBenefitDisplay.hasRows", "template should gate pending station benefit display rows");
   assertIncludes(template, "state.travelV2PreviewPanel.stationBenefitDisplay.rows", "template should iterate pending station benefit rows");
   assertIncludes(template, "{{sourceStationLabel}} → {{targetStationLabel}}", "template should render source and target station labels");

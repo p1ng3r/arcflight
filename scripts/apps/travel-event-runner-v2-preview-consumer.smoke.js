@@ -63,6 +63,8 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(state.effectApplication, "app state should include effect application state");
   assertSmoke(state.travelV2Preview.ok, "app state should expose usable v2 preview");
   assertSmoke(state.travelV2PreviewPanel.available, "app state should expose available preview panel");
+  assertSmoke(state.travelV2PreviewPanel.roundActionOrderDisplay.hasRows, "app state should expose round action order display rows");
+  assertEqual(state.travelV2PreviewPanel.roundActionOrderDisplay.rows[0].stationName, "Navigator", "app state round action order should include station name");
   assertEqual(state.currentSessionCollapsed, false, "app state should preserve expanded current session UI setting");
   assertEqual(state.sessionActionsExpanded, true, "app state should preserve session actions UI setting");
   assertEqual(state.compactRunner, true, "app state should preserve compact UI setting");
@@ -207,6 +209,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "preview-row-exposure",
       "preview-panel-exposure",
       "station-benefit-display-state",
+      "round-action-order-panel-state",
       "preview-only-pressure",
       "guided-empty-start",
       "guided-send-refresh",

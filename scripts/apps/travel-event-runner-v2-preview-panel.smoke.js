@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 8, "panel version should be 8");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 9, "panel version should be 9");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -76,6 +76,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(panel.rows.every((row) => !row.canCorrectPressure), "preview rows should not render correction controls before application");
   assertSmoke(panel.stationBenefitDisplay, "panel should expose station benefit display state");
   assertSmoke(!panel.stationBenefitDisplay.hasRows, "empty station benefit display state should be safe");
+  assertSmoke(panel.roundActionOrderDisplay.hasRows, "panel should expose round action order display rows");
+  assertEqual(panel.roundActionOrderDisplay.rows[0].stationName, "Navigator", "round action order display should expose station name");
+  assertEqual(panel.roundActionOrderDisplay.rows[0].orderNumber, 1, "round action order display should expose order number");
+  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Event Approach", "round action order display should expose selected action label fallback");
+  assertEqual(panel.roundActionOrderDisplay.rows[0].statusLabel, "Needs Order", "round action order display should expose status label");
+  assertSmoke(panel.roundActionOrderDisplay.rows[0].current, "first uncommitted order row should be marked current");
+  assertSmoke(panel.roundActionOrderDisplay.footerText.includes("has not committed"), "round action order display should expose footer text");
 
   const stationBenefitPanel = prepareTravelEventRunnerV2PreviewPanelState({
     ...appState,
@@ -96,6 +103,28 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].requestAvailabilityLabel, "Review only", "pending rows should be display/review-only without use behavior");
   assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[1].requestAvailabilityLabel, "Not ready", "disabled rows should be represented safely");
   assertSmoke(JSON.stringify(stationBenefitPanel.stationBenefitDisplay).includes("gmText") === false, "station benefit panel state should remain player-safe");
+
+
+  const orderedPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      roundPhase: "stationRolls",
+      roundResults: [{
+        stationActionOrder: ["engineer", "navigator"],
+        selectedStationOptionLabels: { engineer: "Stabilize Engines", navigator: "Plot Safe Course" },
+        stationActions: { engineer: { type: "repair" }, navigator: { type: "navigate" } },
+        stationOrderCommitments: { engineer: { committed: true, source: "player" }, navigator: { committed: true, source: "player" } },
+        stationResults: { engineer: "success" }
+      }]
+    }
+  });
+  assertEqual(orderedPanel.roundActionOrderDisplay.rows[0].stationName, "Engineer", "explicit action order should control row ordering");
+  assertEqual(orderedPanel.roundActionOrderDisplay.rows[0].orderLabel, "#1", "ordered row should expose display order label");
+  assertEqual(orderedPanel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Stabilize Engines", "ordered row should expose selected action label");
+  assertEqual(orderedPanel.roundActionOrderDisplay.rows[0].statusLabel, "Resolved", "resolved row should expose status label");
+  assertSmoke(orderedPanel.roundActionOrderDisplay.rows[1].current, "first unresolved station roll should be marked current in station rolls phase");
+  assertSmoke(!JSON.stringify(orderedPanel.roundActionOrderDisplay).includes("applyPayload"), "order display should not expose apply payloads");
 
   const success = panel.rows.find((row) => row.outcomeKey === "success");
   assertSmoke(success, "success row should exist");
@@ -222,6 +251,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "row-application-controls",
       "pre-application-correction-controls-hidden",
       "station-benefit-display-state",
+      "round-action-order-display-state",
       "already-applied-disabled-state",
       "event-completion-readiness-summary",
       "live-completed-follow-ups",

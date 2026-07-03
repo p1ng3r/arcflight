@@ -2477,3 +2477,8 @@
 .arcflight-travel-gm-flow-strip.arcflight-blocked { border-color: rgba(238,147,93,.72); }
 .arcflight-travel-gm-flow-strip.arcflight-warning { border-color: rgba(255,210,102,.72); }
 .arcflight-travel-gm-flow-strip.arcflight-complete { border-color: rgba(151,214,124,.72); }
+
+.arcflight-travel-runner-mvp__v2-benefit-row--current {
+  border-color: rgba(120, 180, 255, 0.75);
+  box-shadow: 0 0 0 1px rgba(120, 180, 255, 0.28);
+}
