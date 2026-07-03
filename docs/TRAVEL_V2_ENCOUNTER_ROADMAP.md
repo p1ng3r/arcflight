@@ -647,3 +647,5 @@ PR #345 adds explicit GM activate/hold/dismiss controls for reviewed active-haza
 
 
 PR #347 adds response action wiring as display/session-local choices only. It does not execute response actions, roll checks, apply station effects, clear hazards, apply consequences, or mutate Foundry documents.
+
+Note for #348: station-impact behavior adds review/session-local guidance only. It does not apply station DC modifiers, mutate check results, roll checks, execute response actions, clear hazards, apply consequences, or mutate Foundry documents.
