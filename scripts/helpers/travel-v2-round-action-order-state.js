@@ -19,7 +19,6 @@ const ORDER_PHASES = Object.freeze({
   REACTION_WINDOW: "reactionWindow",
   OUTCOME_PRESSURE: "outcomePressure"
 });
-const RUNTIME_WRITE_TOKENS = Object.freeze([".setFlag(", ".update(", ".create(", ".delete(", "ChatMessage", "JournalEntry", "Scene", "TokenDocument", "Combat", "game.settings.set", "socket.emit"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -247,8 +246,7 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
     roundResolutionRecord: roundResolutionRecord ? cloneData(roundResolutionRecord) : null,
     footerText: footerTextFor(blockedReasons, rowsWithCurrent, pointer),
     stateOnly: true,
-    mutationNote: "Round action order state is read-only in #353A. It does not commit order, advance rounds, roll checks, change DCs, or persist session data.",
-    runtimeWriteTokens: RUNTIME_WRITE_TOKENS
+    mutationNote: "Round action order state is read-only in #353A. It does not commit order, advance rounds, roll checks, change DCs, or persist session data."
   });
 }
 
