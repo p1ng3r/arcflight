@@ -14,6 +14,7 @@ import { applyTravelV2StationImpactBehaviorToRenderState } from "../helpers/trav
 import { applyTravelV2ResponseActionResolutionReviewToRenderState } from "../helpers/travel-v2-response-action-resolution-review.js";
 import { applyTravelV2StationImpactModifierReviewToRenderState } from "../helpers/travel-v2-station-impact-modifier-review.js";
 import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
+import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
@@ -322,8 +323,14 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithStationImpactModifierReview = applyTravelV2StationImpactModifierReviewToRenderState(appStateWithResponseActionResolutionReview, { user, stations: appStateWithResponseActionResolutionReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithPendingStationBenefitQueue = applyTravelV2PendingStationBenefitQueueToRenderState(appStateWithStationImpactModifierReview, { user, stations: appStateWithStationImpactModifierReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
-  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithPendingStationBenefitQueue);
-  const appStateWithPreview = { ...appStateWithPendingStationBenefitQueue, travelV2PreviewPanel: previewPanel };
+  const appStateWithStationBenefitUseReview = applyTravelV2StationBenefitUseReviewToRenderState(appStateWithPendingStationBenefitQueue, {
+    user,
+    stations: appStateWithPendingStationBenefitQueue.stations,
+    selectedQueueKey: uiState.travelV2StationBenefitUseReviewSelectedQueueKey ?? null,
+    travelV2StationBenefitUseReviewRequested: uiState.travelV2StationBenefitUseReviewRequested === true
+  }, { user, includeGmReview: canManageTravelV2Consequences });
+  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview);
+  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {

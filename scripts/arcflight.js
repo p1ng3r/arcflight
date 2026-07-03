@@ -10,6 +10,7 @@ import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEvent
 import { ArcflightTravelSceneOverlay, getActiveTravelSceneOverlay, openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./apps/travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./apps/travel-event-runner-v2-preview-consumer.js";
 import { TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION, normalizeTravelV2PendingStationBenefitQueueInput, prepareTravelV2PendingStationBenefitQueueItems, prepareTravelV2PendingStationBenefitPlayerState, prepareTravelV2PendingStationBenefitGmState, applyTravelV2PendingStationBenefitQueueToRenderState } from "./helpers/travel-v2-pending-station-benefit-queue.js";
+import { TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION, normalizeTravelV2StationBenefitUseReviewInput, prepareTravelV2StationBenefitDisplayRows, prepareTravelV2StationBenefitUseReviewPlayerState, prepareTravelV2StationBenefitUseReviewGmState, applyTravelV2StationBenefitUseReviewToRenderState } from "./helpers/travel-v2-station-benefit-use-review.js";
 import {
   ArcflightTravelPlayerMissionBoard,
   TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING,
@@ -1365,6 +1366,12 @@ function buildArcflightApi() {
     prepareTravelV2PendingStationBenefitPlayerState,
     prepareTravelV2PendingStationBenefitGmState,
     applyTravelV2PendingStationBenefitQueueToRenderState,
+    TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION,
+    normalizeTravelV2StationBenefitUseReviewInput,
+    prepareTravelV2StationBenefitDisplayRows,
+    prepareTravelV2StationBenefitUseReviewPlayerState,
+    prepareTravelV2StationBenefitUseReviewGmState,
+    applyTravelV2StationBenefitUseReviewToRenderState,
     devTools: createArcflightDevTools(),
     dev: {
       runFoundryChecks,
