@@ -527,11 +527,13 @@
                   <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
                     <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{statusLabel}}</span>
                     <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{requestAvailabilityLabel}}</span>
+                    {{#if canReview}}<button type="button" data-arcflight-travel-v2-station-benefit-review-request data-queue-key="{{queueKey}}" title="Request GM/table review only. Does not use or apply this benefit.">Request Review</button>{{/if}}
                     {{#if disabledReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{disabledReason}}</p>{{/if}}
                   </div>
                 </article>
               {{/each}}
             </div>
+            {{#if state.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.feedbackText}}</p>{{/if}}
           </section>
         {{/if}}
         {{#if state.travelV2PreviewPanel.pressureApplication.alreadyApplied}}

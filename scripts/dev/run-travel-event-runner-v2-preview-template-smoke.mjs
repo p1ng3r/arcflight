@@ -40,7 +40,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "{{statusLabel}}", "template should render station benefit status label");
   assertIncludes(template, "{{requestAvailabilityLabel}}", "template should render station benefit request availability label");
   assertIncludes(template, "{{disabledReason}}", "template should render station benefit disabled reason");
-  assertSmoke(!template.includes("data-arcflight-travel-v2-station-benefit"), "template should not add station benefit request/use click handlers in this display-only pass");
+  assertIncludes(template, "data-arcflight-travel-v2-station-benefit-review-request", "template should add the narrow station benefit review request shell");
+  assertIncludes(template, "Request Review", "template should label station benefit review request controls as review-only");
+  assertIncludes(template, "stationBenefitDisplay.reviewRequest.feedbackText", "template should render review request feedback without use/apply output");
+  assertSmoke(!template.includes("data-arcflight-travel-v2-station-benefit-use") && !template.includes("data-arcflight-travel-v2-station-benefit-apply"), "template should not add station benefit use/apply click handlers");
 
   assertIncludes(template, "Apply Preview", "template should render selected consequence apply preview block");
   assertIncludes(template, "selectedConsequenceApplyPreview.applyEffectSummary", "template should render GM apply preview summary");
@@ -73,7 +76,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
       "template-chip-rendering",
       "template-read-only-footer",
       "template-tone-hook",
-      "station-benefit-display-surface",
+      "station-benefit-review-request-shell",
       "selected-consequence-apply-preview",
       "selected-consequence-manual-apply-button",
       "css-panel-wrapper",

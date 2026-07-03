@@ -162,6 +162,17 @@ function normalizeActorApplicationPreview(state = null, latestResult = null) {
 }
 
 function normalizeStationBenefitDisplay(state = null) {
+  const selectedCandidate = isPlainObject(state?.selectedCandidate) ? state.selectedCandidate : null;
+  const reviewRequest = {
+    requested: Boolean(state?.selectedQueueKey),
+    selectedQueueKey: state?.selectedQueueKey ?? null,
+    status: selectedCandidate?.status ?? "blocked",
+    ready: selectedCandidate?.ready === true,
+    feedbackText: selectedCandidate?.ready === true
+      ? "Station benefit review candidate is ready for GM/table review. No benefit has been used or applied."
+      : (selectedCandidate?.reason ?? "No station benefit review requested."),
+    hasFeedback: Boolean(state?.selectedQueueKey || selectedCandidate?.ready === true)
+  };
   const rows = Array.isArray(state?.rows) ? state.rows.map((row) => {
     const status = typeof row?.status === "string" && row.status.trim() ? row.status.trim() : "blocked";
     const useAvailable = row?.useAvailable === true;
@@ -194,6 +205,7 @@ function normalizeStationBenefitDisplay(state = null) {
     hasRows: rows.length > 0,
     pendingCount: rows.filter((row) => row.status === "pending").length,
     disabledCount: rows.filter((row) => !row.useAvailable).length,
+    reviewRequest,
     reviewOnly: true
   };
 }
