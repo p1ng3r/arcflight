@@ -69,6 +69,24 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(state.compactRoundLabel, "Round 1", "app state should preserve compact round label behavior");
   assertEqual(state.guidedBridge.nextRequiredAction.title, "Send / Refresh Player HUD", "fresh session should guide GM to refresh player HUD/cards");
 
+  const benefitState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session: {
+      event: createRunnerEventFixture(),
+      travelV2PendingStationBenefits: [
+        { queueKey: "benefit-1", title: "Clear Shot", sourceStation: "navigator", targetStation: "engineer", benefitKind: "dcReduction", magnitude: 2, expires: "afterUse", publicText: "Engineer gets an opening.", playerSafeSummary: "Reduce one Engineer DC.", gmText: "secret", applyPayload: { bad: true } },
+        { queueKey: "benefit-2", title: "Spent Opening", sourceStation: "engineer", targetStation: "navigator", status: "expired", publicText: "The opening has passed." }
+      ]
+    },
+    user: { isGM: false }
+  });
+  assertSmoke(benefitState.travelV2StationBenefitUseReviewPlayerState.rows.length === 2, "app state should expose player-safe station benefit display rows");
+  assertSmoke(benefitState.travelV2PreviewPanel.stationBenefitDisplay.hasRows, "preview panel state should expose visible station benefit display rows");
+  assertEqual(benefitState.travelV2PreviewPanel.stationBenefitDisplay.rows[0].sourceStationLabel, "Navigator", "app/panel benefit display should include source station label");
+  assertEqual(benefitState.travelV2PreviewPanel.stationBenefitDisplay.rows[0].targetStationLabel, "Engineer", "app/panel benefit display should include target station label");
+  assertEqual(benefitState.travelV2PreviewPanel.stationBenefitDisplay.rows[1].requestAvailabilityLabel, "Not ready", "disabled station benefit rows should be represented safely");
+  assertSmoke(!JSON.stringify(benefitState).includes("gmText") && !JSON.stringify(benefitState).includes("applyPayload"), "non-GM app/panel station benefit state should not leak GM-only fields");
+  assertSmoke(!JSON.stringify(benefitState.travelV2PreviewPanel.stationBenefitDisplay).includes("useApplied"), "station benefit display should not expose real use/apply behavior");
+
   const gmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true } });
   assertSmoke(gmState.travelV2GmFlowStatus, "GM app state includes Travel v2 flow status strip");
   assertSmoke(gmState.travelV2GmFlowStatus.currentRoundLabel.includes("Round 1"), "GM flow status has current round label");
@@ -180,6 +198,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "ui-state-preservation",
       "preview-row-exposure",
       "preview-panel-exposure",
+      "station-benefit-display-state",
       "preview-only-pressure",
       "guided-empty-start",
       "guided-send-refresh",

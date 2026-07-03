@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 7, "panel version should be 7");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 8, "panel version should be 8");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -74,6 +74,28 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(!panel.travelV2EventCompletionReadiness.eventReady, "unfinalized panel should not be event-ready");
   assertSmoke(panel.rows.every((row) => row.canApplyPressure && !row.pressureApplyDisabled), "preview rows should render enabled apply controls before application");
   assertSmoke(panel.rows.every((row) => !row.canCorrectPressure), "preview rows should not render correction controls before application");
+  assertSmoke(panel.stationBenefitDisplay, "panel should expose station benefit display state");
+  assertSmoke(!panel.stationBenefitDisplay.hasRows, "empty station benefit display state should be safe");
+
+  const stationBenefitPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    travelV2StationBenefitUseReviewPlayerState: {
+      rows: [
+        { queueKey: "benefit-1", title: "Clear Shot", sourceStationLabel: "Navigator", targetStationLabel: "Engineer", playerSafeSummary: "Reduce one Engineer DC.", status: "pending", canReview: true, useAvailable: false, disabledReason: null, reviewOnly: true },
+        { queueKey: "benefit-2", title: "Shielded Approach", sourceStationLabel: "Gunner", targetStationLabel: "Pilot", publicText: "Pilot may ignore one hazard complication.", status: "expired", canReview: false, useAvailable: false, disabledReason: "Pending station benefit is expired.", reviewOnly: true }
+      ]
+    }
+  });
+  assertSmoke(stationBenefitPanel.stationBenefitDisplay.hasRows, "visible station benefit display should be present in panel state");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows.length, 2, "panel should expose all player-safe benefit rows");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].title, "Clear Shot", "benefit display should expose title");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].sourceStationLabel, "Navigator", "benefit display should expose source station label");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].targetStationLabel, "Engineer", "benefit display should expose target station label");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].displaySummary, "Reduce one Engineer DC.", "benefit display should expose summary");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].statusLabel, "Pending", "benefit display should expose status label");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[0].requestAvailabilityLabel, "Review only", "pending rows should be display/review-only without use behavior");
+  assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[1].requestAvailabilityLabel, "Not ready", "disabled rows should be represented safely");
+  assertSmoke(JSON.stringify(stationBenefitPanel.stationBenefitDisplay).includes("gmText") === false, "station benefit panel state should remain player-safe");
 
   const success = panel.rows.find((row) => row.outcomeKey === "success");
   assertSmoke(success, "success row should exist");
@@ -199,6 +221,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "read-only-footer",
       "row-application-controls",
       "pre-application-correction-controls-hidden",
+      "station-benefit-display-state",
       "already-applied-disabled-state",
       "event-completion-readiness-summary",
       "live-completed-follow-ups",
