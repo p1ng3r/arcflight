@@ -48,3 +48,8 @@ GM review data is only included when the requesting user is a GM and `includeGmR
 - Hazard clear/resolve lifecycle.
 - Card pack import/export.
 - Expanded hazard packs.
+
+
+## Response Action Wiring Note
+
+Response action previews can now feed response action wiring as player-safe, session-local display choices. This remains non-executing and non-persistent: it does not roll checks, apply station effects, advance clear progress, resolve hazards, apply consequences, or mutate Foundry documents.
