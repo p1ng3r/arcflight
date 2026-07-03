@@ -8,6 +8,7 @@ import {
 import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEventBuilderShellState } from "../apps/travel-event-builder.js";
 import { ArcflightTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog } from "../apps/travel-event-runner.js";
 import { ArcflightTravelSceneOverlay, openTravelSceneOverlay } from "../apps/travel-scene-overlay.js";
+import { TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION, normalizeTravelV2PendingStationBenefitQueueInput, prepareTravelV2PendingStationBenefitQueueItems, prepareTravelV2PendingStationBenefitPlayerState, prepareTravelV2PendingStationBenefitGmState, applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "../helpers/core-item-sync.js";
 import {
   getTravelFiveStationKeys,
@@ -1055,6 +1056,13 @@ export function createArcflightDevTools() {
     importPublishedTravelEventPackFromJson,
     saveImportedPublishedTravelEventToLibrary,
     saveImportedPublishedTravelEventPackToLibrary,
+
+    TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
+    normalizeTravelV2PendingStationBenefitQueueInput,
+    prepareTravelV2PendingStationBenefitQueueItems,
+    prepareTravelV2PendingStationBenefitPlayerState,
+    prepareTravelV2PendingStationBenefitGmState,
+    applyTravelV2PendingStationBenefitQueueToRenderState,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.

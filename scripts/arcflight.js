@@ -9,6 +9,7 @@ import { ArcflightTravelEventBuilder, openTravelEventBuilder, prepareTravelEvent
 import { ArcflightTravelEventRunner, getActiveTravelEventRunner, openTravelEventRunner, prepareSelectedTravelEventLibraryDetails, prepareTravelEventLibraryOptions, prepareTravelEventNarrativeLog, updateActiveTravelEventRunnerSession } from "./apps/travel-event-runner.js";
 import { ArcflightTravelSceneOverlay, getActiveTravelSceneOverlay, openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./apps/travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./apps/travel-event-runner-v2-preview-consumer.js";
+import { TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION, normalizeTravelV2PendingStationBenefitQueueInput, prepareTravelV2PendingStationBenefitQueueItems, prepareTravelV2PendingStationBenefitPlayerState, prepareTravelV2PendingStationBenefitGmState, applyTravelV2PendingStationBenefitQueueToRenderState } from "./helpers/travel-v2-pending-station-benefit-queue.js";
 import {
   ArcflightTravelPlayerMissionBoard,
   TRAVEL_MISSION_BOARD_BROADCAST_DEBUG_SETTING,
@@ -1358,6 +1359,12 @@ function buildArcflightApi() {
     cleanupDuplicateItems: cleanupDuplicateArcflightItems,
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
+    TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
+    normalizeTravelV2PendingStationBenefitQueueInput,
+    prepareTravelV2PendingStationBenefitQueueItems,
+    prepareTravelV2PendingStationBenefitPlayerState,
+    prepareTravelV2PendingStationBenefitGmState,
+    applyTravelV2PendingStationBenefitQueueToRenderState,
     devTools: createArcflightDevTools(),
     dev: {
       runFoundryChecks,

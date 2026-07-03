@@ -306,3 +306,16 @@ This document intentionally does not add:
 - Player sanitizer changes.
 - Focus, Support, Momentum, Hazard, or consequence behavior changes.
 - Automatic mutation.
+
+## Station Benefit Cards and Two-GPT Builder Split
+
+Station benefit cards are planned authored records for combo openings, support openings, station-order openings, risk-bid discounts, backlash shields, Momentum options, hazard-ignore permissions, and clear-progress opportunities. They should remain separate from runtime pending benefit queue rows. Authored station benefit cards define what can be created; runtime queue records track what exists for the current session and must remain player-safe and non-mutating until a later apply/use flow is explicitly built.
+
+Planned station benefit fields include stable `id`, `schemaVersion`, `type: "stationBenefit"`, `title`, `sourceStationKeys`, `targetStationKeys`, `benefitKind`, `magnitude`, `expires`, `publicText`, `gmText`, `playerSafeSummary`, `gmSummary`, `narration`, and tags. Any future effect payload must be review-only unless a future PR adds an explicit GM/player use flow.
+
+The content builder plan is split into two GPT roles:
+
+- **GPT 1 — Travel Event Story Architect / Branching Event Builder:** writes the adventure design, branching crisis text, station prompts, combo opportunities, risk bid ideas, Momentum opportunities, hazards, consequences, aftermath, rewards, and narration fragments.
+- **GPT 2 — Travel v2 JSON Pack Builder / Schema Converter:** converts approved story design into validated importable JSON for encounter templates, hazards, consequences, station actions, risk bids, station benefits, narration hooks, reward/follow-up references, player-safe / GM-only separation, schema versions, stable ids, validation notes, and import/export compatibility.
+
+Foundry previews, validates, separates player-safe and GM-only sections, imports safely, and lets the GM run the pack. In short: Story GPT writes the adventure; JSON GPT turns it into clean cards; Foundry checks the cards and lets the GM play them.

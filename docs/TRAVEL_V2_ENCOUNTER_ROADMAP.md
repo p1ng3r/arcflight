@@ -657,3 +657,50 @@ PR #349 adds response action resolution review candidates only. It does not exec
 ## PR #350 Station Impact Modifier Review Note
 
 PR #350 adds station impact modifier review candidates only. It does not apply modifiers, roll checks, mutate station results, execute response actions, clear hazards, apply consequences, or mutate Foundry documents.
+
+## PR #351 Roadmap Re-anchor: Missing Table-Play Systems
+
+PR #351 re-anchors Travel v2 around the missing systems that must not be skipped before beta readiness:
+
+- Station Combo Play.
+- Round Action Order / player-chosen station order.
+- Pending Station Benefit Queue.
+- Risk Bids.
+- Momentum as mostly player-controlled.
+- Focus and Support interaction.
+- Hazard completion, not just hazard review.
+- Station action cards.
+- Station benefit cards.
+- Risk bid cards.
+- Encounter templates.
+- Narration hooks.
+- ChatGPT content builder import/export.
+
+### Immediate PR Sequence
+
+- **#351 — Roadmap Re-anchor + Pending Station Benefit Queue Foundation.**
+- **#352 — Player-Facing Station Benefit Display / Direct Player Use Review.**
+- **#353 — Round Action Order State.**
+- **#354 — Station Combo Runtime v1.**
+- **#355 — Risk Bid HUD Selection.**
+- **#356 — Risk Bid Apply to Check Preview.**
+- **#357 — Risk Bid Result Review.**
+- **#358 — Momentum Spend Catalog / Player-Controlled Spend Review.**
+- **#359 — Momentum Apply to Session State.**
+- **#360+ — Continue hazard apply/clear/consequence flow.**
+
+### Two-GPT Content Builder Plan
+
+**GPT 1 — Travel Event Story Architect / Branching Event Builder** writes the adventure/event design layer. It creates the event premise, opening vignette, visible stakes, player-facing crisis text, GM-only secrets, round structure, branching outcomes, station prompts, station action ideas, station combo opportunities, risk bid ideas, Momentum opportunities, hazard suggestions, consequence suggestions, final outcome / aftermath text, rewards, clues, route advantages, follow-up hooks, and narration/vignette fragments for success, failure, critical success, critical failure, hazard cleared, hazard ignored, benefit created, benefit used, and consequence created.
+
+**GPT 2 — Travel v2 JSON Pack Builder / Schema Converter** converts approved story design into validated importable Travel v2 JSON. It creates encounter template JSON, hazard card JSON, consequence card JSON, station action card JSON, risk bid card JSON, station benefit card JSON, narration hook JSON, reward/follow-up references, player-safe / GM-only field separation, schema version fields, stable ids, validation notes, and import/export compatibility.
+
+Foundry then:
+
+1. Previews the JSON pack.
+2. Validates the JSON pack.
+3. Shows player-safe and GM-only sections separately.
+4. Imports the pack safely.
+5. Lets the GM select/run the pack in Travel v2.
+
+Simple explanation: **Story GPT = writes the adventure. JSON GPT = turns the adventure into clean game cards Foundry can read. Foundry = checks the cards and lets the GM play them.**
