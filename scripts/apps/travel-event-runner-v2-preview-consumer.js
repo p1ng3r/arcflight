@@ -322,9 +322,10 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2ResponseActionResolutionNote: uiState.travelV2ResponseActionResolutionNote ?? null
   }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithStationImpactModifierReview = applyTravelV2StationImpactModifierReviewToRenderState(appStateWithResponseActionResolutionReview, { user, stations: appStateWithResponseActionResolutionReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
-  const appStateWithPendingStationBenefitQueue = applyTravelV2PendingStationBenefitQueueToRenderState(appStateWithStationImpactModifierReview, { user, stations: appStateWithStationImpactModifierReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
+  const appStateWithPendingStationBenefitQueue = applyTravelV2PendingStationBenefitQueueToRenderState(appStateWithStationImpactModifierReview, { user, session, stations: appStateWithStationImpactModifierReview.stations }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithStationBenefitUseReview = applyTravelV2StationBenefitUseReviewToRenderState(appStateWithPendingStationBenefitQueue, {
     user,
+    session,
     stations: appStateWithPendingStationBenefitQueue.stations,
     selectedQueueKey: uiState.travelV2StationBenefitUseReviewSelectedQueueKey ?? null,
     travelV2StationBenefitUseReviewRequested: uiState.travelV2StationBenefitUseReviewRequested === true

@@ -510,6 +510,30 @@
         {{else}}
           <p class="arcflight-sheet__hint">Travel v2 pressure preview is unavailable for the current runner state.</p>
         {{/if}}
+        {{#if state.travelV2PreviewPanel.stationBenefitDisplay.hasRows}}
+          <section class="arcflight-travel-runner-mvp__v2-benefits" aria-label="{{state.travelV2PreviewPanel.stationBenefitDisplay.title}}">
+            <header>
+              <h4>{{state.travelV2PreviewPanel.stationBenefitDisplay.title}}</h4>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.stationBenefitDisplay.subtitle}}</p>
+            </header>
+            <div class="arcflight-travel-runner-mvp__v2-benefit-rows">
+              {{#each state.travelV2PreviewPanel.stationBenefitDisplay.rows}}
+                <article class="arcflight-travel-runner-mvp__v2-benefit-row {{#unless useAvailable}}arcflight-travel-runner-mvp__v2-benefit-row--disabled{{/unless}}">
+                  <div>
+                    <strong>{{title}}</strong>
+                    <p>{{displaySummary}}</p>
+                    <p class="arcflight-sheet__hint">{{sourceStationLabel}} → {{targetStationLabel}}</p>
+                  </div>
+                  <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{statusLabel}}</span>
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{requestAvailabilityLabel}}</span>
+                    {{#if disabledReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{disabledReason}}</p>{{/if}}
+                  </div>
+                </article>
+              {{/each}}
+            </div>
+          </section>
+        {{/if}}
         {{#if state.travelV2PreviewPanel.pressureApplication.alreadyApplied}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback arcflight-travel-runner-mvp__v2-preview-feedback--applied">Travel v2 pressure already applied for this round{{#if state.travelV2PreviewPanel.pressureApplication.appliedOutcomeLabel}}: {{state.travelV2PreviewPanel.pressureApplication.appliedOutcomeLabel}}{{/if}}.</p>
         {{/if}}

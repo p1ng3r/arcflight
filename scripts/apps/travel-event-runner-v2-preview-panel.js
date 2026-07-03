@@ -5,7 +5,7 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 7;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 8;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -161,6 +161,43 @@ function normalizeActorApplicationPreview(state = null, latestResult = null) {
   };
 }
 
+function normalizeStationBenefitDisplay(state = null) {
+  const rows = Array.isArray(state?.rows) ? state.rows.map((row) => {
+    const status = typeof row?.status === "string" && row.status.trim() ? row.status.trim() : "blocked";
+    const useAvailable = row?.useAvailable === true;
+    const canReview = row?.canReview === true;
+    const disabledReason = typeof row?.disabledReason === "string" && row.disabledReason.trim()
+      ? row.disabledReason.trim()
+      : (useAvailable ? "" : (status === "pending" ? "Use requests are not available in this display-only pass." : `Pending station benefit is ${status}.`));
+    return {
+      queueKey: row?.queueKey ?? null,
+      title: row?.title || "Pending station benefit",
+      sourceStationLabel: row?.sourceStationLabel || row?.sourceStation || "Source station",
+      targetStationLabel: row?.targetStationLabel || row?.targetStation || "Target station",
+      displaySummary: row?.playerSafeSummary || row?.publicText || "Station benefit details are unavailable.",
+      status,
+      statusLabel: status === "pending" ? "Pending" : humanizeIdentifier(status || "blocked"),
+      requestAvailabilityLabel: useAvailable ? "Request available" : (canReview ? "Review only" : "Not ready"),
+      disabledReason,
+      canReview,
+      useAvailable,
+      reviewOnly: row?.reviewOnly !== false
+    };
+  }) : [];
+  return {
+    available: rows.length > 0,
+    title: "Pending Station Benefits",
+    subtitle: rows.length > 0
+      ? "Display-only player-safe station benefit review. Request and use controls arrive in a later pass."
+      : "No pending station benefits to display.",
+    rows,
+    hasRows: rows.length > 0,
+    pendingCount: rows.filter((row) => row.status === "pending").length,
+    disabledCount: rows.filter((row) => !row.useAvailable).length,
+    reviewOnly: true
+  };
+}
+
 function normalizePreviewRow(row = {}, applicationState = null, correctionState = {}) {
   const outcomeKey = String(row.outcomeKey ?? "skipped");
   const totals = isPlainObject(row.totalsByPressureType) ? row.totalsByPressureType : {};
@@ -260,6 +297,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const actorPreviewSource = isPlainObject(runnerSession) ? prepareTravelV2ActorApplicationPreviewFromSession(runnerSession, appState.actor, { session: runnerSession }) : null;
   const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
   const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
+  const stationBenefitDisplay = normalizeStationBenefitDisplay(appState.travelV2StationBenefitUseReviewPlayerState);
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -281,6 +319,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     actorApplicationPreview: travelV2ActorApplicationPreview,
     travelV2FollowUps,
     followUps: travelV2FollowUps,
+    stationBenefitDisplay,
+    travelV2StationBenefitDisplay: stationBenefitDisplay,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,
