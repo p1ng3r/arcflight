@@ -680,6 +680,7 @@ PR #351 re-anchors Travel v2 around the missing systems that must not be skipped
 
 - **#351 — Roadmap Re-anchor + Pending Station Benefit Queue Foundation.**
 - **#352 — Player-Facing Station Benefit Display / Direct Player Use Review.**
+  - #352A adds display/use-review state only: player-safe rows, selected review-only candidates, GM-gated review state, render-state wiring, docs, and smoke. It does not add visible template rewrites or real use/apply behavior.
 - **#353 — Round Action Order State.**
 - **#354 — Station Combo Runtime v1.**
 - **#355 — Risk Bid HUD Selection.**
