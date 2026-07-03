@@ -45,3 +45,7 @@ Player state contains only player-safe impact rows. GM review details are gated 
 - Hazard clear/resolve lifecycle.
 - Card pack import/export.
 - Expanded hazard packs.
+
+## Response Action Resolution Review Linking
+
+Player-safe station impact guidance can be linked into response action resolution review candidates when the selected wired response action references matching station keys. This linking remains review-only and does not apply station effects, station DC modifiers, or mutate station check results.

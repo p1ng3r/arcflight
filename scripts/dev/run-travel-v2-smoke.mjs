@@ -54,6 +54,7 @@ import runTravelV2HazardCandidateControlsSmokeChecks from "../helpers/travel-v2-
 import runTravelV2ActiveHazardLifecycleDisplaySmokeChecks from "../helpers/travel-v2-active-hazard-lifecycle-display.smoke.js";
 import runTravelV2ResponseActionWiringSmokeChecks from "../helpers/travel-v2-response-action-wiring.smoke.js";
 import runTravelV2StationImpactBehaviorSmokeChecks from "../helpers/travel-v2-station-impact-behavior.smoke.js";
+import runTravelV2ResponseActionResolutionReviewSmokeChecks from "../helpers/travel-v2-response-action-resolution-review.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -111,7 +112,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 hazard candidate controls", runTravelV2HazardCandidateControlsSmokeChecks],
   ["Travel v2 active hazard lifecycle display", runTravelV2ActiveHazardLifecycleDisplaySmokeChecks],
   ["Travel v2 response action wiring", runTravelV2ResponseActionWiringSmokeChecks],
-  ["Travel v2 station impact behavior", runTravelV2StationImpactBehaviorSmokeChecks]
+  ["Travel v2 station impact behavior", runTravelV2StationImpactBehaviorSmokeChecks],
+  ["Travel v2 response action resolution review", runTravelV2ResponseActionResolutionReviewSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {

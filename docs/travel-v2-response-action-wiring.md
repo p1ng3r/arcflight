@@ -49,3 +49,7 @@ GM review rows may include GM review information only when the user is a GM and 
 - Expanded hazard packs.
 
 Station impact previews can now feed Travel v2 station-impact behavior guidance. That guidance remains review-only and still does not apply modifiers, execute response actions, or persist data.
+
+## Resolution Review Handoff
+
+Wired response action choices can now feed explicit response action resolution review candidates. This remains review/render-state only and still does not execute response actions, persist data, roll checks, advance clear progress, or apply consequences.
