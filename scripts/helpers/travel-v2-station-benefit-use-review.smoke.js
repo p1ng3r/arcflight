@@ -34,7 +34,7 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
   const selectedWithoutRequest = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedPendingBenefitQueueKey: "benefit-1" });
   assert.equal(selectedWithoutRequest.selectedCandidate.status, "blocked");
   assert.equal(selectedWithoutRequest.selectedCandidate.ready, false);
-  assert.match(selectedWithoutRequest.selectedCandidate.reason, /not requested/);
+  assert.match(selectedWithoutRequest.selectedCandidate.reason, /No station benefit use review was requested/);
   checked.push("selected queue key without explicit request stays blocked");
 
   const ready = prepareTravelV2StationBenefitUseReviewPlayerState(fixture(), { selectedPendingBenefitQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true });
