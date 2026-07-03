@@ -89,8 +89,8 @@ Run:
 node --check scripts/apps/travel-event-runner.js
 node --check scripts/apps/travel-event-runner-v2-preview-panel.js
 node --check scripts/apps/travel-event-runner-v2-preview-consumer.js
-node scripts/dev/run-travel-event-runner-v2-preview-panel-smoke.mjs
-node scripts/dev/run-travel-event-runner-v2-preview-consumer-smoke.mjs
+node scripts/apps/travel-event-runner-v2-preview-panel.smoke.js
+node scripts/apps/travel-event-runner-v2-preview-consumer.smoke.js
 node scripts/dev/run-travel-v2-smoke.mjs
 ```
 
