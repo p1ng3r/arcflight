@@ -44,3 +44,7 @@ GM review data is included only when the caller is a GM and `includeGmReview` is
 - GM activate/hold/dismiss candidate controls.
 - Card pack import/export.
 - Expanded hazard packs.
+
+## Active Hazard Handoff Review Follow-up
+
+Draw candidates can now feed the GM-only active hazard handoff review layer. That follow-up remains inert and review-only: it prepares a proposed active hazard candidate for GM review without activation, persistence, session mutation, or consequence application.

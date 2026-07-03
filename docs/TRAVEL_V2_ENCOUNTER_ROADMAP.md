@@ -631,3 +631,7 @@ PR #341 adds the GM hazard deck picker/review UI foundation fed by that registry
 ## PR #343 — Explicit GM Hazard Draw / Review Candidates
 
 PR #343 adds an explicit GM-only hazard draw/review candidate flow from the selected built-in hazard deck. The draw result is inert review state only: it does not activate hazards, create active hazard records, import arbitrary packs, persist to settings/world data, or apply hazards/consequences.
+
+## PR #344 Active Hazard Handoff Review Note
+
+PR #344 adds GM-only active hazard handoff review candidates that can describe what a drawn hazard would look like as a proposed active hazard. This remains review-only: it does not activate hazards, append active hazard records, import arbitrary packs, persist to settings/world/session state, or apply hazards/consequences.
