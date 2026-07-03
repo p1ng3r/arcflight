@@ -35,7 +35,8 @@ function selectedKeyFrom(input = {}, options = {}) {
   for (const source of [options, input]) for (const key of SELECTED_KEYS) { const value = text(source?.[key]); if (value) return value; }
   return null;
 }
-function reviewRequested(input = {}, options = {}) { return REVIEW_FLAGS.some((key) => input?.[key] === true || options?.[key] === true) || options.includeGmReview === true || input.includeGmReview === true; }
+function useReviewRequested(input = {}, options = {}) { return REVIEW_FLAGS.some((key) => input?.[key] === true || options?.[key] === true); }
+function canIncludeGmReview(user, input = {}, options = {}) { return isGmLike(user) && (input.includeGmReview === true || options.includeGmReview === true); }
 function displayRowFrom(row = {}) {
   return stripForbiddenFields({ stationBenefitUseReviewVersion: TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION, queueKey: row.queueKey ?? null, title: row.title ?? "Pending station benefit", sourceStation: row.sourceStation ?? null, sourceStationLabel: row.sourceStationLabel ?? null, targetStation: row.targetStation ?? null, targetStationLabel: row.targetStationLabel ?? null, benefitKind: row.benefitKind ?? "unknown", magnitude: row.magnitude ?? null, expires: row.expires ?? "unknown", status: row.status ?? "blocked", publicText: row.publicText ?? null, playerSafeSummary: row.playerSafeSummary ?? row.publicText ?? null, reviewOnly: true, selected: false, canReview: row.status === "pending", disabledReason: row.status === "pending" ? null : `Pending station benefit is ${row.status ?? "unavailable"}.`, ...inertFlags() });
 }
@@ -46,7 +47,7 @@ export function normalizeTravelV2StationBenefitUseReviewInput(input = {}, option
   const user = userFrom(input, options);
   const hiddenKeys = hiddenKeysFor(input);
   const rows = prepareTravelV2PendingStationBenefitQueueItems(input, { ...options, user, includeGmReview: false }).map((row) => hiddenKeys.has(row.queueKey) ? { ...row, hidden: true, playerVisible: false, status: "blocked", disabledReason: "Pending station benefit is hidden." } : row);
-  return cloneData({ stationBenefitUseReviewVersion: TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION, user: { isGM: isGmLike(user) }, includeGmReview: isGmLike(user) && reviewRequested(input, options), selectedQueueKey: selectedKeyFrom(input, options), rows });
+  return cloneData({ stationBenefitUseReviewVersion: TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION, user: { isGM: isGmLike(user) }, includeGmReview: canIncludeGmReview(user, input, options) && useReviewRequested(input, options), selectedQueueKey: selectedKeyFrom(input, options), rows });
 }
 
 export function prepareTravelV2StationBenefitDisplayRows(input = {}, options = {}) {
@@ -54,10 +55,12 @@ export function prepareTravelV2StationBenefitDisplayRows(input = {}, options = {
 }
 
 export function prepareTravelV2StationBenefitUseReviewPlayerState(input = {}, options = {}) {
+  const requested = useReviewRequested(input, options);
   const normalized = normalizeTravelV2StationBenefitUseReviewInput(input, { ...options, includeGmReview: false });
   const rows = normalized.rows.map(displayRowFrom);
   let selectedCandidate = blockedCandidate("No pending station benefit is selected.", null);
-  if (normalized.selectedQueueKey) {
+  if (normalized.selectedQueueKey && !requested) selectedCandidate = blockedCandidate("No station benefit use review was requested.", normalized.selectedQueueKey);
+  else if (requested && normalized.selectedQueueKey) {
     const row = normalized.rows.find((entry) => entry.queueKey === normalized.selectedQueueKey);
     if (!row) selectedCandidate = blockedCandidate("Selected pending station benefit was not found.", normalized.selectedQueueKey);
     else if (row.playerVisible === false || row.hidden === true) selectedCandidate = blockedCandidate("Selected pending station benefit is hidden.", normalized.selectedQueueKey);
@@ -71,7 +74,7 @@ export function prepareTravelV2StationBenefitUseReviewPlayerState(input = {}, op
 export function prepareTravelV2StationBenefitUseReviewGmState(input = {}, options = {}) {
   const user = userFrom(input, options);
   const playerState = prepareTravelV2StationBenefitUseReviewPlayerState(input, options);
-  if (!isGmLike(user) || !reviewRequested(input, options)) return playerState;
+  if (!canIncludeGmReview(user, input, options) || !useReviewRequested(input, options)) return playerState;
   const normalized = normalizeTravelV2StationBenefitUseReviewInput(input, { ...options, user, includeGmReview: true });
   const selectedGmRow = normalized.selectedQueueKey ? normalized.rows.find((row) => row.queueKey === normalized.selectedQueueKey) ?? null : null;
   return cloneData({ ...playerState, gmReview: { reviewRequested: true, selectedQueueKey: normalized.selectedQueueKey, selectedRow: cloneData(selectedGmRow), note: "Review-only station benefit candidate; no use/apply result is created." } });
@@ -87,6 +90,6 @@ export function applyTravelV2StationBenefitUseReviewToRenderState(renderState = 
     return cloneData(stripForbiddenFields({ ...safeBase, travelV2StationBenefitUseReviewPlayerState: playerState }));
   }
   const next = { ...base, travelV2StationBenefitUseReviewPlayerState: playerState };
-  if (reviewRequested(reviewInput, options)) next.travelV2StationBenefitUseReview = prepareTravelV2StationBenefitUseReviewGmState(reviewInput, { ...options, user, includeGmReview: true });
+  if (canIncludeGmReview(user, reviewInput, options) && useReviewRequested(reviewInput, options)) next.travelV2StationBenefitUseReview = prepareTravelV2StationBenefitUseReviewGmState(reviewInput, { ...options, user, includeGmReview: true });
   return cloneData(next);
 }
