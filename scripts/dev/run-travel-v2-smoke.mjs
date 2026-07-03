@@ -52,6 +52,7 @@ import runTravelV2HazardDrawReviewSmokeChecks from "../helpers/travel-v2-hazard-
 import runTravelV2ActiveHazardHandoffReviewSmokeChecks from "../helpers/travel-v2-active-hazard-handoff-review.smoke.js";
 import runTravelV2HazardCandidateControlsSmokeChecks from "../helpers/travel-v2-hazard-candidate-controls.smoke.js";
 import runTravelV2ActiveHazardLifecycleDisplaySmokeChecks from "../helpers/travel-v2-active-hazard-lifecycle-display.smoke.js";
+import runTravelV2ResponseActionWiringSmokeChecks from "../helpers/travel-v2-response-action-wiring.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -107,7 +108,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 hazard draw review", runTravelV2HazardDrawReviewSmokeChecks],
   ["Travel v2 active hazard handoff review", runTravelV2ActiveHazardHandoffReviewSmokeChecks],
   ["Travel v2 hazard candidate controls", runTravelV2HazardCandidateControlsSmokeChecks],
-  ["Travel v2 active hazard lifecycle display", runTravelV2ActiveHazardLifecycleDisplaySmokeChecks]
+  ["Travel v2 active hazard lifecycle display", runTravelV2ActiveHazardLifecycleDisplaySmokeChecks],
+  ["Travel v2 response action wiring", runTravelV2ResponseActionWiringSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {

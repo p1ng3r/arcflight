@@ -644,3 +644,6 @@ PR #344 adds GM-only active hazard handoff review candidates that can describe w
 ## PR #345 GM Hazard Candidate Controls Note
 
 PR #345 adds explicit GM activate/hold/dismiss controls for reviewed active-hazard handoff candidates. These controls still do not mutate Foundry documents, apply consequences, or automatically apply station effects. The activate result is a session-local/render-state object only and remains marked non-persistent.
+
+
+PR #347 adds response action wiring as display/session-local choices only. It does not execute response actions, roll checks, apply station effects, clear hazards, apply consequences, or mutate Foundry documents.

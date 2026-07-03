@@ -9,6 +9,7 @@ import { prepareTravelV2HazardDrawReviewState } from "../helpers/travel-v2-hazar
 import { prepareTravelV2ActiveHazardHandoffReviewState } from "../helpers/travel-v2-active-hazard-handoff-review.js";
 import { prepareTravelV2HazardCandidateControlGmState } from "../helpers/travel-v2-hazard-candidate-controls.js";
 import { applyTravelV2ActiveHazardLifecycleDisplayToRenderState } from "../helpers/travel-v2-active-hazard-lifecycle-display.js";
+import { applyTravelV2ResponseActionWiringToRenderState } from "../helpers/travel-v2-response-action-wiring.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
@@ -306,8 +307,9 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     compactRoundLabel: state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round"
   };
   const appStateWithLifecycleDisplay = applyTravelV2ActiveHazardLifecycleDisplayToRenderState(appState, { travelV2HazardCandidateControlResult, user }, { user, includeGmReview: canManageTravelV2Consequences });
-  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithLifecycleDisplay);
-  const appStateWithPreview = { ...appStateWithLifecycleDisplay, travelV2PreviewPanel: previewPanel };
+  const appStateWithResponseActionWiring = applyTravelV2ResponseActionWiringToRenderState(appStateWithLifecycleDisplay, { user }, { user, includeGmReview: canManageTravelV2Consequences });
+  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithResponseActionWiring);
+  const appStateWithPreview = { ...appStateWithResponseActionWiring, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {
