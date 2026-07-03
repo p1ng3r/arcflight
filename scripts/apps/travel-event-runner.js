@@ -129,6 +129,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-dev-copy-debug]",
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-station-benefit-review-request]",
+  "[data-arcflight-travel-v2-order-reorder-request]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
@@ -570,6 +571,16 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     setTimeout(() => this.#showTravelV2RoundResolutionDialog({ finalize: false }), 0);
   }
 
+  #requestTravelV2RoundActionOrderReorder(target) {
+    const proposed = typeof target?.dataset?.proposedOrder === "string" ? target.dataset.proposedOrder.split(",").map((key) => key.trim()).filter(Boolean) : [];
+    this.uiState.travelV2RoundActionOrderReorderRequested = true;
+    this.uiState.travelV2ProposedRoundActionOrder = proposed;
+    this.statusMessage = proposed.length > 0
+      ? "Round action-order reorder review requested. This only updates local render state and does not apply or persist order."
+      : "Round action-order reorder review requires a proposed station list.";
+    return this.render(true);
+  }
+
   #requestTravelV2StationBenefitReview(target) {
     const queueKey = typeof target?.dataset?.queueKey === "string" ? target.dataset.queueKey.trim() : "";
     this.uiState.travelV2StationBenefitUseReviewSelectedQueueKey = queueKey;
@@ -693,6 +704,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-dev-copy-debug")) return this.#copyTravelV2DebugReport();
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-review-request")) return this.#requestTravelV2StationBenefitReview(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();

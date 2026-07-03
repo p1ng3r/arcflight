@@ -16,7 +16,7 @@ import { applyTravelV2StationImpactModifierReviewToRenderState } from "../helper
 import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
 import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 4;
 
 function guidedQueueButtons(action, { canApply = false, canSend = false, noDismiss = false } = {}) {
   const buttons = [];
@@ -307,6 +307,8 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview, travelV2RuntimeHazardDeckSelection, travelV2HazardDeckPicker, travelV2HazardDrawReview, travelV2ActiveHazardHandoffReview, travelV2HazardCandidateControlResult } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
+    travelV2RoundActionOrderReorderRequested: uiState.travelV2RoundActionOrderReorderRequested === true,
+    travelV2ProposedRoundActionOrder: Array.isArray(uiState.travelV2ProposedRoundActionOrder) ? uiState.travelV2ProposedRoundActionOrder : [],
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],
     travelV2CompletedSessionHistory: prepareTravelV2CompletedSessionHistoryState(state.sessionLibrary, { actor, includeGmSummary: canManageTravelV2Consequences }),
     compactRoundLabel: state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round"

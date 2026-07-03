@@ -532,6 +532,25 @@
                 </article>
               {{/each}}
             </div>
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.canRequestReorderReview}}
+              <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                <button type="button" data-arcflight-travel-v2-order-reorder-request data-proposed-order="{{state.travelV2PreviewPanel.roundActionOrderDisplay.proposedShellOrderCsv}}" title="Requests a GM-only review of a proposed station order in local render state only. Does not apply, save, persist, or advance the round.">Request Reorder Review</button>
+              </div>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.requested}}
+              <section class="arcflight-travel-runner-mvp__v2-order-reorder" aria-label="Round action order reorder review">
+                <h5>Reorder Review Candidate</h5>
+                <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.feedbackText}}</p>
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.hasComparisonRows}}
+                  <div class="arcflight-travel-runner-mvp__v2-order-compare">
+                    <div><strong>Current Order</strong>{{#each state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.currentRows}}<p>{{orderLabel}} · {{stationName}}</p>{{/each}}</div>
+                    <div><strong>Proposed Order</strong>{{#each state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.proposedRows}}<p>{{orderLabel}} · {{stationName}}</p>{{/each}}</div>
+                  </div>
+                {{/if}}
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.blockedReason}}</p>{{/if}}
+                <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.mutationNote}}</p>
+              </section>
+            {{/if}}
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.hasBlockedText}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.blockedText}}</p>{{/if}}
             <p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.footerText}}</p>
           </section>

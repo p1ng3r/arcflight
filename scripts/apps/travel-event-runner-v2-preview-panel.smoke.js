@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 9, "panel version should be 9");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 10, "panel version should be 10");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -83,6 +83,12 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(panel.roundActionOrderDisplay.rows[0].statusLabel, "Needs Order", "round action order display should expose status label");
   assertSmoke(panel.roundActionOrderDisplay.rows[0].current, "first uncommitted order row should be marked current");
   assertSmoke(panel.roundActionOrderDisplay.footerText.includes("has not committed"), "round action order display should expose footer text");
+  assertSmoke(!panel.roundActionOrderDisplay.reorderRequest.requested, "panel should not show reorder comparison without explicit request");
+  assertSmoke(panel.roundActionOrderDisplay.canRequestReorderReview, "panel should expose an explicit reorder review request shell for multi-station rounds");
+
+  const reorderPanel = prepareTravelEventRunnerV2PreviewPanelState({ session: appState.session, user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] });
+  assertSmoke(reorderPanel.roundActionOrderDisplay.reorderRequest.ready, "explicit GM reorder request should prepare a ready review-only candidate");
+  assertEqual(reorderPanel.roundActionOrderDisplay.reorderRequest.proposedRows[0].stationName, "Engineer", "reorder candidate should expose proposed station order");
 
   const stationBenefitPanel = prepareTravelEventRunnerV2PreviewPanelState({
     ...appState,
