@@ -11,6 +11,7 @@ import { prepareTravelV2HazardCandidateControlGmState } from "../helpers/travel-
 import { applyTravelV2ActiveHazardLifecycleDisplayToRenderState } from "../helpers/travel-v2-active-hazard-lifecycle-display.js";
 import { applyTravelV2ResponseActionWiringToRenderState } from "../helpers/travel-v2-response-action-wiring.js";
 import { applyTravelV2StationImpactBehaviorToRenderState } from "../helpers/travel-v2-station-impact-behavior.js";
+import { applyTravelV2ResponseActionResolutionReviewToRenderState } from "../helpers/travel-v2-response-action-resolution-review.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 3;
 
@@ -310,8 +311,15 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const appStateWithLifecycleDisplay = applyTravelV2ActiveHazardLifecycleDisplayToRenderState(appState, { travelV2HazardCandidateControlResult, user }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithResponseActionWiring = applyTravelV2ResponseActionWiringToRenderState(appStateWithLifecycleDisplay, { user }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithStationImpactBehavior = applyTravelV2StationImpactBehaviorToRenderState(appStateWithResponseActionWiring, { user, stations: appStateWithResponseActionWiring.stations }, { user, includeGmReview: canManageTravelV2Consequences });
-  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationImpactBehavior);
-  const appStateWithPreview = { ...appStateWithStationImpactBehavior, travelV2PreviewPanel: previewPanel };
+  const appStateWithResponseActionResolutionReview = applyTravelV2ResponseActionResolutionReviewToRenderState(appStateWithStationImpactBehavior, {
+    user,
+    travelV2ResponseActionResolutionRequested: uiState.travelV2ResponseActionResolutionRequested === true,
+    travelV2ResponseActionSelectedActionId: uiState.travelV2ResponseActionSelectedActionId ?? null,
+    travelV2ResponseActionSelectedHazardCardId: uiState.travelV2ResponseActionSelectedHazardCardId ?? null,
+    travelV2ResponseActionResolutionNote: uiState.travelV2ResponseActionResolutionNote ?? null
+  }, { user, includeGmReview: canManageTravelV2Consequences });
+  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithResponseActionResolutionReview);
+  const appStateWithPreview = { ...appStateWithResponseActionResolutionReview, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {
