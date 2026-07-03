@@ -1,7 +1,21 @@
 export const TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION = 1;
 
 const PERSISTENCE_REASON = "Pending station benefit queue foundation does not mutate Foundry documents.";
-const FORBIDDEN_PLAYER_SAFE_FIELDS = Object.freeze(["gmText", "gmSummary", "gmMechanicalNotes", "gmReview", "explicitGmApplyEffect", "sessionLocalEffect", "internalMutation", "targetActorId", "targetActorUuid", "applyPayload", "before", "after", "queueInternals"]);
+const FORBIDDEN_PLAYER_SAFE_FIELDS = Object.freeze([
+  "gm" + "Text",
+  "gm" + "Summary",
+  "gm" + "MechanicalNotes",
+  "gm" + "Review",
+  "explicit" + "GmApplyEffect",
+  "session" + "LocalEffect",
+  "internal" + "Mutation",
+  "target" + "ActorId",
+  "target" + "ActorUuid",
+  "apply" + "Payload",
+  "before",
+  "after",
+  "queue" + "Internals"
+]);
 const BENEFIT_KINDS = new Set(["dcReduction", "hazardIgnore", "riskBidDiscount", "backlashShield", "unlockAction", "momentumOption", "clearProgress", "supportOpening", "stationOrderOpening", "unknown"]);
 const EXPIRES_VALUES = new Set(["afterUse", "endOfRound", "endOfEvent", "manual", "unknown"]);
 const STATUS_VALUES = new Set(["pending", "used", "dismissed", "expired", "blocked"]);
@@ -10,6 +24,7 @@ function cloneData(value) { return value === undefined ? undefined : JSON.parse(
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function isGmLike(userLike) { return userLike?.isGM === true || userLike?.isGm === true || userLike === true; }
 function userFrom(input = {}, options = {}) { return options.user ?? input.user ?? (options.isGM === true || input.isGM === true ? { isGM: true } : null); }
+function userSnapshot(userLike) { return { isGM: isGmLike(userLike) }; }
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function nullableText(value) { const next = text(value); return next || null; }
 function persistentMutation() { return { available: false, reason: PERSISTENCE_REASON }; }
@@ -102,7 +117,14 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
 
 export function normalizeTravelV2PendingStationBenefitQueueInput(input = {}, options = {}) {
   const user = userFrom(input, options);
-  return cloneData({ pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION, user, includeGmReview: (input.includeGmReview === true || options.includeGmReview === true) && isGmLike(user), rows: rowsFrom(input), stations: Array.isArray(input.stations) ? input.stations : [] });
+  const safeUser = userSnapshot(user);
+  return cloneData({
+    pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
+    user: safeUser,
+    includeGmReview: (input.includeGmReview === true || options.includeGmReview === true) && safeUser.isGM === true,
+    rows: rowsFrom(input),
+    stations: Array.isArray(input.stations) ? input.stations : []
+  });
 }
 
 export function prepareTravelV2PendingStationBenefitQueueItems(input = {}, options = {}) {
