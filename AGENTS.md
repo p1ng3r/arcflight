@@ -12,6 +12,27 @@ For every narrow Travel v2 PR:
 4. Add an `Agent Checks` section to the PR body.
 5. Do not mark a PR complete unless all required agents are `PASS` or any `WATCH` item is clearly explained and deferred.
 
+## PR #352 Required Agents
+
+For `codex/pr352-player-station-benefit-display`, use:
+
+- `docs/agents/roadmap-scope-agent.md`
+- `docs/agents/helper-runtime-agent.md`
+- `docs/agents/ui-player-flow-agent.md`
+- `docs/agents/foundry-pf2e-api-agent.md`
+- `docs/agents/safety-leak-audit-agent.md`
+- `docs/agents/smoke-test-agent.md`
+
+The Content Builder Agent is only required if content-builder, JSON pack, import/export, validator, or authored pack behavior is changed.
+
+## Future PR Agent Rule
+
+All future Codex prompts should consider whether `docs/agents/foundry-pf2e-api-agent.md` is required.
+
+Require the Foundry / PF2E System Compatibility Agent when a PR touches app/runtime files, UI render state, templates, module exports, Foundry globals, PF2E actor/item assumptions, roll/check/DC behavior, settings, sockets, chat, journals, scenes, tokens, combats, compendia, world data, or persistent flags.
+
+For pure helper-only PRs with no Foundry/PF2E runtime assumptions, mark it `WATCH` or `NOT APPLICABLE` and explain why.
+
 ## PR #351 Required Agents
 
 For `codex/pr351-roadmap-benefit-queue`, use:
@@ -30,6 +51,10 @@ The Content Builder Agent is only required if content-builder, JSON pack, import
 Do not automatically mutate Foundry actors, items, chat, journals, scenes, tokens, combats, settings, sockets, compendia, world data, or persistent flags unless the current PR explicitly builds a GM Apply flow.
 
 Player-safe state must not expose GM-only fields or internal apply payloads.
+
+Pure helper files should remain Node-smoke-safe and should not import or require unguarded Foundry globals.
+
+Preserve the Arcflight model: PF2E vehicle actors are ships, PF2E equipment items are components, and Arcflight data lives under `flags.arcflight.*`.
 
 ## Legacy Phase 0 Guardrails
 
