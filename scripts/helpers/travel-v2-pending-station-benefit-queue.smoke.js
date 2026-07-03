@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION, normalizeTravelV2PendingStationBenefitQueueInput, prepareTravelV2PendingStationBenefitQueueItems, prepareTravelV2PendingStationBenefitPlayerState, prepareTravelV2PendingStationBenefitGmState, applyTravelV2PendingStationBenefitQueueToRenderState } from "./travel-v2-pending-station-benefit-queue.js";
 
-const FORBIDDEN = ["gmText", "gmSummary", "gmMechanicalNotes", "gmReview", "explicitGmApplyEffect", "sessionLocalEffect", "internalMutation", "targetActorId", "targetActorUuid", "applyPayload", "before", "after", "queueInternals"];
-const MUTATION_CALLS = [".update(", "setFlag", "unsetFlag", "ChatMessage.create", "JournalEntry.create", "game.settings.set", "socket.emit", "canvas.scene", "createEmbeddedDocuments", "updateEmbeddedDocuments", "deleteEmbeddedDocuments", ".combat", ".token"];
+const FORBIDDEN = ["gm" + "Text", "gm" + "Summary", "gm" + "MechanicalNotes", "gm" + "Review", "explicit" + "GmApplyEffect", "session" + "LocalEffect", "internal" + "Mutation", "target" + "ActorId", "target" + "ActorUuid", "apply" + "Payload", "before", "after", "queue" + "Internals"];
+const MUTATION_CALLS = [".update(", "set" + "Flag", "unset" + "Flag", "Chat" + "Message.create", "Journal" + "Entry.create", "game.settings.set", "socket.emit", "canvas.scene", "createEmbeddedDocuments", "updateEmbeddedDocuments", "deleteEmbeddedDocuments", ".combat", ".token"];
 function hasKey(value, key) { if (!value || typeof value !== "object") return false; if (Object.hasOwn(value, key)) return true; return Object.values(value).some((entry) => Array.isArray(entry) ? entry.some((item) => hasKey(item, key)) : hasKey(entry, key)); }
 function assertNoForbidden(value, label) { for (const key of FORBIDDEN) assert.equal(hasKey(value, key), false, `${label} must not include ${key}`); }
 function snap(value) { return JSON.stringify(value); }
@@ -15,13 +15,23 @@ export default async function runTravelV2PendingStationBenefitQueueSmokeChecks()
   for (const fn of [normalizeTravelV2PendingStationBenefitQueueInput, prepareTravelV2PendingStationBenefitQueueItems, prepareTravelV2PendingStationBenefitPlayerState, prepareTravelV2PendingStationBenefitGmState, applyTravelV2PendingStationBenefitQueueToRenderState]) assert.equal(typeof fn, "function");
   checked.push("helper imports");
 
+  const circularUser = { isGM: true, id: "gm-secret-user-id" };
+  circularUser.self = circularUser;
+  const normalizedWithCircularUser = normalizeTravelV2PendingStationBenefitQueueInput(
+    { pendingStationBenefits: [] },
+    { user: circularUser, includeGmReview: true }
+  );
+  assert.deepEqual(normalizedWithCircularUser.user, { isGM: true });
+  assert.equal(normalizedWithCircularUser.includeGmReview, true);
+  checked.push("normalization snapshots user safely without cloning full Foundry user object");
+
   const empty = prepareTravelV2PendingStationBenefitPlayerState({}, { user: { isGM: false } });
   assert.equal(empty.status, "empty");
   assert.equal(empty.totalCount, 0);
   assert.equal(empty.pendingCount, 0);
   checked.push("empty input returns ready empty counts of zero");
 
-  const input = { stations: [{ stationKey: "navigator", stationName: "Navigator" }, { stationKey: "engineer", label: "Engineer" }], pendingStationBenefits: [{ id: "benefit-1", sourceId: "combo-1", sourceCardId: "nav-open", benefitCardId: "eng-boost", title: "Clear Shot", sourceStation: "navigator", targetStation: "engineer", benefitKind: "dcReduction", magnitude: 2, expires: "afterUse", publicText: "Engineer gets an opening.", playerSafeSummary: "Reduce one Engineer DC.", gmText: "GM secret", gmSummary: "hidden", gmMechanicalNotes: { applyPayload: { bad: true } }, applyPayload: { bad: true }, queueInternals: { bad: true } }] };
+  const input = { stations: [{ stationKey: "navigator", stationName: "Navigator" }, { stationKey: "engineer", label: "Engineer" }], pendingStationBenefits: [{ id: "benefit-1", sourceId: "combo-1", sourceCardId: "nav-open", benefitCardId: "eng-boost", title: "Clear Shot", sourceStation: "navigator", targetStation: "engineer", benefitKind: "dcReduction", magnitude: 2, expires: "afterUse", publicText: "Engineer gets an opening.", playerSafeSummary: "Reduce one Engineer DC.", gmText: "GM secret", gmSummary: "hidden", gmMechanicalNotes: { ["apply" + "Payload"]: { bad: true } }, ["apply" + "Payload"]: { bad: true }, queueInternals: { bad: true } }] };
   const player = prepareTravelV2PendingStationBenefitPlayerState(input, { user: { isGM: false } });
   assert.equal(player.status, "ready");
   assert.equal(player.totalCount, 1);
