@@ -1,7 +1,7 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { normalizeTravelRoundSegmentKey } from "./travel-round-segments.js";
 
-export const TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION = 2;
+export const TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION = 3;
 
 const RESULT_LABELS = Object.freeze({
   criticalFailure: "Critical Failure",
@@ -124,11 +124,13 @@ function normalizeStationOrder(sourceOrder = [], fallbackStations = []) {
 
 function explicitOrderSource(session = {}, round = {}, roundResult = {}, options = {}) {
   if (Array.isArray(options.order) || Array.isArray(options.stationOrder)) return options.order ?? options.stationOrder;
-  if (Array.isArray(roundResult.stationActionOrder) || Array.isArray(roundResult.actionOrder) || Array.isArray(roundResult.stationOrder)) return roundResult.stationActionOrder ?? roundResult.actionOrder ?? roundResult.stationOrder;
-  if (Array.isArray(round.stationActionOrder) || Array.isArray(round.actionOrder) || Array.isArray(round.stationOrder)) return round.stationActionOrder ?? round.actionOrder ?? round.stationOrder;
   const orderState = isPlainObject(session.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : {};
   const roundOrder = orderState.rounds?.[String(roundResult.roundIndex ?? session.currentRoundIndex ?? 0)] ?? orderState.rounds?.[roundResult.roundIndex ?? session.currentRoundIndex ?? 0];
-  return sourceOrderFrom(roundOrder);
+  const committedOrder = sourceOrderFrom(roundOrder);
+  if (committedOrder.length > 0) return committedOrder;
+  if (Array.isArray(roundResult.stationActionOrder) || Array.isArray(roundResult.actionOrder) || Array.isArray(roundResult.stationOrder)) return roundResult.stationActionOrder ?? roundResult.actionOrder ?? roundResult.stationOrder;
+  if (Array.isArray(round.stationActionOrder) || Array.isArray(round.actionOrder) || Array.isArray(round.stationOrder)) return round.stationActionOrder ?? round.actionOrder ?? round.stationOrder;
+  return [];
 }
 
 function stationLabel(round = {}, stationKey = "") {
@@ -200,6 +202,82 @@ function prepareReorderRequestState({ sessionState, currentRows, currentOrder, a
   };
   const ready = blockedReasons.length === 0 && validation.ready === true;
   return deepFreeze({ requested: true, ready, blocked: !ready, playerSafe: false, status: ready ? "ready" : "blocked", feedbackText: ready ? "Reorder candidate is ready for GM review only. It has not been applied, saved, or persisted." : (blockedReasons[0] ?? "Reorder candidate is blocked."), currentStationKeys: currentOrder, proposedStationKeys: validation.proposedStationKeys, currentRows: currentOrder.map(rowFor), proposedRows: validation.proposedStationKeys.map(rowFor), blockedReasons, missingKeys: validation.missingKeys, unknownKeys: validation.unknownKeys, duplicateKeys: validation.duplicateKeys, reviewOnly: true, mutationNote: "Review-only reorder candidate. No session write, persistence, round advancement, station result change, roll, DC, socket, actor, item, chat, or journal mutation is performed." });
+}
+
+function arraysEqual(left = [], right = []) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function safeUserMetadata(options = {}) {
+  const user = options.user ?? {};
+  return {
+    source: typeof options.source === "string" && options.source.trim() ? options.source.trim() : "gm-order-commit",
+    userId: typeof user.id === "string" && user.id.trim() ? user.id.trim() : (typeof options.userId === "string" && options.userId.trim() ? options.userId.trim() : null),
+    userName: typeof user.name === "string" && user.name.trim() ? user.name.trim() : (typeof options.userName === "string" && options.userName.trim() ? options.userName.trim() : null),
+    isGM: user.isGM === true || options.isGM === true
+  };
+}
+
+function existingRoundOrderRecord(session = {}, roundIndex = -1) {
+  const state = isPlainObject(session.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : {};
+  const rounds = isPlainObject(state.rounds) ? state.rounds : {};
+  return rounds[String(roundIndex)] ?? rounds[roundIndex] ?? null;
+}
+
+export function commitTravelV2RoundActionOrderToSession(session = null, proposedOrder = [], options = {}) {
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const blockedReasons = [];
+  if (!isGm) blockedReasons.push("Only the GM can commit round action order.");
+  if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
+  const isCompleted = isPlainObject(session) ? isCompletedSession(session) : false;
+  if (isCompleted) blockedReasons.push("Completed Travel v2 runner sessions cannot commit round action order.");
+  const { roundIndex, round, roundNumber } = isPlainObject(session) ? getCurrentRound(session) : { roundIndex: -1, round: null, roundNumber: null };
+  const hasCurrentRound = Boolean(round);
+  const roundResult = hasCurrentRound && Array.isArray(session.roundResults) && isPlainObject(session.roundResults[roundIndex]) ? session.roundResults[roundIndex] : {};
+  const activeStations = hasCurrentRound ? activeStationKeys(round, roundResult) : [];
+  const roundResolutionRecord = hasCurrentRound ? findRoundResolutionRecord(session, round, roundIndex, roundNumber) : null;
+  if (!hasCurrentRound) blockedReasons.push("Travel v2 runner session has no current round.");
+  if (hasCurrentRound && activeStations.length === 0) blockedReasons.push("Current Travel v2 round has no active stations.");
+  if (roundResolutionRecord) blockedReasons.push("Current Travel v2 round is already completed.");
+
+  const validation = normalizeTravelV2ProposedRoundActionOrder(proposedOrder, activeStations);
+  blockedReasons.push(...validation.blockedReasons);
+  if (blockedReasons.length > 0) return deepFreeze({ ok: false, committed: false, duplicate: false, blocked: true, playerSafe: !isGm, blockedReasons, reason: blockedReasons[0] ?? "Round action order commit blocked.", session: isGm ? cloneData(session) : null });
+
+  const previousOrder = normalizeStationOrder(explicitOrderSource(session, round, roundResult, {}), activeStations);
+  const committedOrder = [...validation.proposedStationKeys];
+  const existingRecord = existingRoundOrderRecord(session, roundIndex);
+  const existingOrder = sourceOrderFrom(existingRecord);
+  if (arraysEqual(existingOrder, committedOrder)) {
+    return deepFreeze({ ok: true, committed: false, duplicate: true, blocked: false, blockedReasons: [], reason: "Round action order already committed with the same station order.", roundIndex, roundNumber, previousOrder, committedOrder, auditRecord: isPlainObject(existingRecord?.auditRecord) ? cloneData(existingRecord.auditRecord) : null, session: cloneData(session) });
+  }
+
+  const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();
+  const metadata = safeUserMetadata(options);
+  const auditRecord = {
+    id: `round-action-order:${roundIndex}:${timestamp}`,
+    type: "roundActionOrderCommit",
+    roundIndex,
+    roundNumber,
+    previousOrder: cloneData(previousOrder),
+    committedOrder: cloneData(committedOrder),
+    timestamp,
+    source: metadata.source,
+    userId: metadata.userId,
+    userName: metadata.userName,
+    isGM: metadata.isGM,
+    mutationScope: "session-local-station-action-order-only"
+  };
+  const nextSession = cloneData(session);
+  const nextState = isPlainObject(nextSession.travelV2RoundActionOrder) ? { ...nextSession.travelV2RoundActionOrder } : {};
+  const nextRounds = isPlainObject(nextState.rounds) ? { ...nextState.rounds } : {};
+  nextRounds[String(roundIndex)] = { roundIndex, roundNumber, order: cloneData(committedOrder), stationOrder: cloneData(committedOrder), committedAt: timestamp, source: metadata.source, userId: metadata.userId, userName: metadata.userName, auditRecord: cloneData(auditRecord) };
+  const priorRecords = recordsFromContainer(nextState.commitRecords ?? nextState.commits ?? nextState.auditRecords);
+  nextState.version = TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION;
+  nextState.rounds = nextRounds;
+  nextState.commitRecords = [...cloneData(priorRecords), cloneData(auditRecord)];
+  nextSession.travelV2RoundActionOrder = nextState;
+  return deepFreeze({ ok: true, committed: true, duplicate: false, blocked: false, blockedReasons: [], reason: "Round action order committed to this runner session.", roundIndex, roundNumber, previousOrder, committedOrder, auditRecord, session: nextSession });
 }
 
 export function prepareTravelV2RoundActionOrderState(session = null, options = {}) {
