@@ -4,8 +4,9 @@ import { prepareTravelV2RoundFinalizationState } from "../helpers/travel-v2-roun
 import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
+import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 8;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 9;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -210,6 +211,43 @@ function normalizeStationBenefitDisplay(state = null) {
   };
 }
 
+function normalizeRoundActionOrderDisplay(state = null) {
+  const rows = Array.isArray(state?.rows) ? state.rows.map((row) => ({
+    stationKey: row?.stationKey ?? "",
+    stationName: row?.stationName || "Station",
+    orderNumber: Number.isInteger(Number(row?.orderNumber)) ? Number(row.orderNumber) : null,
+    orderLabel: Number.isInteger(Number(row?.orderNumber)) ? `#${Number(row.orderNumber)}` : "—",
+    selectedActionLabel: row?.selectedActionLabel || row?.actionTypeLabel || "Station order",
+    status: row?.status || "needs-order",
+    statusLabel: row?.statusLabel || humanizeIdentifier(row?.status || "needs-order"),
+    current: row?.current === true,
+    currentMarker: row?.current === true ? "Current" : "",
+    resultLabel: row?.resultLabel || "Unresolved"
+  })) : [];
+  const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
+  const blockedText = blockedReasons[0] ?? "";
+  return {
+    available: rows.length > 0,
+    title: "Round Action Order",
+    subtitle: rows.length > 0
+      ? "Display-only station action order for the current Travel v2 round."
+      : "No round action order is available for this state.",
+    roundIndex: Number.isInteger(Number(state?.roundIndex)) ? Number(state.roundIndex) : -1,
+    roundNumber: state?.roundNumber ?? null,
+    phase: state?.phase ?? "roundReveal",
+    rows,
+    hasRows: rows.length > 0,
+    rowCount: rows.length,
+    hasCurrent: state?.hasCurrent === true,
+    blocked: state?.blocked === true,
+    blockedReasons,
+    blockedText,
+    hasBlockedText: Boolean(blockedText),
+    footerText: state?.footerText || (rows.length > 0 ? "Round action order is display-only." : "No round action-order rows are available."),
+    readOnly: true
+  };
+}
+
 function normalizePreviewRow(row = {}, applicationState = null, correctionState = {}) {
   const outcomeKey = String(row.outcomeKey ?? "skipped");
   const totals = isPlainObject(row.totalsByPressureType) ? row.totalsByPressureType : {};
@@ -310,6 +348,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
   const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
   const stationBenefitDisplay = normalizeStationBenefitDisplay(appState.travelV2StationBenefitUseReviewPlayerState);
+  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession) : null);
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
@@ -333,6 +372,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     followUps: travelV2FollowUps,
     stationBenefitDisplay,
     travelV2StationBenefitDisplay: stationBenefitDisplay,
+    roundActionOrderDisplay,
+    travelV2RoundActionOrderDisplay: roundActionOrderDisplay,
     pressureApplication: {
       canApply: currentApplicationState?.canApply === true,
       alreadyApplied: currentApplicationState?.alreadyApplied === true,

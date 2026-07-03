@@ -510,6 +510,32 @@
         {{else}}
           <p class="arcflight-sheet__hint">Travel v2 pressure preview is unavailable for the current runner state.</p>
         {{/if}}
+        {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.hasRows}}
+          <section class="arcflight-travel-runner-mvp__v2-benefits arcflight-travel-runner-mvp__v2-order" aria-label="{{state.travelV2PreviewPanel.roundActionOrderDisplay.title}}">
+            <header>
+              <h4>{{state.travelV2PreviewPanel.roundActionOrderDisplay.title}}</h4>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.subtitle}}</p>
+            </header>
+            <div class="arcflight-travel-runner-mvp__v2-benefit-rows">
+              {{#each state.travelV2PreviewPanel.roundActionOrderDisplay.rows}}
+                <article class="arcflight-travel-runner-mvp__v2-benefit-row {{#if current}}arcflight-travel-runner-mvp__v2-benefit-row--current{{/if}}">
+                  <div>
+                    <strong>{{orderLabel}} · {{stationName}}</strong>
+                    <p>{{selectedActionLabel}}</p>
+                    {{#if currentMarker}}<p class="arcflight-sheet__hint">{{currentMarker}}</p>{{/if}}
+                  </div>
+                  <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip">Order {{orderNumber}}</span>
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{statusLabel}}</span>
+                    {{#if resultLabel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">{{resultLabel}}</span>{{/if}}
+                  </div>
+                </article>
+              {{/each}}
+            </div>
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.hasBlockedText}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.blockedText}}</p>{{/if}}
+            <p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.footerText}}</p>
+          </section>
+        {{/if}}
         {{#if state.travelV2PreviewPanel.stationBenefitDisplay.hasRows}}
           <section class="arcflight-travel-runner-mvp__v2-benefits" aria-label="{{state.travelV2PreviewPanel.stationBenefitDisplay.title}}">
             <header>
