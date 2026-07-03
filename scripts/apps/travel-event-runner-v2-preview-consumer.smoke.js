@@ -86,6 +86,14 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(benefitState.travelV2PreviewPanel.stationBenefitDisplay.rows[1].requestAvailabilityLabel, "Not ready", "disabled station benefit rows should be represented safely");
   assertSmoke(!JSON.stringify(benefitState).includes("gmText") && !JSON.stringify(benefitState).includes("applyPayload"), "non-GM app/panel station benefit state should not leak GM-only fields");
   assertSmoke(!JSON.stringify(benefitState.travelV2PreviewPanel.stationBenefitDisplay).includes("useApplied"), "station benefit display should not expose real use/apply behavior");
+  const requestedBenefitState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session: { pendingStationBenefits: [{ queueKey: "benefit-1", title: "Clear Shot", sourceStation: "navigator", targetStation: "engineer", status: "pending", playerSafeSummary: "Reduce one Engineer DC." }] },
+    uiState: { travelV2StationBenefitUseReviewSelectedQueueKey: "benefit-1", travelV2StationBenefitUseReviewRequested: true },
+    user: { isGM: true }
+  });
+  assertEqual(requestedBenefitState.travelV2StationBenefitUseReviewPlayerState.selectedCandidate.status, "ready", "ephemeral UI request should prepare a ready review-only station benefit candidate");
+  assertEqual(requestedBenefitState.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.ready, true, "preview panel should expose ready review request feedback");
+  assertSmoke(requestedBenefitState.travelV2StationBenefitUseReview.gmReview.reviewRequested === true, "GM review state should be available for GM-like users after request");
 
   const gmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true } });
   assertSmoke(gmState.travelV2GmFlowStatus, "GM app state includes Travel v2 flow status strip");
