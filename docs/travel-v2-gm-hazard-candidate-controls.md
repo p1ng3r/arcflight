@@ -47,3 +47,7 @@ Controls are GM-only and require a valid handoff candidate plus an explicit GM c
 - station-impact behavior
 - card pack import/export
 - expanded hazard packs
+
+## Display Lifecycle Follow-Up
+
+Activate, hold, and dismiss results can feed the active hazard lifecycle/player HUD display layer. That follow-up state is display-only: it does not apply station effects, execute response actions, apply consequences, persist settings, or mutate Foundry documents.
