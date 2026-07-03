@@ -51,3 +51,7 @@ Player state is derived only from player-safe available response actions and pla
 - Hazard clear/resolve lifecycle.
 - Card pack import/export.
 - Expanded hazard packs.
+
+## Station Impact Modifier Review Context
+
+Response action resolution review context may be linked into station impact modifier review candidates so the GM/table can see the selected action alongside related station impact proposals. This linking is still review-only and does not execute actions, apply modifiers, or mutate station/check state.

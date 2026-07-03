@@ -49,3 +49,7 @@ Player state contains only player-safe impact rows. GM review details are gated 
 ## Response Action Resolution Review Linking
 
 Player-safe station impact guidance can be linked into response action resolution review candidates when the selected wired response action references matching station keys. This linking remains review-only and does not apply station effects, station DC modifiers, or mutate station check results.
+
+## Station Impact Modifier Review Hand-off
+
+Station impact guidance can now feed station impact modifier review candidates. This remains review/session-local only: no modifier application, station DC application, station state mutation, check result mutation, or persistence occurs in this hand-off.

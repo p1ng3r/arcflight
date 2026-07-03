@@ -653,3 +653,7 @@ Note for #348: station-impact behavior adds review/session-local guidance only. 
 ## PR #349 Response Action Resolution Review Note
 
 PR #349 adds response action resolution review candidates only. It does not execute actions, roll checks, apply outcomes, modify station checks, clear hazards, apply consequences, or mutate Foundry documents.
+
+## PR #350 Station Impact Modifier Review Note
+
+PR #350 adds station impact modifier review candidates only. It does not apply modifiers, roll checks, mutate station results, execute response actions, clear hazards, apply consequences, or mutate Foundry documents.
