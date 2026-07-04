@@ -10,6 +10,7 @@ import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/trav
 import { applyTravelV2FinalOutcomeToShip } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
+import { commitTravelV2RoundActionOrderToSession } from "../helpers/travel-v2-round-action-order-state.js";
 import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
@@ -130,6 +131,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-station-benefit-review-request]",
   "[data-arcflight-travel-v2-order-reorder-request]",
+  "[data-arcflight-travel-v2-order-commit-request]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
@@ -400,6 +402,25 @@ export function prepareTravelV2EventOutcomeApplicationRunnerUpdate(currentSessio
   };
 }
 
+
+export function prepareTravelV2RoundActionOrderCommitRunnerUpdate(currentSession, options = {}) {
+  const proposedOrder = Array.isArray(options.proposedOrder)
+    ? options.proposedOrder
+    : (Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []);
+  const result = commitTravelV2RoundActionOrderToSession(currentSession, proposedOrder, {
+    ...options,
+    commitRequested: options.commitRequested === true || options.travelV2RoundActionOrderCommitRequested === true,
+    travelV2RoundActionOrderCommitRequested: options.travelV2RoundActionOrderCommitRequested === true || options.commitRequested === true
+  });
+  const shouldUpdateSession = result?.ok === true && result?.committed === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
@@ -430,7 +451,10 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2FollowUpResult: null,
       travelV2ShipScarResult: null,
       travelV2DevToolResult: null,
-      travelV2AutoSaveResult: null
+      travelV2AutoSaveResult: null,
+      travelV2RoundActionOrderCommitResult: null,
+      travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
+      travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
   }
 
@@ -581,6 +605,29 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+  async commitTravelV2RoundActionOrder(options = {}) {
+    const update = prepareTravelV2RoundActionOrderCommitRunnerUpdate(this.session, {
+      ...options,
+      user: options.user ?? globalThis.game?.user,
+      isGM: options.isGM ?? globalThis.game?.user?.isGM === true,
+      commitRequested: true,
+      proposedOrder: this.uiState.travelV2ProposedRoundActionOrder
+    });
+    this.uiState.travelV2RoundActionOrderCommitResult = update.result;
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2RoundActionOrderReorderRequested = false;
+      this.uiState.travelV2ProposedRoundActionOrder = [];
+      this.statusMessage = `Round action order committed for Round ${update.result.roundNumber ?? Number(update.result.roundIndex ?? 0) + 1}; local runner session state was replaced only.`;
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = update.result?.reason ?? update.result?.blockedReasons?.[0] ?? (update.result?.duplicate ? "Round action order was already committed with that order." : "Round action order commit was blocked.");
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return update;
+  }
+
   #requestTravelV2StationBenefitReview(target) {
     const queueKey = typeof target?.dataset?.queueKey === "string" ? target.dataset.queueKey.trim() : "";
     this.uiState.travelV2StationBenefitUseReviewSelectedQueueKey = queueKey;
@@ -705,6 +752,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-review-request")) return this.#requestTravelV2StationBenefitReview(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();

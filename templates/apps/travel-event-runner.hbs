@@ -548,6 +548,11 @@
                   </div>
                 {{/if}}
                 {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.blockedReason}}</p>{{/if}}
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready}}
+                  <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                    <button type="button" data-arcflight-travel-v2-order-commit-request title="GM-only explicit commit. Replaces only this local runner session state and does not advance rounds, roll checks, change DCs, use sockets, or mutate actor/item/chat/journal data.">Commit Reviewed Order</button>
+                  </div>
+                {{/if}}
                 <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.mutationNote}}</p>
               </section>
             {{/if}}
