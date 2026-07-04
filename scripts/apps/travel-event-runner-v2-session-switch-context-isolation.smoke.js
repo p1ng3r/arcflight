@@ -317,7 +317,30 @@ export async function runTravelEventRunnerV2SessionSwitchContextIsolationSmokeCh
   assertSmoke(!afterText.includes("travelV2RoundActionOrderCommitResult"), "no commit result is created");
   assertSmoke(!afterText.includes("travelV2RoundActionOrderPersistResult"), "no persistence result is created");
   assertSmoke(!afterText.includes("persistenceRecords") && !afterText.includes("persistRecords"), "no persistence records are created");
-  checked.push("switching sessions creates no proposed order, commit result, persistence result, new records, duplicated commit records, or persistence records and mutates no library, entry, or session source data");
+  const forbiddenCreatedRecordTerms = [
+    "pressureApplicationRecords",
+    "pressureCorrectionRecords",
+    "roundFinalizationRecords",
+    "eventCompletionRecords",
+    "eventOutcomeApplicationRecords",
+    "actorApplicationRecords",
+    "hazardDrawRecords",
+    "hazardControlRecords",
+    "followUpRecords",
+    "stationBenefitUseRecords",
+    "travelV2PressureApplicationResult",
+    "travelV2PressureCorrectionResult",
+    "travelV2RoundFinalizationResult",
+    "travelV2EventCompletionResult",
+    "travelV2EventOutcomeApplicationResult",
+    "travelV2ActorApplicationResult",
+    "travelV2HazardDrawResult",
+    "travelV2HazardControlResult",
+    "travelV2FollowUpResult",
+    "travelV2StationBenefitUseResult"
+  ];
+  for (const term of forbiddenCreatedRecordTerms) assertSmoke(!afterText.includes(term), `switching sessions creates no ${term}`);
+  checked.push("switching sessions creates no proposed order, commit result, persistence result, pressure/correction/finalization/completion/outcome/application/hazard/follow-up/station-benefit records, duplicated commit records, or persistence records and mutates no library, entry, or session source data");
 
   const aggregate = readFileSync(new URL("../dev/run-travel-v2-smoke.mjs", import.meta.url), "utf8");
   assertSmoke(aggregate.includes("runTravelEventRunnerV2SessionSwitchContextIsolationSmokeChecks"), "aggregate Travel v2 smoke includes session switch context isolation suite");
