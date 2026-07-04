@@ -537,6 +537,22 @@
                 <button type="button" data-arcflight-travel-v2-order-reorder-request data-proposed-order="{{state.travelV2PreviewPanel.roundActionOrderDisplay.proposedShellOrderCsv}}" title="Requests a GM-only review of a proposed station order in local render state only. Does not apply, save, persist, or advance the round.">Request Reorder Review</button>
               </div>
             {{/if}}
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.available}}
+              <section class="arcflight-travel-runner-mvp__v2-order-commit-result" aria-label="{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.title}}">
+                <h5>{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.title}} · {{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.statusLabel}}</h5>
+                <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.summaryText}}</p>
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.hasPreviousRows}}
+                  <p><strong>Previous order:</strong> {{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.previousOrderText}}</p>
+                {{/if}}
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.hasCommittedRows}}
+                  <p><strong>Committed order:</strong> {{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.committedOrderText}}</p>
+                {{/if}}
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.hasAuditMetadata}}
+                  <p class="arcflight-sheet__hint">{{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.timestamp}}{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.timestamp}}{{/if}}{{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.source}} · {{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.source}}{{/if}}{{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.userName}} · {{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.userName}}{{/if}}</p>
+                {{/if}}
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.blockedReason}}</p>{{/if}}
+              </section>
+            {{/if}}
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.requested}}
               <section class="arcflight-travel-runner-mvp__v2-order-reorder" aria-label="Round action order reorder review">
                 <h5>Reorder Review Candidate</h5>

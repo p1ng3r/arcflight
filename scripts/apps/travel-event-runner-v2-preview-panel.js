@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 10;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 11;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -233,7 +233,7 @@ function normalizeRoundActionOrderReorderRequest(request = null) {
   };
 }
 
-function normalizeRoundActionOrderDisplay(state = null) {
+function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const rows = Array.isArray(state?.rows) ? state.rows.map((row) => ({
     stationKey: row?.stationKey ?? "",
     stationName: row?.stationName || "Station",
@@ -271,6 +271,71 @@ function normalizeRoundActionOrderDisplay(state = null) {
     proposedShellOrderCsv: proposedShellOrder.join(","),
     footerText: state?.footerText || (rows.length > 0 ? "Round action order is display-only." : "No round action-order rows are available."),
     reorderRequest: normalizeRoundActionOrderReorderRequest(state?.reorderRequest),
+    commitResult: normalizeRoundActionOrderCommitResult(options.commitResult, rows, options),
+    readOnly: true
+  };
+}
+
+function orderLabelsForKeys(keys = [], rows = []) {
+  const rowByKey = new Map(rows.map((row) => [row.stationKey, row]));
+  return (Array.isArray(keys) ? keys : []).map((stationKey, index) => {
+    const row = rowByKey.get(stationKey);
+    const stationName = row?.stationName || humanizeIdentifier(stationKey || "station");
+    return {
+      stationKey,
+      stationName,
+      orderNumber: index + 1,
+      orderLabel: `#${index + 1}`,
+      displayText: `#${index + 1} · ${stationName}`,
+      playerSafe: true
+    };
+  });
+}
+
+function normalizeRoundActionOrderCommitResult(result = null, rows = [], options = {}) {
+  if (!isPlainObject(result)) {
+    return { available: false, hasFeedback: false, status: "none", title: "Latest Commit Result", summaryText: "No round action-order commit has been attempted.", readOnly: true };
+  }
+  const isGm = options.isGM === true || options.user?.isGM === true;
+  const blockedReasons = Array.isArray(result.blockedReasons) ? result.blockedReasons.filter((reason) => typeof reason === "string" && reason.trim()) : [];
+  const status = result.committed === true ? "committed" : (result.duplicate === true ? "duplicate" : (result.blocked === true || result.ok === false ? "blocked" : "review"));
+  const committedRows = orderLabelsForKeys(result.committedOrder, rows);
+  const previousRows = orderLabelsForKeys(result.previousOrder, rows);
+  const safeAudit = isGm && isPlainObject(result.auditRecord) ? result.auditRecord : {};
+  const roundNumber = result.roundNumber ?? safeAudit.roundNumber ?? null;
+  const roundIndex = Number.isInteger(Number(result.roundIndex ?? safeAudit.roundIndex)) ? Number(result.roundIndex ?? safeAudit.roundIndex) : null;
+  const orderText = committedRows.length > 0 ? committedRows.map((row) => row.displayText).join(" → ") : "No committed order listed.";
+  const previousOrderText = previousRows.length > 0 ? previousRows.map((row) => row.displayText).join(" → ") : "No previous order listed.";
+  const roundText = roundNumber ? `Round ${roundNumber}` : (roundIndex !== null ? `Round index ${roundIndex}` : "Current round");
+  const summaryText = status === "committed"
+    ? `${roundText} action order committed: ${orderText}.`
+    : (status === "duplicate"
+      ? `${roundText} already had this committed action order: ${orderText}. No session changes were made.`
+      : `${roundText} action order commit blocked: ${blockedReasons[0] ?? result.reason ?? "No reason provided."}`);
+  return {
+    available: true,
+    hasFeedback: true,
+    status,
+    statusLabel: status === "committed" ? "Committed" : (status === "duplicate" ? "Duplicate" : (status === "blocked" ? "Blocked" : "Review")),
+    title: "Latest Commit Result",
+    summaryText,
+    reason: typeof result.reason === "string" ? result.reason : "",
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    roundNumber,
+    roundIndex,
+    hasRoundMetadata: roundNumber !== null || roundIndex !== null,
+    committedRows: isGm || status !== "blocked" ? committedRows : [],
+    previousRows: isGm ? previousRows : [],
+    hasCommittedRows: (isGm || status !== "blocked") && committedRows.length > 0,
+    hasPreviousRows: isGm && previousRows.length > 0,
+    committedOrderText: isGm || status !== "blocked" ? orderText : "",
+    previousOrderText: isGm ? previousOrderText : "",
+    timestamp: isGm && typeof safeAudit.timestamp === "string" ? safeAudit.timestamp : "",
+    source: isGm && typeof safeAudit.source === "string" ? safeAudit.source : "",
+    userName: isGm && typeof safeAudit.userName === "string" ? safeAudit.userName : "",
+    hasAuditMetadata: Boolean(isGm && (safeAudit.timestamp || safeAudit.source || safeAudit.userName)),
+    playerSafe: !isGm,
     readOnly: true
   };
 }
@@ -375,7 +440,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
   const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
   const stationBenefitDisplay = normalizeStationBenefitDisplay(appState.travelV2StationBenefitUseReviewPlayerState);
-  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null);
+  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult });
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,
