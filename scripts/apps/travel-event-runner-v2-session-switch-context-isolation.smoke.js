@@ -27,6 +27,26 @@ const TRANSIENT_RESULT_FIELDS = Object.freeze([
   "travelV2StationBenefitUseResult"
 ]);
 
+const REVIEW_CANDIDATE_FIELDS = Object.freeze([
+  ["travelV2HazardDrawRequested", false],
+  ["travelV2HazardDrawRequest", null],
+  ["travelV2HazardDrawMode", null],
+  ["travelV2HazardDrawCardId", null],
+  ["travelV2HazardDrawIndex", null],
+  ["travelV2HazardDrawSeed", null],
+  ["travelV2ActiveHazardHandoffReviewRequested", false],
+  ["travelV2ActiveHazardHandoffReviewRequest", null],
+  ["travelV2HazardCandidateControlRequested", false],
+  ["travelV2HazardCandidateControlAction", null],
+  ["travelV2HazardCandidateControlNote", null],
+  ["travelV2ResponseActionResolutionRequested", false],
+  ["travelV2ResponseActionSelectedActionId", null],
+  ["travelV2ResponseActionSelectedHazardCardId", null],
+  ["travelV2ResponseActionResolutionNote", null],
+  ["travelV2StationBenefitUseReviewSelectedQueueKey", null],
+  ["travelV2StationBenefitUseReviewRequested", false]
+]);
+
 function seedSessionATransientResults(uiState) {
   for (const field of TRANSIENT_RESULT_FIELDS) {
     uiState[field] = { ok: true, marker: `session-a-transient:${field}`, sessionKey: "context-a", roundIndex: 0 };
@@ -35,6 +55,29 @@ function seedSessionATransientResults(uiState) {
 
 function assertTransientFieldsCleared(uiState, label) {
   for (const field of TRANSIENT_RESULT_FIELDS) assertEqual(uiState[field], null, `${label} clears ${field}`);
+}
+
+function seedSessionAReviewCandidates(uiState) {
+  uiState.travelV2HazardDrawRequested = true;
+  uiState.travelV2HazardDrawMode = "id";
+  uiState.travelV2HazardDrawCardId = "session-a-review-hazard-card";
+  uiState.travelV2HazardDrawSeed = "session-a-review:hazard-draw";
+  uiState.travelV2HazardDrawRequest = { marker: "session-a-review:hazard-draw-request", requestedCardId: "session-a-review-hazard-card" };
+  uiState.travelV2ActiveHazardHandoffReviewRequested = true;
+  uiState.travelV2ActiveHazardHandoffReviewRequest = { marker: "session-a-review:hazard-handoff", explicitHandoffReviewRequested: true };
+  uiState.travelV2HazardCandidateControlRequested = true;
+  uiState.travelV2HazardCandidateControlAction = "activate";
+  uiState.travelV2HazardCandidateControlNote = "session-a-review:hazard-control";
+  uiState.travelV2ResponseActionResolutionRequested = true;
+  uiState.travelV2ResponseActionSelectedActionId = "session-a-review-response-action";
+  uiState.travelV2ResponseActionSelectedHazardCardId = "session-a-review-hazard-card";
+  uiState.travelV2ResponseActionResolutionNote = "session-a-review:response-action";
+  uiState.travelV2StationBenefitUseReviewSelectedQueueKey = "session-a-benefit";
+  uiState.travelV2StationBenefitUseReviewRequested = true;
+}
+
+function assertReviewCandidateFieldsCleared(uiState, label) {
+  for (const [field, expected] of REVIEW_CANDIDATE_FIELDS) assertEqual(uiState[field], expected, `${label} clears ${field}`);
 }
 
 function orderStateFor(roundIndex, order, timestamp) {
@@ -118,6 +161,7 @@ function sessionFixture({ key, name, eventKey, eventName, eventTitle, category, 
         watchmaster: { committed: true, source: "player" }
       } : {}
     })),
+    ...(key === "context-a" ? { pendingStationBenefits: [{ queueKey: "session-a-benefit", title: "Session A Review Benefit", sourceStation: "navigator", targetStation: "engineer", status: "pending", playerSafeSummary: "session-a-review:station-benefit" }] } : {}),
     ...(orderState ? { travelV2RoundActionOrder: orderState } : {})
   };
 }
@@ -194,6 +238,7 @@ export async function runTravelEventRunnerV2SessionSwitchContextIsolationSmokeCh
     const { ArcflightTravelEventRunner } = await importRunnerModule();
     const app = new ArcflightTravelEventRunner({ session: library.sessions["context-a"].session, selectedSessionKey: "context-a", selectedEventId: "event-a", travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["watchmaster", "navigator"] });
     seedSessionATransientResults(app.uiState);
+    seedSessionAReviewCandidates(app.uiState);
     app.uiState.travelV2RoundActionOrderCommitResult = { ok: true, committed: true, committedOrder: [...ORDER_A], roundIndex: 0, roundNumber: 1, marker: "session-a-transient:commit" };
     app.uiState.travelV2RoundActionOrderPersistResult = { ok: true, persisted: true, persistedRecord: { order: [...ORDER_A] }, marker: "session-a-transient:persist" };
     let clickHandler = null;
@@ -204,33 +249,44 @@ export async function runTravelEventRunnerV2SessionSwitchContextIsolationSmokeCh
 
     await clickLoad(clickHandler, "context-a");
     seedSessionATransientResults(app.uiState);
+    seedSessionAReviewCandidates(app.uiState);
     app.uiState.travelV2RoundActionOrderCommitResult = { ok: true, committed: true, committedOrder: [...ORDER_A], roundIndex: 0, roundNumber: 1, marker: "session-a-transient:commit" };
     app.uiState.travelV2RoundActionOrderPersistResult = { ok: true, persisted: true, persistedRecord: { order: [...ORDER_A] }, marker: "session-a-transient:persist" };
     const contextAWithTransient = await app._prepareContext({});
     assertContext(contextAWithTransient, { key: "context-a", sessionName: "Session A", eventKey: "event-a", eventName: "Event Alpha", eventTitle: "Event Alpha", category: "nebula", roundIndex: 0, order: ORDER_A, hasCurrentCommit: true, notNames: ["Session B", "Session C"] });
-    assertSmoke(snapshot(contextAWithTransient.state).includes("session-a-transient:travelV2PressureApplicationResult"), "selecting A displays seeded A transient result state only");
+    const contextAText = snapshot(contextAWithTransient.state);
+    assertSmoke(contextAText.includes("session-a-transient:travelV2PressureApplicationResult"), "selecting A displays seeded A transient result state only");
+    assertSmoke(contextAText.includes("session-a-review-response-action") && contextAText.includes("session-a-benefit") && contextAText.includes("session-a-review-hazard-card"), "selecting A displays seeded A review-only candidate markers only");
     assertSmoke(!snapshot(contextAWithTransient.state).includes("session-b-transient") && !snapshot(contextAWithTransient.state).includes("session-c-transient"), "selecting A transient state does not display B or C transient markers");
 
     await clickLoad(clickHandler, "context-b");
     assertContext(await app._prepareContext({}), { key: "context-b", sessionName: "Session B", eventKey: "event-b", eventName: "Event Beta", eventTitle: "Event Beta", category: "storm", roundIndex: 1, order: BASE_ORDER, hasCurrentCommit: false, notNames: ["Session A", "Session C"] });
     assertTransientFieldsCleared(app.uiState, "switching to B");
+    assertReviewCandidateFieldsCleared(app.uiState, "switching to B");
     assertEqual(app.uiState.travelV2RoundActionOrderCommitResult, null, "switching to B clears A commit result");
     assertEqual(app.uiState.travelV2RoundActionOrderPersistResult, null, "switching to B clears A persistence result");
     assertEqual(snapshot(app.uiState.travelV2ProposedRoundActionOrder), "[]", "switching to B does not create a proposed order");
-    assertSmoke(!snapshot(await app._prepareContext({})).includes("session-a-transient"), "switching to B clears stale A transient feedback from render state");
+    const contextBText = snapshot(await app._prepareContext({}));
+    assertSmoke(!contextBText.includes("session-a-transient"), "switching to B clears stale A transient feedback from render state");
+    assertSmoke(!contextBText.includes("session-a-review-hazard-card") && !contextBText.includes("session-a-review:hazard") && !contextBText.includes("session-a-review-response-action"), "switching to B clears stale hazard draw, handoff, and candidate-control review state");
+    assertSmoke(!contextBText.includes("session-a-review:response-action"), "switching to B clears stale response-action review state");
+    assertSmoke(!contextBText.includes("session-a-benefit") && !contextBText.includes("session-a-review:station-benefit"), "switching to B clears stale station-benefit review state");
+    assertSmoke(!contextBText.includes("session-a-review:station-impact") && !contextBText.includes("session-a-review:follow-up") && !contextBText.includes("session-a-review:final-outcome"), "switching to B clears stale station-impact, follow-up, and final-outcome review feedback when present");
 
     await clickLoad(clickHandler, "context-c");
     const contextC = await app._prepareContext({});
     assertContext(contextC, { key: "context-c", sessionName: "Session C", eventKey: "event-c", eventName: "Event Gamma", eventTitle: "Event Gamma", category: "ruins", roundIndex: 2, order: BASE_ORDER, hasCurrentCommit: false, notNames: ["Session A", "Session B"] });
     assertSmoke(contextC.state.isCompleted, "switching to C shows completed state");
     assertTransientFieldsCleared(app.uiState, "switching to C");
-    assertSmoke(!snapshot(contextC.state).includes("session-a-transient"), "switching to C does not restore A or B transient feedback");
+    assertReviewCandidateFieldsCleared(app.uiState, "switching to C");
+    assertSmoke(!snapshot(contextC.state).includes("session-a-transient") && !snapshot(contextC.state).includes("session-a-review:"), "switching to C does not restore A or B review-only candidate feedback");
 
     await clickLoad(clickHandler, "context-a");
     const contextAReloaded = await app._prepareContext({});
     assertContext(contextAReloaded, { key: "context-a", sessionName: "Session A", eventKey: "event-a", eventName: "Event Alpha", eventTitle: "Event Alpha", category: "nebula", roundIndex: 0, order: ORDER_A, hasCurrentCommit: true, notNames: ["Session B", "Session C"] });
     assertTransientFieldsCleared(app.uiState, "switching back to A");
-    assertSmoke(!snapshot(contextAReloaded.state).includes("session-a-transient"), "switching back to A restores saved records only, not stale transient feedback");
+    assertReviewCandidateFieldsCleared(app.uiState, "switching back to A");
+    assertSmoke(!snapshot(contextAReloaded.state).includes("session-a-transient") && !snapshot(contextAReloaded.state).includes("session-a-review:response-action"), "switching back to A restores A saved session data only, not stale review-only candidate state");
     checked.push("A → B → C → A updates selected session, event, round, preview rows, status text, selected library row, committed-order status, and Travel v2 transient result feedback without ghosts");
   } finally {
     if (previousGame === undefined) delete globalThis.game; else globalThis.game = previousGame;
