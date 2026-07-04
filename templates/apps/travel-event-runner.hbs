@@ -537,6 +537,21 @@
                 <button type="button" data-arcflight-travel-v2-order-reorder-request data-proposed-order="{{state.travelV2PreviewPanel.roundActionOrderDisplay.proposedShellOrderCsv}}" title="Requests a GM-only review of a proposed station order in local render state only. Does not apply, save, persist, or advance the round.">Request Reorder Review</button>
               </div>
             {{/if}}
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.canPersistCommittedOrder}}
+              <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                <button type="button" data-arcflight-travel-v2-order-persist-request title="GM-only: persists the already committed local round action order through the existing saved runner session path. Does not commit, reorder, advance, roll, apply stations, or finalize anything.">Persist Committed Order</button>
+              </div>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.available}}
+              <section class="arcflight-travel-runner-mvp__v2-order-persist-result" aria-label="{{state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.title}}">
+                <h5>{{state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.title}} · {{state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.statusLabel}}</h5>
+                <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.summaryText}}</p>
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.hasPersistedRows}}
+                  <p><strong>Persisted order:</strong> {{state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.persistedOrderText}}</p>
+                {{/if}}
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.blockedReason}}</p>{{/if}}
+              </section>
+            {{/if}}
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.available}}
               <section class="arcflight-travel-runner-mvp__v2-order-commit-result" aria-label="{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.title}}">
                 <h5>{{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.title}} · {{state.travelV2PreviewPanel.roundActionOrderDisplay.commitResult.statusLabel}}</h5>

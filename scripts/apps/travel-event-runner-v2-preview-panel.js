@@ -272,6 +272,8 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     footerText: state?.footerText || (rows.length > 0 ? "Round action order is display-only." : "No round action-order rows are available."),
     reorderRequest: normalizeRoundActionOrderReorderRequest(state?.reorderRequest),
     commitResult: normalizeRoundActionOrderCommitResult(options.commitResult, rows, options),
+    persistResult: normalizeRoundActionOrderPersistResult(options.persistResult, rows, options),
+    canPersistCommittedOrder: options.hasCommittedOrder === true && (options.isGM === true || options.user?.isGM === true),
     readOnly: true
   };
 }
@@ -290,6 +292,36 @@ function orderLabelsForKeys(keys = [], rows = []) {
       playerSafe: true
     };
   });
+}
+
+function normalizeRoundActionOrderPersistResult(result = null, rows = [], options = {}) {
+  if (!isPlainObject(result)) {
+    return { available: false, hasFeedback: false, status: "none", title: "Latest Persistence Result", summaryText: "No committed round action-order persistence has been attempted.", readOnly: true };
+  }
+  const isGm = options.isGM === true || options.user?.isGM === true;
+  const blockedReasons = Array.isArray(result.blockedReasons) ? result.blockedReasons.filter((reason) => typeof reason === "string" && reason.trim()) : [];
+  const status = result.persisted === true ? "persisted" : (result.duplicate === true ? "duplicate" : (result.blocked === true || result.ok === false ? "blocked" : "review"));
+  const keys = Array.isArray(result.persistedRecord?.order) ? result.persistedRecord.order : (Array.isArray(result.persistedRecord?.stationOrder) ? result.persistedRecord.stationOrder : []);
+  const persistedRows = orderLabelsForKeys(keys, rows);
+  const orderText = persistedRows.length > 0 ? persistedRows.map((row) => row.displayText).join(" → ") : "No persisted order listed.";
+  const summaryText = typeof result.summaryText === "string" && result.summaryText.trim()
+    ? result.summaryText.trim()
+    : (status === "persisted" ? `Committed action order persisted: ${orderText}.` : (status === "duplicate" ? `Committed action order was already persisted: ${orderText}. No local session changes were made.` : `Committed action order persistence blocked: ${blockedReasons[0] ?? "No reason provided."}`));
+  return {
+    available: true,
+    hasFeedback: true,
+    status,
+    statusLabel: status === "persisted" ? "Persisted" : (status === "duplicate" ? "Duplicate" : (status === "blocked" ? "Blocked" : "Review")),
+    title: "Latest Persistence Result",
+    summaryText,
+    blockedReasons,
+    blockedReason: blockedReasons[0] ?? "",
+    persistedRows: isGm || status !== "blocked" ? persistedRows : [],
+    hasPersistedRows: (isGm || status !== "blocked") && persistedRows.length > 0,
+    persistedOrderText: isGm || status !== "blocked" ? orderText : "",
+    playerSafe: !isGm,
+    readOnly: true
+  };
 }
 
 function normalizeRoundActionOrderCommitResult(result = null, rows = [], options = {}) {
@@ -440,7 +472,9 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
   const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
   const stationBenefitDisplay = normalizeStationBenefitDisplay(appState.travelV2StationBenefitUseReviewPlayerState);
-  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult });
+  const currentOrderState = isPlainObject(runnerSession?.travelV2RoundActionOrder?.rounds) ? (runnerSession.travelV2RoundActionOrder.rounds[String(runnerSession.currentRoundIndex ?? 0)] ?? runnerSession.travelV2RoundActionOrder.rounds[runnerSession.currentRoundIndex ?? 0] ?? null) : null;
+  const hasCommittedOrder = isPlainObject(currentOrderState) && (Array.isArray(currentOrderState.order) || Array.isArray(currentOrderState.stationOrder));
+  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult, persistResult: appState.travelV2RoundActionOrderPersistResult, hasCommittedOrder });
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,

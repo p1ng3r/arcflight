@@ -43,6 +43,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "data-arcflight-travel-v2-order-reorder-request", "template should add explicit GM reorder review request shell");
   assertIncludes(template, "Request Reorder Review", "template should label reorder review shell");
   assertIncludes(template, "roundActionOrderDisplay.reorderRequest.requested", "template should only show reorder comparison after explicit request");
+  assertIncludes(template, "state.travelV2PreviewPanel.roundActionOrderDisplay.canPersistCommittedOrder", "template should gate committed order persistence on committed local order state");
+  assertIncludes(template, "data-arcflight-travel-v2-order-persist-request", "template should add one explicit GM committed order persistence action");
+  assertIncludes(template, "Persist Committed Order", "template should label committed order persistence action clearly");
+  assertSmoke((template.match(/data-arcflight-travel-v2-order-persist-request/g) ?? []).length === 1, "template should expose exactly one committed order persistence action");
   assertIncludes(template, "Proposed Order", "template should render proposed order comparison only in requested shell");
   assertIncludes(template, "state.travelV2PreviewPanel.stationBenefitDisplay.hasRows", "template should gate pending station benefit display rows");
   assertIncludes(template, "state.travelV2PreviewPanel.stationBenefitDisplay.rows", "template should iterate pending station benefit rows");
@@ -93,7 +97,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
       "css-panel-wrapper",
       "css-row-and-chip-hooks",
       "css-station-benefit-display",
-      "round-action-order-reorder-request-shell"
+      "round-action-order-reorder-request-shell",
+      "round-action-order-persist-request-shell"
     ]
   };
 }
