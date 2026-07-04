@@ -210,6 +210,7 @@ import {
   commitTravelEventRunnerStationOrder,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
+  persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
   setTravelEventRunnerStationResult,
   setTravelEventRunnerStationSkillApproach,
   summarizeTravelEventRunnerSession
@@ -1309,6 +1310,7 @@ function buildArcflightApi() {
     TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
     getTravelEventRunnerSessionLibrary,
     saveTravelEventRunnerSessionToLibrary,
+    persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
     loadTravelEventRunnerSessionFromLibrary,
     deleteTravelEventRunnerSessionFromLibrary,
     duplicateTravelEventRunnerSession,
@@ -2060,6 +2062,7 @@ export {
   TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION,
   getTravelEventRunnerSessionLibrary,
   saveTravelEventRunnerSessionToLibrary,
+  persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
   loadTravelEventRunnerSessionFromLibrary,
   deleteTravelEventRunnerSessionFromLibrary,
   duplicateTravelEventRunnerSession,
