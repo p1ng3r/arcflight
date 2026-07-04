@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2RoundActionOrderState } from "./travel-v2-round-action-order-state.js";
+import { TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, commitTravelV2RoundActionOrderToSession, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2RoundActionOrderState } from "./travel-v2-round-action-order-state.js";
 
 const json = (value) => JSON.stringify(value);
 const forbidden = ["gmText", "gmSummary", "gmMechanicalNotes", "applyPayload", "internalMutation", "socketPayload", "targetActorUuid"];
@@ -49,9 +49,10 @@ function fixture(overrides = {}) {
 
 export default async function runTravelV2RoundActionOrderStateSmokeChecks() {
   const checked = [];
-  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, 2);
+  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, 3);
   assert.equal(typeof normalizeTravelV2ProposedRoundActionOrder, "function");
   assert.equal(typeof prepareTravelV2RoundActionOrderState, "function");
+  assert.equal(typeof commitTravelV2RoundActionOrderToSession, "function");
   checked.push("exports and version");
 
   const missing = prepareTravelV2RoundActionOrderState(null);
@@ -116,6 +117,59 @@ export default async function runTravelV2RoundActionOrderStateSmokeChecks() {
   assert.equal(nonGmReorder.reorderRequest.proposedRows.length, 0);
   assertPlayerSafe(nonGmReorder);
   checked.push("GM reorder requests are review-only and non-GM requests are redacted");
+
+  const original = fixture();
+  const missingCommitRequest = commitTravelV2RoundActionOrderToSession(original, ["engineer", "navigator", "watchmaster"], { user: { isGM: true, id: "gm-1", name: "GM" }, timestamp: "2026-07-03T00:00:00.000Z" });
+  assert.equal(missingCommitRequest.ok, false);
+  assert.equal(missingCommitRequest.committed, false);
+  assert.match(missingCommitRequest.reason, /Explicit round action-order commit request is required/);
+  assert.equal(missingCommitRequest.session.travelV2RoundActionOrder, undefined);
+  assert.equal(original.travelV2RoundActionOrder, undefined);
+  checked.push("missing explicit GM commit request is blocked without persistence");
+
+  const committed = commitTravelV2RoundActionOrderToSession(original, ["engineer", "navigator", "watchmaster"], { user: { isGM: true, id: "gm-1", name: "GM" }, commitRequested: true, timestamp: "2026-07-03T00:00:00.000Z" });
+  assert.equal(committed.ok, true);
+  assert.equal(committed.committed, true);
+  assert.deepEqual(committed.previousOrder, ["navigator", "engineer", "watchmaster"]);
+  assert.deepEqual(committed.committedOrder, ["engineer", "navigator", "watchmaster"]);
+  assert.deepEqual(committed.session.travelV2RoundActionOrder.rounds["0"].order, ["engineer", "navigator", "watchmaster"]);
+  assert.equal(committed.session.travelV2RoundActionOrder.commitRecords[0].roundNumber, 1);
+  assert.equal(committed.session.travelV2RoundActionOrder.commitRecords[0].userId, "gm-1");
+  assert.equal(original.travelV2RoundActionOrder, undefined);
+  assert.equal(committed.session.roundResults[0].stationResults.navigator, null);
+  const displayedCommitted = prepareTravelV2RoundActionOrderState(committed.session);
+  assert.deepEqual(displayedCommitted.orderedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  checked.push("GM commit persists only current round station order with audit metadata and updates display order");
+
+  const duplicate = commitTravelV2RoundActionOrderToSession(committed.session, ["engineer", "navigator", "watchmaster"], { user: { isGM: true }, travelV2RoundActionOrderCommitRequested: true, timestamp: "2026-07-03T00:01:00.000Z" });
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.committed, false);
+  assert.equal(duplicate.session.travelV2RoundActionOrder.commitRecords.length, 1);
+  checked.push("duplicate commit is non-destructive and does not append audit records");
+
+  const invalidCommit = commitTravelV2RoundActionOrderToSession(fixture(), ["engineer", "engineer", "bogus"], { user: { isGM: true }, commitRequested: true });
+  assert.equal(invalidCommit.ok, false);
+  assert.match(invalidCommit.blockedReasons.join("\n"), /repeats station keys/);
+  assert.equal(invalidCommit.session.travelV2RoundActionOrder, undefined);
+  const nonGmCommit = commitTravelV2RoundActionOrderToSession(fixture(), ["engineer", "navigator", "watchmaster"], { user: { isGM: false }, commitRequested: true });
+  assert.equal(nonGmCommit.ok, false);
+  assert.match(nonGmCommit.reason, /Only the GM/);
+  assertPlayerSafe(nonGmCommit);
+  checked.push("invalid proposed order and non-GM commit requests are blocked safely");
+
+  const completedRoundCommit = commitTravelV2RoundActionOrderToSession(fixture({ travelV2RoundResolutions: { records: [{ roundIndex: 0, outcomeKey: "success" }] } }), ["engineer", "navigator", "watchmaster"], { user: { isGM: true }, commitRequested: true });
+  assert.equal(completedRoundCommit.ok, false);
+  assert.match(completedRoundCommit.blockedReasons.join("\n"), /already completed/);
+  const completedSessionCommit = commitTravelV2RoundActionOrderToSession(fixture({ status: "completed", completedAt: "2026-07-03T00:00:00.000Z" }), ["engineer", "navigator", "watchmaster"], { user: { isGM: true }, commitRequested: true });
+  assert.equal(completedSessionCommit.ok, false);
+  assert.match(completedSessionCommit.blockedReasons.join("\n"), /Completed Travel v2 runner sessions/);
+  checked.push("completed sessions and completed rounds block persisted order commits");
+
+  const cloneSafety = commitTravelV2RoundActionOrderToSession(fixture(), ["engineer", "navigator", "watchmaster"], { user: { isGM: true }, commitRequested: true });
+  assert.equal(Object.isFrozen(cloneSafety.session.travelV2RoundActionOrder.rounds["0"].order), true);
+  assert.deepEqual(commitTravelV2RoundActionOrderToSession(fixture(), ["engineer", "navigator", "watchmaster"], { user: { isGM: true }, commitRequested: true }).session.travelV2RoundActionOrder.rounds["0"].order, ["engineer", "navigator", "watchmaster"]);
+  checked.push("commit result is clone-safe and unrelated session data is not mutated");
 
   const completedRound = prepareTravelV2RoundActionOrderState(fixture({ travelV2RoundResolutions: { records: [{ roundIndex: 0, outcomeKey: "success" }] } }));
   assert.equal(completedRound.blocked, true);
