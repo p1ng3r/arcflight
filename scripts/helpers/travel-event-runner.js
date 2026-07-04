@@ -2304,12 +2304,13 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     playerMissionBoardRollDetails: isPlainObject(session.playerMissionBoardRollDetails) ? cloneData(session.playerMissionBoardRollDetails) : {},
     travelV2PressureApplications: isPlainObject(session.travelV2PressureApplications) || Array.isArray(session.travelV2PressureApplications) ? cloneData(session.travelV2PressureApplications) : undefined,
     travelV2PressureCorrections: isPlainObject(session.travelV2PressureCorrections) || Array.isArray(session.travelV2PressureCorrections) ? cloneData(session.travelV2PressureCorrections) : undefined,
+    travelV2RoundActionOrder: isPlainObject(session.travelV2RoundActionOrder) ? cloneData(session.travelV2RoundActionOrder) : undefined,
     travelV2RoundResolutions: isPlainObject(session.travelV2RoundResolutions) || Array.isArray(session.travelV2RoundResolutions) ? cloneData(session.travelV2RoundResolutions) : undefined,
     travelV2EventCompletion: isPlainObject(session.travelV2EventCompletion) ? cloneData(session.travelV2EventCompletion) : undefined,
     travelV2EventOutcomeApplication: isPlainObject(session.travelV2EventOutcomeApplication) ? cloneData(session.travelV2EventOutcomeApplication) : undefined,
     travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined
   };
-  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication"]) {
+  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -2766,6 +2767,56 @@ export async function saveTravelEventRunnerSessionToLibrary(session, options = {
   const nextLibrary = { ...library, version: TRAVEL_EVENT_RUNNER_SESSION_LIBRARY_VERSION, sessions: { ...library.sessions, [key]: entry } };
   if (!options.dryRun) await setGameSettingRunnerSessionLibrary(nextLibrary);
   return buildRunnerLibraryResult(true, { warnings: [], library: nextLibrary, entry: cloneData(entry), session: cloneData(nextSession) });
+}
+
+function committedRoundActionOrderRecord(session) {
+  const state = isPlainObject(session?.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : null;
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : -1;
+  const record = isPlainObject(state?.rounds) ? (state.rounds[String(roundIndex)] ?? state.rounds[roundIndex] ?? null) : null;
+  if (!isPlainObject(record) || !Array.isArray(record.order ?? record.stationOrder)) return null;
+  return { roundIndex, state: cloneData(state), record: cloneData(record) };
+}
+
+function orderPersistenceResult(ok, data = {}) {
+  const blockedReasons = Array.isArray(data.blockedReasons) ? data.blockedReasons : [];
+  const duplicate = data.duplicate === true;
+  const persisted = ok === true && data.persisted === true;
+  return {
+    ...data,
+    ok: ok === true,
+    blocked: ok !== true,
+    persisted,
+    duplicate,
+    blockedReasons,
+    persistedRecord: data.persistedRecord ?? null,
+    summaryText: typeof data.summaryText === "string" && data.summaryText.length > 0 ? data.summaryText : (ok ? (duplicate ? "Committed round action order was already persisted; no saved session data changed." : "Committed round action order was persisted to the saved runner session.") : (blockedReasons[0] ?? "Committed round action order persistence was blocked."))
+  };
+}
+
+export async function persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary(session, options = {}) {
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const persistRequested = options.persistRequested === true || options.travelV2RoundActionOrderPersistRequested === true;
+  const blockedReasons = [];
+  if (!isGm) blockedReasons.push("Only the GM can persist committed round action order.");
+  if (!persistRequested) blockedReasons.push("Explicit round action-order persist request is required.");
+  if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
+  const committed = isPlainObject(session) ? committedRoundActionOrderRecord(session) : null;
+  if (isPlainObject(session) && !committed) blockedReasons.push("Travel v2 runner session has no committed round action order to persist.");
+  if (blockedReasons.length > 0) return orderPersistenceResult(false, { blockedReasons, persistedRecord: null, session: isGm && isPlainObject(session) ? cloneData(session) : null });
+
+  const library = getTravelEventRunnerSessionLibrary(options);
+  const key = typeof options.key === "string" && options.key.length > 0 ? options.key : (typeof session.key === "string" ? session.key : "");
+  const existingEntry = findRunnerSessionLibraryEntry(library, key);
+  const savedSession = isPlainObject(existingEntry?.session) ? cloneData(existingEntry.session) : cloneData(session);
+  const priorState = isPlainObject(savedSession.travelV2RoundActionOrder) ? savedSession.travelV2RoundActionOrder : null;
+  if (JSON.stringify(priorState) === JSON.stringify(committed.state)) {
+    return orderPersistenceResult(true, { persisted: false, duplicate: true, library: cloneData(library), entry: existingEntry ? cloneData(existingEntry) : null, session: cloneData(savedSession), persistedRecord: cloneData(committed.record) });
+  }
+
+  savedSession.travelV2RoundActionOrder = cloneData(committed.state);
+  const saved = await saveTravelEventRunnerSessionToLibrary(savedSession, { ...options, key: key || savedSession.key, overwrite: true });
+  if (!saved.ok) return orderPersistenceResult(false, { blockedReasons: saved.errors?.length ? saved.errors : ["Existing Travel Event Runner session save path blocked persistence."], warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry ?? null, session: isGm ? saved.session ?? cloneData(savedSession) : null });
+  return orderPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, persistedRecord: cloneData(committed.record) });
 }
 
 export function loadTravelEventRunnerSessionFromLibrary(sessionKey, options = {}) {
