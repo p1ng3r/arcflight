@@ -2712,6 +2712,45 @@ function findRunnerSessionLibraryEntry(library, sessionKey) {
   return library.sessions?.[key] ?? getRunnerSessionLibraryEntries(library).find((candidate) => candidate.key === key) ?? null;
 }
 
+
+function getRunnerSessionCurrentRoundOrderRecord(session = {}) {
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const state = isPlainObject(session?.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : {};
+  const rounds = isPlainObject(state.rounds) ? state.rounds : {};
+  const record = rounds[String(roundIndex)] ?? rounds[roundIndex] ?? null;
+  const order = Array.isArray(record?.order) ? record.order : (Array.isArray(record?.stationOrder) ? record.stationOrder : []);
+  return { roundIndex, record: isPlainObject(record) ? record : null, order: order.map(normalizeStationKey).filter(Boolean) };
+}
+
+function runnerSessionStationLabel(session = {}, stationKey = "") {
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const round = Array.isArray(session?.event?.rounds) && isPlainObject(session.event.rounds[roundIndex]) ? session.event.rounds[roundIndex] : {};
+  const prompt = isPlainObject(round.stationPrompts?.[stationKey]) ? round.stationPrompts[stationKey] : {};
+  const station = getStation(stationKey) ?? {};
+  return prompt.stationName || prompt.label || station.displayName || station.name || humanizeIdentifier(stationKey);
+}
+
+export function prepareTravelV2RoundActionOrderLibraryStatus(session = null, options = {}) {
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  if (!isPlainObject(session)) return { hasCommittedOrder: false, status: "none", label: "No committed order saved", statusLabel: "No committed order saved", roundNumber: null, stationLabels: [], stationLabelText: "", playerSafe: true };
+  const { roundIndex, record, order } = getRunnerSessionCurrentRoundOrderRecord(session);
+  const hasCommittedOrder = Boolean(record && order.length > 0);
+  const round = Array.isArray(session.event?.rounds) ? session.event.rounds[roundIndex] : null;
+  const roundNumber = Number.isInteger(Number(record?.roundNumber)) ? Number(record.roundNumber) : (Number.isInteger(Number(round?.roundNumber)) ? Number(round.roundNumber) : roundIndex + 1);
+  const stationLabels = hasCommittedOrder ? order.map((stationKey) => runnerSessionStationLabel(session, stationKey)) : [];
+  const safe = {
+    hasCommittedOrder,
+    status: hasCommittedOrder ? "committed" : "none",
+    label: hasCommittedOrder ? "Committed order saved" : "No committed order saved",
+    statusLabel: hasCommittedOrder ? "Committed order saved" : "No committed order saved",
+    roundNumber: isGm && hasCommittedOrder ? roundNumber : null,
+    stationLabels: isGm ? stationLabels : [],
+    stationLabelText: isGm ? stationLabels.join(" → ") : "",
+    playerSafe: true
+  };
+  return Object.freeze(safe);
+}
+
 function publishedEventExistsForSession(entry, options = {}) {
   const eventKey = entry?.eventKey ?? entry?.session?.event?.key ?? "";
   if (!eventKey) return false;
@@ -2859,6 +2898,7 @@ export function prepareTravelEventRunnerSessionLibraryState(options = {}) {
   const entries = getRunnerSessionLibraryEntries(library).map((entry) => ({
     ...cloneData(entry),
     session: undefined,
+    roundActionOrderLibraryStatus: prepareTravelV2RoundActionOrderLibraryStatus(entry.session, options),
     eventCategoryLabel: humanizeIdentifier(entry.eventCategory),
     statusLabel: humanizeIdentifier(entry.status),
     currentRoundNumber: Number(entry.currentRoundIndex ?? 0) + 1,

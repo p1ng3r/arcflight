@@ -1546,6 +1546,7 @@
             </header>
             <p>{{eventName}}{{#if eventCategoryLabel}} — {{eventCategoryLabel}}{{/if}}</p>
             <p class="arcflight-sheet__hint">Round {{currentRoundNumber}} • Updated {{updatedAtLabel}}</p>
+            <p class="arcflight-sheet__hint" data-arcflight-travel-v2-library-order-status>Round Action Order: <strong>{{roundActionOrderLibraryStatus.statusLabel}}</strong>{{#if roundActionOrderLibraryStatus.roundNumber}} · Round {{roundActionOrderLibraryStatus.roundNumber}}{{/if}}{{#if roundActionOrderLibraryStatus.stationLabelText}} · {{roundActionOrderLibraryStatus.stationLabelText}}{{/if}}</p>
             {{#if missingPublishedEvent}}<p class="arcflight-sheet__hint"><strong>Warning:</strong> The source published event is not currently available. Loading uses the saved snapshot only.</p>{{/if}}
             {{#if validationErrors.length}}<p class="arcflight-sheet__hint"><strong>Malformed:</strong> {{validationErrors}}</p>{{/if}}
             <div class="arcflight-travel-runner-mvp__actions">
