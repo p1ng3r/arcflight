@@ -2314,6 +2314,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+
+  #clearTravelV2RoundActionOrderTransientState() {
+    this.uiState.travelV2RoundActionOrderCommitResult = null;
+    this.uiState.travelV2RoundActionOrderPersistResult = null;
+    this.uiState.travelV2RoundActionOrderReorderRequested = false;
+    this.uiState.travelV2ProposedRoundActionOrder = [];
+  }
+
   #getSessionKeyFromTarget(target) {
     return target.dataset.arcflightRunnerLoadSession
       ?? target.dataset.arcflightRunnerDuplicateSession
@@ -2333,6 +2341,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = loaded.session;
       this.selectedSessionKey = loaded.entry.key;
       this.selectedEventId = loaded.entry.eventKey || this.selectedEventId;
+      this.#clearTravelV2RoundActionOrderTransientState();
       this.statusMessage = loaded.warnings?.[0] ?? `Loaded saved runner session "${loaded.entry.name}".`;
       if (loaded.warnings?.length) ui.notifications?.warn?.(this.statusMessage);
       else ui.notifications?.info?.(this.statusMessage);
