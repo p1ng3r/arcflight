@@ -65,6 +65,38 @@ export default async function runTravelV2RoundActionOrderLibraryStatusSmokeCheck
   for (const forbidden of FORBIDDEN_NON_GM_FIELDS) assertSmoke(!snapshot(playerCommittedRow).includes(forbidden), `non-GM library row/template-facing state should not expose ${forbidden}`);
   for (const forbidden of ["gm-secret", "GM Secret", "Actor.secret", "GM-only audit text"]) assertSmoke(!snapshot(playerCommittedRow).includes(forbidden), `non-GM library row/template-facing state should not expose ${forbidden}`);
 
+  const malformedFixtures = [
+    ["missing travelV2RoundActionOrder", sessionFixture({ key: "missing-order-state" })],
+    ["malformed travelV2RoundActionOrder", sessionFixture({ key: "malformed-order-state", travelV2RoundActionOrder: "not-an-object" })],
+    ["malformed rounds map", sessionFixture({ key: "malformed-rounds-map", travelV2RoundActionOrder: { rounds: [] } })],
+    ["missing current-round record", sessionFixture({ key: "missing-current-round-record", currentRoundIndex: 1, travelV2RoundActionOrder: { rounds: { "0": { order: ["navigator"] } } } })],
+    ["empty order array", sessionFixture({ key: "empty-order-array", travelV2RoundActionOrder: { rounds: { "0": { order: [] } } } })],
+    ["non-array order", sessionFixture({ key: "non-array-order", travelV2RoundActionOrder: { rounds: { "0": { order: "navigator" } } } })],
+    ["non-array stationOrder", sessionFixture({ key: "non-array-station-order", travelV2RoundActionOrder: { rounds: { "0": { stationOrder: "navigator" } } } })],
+    ["invalid station keys only", sessionFixture({ key: "invalid-station-keys", travelV2RoundActionOrder: { rounds: { "0": { order: ["science-officer", "", null, { key: "bogus" }] } } } })],
+    ["missing event rounds", sessionFixture({ key: "missing-event-rounds", event: { key: "event", name: "Event", category: "travel" }, travelV2RoundActionOrder: { rounds: { "0": { order: [] } } } })],
+    ["strange currentRoundIndex", sessionFixture({ key: "strange-current-round-index", currentRoundIndex: Symbol("round"), travelV2RoundActionOrder: { rounds: { "0": { order: [] } } } })]
+  ];
+  for (const [label, malformedSession] of malformedFixtures) {
+    const beforeMalformed = snapshot(malformedSession);
+    let gmMalformedStatus;
+    let playerMalformedStatus;
+    assertSmoke((() => { try { gmMalformedStatus = prepareTravelV2RoundActionOrderLibraryStatus(malformedSession, { user: { isGM: true } }); playerMalformedStatus = prepareTravelV2RoundActionOrderLibraryStatus(malformedSession, { user: { isGM: false } }); return true; } catch (_error) { return false; } })(), `${label} does not throw`);
+    assertEqual(gmMalformedStatus.statusLabel, "No committed order saved", `${label} GM status fails safe`);
+    assertDeepEqual(ownKeys(gmMalformedStatus), ["roundNumber", "stationLabelText", "statusLabel"], `${label} GM status preserves minimal output keys`);
+    assertEqual(gmMalformedStatus.roundNumber, null, `${label} GM status omits round number when not committed`);
+    assertEqual(gmMalformedStatus.stationLabelText, "", `${label} GM status omits station labels when not committed`);
+    assertDeepEqual(ownKeys(playerMalformedStatus), ["statusLabel"], `${label} non-GM status exposes only statusLabel`);
+    assertEqual(playerMalformedStatus.statusLabel, "No committed order saved", `${label} non-GM status fails safe`);
+    assertEqual(snapshot(malformedSession), beforeMalformed, `${label} indicator computation does not mutate session`);
+  }
+
+  const aliasSession = sessionFixture({ key: "station-order-alias", travelV2RoundActionOrder: { rounds: { "0": { roundIndex: 0, roundNumber: 1, stationOrder: ["engineer", "navigator"] } } } });
+  assertEqual(prepareTravelV2RoundActionOrderLibraryStatus(aliasSession, { user: { isGM: true } }).stationLabelText, "Arkengineer → Routefinder", "stationOrder alias still works when valid");
+
+  const missingPromptsSession = sessionFixture({ key: "missing-station-prompts", event: { key: "event", name: "Event", category: "travel", rounds: [{ roundNumber: 1, title: "No Prompts", activeStations: ["navigator", "watchmaster"] }] }, travelV2RoundActionOrder: { rounds: { "0": { roundIndex: 0, roundNumber: 1, order: ["navigator", "watchmaster"] } } } });
+  assertEqual(prepareTravelV2RoundActionOrderLibraryStatus(missingPromptsSession, { user: { isGM: true } }).stationLabelText, "Navigator → Watchmaster", "missing station prompts fall back to safe humanized/core station labels for GM");
+
   prepareTravelV2RoundActionOrderLibraryStatus(committed, { user: { isGM: true } });
   assertEqual(snapshot(library), beforeLibrary, "indicator computation does not mutate library");
   assertEqual(snapshot(plain), beforePlain, "indicator computation does not mutate sessions without committed order");
@@ -85,7 +117,7 @@ export default async function runTravelV2RoundActionOrderLibraryStatusSmokeCheck
   const aggregate = fs.readFileSync(new URL("../dev/run-travel-v2-smoke.mjs", import.meta.url), "utf8");
   assertSmoke(aggregate.includes("runTravelV2RoundActionOrderLibraryStatusSmokeChecks"), "aggregate Travel v2 smoke includes the new suite");
 
-  return { ok: true, checked: ["no-order-row", "committed-order-row", "no-row-session", "gm-template-facing-keys", "non-gm-label-only", "non-gm-redaction", "non-mutating", "no-proposed-commit-persist-records", "single-status-selector", "safe-status-template-line", "zero-new-commit-persist-controls", "aggregate-wiring"] };
+  return { ok: true, checked: ["no-order-row", "committed-order-row", "no-row-session", "gm-template-facing-keys", "non-gm-label-only", "non-gm-redaction", "malformed-fail-safe", "malformed-non-gm-label-only", "malformed-non-throwing", "malformed-non-mutating", "station-order-alias", "missing-prompts-safe-labels", "non-mutating", "no-proposed-commit-persist-records", "single-status-selector", "safe-status-template-line", "zero-new-commit-persist-controls", "aggregate-wiring"] };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
