@@ -307,6 +307,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview, travelV2RuntimeHazardDeckSelection, travelV2HazardDeckPicker, travelV2HazardDrawReview, travelV2ActiveHazardHandoffReview, travelV2HazardCandidateControlResult } : {}),
     travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
+    travelV2RoundActionOrderCommitResult: uiState.travelV2RoundActionOrderCommitResult ?? null,
     travelV2RoundActionOrderReorderRequested: uiState.travelV2RoundActionOrderReorderRequested === true,
     travelV2ProposedRoundActionOrder: Array.isArray(uiState.travelV2ProposedRoundActionOrder) ? uiState.travelV2ProposedRoundActionOrder : [],
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],

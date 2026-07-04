@@ -32,6 +32,7 @@ import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-
 import runTravelEventRunnerV2PressureApplicationSmokeChecks from "../apps/travel-event-runner-v2-pressure-application.smoke.js";
 import runTravelEventRunnerV2PressureCorrectionSmokeChecks from "../apps/travel-event-runner-v2-pressure-correction.smoke.js";
 import runTravelEventRunnerV2RoundFinalizationSmokeChecks from "../apps/travel-event-runner-v2-round-finalization.smoke.js";
+import runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-commit.smoke.js";
 import runTravelEventRunnerV2EventCompletionSmokeChecks from "../apps/travel-event-runner-v2-event-completion.smoke.js";
 import runTravelEventRunnerV2EventOutcomeApplicationSmokeChecks from "../apps/travel-event-runner-v2-event-outcome-application.smoke.js";
 import runTravelEventRunnerStartupDiagnosticsSmokeChecks from "../apps/travel-event-runner-startup-diagnostics.smoke.js";
@@ -95,6 +96,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 pressure application", runTravelEventRunnerV2PressureApplicationSmokeChecks],
   ["Travel event runner v2 pressure correction", runTravelEventRunnerV2PressureCorrectionSmokeChecks],
   ["Travel event runner v2 round finalization", runTravelEventRunnerV2RoundFinalizationSmokeChecks],
+  ["Travel event runner v2 round action order commit", runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks],
   ["Travel event runner v2 event completion", runTravelEventRunnerV2EventCompletionSmokeChecks],
   ["Travel event runner v2 event outcome application", runTravelEventRunnerV2EventOutcomeApplicationSmokeChecks],
   ["Travel event runner startup diagnostics", runTravelEventRunnerStartupDiagnosticsSmokeChecks],
