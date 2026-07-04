@@ -3035,7 +3035,17 @@ const PLAYER_SAFE_RUNNER_OMIT_KEYS = new Set([
   "unsupportedRows",
   "deferredRows",
   "resourceOptions",
-  "debugReport"
+  "debugReport",
+  "auditRecord",
+  "commitRecords",
+  "userId",
+  "userName",
+  "gmText",
+  "applyPayload",
+  "targetActorUuid",
+  "mutationScope",
+  "internalMutation",
+  "secret"
 ]);
 
 function sanitizePlayerSafeRunnerStateValue(value) {

@@ -39,6 +39,7 @@ import runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks from "../app
 import runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-closeout.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-startup.smoke.js";
 import runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks from "../apps/travel-event-runner-v2-session-switch-order-state.smoke.js";
+import runTravelEventRunnerV2SessionSwitchContextIsolationSmokeChecks from "../apps/travel-event-runner-v2-session-switch-context-isolation.smoke.js";
 import runTravelEventRunnerV2LibraryOrderStatusCloseoutSmokeChecks from "../apps/travel-event-runner-v2-library-order-status-closeout.smoke.js";
 import runTravelEventRunnerV2EventCompletionSmokeChecks from "../apps/travel-event-runner-v2-event-completion.smoke.js";
 import runTravelEventRunnerV2EventOutcomeApplicationSmokeChecks from "../apps/travel-event-runner-v2-event-outcome-application.smoke.js";
@@ -110,6 +111,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 round action order closeout", runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks],
   ["Travel event runner v2 round action order startup hardening", runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks],
   ["Travel event runner v2 session switch order state isolation", runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks],
+  ["Travel event runner v2 session switch context isolation", runTravelEventRunnerV2SessionSwitchContextIsolationSmokeChecks],
   ["Travel event runner v2 library order status closeout", runTravelEventRunnerV2LibraryOrderStatusCloseoutSmokeChecks],
   ["Travel event runner v2 event completion", runTravelEventRunnerV2EventCompletionSmokeChecks],
   ["Travel event runner v2 event outcome application", runTravelEventRunnerV2EventOutcomeApplicationSmokeChecks],
