@@ -450,7 +450,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2EventCompletionResult: null,
       travelV2EventOutcomeApplicationResult: null,
       travelV2ActorApplicationResult: null,
+      travelV2FinalOutcomeApplyResult: null,
       travelV2FollowUpResult: null,
+      travelV2FollowUpActionResult: null,
+      travelV2HazardDrawResult: null,
+      travelV2HazardControlResult: null,
+      travelV2HazardCandidateControlResult: null,
+      travelV2StationBenefitUseResult: null,
       travelV2ShipScarResult: null,
       travelV2DevToolResult: null,
       travelV2AutoSaveResult: null,
@@ -2315,7 +2321,20 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
 
-  #clearTravelV2RoundActionOrderTransientState() {
+  #clearTravelV2SessionSwitchTransientState() {
+    this.uiState.travelV2PressureApplicationResult = null;
+    this.uiState.travelV2PressureCorrectionResult = null;
+    this.uiState.travelV2RoundFinalizationResult = null;
+    this.uiState.travelV2EventCompletionResult = null;
+    this.uiState.travelV2EventOutcomeApplicationResult = null;
+    this.uiState.travelV2ActorApplicationResult = null;
+    this.uiState.travelV2FinalOutcomeApplyResult = null;
+    this.uiState.travelV2FollowUpResult = null;
+    this.uiState.travelV2FollowUpActionResult = null;
+    this.uiState.travelV2HazardDrawResult = null;
+    this.uiState.travelV2HazardControlResult = null;
+    this.uiState.travelV2HazardCandidateControlResult = null;
+    this.uiState.travelV2StationBenefitUseResult = null;
     this.uiState.travelV2RoundActionOrderCommitResult = null;
     this.uiState.travelV2RoundActionOrderPersistResult = null;
     this.uiState.travelV2RoundActionOrderReorderRequested = false;
@@ -2341,7 +2360,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.session = loaded.session;
       this.selectedSessionKey = loaded.entry.key;
       this.selectedEventId = loaded.entry.eventKey || this.selectedEventId;
-      this.#clearTravelV2RoundActionOrderTransientState();
+      this.#clearTravelV2SessionSwitchTransientState();
       this.statusMessage = loaded.warnings?.[0] ?? `Loaded saved runner session "${loaded.entry.name}".`;
       if (loaded.warnings?.length) ui.notifications?.warn?.(this.statusMessage);
       else ui.notifications?.info?.(this.statusMessage);
