@@ -11,6 +11,32 @@ const GM_USER = Object.freeze({ isGM: true, id: "gm-context", name: "Context GM"
 const PLAYER_USER = Object.freeze({ isGM: false, id: "player-context", name: "Context Player" });
 const FORBIDDEN_NON_GM = Object.freeze(["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "Secret"]);
 
+const TRANSIENT_RESULT_FIELDS = Object.freeze([
+  "travelV2PressureApplicationResult",
+  "travelV2PressureCorrectionResult",
+  "travelV2RoundFinalizationResult",
+  "travelV2EventCompletionResult",
+  "travelV2EventOutcomeApplicationResult",
+  "travelV2ActorApplicationResult",
+  "travelV2FinalOutcomeApplyResult",
+  "travelV2FollowUpResult",
+  "travelV2FollowUpActionResult",
+  "travelV2HazardDrawResult",
+  "travelV2HazardControlResult",
+  "travelV2HazardCandidateControlResult",
+  "travelV2StationBenefitUseResult"
+]);
+
+function seedSessionATransientResults(uiState) {
+  for (const field of TRANSIENT_RESULT_FIELDS) {
+    uiState[field] = { ok: true, marker: `session-a-transient:${field}`, sessionKey: "context-a", roundIndex: 0 };
+  }
+}
+
+function assertTransientFieldsCleared(uiState, label) {
+  for (const field of TRANSIENT_RESULT_FIELDS) assertEqual(uiState[field], null, `${label} clears ${field}`);
+}
+
 function orderStateFor(roundIndex, order, timestamp) {
   const auditRecord = {
     id: `round-action-order:${roundIndex}:${timestamp}`,
@@ -167,8 +193,9 @@ export async function runTravelEventRunnerV2SessionSwitchContextIsolationSmokeCh
   try {
     const { ArcflightTravelEventRunner } = await importRunnerModule();
     const app = new ArcflightTravelEventRunner({ session: library.sessions["context-a"].session, selectedSessionKey: "context-a", selectedEventId: "event-a", travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["watchmaster", "navigator"] });
-    app.uiState.travelV2RoundActionOrderCommitResult = { ok: true, committed: true, committedOrder: [...ORDER_A], roundIndex: 0, roundNumber: 1 };
-    app.uiState.travelV2RoundActionOrderPersistResult = { ok: true, persisted: true, persistedRecord: { order: [...ORDER_A] } };
+    seedSessionATransientResults(app.uiState);
+    app.uiState.travelV2RoundActionOrderCommitResult = { ok: true, committed: true, committedOrder: [...ORDER_A], roundIndex: 0, roundNumber: 1, marker: "session-a-transient:commit" };
+    app.uiState.travelV2RoundActionOrderPersistResult = { ok: true, persisted: true, persistedRecord: { order: [...ORDER_A] }, marker: "session-a-transient:persist" };
     let clickHandler = null;
     app.render = async () => ({ rendered: true });
     app.element = { contains: () => true, removeEventListener: () => {}, addEventListener: (type, handler) => { if (type === "click") clickHandler = handler; }, closest: () => null, querySelector: () => null };
@@ -176,22 +203,35 @@ export async function runTravelEventRunnerV2SessionSwitchContextIsolationSmokeCh
     assertSmoke(typeof clickHandler === "function", "runner click handler is registered for session switching");
 
     await clickLoad(clickHandler, "context-a");
-    assertContext(await app._prepareContext({}), { key: "context-a", sessionName: "Session A", eventKey: "event-a", eventName: "Event Alpha", eventTitle: "Event Alpha", category: "nebula", roundIndex: 0, order: ORDER_A, hasCurrentCommit: true, notNames: ["Session B", "Session C"] });
+    seedSessionATransientResults(app.uiState);
+    app.uiState.travelV2RoundActionOrderCommitResult = { ok: true, committed: true, committedOrder: [...ORDER_A], roundIndex: 0, roundNumber: 1, marker: "session-a-transient:commit" };
+    app.uiState.travelV2RoundActionOrderPersistResult = { ok: true, persisted: true, persistedRecord: { order: [...ORDER_A] }, marker: "session-a-transient:persist" };
+    const contextAWithTransient = await app._prepareContext({});
+    assertContext(contextAWithTransient, { key: "context-a", sessionName: "Session A", eventKey: "event-a", eventName: "Event Alpha", eventTitle: "Event Alpha", category: "nebula", roundIndex: 0, order: ORDER_A, hasCurrentCommit: true, notNames: ["Session B", "Session C"] });
+    assertSmoke(snapshot(contextAWithTransient.state).includes("session-a-transient:travelV2PressureApplicationResult"), "selecting A displays seeded A transient result state only");
+    assertSmoke(!snapshot(contextAWithTransient.state).includes("session-b-transient") && !snapshot(contextAWithTransient.state).includes("session-c-transient"), "selecting A transient state does not display B or C transient markers");
 
     await clickLoad(clickHandler, "context-b");
     assertContext(await app._prepareContext({}), { key: "context-b", sessionName: "Session B", eventKey: "event-b", eventName: "Event Beta", eventTitle: "Event Beta", category: "storm", roundIndex: 1, order: BASE_ORDER, hasCurrentCommit: false, notNames: ["Session A", "Session C"] });
+    assertTransientFieldsCleared(app.uiState, "switching to B");
     assertEqual(app.uiState.travelV2RoundActionOrderCommitResult, null, "switching to B clears A commit result");
     assertEqual(app.uiState.travelV2RoundActionOrderPersistResult, null, "switching to B clears A persistence result");
     assertEqual(snapshot(app.uiState.travelV2ProposedRoundActionOrder), "[]", "switching to B does not create a proposed order");
+    assertSmoke(!snapshot(await app._prepareContext({})).includes("session-a-transient"), "switching to B clears stale A transient feedback from render state");
 
     await clickLoad(clickHandler, "context-c");
     const contextC = await app._prepareContext({});
     assertContext(contextC, { key: "context-c", sessionName: "Session C", eventKey: "event-c", eventName: "Event Gamma", eventTitle: "Event Gamma", category: "ruins", roundIndex: 2, order: BASE_ORDER, hasCurrentCommit: false, notNames: ["Session A", "Session B"] });
     assertSmoke(contextC.state.isCompleted, "switching to C shows completed state");
+    assertTransientFieldsCleared(app.uiState, "switching to C");
+    assertSmoke(!snapshot(contextC.state).includes("session-a-transient"), "switching to C does not restore A or B transient feedback");
 
     await clickLoad(clickHandler, "context-a");
-    assertContext(await app._prepareContext({}), { key: "context-a", sessionName: "Session A", eventKey: "event-a", eventName: "Event Alpha", eventTitle: "Event Alpha", category: "nebula", roundIndex: 0, order: ORDER_A, hasCurrentCommit: true, notNames: ["Session B", "Session C"] });
-    checked.push("A → B → C → A updates selected session, event, round, preview rows, status text, selected library row, and committed-order status without ghosts");
+    const contextAReloaded = await app._prepareContext({});
+    assertContext(contextAReloaded, { key: "context-a", sessionName: "Session A", eventKey: "event-a", eventName: "Event Alpha", eventTitle: "Event Alpha", category: "nebula", roundIndex: 0, order: ORDER_A, hasCurrentCommit: true, notNames: ["Session B", "Session C"] });
+    assertTransientFieldsCleared(app.uiState, "switching back to A");
+    assertSmoke(!snapshot(contextAReloaded.state).includes("session-a-transient"), "switching back to A restores saved records only, not stale transient feedback");
+    checked.push("A → B → C → A updates selected session, event, round, preview rows, status text, selected library row, committed-order status, and Travel v2 transient result feedback without ghosts");
   } finally {
     if (previousGame === undefined) delete globalThis.game; else globalThis.game = previousGame;
     if (previousUi === undefined) delete globalThis.ui; else globalThis.ui = previousUi;
@@ -217,6 +257,7 @@ export async function runTravelEventRunnerV2SessionSwitchContextIsolationSmokeCh
   assertEqual(library.sessions["context-a"].session.travelV2RoundActionOrder.commitRecords.length, 1, "commitRecords are not duplicated");
   const afterText = snapshot(library);
   assertSmoke(!afterText.includes("travelV2ProposedRoundActionOrder"), "no proposed order is created");
+  for (const field of TRANSIENT_RESULT_FIELDS) assertSmoke(!afterText.includes(field), `${field} is not persisted to the session library`);
   assertSmoke(!afterText.includes("travelV2RoundActionOrderCommitResult"), "no commit result is created");
   assertSmoke(!afterText.includes("travelV2RoundActionOrderPersistResult"), "no persistence result is created");
   assertSmoke(!afterText.includes("persistenceRecords") && !afterText.includes("persistRecords"), "no persistence records are created");
