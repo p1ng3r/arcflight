@@ -2732,23 +2732,15 @@ function runnerSessionStationLabel(session = {}, stationKey = "") {
 
 export function prepareTravelV2RoundActionOrderLibraryStatus(session = null, options = {}) {
   const isGm = options.user?.isGM === true || options.isGM === true;
-  if (!isPlainObject(session)) return { hasCommittedOrder: false, status: "none", label: "No committed order saved", statusLabel: "No committed order saved", roundNumber: null, stationLabels: [], stationLabelText: "", playerSafe: true };
+  if (!isPlainObject(session)) return Object.freeze({ statusLabel: "No committed order saved", ...(isGm ? { roundNumber: null, stationLabelText: "" } : {}) });
   const { roundIndex, record, order } = getRunnerSessionCurrentRoundOrderRecord(session);
   const hasCommittedOrder = Boolean(record && order.length > 0);
+  const statusLabel = hasCommittedOrder ? "Committed order saved" : "No committed order saved";
+  if (!isGm) return Object.freeze({ statusLabel });
   const round = Array.isArray(session.event?.rounds) ? session.event.rounds[roundIndex] : null;
-  const roundNumber = Number.isInteger(Number(record?.roundNumber)) ? Number(record.roundNumber) : (Number.isInteger(Number(round?.roundNumber)) ? Number(round.roundNumber) : roundIndex + 1);
+  const roundNumber = hasCommittedOrder ? (Number.isInteger(Number(record?.roundNumber)) ? Number(record.roundNumber) : (Number.isInteger(Number(round?.roundNumber)) ? Number(round.roundNumber) : roundIndex + 1)) : null;
   const stationLabels = hasCommittedOrder ? order.map((stationKey) => runnerSessionStationLabel(session, stationKey)) : [];
-  const safe = {
-    hasCommittedOrder,
-    status: hasCommittedOrder ? "committed" : "none",
-    label: hasCommittedOrder ? "Committed order saved" : "No committed order saved",
-    statusLabel: hasCommittedOrder ? "Committed order saved" : "No committed order saved",
-    roundNumber: isGm && hasCommittedOrder ? roundNumber : null,
-    stationLabels: isGm ? stationLabels : [],
-    stationLabelText: isGm ? stationLabels.join(" → ") : "",
-    playerSafe: true
-  };
-  return Object.freeze(safe);
+  return Object.freeze({ statusLabel, roundNumber, stationLabelText: stationLabels.join(" → ") });
 }
 
 function publishedEventExistsForSession(entry, options = {}) {
