@@ -96,6 +96,8 @@ export async function runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks() 
     }
     const template = fs.readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
     assertSmoke(template.includes("data-arcflight-travel-v2-order-commit-request"), "template exposes explicit GM commit request path");
+    assertEqual((template.match(/data-arcflight-travel-v2-order-commit-request/g) ?? []).length, 1, "template should keep exactly one explicit commit button path");
+    assertSmoke(template.includes("v2-order-commit-result"), "template displays latest commit result read-only");
     const aggregate = fs.readFileSync(new URL("../dev/run-travel-v2-smoke.mjs", import.meta.url), "utf8");
     assertSmoke(aggregate.includes("runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks"), "aggregate smoke runner includes app commit suite");
     assertSmoke(getRenderCalls() >= 1, "successful app commit requested render");

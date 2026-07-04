@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 10, "panel version should be 10");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 11, "panel version should be 11");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -89,6 +89,49 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   const reorderPanel = prepareTravelEventRunnerV2PreviewPanelState({ session: appState.session, user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] });
   assertSmoke(reorderPanel.roundActionOrderDisplay.reorderRequest.ready, "explicit GM reorder request should prepare a ready review-only candidate");
   assertEqual(reorderPanel.roundActionOrderDisplay.reorderRequest.proposedRows[0].stationName, "Engineer", "reorder candidate should expose proposed station order");
+
+  const successfulCommitPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    session: appState.session,
+    user: { isGM: true },
+    isGM: true,
+    travelV2RoundActionOrderCommitResult: { ok: true, committed: true, duplicate: false, blocked: false, roundIndex: 0, roundNumber: 1, previousOrder: ["navigator", "engineer"], committedOrder: ["engineer", "navigator"], auditRecord: { timestamp: "2026-07-04T00:00:00.000Z", source: "app", userName: "GM" } }
+  });
+  assertEqual(successfulCommitPanel.roundActionOrderDisplay.commitResult.status, "committed", "successful commit result should display committed status");
+  assertSmoke(successfulCommitPanel.roundActionOrderDisplay.commitResult.summaryText.includes("action order committed"), "successful commit result should use success copy");
+  assertSmoke(successfulCommitPanel.roundActionOrderDisplay.commitResult.committedOrderText.includes("Engineer"), "successful commit result should show committed labels");
+  assertSmoke(successfulCommitPanel.roundActionOrderDisplay.commitResult.previousOrderText.includes("Navigator"), "successful commit result should show previous order labels to GM");
+  assertSmoke(successfulCommitPanel.roundActionOrderDisplay.commitResult.hasAuditMetadata, "successful GM commit result should include safe audit metadata");
+
+  const duplicateCommitPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    session: appState.session,
+    user: { isGM: true },
+    isGM: true,
+    travelV2RoundActionOrderCommitResult: { ok: true, committed: false, duplicate: true, blocked: false, roundIndex: 0, roundNumber: 1, previousOrder: ["engineer", "navigator"], committedOrder: ["engineer", "navigator"], reason: "Round action order already committed with the same station order." }
+  });
+  assertEqual(duplicateCommitPanel.roundActionOrderDisplay.commitResult.status, "duplicate", "duplicate commit result should display duplicate status");
+  assertSmoke(duplicateCommitPanel.roundActionOrderDisplay.commitResult.summaryText.includes("No session changes were made"), "duplicate commit result should be explicitly non-destructive");
+
+  const blockedCommitPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    session: appState.session,
+    user: { isGM: true },
+    isGM: true,
+    travelV2RoundActionOrderCommitResult: { ok: false, committed: false, duplicate: false, blocked: true, roundIndex: 0, roundNumber: 1, blockedReasons: ["Current Travel v2 round is already completed."], previousOrder: ["navigator", "engineer"], committedOrder: ["engineer", "navigator"] }
+  });
+  assertEqual(blockedCommitPanel.roundActionOrderDisplay.commitResult.status, "blocked", "blocked commit result should display blocked status");
+  assertSmoke(blockedCommitPanel.roundActionOrderDisplay.commitResult.summaryText.includes("commit blocked"), "blocked commit result should use blocked copy");
+  assertEqual(blockedCommitPanel.roundActionOrderDisplay.commitResult.blockedReason, "Current Travel v2 round is already completed.", "blocked commit result should expose reason text");
+
+  const nonGmCommitPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    session: appState.session,
+    user: { isGM: false },
+    isGM: false,
+    travelV2RoundActionOrderCommitResult: { ok: false, committed: false, duplicate: false, blocked: true, playerSafe: true, blockedReasons: ["Only the GM can commit round action order."], session: null, previousOrder: ["navigator", "engineer"], committedOrder: ["engineer", "navigator"], auditRecord: { timestamp: "2026-07-04T00:00:00.000Z", source: "app", userName: "Captain Secret" } }
+  });
+  assertEqual(nonGmCommitPanel.roundActionOrderDisplay.commitResult.status, "blocked", "non-GM commit result should still show safe blocked status");
+  assertSmoke(!nonGmCommitPanel.roundActionOrderDisplay.commitResult.hasAuditMetadata, "non-GM commit result should redact audit metadata");
+  assertSmoke(!nonGmCommitPanel.roundActionOrderDisplay.commitResult.hasPreviousRows, "non-GM blocked commit result should redact previous order rows");
+  assertSmoke(!JSON.stringify(nonGmCommitPanel.roundActionOrderDisplay.commitResult).includes("Captain Secret"), "non-GM commit result should not expose GM user name");
+  assertSmoke(!JSON.stringify(nonGmCommitPanel.roundActionOrderDisplay.commitResult).includes("session"), "non-GM commit result display should not expose session payload");
 
   const stationBenefitPanel = prepareTravelEventRunnerV2PreviewPanelState({
     ...appState,
@@ -258,6 +301,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "pre-application-correction-controls-hidden",
       "station-benefit-display-state",
       "round-action-order-display-state",
+      "round-action-order-commit-result-display",
+      "round-action-order-commit-result-redaction",
       "already-applied-disabled-state",
       "event-completion-readiness-summary",
       "live-completed-follow-ups",
