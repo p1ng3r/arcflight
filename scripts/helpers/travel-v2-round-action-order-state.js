@@ -226,8 +226,10 @@ function existingRoundOrderRecord(session = {}, roundIndex = -1) {
 
 export function commitTravelV2RoundActionOrderToSession(session = null, proposedOrder = [], options = {}) {
   const isGm = options.user?.isGM === true || options.isGM === true;
+  const commitRequested = options.commitRequested === true || options.travelV2RoundActionOrderCommitRequested === true;
   const blockedReasons = [];
   if (!isGm) blockedReasons.push("Only the GM can commit round action order.");
+  if (!commitRequested) blockedReasons.push("Explicit round action-order commit request is required.");
   if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
   const isCompleted = isPlainObject(session) ? isCompletedSession(session) : false;
   if (isCompleted) blockedReasons.push("Completed Travel v2 runner sessions cannot commit round action order.");
