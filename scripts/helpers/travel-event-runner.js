@@ -2713,17 +2713,32 @@ function findRunnerSessionLibraryEntry(library, sessionKey) {
 }
 
 
+function safeRunnerSessionRoundIndex(session = {}) {
+  try {
+    const roundIndex = Number(session?.currentRoundIndex);
+    return Number.isInteger(roundIndex) && roundIndex >= 0 ? roundIndex : 0;
+  } catch (_error) {
+    return 0;
+  }
+}
+
+function normalizeRunnerSessionOrderStationKey(entry) {
+  const stationKey = normalizeStationKey(entry);
+  return TRAVEL_FIVE_STATION_KEYS.includes(stationKey) ? stationKey : "";
+}
+
 function getRunnerSessionCurrentRoundOrderRecord(session = {}) {
-  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const roundIndex = safeRunnerSessionRoundIndex(session);
   const state = isPlainObject(session?.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : {};
   const rounds = isPlainObject(state.rounds) ? state.rounds : {};
   const record = rounds[String(roundIndex)] ?? rounds[roundIndex] ?? null;
-  const order = Array.isArray(record?.order) ? record.order : (Array.isArray(record?.stationOrder) ? record.stationOrder : []);
-  return { roundIndex, record: isPlainObject(record) ? record : null, order: order.map(normalizeStationKey).filter(Boolean) };
+  const orderSource = Array.isArray(record?.order) ? record.order : (Array.isArray(record?.stationOrder) ? record.stationOrder : []);
+  const order = orderSource.map(normalizeRunnerSessionOrderStationKey).filter(Boolean);
+  return { roundIndex, record: isPlainObject(record) ? record : null, order };
 }
 
 function runnerSessionStationLabel(session = {}, stationKey = "") {
-  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const roundIndex = safeRunnerSessionRoundIndex(session);
   const round = Array.isArray(session?.event?.rounds) && isPlainObject(session.event.rounds[roundIndex]) ? session.event.rounds[roundIndex] : {};
   const prompt = isPlainObject(round.stationPrompts?.[stationKey]) ? round.stationPrompts[stationKey] : {};
   const station = getStation(stationKey) ?? {};
