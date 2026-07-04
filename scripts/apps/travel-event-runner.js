@@ -41,6 +41,7 @@ import {
   retreatTravelEventRunnerRoundPhase,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
+  persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
   commitTravelEventRunnerStationOrder,
   setTravelEventRunnerStationAction,
   setTravelEventRunnerRoundPhase,
@@ -132,6 +133,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-station-benefit-review-request]",
   "[data-arcflight-travel-v2-order-reorder-request]",
   "[data-arcflight-travel-v2-order-commit-request]",
+  "[data-arcflight-travel-v2-order-persist-request]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
@@ -453,6 +455,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2DevToolResult: null,
       travelV2AutoSaveResult: null,
       travelV2RoundActionOrderCommitResult: null,
+      travelV2RoundActionOrderPersistResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
       travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
@@ -628,6 +631,24 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return update;
   }
 
+  async persistCommittedTravelV2RoundActionOrder(options = {}) {
+    const result = await persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary(this.session, {
+      ...options,
+      user: options.user ?? globalThis.game?.user,
+      isGM: options.isGM ?? globalThis.game?.user?.isGM === true,
+      persistRequested: true
+    });
+    this.uiState.travelV2RoundActionOrderPersistResult = result;
+    if (result.ok === true && result.persisted === true) {
+      this.statusMessage = result.summaryText || "Committed round action order persisted to the saved runner session.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = result.summaryText || result.blockedReasons?.[0] || (result.duplicate ? "Committed round action order was already persisted; no local session changes were made." : "Committed round action order persistence was blocked.");
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return result;
+  }
+
   #requestTravelV2StationBenefitReview(target) {
     const queueKey = typeof target?.dataset?.queueKey === "string" ? target.dataset.queueKey.trim() : "";
     this.uiState.travelV2StationBenefitUseReviewSelectedQueueKey = queueKey;
@@ -753,6 +774,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-review-request")) return this.#requestTravelV2StationBenefitReview(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
+    if (target.hasAttribute("data-arcflight-travel-v2-order-persist-request")) return this.persistCommittedTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();
