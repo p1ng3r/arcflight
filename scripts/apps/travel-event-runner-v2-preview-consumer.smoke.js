@@ -53,6 +53,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(!emptyState.hasSession, "empty app state should have no session");
   assertSmoke(emptyState.travelV2Preview, "empty app state should expose preview object");
   assertSmoke(emptyState.travelV2PreviewPanel, "empty app state should expose preview panel object");
+  assertSmoke(emptyState.travelV2SetupStakes?.hasSession === false, "empty app state should mark setup stakes as non-renderable without a session");
   assertSmoke(!emptyState.travelV2PreviewPanel.available, "empty preview panel should be unavailable");
   assertEqual(emptyState.compactRoundLabel, "No active round", "empty app state should keep compact label fallback");
   assertEqual(emptyState.guidedBridge.nextRequiredAction.title, "Start Travel Session", "empty guided bridge should require starting a session");
@@ -222,6 +223,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(runnerSource.includes("selectAllSingleSuggestionTravelV2PendingConsequences"), "runner imports selectAllSingleSuggestionTravelV2PendingConsequences");
   assertSmoke(runnerSource.includes(`[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`), "RUNNER_CLICK_SELECTOR includes the single-suggestion selection data-action selector");
   const templateSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../templates/apps/travel-event-runner.hbs"), "utf8");
+  assertSmoke(templateSource.includes("{{#if state.travelV2SetupStakes.hasSession}}"), "template gates setup stakes panel on active session setup state");
   assertSmoke(templateSource.includes("state.travelV2GmFlowStatus.showFinalizeRoundAction"), "template gates the GM flow finalize-round button from UI state");
   assertSmoke(templateSource.includes("data-arcflight-travel-v2-round-finalize"), "template renders a button wired to the existing finalize round handler");
   assertSmoke(runnerSource.includes(`target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences"`), "runner keeps the exact single-suggestion selection handler condition");

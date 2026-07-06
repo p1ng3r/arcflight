@@ -59,7 +59,7 @@
       <button type="button" data-arcflight-runner-send-mission-board title="{{#if state.travelV2GmFlowStatus}}{{state.travelV2GmFlowStatus.disabledActions.syncPlayers}}{{else}}Send or refresh player HUD and station cards.{{/if}}">Send / Refresh Player HUD</button>
     </header>
 
-    {{#if state.travelV2SetupStakes}}
+    {{#if state.travelV2SetupStakes.hasSession}}
     <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe" aria-label="Travel v2 setup stakes">
       <h2>Setup Stakes</h2>
       {{#if state.travelV2SetupStakes.hasValidationMessages}}
