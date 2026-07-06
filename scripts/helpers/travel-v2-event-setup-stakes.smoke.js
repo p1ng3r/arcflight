@@ -46,7 +46,7 @@ function createSetupFixture() {
 }
 
 export function runTravelV2EventSetupStakesSmokeChecks() {
-  assertEqual(TRAVEL_V2_EVENT_SETUP_STAKES_VERSION, 1, "setup stakes version should be 1");
+  assertEqual(TRAVEL_V2_EVENT_SETUP_STAKES_VERSION, 2, "setup stakes version should be 2");
 
   const source = createSetupFixture();
   const before = JSON.stringify(source);
@@ -62,8 +62,8 @@ export function runTravelV2EventSetupStakesSmokeChecks() {
   assertSmoke(!travelV2PlayerSafeSetupHasForbiddenKeys(state.playerSafe), "player setup should avoid forbidden player-safe keys");
 
   const leakySource = createSetupFixture();
-  leakySource.event.player.knownDangers = ["safe tell", "secret machinery", "unrevealedHazard detail"];
-  leakySource.event.player.broadFailureDanger = "gmOnly consequence tree";
+  leakySource.event.player.knownDangers = ["safe tell", "secret machinery", "unrevealedHazard detail", "Hidden Hazard detail", "FUTURE TRIGGER detail", "internal scoring clue", "debug report detail"];
+  leakySource.event.player.broadFailureDanger = "GM-ONLY consequence tree";
   const redactedState = prepareTravelV2EventSetupStakesState(leakySource);
   assertSmoke(redactedState.ok, "forbidden player-safe terms should not invalidate otherwise playable setup");
   assertEqual(redactedState.playerSafe.knownDangers.length, 1, "forbidden player-safe tell entries should be removed");

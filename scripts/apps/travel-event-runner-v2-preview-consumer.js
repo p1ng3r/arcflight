@@ -15,6 +15,7 @@ import { applyTravelV2ResponseActionResolutionReviewToRenderState } from "../hel
 import { applyTravelV2StationImpactModifierReviewToRenderState } from "../helpers/travel-v2-station-impact-modifier-review.js";
 import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
 import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
+import { prepareTravelV2EventSetupStakesState } from "../helpers/travel-v2-event-setup-stakes.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 4;
 
@@ -234,6 +235,40 @@ function buildTravelV2GuidedState(state = {}) {
   };
 }
 
+function formatSetupStakesValidation(errors = []) {
+  const messages = {
+    "round-count-required": "Setup round count is missing.",
+    "round-count-below-alpha-minimum": "Setup round count is below the Travel v2 alpha minimum.",
+    "round-count-above-alpha-maximum": "Setup round count is above the Travel v2 alpha maximum."
+  };
+  return errors.map((error) => {
+    if (typeof error === "string" && error.startsWith("missing-core-station:")) return "Setup is missing an alpha core station.";
+    return messages[error] ?? "Setup stakes need GM review before play.";
+  });
+}
+
+function buildSetupStakesRenderState(session, { includeGm = false } = {}) {
+  const prepared = prepareTravelV2EventSetupStakesState(session ?? {});
+  const playerSafe = prepared.playerSafe ?? {};
+  const validationMessages = formatSetupStakesValidation(prepared.errors ?? []);
+  return {
+    ok: prepared.ok === true,
+    hasSession: Boolean(session),
+    validationMessages,
+    hasValidationMessages: validationMessages.length > 0,
+    playerSafe,
+    hasOpeningText: Boolean(playerSafe.openingPremise || playerSafe.openingVignette),
+    openingText: playerSafe.openingPremise || playerSafe.openingVignette || "",
+    hasThreatenedResources: (playerSafe.threatenedResources ?? []).length > 0,
+    hasKnownDangers: (playerSafe.knownDangers ?? []).length > 0,
+    hasAvailableCoreStations: (playerSafe.availableCoreStations ?? []).length > 0,
+    ...(includeGm ? {
+      gmFacing: prepared.gmFacing ?? {},
+      gmOnlyLabel: "GM-only setup notes",
+      hasGmFacingNotes: Boolean(prepared.gmFacing?.gmNotes || prepared.gmFacing?.setupNotes || prepared.gmFacing?.hiddenHazards?.length || prepared.gmFacing?.futureTriggers?.length || Object.keys(prepared.gmFacing?.internalScoring ?? {}).length)
+    } : {})
+  };
+}
 
 function sanitizeNonGmAppStateValue(value) {
   if (typeof value === "string") {
@@ -255,6 +290,7 @@ function sanitizeNonGmAppStateValue(value) {
 export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false, user = globalThis.game?.user } = {}) {
   const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor, user });
   const canManageTravelV2Consequences = user?.isGM === true;
+  const travelV2SetupStakes = buildSetupStakesRenderState(session, { includeGm: canManageTravelV2Consequences });
   const preparedPendingConsequenceQueue = prepareTravelV2PendingConsequenceQueue(session);
   const preparedConsequenceFollowupReview = prepareTravelV2ConsequenceFollowupReview(session);
   const travelV2RuntimeHazardDeckSelection = canManageTravelV2Consequences ? prepareTravelV2RuntimeHazardDeckSelectionGmState({ selectedDeckId: uiState.travelV2HazardDeckPickerSelectedDeckId ?? null }, { defaultToGoldStandard: true, includeGmReview: canManageTravelV2Consequences, user }) : null;
@@ -293,6 +329,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     currentSessionCollapsed: uiState.currentSessionCollapsed !== false,
     sessionActionsExpanded: uiState.sessionActionsExpanded === true,
     compactRunner: uiState.compactRunner === true,
+    travelV2SetupStakes,
     travelV2PressureApplicationResult: uiState.travelV2PressureApplicationResult ?? null,
     travelV2PressureCorrectionResult: uiState.travelV2PressureCorrectionResult ?? null,
     travelV2RoundFinalizationResult: uiState.travelV2RoundFinalizationResult ?? null,
