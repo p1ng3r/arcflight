@@ -1,143 +1,178 @@
-const ALPHA_STATION_KEYS = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
-const FORBIDDEN_PLAYER_SAFE_KEYS = ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"];
+import { getStation } from "../../data/stations/core-stations.js";
+import { getCoreStationAction } from "../../data/station-actions/core-station-actions.js";
+
+export const TRAVEL_V2_STATION_ACTION_LOCK_IN_STATE_VERSION = 1;
+export const TRAVEL_V2_STATION_ACTION_LOCK_IN_STATE_KEY = "travelV2StationActionLockIn";
+export const TRAVEL_V2_ALPHA_CORE_STATION_KEYS = Object.freeze(["captain", "navigator", "engineer", "veilwarden", "watchmaster"]);
+
+const STATION_ALIASES = Object.freeze({ arkengineer: "engineer" });
+const FORBIDDEN_PLAYER_SAFE_KEYS = Object.freeze([
+  "auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions",
+  "hiddenHazards", "gmNotes", "consequenceQueues", "riskBidOutcomes", "focusBacklash", "internalScoring", "debugData", "futureTriggers", "actorUuid", "mutationData"
+]);
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function cloneData(value) {
-  if (value == null) return value;
-  if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
-  if (typeof structuredClone === "function") return structuredClone(value);
+  if (value === null || value === undefined) return value;
   return JSON.parse(JSON.stringify(value));
 }
 
-function humanizeIdentifier(value) {
-  return String(value ?? "").replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").trim().replace(/\b\w/g, (letter) => letter.toUpperCase());
+function deepFreeze(value) {
+  if (!isPlainObject(value) && !Array.isArray(value)) return value;
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
 }
 
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function safeString(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeRequiredStationKeys(options = {}) {
-  const keys = Array.isArray(options.requiredStationKeys) && options.requiredStationKeys.length > 0 ? options.requiredStationKeys : ALPHA_STATION_KEYS;
-  return keys.filter((key) => typeof key === "string" && key.trim());
+function normalizeStationKey(stationKey) {
+  const key = safeString(stationKey).toLowerCase();
+  return STATION_ALIASES[key] ?? key;
 }
 
-function normalizeChoice(choice = {}, fallbackStationKey = "") {
-  if (!isPlainObject(choice)) return null;
-  const stationKey = typeof choice.stationKey === "string" && choice.stationKey ? choice.stationKey : fallbackStationKey;
-  const actionKey = typeof choice.actionKey === "string" ? choice.actionKey : (typeof choice.type === "string" ? choice.type : "");
-  if (!stationKey || !actionKey) return null;
-  const actionLabel = typeof choice.actionLabel === "string" && choice.actionLabel.trim() ? choice.actionLabel.trim() : (typeof choice.label === "string" && choice.label.trim() ? choice.label.trim() : humanizeIdentifier(actionKey));
-  return { stationKey, stationName: humanizeIdentifier(stationKey), actionKey, actionLabel, selected: true };
+function actionLabelFor(actionKey, action = {}) {
+  const catalogAction = getCoreStationAction(actionKey);
+  return safeString(action.label) || safeString(action.name) || catalogAction?.name || actionKey;
 }
 
-function readChoicesByStation(value = {}) {
-  if (isPlainObject(value?.choicesByStation)) return value.choicesByStation;
-  if (isPlainObject(value?.stationActionChoices)) return value.stationActionChoices;
-  if (isPlainObject(value?.stationActions)) return value.stationActions;
-  if (isPlainObject(value?.roundResult?.stationActions)) return value.roundResult.stationActions;
-  if (isPlainObject(value)) return value;
-  return {};
+function requiredStationKeysFrom(options = {}) {
+  const source = Array.isArray(options.requiredStationKeys) ? options.requiredStationKeys : TRAVEL_V2_ALPHA_CORE_STATION_KEYS;
+  return Array.from(new Set(source.map(normalizeStationKey).filter(Boolean)));
 }
 
-function readLocksByStation(value = {}) {
-  if (isPlainObject(value?.locksByStation)) return value.locksByStation;
-  if (isPlainObject(value?.stationActionLocks)) return value.stationActionLocks;
-  if (isPlainObject(value?.stationOrderCommitments)) return value.stationOrderCommitments;
-  if (isPlainObject(value?.roundResult?.stationOrderCommitments)) return value.roundResult.stationOrderCommitments;
-  return {};
+function stationOrderFrom(source = {}, options = {}) {
+  const explicit = Array.isArray(options.stationOrder) ? options.stationOrder : null;
+  const sourceOrder = explicit ?? source.stationOrder ?? source.requiredStationKeys ?? source.activeStations ?? Object.keys(source.stations ?? source.actions ?? source.choices ?? source);
+  const normalized = Array.isArray(sourceOrder) ? sourceOrder.map((entry) => normalizeStationKey(typeof entry === "string" ? entry : entry?.stationKey)).filter(Boolean) : [];
+  if (Array.isArray(options.stationOrder)) return Array.from(new Set(normalized));
+  return Array.from(new Set([...normalized, ...requiredStationKeysFrom(options)]));
 }
 
-function normalizeLock(lock = {}) {
-  if (!isPlainObject(lock)) return { locked: false };
-  return { locked: lock.locked === true || lock.committed === true };
+function error(code, stationKey, message) {
+  return { code, stationKey, message };
 }
 
-export function normalizeTravelV2StationActionChoices(value = {}, options = {}) {
-  const requiredStationKeys = normalizeRequiredStationKeys(options);
-  const choicesByStation = readChoicesByStation(value);
-  const normalizedChoices = {};
-  const invalidStationKeys = [];
-  for (const [stationKey, choice] of Object.entries(choicesByStation)) {
-    if (!requiredStationKeys.includes(stationKey)) {
-      if (stationKey) invalidStationKeys.push(stationKey);
-      continue;
-    }
-    const normalized = normalizeChoice(choice, stationKey);
-    if (normalized) normalizedChoices[stationKey] = normalized;
+function sourceChoices(source = {}) {
+  if (isPlainObject(source?.stations)) return source.stations;
+  if (isPlainObject(source?.actions)) return source.actions;
+  if (isPlainObject(source?.choices)) return source.choices;
+  return isPlainObject(source) ? source : {};
+}
+
+function normalizeChoice(stationKey, rawChoice) {
+  const raw = isPlainObject(rawChoice) ? rawChoice : { actionKey: rawChoice };
+  const actionKey = safeString(raw.actionKey ?? raw.key ?? raw.actionKey ?? raw.action?.actionKey ?? raw.action?.key ?? raw.action ?? raw.type);
+  if (!actionKey) return { action: null, locked: raw.locked === true };
+  return {
+    action: {
+      actionKey,
+      label: actionLabelFor(actionKey, raw),
+      stationKey
+    },
+    locked: raw.locked === true
+  };
+}
+
+function validateState(state, requiredStationKeys = TRAVEL_V2_ALPHA_CORE_STATION_KEYS) {
+  const errors = [];
+  const required = new Set(requiredStationKeys);
+  for (const stationKey of state.stationOrder) {
+    if (!getStation(stationKey)) errors.push(error("invalidStationKey", stationKey, `Station key is not valid for Travel v2: ${stationKey}.`));
   }
-  return { requiredStationKeys, choicesByStation: normalizedChoices, invalidStationKeys };
-}
-
-export function selectTravelV2StationAction(state = {}, stationKey = "", action = {}, options = {}) {
-  const normalized = normalizeTravelV2StationActionChoices(state, options);
-  if (!normalized.requiredStationKeys.includes(stationKey)) return { ok: false, errors: [`Invalid station key: ${stationKey}.`], state: cloneData(state) ?? {} };
-  const choice = normalizeChoice({ ...action, stationKey }, stationKey);
-  if (!choice) return { ok: false, errors: [`Missing station action for ${stationKey}.`], state: cloneData(state) ?? {} };
-  const nextState = cloneData(state) ?? {};
-  nextState.choicesByStation = { ...(normalized.choicesByStation ?? {}), [stationKey]: choice };
-  return { ok: true, errors: [], state: nextState };
-}
-
-export function lockTravelV2StationAction(state = {}, stationKey = "", options = {}) {
-  const requiredStationKeys = normalizeRequiredStationKeys(options);
-  if (!requiredStationKeys.includes(stationKey)) return { ok: false, errors: [`Invalid station key: ${stationKey}.`], state: cloneData(state) ?? {} };
-  const nextState = cloneData(state) ?? {};
-  nextState.locksByStation = { ...readLocksByStation(nextState), [stationKey]: { locked: true } };
-  return { ok: true, errors: [], state: nextState };
-}
-
-export function unlockTravelV2StationAction(state = {}, stationKey = "", options = {}) {
-  const requiredStationKeys = normalizeRequiredStationKeys(options);
-  if (!requiredStationKeys.includes(stationKey)) return { ok: false, errors: [`Invalid station key: ${stationKey}.`], state: cloneData(state) ?? {} };
-  const nextState = cloneData(state) ?? {};
-  nextState.locksByStation = { ...readLocksByStation(nextState), [stationKey]: { locked: false } };
-  return { ok: true, errors: [], state: nextState };
-}
-
-export function checkTravelV2StationActionLockInReady(state = {}, options = {}) {
-  const requiredStationKeys = normalizeRequiredStationKeys(options);
-  const activeStations = Array.isArray(state?.activeStations) ? state.activeStations : requiredStationKeys;
-  const { choicesByStation, invalidStationKeys } = normalizeTravelV2StationActionChoices(state, { requiredStationKeys });
-  const locksByStation = readLocksByStation(state);
-  const rows = [];
-  const validationMessages = [];
-  for (const stationKey of requiredStationKeys) {
-    const stationName = humanizeIdentifier(stationKey);
-    const stationPresent = activeStations.includes(stationKey);
-    const choice = choicesByStation[stationKey] ?? null;
-    const locked = normalizeLock(locksByStation[stationKey]).locked;
-    if (!stationPresent) validationMessages.push(`${stationName}: missing required station.`);
-    if (!choice) validationMessages.push(`${stationName}: missing station action.`);
-    if (choice && !locked) validationMessages.push(`${stationName}: station action must be locked before resolution.`);
-    rows.push({ stationKey, stationName, stationPresent, actionKey: choice?.actionKey ?? "", actionLabel: choice?.actionLabel ?? "No action selected", hasAction: Boolean(choice), locked, lockState: locked ? "locked" : "unlocked", lockStateLabel: locked ? "Locked" : "Unlocked", readinessLabel: stationPresent && choice && locked ? "Ready" : "Not ready", message: !stationPresent ? "Missing required station." : (!choice ? "No action selected." : (!locked ? "Must be locked before resolution." : "Ready.")) });
+  for (const stationKey of required) {
+    const row = state.stations[stationKey];
+    if (!row) errors.push(error("missingRequiredStation", stationKey, `Required station is missing: ${stationKey}.`));
+    else if (!row.action) errors.push(error("missingStationAction", stationKey, `Required station has no selected action: ${stationKey}.`));
+    else if (!row.locked) errors.push(error("stationActionUnlocked", stationKey, `Required station action is not locked: ${stationKey}.`));
   }
-  for (const stationKey of invalidStationKeys) validationMessages.push(`${humanizeIdentifier(stationKey)}: invalid station key.`);
-  const ready = rows.length === requiredStationKeys.length && rows.every((row) => row.stationPresent && row.hasAction && row.locked);
-  if (!ready) validationMessages.push("Attempted resolution before lock-in: all required station actions must be selected and locked before resolution.");
-  return { ready, ok: ready, requiredStationKeys, rows, validationMessages: Array.from(new Set(validationMessages)), blockedReasons: ready ? [] : ["Resolution requires all required station actions to be selected and locked."] };
+  return errors;
 }
 
-export function preparePlayerSafeTravelV2StationActionLockState(state = {}, options = {}) {
-  const readiness = checkTravelV2StationActionLockInReady(state, options);
-  return { rows: readiness.rows, ready: readiness.ready, statusLabel: readiness.ready ? "Ready to resolve" : "Not ready to resolve", readinessText: readiness.ready ? "Ready to resolve: all required station actions are selected and locked." : "Not ready: all required station actions must be selected and locked before resolution.", validationMessages: readiness.validationMessages, hasValidationMessages: readiness.validationMessages.length > 0, blockedReason: readiness.ready ? "" : readiness.blockedReasons[0], requiredStationKeys: readiness.requiredStationKeys };
+export function normalizeTravelV2StationActionChoices(source = {}, options = {}) {
+  const requiredStationKeys = requiredStationKeysFrom(options);
+  const choices = sourceChoices(source);
+  const stationOrder = stationOrderFrom(source, { ...options, requiredStationKeys });
+  const stations = {};
+  const validationErrors = [];
+
+  for (const originalKey of Object.keys(choices)) {
+    const stationKey = normalizeStationKey(originalKey);
+    if (!stationKey || !getStation(stationKey)) validationErrors.push(error("invalidStationKey", stationKey || originalKey, `Station key is not valid for Travel v2: ${stationKey || originalKey}.`));
+  }
+
+  for (const stationKey of stationOrder) {
+    const rawChoice = choices[stationKey] ?? choices[Object.keys(STATION_ALIASES).find((alias) => STATION_ALIASES[alias] === stationKey)];
+    const choice = normalizeChoice(stationKey, rawChoice ?? {});
+    stations[stationKey] = { stationKey, action: choice.action, locked: choice.locked };
+  }
+
+  const state = {
+    version: TRAVEL_V2_STATION_ACTION_LOCK_IN_STATE_VERSION,
+    requiredStationKeys,
+    stationOrder,
+    stations,
+    allRequiredLocked: false,
+    readyToResolve: false,
+    validationErrors: []
+  };
+  const errors = [...validationErrors, ...validateState(state, requiredStationKeys).filter((entry) => entry.code !== "stationActionUnlocked")];
+  state.allRequiredLocked = requiredStationKeys.every((stationKey) => Boolean(stations[stationKey]?.action && stations[stationKey]?.locked));
+  state.readyToResolve = errors.length === 0 && state.allRequiredLocked;
+  state.validationErrors = state.readyToResolve ? [] : [...errors, ...validateState(state, requiredStationKeys).filter((entry) => entry.code === "stationActionUnlocked")];
+  return deepFreeze(state);
 }
 
-export function prepareGmTravelV2StationActionLockState(state = {}, options = {}) {
-  return { ...preparePlayerSafeTravelV2StationActionLockState(state, options), canOverrideLocks: options.canOverrideLocks === true };
+export function selectTravelV2StationAction(state, stationKey, actionChoice) {
+  const normalized = normalizeTravelV2StationActionChoices(state);
+  const key = normalizeStationKey(stationKey);
+  if (!getStation(key)) return { ...normalized, validationErrors: [...normalized.validationErrors, error("invalidStationKey", key, `Station key is not valid for Travel v2: ${key}.`)] };
+  if (normalized.stations[key]?.locked) return normalized;
+  const next = cloneData(normalized);
+  if (!next.stationOrder.includes(key)) next.stationOrder.push(key);
+  next.stations[key] = { stationKey: key, ...normalizeChoice(key, actionChoice), locked: false };
+  return normalizeTravelV2StationActionChoices(next, { requiredStationKeys: next.requiredStationKeys, stationOrder: next.stationOrder });
 }
 
-export function playerSafeTravelV2StationActionLockStateHasForbiddenKeys(state = {}) {
+export function lockTravelV2StationAction(state, stationKey) {
+  const normalized = normalizeTravelV2StationActionChoices(state);
+  const key = normalizeStationKey(stationKey);
+  const next = cloneData(normalized);
+  if (next.stations[key]) next.stations[key].locked = Boolean(next.stations[key].action);
+  return normalizeTravelV2StationActionChoices(next, { requiredStationKeys: next.requiredStationKeys, stationOrder: next.stationOrder });
+}
+
+export function unlockTravelV2StationAction(state, stationKey, { allowUnlock = false } = {}) {
+  const normalized = normalizeTravelV2StationActionChoices(state);
+  if (!allowUnlock) return normalized;
+  const key = normalizeStationKey(stationKey);
+  const next = cloneData(normalized);
+  if (next.stations[key]) next.stations[key].locked = false;
+  return normalizeTravelV2StationActionChoices(next, { requiredStationKeys: next.requiredStationKeys, stationOrder: next.stationOrder });
+}
+
+export function checkTravelV2StationActionLockInReady(state) {
+  const normalized = normalizeTravelV2StationActionChoices(state);
+  const resolutionErrors = normalized.readyToResolve ? [] : [error("resolveBeforeLockIn", "", "Cannot resolve Travel v2 round before all required station actions are selected and locked.")];
+  return deepFreeze({ ready: normalized.readyToResolve, allRequiredLocked: normalized.allRequiredLocked, validationErrors: [...normalized.validationErrors, ...resolutionErrors] });
+}
+
+export function preparePlayerSafeTravelV2StationActionLockState(state) {
+  const normalized = normalizeTravelV2StationActionChoices(state);
+  const stations = normalized.stationOrder.map((stationKey) => ({ stationKey, action: normalized.stations[stationKey]?.action ?? null, locked: normalized.stations[stationKey]?.locked === true }));
+  return deepFreeze({ version: normalized.version, requiredStationKeys: normalized.requiredStationKeys, stationOrder: normalized.stationOrder, stations, allRequiredLocked: normalized.allRequiredLocked, readyToResolve: normalized.readyToResolve, validationErrors: normalized.validationErrors });
+}
+
+export function prepareGmTravelV2StationActionLockState(state) {
+  const normalized = normalizeTravelV2StationActionChoices(state);
+  return deepFreeze({ ...cloneData(normalized), stateKey: TRAVEL_V2_STATION_ACTION_LOCK_IN_STATE_KEY });
+}
+
+export function playerSafeTravelV2StationActionLockStateHasForbiddenKeys(state) {
   const text = JSON.stringify(state ?? {});
   return FORBIDDEN_PLAYER_SAFE_KEYS.some((key) => text.includes(key));
 }
-
-export default {
-  normalizeTravelV2StationActionChoices,
-  selectTravelV2StationAction,
-  lockTravelV2StationAction,
-  unlockTravelV2StationAction,
-  checkTravelV2StationActionLockInReady,
-  preparePlayerSafeTravelV2StationActionLockState,
-  prepareGmTravelV2StationActionLockState,
-  playerSafeTravelV2StationActionLockStateHasForbiddenKeys
-};

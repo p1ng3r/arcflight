@@ -10,39 +10,76 @@ import {
   unlockTravelV2StationAction
 } from "./travel-v2-station-action-lock-in.js";
 
-const required = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
-function lockedState() {
+function assertSmoke(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) throw new Error(`${message} Expected ${expected}, received ${actual}.`);
+}
+
+function completeChoices(locked = false) {
   return {
-    activeStations: required,
-    stationActions: Object.fromEntries(required.map((key) => [key, { type: "eventApproach", label: `${key} action` }])),
-    stationOrderCommitments: Object.fromEntries(required.map((key) => [key, { committed: true }]))
+    captain: { actionKey: "rally-crew", locked },
+    navigator: { actionKey: "plot-course", label: "Plot Course", locked },
+    engineer: { actionKey: "stabilize-strain", locked },
+    veilwarden: { actionKey: "reinforce-lifeveil", locked },
+    watchmaster: { actionKey: "scan-threats", locked }
   };
 }
 
-export function runTravelV2StationActionLockInSmoke() {
-  const normalized = normalizeTravelV2StationActionChoices(lockedState(), { requiredStationKeys: required });
-  assert.equal(Object.keys(normalized.choicesByStation).length, 5, "normalizes five selected choices");
-  const selected = selectTravelV2StationAction({ activeStations: required }, "captain", { actionKey: "eventApproach", actionLabel: "Event Approach" }, { requiredStationKeys: required });
-  assert.equal(selected.ok, true, "select helper records a station action");
-  const locked = lockTravelV2StationAction(selected.state, "captain", { requiredStationKeys: required });
-  assert.equal(locked.ok, true, "lock helper locks a station action");
-  const unlocked = unlockTravelV2StationAction(locked.state, "captain", { requiredStationKeys: required });
-  assert.equal(unlocked.state.locksByStation.captain.locked, false, "unlock helper unlocks a station action");
-  const ready = checkTravelV2StationActionLockInReady(lockedState(), { requiredStationKeys: required });
-  assert.equal(ready.ready, true, "complete locked five-station state reports ready");
-  const missing = checkTravelV2StationActionLockInReady({ activeStations: required, stationActions: {}, stationOrderCommitments: {} }, { requiredStationKeys: required });
-  assert.equal(missing.ready, false, "incomplete state reports not ready");
-  assert(missing.validationMessages.some((message) => message.includes("missing station action")), "missing action produces safe validation message");
-  const unlockedState = checkTravelV2StationActionLockInReady({ activeStations: required, stationActions: { captain: { type: "eventApproach" } }, stationOrderCommitments: { captain: { committed: false } } }, { requiredStationKeys: required });
-  assert(unlockedState.validationMessages.some((message) => message.includes("must be locked")), "unlocked action produces safe validation message");
-  const invalid = checkTravelV2StationActionLockInReady({ activeStations: required, stationActions: { pilot: { type: "eventApproach" } }, stationOrderCommitments: {} }, { requiredStationKeys: required });
-  assert(invalid.validationMessages.some((message) => message.includes("invalid station key")), "invalid station key produces safe validation message");
-  const playerSafe = preparePlayerSafeTravelV2StationActionLockState(lockedState(), { requiredStationKeys: required });
-  assert.equal(playerSafeTravelV2StationActionLockStateHasForbiddenKeys(playerSafe), false, "player-safe projection avoids forbidden keys");
-  const gmState = prepareGmTravelV2StationActionLockState(lockedState(), { requiredStationKeys: required, canOverrideLocks: true });
-  assert.equal(gmState.canOverrideLocks, true, "GM projection may include GM-facing lock affordance state");
-  return { checked: ["normalize", "select", "lock", "unlock", "ready state", "incomplete state", "missing action", "unlocked action", "invalid station key", "player-safe projection", "GM projection"] };
-}
+export default async function runTravelV2StationActionLockInSmokeChecks() {
+  const checked = [];
 
-if (import.meta.url === `file://${process.argv[1]}`) console.log(runTravelV2StationActionLockInSmoke());
-export default runTravelV2StationActionLockInSmoke;
+  const complete = normalizeTravelV2StationActionChoices({ stations: completeChoices(true) });
+  assertEqual(complete.stationOrder.join(","), "captain,navigator,engineer,veilwarden,watchmaster", "normalization should preserve alpha station order.");
+  assertSmoke(complete.readyToResolve, "complete locked five-station action selection should be ready.");
+  checked.push("normalizes complete five-station action selection");
+
+  const source = { stations: completeChoices(false), hiddenHazards: ["do-not-leak"], gmNotes: "secret", applyPayload: { targetActorUuid: "Actor.x" }, debugData: { futureTriggers: ["later"] } };
+  const before = JSON.stringify(source);
+  let state = normalizeTravelV2StationActionChoices(source);
+  state = selectTravelV2StationAction(state, "captain", { actionKey: "coordinate-orders" });
+  assertEqual(state.stations.captain.action.actionKey, "coordinate-orders", "selecting should update an unlocked station action.");
+  state = selectTravelV2StationAction(state, "captain", { actionKey: "rally-crew" });
+  assertEqual(state.stations.captain.action.actionKey, "rally-crew", "selecting should replace an unlocked station action.");
+  assertEqual(JSON.stringify(source), before, "source input should not be mutated.");
+  checked.push("selects and replaces unlocked station actions without mutating source");
+
+  state = lockTravelV2StationAction(state, "captain");
+  assertSmoke(state.stations.captain.locked, "locking should lock a selected station action.");
+  checked.push("locks one station action");
+
+  for (const stationKey of ["navigator", "engineer", "veilwarden", "watchmaster"]) state = lockTravelV2StationAction(state, stationKey);
+  assertSmoke(state.allRequiredLocked, "locking all five alpha station actions should set allRequiredLocked.");
+  assertSmoke(checkTravelV2StationActionLockInReady(state).ready, "current round should be ready only after all five required actions are locked.");
+  checked.push("locks all five actions and reports readiness");
+
+  const missingAction = normalizeTravelV2StationActionChoices({ stations: { ...completeChoices(true), watchmaster: { locked: true } } });
+  assertSmoke(!checkTravelV2StationActionLockInReady(missingAction).ready, "missing action should block readiness.");
+  assertSmoke(missingAction.validationErrors.some((entry) => entry.code === "missingStationAction"), "missing action should report safe validation error.");
+  checked.push("missing action blocks readiness");
+
+  const missingStation = normalizeTravelV2StationActionChoices({ stations: { captain: { actionKey: "rally-crew", locked: true } }, stationOrder: ["captain"] }, { stationOrder: ["captain"], requiredStationKeys: ["captain", "navigator"] });
+  assertSmoke(missingStation.validationErrors.some((entry) => entry.code === "missingRequiredStation"), "missing required station should report safe validation error.");
+  checked.push("missing required station blocks readiness");
+
+  const invalid = normalizeTravelV2StationActionChoices({ stations: { helmcat: { actionKey: "pounce", locked: true } } });
+  assertSmoke(invalid.validationErrors.some((entry) => entry.code === "invalidStationKey"), "invalid station key should report safe validation error.");
+  checked.push("invalid station key reports safe validation error");
+
+  const playerSafe = preparePlayerSafeTravelV2StationActionLockState(source);
+  assertSmoke(!playerSafeTravelV2StationActionLockStateHasForbiddenKeys(playerSafe), "player-safe output should exclude GM-only/internal data.");
+  assertSmoke(!JSON.stringify(playerSafe).includes("hiddenHazards"), "player-safe state should exclude hidden hazards.");
+  const gmState = prepareGmTravelV2StationActionLockState(state);
+  assertEqual(gmState.stateKey, "travelV2StationActionLockIn", "GM state should expose helper namespace.");
+  checked.push("prepares player-safe and GM-facing projections");
+
+  const unlockBlocked = unlockTravelV2StationAction(state, "captain");
+  assertSmoke(unlockBlocked.stations.captain.locked, "unlock should be blocked by default.");
+  const unlockAllowed = unlockTravelV2StationAction(state, "captain", { allowUnlock: true });
+  assertSmoke(!unlockAllowed.stations.captain.locked, "GM/manual unlock should work only when explicitly allowed.");
+  checked.push("GM/manual unlock requires explicit allowUnlock");
+
+  return { checked };
+}

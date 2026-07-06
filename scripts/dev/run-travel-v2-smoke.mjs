@@ -146,6 +146,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 event setup stakes", runTravelV2EventSetupStakesSmokeChecks],
   ["Travel v2 station action lock-in", runTravelV2StationActionLockInSmokeChecks],
   ["Travel event runner v2 station action lock-in", runTravelEventRunnerV2StationActionLockInSmokeChecks]
+  ["Travel v2 station action lock-in", runTravelV2StationActionLockInSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
