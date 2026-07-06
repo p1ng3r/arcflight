@@ -1,8 +1,26 @@
 # Travel v2 Open Issues
 
-This document is the canonical repo-local tracker for the remaining Travel v2 work.
+Status: implementation tracker.
 
-Use this file to avoid drifting between older handoff notes, roadmap drafts, GitHub issue numbers, and pull request numbers. GitHub Issues remain the live work tickets; this file is the stable numbered checklist for what still needs to be built, integrated, or closed out.
+This document is the repo-local implementation tracker for Travel v2. It is not the top-level Arcflight roadmap and it is not the Travel Alpha gameplay goal.
+
+Use the current docs in this order:
+
+1. `docs/ARCFLIGHT_ALPHA_PILLAR_ROADMAP.md` — top-level sequencing: Travel Alpha, then Combat Alpha, then Upgrade / Progression Alpha, then Beta.
+2. `docs/TRAVEL_V2_ALPHA_GOAL.md` — current Travel Alpha source of truth.
+3. This file — numbered implementation tracker for Travel v2 work items.
+4. GitHub Issues — live ticket discussion and PR-sized work tracking.
+
+When this tracker conflicts with `TRAVEL_V2_ALPHA_GOAL.md`, treat the alpha goal document as authoritative unless a later docs PR intentionally changes the goal.
+
+## Scope labels
+
+Each numbered item may use one of these scope labels:
+
+- **Alpha blocker:** required before Travel Alpha can be called playable.
+- **Alpha support:** useful for alpha or needed by an alpha blocker, but not necessarily a standalone blocker.
+- **Post-alpha:** important Travel v2 work that should not block the two-event alpha loop.
+- **Foundation / historical:** existing foundation, closeout notes, or work that should not be rebuilt unless a focused smoke test exposes a bug.
 
 ## Current status
 
@@ -18,7 +36,7 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - The GM may choose specific events to trigger at specific route beats.
 - The GM may also use random or weighted event picks when improvisation is desired.
 - A single voyage can contain multiple Travel v2 events.
-- Player choices on the ship should drive station actions, risk bids, Momentum spends, inter-station help, hazard responses, consequences, and final outcomes.
+- Player choices on the ship should drive station actions, risk bids, Focus, Momentum spends, inter-station help, hazard responses, consequences, and final outcomes.
 - The system should make player-driven ship actions mechanically meaningful while leaving pacing, story emphasis, and event curation in the GM's hands.
 
 ## Numbering rules
@@ -29,56 +47,93 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - A system can be `missing`, `partial`, `foundation-complete`, or `closeout-needed`.
 - Prefer small smoke-first PRs.
 - Every runtime feature needs a focused smoke and aggregate Travel v2 smoke wiring.
+- Alpha work should map back to `docs/TRAVEL_V2_ALPHA_GOAL.md`.
+
+## Alpha blocker summary
+
+These are the current implementation areas that most directly block the locked Travel Alpha goal:
+
+- TV2-002 — Inter-Station Help.
+- TV2-003 — Player-Chosen Round Action Order UX polish.
+- TV2-004 — Risk Bids / Difficulty Bids.
+- TV2-005 — Risk Bid Result Pipeline.
+- TV2-006 — Momentum Spend Catalog.
+- TV2-007 — Hazard Mechanical Completion.
+- TV2-008 — Consequence Queue Expansion.
+- TV2-009 — Explicit GM Persistent Apply Foundation.
+- TV2-010 — Station Action Card Runtime.
+- TV2-011 — Station Benefit Card Runtime.
+- TV2-012 — Risk Bid Card Runtime.
+- TV2-016 — Gold-Standard Encounter Sample, now expanded to two alpha events by `TRAVEL_V2_ALPHA_GOAL.md`.
+- TV2-018 — Visible Stakes Runtime.
+- TV2-019 — Narration Hook Assembly.
+- TV2-020 — Final Outcome and Aftermath Expansion.
+- TV2-021 — Player HUD Polish.
+- TV2-022 — GM Pending Decisions UI.
+- TV2-023 — End-to-End Table Test Scenario.
+- TV2-024 — Safety / Leak / Mutation Audit.
+- TV2-026 — Core Gameplay Loop Closeout.
+- TV2-028 — Crew / Station Assignment and Role Ownership.
+- TV2-029 — Player Decision Prompt Flow.
+- TV2-032 — Reward / Discovery / Clue Runtime.
+
+Post-alpha items should not delay the two-event alpha loop unless a specific alpha dependency is identified.
 
 ## Open numbered issues
 
 ### TV2-001 — Phase 8D Dev Tools and Resolution Dialogs
 
-**Status:** partial
+**Status:** foundation-complete / closeout-needed  
+**Scope:** Alpha support
 
 **Goal:** Complete the GM-facing development and resolution workflow.
 
+**Current note:** Dev tools, dialog-state helpers, session-local forcing, debug report support, and sample setup have foundation coverage. Treat this as Foundry usability closeout, not a rebuild.
+
 **Remaining work:**
 
-- GM-only dev tools panel gated by `arcflight.enableTravelV2DevTools`.
-- Dev buttons for deterministic test setup and session-local forcing.
-- Round Resolution dialog/window.
-- End-of-Event Resolution dialog/window.
-- Live completed-session shape support using `status`, `completedAt`, `summary`, and `roundResults`.
-- Copy Travel v2 Debug Report action.
-- Full smoke coverage for visibility, GM-only gating, no accidental mutation, dialog state, and debug report keys.
+- Verify GM-only dev tools panel behavior in Foundry.
+- Verify Round Resolution dialog/window opens cleanly from the runner.
+- Verify End-of-Event Resolution dialog/window opens cleanly from the runner.
+- Verify live completed-session shape support using `status`, `completedAt`, `summary`, and `roundResults`.
+- Verify Copy Travel v2 Debug Report action.
+- Finish smoke coverage for visibility, GM-only gating, no accidental mutation, dialog state, and debug report keys.
 
 **Safety:** No actor, item, effect, journal, chat, socket, or world mutation without explicit GM confirmation.
 
 ### TV2-002 — Station Combo / Inter-Station Help
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
-**Goal:** Let stations create benefits for other stations and make round order matter beyond narration.
+**Goal:** Let stations create benefits for other stations and make station order matter beyond narration.
+
+**Alpha alignment:** Inter-Station Help must be visible as its own gameplay system. Under the hood it may reuse the pending station benefit queue, but the player-facing flow should read as help created by earlier stations and consumed by later stations.
 
 **Remaining work:**
 
-- Define station-to-station help lanes.
-- Let earlier stations create pending benefits for later stations.
+- Define event-authored help actions.
+- Let earlier stations create pending benefits for any later station in the same round.
 - Let later stations consume queued benefits through the existing station benefit review path.
-- Add smoke coverage for creation, queueing, visibility, use, expiration, and player-safe state.
-
-**Examples:**
-
-- Engineer stabilizes the Arkengine to help Navigator.
-- Watchmaster spots a route threat to help Captain or Veilwarden.
-- Veilwarden shields the ship to reduce hazard impact.
-- Captain coordinates a later station action.
+- Support critical-success stronger or automatic benefits where authored.
+- Support critical-failure backlash.
+- Add smoke coverage for creation, queueing, visibility, use, expiration, backlash, and player-safe state.
 
 ### TV2-003 — Player-Chosen Round Action Order UX Polish
 
-**Status:** foundation-complete / polish remaining
+**Status:** foundation-complete / polish remaining  
+**Scope:** Alpha blocker
 
 **Goal:** Make the already-smoke-covered round action order path table-ready.
 
+**Alpha alignment:** Station order is chosen before Round 1, remains fixed for the event unless the GM unlocks it, and determines which stations can help later stations.
+
 **Remaining work:**
 
-- Player-facing polish for selecting/reviewing round action order.
+- Player-facing polish for selecting/reviewing station order before Round 1.
+- GM drag/reorder support where available.
+- GM lock/unlock support.
+- Captain final-say guidance text when players cannot agree.
 - Clear GM/player labels for committed vs proposed order.
 - Final UX check for startup, saved-session loading, switching, library row status, and persistence.
 
@@ -86,80 +141,98 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-004 — Risk Bids / Difficulty Bids
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Alpha blocker
 
 **Goal:** Add authored fixed-DC risk bids declared before a station roll.
+
+**Alpha alignment:** Risk bid values are locked as `+2`, `+5`, and `+8`. Risk bids cost nothing up front; the cost is increased danger.
 
 **Remaining work:**
 
 - Add deterministic risk bid data model.
-- Support fixed bid tiers such as `+2`, `+5`, and `+10`.
+- Support fixed bid tiers `+2`, `+5`, and `+8`.
 - Attach risk bids to station actions or encounter context.
-- Present risk bid choices before rolling.
+- Present risk bid choices before rolling and before consequences are known.
+- Support station-flavored bid names and text.
 - Store selected bid in session-local roll context.
 - Smoke no freeform arbitrary bid values.
 
-**Safety:** Risk bids must not mutate actors directly. They create session-local benefits, consequences, Momentum, hazards, or modifiers through reviewed paths.
+**Safety:** Risk bids must not mutate actors directly. They create session-local benefits, consequences, Momentum, hazards, pressure, scars, or modifiers through reviewed paths.
 
 ### TV2-005 — Risk Bid Result Pipeline
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Alpha blocker
 
 **Goal:** Resolve risk bid outcomes into reviewed Travel v2 effects.
 
 **Remaining work:**
 
-- Critical success: stronger benefit, Momentum, or major progress.
+- Critical success: stronger benefit, Momentum, major progress, or improved reward.
 - Success: selected benefit or progress.
-- Failure: consequence candidate, pressure, hazard progress, or complication.
-- Critical failure: stronger consequence, hazard escalation, ship scar candidate, or pressure spike.
+- Failure: consequence candidate, pressure, hazard progress, station complication, or next-round difficulty.
+- Critical failure: stronger consequence, hazard escalation, ship scar candidate, severe pressure spike, or additional hazard.
+- Make `+8` failures meaningfully dangerous.
 - Smoke all four result bands.
 
 ### TV2-006 — Momentum Spend Catalog
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
 **Goal:** Turn Momentum from a tracked resource into a meaningful player/GM decision system.
 
+**Alpha alignment:** Momentum is shared by the crew, tied to the ship actor where practical, visible to players, and resets at event end.
+
 **Remaining work:**
 
-- Define spend options.
-- Add review/apply flow for Momentum spends.
+- Define alpha spend options.
+- Add review/apply flow for Momentum spends where needed.
 - Integrate with risk bids, hazards, station benefits, pressure prevention, and final outcome adjustment.
-- Smoke player-safe preview, GM approval, no duplicate spend, and no silent mutation.
+- Support GM-awarded Momentum for excellent roleplay or clever planning.
+- Smoke player-safe preview, no duplicate spend, event-end reset, and no silent mutation.
 
-**Candidate spends:**
+**Candidate alpha spends:**
 
-- Add +1 or +2.
-- Upgrade a benefit.
-- Downgrade a failure.
-- Late assist.
-- Suppress a hazard.
-- Prevent or reduce pressure.
-- Improve final outcome package.
+- Reveal clearer hidden hazard tell.
+- Suppress a hazard effect.
+- Improve a benefit.
+- Add limited bonus where allowed.
+- Prevent or reduce pressure where allowed.
 
 ### TV2-007 — Hazard Mechanical Completion
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
 **Goal:** Make hazards change gameplay, not just display as pressure or flavor.
 
+**Alpha alignment:** Each alpha event should have one authored main evolving hazard and optional event-tagged secondary hazards. Six hazard forms should be covered across alpha work.
+
 **Remaining work:**
 
-- Option lockouts.
-- Focus suppression application.
+- Station modifier hazards.
+- Station lockout hazards.
+- Countdown hazards.
+- Pressure cascade hazards.
+- Response action hazards.
+- Consequence or scar handoff hazards.
+- Focus suppression application if still compatible with the locked Focus rule.
 - Response action execution.
 - Clear/suppress/resolve lifecycle.
 - Countdown and duration handling.
 - Unresolved consequence handoff.
 - Escalation to ship scar or other reviewed consequences.
 - Persistence and reload behavior.
+- Hidden hazard tells and Momentum reveal support.
 
 **Do not rebuild:** Hazard deck registry, picker, runtime selection, draw review, handoff review, candidate controls, lifecycle display, response action wiring, and station impact reviews already have foundation coverage.
 
 ### TV2-008 — Consequence Queue Expansion
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
 **Goal:** Unify how consequences enter review from multiple Travel v2 systems.
 
@@ -168,15 +241,19 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Feed consequence candidates from risk bids.
 - Feed consequence candidates from unresolved hazards.
 - Feed consequence candidates from pressure overflow or severe pressure events.
-- Feed consequence candidates from Focus/Support backlash.
+- Feed consequence candidates from Focus backlash.
+- Feed consequence candidates from inter-station help backlash.
 - Feed consequence candidates from final outcome packages.
 - Smoke queueing, dedupe, player-safe preview, GM approve/dismiss/defer, and persistence boundaries.
 
 ### TV2-009 — Explicit GM Persistent Apply Foundation
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
 **Goal:** Create a strict, reusable framework for all persistent Travel v2 mutations.
+
+**Alpha alignment:** Apply-to-ship requires a final GM confirmation summary and creates an audit/history record for later Voyage Log use.
 
 **Remaining work:**
 
@@ -184,26 +261,33 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Standard mutation audit record.
 - Standard no-op / blocked reason handling.
 - Standard actor/item/world mutation boundary.
+- Standard final confirmation summary.
 - Standard smoke for no chat/journal/socket side effects unless explicitly requested.
 
 **Do not rebuild:** Actor application bridge exists; this is the broader safe apply framework around it.
 
 ### TV2-010 — Station Action Card Runtime
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Consume authored station action cards during Travel v2 runtime.
+
+**Alpha alignment:** Players discuss station actions openly, then lock their actions before station-by-station resolution. A locked action cannot be changed because another station rolled well or badly.
 
 **Remaining work:**
 
 - Load station action card definitions from encounter/content data.
 - Present available station actions by station and round context.
-- Attach rolls, DCs, risk bids, success bands, benefit hooks, and consequence hooks.
-- Smoke schema compatibility, invalid-card rejection, and player-safe projections.
+- Attach rolls, DCs, risk bids, Focus availability, success bands, benefit hooks, and consequence hooks.
+- Add action lock-in state.
+- Add action-specific vignette text on player station cards.
+- Smoke schema compatibility, invalid-card rejection, lock-in behavior, and player-safe projections.
 
 ### TV2-011 — Station Benefit Card Runtime
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Make authored station benefit cards flow through the existing pending-benefit queue and review/use path.
 
@@ -212,25 +296,30 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Consume benefit card definitions.
 - Create pending benefits from station action outcomes.
 - Let later stations review/use benefits.
+- Support critical success stronger/automatic benefit rules.
 - Expire or carry benefits based on card rules.
 - Smoke lifecycle and no duplicated use.
 
 ### TV2-012 — Risk Bid Card Runtime
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Alpha blocker
 
 **Goal:** Make authored risk bid cards available to station action runtime.
 
 **Remaining work:**
 
 - Define/import risk bid card schema.
+- Support fixed bid tiers `+2`, `+5`, and `+8`.
 - Attach allowed bids to station actions or encounter context.
 - Enforce fixed DC increases.
+- Add station-flavored labels and text.
 - Resolve bid outcomes through TV2-005.
 
 ### TV2-013 — Encounter Template Preview and Runtime
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha support
 
 **Goal:** Support complete authored Travel v2 encounter templates from content packs.
 
@@ -239,12 +328,15 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Define encounter template shape.
 - Preview encounter template in Foundry.
 - Start runtime session from template.
+- Validate minimum 3 and maximum 12 rounds.
+- Validate all five core stations are present for playable alpha events.
 - Validate rounds, stations, hazards, consequences, rewards, follow-ups, and aftermath.
 - Smoke malformed template rejection and safe import.
 
 ### TV2-014 — ChatGPT Content Builder Export Contract
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Post-alpha unless needed by alpha event authoring
 
 **Goal:** Establish a reliable two-GPT authoring flow.
 
@@ -257,7 +349,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-015 — Content Pack Validator and Safe Import/Export
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha support / post-alpha expansion
 
 **Goal:** Make Travel v2 content packs safe to author, validate, import, export, and select at runtime.
 
@@ -272,16 +365,20 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-016 — Gold-Standard Encounter Sample
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Alpha blocker
 
-**Goal:** Create one complete Travel v2 encounter that proves the whole system works as intended.
+**Goal:** Create complete Travel v2 encounters that prove the whole system works as intended.
+
+**Alpha alignment:** The locked alpha goal expands this from one sample encounter to two playable alpha events: updated `The Lantern in the Static` and a second physical/voidfaring event such as `Shattered Chain Drift`.
 
 **Must include:**
 
 - Stakes.
 - Station actions.
 - Risk bids.
-- Station benefits.
+- Focus.
+- Station benefits / Inter-Station Help.
 - Hazards.
 - Consequences.
 - Momentum.
@@ -291,7 +388,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-017 — Expanded Content Packs
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Post-alpha
 
 **Goal:** Build enough authored cards and encounters to make Travel v2 feel rich at the table.
 
@@ -306,35 +404,54 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-018 — Visible Stakes Runtime
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Give players and GM a clear view of what is at stake before and during each event.
+
+**Alpha alignment:** Players see general event stakes at setup and sharper round-specific stakes as the event unfolds.
 
 **Remaining work:**
 
 - Stakes card projection.
+- Crisis summary.
+- Threatened resource summary.
 - Risk/reward/consequence summary.
+- Round count display.
+- Known hazards or suspicious tells.
 - Player-safe state.
+- GM-only hidden hazard state.
 - Integration with final outcome and aftermath.
 
 ### TV2-019 — Narration Hook Assembly
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
 **Goal:** Assemble narration from the actual mechanics that happened.
+
+**Alpha alignment:** Travel Alpha uses one official dynamic vignette between rounds, assembled from results, with mechanical callouts immediately below it. GM can edit the official vignette before showing it.
 
 **Remaining work:**
 
 - Include station order.
+- Include best station result.
+- Include worst station result.
 - Include assists and station benefits.
 - Include risk bids.
 - Include hazards and consequences.
+- Include hidden hazard tells when applicable.
 - Include Momentum spends.
+- Include pressure/resource changes.
+- Include next-round hook.
 - Avoid repetitive station-result prose.
+- Add GM edit-before-show flow.
+- Add mechanical callouts below prose.
 
 ### TV2-020 — Final Outcome and Aftermath Expansion
 
-**Status:** partial
+**Status:** partial  
+**Scope:** Alpha blocker
 
 **Goal:** Make event completion produce a useful aftermath package.
 
@@ -344,27 +461,35 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Summarize unresolved hazards.
 - Summarize consequences.
 - Summarize rewards, clues, route advantages, and follow-ups.
+- Summarize scars and pressure changes.
 - Integrate with End-of-Event Resolution dialog.
+- Preserve rewards both in completed event records and attached to the ship where useful.
 
 ### TV2-021 — Player HUD Polish
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Make the player-facing Travel v2 UI clear, safe, and table-ready.
+
+**Alpha alignment:** Players see their station, current action choices, action-specific vignette, allowed risk bid options, help options, Focus availability, roll button, allowed Momentum options, shared Momentum, and immediate round context.
 
 **Remaining work:**
 
 - Player-safe HUD state.
 - Current station/action context.
+- Action-specific vignette.
 - Help/benefit availability.
 - Risk bid selection state.
+- Focus availability and spent state.
 - Momentum visibility.
-- Hazard visibility.
-- Consequence visibility.
+- Hazard visibility for revealed hazards.
+- No GM-only consequence queue, hidden hazards, unrevealed backlash, internal scoring, debug reports, future triggers, or hidden consequence trees.
 
 ### TV2-022 — GM Pending Decisions UI
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Give the GM one unified queue for unresolved Travel v2 decisions.
 
@@ -373,13 +498,17 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Pending consequences.
 - Pending station benefits.
 - Pending hazards.
-- Pending Momentum spend reviews.
+- Pending Momentum spend reviews where required.
+- Pending Focus backlash.
+- Pending help backlash.
 - Pending outcome package changes.
 - Approve/dismiss/defer/use controls.
+- Player-safe boundaries.
 
 ### TV2-023 — End-to-End Table Test Scenario
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Alpha blocker
 
 **Goal:** Create a full scripted scenario for manual Foundry testing.
 
@@ -388,16 +517,18 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Setup instructions.
 - Sample ship.
 - Sample crew/stations.
-- Sample event.
+- Two alpha events.
 - Expected round-by-round decisions.
+- Expected risk bid, Focus, Momentum, help, and hazard interactions.
 - Expected final outcome.
 - Smoke/manual acceptance checklist.
 
 ### TV2-024 — Safety / Leak / Mutation Audit
 
-**Status:** closeout-needed
+**Status:** closeout-needed  
+**Scope:** Alpha blocker
 
-**Goal:** Audit Travel v2 before beta for player-safe output and mutation boundaries.
+**Goal:** Audit Travel v2 before any beta-style release for player-safe output and mutation boundaries.
 
 **Remaining work:**
 
@@ -406,12 +537,16 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Actor/item/world mutation audit.
 - Chat/journal/socket side-effect audit.
 - Persistence/reload audit.
+- Verify no silent mutation from rolls, risk bids, Focus, Momentum, hazards, outcomes, or completion.
 
 ### TV2-025 — Beta Readiness Pass
 
-**Status:** final
+**Status:** final  
+**Scope:** Post-alpha
 
 **Goal:** Prepare Travel v2 for a beta-style release.
+
+**Roadmap alignment:** Do not begin real beta work until Travel Alpha, Combat Alpha, and Upgrade / Progression Alpha are all playable according to `ARCFLIGHT_ALPHA_PILLAR_ROADMAP.md`.
 
 **Remaining work:**
 
@@ -424,30 +559,37 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-026 — Core Gameplay Loop Closeout
 
-**Status:** closeout-needed
+**Status:** closeout-needed  
+**Scope:** Alpha blocker
 
 **Goal:** Prove Travel v2 feels like a complete gameplay loop instead of a set of disconnected helpers.
 
-**Must prove one complete event includes:**
+**Must prove two complete alpha events include:**
 
 - Visible stakes.
 - Player-owned station order.
 - Station action choices.
+- Action lock-in.
 - Inter-station help.
 - Risk bids.
+- Focus.
 - Momentum spend.
 - Active hazard interaction.
 - Consequence queue review.
 - Round Resolution flow.
 - End-of-Event Resolution flow.
 - Explicit GM apply.
+- Audit/history record.
 - Aftermath, rewards, and follow-ups.
 
 ### TV2-027 — Voyage Route / Event Chain Frame
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Post-alpha
 
 **Goal:** Add the voyage layer above individual Travel v2 events.
+
+**Roadmap alignment:** This is not part of the two-event Travel Alpha blocker set unless a narrow handoff is needed for event rewards/follow-ups.
 
 **Remaining work:**
 
@@ -459,31 +601,35 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-028 — Crew / Station Assignment and Role Ownership
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Make it clear who owns each station at the table.
 
 **Remaining work:**
 
 - Assign player/actor/NPC crew to Navigator, Engineer, Veilwarden, Watchmaster, Captain, and any future stations.
-- Handle missing stations.
-- Handle duplicate or substitute stations.
+- Handle missing stations safely.
+- Handle duplicate or substitute stations safely.
 - Show who is up next.
 - Preserve player-safe output.
 - Smoke assignment, reassignment, missing station fallback, and saved-session reload.
 
 ### TV2-029 — Player Decision Prompt Flow
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Alpha blocker
 
 **Goal:** Guide players through station decisions instead of making the GM manually ask every question.
 
 **Prompt chain:**
 
 - Choose station action.
-- Choose optional risk bid.
-- Choose whether to use queued help.
-- Choose Momentum spend.
+- Lock station action.
+- Choose optional risk bid if the action allows it.
+- Choose whether to spend Focus if the action allows it.
+- Choose whether to use queued help if available.
+- Choose Momentum spend if allowed.
 - Roll/resolve.
 - Choose response action if a hazard triggers.
 
@@ -491,7 +637,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-030 — Between-Round / Between-Event Recovery
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Post-alpha unless an alpha event explicitly uses it
 
 **Goal:** Define what recovery and maintenance look like during a voyage.
 
@@ -505,7 +652,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-031 — Failure / Retreat / Abort Flow
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha support / post-alpha expansion
 
 **Goal:** Make bad outcomes playable instead of letting the event simply stop.
 
@@ -522,7 +670,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-032 — Reward / Discovery / Clue Runtime
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha blocker
 
 **Goal:** Give players positive mechanical and story reasons to engage with Travel v2.
 
@@ -541,7 +690,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-033 — Travel Event Selection / Trigger Runtime
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Post-alpha
 
 **Goal:** Support both GM-authored event triggers and random/weighted event selection.
 
@@ -558,7 +708,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-034 — GM Voyage Director Tools
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Post-alpha
 
 **Goal:** Keep the GM present as storyteller and pacing director while the players drive ship actions.
 
@@ -574,7 +725,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-035 — GM Override / Edit Tools
 
-**Status:** missing / partial
+**Status:** missing / partial  
+**Scope:** Alpha support / post-alpha expansion
 
 **Goal:** Give the GM safe live-table correction tools that are distinct from dev/test tools.
 
@@ -591,7 +743,8 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ### TV2-036 — Tutorial / Table Onboarding
 
-**Status:** missing
+**Status:** missing  
+**Scope:** Post-alpha
 
 **Goal:** Make Travel v2 usable without the GM explaining every button and term live.
 
@@ -601,6 +754,7 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 - Player quickstart.
 - Station role summary.
 - Risk bid explanation.
+- Focus explanation.
 - Momentum explanation.
 - Hazard explanation.
 - Round-end explanation.
