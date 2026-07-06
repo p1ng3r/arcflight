@@ -1,7 +1,7 @@
 import { prepareTravelEventRunnerStateWithTravelV2Preview } from "../helpers/travel-event-runner-v2-preview.js";
 import { prepareTravelEventEffectApplicationState } from "../helpers/travel-event-runner.js";
 import { prepareTravelEventRunnerV2PreviewPanelState } from "./travel-event-runner-v2-preview-panel.js";
-import { prepareTravelV2CompletedSessionHistoryState, prepareTravelV2DevToolsPanelState } from "../helpers/travel-v2-dev-tools.js";
+import { prepareTravelV2CompletedSessionHistoryState } from "../helpers/travel-v2-dev-tools.js";
 import { prepareTravelV2ConsequenceFollowupReview, prepareTravelV2PendingConsequenceQueue } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2HazardDeckPickerUiState } from "../helpers/travel-v2-hazard-deck-picker-ui.js";
 import { prepareTravelV2RuntimeHazardDeckSelectionGmState } from "../helpers/travel-v2-runtime-hazard-deck-selection.js";
@@ -281,16 +281,6 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2HazardCandidateControlAction: uiState.travelV2HazardCandidateControlAction ?? null,
     travelV2HazardCandidateControlNote: uiState.travelV2HazardCandidateControlNote ?? null
   }, { user, includeGmReview: true }) : (uiState.travelV2HazardCandidateControlResult ?? null);
-  const travelV2DevToolsPanel = prepareTravelV2DevToolsPanelState({ isGM: canManageTravelV2Consequences, session, hasSession: state.hasSession });
-  const templateTravelV2DevToolsPanel = canManageTravelV2Consequences
-    ? travelV2DevToolsPanel
-    : Object.freeze({
-      version: travelV2DevToolsPanel.version,
-      isGm: false,
-      enabled: false,
-      visible: false,
-      hasSession: state.hasSession
-    });
   const pendingConsequenceCount = Number(preparedPendingConsequenceQueue.pendingCount) || 0;
   const consequenceFlowReady = state.roundFinalization?.isFinalized === true && pendingConsequenceCount === 0;
   const consequenceFlowBlocked = state.roundFinalization?.isFinalized === true && pendingConsequenceCount > 0;
@@ -315,8 +305,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     isGM: canManageTravelV2Consequences,
     ...(canManageTravelV2Consequences ? { canManageTravelV2Consequences, consequenceFlowReady, consequenceFlowBlocked, consequenceFlowBlockers, consequenceFlowWarningLabel, canReviewConsequences: pendingConsequenceCount > 0, canApplyPendingConsequences: pendingConsequenceCount > 0, canDismissPendingConsequences: pendingConsequenceCount > 0, canAdvanceAfterConsequences: consequenceFlowReady, pendingConsequenceQueue: preparedPendingConsequenceQueue } : {}),
     ...(canManageTravelV2Consequences ? { consequenceFollowupReview: preparedConsequenceFollowupReview, travelV2RuntimeHazardDeckSelection, travelV2HazardDeckPicker, travelV2HazardDrawReview, travelV2ActiveHazardHandoffReview, travelV2HazardCandidateControlResult } : {}),
-    travelV2DevToolsPanel: templateTravelV2DevToolsPanel,
-    travelV2DevToolsEnabled: templateTravelV2DevToolsPanel.visible === true,
+    travelV2DevToolsEnabled: travelV2DevToolsEnabled === true,
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     travelV2RoundActionOrderCommitResult: uiState.travelV2RoundActionOrderCommitResult ?? null,
     travelV2RoundActionOrderPersistResult: uiState.travelV2RoundActionOrderPersistResult ?? null,
