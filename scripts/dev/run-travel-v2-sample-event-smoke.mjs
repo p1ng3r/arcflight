@@ -1,6 +1,10 @@
 import { LANTERN_IN_THE_STATIC_SAMPLE_DRAFT_ID, LANTERN_IN_THE_STATIC_SAMPLE_EVENT } from "../../data/travel-events/sample-travel-v2-events.js";
 import { validateTravelEventDefinition } from "../helpers/travel-events.js";
 import {
+  prepareTravelV2EventSetupStakesState,
+  travelV2PlayerSafeSetupHasForbiddenKeys
+} from "../helpers/travel-v2-event-setup-stakes.js";
+import {
   createLanternInTheStaticSampleDraft,
   loadLanternInTheStaticSampleDraftIntoBuilderLibrary,
   publishTravelEventDraftToLibrary
@@ -30,6 +34,27 @@ export default async function runTravelV2SampleEventSmokeChecks() {
 
   assertSmoke(sample.roundCount === 3 && sample.rounds.length === 3, "sample event should have exactly 3 rounds");
   checked.push("Sample has exactly 3 rounds");
+
+  const setupStakes = prepareTravelV2EventSetupStakesState({ event: sample });
+  assertSmoke(setupStakes.ok, `Lantern setup/stakes projection should validate: ${setupStakes.errors.join("; ")}`);
+  assertSmoke(setupStakes.playerSafe.eventName === "The Lantern in the Static", "Lantern setup should expose player-safe event name");
+  assertSmoke(setupStakes.playerSafe.openingPremise.includes("lantern burns inside silver static"), "Lantern setup should expose player-safe premise");
+  assertSmoke(setupStakes.playerSafe.openingVignette.includes("Silver static"), "Lantern setup should expose player-safe vignette");
+  assertSmoke(setupStakes.playerSafe.roundCount === 3, "Lantern setup should expose valid round count");
+  assertSmoke(["lifeveil", "morale", "strain"].every((resource) => setupStakes.playerSafe.threatenedResources.includes(resource)), "Lantern setup should expose threatened alpha resources");
+  assertSmoke(setupStakes.playerSafe.knownDangers.some((danger) => danger.includes("familiar voices")), "Lantern setup should expose familiar-voice tell");
+  assertSmoke(setupStakes.playerSafe.knownDangers.some((danger) => danger.includes("true flame")), "Lantern setup should expose true-flame possibility");
+  assertSmoke(setupStakes.playerSafe.knownDangers.some((danger) => danger.includes("bait")), "Lantern setup should expose bait suspicion");
+  assertSmoke(setupStakes.playerSafe.broadSuccessReward.includes("route clue"), "Lantern setup should expose broad success reward");
+  assertSmoke(setupStakes.playerSafe.broadFailureDanger.includes("ship scar candidates"), "Lantern setup should expose broad failure danger");
+  assertSmoke(["captain", "navigator", "engineer", "veilwarden", "watchmaster"].every((station) => setupStakes.playerSafe.availableCoreStations.includes(station)), "Lantern setup should expose all alpha core stations");
+  assertSmoke(setupStakes.gmFacing.hiddenHazards.length === 2, "Lantern setup should keep hidden hazards in GM-facing data");
+  const playerSafeJson = JSON.stringify(setupStakes.playerSafe);
+  assertSmoke(!playerSafeJson.includes("Voice-hunting static"), "Lantern player-safe setup should not include hidden hazard names");
+  assertSmoke(!playerSafeJson.includes("Lantern parasite"), "Lantern player-safe setup should not include hidden hazard details");
+  assertSmoke(!playerSafeJson.includes("answered-familiar-order"), "Lantern player-safe setup should not include future trigger data");
+  assertSmoke(!travelV2PlayerSafeSetupHasForbiddenKeys(setupStakes.playerSafe), "Lantern player-safe setup should avoid forbidden player-safe terms");
+  checked.push("Sample setup/stakes projection is player-safe and valid");
 
   for (const round of sample.rounds) {
     assertSmoke(words(round.openingVignette) >= 20, `round ${round.round} should have readable opening vignette`);

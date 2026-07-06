@@ -99,6 +99,29 @@ export const LANTERN_IN_THE_STATIC_SAMPLE_EVENT = deepFreeze({
   baseDC: 18,
   activeResources: ["lifeveil", "morale", "strain"],
   travelStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
+  availableCoreStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
+  setup: {
+    openingPremise: "A lone lantern burns inside silver static ahead, and the static repeats shipboard orders in familiar voices before the crew has spoken them.",
+    openingVignette: "The dead stretch ahead glows with one impossible amber light. Silver static curls around it, throwing back orders in voices the crew almost trusts: brace, turn, answer, come closer."
+  },
+  stakes: {
+    threatenedResources: ["lifeveil", "morale", "strain"],
+    knownDangers: [
+      "The static repeats shipboard orders in familiar voices before the crew speaks.",
+      "The lantern may hold a trapped true flame that wants rescue.",
+      "The silver static may be bait, especially when a warning sounds useful or merciful."
+    ],
+    broadSuccessReward: "Rescue the true flame, gain a route clue, or escape the static with better control of the ship's voice and bearing.",
+    broadFailureDanger: "The crossing may leave occult consequence candidates, pressure on Morale, Lifeveil, or Strain, or ship scar candidates for later review."
+  },
+  gm: {
+    notes: "Keep the sample eerie and player-led. Use the setup preview to frame stakes, then reveal deeper mechanics only through normal round play.",
+    hiddenHazards: [
+      { name: "Voice-hunting static", detail: "The lure is more dangerous when the crew treats every familiar order as safe." },
+      { name: "Lantern parasite", detail: "The predator is wrapped around the trapped flame rather than identical to it." }
+    ],
+    futureTriggers: ["answered-familiar-order", "rescued-true-flame", "escaped-with-static-trace"]
+  },
   openingVignette: "The ship crosses a dead stretch of void where a lone lantern burns inside a cloud of silver static. It is not a ship, not a star, and not quite a ghost. As the crew approaches, the static repeats fragments of shouted orders before anyone has spoken them. Something inside the lantern wants to be rescued; something wrapped around it wants the crew to answer.",
   description: "A three-round occult void-sailing encounter for testing the Travel v2 builder-to-runner workflow. The crew must keep command of their own voices, sort truth from familiar bait, and escape or rescue the lantern without letting the thing around it claim the Lifeveil.",
   gmSummary: "Run this as eerie, adventurous Arkflight travel rather than combat. Let each station describe how the crew resists the static, then use the round transition text to braid those actions into table-ready narration. Consequences should remain fictional or staged for GM review; this sample creates no actors, items, chat messages, journals, sockets, sessions, or automatic effects.",
