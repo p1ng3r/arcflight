@@ -68,6 +68,7 @@ import runTravelV2ResponseActionResolutionReviewSmokeChecks from "../helpers/tra
 import runTravelV2StationImpactModifierReviewSmokeChecks from "../helpers/travel-v2-station-impact-modifier-review.smoke.js";
 import runTravelV2PendingStationBenefitQueueSmokeChecks from "../helpers/travel-v2-pending-station-benefit-queue.smoke.js";
 import runTravelV2StationBenefitUseReviewSmokeChecks from "../helpers/travel-v2-station-benefit-use-review.smoke.js";
+import runTravelV2EventSetupStakesSmokeChecks from "../helpers/travel-v2-event-setup-stakes.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -139,7 +140,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 response action resolution review", runTravelV2ResponseActionResolutionReviewSmokeChecks],
   ["Travel v2 station impact modifier review", runTravelV2StationImpactModifierReviewSmokeChecks],
   ["Travel v2 pending station benefit queue", runTravelV2PendingStationBenefitQueueSmokeChecks],
-  ["Travel v2 station benefit use review", runTravelV2StationBenefitUseReviewSmokeChecks]
+  ["Travel v2 station benefit use review", runTravelV2StationBenefitUseReviewSmokeChecks],
+  ["Travel v2 event setup stakes", runTravelV2EventSetupStakesSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
