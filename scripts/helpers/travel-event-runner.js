@@ -3085,17 +3085,124 @@ function preparePlayerSafeRunnerSession(session = null, options = {}) {
 }
 
 
+function formatTravelEventRunnerStationActionLockValidationMessage(entry = {}) {
+  if (typeof entry === "string") return entry;
+  if (typeof entry?.message === "string" && entry.message.trim()) return entry.message.trim();
+
+  const stationKey = typeof entry?.stationKey === "string" ? entry.stationKey : "";
+  const stationLabel = stationKey ? stationKey.replace(/[-_]+/g, " ") : "Station";
+
+  switch (entry?.code) {
+    case "invalidStationKey":
+      return `Invalid station key: ${stationKey || "unknown"}.`;
+    case "missingRequiredStation":
+      return `Required station is missing: ${stationKey || "unknown"}.`;
+    case "missingStationAction":
+      return `${stationLabel}: missing station action.`;
+    case "stationActionUnlocked":
+      return `${stationLabel}: station action must be locked before resolution.`;
+    case "resolveBeforeLockIn":
+      return "Attempted resolution before lock-in: all required station actions must be selected and locked before resolution.";
+    default:
+      return "Station action lock-in is not ready.";
+  }
+}
+
+function formatTravelEventRunnerStationActionLabel(action = null) {
+  if (!action) return "No action selected";
+  if (typeof action.label === "string" && action.label.trim()) return action.label.trim();
+  if (typeof action.name === "string" && action.name.trim()) return action.name.trim();
+  if (typeof action.actionLabel === "string" && action.actionLabel.trim()) return action.actionLabel.trim();
+  if (typeof action.actionKey === "string" && action.actionKey.trim()) return action.actionKey.trim();
+  if (typeof action.key === "string" && action.key.trim()) return action.key.trim();
+  return "Selected action";
+}
+
+function formatTravelEventRunnerStationName(stationKey = "") {
+  return stationKey
+    ? stationKey.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "Station";
+}
+
+function prepareTravelEventRunnerStationActionLockInRenderState(helperState = {}) {
+  const ready = helperState.readyToResolve === true || helperState.ready === true;
+  const stationRows = Array.isArray(helperState.stations)
+    ? helperState.stations
+    : (helperState.stations && typeof helperState.stations === "object" ? Object.values(helperState.stations) : []);
+
+  const rows = stationRows.map((row) => {
+    const action = row.action ?? null;
+    const stationKey = row.stationKey ?? action?.stationKey ?? "";
+    const actionKey = action?.actionKey ?? action?.key ?? "";
+    const locked = row.locked === true;
+
+    return {
+      stationKey,
+      stationName: formatTravelEventRunnerStationName(stationKey),
+      stationPresent: true,
+      action,
+      actionKey,
+      actionLabel: formatTravelEventRunnerStationActionLabel(action),
+      hasAction: Boolean(action),
+      locked,
+      lockState: locked ? "locked" : "unlocked",
+      lockStateLabel: locked ? "Locked" : "Unlocked",
+      readinessLabel: action && locked ? "Ready" : "Not ready",
+      message: !action ? "No action selected." : (!locked ? "Must be locked before resolution." : "Ready.")
+    };
+  });
+
+  const validationMessages = Array.isArray(helperState.validationErrors)
+    ? helperState.validationErrors.map(formatTravelEventRunnerStationActionLockValidationMessage)
+    : [];
+
+  return {
+    ...helperState,
+    rows,
+    ready,
+    statusLabel: ready ? "Ready to resolve" : "Not ready to resolve",
+    readinessText: ready
+      ? "Ready to resolve: all required station actions are selected and locked."
+      : "Not ready: all required station actions must be selected and locked before resolution.",
+    validationMessages,
+    hasValidationMessages: validationMessages.length > 0,
+    blockedReason: ready ? "" : "Resolution requires all required station actions to be selected and locked."
+  };
+}
+
 function prepareTravelEventRunnerStationActionLockInState(session = null, currentRound = null, currentRoundResult = null, options = {}) {
   const requiredStationKeys = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
-  const source = {
-    activeStations: Array.isArray(currentRound?.activeStations) ? currentRound.activeStations : [],
-    stationActions: currentRoundResult?.stationActions ?? {},
-    stationOrderCommitments: currentRoundResult?.stationOrderCommitments ?? {}
-  };
-  const helperOptions = { ...options, requiredStationKeys };
-  return completionChecklistUserIsGm(options)
+  const stationOrder = Array.isArray(currentRound?.activeStations) && currentRound.activeStations.length > 0
+    ? currentRound.activeStations
+    : requiredStationKeys;
+
+  const stationActions = currentRoundResult?.stationActions ?? {};
+  const stationOrderCommitments = currentRoundResult?.stationOrderCommitments ?? {};
+
+  const stations = Object.fromEntries(stationOrder.map((stationKey) => {
+    const actionChoice = stationActions?.[stationKey] ?? {};
+    const commitment = stationOrderCommitments?.[stationKey] ?? {};
+    const locked = commitment?.committed === true || commitment?.locked === true || actionChoice?.locked === true;
+
+    return [
+      stationKey,
+      {
+        ...actionChoice,
+        actionKey: actionChoice?.actionKey ?? actionChoice?.key ?? actionChoice?.type ?? actionChoice?.action ?? "",
+        label: actionChoice?.label ?? actionChoice?.actionLabel ?? actionChoice?.name ?? "",
+        locked
+      }
+    ];
+  }));
+
+  const helperOptions = { ...options, requiredStationKeys, stationOrder };
+  const source = { stationOrder, activeStations: stationOrder, stations };
+
+  const helperState = completionChecklistUserIsGm(options)
     ? prepareGmTravelV2StationActionLockState(source, helperOptions)
     : preparePlayerSafeTravelV2StationActionLockState(source, helperOptions);
+
+  return prepareTravelEventRunnerStationActionLockInRenderState(helperState);
 }
 
 export function prepareTravelEventRunnerState(session = null, options = {}) {

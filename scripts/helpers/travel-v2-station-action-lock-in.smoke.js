@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import {
   checkTravelV2StationActionLockInReady,
   lockTravelV2StationAction,

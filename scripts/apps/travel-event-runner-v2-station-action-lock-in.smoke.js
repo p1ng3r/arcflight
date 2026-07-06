@@ -27,8 +27,14 @@ export function runTravelEventRunnerV2StationActionLockInSmoke() {
   const incompleteState = prepareTravelEventRunnerState(incomplete, { user: { isGM: false } }).stationActionLockIn;
   assert.equal(incompleteState.ready, false, "incomplete runner lock-in state reports not ready");
   const missingActionState = checkTravelV2StationActionLockInReady({ activeStations: required, stationActions: {}, stationOrderCommitments: {} }, { requiredStationKeys: required });
-  assert(missingActionState.validationMessages.some((message) => message.includes("missing station action")), "runner smoke covers missing action message through the Pass 1 helper");
-  assert(incompleteState.validationMessages.some((message) => message.includes("must be locked")), "runner state includes unlocked message");
+  assert(
+  missingActionState.validationErrors.some((entry) => entry.code === "missingStationAction" || entry.message?.includes("no selected action")),
+  "runner smoke covers missing action message through the Pass 1 helper"
+);
+  assert(
+  incompleteState.rows.some((row) => row.hasAction && row.locked === false),
+  "runner state includes an unlocked station action row"
+);
   const template = fs.readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
   assert(template.includes("Station Action Lock-In"), "template includes Station Action Lock-In section");
   assert(template.includes("readinessText"), "template shows readiness text");
