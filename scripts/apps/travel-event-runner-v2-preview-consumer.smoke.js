@@ -23,6 +23,11 @@ function createRunnerEventFixture() {
     name: "V2 App Preview Test",
     category: "navigation",
     baseDC: 20,
+    roundCount: 4,
+    availableCoreStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
+    setup: { openingPremise: "A lantern burns inside silver static ahead.", openingVignette: "Static ripples across the bow." },
+    stakes: { threatenedResources: ["lifeveil", "morale"], knownDangers: ["Known danger: the static repeats shipboard orders.", "Suspicious tell: the lantern answers too quickly."], broadSuccessReward: "A route clue becomes clear.", broadFailureDanger: "An occult scar may follow the ship." },
+    gm: { notes: "GM note stays separate.", hiddenHazards: [{ name: "Voice Thief" }], futureTriggers: ["answered-voice"], internalScoring: { failures: 0 } },
     rounds: [
       {
         roundNumber: 1,
@@ -48,6 +53,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(!emptyState.hasSession, "empty app state should have no session");
   assertSmoke(emptyState.travelV2Preview, "empty app state should expose preview object");
   assertSmoke(emptyState.travelV2PreviewPanel, "empty app state should expose preview panel object");
+  assertSmoke(emptyState.travelV2SetupStakes?.hasSession === false, "empty app state should mark setup stakes as non-renderable without a session");
   assertSmoke(!emptyState.travelV2PreviewPanel.available, "empty preview panel should be unavailable");
   assertEqual(emptyState.compactRoundLabel, "No active round", "empty app state should keep compact label fallback");
   assertEqual(emptyState.guidedBridge.nextRequiredAction.title, "Start Travel Session", "empty guided bridge should require starting a session");
@@ -71,6 +77,17 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(state.compactRunner, true, "app state should preserve compact UI setting");
   assertEqual(state.compactRoundLabel, "Round 1", "app state should preserve compact round label behavior");
   assertEqual(state.guidedBridge.nextRequiredAction.title, "Send / Refresh Player HUD", "fresh session should guide GM to refresh player HUD/cards");
+  assertSmoke(state.travelV2SetupStakes.ok, "runner render state should include valid setup stakes");
+  assertEqual(state.travelV2SetupStakes.playerSafe.eventName, "V2 App Preview Test", "runner setup state should include event name");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.openingPremise.includes("lantern"), "runner setup state should include opening premise");
+  assertEqual(state.travelV2SetupStakes.playerSafe.roundCount, 4, "runner setup state should include round count");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.threatenedResources.includes("lifeveil"), "runner setup state should include threatened resources");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.knownDangers.some((entry) => entry.includes("Known danger")), "runner setup state should keep known danger prose");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.knownDangers.some((entry) => entry.includes("Suspicious tell")), "runner setup state should keep suspicious tell prose");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.broadSuccessReward.includes("route clue"), "runner setup state should include broad success reward");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.broadFailureDanger.includes("occult scar"), "runner setup state should include broad failure danger");
+  assertSmoke(state.travelV2SetupStakes.playerSafe.availableCoreStations.includes("watchmaster"), "runner setup state should include available core stations");
+  assertSmoke(!JSON.stringify(state.travelV2SetupStakes).includes("Voice Thief") && !JSON.stringify(state.travelV2SetupStakes).includes("GM note"), "non-GM setup state should not expose GM-only setup fields");
 
   const benefitState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
     session: {
@@ -105,7 +122,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(!nonGmReorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready, "non-GM reorder request should be blocked");
   assertEqual(nonGmReorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.proposedRows.length, 0, "non-GM reorder request should redact proposed rows");
 
-  const gmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true } });
+  const gmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() }, user: { isGM: true } });
   assertSmoke(gmState.travelV2GmFlowStatus, "GM app state includes Travel v2 flow status strip");
   assertSmoke(gmState.travelV2GmFlowStatus.currentRoundLabel.includes("Round 1"), "GM flow status has current round label");
   assertSmoke(gmState.travelV2GmFlowStatus.stationResolutionLabel.includes("Stations:"), "GM flow status has station readiness label");
@@ -114,6 +131,17 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(gmState.travelV2GmFlowStatus.advanceLabel.includes("Advance:"), "GM flow status has advance readiness label");
   assertSmoke(gmState.travelV2GmFlowStatus.nextActionLabel, "GM flow status includes next action label");
   assertSmoke(gmState.travelV2GmFlowStatus.disabledActions.advanceRound, "GM flow status includes blocked advance disabled reason");
+  assertSmoke(gmState.travelV2SetupStakes.hasGmFacingNotes, "GM setup state may include separated GM-facing notes");
+  assertSmoke(JSON.stringify(gmState.travelV2SetupStakes.gmFacing).includes("Voice Thief"), "GM setup state retains hidden hazards separately");
+  const invalidRoundSetupState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: { ...createRunnerEventFixture(), roundCount: 2 } }, user: { isGM: false } });
+  assertSmoke(!invalidRoundSetupState.travelV2SetupStakes.ok && invalidRoundSetupState.travelV2SetupStakes.hasValidationMessages, "invalid round count produces safe setup validation state");
+  const missingCoreSetupState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: { ...createRunnerEventFixture(), availableCoreStations: ["captain", "navigator", "engineer", "veilwarden"] } }, user: { isGM: false } });
+  assertSmoke(!missingCoreSetupState.travelV2SetupStakes.ok && missingCoreSetupState.travelV2SetupStakes.validationMessages.includes("Setup is missing an alpha core station."), "missing core station produces safe setup validation state");
+  const leakySetupState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: { ...createRunnerEventFixture(), player: { knownDangers: ["safe suspicious tell", "AuditRecord leak", "gm-only leak", "HIDDEN HAZARD leak", "future trigger leak", "internal scoring leak", "consequence tree leak", "debug report leak"], broadFailureDanger: "SECRET leak" } } }, user: { isGM: false } });
+  assertEqual(leakySetupState.travelV2SetupStakes.playerSafe.knownDangers.length, 1, "case-insensitive and human-readable forbidden setup terms are redacted");
+  assertEqual(leakySetupState.travelV2SetupStakes.playerSafe.broadFailureDanger, "", "case-insensitive forbidden scalar setup terms are redacted");
+  const leakySetupJson = JSON.stringify(leakySetupState.travelV2SetupStakes);
+  for (const forbidden of ["AuditRecord", "gm-only", "HIDDEN HAZARD", "future trigger", "internal scoring", "consequence tree", "debug report", "SECRET"]) assertSmoke(!leakySetupJson.includes(forbidden), `non-GM setup state redacts ${forbidden}`);
 
   const criticalFailure = state.travelV2Preview.rows.find((row) => row.outcomeKey === "criticalFailure");
   assertSmoke(criticalFailure, "critical failure preview row should exist");
@@ -195,6 +223,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(runnerSource.includes("selectAllSingleSuggestionTravelV2PendingConsequences"), "runner imports selectAllSingleSuggestionTravelV2PendingConsequences");
   assertSmoke(runnerSource.includes(`[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`), "RUNNER_CLICK_SELECTOR includes the single-suggestion selection data-action selector");
   const templateSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../templates/apps/travel-event-runner.hbs"), "utf8");
+  assertSmoke(templateSource.includes("{{#if state.travelV2SetupStakes.hasSession}}"), "template gates setup stakes panel on active session setup state");
   assertSmoke(templateSource.includes("state.travelV2GmFlowStatus.showFinalizeRoundAction"), "template gates the GM flow finalize-round button from UI state");
   assertSmoke(templateSource.includes("data-arcflight-travel-v2-round-finalize"), "template renders a button wired to the existing finalize round handler");
   assertSmoke(runnerSource.includes(`target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences"`), "runner keeps the exact single-suggestion selection handler condition");
@@ -213,6 +242,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "consumer-version",
       "empty-app-state",
       "active-app-state",
+      "setup-stakes-render-state",
       "ui-state-preservation",
       "preview-row-exposure",
       "preview-panel-exposure",
