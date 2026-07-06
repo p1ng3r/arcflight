@@ -10,6 +10,17 @@ Travel v2 has substantial foundation coverage already. The aggregate smoke runne
 
 Do not rebuild those foundations unless a new smoke test exposes a narrow bug.
 
+## Gameplay ownership principle
+
+Travel v2 should keep the GM present as voyage director, not replace the GM with an automated board game.
+
+- The GM builds the voyage premise, major story turns, and authored events.
+- The GM may choose specific events to trigger at specific route beats.
+- The GM may also use random or weighted event picks when improvisation is desired.
+- A single voyage can contain multiple Travel v2 events.
+- Player choices on the ship should drive station actions, risk bids, Momentum spends, inter-station help, hazard responses, consequences, and final outcomes.
+- The system should make player-driven ship actions mechanically meaningful while leaving pacing, story emphasis, and event curation in the GM's hands.
+
 ## Numbering rules
 
 - Use `TV2-###` numbers for this document.
@@ -410,6 +421,191 @@ Do not rebuild those foundations unless a new smoke test exposes a narrow bug.
 - Known limitations.
 - Upgrade notes.
 - Release checklist.
+
+### TV2-026 — Core Gameplay Loop Closeout
+
+**Status:** closeout-needed
+
+**Goal:** Prove Travel v2 feels like a complete gameplay loop instead of a set of disconnected helpers.
+
+**Must prove one complete event includes:**
+
+- Visible stakes.
+- Player-owned station order.
+- Station action choices.
+- Inter-station help.
+- Risk bids.
+- Momentum spend.
+- Active hazard interaction.
+- Consequence queue review.
+- Round Resolution flow.
+- End-of-Event Resolution flow.
+- Explicit GM apply.
+- Aftermath, rewards, and follow-ups.
+
+### TV2-027 — Voyage Route / Event Chain Frame
+
+**Status:** missing
+
+**Goal:** Add the voyage layer above individual Travel v2 events.
+
+**Remaining work:**
+
+- Define origin, destination, route, leg, travel day/hex, and arrival state.
+- Allow a voyage to contain multiple Travel v2 events.
+- Track completed, skipped, failed, or deferred events within a voyage.
+- Carry route consequences, advantages, hazards, clues, and detours between events.
+- Smoke event-to-event handoff and no accidental persistence without GM confirmation.
+
+### TV2-028 — Crew / Station Assignment and Role Ownership
+
+**Status:** missing / partial
+
+**Goal:** Make it clear who owns each station at the table.
+
+**Remaining work:**
+
+- Assign player/actor/NPC crew to Navigator, Engineer, Veilwarden, Watchmaster, Captain, and any future stations.
+- Handle missing stations.
+- Handle duplicate or substitute stations.
+- Show who is up next.
+- Preserve player-safe output.
+- Smoke assignment, reassignment, missing station fallback, and saved-session reload.
+
+### TV2-029 — Player Decision Prompt Flow
+
+**Status:** missing
+
+**Goal:** Guide players through station decisions instead of making the GM manually ask every question.
+
+**Prompt chain:**
+
+- Choose station action.
+- Choose optional risk bid.
+- Choose whether to use queued help.
+- Choose Momentum spend.
+- Roll/resolve.
+- Choose response action if a hazard triggers.
+
+**Safety:** Player prompts create session-local requests until the GM confirms reviewed effects.
+
+### TV2-030 — Between-Round / Between-Event Recovery
+
+**Status:** missing / partial
+
+**Goal:** Define what recovery and maintenance look like during a voyage.
+
+**Questions to answer:**
+
+- Can the crew repair between rounds?
+- Can the crew recover Lifeveil, Morale, Supplies, Cargo, Strain, or Hull between events?
+- What actions cost supplies or time?
+- What can happen at port, safe harbor, or after a long rest?
+- Which recovery choices are player-driven and which require GM approval?
+
+### TV2-031 — Failure / Retreat / Abort Flow
+
+**Status:** missing / partial
+
+**Goal:** Make bad outcomes playable instead of letting the event simply stop.
+
+**Remaining work:**
+
+- Abandon route.
+- Retreat.
+- Emergency jump.
+- Fail forward.
+- Ship disabled state.
+- Event transforms into a new problem.
+- GM-approved abort/retreat controls.
+- Smoke early-end, abort, retreat, and fail-forward state.
+
+### TV2-032 — Reward / Discovery / Clue Runtime
+
+**Status:** missing / partial
+
+**Goal:** Give players positive mechanical and story reasons to engage with Travel v2.
+
+**Reward types:**
+
+- Route advantage.
+- Map clue.
+- Faction clue.
+- Salvage.
+- Cargo.
+- Morale gain.
+- Safe harbor.
+- Shortcut.
+- Hazard knowledge.
+- New contact or follow-up.
+
+### TV2-033 — Travel Event Selection / Trigger Runtime
+
+**Status:** missing
+
+**Goal:** Support both GM-authored event triggers and random/weighted event selection.
+
+**Remaining work:**
+
+- GM-selected event trigger.
+- Route-beat trigger.
+- Random event table/deck.
+- Weighted event selection by region, route, danger, biome, faction, or story state.
+- Repeat protection and cooldowns.
+- Event preview before launch.
+- Support multiple events during one voyage.
+- Smoke deterministic random selection and GM-forced event selection.
+
+### TV2-034 — GM Voyage Director Tools
+
+**Status:** missing
+
+**Goal:** Keep the GM present as storyteller and pacing director while the players drive ship actions.
+
+**Remaining work:**
+
+- GM chooses next event from available candidates.
+- GM pins authored events to voyage legs.
+- GM marks story-triggered events.
+- GM mixes random events with curated events.
+- GM adjusts pacing between calm, danger, discovery, social, and crisis beats.
+- GM can defer or replace an event without corrupting voyage/session state.
+- Smoke GM-only visibility and no player leakage of hidden event candidates.
+
+### TV2-035 — GM Override / Edit Tools
+
+**Status:** missing / partial
+
+**Goal:** Give the GM safe live-table correction tools that are distinct from dev/test tools.
+
+**Remaining work:**
+
+- Edit pending consequence.
+- Edit pressure delta.
+- Edit final outcome note.
+- Override blocked reason.
+- Manually add/remove pending benefit.
+- Manually mark hazard resolved.
+- Undo last local step before apply.
+- Smoke GM-only gating, audit record, and no silent mutation.
+
+### TV2-036 — Tutorial / Table Onboarding
+
+**Status:** missing
+
+**Goal:** Make Travel v2 usable without the GM explaining every button and term live.
+
+**Remaining work:**
+
+- GM quickstart.
+- Player quickstart.
+- Station role summary.
+- Risk bid explanation.
+- Momentum explanation.
+- Hazard explanation.
+- Round-end explanation.
+- Event-end explanation.
+- Minimal in-app help text or docs link.
 
 ## Completed / foundation-complete systems
 
