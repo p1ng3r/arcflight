@@ -69,6 +69,8 @@ import runTravelV2StationImpactModifierReviewSmokeChecks from "../helpers/travel
 import runTravelV2PendingStationBenefitQueueSmokeChecks from "../helpers/travel-v2-pending-station-benefit-queue.smoke.js";
 import runTravelV2StationBenefitUseReviewSmokeChecks from "../helpers/travel-v2-station-benefit-use-review.smoke.js";
 import runTravelV2EventSetupStakesSmokeChecks from "../helpers/travel-v2-event-setup-stakes.smoke.js";
+import runTravelV2StationActionLockInSmokeChecks from "../helpers/travel-v2-station-action-lock-in.smoke.js";
+import runTravelEventRunnerV2StationActionLockInSmokeChecks from "../apps/travel-event-runner-v2-station-action-lock-in.smoke.js";
 
 const SMOKE_SUITES = Object.freeze([
   ["Travel v2 state", runTravelV2StateSmokeChecks],
@@ -141,7 +143,9 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 station impact modifier review", runTravelV2StationImpactModifierReviewSmokeChecks],
   ["Travel v2 pending station benefit queue", runTravelV2PendingStationBenefitQueueSmokeChecks],
   ["Travel v2 station benefit use review", runTravelV2StationBenefitUseReviewSmokeChecks],
-  ["Travel v2 event setup stakes", runTravelV2EventSetupStakesSmokeChecks]
+  ["Travel v2 event setup stakes", runTravelV2EventSetupStakesSmokeChecks],
+  ["Travel v2 station action lock-in", runTravelV2StationActionLockInSmokeChecks],
+  ["Travel event runner v2 station action lock-in", runTravelEventRunnerV2StationActionLockInSmokeChecks]
 ]);
 
 function printSuiteResult(label, result) {
