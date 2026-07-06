@@ -350,7 +350,7 @@
           {{/each}}
         {{else}}<p class="arcflight-sheet__hint">No completed Travel v2 runner sessions are saved in the runner library yet.</p>{{/if}}
       </details>
-      {{#if state.travelV2DevToolsEnabled}}<details id="arcflight-guided-devtools" class="arcflight-card-drawer arcflight-gm-only" tabindex="-1"><summary>🧪 Dev Tools</summary><p>GM-only dev tools are gated by travelV2DevToolsEnabled below.</p></details>{{/if}}
+      {{#if state.travelV2DevToolsPanel.visible}}<details id="arcflight-guided-devtools" class="arcflight-card-drawer arcflight-gm-only" tabindex="-1"><summary>🧪 Dev Tools</summary><p>GM-only dev tools are gated by the canonical Travel v2 Dev Tools panel state.</p></details>{{/if}}
       <details class="arcflight-card-drawer arcflight-gm-only"><summary>🔒 Event Schema</summary><p>Future authoring/schema support. GM-only. Category: {{state.guidedBridge.tags.category}} · Level: {{state.guidedBridge.tags.level}} · Severity: {{state.guidedBridge.tags.severity}} · Stations: {{state.guidedBridge.stationSummary.total}} · Pressure Suggestions / Hazards / Follow-ups prepared from event schema.</p></details>
     </div>
   </section>
@@ -774,7 +774,7 @@
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2FollowUps.helpText}}</p>
           {{/if}}
         </div>
-        {{#if state.travelV2DevToolsEnabled}}
+        {{#if state.travelV2DevToolsPanel.visible}}
           <section class="arcflight-travel-runner-mvp__v2-dev-tools" aria-label="Travel v2 Dev Tools">
             <h4>Travel v2 Dev Tools</h4>
             <p class="arcflight-sheet__hint">GM-only controls for local Travel v2 testing. Actor mutation remains behind explicit Apply buttons.</p>

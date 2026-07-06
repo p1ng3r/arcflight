@@ -17,6 +17,26 @@ function assertEqual(actual, expected, message) {
   }
 }
 
+function withTravelV2DevToolsSetting(value, callback) {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    ...(previousGame ?? {}),
+    settings: {
+      ...(previousGame?.settings ?? {}),
+      get: (moduleId, settingKey) => {
+        if (moduleId === "arcflight" && settingKey === "enableTravelV2DevTools") return value;
+        return previousGame?.settings?.get?.(moduleId, settingKey);
+      }
+    }
+  };
+  try {
+    return callback();
+  } finally {
+    if (previousGame === undefined) delete globalThis.game;
+    else globalThis.game = previousGame;
+  }
+}
+
 function createRunnerEventFixture() {
   return {
     key: "v2-app-preview-test",
@@ -115,6 +135,18 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(gmState.travelV2GmFlowStatus.nextActionLabel, "GM flow status includes next action label");
   assertSmoke(gmState.travelV2GmFlowStatus.disabledActions.advanceRound, "GM flow status includes blocked advance disabled reason");
 
+  const gmEnabledDevToolsState = withTravelV2DevToolsSetting(true, () => prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true } }));
+  assertSmoke(gmEnabledDevToolsState.travelV2DevToolsPanel.visible === true, "GM with enabled canonical setting exposes visible dev tools panel state");
+  assertSmoke(gmEnabledDevToolsState.travelV2DevToolsEnabled === true, "legacy template gate mirrors visible panel state when helper enables the panel");
+  assertEqual(gmEnabledDevToolsState.travelV2DevToolsPanel.settingPath, "arcflight.enableTravelV2DevTools", "dev tools panel state exposes canonical setting path");
+  assertSmoke(gmEnabledDevToolsState.travelV2DevToolsPanel.actions.some((action) => action.key === "copyDebug"), "dev tools panel preserves existing dev actions");
+  const gmDisabledDevToolsState = withTravelV2DevToolsSetting(false, () => prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: true }, travelV2DevToolsEnabled: true }));
+  assertSmoke(gmDisabledDevToolsState.travelV2DevToolsPanel.visible === false, "GM with disabled canonical setting hides dev tools panel state even when legacy argument is true");
+  assertSmoke(gmDisabledDevToolsState.travelV2DevToolsEnabled === false, "legacy template gate mirrors hidden panel state when helper disables the panel");
+  const nonGmEnabledDevToolsState = withTravelV2DevToolsSetting(true, () => prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, user: { isGM: false } }));
+  assertSmoke(nonGmEnabledDevToolsState.travelV2DevToolsPanel.visible === false, "non-GM never receives visible dev tools panel state");
+  assertSmoke(nonGmEnabledDevToolsState.travelV2DevToolsEnabled === false, "non-GM legacy template gate remains false");
+
   const criticalFailure = state.travelV2Preview.rows.find((row) => row.outcomeKey === "criticalFailure");
   assertSmoke(criticalFailure, "critical failure preview row should exist");
   assertEqual(criticalFailure.totalsByPressureType[ARCFLIGHT_TRAVEL_RESOURCES.HULL], 2, "critical failure should preview hull pressure");
@@ -184,6 +216,10 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   for (const forbidden of ["gmItemGroups","singleSuggestionSelectionSummary","clearSelectionSummary","applyStatusSummary","consequenceFollowupReview","catalogSuggestions","selectedConsequenceApplyPreview","applyEffectSummary","sourceRecord"]) assertSmoke(!nonGmQueueStateJson.includes(forbidden), `non-GM app state does not expose GM-only queue field ${forbidden}`);
   const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);
   assertSmoke(!playerSafeQueue.includes("gmItemGroups") && !playerSafeQueue.includes("singleSuggestionSelectionSummary") && !playerSafeQueue.includes("clearSelectionSummary") && !playerSafeQueue.includes("canClearSelectedConsequence") && !playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("applyEffectSummary") && !playerSafeQueue.includes("sourceRecord") && !playerSafeQueue.includes("catalogSuggestions") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations") && !playerSafeQueue.includes("consequenceFollowupReview") && !playerSafeQueue.includes("travelV2ConsequenceFollowups") && !playerSafeQueue.includes("followupRecord"), "player-safe state does not expose selection summaries or GM-only apply details");
+  const consumerSource = fs.readFileSync(fileURLToPath(import.meta.url).replace(/\.smoke\.js$/, ".js"), "utf8");
+  assertSmoke(consumerSource.includes("prepareTravelV2DevToolsPanelState"), "consumer render state is driven by the canonical dev tools panel helper");
+  assertSmoke(!consumerSource.includes("Actor.create") && !consumerSource.includes("Item.create") && !consumerSource.includes("ChatMessage.create") && !consumerSource.includes("JournalEntry.create") && !consumerSource.includes("Combat.create") && !consumerSource.includes("Scene.create") && !consumerSource.includes("TokenDocument.create") && !consumerSource.includes("game.socket") && !consumerSource.includes("socket.emit") && !consumerSource.includes("fromCompendium") && !consumerSource.includes("game.settings.set"), "consumer source does not add actor/item/chat/journal/combat/scene/token/socket/compendium/world mutation calls for dev tools panel state");
+
   const runnerSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "travel-event-runner.js"), "utf8");
   assertSmoke(runnerSource.includes("updateTravelV2ConsequenceFollowupStatus"), "runner imports updateTravelV2ConsequenceFollowupStatus");
   assertSmoke(runnerSource.includes("[data-arcflight-travel-v2-followup-note-status]"), "RUNNER_CLICK_SELECTOR includes follow-up note status selector");
@@ -224,7 +260,11 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "pressure-ready-after-skipped",
       "gm-flow-status-strip",
       "gm-disabled-action-reasons",
-      "gm-visible-finalize-round-action"
+      "gm-visible-finalize-round-action",
+      "dev-tools-panel-helper-driven-state",
+      "dev-tools-panel-gm-enabled",
+      "dev-tools-panel-gm-disabled",
+      "dev-tools-panel-non-gm-hidden"
     ]
   };
 }
