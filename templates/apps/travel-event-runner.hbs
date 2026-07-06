@@ -649,6 +649,33 @@
         {{#if state.travelV2PreviewPanel.pressureApplication.hasFeedback}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.pressureApplication.feedbackText}}</p>
         {{/if}}
+        <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe" aria-label="Station Action Lock-In">
+          <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
+            <div>
+              <strong>Station Action Lock-In</strong>
+              <p class="arcflight-sheet__hint">{{state.stationActionLockIn.readinessText}}</p>
+            </div>
+            <span class="arcflight-travel-safety-chip">{{state.stationActionLockIn.statusLabel}}</span>
+          </div>
+          <table class="arcflight-travel-runner-mvp__table">
+            <thead><tr><th>Station</th><th>Selected Action</th><th>Lock State</th><th>Status</th></tr></thead>
+            <tbody>
+              {{#each state.stationActionLockIn.rows}}
+                <tr>
+                  <td><strong>{{stationName}}</strong><br><span class="arcflight-sheet__hint">{{stationKey}}</span></td>
+                  <td>{{#if hasAction}}{{actionLabel}}<br><span class="arcflight-sheet__hint">{{actionKey}}</span>{{else}}<span class="arcflight-sheet__hint">No action selected</span>{{/if}}</td>
+                  <td>{{lockStateLabel}}</td>
+                  <td>{{message}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+          {{#if state.stationActionLockIn.hasValidationMessages}}
+            <ul class="arcflight-sheet__hint">
+              {{#each state.stationActionLockIn.validationMessages}}<li>{{this}}</li>{{/each}}
+            </ul>
+          {{/if}}
+        </section>
         <div class="arcflight-travel-runner-mvp__v2-finalize" aria-label="Travel v2 round finalization">
           <div>
             <strong>Round Finalization</strong>
