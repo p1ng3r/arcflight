@@ -1,6 +1,6 @@
 import { ARCFLIGHT_TRAVEL_STATIONS } from "../config/constants.js";
 
-export const TRAVEL_V2_EVENT_SETUP_STAKES_VERSION = 1;
+export const TRAVEL_V2_EVENT_SETUP_STAKES_VERSION = 2;
 export const TRAVEL_V2_ALPHA_MIN_ROUND_COUNT = 3;
 export const TRAVEL_V2_ALPHA_MAX_ROUND_COUNT = 12;
 
@@ -12,7 +12,7 @@ export const TRAVEL_V2_ALPHA_CORE_STATION_GROUPS = Object.freeze([
   Object.freeze([ARCFLIGHT_TRAVEL_STATIONS.WATCHMASTER])
 ]);
 
-const FORBIDDEN_PLAYER_SAFE_KEYS = Object.freeze([
+export const FORBIDDEN_PLAYER_SAFE_KEYS = Object.freeze([
   "auditRecord",
   "commitRecords",
   "userId",
@@ -28,6 +28,19 @@ const FORBIDDEN_PLAYER_SAFE_KEYS = Object.freeze([
   "unrevealedHazard",
   "catalogSuggestions"
 ]);
+
+export const FORBIDDEN_PLAYER_SAFE_TEXT_VARIANTS = Object.freeze([
+  "gm-only",
+  "hidden hazard",
+  "future trigger",
+  "internal scoring",
+  "consequence tree",
+  "debug report"
+]);
+
+function normalizeForbiddenTerm(value) {
+  return stringValue(value).toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+}
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -139,7 +152,11 @@ function validateCoreStations(stations) {
 
 function includesForbiddenPlayerSafeTerm(value) {
   const text = stringValue(value);
-  return FORBIDDEN_PLAYER_SAFE_KEYS.some((key) => text.includes(key));
+  if (!text) return false;
+  const lowerText = text.toLowerCase();
+  const normalizedText = normalizeForbiddenTerm(text);
+  return FORBIDDEN_PLAYER_SAFE_KEYS.some((key) => lowerText.includes(key.toLowerCase()))
+    || FORBIDDEN_PLAYER_SAFE_TEXT_VARIANTS.some((variant) => normalizedText.includes(normalizeForbiddenTerm(variant)));
 }
 
 function playerSafeText(value) {
@@ -215,7 +232,7 @@ export function prepareTravelV2EventSetupStakesState(input = {}) {
 
 export function travelV2PlayerSafeSetupHasForbiddenKeys(playerSafe = {}) {
   const serialized = JSON.stringify(playerSafe);
-  return FORBIDDEN_PLAYER_SAFE_KEYS.some((key) => serialized.includes(key));
+  return includesForbiddenPlayerSafeTerm(serialized);
 }
 
 export default prepareTravelV2EventSetupStakesState;

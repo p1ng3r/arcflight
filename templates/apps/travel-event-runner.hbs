@@ -59,6 +59,32 @@
       <button type="button" data-arcflight-runner-send-mission-board title="{{#if state.travelV2GmFlowStatus}}{{state.travelV2GmFlowStatus.disabledActions.syncPlayers}}{{else}}Send or refresh player HUD and station cards.{{/if}}">Send / Refresh Player HUD</button>
     </header>
 
+    {{#if state.travelV2SetupStakes}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe" aria-label="Travel v2 setup stakes">
+      <h2>Setup Stakes</h2>
+      {{#if state.travelV2SetupStakes.hasValidationMessages}}
+        <p class="arcflight-travel-builder__warning"><strong>Setup needs review:</strong> {{#each state.travelV2SetupStakes.validationMessages}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>
+      {{/if}}
+      <p><strong>Event:</strong> {{state.travelV2SetupStakes.playerSafe.eventName}}</p>
+      {{#if state.travelV2SetupStakes.hasOpeningText}}<p><strong>Opening:</strong> {{state.travelV2SetupStakes.openingText}}</p>{{/if}}
+      {{#if state.travelV2SetupStakes.hasThreatenedResources}}<p><strong>Threatened Resources:</strong> {{#each state.travelV2SetupStakes.playerSafe.threatenedResources}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</p>{{/if}}
+      <p><strong>Rounds:</strong> {{state.travelV2SetupStakes.playerSafe.roundCount}}</p>
+      {{#if state.travelV2SetupStakes.hasKnownDangers}}<p><strong>Known Dangers / Suspicious Tells:</strong> {{#each state.travelV2SetupStakes.playerSafe.knownDangers}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
+      {{#if state.travelV2SetupStakes.playerSafe.broadSuccessReward}}<p><strong>Broad Success Reward:</strong> {{state.travelV2SetupStakes.playerSafe.broadSuccessReward}}</p>{{/if}}
+      {{#if state.travelV2SetupStakes.playerSafe.broadFailureDanger}}<p><strong>Broad Failure Danger:</strong> {{state.travelV2SetupStakes.playerSafe.broadFailureDanger}}</p>{{/if}}
+      {{#if state.travelV2SetupStakes.hasAvailableCoreStations}}<p><strong>Available Core Stations:</strong> {{#each state.travelV2SetupStakes.playerSafe.availableCoreStations}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</p>{{/if}}
+      {{#if state.travelV2SetupStakes.hasGmFacingNotes}}
+        <details class="arcflight-gm-only">
+          <summary><strong>GM-only setup details</strong></summary>
+          {{#if state.travelV2SetupStakes.gmFacing.gmNotes}}<p><strong>GM-only Notes:</strong> {{state.travelV2SetupStakes.gmFacing.gmNotes}}</p>{{/if}}
+          {{#if state.travelV2SetupStakes.gmFacing.setupNotes}}<p><strong>GM-only Setup Notes:</strong> {{state.travelV2SetupStakes.gmFacing.setupNotes}}</p>{{/if}}
+          {{#if state.travelV2SetupStakes.gmFacing.hiddenHazards}}<p><strong>GM-only Hidden Hazards:</strong> {{state.travelV2SetupStakes.gmFacing.hiddenHazards.length}}</p>{{/if}}
+          {{#if state.travelV2SetupStakes.gmFacing.futureTriggers}}<p><strong>GM-only Future Triggers:</strong> {{state.travelV2SetupStakes.gmFacing.futureTriggers.length}}</p>{{/if}}
+        </details>
+      {{/if}}
+    </section>
+    {{/if}}
+
     {{#if state.travelV2GmFlowStatus}}
     <section class="arcflight-travel-gm-flow-strip arcflight-{{state.travelV2GmFlowStatus.stateTone}} arcflight-gm-only" aria-label="Travel v2 GM flow status">
       <header>
