@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { prepareTravelEventRunnerState } from "../helpers/travel-event-runner.js";
-import { prepareTravelV2StationActionLockInState } from "../helpers/travel-v2-station-action-lock-in.js";
 import { createTravelEventRunnerSession } from "../helpers/travel-event-runner.js";
+import { checkTravelV2StationActionLockInReady } from "../helpers/travel-v2-station-action-lock-in.js";
 import { LANTERN_IN_THE_STATIC_SAMPLE_EVENT } from "../../data/travel-events/sample-travel-v2-events.js";
 import fs from "node:fs";
 
@@ -26,8 +26,8 @@ export function runTravelEventRunnerV2StationActionLockInSmoke() {
   incomplete.roundResults[0].stationOrderCommitments.navigator = { committed: false };
   const incompleteState = prepareTravelEventRunnerState(incomplete, { user: { isGM: false } }).stationActionLockIn;
   assert.equal(incompleteState.ready, false, "incomplete runner lock-in state reports not ready");
-  const missingActionState = prepareTravelV2StationActionLockInState({ currentRoundIndex: 0, event: { rounds: [{ activeStations: required }] }, roundResults: [{ stationActions: {}, stationOrderCommitments: {} }] });
-  assert(missingActionState.validationMessages.some((message) => message.includes("missing station action")), "runner smoke covers missing action message through reused helper");
+  const missingActionState = checkTravelV2StationActionLockInReady({ activeStations: required, stationActions: {}, stationOrderCommitments: {} }, { requiredStationKeys: required });
+  assert(missingActionState.validationMessages.some((message) => message.includes("missing station action")), "runner smoke covers missing action message through the Pass 1 helper");
   assert(incompleteState.validationMessages.some((message) => message.includes("must be locked")), "runner state includes unlocked message");
   const template = fs.readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
   assert(template.includes("Station Action Lock-In"), "template includes Station Action Lock-In section");
