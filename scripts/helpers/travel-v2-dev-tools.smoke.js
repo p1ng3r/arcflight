@@ -1,5 +1,7 @@
 import {
+  TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING,
   TRAVEL_V2_DEV_TOOLS_SETTING,
+  TRAVEL_V2_DEV_TOOLS_SETTING_PATH,
   buildTravelV2DebugReport,
   copyTravelV2DebugReport,
   createLanternTravelV2SampleSession,
@@ -8,8 +10,11 @@ import {
   forceTravelV2EarlyEndRound,
   forceTravelV2Outcome,
   filterTravelV2CompletedSessionEntries,
+  getTravelV2DevToolsSettingKeys,
+  isTravelV2DevToolsEnabled,
   prepareTravelV2CompletedSessionHistoryState,
   prepareTravelV2CompletedSessionSummaryViewState,
+  prepareTravelV2DevToolsPanelState,
   prepareTravelV2EndOfEventResolutionDialogState,
   prepareTravelV2RoundResolutionDialogState
 } from "./travel-v2-dev-tools.js";
@@ -18,8 +23,29 @@ function assert(condition, message) { if (!condition) throw new Error(`Travel v2
 
 export default async function runTravelV2DevToolsSmokeChecks() {
   const checked = [];
-  assert(TRAVEL_V2_DEV_TOOLS_SETTING === "travelV2DevToolsEnabled", "setting key is stable");
-  checked.push("setting key");
+  assert(TRAVEL_V2_DEV_TOOLS_SETTING === "enableTravelV2DevTools", "canonical setting key is stable");
+  assert(TRAVEL_V2_DEV_TOOLS_SETTING_PATH === "arcflight.enableTravelV2DevTools", "canonical setting path is stable");
+  assert(TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING === "travelV2DevToolsEnabled", "legacy setting key is retained for read fallback only");
+  const settingKeys = getTravelV2DevToolsSettingKeys();
+  assert(settingKeys.settingKey === TRAVEL_V2_DEV_TOOLS_SETTING && settingKeys.legacySettingKey === TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING, "setting key helper exposes canonical and legacy keys");
+  checked.push("setting keys");
+
+  assert(isTravelV2DevToolsEnabled({ isGM: true, settingValue: true }) === true, "GM can enable dev tools through canonical setting value");
+  assert(isTravelV2DevToolsEnabled({ isGM: true, settingValue: false }) === false, "canonical setting value hides dev tools by default");
+  assert(isTravelV2DevToolsEnabled({ isGM: false, settingValue: true }) === false, "non-GM cannot reveal dev tools even when setting is true");
+  checked.push("GM-only dev tools enablement");
+
+  const gmPanel = prepareTravelV2DevToolsPanelState({ isGM: true, settingValue: true, hasSession: true });
+  const disabledPanel = prepareTravelV2DevToolsPanelState({ isGM: true, settingValue: false, hasSession: true });
+  const playerPanel = prepareTravelV2DevToolsPanelState({ isGM: false, settingValue: true, hasSession: true });
+  assert(gmPanel.visible === true && gmPanel.settingPath === "arcflight.enableTravelV2DevTools" && gmPanel.actions.length >= 3, "GM panel is visible only when enabled and exposes inert shell action metadata");
+  assert(gmPanel.mutationBoundary.includes("No actor") && gmPanel.actions.every((action) => action.sessionLocalOnly === true), "dev panel documents no actor/world mutation boundary");
+  assert(disabledPanel.visible === false && disabledPanel.hiddenReason.includes("enableTravelV2DevTools"), "disabled GM panel stays hidden with canonical setting hint");
+  assert(playerPanel.visible === false && playerPanel.hiddenReason.includes("GM-only"), "non-GM panel stays hidden");
+  const panelBefore = JSON.stringify({ isGM: true, settingValue: true, hasSession: true });
+  prepareTravelV2DevToolsPanelState({ isGM: true, settingValue: true, hasSession: true });
+  assert(panelBefore === JSON.stringify({ isGM: true, settingValue: true, hasSession: true }), "dev panel state preparation does not mutate input data");
+  checked.push("GM-only dev panel shell state");
 
   const sample = createLanternTravelV2SampleSession({ now: "2026-01-01T00:00:00.000Z" });
   assert(sample.ok && sample.session?.event?.key === "lantern-in-the-static", "Lantern sample session can be created");

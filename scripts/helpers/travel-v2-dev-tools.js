@@ -6,7 +6,9 @@ import { prepareTravelV2EventOutcomePackage } from "./travel-v2-event-outcome-pa
 import { prepareTravelV2FollowUpState } from "./travel-v2-followups.js";
 import { LANTERN_IN_THE_STATIC_SAMPLE_EVENT } from "../../data/travel-events/sample-travel-v2-events.js";
 
-export const TRAVEL_V2_DEV_TOOLS_SETTING = "travelV2DevToolsEnabled";
+export const TRAVEL_V2_DEV_TOOLS_SETTING = "enableTravelV2DevTools";
+export const TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING = "travelV2DevToolsEnabled";
+export const TRAVEL_V2_DEV_TOOLS_SETTING_PATH = `arcflight.${TRAVEL_V2_DEV_TOOLS_SETTING}`;
 export const TRAVEL_V2_DEV_TOOLS_VERSION = 1;
 export const TRAVEL_V2_FORCE_OUTCOME_KEYS = Object.freeze(["criticalSuccess", "success", "mixed", "failure", "criticalFailure"]);
 
@@ -68,11 +70,58 @@ function getCurrentRoundIndex(session = {}) { const count = Array.isArray(sessio
 function recordsFrom(container) { if (Array.isArray(container)) return container; if (Array.isArray(container?.records)) return container.records; return []; }
 function roundRecord(session = {}, roundIndex = 0, roundNumber = roundIndex + 1) { return recordsFrom(session.travelV2PressureApplications).find((record) => Number(record?.roundIndex) === roundIndex || Number(record?.roundNumber) === roundNumber) ?? null; }
 function pressureChangeRows(record = null) { return Object.entries(record?.totalsByPressureType ?? {}).filter(([, amount]) => Number(amount) !== 0).map(([pressureType, amount]) => ({ pressureType, amount: Number(amount), label: pressureType, displayAmount: `${Number(amount) > 0 ? "+" : ""}${Number(amount)}` })); }
+function isExplicitBoolean(value) { return value === true || value === false; }
+function readTravelV2DevToolsSetting(settingKey) {
+  try {
+    const value = globalThis.game?.settings?.get?.("arcflight", settingKey);
+    return isExplicitBoolean(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getTravelV2DevToolsSettingKeys() {
+  return Object.freeze({ moduleId: "arcflight", settingKey: TRAVEL_V2_DEV_TOOLS_SETTING, settingPath: TRAVEL_V2_DEV_TOOLS_SETTING_PATH, legacySettingKey: TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING });
+}
 
 export function isTravelV2DevToolsEnabled(options = {}) {
   if (options.enabled === true || options.force === true) return true;
   if (options.enabled === false) return false;
-  try { return globalThis.game?.user?.isGM === true && globalThis.game?.settings?.get?.("arcflight", TRAVEL_V2_DEV_TOOLS_SETTING) === true; } catch { return false; }
+  const isGm = options.isGM ?? globalThis.game?.user?.isGM === true;
+  if (isGm !== true) return false;
+  if (isExplicitBoolean(options.settingValue)) return options.settingValue;
+  const canonical = readTravelV2DevToolsSetting(TRAVEL_V2_DEV_TOOLS_SETTING);
+  if (canonical !== null) return canonical;
+  return readTravelV2DevToolsSetting(TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING) === true;
+}
+
+export function prepareTravelV2DevToolsPanelState(options = {}) {
+  const isGm = options.isGM ?? globalThis.game?.user?.isGM === true;
+  const enabled = isTravelV2DevToolsEnabled(options);
+  const hasSession = options.hasSession === true || Boolean(options.session);
+  const hiddenReason = isGm !== true
+    ? "Travel v2 Dev Tools are GM-only."
+    : (enabled !== true ? `Enable ${TRAVEL_V2_DEV_TOOLS_SETTING_PATH} to show the Travel v2 Dev Tools panel.` : "");
+  return Object.freeze({
+    version: TRAVEL_V2_DEV_TOOLS_VERSION,
+    moduleId: "arcflight",
+    settingKey: TRAVEL_V2_DEV_TOOLS_SETTING,
+    settingPath: TRAVEL_V2_DEV_TOOLS_SETTING_PATH,
+    legacySettingKey: TRAVEL_V2_DEV_TOOLS_LEGACY_SETTING,
+    isGm: isGm === true,
+    enabled,
+    visible: isGm === true && enabled === true,
+    hasSession,
+    hiddenReason,
+    title: "Travel v2 Dev Tools",
+    shellOnly: true,
+    mutationBoundary: "No actor, item, active effect, journal, chat, socket, compendium, scene, token, or world mutation. Buttons must stay session-local unless a later reviewed apply path explicitly says otherwise.",
+    actions: Object.freeze([
+      { key: "lanternSample", label: "One-click Lantern Sample Setup", sessionLocalOnly: true },
+      { key: "copyDebug", label: "Copy Travel v2 Debug Report", sessionLocalOnly: true },
+      { key: "earlyEnd", label: "Force Not Run / Ended Early", sessionLocalOnly: true }
+    ])
+  });
 }
 
 export function forceTravelV2CurrentRoundResults(session, outcomeKey = "mixed", options = {}) {
@@ -165,7 +214,6 @@ export async function deleteTravelV2CompletedSessionFromLibrary(sessionKey, opti
   }
   return deleteTravelEventRunnerSessionFromLibrary(key, { ...options, library });
 }
-
 
 function asArray(value) { return Array.isArray(value) ? value : []; }
 function cleanText(value) { return typeof value === "string" ? value.trim() : (value == null ? "" : String(value).trim()); }
