@@ -12,6 +12,12 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function recordsFromContainer(container) {
+  if (Array.isArray(container)) return container;
+  if (Array.isArray(container?.records)) return container.records;
+  return [];
+}
+
 function humanizeIdentifier(value) {
   return String(value ?? "")
     .replace(/[-_]+/g, " ")
@@ -66,6 +72,38 @@ function normalizeFinalizationState(state = null, latestResult = null) {
     hasFeedback: Boolean(feedbackText),
     readinessText,
     hasReadinessText: Boolean(readinessText)
+  };
+}
+
+function normalizeStationActionResolutionSummary(summary = null) {
+  const stations = Array.isArray(summary?.stations) ? summary.stations.map((row) => ({
+    stationKey: row?.stationKey ?? "",
+    stationLabel: row?.stationLabel || humanizeIdentifier(row?.stationKey || "station"),
+    selectedActionKey: row?.selectedActionKey ?? "",
+    selectedActionType: row?.selectedActionType ?? "",
+    selectedActionLabel: row?.selectedActionLabel || humanizeIdentifier(row?.selectedActionKey || row?.selectedActionType || "station action"),
+    targetStationKey: row?.targetStationKey ?? "",
+    targetStationLabel: row?.targetStationLabel ?? "",
+    hasTargetStation: Boolean(row?.targetStationKey && row?.targetStationLabel),
+    locked: row?.locked === true,
+    committed: row?.committed === true,
+    stateLabel: row?.committed === true || row?.locked === true ? "Locked / committed" : "Not committed",
+    roundIndex: Number.isInteger(Number(row?.roundIndex)) ? Number(row.roundIndex) : null,
+    roundNumber: row?.roundNumber ?? summary?.roundNumber ?? null
+  })) : [];
+  return {
+    available: stations.length > 0,
+    title: "Finalized Station Actions",
+    subtitle: stations.length > 0
+      ? `Round ${summary?.roundNumber ?? "?"} locked station actions captured for resolution summary only.`
+      : "No finalized station action summary has been captured yet.",
+    roundIndex: Number.isInteger(Number(summary?.roundIndex)) ? Number(summary.roundIndex) : null,
+    roundNumber: summary?.roundNumber ?? null,
+    stations,
+    hasStations: stations.length > 0,
+    stationCount: stations.length,
+    playerSafe: true,
+    readOnly: true
   };
 }
 
@@ -457,6 +495,9 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     isPlainObject(runnerSession) ? prepareTravelV2RoundFinalizationState(runnerSession) : null,
     latestFinalizationResult
   );
+  const resolutionRecords = recordsFromContainer(runnerSession?.travelV2RoundResolutions);
+  const latestResolutionRecord = resolutionRecords.length > 0 ? resolutionRecords[resolutionRecords.length - 1] : null;
+  const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -488,6 +529,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     hasPressureChanges: rows.some((row) => row.hasRequests),
     travelV2RoundFinalizationState,
     roundFinalization: travelV2RoundFinalizationState,
+    stationActionResolutionSummary,
+    travelV2StationActionResolutionSummary: stationActionResolutionSummary,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,

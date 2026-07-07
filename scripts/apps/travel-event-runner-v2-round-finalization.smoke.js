@@ -27,7 +27,9 @@ function lockedStationActionsFixture({ unlockedStation = "", missingStation = ""
   const stationOrderCommitments = {};
   for (const stationKey of stations) {
     if (stationKey === missingStation) continue;
-    stationActions[stationKey] = { actionKey: "eventApproach", label: "Event Approach" };
+    stationActions[stationKey] = stationKey === "engineer"
+      ? { actionKey: "support", type: "support", label: "Support", targetStationKey: "navigator", gmText: "GM-only action text", auditRecord: { secret: true } }
+      : { actionKey: "eventApproach", label: "Event Approach", gmOnly: "hidden" };
     stationOrderCommitments[stationKey] = { committed: stationKey !== unlockedStation };
   }
   if (invalidStation) {
@@ -58,6 +60,13 @@ function createRunnerSessionFixture(overrides = {}) {
           secondaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES,
           pressureStation: "engineer",
           activeStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
+          stationPrompts: {
+            captain: { stationName: "Captain" },
+            navigator: { stationName: "Navigator" },
+            engineer: { stationName: "Engineer" },
+            veilwarden: { stationName: "Veilwarden" },
+            watchmaster: { stationName: "Watchmaster" }
+          },
           stationSummary: { engineer: { degree: "failure" } }
         }
       ]
@@ -138,6 +147,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     const missingActionBefore = snapshot(missingActionApplied.nextSession);
     const missingActionBlocked = prepareTravelV2RoundFinalizationRunnerUpdate(missingActionApplied.nextSession, { now: "2026-01-01T00:00:01.200Z" });
     assertSmoke(!missingActionBlocked.result.ok && !missingActionBlocked.result.finalized, "missing station action should block finalization");
+    assertSmoke(!missingActionBlocked.result.stationActionSummary, "missing station action should block before station action summary generation");
     assertSmoke(missingActionBlocked.result.playerMessage.includes("selected and locked"), "blocked result should include safe player-facing lock-in message");
     assertSmoke(missingActionBlocked.result.gmMessage.includes("captain"), "blocked result should include readable GM-facing station reason");
     assertEqual(snapshot(missingActionApplied.nextSession), missingActionBefore, "missing action guard should not mutate input session");
@@ -166,6 +176,18 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(successful.nextSession !== applied.nextSession, "successful finalization should return a cloned updated session");
     assertEqual(snapshot(source), sourceBefore, "finalization path should not mutate original input session");
     assertEqual(recordsFrom(successful.nextSession.travelV2RoundResolutions).length, 1, "successful finalization should append exactly one resolution record");
+    const resolutionRecord = recordsFrom(successful.nextSession.travelV2RoundResolutions)[0];
+    const stationActionSummary = successful.result.stationActionSummary;
+    assertSmoke(stationActionSummary && resolutionRecord.stationActionSummary, "successful finalization should record station action summary on result and resolution record");
+    assertEqual(stationActionSummary.stations.length, 5, "station action summary should include all Travel Five stations");
+    assertSmoke(stationActionSummary.stations.every((row) => row.roundIndex === 0 && row.roundNumber === 1 && row.committed === true && row.locked === true), "station action summary rows should include round metadata and locked/committed state");
+    const supportSummary = stationActionSummary.stations.find((row) => row.stationKey === "engineer");
+    assertSmoke(supportSummary?.selectedActionKey === "support" && supportSummary?.selectedActionType === "support", "support station action summary should include safe action key and type");
+    assertSmoke(supportSummary?.targetStationKey === "navigator" && supportSummary?.targetStationLabel === "Navigator", "support station action summary should include safe target station display");
+    const summaryJson = JSON.stringify(stationActionSummary);
+    for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+      assertSmoke(!summaryJson.includes(forbidden), `station action summary should not include forbidden player-safe term ${forbidden}`);
+    }
 
     const duplicateBefore = snapshot(successful.nextSession);
     const duplicate = prepareTravelV2RoundFinalizationRunnerUpdate(successful.nextSession, { now: "2026-01-01T00:00:04.000Z" });
@@ -198,6 +220,9 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(appResult.rendered, "internal app finalization method should rerender on success");
     assertEqual(app.uiState.travelV2RoundFinalizationResult.finalized, true, "app should store successful finalization result in UI state");
     assertEqual(recordsFrom(app.session.travelV2RoundResolutions).length, 1, "app should replace session with finalized clone");
+    const appStateAfterFinalize = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: app.session, travelV2RoundFinalizationResult: app.uiState.travelV2RoundFinalizationResult });
+    assertSmoke(appStateAfterFinalize.travelV2PreviewPanel.travelV2StationActionResolutionSummary.hasStations, "runner render state should expose finalized station action summary");
+    assertSmoke(appStateAfterFinalize.travelV2PreviewPanel.travelV2StationActionResolutionSummary.stations.some((row) => row.stationKey === "engineer" && row.targetStationLabel === "Navigator"), "runner render state should expose safe Support target display");
     assertEqual(app.selectedSessionKey, "runner-finalization-fixture", "app should preserve selected session key from session");
 
     const blockedApp = new ArcflightTravelEventRunner({ session: noPressure });
@@ -214,6 +239,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     const fs = await import("node:fs");
     const template = fs.readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
     assertSmoke(template.includes("data-arcflight-travel-v2-round-finalize"), "template should include visible round finalization control");
+    assertSmoke(template.includes("travelV2StationActionResolutionSummary"), "template should render finalized station action summary when available");
     assertSmoke(template.includes("state.travelV2PreviewPanel.travelV2RoundFinalizationState"), "template should use prepared finalization state");
     assertSmoke(template.includes("finalizeDisabled"), "template should use prepared disabled state");
     assertSmoke(!template.includes("data-arcflight-runner-complete") || template.includes("data-arcflight-travel-v2-round-finalize"), "finalization control should not replace or add event completion behavior");
@@ -231,6 +257,10 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
         "unlocked-station-action-lock-in-blocked",
         "invalid-station-key-lock-in-blocked",
         "player-safe-lock-in-block-redacted",
+        "ready-locked-finalization-records-station-action-summary",
+        "summary-includes-travel-five",
+        "support-target-safe-summary",
+        "station-action-summary-player-safe-redacted",
         "successful-finalization-replaces-session",
         "duplicate-finalization-non-destructive",
         "completed-session-blocked",
