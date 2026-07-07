@@ -711,6 +711,17 @@
         {{#if state.travelV2PreviewPanel.travelV2RoundFinalizationState.hasReadinessText}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback arcflight-travel-runner-mvp__v2-preview-feedback--applied">{{state.travelV2PreviewPanel.travelV2RoundFinalizationState.readinessText}}</p>
         {{/if}}
+        {{#if state.travelV2PreviewPanel.travelV2StationActionResolutionSummary.hasStations}}
+          <div class="arcflight-travel-runner-mvp__v2-round-summary" aria-label="Finalized Travel v2 station action summary">
+            <h4>{{state.travelV2PreviewPanel.travelV2StationActionResolutionSummary.title}}</h4>
+            <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionResolutionSummary.subtitle}}</p>
+            <ul>
+              {{#each state.travelV2PreviewPanel.travelV2StationActionResolutionSummary.stations}}
+                <li><strong>{{stationLabel}}</strong>: {{selectedActionLabel}}{{#if hasTargetStation}} → {{targetStationLabel}}{{/if}} <span class="arcflight-sheet__hint">({{stateLabel}})</span></li>
+              {{/each}}
+            </ul>
+          </div>
+        {{/if}}
         <div class="arcflight-travel-runner-mvp__v2-event-readiness" aria-label="Travel v2 event completion readiness">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>

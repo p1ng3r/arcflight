@@ -2,6 +2,7 @@ import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finaliz
 import { TRAVEL_V2_ALPHA_CORE_STATION_KEYS, checkTravelV2StationActionLockInReady } from "./travel-v2-station-action-lock-in.js";
 
 export const TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION = 1;
+export const TRAVEL_V2_STATION_ACTION_RESOLUTION_SUMMARY_VERSION = 1;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -30,6 +31,36 @@ function optionalString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function humanizeIdentifier(value) {
+  return String(value ?? "")
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function safeKey(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return /^[a-zA-Z0-9_-]+$/.test(trimmed) ? trimmed : "";
+}
+
+function stationLabel(round = {}, stationKey = "") {
+  const prompt = isPlainObject(round?.stationPrompts?.[stationKey]) ? round.stationPrompts[stationKey] : {};
+  return optionalString(prompt.stationName)
+    ?? optionalString(prompt.stationLabel)
+    ?? optionalString(prompt.label)
+    ?? humanizeIdentifier(stationKey);
+}
+
+function actionLabel(action = {}, actionKey = "") {
+  return optionalString(action.label)
+    ?? optionalString(action.actionLabel)
+    ?? optionalString(action.name)
+    ?? humanizeIdentifier(actionKey || "station-action");
+}
+
 function recordsFromContainer(container) {
   if (Array.isArray(container)) return container;
   if (Array.isArray(container?.records)) return container.records;
@@ -46,7 +77,8 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
     effectiveOutcomeKey: finalizationState.effectiveOutcomeKey,
     pressureApplicationRecord: cloneData(finalizationState.pressureApplicationRecord),
     correctionRecord: finalizationState.correctionRecord ? cloneData(finalizationState.correctionRecord) : null,
-    stationSummary: finalizationState.stationSummary ? cloneData(finalizationState.stationSummary) : null
+    stationSummary: finalizationState.stationSummary ? cloneData(finalizationState.stationSummary) : null,
+    stationActionSummary: finalizationState.stationActionSummary ? cloneData(finalizationState.stationActionSummary) : null
   };
   const notes = optionalString(options.notes);
   const reason = optionalString(options.reason);
@@ -92,6 +124,47 @@ function currentRoundLockInSource(session = {}) {
     };
   }
   return { stationOrder, activeStations: stationOrder, stations };
+}
+
+export function prepareTravelV2StationActionResolutionSummary(session = {}, options = {}) {
+  const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
+  const roundIndex = Number.isInteger(Number(options.roundIndex))
+    ? Number(options.roundIndex)
+    : (Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0);
+  const boundedRoundIndex = rounds.length > 0 ? Math.min(Math.max(roundIndex, 0), rounds.length - 1) : Math.max(roundIndex, 0);
+  const round = isPlainObject(rounds[boundedRoundIndex]) ? rounds[boundedRoundIndex] : {};
+  const roundResult = Array.isArray(session?.roundResults) && isPlainObject(session.roundResults[boundedRoundIndex]) ? session.roundResults[boundedRoundIndex] : {};
+  const source = currentRoundLockInSource({ ...session, currentRoundIndex: boundedRoundIndex });
+  const activeStationKeys = new Set(source.stationOrder);
+  const stations = TRAVEL_V2_ALPHA_CORE_STATION_KEYS.map((stationKey) => {
+    const action = isPlainObject(roundResult.stationActions?.[stationKey]) ? roundResult.stationActions[stationKey] : {};
+    const commitment = isPlainObject(roundResult.stationOrderCommitments?.[stationKey]) ? roundResult.stationOrderCommitments[stationKey] : {};
+    const selectedActionKey = safeKey(action.actionKey ?? action.key ?? action.action ?? action.type);
+    const selectedActionType = safeKey(action.type ?? action.actionType ?? selectedActionKey);
+    const targetStationKey = safeKey(action.targetStationKey ?? action.targetStation ?? "");
+    const hasTarget = targetStationKey && activeStationKeys.has(targetStationKey);
+    return {
+      stationKey,
+      stationLabel: stationLabel(round, stationKey),
+      selectedActionKey,
+      selectedActionType,
+      selectedActionLabel: actionLabel(action, selectedActionKey || selectedActionType),
+      targetStationKey: hasTarget ? targetStationKey : "",
+      targetStationLabel: hasTarget ? stationLabel(round, targetStationKey) : "",
+      locked: commitment.committed === true || commitment.locked === true || action.locked === true,
+      committed: commitment.committed === true || commitment.locked === true || action.locked === true,
+      roundIndex: boundedRoundIndex,
+      roundNumber: round.roundNumber ?? round.number ?? boundedRoundIndex + 1
+    };
+  });
+  return {
+    version: TRAVEL_V2_STATION_ACTION_RESOLUTION_SUMMARY_VERSION,
+    roundIndex: boundedRoundIndex,
+    roundNumber: round.roundNumber ?? round.number ?? boundedRoundIndex + 1,
+    stations,
+    stationCount: stations.length,
+    playerSafe: true
+  };
 }
 
 function formatLockInGuardMessage(entry = {}) {
@@ -160,7 +233,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   }
 
   const clonedSession = cloneData(session);
-  const roundResolutionRecord = createRoundResolutionRecord(finalizationStateBefore, options);
+  const stationActionSummary = prepareTravelV2StationActionResolutionSummary(session, { ...options, roundIndex: finalizationStateBefore.roundIndex });
+  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary }, options);
   const finalizedSession = appendRoundResolutionRecord(clonedSession, roundResolutionRecord);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
@@ -176,7 +250,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     effectiveOutcomeKey: finalizationStateBefore.effectiveOutcomeKey,
     isEventCompleteReady: finalizationStateAfter.isEventCompleteReady === true,
     finalizationStateBefore,
-    finalizationStateAfter
+    finalizationStateAfter,
+    stationActionSummary: cloneData(stationActionSummary)
   };
 }
 
