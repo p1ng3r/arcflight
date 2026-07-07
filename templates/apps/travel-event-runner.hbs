@@ -762,6 +762,12 @@
               <p><strong>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.valueLabel}}</strong> <span class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.tallyLabel}}</span></p>
               <p class="arcflight-sheet__hint">Contributions: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.contributionCount}} · Positive: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.positiveContributionCount}} · Zero: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.zeroContributionCount}} · Negative: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.negativeContributionCount}}{{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.hasContributingStationLabels}} · Stations: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.contributingStationLabelText}}{{/if}}</p>
             {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.available}}
+              <h5>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.title}}</h5>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.subtitle}}</p>
+              <p class="arcflight-{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.statusTone}}"><strong>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.statusLabel}}</strong> <span class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.previewLabel}}</span></p>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.previewMessage}}</p>
+            {{/if}}
             {{#if state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.hasRecords}}
               <h5>{{state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.title}}</h5>
               <ul>
