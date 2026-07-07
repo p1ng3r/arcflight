@@ -722,6 +722,40 @@
             </ul>
           </div>
         {{/if}}
+        {{#if state.travelV2PreviewPanel.supportBonusStatusAvailable}}
+          <div class="arcflight-travel-runner-mvp__v2-round-summary" aria-label="Finalized Travel v2 station action effects">
+            <h4>{{state.travelV2PreviewPanel.travelV2StationActionSupportEffects.title}}</h4>
+            <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionSupportEffects.subtitle}}</p>
+            {{#if state.travelV2PreviewPanel.travelV2StationActionSupportEffects.hasEffects}}
+              <ul>
+                {{#each state.travelV2PreviewPanel.travelV2StationActionSupportEffects.effects}}
+                  <li><strong>{{sourceStationLabel}}</strong> → {{targetStationLabel}} <span class="arcflight-sheet__hint">{{effectLabel}}</span></li>
+                {{/each}}
+              </ul>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionSupportEffects.hasWarnings}}
+              <ul class="arcflight-sheet__hint">
+                {{#each state.travelV2PreviewPanel.travelV2StationActionSupportEffects.warnings}}<li>{{this}}</li>{{/each}}
+              </ul>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.hasRecords}}
+              <h5>{{state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.title}}</h5>
+              <ul>
+                {{#each state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.records}}
+                  <li><strong>{{sourceStationLabel}}</strong> → <strong>{{targetStationLabel}}</strong>: {{readableLabel}} <span class="arcflight-sheet__hint">{{statusLabel}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}}</span></li>
+                {{/each}}
+              </ul>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2AppliedStationActionBonuses.hasRecords}}
+              <h5>{{state.travelV2PreviewPanel.travelV2AppliedStationActionBonuses.title}}</h5>
+              <ul>
+                {{#each state.travelV2PreviewPanel.travelV2AppliedStationActionBonuses.records}}
+                  <li><strong>{{sourceStationLabel}}</strong> → <strong>{{targetStationLabel}}</strong>: {{readableLabel}} <span class="arcflight-sheet__hint">{{statusLabel}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}}</span></li>
+                {{/each}}
+              </ul>
+            {{/if}}
+          </div>
+        {{/if}}
         <div class="arcflight-travel-runner-mvp__v2-event-readiness" aria-label="Travel v2 event completion readiness">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>

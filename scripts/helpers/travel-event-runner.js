@@ -2265,14 +2265,17 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
   const roundResults = createRoundResults(event).map((roundResult, index) => {
     const source = Array.isArray(session.roundResults) ? session.roundResults[index] : null;
     const sourceResults = source?.stationResults && typeof source.stationResults === "object" && !Array.isArray(source.stationResults) ? source.stationResults : {};
-    return {
+    const normalizedRoundResult = {
       ...roundResult,
       stationResults: Object.fromEntries(Object.keys(roundResult.stationResults).map((stationKey) => [stationKey, TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(sourceResults[stationKey]) ? sourceResults[stationKey] : null])),
       selectedStationSkills: normalizeSelectedStationSkills(source, event.rounds[index]),
       selectedStationOptionLabels: normalizeSelectedStationOptionLabels(source, event.rounds[index]),
       stationActions: normalizeStationActions(source, event.rounds[index]),
-      stationOrderCommitments: normalizeStationOrderCommitments(source, event.rounds[index])
+      stationOrderCommitments: normalizeStationOrderCommitments(source, event.rounds[index]),
+      stationCheckAppliedBonuses: isPlainObject(source?.stationCheckAppliedBonuses) ? cloneData(source.stationCheckAppliedBonuses) : undefined
     };
+    if (normalizedRoundResult.stationCheckAppliedBonuses === undefined) delete normalizedRoundResult.stationCheckAppliedBonuses;
+    return normalizedRoundResult;
   });
   const normalized = {
     key: resolveTravelEventRunnerSessionKey({ ...session, event, startedAt: typeof session.startedAt === "string" ? session.startedAt : "" }, options),
@@ -2310,9 +2313,10 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2RoundResolutions: isPlainObject(session.travelV2RoundResolutions) || Array.isArray(session.travelV2RoundResolutions) ? cloneData(session.travelV2RoundResolutions) : undefined,
     travelV2EventCompletion: isPlainObject(session.travelV2EventCompletion) ? cloneData(session.travelV2EventCompletion) : undefined,
     travelV2EventOutcomeApplication: isPlainObject(session.travelV2EventOutcomeApplication) ? cloneData(session.travelV2EventOutcomeApplication) : undefined,
-    travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined
+    travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined,
+    travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined
   };
-  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication"]) {
+  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2PendingStationActionBonuses"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -4154,6 +4158,7 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   if (!Object.hasOwn(normalized.session.roundResults[index].stationResults, stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   let nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
+  if (isPlainObject(nextSession.roundResults[index].stationCheckAppliedBonuses)) delete nextSession.roundResults[index].stationCheckAppliedBonuses[stationKey];
   const stationAction = normalizeTravelStationAction(nextSession.roundResults[index].stationActions?.[stationKey], stationKey, nextSession.event.rounds[index]);
   if (stationAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE && stationAction.hazardRecordId) {
     const hazardUpdate = resolveTravelV2HazardResponse(nextSession, stationAction.hazardRecordId, stationKey, result, { ...options, roundIndex: index });
@@ -4161,6 +4166,9 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
     nextSession = cloneData(hazardUpdate.session);
     nextSession.roundResults[index].stationResults[stationKey] = result;
   }
+  const supportBonusUpdate = applyTravelV2PendingSupportBonusToStationCheck(nextSession, index, stationKey, options);
+  if (!supportBonusUpdate.ok) return supportBonusUpdate;
+  Object.assign(nextSession, supportBonusUpdate.session);
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);
@@ -4297,6 +4305,64 @@ function recordsFromTravelV2Container(container) {
   if (Array.isArray(container)) return container;
   if (Array.isArray(container?.records)) return container.records;
   return [];
+}
+
+function safeStationActionBonusLabel(value, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function travelV2PendingStationActionBonusAppliesToRound(record = {}, roundIndex = 0) {
+  const expectedRound = Number(roundIndex);
+  for (const key of ["appliesToRoundIndex", "nextRoundIndex"]) {
+    if (record?.[key] === null || record?.[key] === undefined || record?.[key] === "") continue;
+    const value = Number(record[key]);
+    if (!Number.isInteger(value) || value !== expectedRound) return false;
+  }
+  return true;
+}
+
+function sanitizeAppliedTravelV2SupportBonus(record = {}, stationKey = "", roundIndex = 0) {
+  if (!isPlainObject(record)) return null;
+  if (record.bonusKey !== "support" || record.consumed === true || record.playerSafe !== true || record.readOnly !== true) return null;
+  if (record.targetStationKey !== stationKey || !travelV2PendingStationActionBonusAppliesToRound(record, roundIndex)) return null;
+  const bonusValue = Number(record.bonusValue);
+  if (bonusValue !== 1 || record.bonusType !== "circumstance") return null;
+  const sourceStationKey = typeof record.sourceStationKey === "string" ? record.sourceStationKey.trim() : "";
+  const targetStationKey = typeof record.targetStationKey === "string" ? record.targetStationKey.trim() : "";
+  if (!sourceStationKey || !targetStationKey || sourceStationKey === targetStationKey) return null;
+  const sourceStationLabel = safeStationActionBonusLabel(record.sourceStationLabel, humanizeIdentifier(sourceStationKey));
+  const targetStationLabel = safeStationActionBonusLabel(record.targetStationLabel, humanizeIdentifier(targetStationKey));
+  return {
+    bonusKey: "support",
+    bonusType: "circumstance",
+    bonusValue: 1,
+    bonusLabel: safeStationActionBonusLabel(record.bonusLabel, `Support from ${sourceStationLabel}: +1 circumstance bonus for ${targetStationLabel}.`),
+    sourceStationKey,
+    sourceStationLabel,
+    targetStationKey,
+    targetStationLabel,
+    roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null,
+    roundNumber: record.roundNumber ?? null,
+    appliesToRoundIndex: Number.isInteger(Number(record.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : null,
+    nextRoundIndex: Number.isInteger(Number(record.nextRoundIndex)) ? Number(record.nextRoundIndex) : null,
+    playerSafe: true
+  };
+}
+
+export function applyTravelV2PendingSupportBonusToStationCheck(session, roundIndex, stationKey, options = {}) {
+  const nextSession = cloneData(session);
+  const records = recordsFromTravelV2Container(nextSession.travelV2PendingStationActionBonuses);
+  const appliedIndex = records.findIndex((record) => sanitizeAppliedTravelV2SupportBonus(record, stationKey, roundIndex));
+  if (appliedIndex < 0) return { ok: true, errors: [], warnings: [], session: nextSession, appliedBonus: null, appliedBonuses: [] };
+  const appliedBonus = sanitizeAppliedTravelV2SupportBonus(records[appliedIndex], stationKey, roundIndex);
+  const updatedRecords = records.map((record, index) => index === appliedIndex ? { ...cloneData(record), consumed: true, consumedRoundIndex: Number(roundIndex), consumedStationKey: stationKey } : cloneData(record));
+  nextSession.travelV2PendingStationActionBonuses = { ...(isPlainObject(nextSession.travelV2PendingStationActionBonuses) ? nextSession.travelV2PendingStationActionBonuses : {}), records: updatedRecords, playerSafe: true, readOnly: true };
+  const rr = nextSession.roundResults?.[Number(roundIndex)];
+  if (isPlainObject(rr)) {
+    rr.stationCheckAppliedBonuses = isPlainObject(rr.stationCheckAppliedBonuses) ? cloneData(rr.stationCheckAppliedBonuses) : {};
+    rr.stationCheckAppliedBonuses[stationKey] = [appliedBonus];
+  }
+  return { ok: true, errors: [], warnings: [], session: nextSession, appliedBonus, appliedBonuses: [appliedBonus] };
 }
 
 export function setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill, options = {}) {

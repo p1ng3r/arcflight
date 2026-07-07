@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 11;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 13;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -102,6 +102,117 @@ function normalizeStationActionResolutionSummary(summary = null) {
     stations,
     hasStations: stations.length > 0,
     stationCount: stations.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeStationActionSupportEffects(supportEffects = null) {
+  const effectsSource = Array.isArray(supportEffects) ? supportEffects : supportEffects?.effects;
+  const effects = Array.isArray(effectsSource) ? effectsSource.map((effect) => ({
+    sourceStationKey: effect?.sourceStationKey ?? "",
+    sourceStationLabel: effect?.sourceStationLabel || humanizeIdentifier(effect?.sourceStationKey || "source station"),
+    targetStationKey: effect?.targetStationKey ?? "",
+    targetStationLabel: effect?.targetStationLabel || humanizeIdentifier(effect?.targetStationKey || "target station"),
+    effectKey: effect?.effectKey ?? "support",
+    effectType: effect?.effectType ?? "support",
+    effectLabel: effect?.effectLabel || `${effect?.sourceStationLabel || "Source station"} supports ${effect?.targetStationLabel || "target station"}.`,
+    roundIndex: Number.isInteger(Number(effect?.roundIndex)) ? Number(effect.roundIndex) : null,
+    roundNumber: effect?.roundNumber ?? supportEffects?.roundNumber ?? null,
+    playerSafe: true,
+    readOnly: true
+  })) : [];
+  const warnings = Array.isArray(supportEffects?.warnings) ? supportEffects.warnings.filter((warning) => typeof warning === "string" && warning.trim()).map((warning) => warning.trim()) : [];
+  return {
+    available: effects.length > 0 || warnings.length > 0,
+    title: "Station Action Effects",
+    subtitle: effects.length > 0
+      ? `Round ${supportEffects?.roundNumber ?? effects[0]?.roundNumber ?? "?"} read-only Support effects captured for later resolution.`
+      : "No station action effects have been captured yet.",
+    roundIndex: Number.isInteger(Number(supportEffects?.roundIndex)) ? Number(supportEffects.roundIndex) : null,
+    roundNumber: supportEffects?.roundNumber ?? effects[0]?.roundNumber ?? null,
+    effects,
+    warnings,
+    hasEffects: effects.length > 0,
+    hasWarnings: warnings.length > 0,
+    effectCount: effects.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeSupportBonusRecord(record = {}, fallback = {}, forcedStatus = "") {
+  const sourceStationKey = record?.sourceStationKey ?? "";
+  const targetStationKey = record?.targetStationKey ?? fallback.targetStationKey ?? "";
+  const sourceStationLabel = record?.sourceStationLabel || humanizeIdentifier(sourceStationKey || "source station");
+  const targetStationLabel = record?.targetStationLabel || humanizeIdentifier(targetStationKey || "target station");
+  const bonusValue = Number.isFinite(Number(record?.bonusValue)) ? Number(record.bonusValue) : 1;
+  const status = forcedStatus || (record?.consumed === true ? "consumed" : "pending");
+  const statusLabel = status === "applied" ? "Applied" : (status === "consumed" ? "Consumed" : "Pending");
+  const bonusType = record?.bonusType ?? "circumstance";
+  return {
+    sourceStationKey,
+    sourceStationLabel,
+    targetStationKey,
+    targetStationLabel,
+    bonusKey: record?.bonusKey ?? "support",
+    bonusType,
+    bonusValue,
+    bonusLabel: record?.bonusLabel || `${sourceStationLabel} supports ${targetStationLabel}: +${bonusValue} ${bonusType} bonus.`,
+    readableLabel: record?.readableLabel || `${sourceStationLabel} supports ${targetStationLabel}: +${bonusValue} ${bonusType} bonus`,
+    status,
+    statusLabel,
+    stateLabel: statusLabel,
+    pending: status === "pending",
+    applied: status === "applied",
+    consumed: status === "consumed",
+    roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : (Number.isInteger(Number(fallback.roundIndex)) ? Number(fallback.roundIndex) : null),
+    roundNumber: record?.roundNumber ?? fallback.roundNumber ?? null,
+    appliesToRoundIndex: Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : (Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : null),
+    nextRoundIndex: Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : (Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : null),
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizePendingStationActionBonuses(pendingBonuses = null) {
+  const recordsSource = Array.isArray(pendingBonuses) ? pendingBonuses : pendingBonuses?.records;
+  const records = Array.isArray(recordsSource) ? recordsSource.map((record) => normalizeSupportBonusRecord(record, pendingBonuses, record?.consumed === true ? "consumed" : "pending")) : [];
+  return {
+    available: records.length > 0,
+    title: "Pending Support Bonuses",
+    subtitle: records.length > 0
+      ? "Read-only Support bonuses are pending for later station-check logic."
+      : "No pending Support bonuses have been captured yet.",
+    roundIndex: Number.isInteger(Number(pendingBonuses?.roundIndex)) ? Number(pendingBonuses.roundIndex) : null,
+    roundNumber: pendingBonuses?.roundNumber ?? records[0]?.roundNumber ?? null,
+    records,
+    hasRecords: records.length > 0,
+    recordCount: records.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeAppliedStationActionBonuses(roundResults = []) {
+  const records = [];
+  if (!Array.isArray(roundResults)) return { available: false, title: "Applied Support Bonuses", subtitle: "No Support bonuses have been applied to station checks yet.", records, hasRecords: false, recordCount: 0, playerSafe: true, readOnly: true };
+  roundResults.forEach((roundResult, roundIndex) => {
+    const appliedByStation = isPlainObject(roundResult?.stationCheckAppliedBonuses) ? roundResult.stationCheckAppliedBonuses : {};
+    for (const [stationKey, stationBonuses] of Object.entries(appliedByStation)) {
+      const bonuses = Array.isArray(stationBonuses) ? stationBonuses : [];
+      bonuses.filter((bonus) => bonus?.bonusKey === "support").forEach((bonus) => {
+        records.push(normalizeSupportBonusRecord(bonus, { targetStationKey: stationKey, roundIndex, roundNumber: roundResult?.roundNumber ?? roundIndex + 1 }, "applied"));
+      });
+    }
+  });
+  return {
+    available: records.length > 0,
+    title: "Applied Support Bonuses",
+    subtitle: records.length > 0 ? "Read-only Support bonuses applied to station checks." : "No Support bonuses have been applied to station checks yet.",
+    records,
+    hasRecords: records.length > 0,
+    recordCount: records.length,
     playerSafe: true,
     readOnly: true
   };
@@ -498,6 +609,10 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const resolutionRecords = recordsFromContainer(runnerSession?.travelV2RoundResolutions);
   const latestResolutionRecord = resolutionRecords.length > 0 ? resolutionRecords[resolutionRecords.length - 1] : null;
   const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
+  const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
+  const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
+  const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
+  const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -531,6 +646,13 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     roundFinalization: travelV2RoundFinalizationState,
     stationActionResolutionSummary,
     travelV2StationActionResolutionSummary: stationActionResolutionSummary,
+    stationActionSupportEffects,
+    travelV2StationActionSupportEffects: stationActionSupportEffects,
+    supportBonusStatusAvailable,
+    pendingStationActionBonuses,
+    travelV2PendingStationActionBonuses: pendingStationActionBonuses,
+    appliedStationActionBonuses,
+    travelV2AppliedStationActionBonuses: appliedStationActionBonuses,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,
