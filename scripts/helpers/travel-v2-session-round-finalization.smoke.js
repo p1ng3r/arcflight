@@ -2,12 +2,15 @@ import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import {
   finalizeTravelV2RoundOnRunnerSession,
   getTravelV2DifficultyBidDcModifier,
+  getTravelV2StationResultForRound,
+  isTravelV2RoundActionsLocked,
   normalizeTravelV2ActiveCardRecords,
   normalizeTravelV2DifficultyBid,
   prepareTravelV2DifficultyBidCardRecord,
   prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary,
   prepareTravelV2DifficultyBidPreview,
   prepareTravelV2DifficultyBidRewardPreview,
+  prepareTravelV2ActiveCardsPreviewState,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -241,6 +244,77 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   const unsafeSanitized = sanitizeTravelV2ActiveCardsForPlayers({ records: [pendingActiveCard({ gmText: "secret", auditRecord: { secret: true } })] });
   const unsafeSanitizedJson = JSON.stringify(unsafeSanitized);
   assertSmoke(!unsafeSanitizedJson.includes("gmText") && !unsafeSanitizedJson.includes("auditRecord") && !unsafeSanitizedJson.includes("secret"), "active card sanitizer should strip GM/internal fields");
+
+  const previewBaseSession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }] });
+  const previewWithoutTarget = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard()], previewBaseSession);
+  assertEqual(previewWithoutTarget.records[0].previewStatus, "needsTarget", "active card without target should need target");
+  assertSmoke(snapshot(previewBaseSession) === snapshot(createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }] })), "active card preview helper should not mutate source session data");
+
+  for (const cardKey of ["minorOpening", "greaterOpening", "legendaryEvent"]) {
+    const preview = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey, rewardKey: cardKey, targetStationKey: "navigator" })], previewBaseSession);
+    assertEqual(preview.records[0].previewStatus, "playable", `${cardKey} with locked actions and no target result should be playable`);
+    assertSmoke(preview.records[0].playablePreview === true, `${cardKey} should set playable preview`);
+  }
+
+  const rolledBeforeRoll = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "success" } }] }));
+  assertEqual(rolledBeforeRoll.records[0].previewStatus, "missedWindow", "before-roll active card with target already rolled should miss window");
+  const beforeLock = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ stationOrderCommitments: {}, stationResults: {} }] }));
+  assertEqual(beforeLock.records[0].previewStatus, "waitingForLock", "before-roll active card before lock should wait for lock");
+
+  const heroicNoResult = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], previewBaseSession);
+  assertEqual(heroicNoResult.records[0].previewStatus, "waitingForTrigger", "heroic event with no result should wait for trigger");
+  for (const result of ["failure", "criticalFailure"]) {
+    const heroic = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: result } }] }));
+    assertEqual(heroic.records[0].previewStatus, "triggerReady", `heroic event with ${result} should be trigger-ready`);
+  }
+  for (const result of ["success", "criticalSuccess"]) {
+    const heroic = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: result } }] }));
+    assertEqual(heroic.records[0].previewStatus, "noTrigger", `heroic event with ${result} should have no trigger`);
+  }
+  const invalidTarget = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "missing" })], previewBaseSession);
+  assertEqual(invalidTarget.records[0].targetStatus, "invalidTarget", "unavailable target station should normalize safely");
+  const previewJson = JSON.stringify(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator", gmText: "secret" })], previewBaseSession));
+  assertSmoke(!previewJson.includes("gmText") && !previewJson.includes("secret"), "active card preview state should remain player-safe");
+
+  const futureRoundSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: { navigator: "success" } },
+      { ...lockedRoundResult(), stationResults: {} }
+    ]
+  });
+  const oldBeforeRollCard = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ roundIndex: 0, roundNumber: 1, targetStationKey: "navigator" })], futureRoundSession);
+  assertEqual(oldBeforeRollCard.records[0].previewStatus, "playable", "existing before-roll card should evaluate current round instead of stale created round");
+  assertEqual(oldBeforeRollCard.records[0].previewRoundIndex, 1, "active card preview should expose current preview round index");
+  assertEqual(oldBeforeRollCard.records[0].previewRoundNumber, 2, "active card preview should expose current preview round number");
+
+  const oldHeroicFailedCurrentRound = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", roundIndex: 0, roundNumber: 1, targetStationKey: "navigator" })], createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: {} },
+      { ...lockedRoundResult(), stationResults: { navigator: "failure" } }
+    ]
+  }));
+  assertEqual(oldHeroicFailedCurrentRound.records[0].previewStatus, "triggerReady", "existing heroic card should trigger from current round failure");
+
+  const oldHeroicStaleFailure = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", roundIndex: 0, roundNumber: 1, targetStationKey: "navigator" })], createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: { navigator: "failure" } },
+      { ...lockedRoundResult(), stationResults: {} }
+    ]
+  }));
+  assertEqual(oldHeroicStaleFailure.records[0].previewStatus, "waitingForTrigger", "existing heroic card should ignore stale created-round failure");
+
+  const implicitIndexSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: { navigator: "success" } },
+      { stationOrderCommitments: {}, stationResults: { navigator: "failure" } }
+    ]
+  });
+  assertSmoke(isTravelV2RoundActionsLocked(implicitIndexSession, 1) === false, "action lock lookup should use roundResults[1] when records lack explicit roundIndex");
+  assertEqual(getTravelV2StationResultForRound(implicitIndexSession, "navigator", 1), "failure", "station result lookup should use roundResults[1] when records lack explicit roundIndex");
 
   const duplicateResult = finalizeTravelV2RoundOnRunnerSession(result.session, { now: "2026-06-19T00:00:01.000Z" });
   assertSmoke(!duplicateResult.ok && !duplicateResult.finalized, "duplicate finalization should block");

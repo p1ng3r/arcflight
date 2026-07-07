@@ -10,9 +10,12 @@ export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTION_TALLY_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_STATUS_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION = 1;
+export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
 export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending"]);
+export const TRAVEL_V2_ACTIVE_CARD_TIMING_TYPES = Object.freeze(["beforeRoll", "afterFailure"]);
+export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_STATUSES = Object.freeze(["needsTarget", "waitingForLock", "playable", "missedWindow", "waitingForTrigger", "triggerReady", "noTrigger"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -89,22 +92,34 @@ const TRAVEL_V2_ACTIVE_CARD_CONFIG = Object.freeze({
   minorOpening: Object.freeze({
     cardLabel: "Minor Opening",
     timingHint: "Play after station actions are locked and before the target station rolls.",
-    effectPreviewText: "Future effect: grant +1 circumstance bonus to one target station roll."
+    effectPreviewText: "Future effect: grant +1 circumstance bonus to one target station roll.",
+    timingType: "beforeRoll",
+    playWindowKey: "afterLockBeforeRoll",
+    playWindowLabel: "After lock, before target roll"
   }),
   greaterOpening: Object.freeze({
     cardLabel: "Greater Opening",
     timingHint: "Play after station actions are locked and before the target station rolls.",
-    effectPreviewText: "Future effect: grant +3 circumstance bonus to one target station roll."
+    effectPreviewText: "Future effect: grant +3 circumstance bonus to one target station roll.",
+    timingType: "beforeRoll",
+    playWindowKey: "afterLockBeforeRoll",
+    playWindowLabel: "After lock, before target roll"
   }),
   heroicEvent: Object.freeze({
     cardLabel: "Heroic Event",
     timingHint: "Triggers when the target station rolls failure or critical failure.",
-    effectPreviewText: "Future effect: improve one target station failure or critical failure by one degree."
+    effectPreviewText: "Future effect: improve one target station failure or critical failure by one degree.",
+    timingType: "afterFailure",
+    playWindowKey: "afterTargetFailure",
+    playWindowLabel: "After target failure"
   }),
   legendaryEvent: Object.freeze({
     cardLabel: "Legendary Event",
     timingHint: "Play after station actions are locked but before the target station rolls.",
-    effectPreviewText: "Future effect: target station cannot resolve worse than success."
+    effectPreviewText: "Future effect: target station cannot resolve worse than success.",
+    timingType: "beforeRoll",
+    playWindowKey: "afterLockBeforeRoll",
+    playWindowLabel: "After lock, before target roll"
   })
 });
 
@@ -223,6 +238,16 @@ export function normalizeTravelV2ActiveCardRecords(container = {}) {
         effectPreviewText: optionalString(record.effectPreviewText) ?? config.effectPreviewText ?? "",
         targetStationKey: safeKey(record.targetStationKey),
         targetStationLabel: optionalString(record.targetStationLabel) ?? "",
+        hasTargetStation: Boolean(safeKey(record.targetStationKey)),
+        targetStatus: safeKey(record.targetStationKey) ? "targeted" : "needsTarget",
+        timingType: activeCardTimingType(rewardKey),
+        playWindowKey: config.playWindowKey ?? "",
+        playWindowLabel: config.playWindowLabel ?? "",
+        playablePreview: false,
+        triggerReadyPreview: false,
+        waitingForTrigger: false,
+        previewStatus: safeKey(record.targetStationKey) ? "waitingForLock" : "needsTarget",
+        previewStatusLabel: activeCardPreviewStatusLabel(safeKey(record.targetStationKey) ? "waitingForLock" : "needsTarget"),
         playerSafe: true,
         readOnly: true
       };
@@ -242,6 +267,131 @@ export function normalizeTravelV2ActiveCardRecords(container = {}) {
     playerSafe: true,
     readOnly: true
   };
+}
+
+
+function activeCardTimingType(cardKey = "") {
+  const timingType = TRAVEL_V2_ACTIVE_CARD_CONFIG[cardKey]?.timingType;
+  return TRAVEL_V2_ACTIVE_CARD_TIMING_TYPES.includes(timingType) ? timingType : "beforeRoll";
+}
+
+function activeCardPreviewStatusLabel(status = "") {
+  return {
+    needsTarget: "Needs target",
+    waitingForLock: "Waiting for station action lock",
+    playable: "Playable preview",
+    missedWindow: "Missed play window",
+    waitingForTrigger: "Waiting for trigger",
+    triggerReady: "Trigger-ready preview",
+    noTrigger: "No trigger"
+  }[status] ?? humanizeIdentifier(status || "unknown");
+}
+
+function availableTravelV2TargetStations(round = {}, session = {}) {
+  const keys = Array.isArray(round?.stationOrder) ? round.stationOrder : (Array.isArray(session?.activeStations) ? session.activeStations : TRAVEL_V2_ALPHA_CORE_STATION_KEYS);
+  return Array.from(new Set([...keys, ...TRAVEL_V2_ALPHA_CORE_STATION_KEYS].map(safeKey).filter(Boolean)))
+    .filter((stationKey) => TRAVEL_V2_ALPHA_CORE_STATION_KEYS.includes(stationKey))
+    .map((stationKey) => ({ stationKey, stationLabel: stationLabel(round, stationKey), playerSafe: true, readOnly: true }));
+}
+
+function currentRoundContext(session = {}) {
+  const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const round = isPlainObject(rounds[roundIndex]) ? rounds[roundIndex] : {};
+  const roundNumber = round?.roundNumber ?? round?.number ?? roundIndex + 1;
+  return { roundIndex, roundNumber, round };
+}
+
+function roundResultForIndex(session = {}, roundIndex = 0) {
+  const records = recordsFromContainer(session?.roundResults);
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
+  return records.find((record) => Number.isInteger(Number(record?.roundIndex)) && Number(record.roundIndex) === index)
+    ?? records[index]
+    ?? {};
+}
+
+export function resolveTravelV2ActiveCardPreviewRound(session = {}, card = {}) {
+  const context = currentRoundContext(session);
+  return {
+    previewRoundIndex: context.roundIndex,
+    previewRoundNumber: context.roundNumber,
+    round: context.round,
+    createdRoundIndex: Number.isInteger(Number(card?.roundIndex)) ? Number(card.roundIndex) : null,
+    createdRoundNumber: card?.roundNumber ?? null
+  };
+}
+
+export function isTravelV2RoundActionsLocked(session = {}, roundIndex = null) {
+  const { roundIndex: currentIndex } = currentRoundContext(session);
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : currentIndex;
+  const result = roundResultForIndex(session, index);
+  if (isPlainObject(result?.stationOrderCommitments)) {
+    return TRAVEL_V2_ALPHA_CORE_STATION_KEYS.every((stationKey) => result.stationOrderCommitments[stationKey]?.committed === true || result.stationOrderCommitments[stationKey]?.locked === true);
+  }
+  const lockState = session?.travelV2StationActionLockIn ?? session?.stationActionLockIn ?? result?.travelV2StationActionLockIn;
+  if (isPlainObject(lockState)) return checkTravelV2StationActionLockInReady(lockState).allRequiredLocked === true;
+  return false;
+}
+
+export function getTravelV2StationResultForRound(session = {}, stationKey = "", roundIndex = null) {
+  const key = safeKey(stationKey);
+  if (!key) return "";
+  const { roundIndex: currentIndex, round } = currentRoundContext(session);
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : currentIndex;
+  const candidates = [roundResultForIndex(session, index), round].filter(Boolean);
+  for (const candidate of candidates) {
+    const value = candidate?.stationResults?.[key] ?? candidate?.stationSummary?.[key]?.degree ?? candidate?.stationSummary?.[key]?.outcomeKey ?? candidate?.stations?.[key]?.result;
+    const normalized = normalizeStationOutcomeKey(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+export function hasTravelV2StationRolledForRound(session = {}, stationKey = "", roundIndex = null) {
+  return Boolean(getTravelV2StationResultForRound(session, stationKey, roundIndex));
+}
+
+export function prepareTravelV2ActiveCardTargetPreview(card = {}, session = {}) {
+  const { round } = currentRoundContext(session);
+  const availableTargetStations = availableTravelV2TargetStations(round, session);
+  const targetStationKey = safeKey(card.targetStationKey ?? card.target?.stationKey ?? card.stationTargetKey);
+  const targetOption = availableTargetStations.find((option) => option.stationKey === targetStationKey);
+  const targetStationLabel = targetOption?.stationLabel ?? optionalString(card.targetStationLabel ?? card.target?.stationLabel) ?? "";
+  const hasTargetStation = Boolean(targetOption);
+  return { targetStationKey: hasTargetStation ? targetStationKey : "", targetStationLabel: hasTargetStation ? targetStationLabel : "", hasTargetStation, targetStatus: hasTargetStation ? "targeted" : (targetStationKey ? "invalidTarget" : "needsTarget"), availableTargetStations, playerSafe: true, readOnly: true };
+}
+
+export function prepareTravelV2ActiveCardPlayPreview(card = {}, session = {}) {
+  const target = prepareTravelV2ActiveCardTargetPreview(card, session);
+  const timingType = activeCardTimingType(card.rewardKey ?? card.cardKey);
+  let previewStatus = "needsTarget";
+  let playablePreview = false;
+  let triggerReadyPreview = false;
+  let waitingForTrigger = false;
+  const { previewRoundIndex, previewRoundNumber } = resolveTravelV2ActiveCardPreviewRound(session, card);
+  const stationResult = target.hasTargetStation ? getTravelV2StationResultForRound(session, target.targetStationKey, previewRoundIndex) : "";
+  const stationRolled = Boolean(stationResult);
+  if (target.hasTargetStation && timingType === "afterFailure") {
+    if (!stationRolled) { previewStatus = "waitingForTrigger"; waitingForTrigger = true; }
+    else if (stationResult === "failure" || stationResult === "criticalFailure") { previewStatus = "triggerReady"; triggerReadyPreview = true; }
+    else previewStatus = "noTrigger";
+  } else if (target.hasTargetStation) {
+    if (stationRolled) previewStatus = "missedWindow";
+    else if (isTravelV2RoundActionsLocked(session, previewRoundIndex)) { previewStatus = "playable"; playablePreview = true; }
+    else previewStatus = "waitingForLock";
+  }
+  const config = TRAVEL_V2_ACTIVE_CARD_CONFIG[card.rewardKey ?? card.cardKey] ?? {};
+  return { ...target, previewRoundIndex, previewRoundNumber, timingType, playWindowKey: config.playWindowKey ?? "", playWindowLabel: config.playWindowLabel ?? "", playablePreview, triggerReadyPreview, waitingForTrigger, previewStatus, previewStatusLabel: activeCardPreviewStatusLabel(previewStatus), stationResult: stationResult || "", playerSafe: true, readOnly: true };
+}
+
+export function prepareTravelV2ActiveCardsPreviewState(container = {}, session = {}) {
+  const normalized = normalizeTravelV2ActiveCardRecords(container);
+  const records = normalized.records.map((record) => ({ ...record, ...prepareTravelV2ActiveCardPlayPreview(record, session), status: "pending", playerSafe: true, readOnly: true }));
+  return { version: TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
+}
+
+export function sanitizeTravelV2ActiveCardPreviewForPlayers(container = {}, session = {}) {
+  return prepareTravelV2ActiveCardsPreviewState(container, session);
 }
 
 export function prepareTravelV2DifficultyBidCardRecord(stationRow = {}) {
@@ -272,6 +422,7 @@ export function prepareTravelV2DifficultyBidCardRecord(stationRow = {}) {
     targetStationLabel: stationRow.targetStationLabel
   }]).records[0] ?? null;
 }
+
 
 export function prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary(stationActionSummary = {}) {
   const stations = Array.isArray(stationActionSummary?.stations) ? stationActionSummary.stations : [];

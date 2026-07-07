@@ -5,7 +5,7 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
-import { sanitizeTravelV2ActiveCardsForPlayers } from "../helpers/travel-v2-session-round-finalization.js";
+import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers } from "../helpers/travel-v2-session-round-finalization.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 15;
 
@@ -115,12 +115,12 @@ function normalizeStationActionResolutionSummary(summary = null) {
   };
 }
 
-function normalizeActiveTravelCards(...containers) {
+function normalizeActiveTravelCards(session, ...containers) {
   const mergedRecords = [];
   for (const container of containers) {
     mergedRecords.push(...sanitizeTravelV2ActiveCardsForPlayers(container).records);
   }
-  const normalized = sanitizeTravelV2ActiveCardsForPlayers(mergedRecords);
+  const normalized = sanitizeTravelV2ActiveCardPreviewForPlayers(mergedRecords, session);
   return {
     ...normalized,
     title: "Active Travel Cards",
@@ -784,7 +784,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
-  const travelV2ActiveCards = normalizeActiveTravelCards(runnerSession?.travelV2ActiveCards, latestResolutionRecord?.travelV2ActiveCards, latestFinalizationResult?.travelV2ActiveCards);
+  const travelV2ActiveCards = normalizeActiveTravelCards(runnerSession, runnerSession?.travelV2ActiveCards, latestResolutionRecord?.travelV2ActiveCards, latestFinalizationResult?.travelV2ActiveCards);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available || stationActionEventApproachTallyStatus.available;
