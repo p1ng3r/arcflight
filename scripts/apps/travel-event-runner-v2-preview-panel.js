@@ -5,7 +5,7 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
-import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers, sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers, applyTravelV2ActiveCardApplicationPreviewToSession } from "../helpers/travel-v2-session-round-finalization.js";
+import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers, sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers, applyTravelV2ActiveCardApplicationPreviewToSession, resolveTravelV2BestStationRollBonuses, prepareTravelV2StationResultFloorState } from "../helpers/travel-v2-session-round-finalization.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 16;
 
@@ -467,6 +467,36 @@ function normalizeAppliedStationActionBonuses(roundResults = []) {
   };
 }
 
+function normalizeStationRollBonusState(session = {}, roundIndex = 0) {
+  const state = resolveTravelV2BestStationRollBonuses(session, roundIndex);
+  return {
+    ...state,
+    available: state.hasBonuses === true,
+    title: "Station Roll Bonuses",
+    subtitle: state.hasBonuses === true ? "Highest non-stacking circumstance bonuses are selected for station rolls." : "No pending station roll bonuses apply to this round.",
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeStationResultFloorState(session = {}, roundIndex = 0) {
+  const records = recordsFromContainer(session?.travelV2PendingStationResultFloors);
+  const stationKeys = Array.from(new Set(records.map((record) => String(record?.targetStationKey ?? "").trim()).filter(Boolean)));
+  const states = stationKeys.map((stationKey) => prepareTravelV2StationResultFloorState(session, stationKey, roundIndex));
+  return {
+    available: states.some((state) => state.hasPendingFloor),
+    title: "Station Result Floors",
+    subtitle: states.some((state) => state.hasPendingFloor) ? "Pending result floors can improve finalized station outcomes." : "No pending station result floors apply to this round.",
+    roundIndex: Number(roundIndex),
+    roundNumber: Number(roundIndex) + 1,
+    stations: states,
+    records: states,
+    hasRecords: states.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function normalizeEventCompletionReadiness(state = null, latestResult = null) {
   const eventRoundCount = Number(state?.eventRoundCount) || 0;
   const finalizedRoundCount = Number(state?.finalizedRoundCount) || 0;
@@ -864,6 +894,9 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
+  const stationRollRoundIndex = Number.isInteger(Number(runnerSession?.currentRoundIndex)) ? Number(runnerSession.currentRoundIndex) : Number(preview.roundIndex ?? 0);
+  const stationRollBonusState = normalizeStationRollBonusState(runnerSession, stationRollRoundIndex);
+  const stationResultFloorState = normalizeStationResultFloorState(runnerSession, stationRollRoundIndex);
   const travelV2ActiveCards = normalizeActiveTravelCards(runnerSession, runnerSession?.travelV2ActiveCards, latestResolutionRecord?.travelV2ActiveCards, latestFinalizationResult?.travelV2ActiveCards);
   const travelV2ActiveCardApplicationPreviews = prepareTravelV2ActiveCardApplicationControls(travelV2ActiveCards.travelV2ActiveCardApplicationPreviews, runnerSession, { user: appState.user, isGM: appState.isGM === true });
   travelV2ActiveCards.applicationPreviews = travelV2ActiveCardApplicationPreviews;
@@ -919,6 +952,10 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     stationActionEffectsAvailable,
     pendingStationActionBonuses,
     travelV2PendingStationActionBonuses: pendingStationActionBonuses,
+    stationRollBonusState,
+    travelV2StationRollBonusState: stationRollBonusState,
+    stationResultFloorState,
+    travelV2StationResultFloorState: stationResultFloorState,
     appliedStationActionBonuses,
     travelV2AppliedStationActionBonuses: appliedStationActionBonuses,
     travelV2ActiveCards,

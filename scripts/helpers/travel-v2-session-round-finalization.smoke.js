@@ -13,6 +13,10 @@ import {
   prepareTravelV2DifficultyBidRewardPreview,
   prepareTravelV2ActiveCardsPreviewState,
   prepareTravelV2ActiveCardApplicationPreviewState,
+  prepareTravelV2StationRollBonusState,
+  consumeTravelV2PendingStationActionBonusesForStationRoll,
+  applyTravelV2PendingStationResultFloorToOutcome,
+  prepareTravelV2StationResultFloorState,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -500,6 +504,61 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   }), { now: "2026-06-19T00:00:04.000Z" });
   assertSmoke(sideEffectResult.ok, "side-effect sentinels should not be called during finalization");
 
+  const bonusSession = {
+    currentRoundIndex: 0,
+    event: { rounds: [{ activeStations: ["navigator", "engineer"] }] },
+    travelV2PendingStationActionBonuses: {
+      records: [
+        { id: "support-1", bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationLabel: "Engineer", targetStationKey: "navigator", targetStationLabel: "Navigator", nextRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true },
+        { id: "greater-1", bonusKey: "greaterOpeningBonus", bonusType: "circumstance", bonusValue: 3, sourceCardId: "card-greater", sourceCardLabel: "Greater Opening", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true },
+        { id: "other-station", bonusKey: "minorOpeningBonus", bonusType: "circumstance", bonusValue: 1, sourceCardId: "card-minor", targetStationKey: "engineer", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true },
+        { id: "wrong-round", bonusKey: "support", bonusType: "circumstance", bonusValue: 1, targetStationKey: "navigator", nextRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true },
+        { id: "consumed", bonusKey: "support", bonusType: "circumstance", bonusValue: 9, targetStationKey: "navigator", nextRoundIndex: 0, consumed: true, playerSafe: true, readOnly: true }
+      ]
+    }
+  };
+  const bonusState = prepareTravelV2StationRollBonusState(bonusSession, "navigator", 0);
+  assertEqual(bonusState.selectedBonusValue, 3, "Greater Opening +3 should be selected over Support +1");
+  assertEqual(bonusState.selectedSourceCardId, "card-greater", "selected card id should be exposed for card bonuses");
+  assertSmoke(bonusState.suppressed.some((record) => record.recordId === "support-1"), "lower Support bonus should be suppressed by same-round Greater Opening");
+  assertSmoke(!bonusState.candidates.some((record) => record.recordId === "other-station" || record.recordId === "wrong-round" || record.recordId === "consumed"), "wrong station, wrong round, and consumed bonuses should be ignored");
+  const tiedBonusState = prepareTravelV2StationRollBonusState({
+    currentRoundIndex: 0,
+    travelV2PendingStationActionBonuses: { records: [
+      { id: "support-tie", bonusKey: "support", bonusType: "circumstance", bonusValue: 1, targetStationKey: "navigator", nextRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true },
+      { id: "minor-tie", bonusKey: "minorOpeningBonus", bonusType: "circumstance", bonusValue: 1, sourceCardId: "card-minor", targetStationKey: "navigator", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true }
+    ] }
+  }, "navigator", 0);
+  assertEqual(tiedBonusState.selectedBonusValue, 1, "Support +1 and Minor Opening +1 should select one +1 circumstance bonus");
+  assertEqual(tiedBonusState.suppressed.length, 1, "equal circumstance bonus should suppress the other same-roll bonus");
+  const consumedBonuses = consumeTravelV2PendingStationActionBonusesForStationRoll(bonusSession, "navigator", 0);
+  assertSmoke(consumedBonuses.session !== bonusSession, "bonus consume helper should return cloned session");
+  assertSmoke(bonusSession.travelV2PendingStationActionBonuses.records.every((record) => record.consumed !== true || record.id === "consumed"), "bonus consume helper should not mutate source session");
+  assertSmoke(consumedBonuses.session.travelV2PendingStationActionBonuses.records.find((record) => record.id === "greater-1")?.consumed === true, "selected bonus should be marked consumed");
+  assertSmoke(consumedBonuses.session.travelV2PendingStationActionBonuses.records.find((record) => record.id === "support-1")?.suppressed === true, "suppressed same-roll bonus should be marked suppressed");
+  assertEqual(consumedBonuses.session.travelV2PendingStationActionBonuses.records.length, bonusSession.travelV2PendingStationActionBonuses.records.length, "consumed bonus records should remain auditable");
+
+  const floorSession = {
+    currentRoundIndex: 0,
+    roundResults: [{ stationResults: { navigator: "failure" } }],
+    travelV2PendingStationResultFloors: { records: [
+      { id: "legendary-1", resultFloor: "success", sourceCardId: "card-legendary", sourceCardLabel: "Legendary Event", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true },
+      { id: "wrong-floor", resultFloor: "success", targetStationKey: "engineer", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true }
+    ] }
+  };
+  const floorState = prepareTravelV2StationResultFloorState(floorSession, "navigator", 0);
+  assertEqual(floorState.predictedFloorEffect.effectiveOutcomeKey, "success", "result floor state should predict failure to success");
+  for (const [before, after] of [["criticalFailure", "success"], ["failure", "success"], ["success", "success"], ["criticalSuccess", "criticalSuccess"]]) {
+    const floorResult = applyTravelV2PendingStationResultFloorToOutcome(floorSession, "navigator", before, 0);
+    assertEqual(floorResult.effectiveOutcomeKey, after, `Legendary floor should map ${before} to ${after}`);
+    assertSmoke(floorResult.session !== floorSession, "result floor helper should return cloned session");
+    assertSmoke(floorSession.travelV2PendingStationResultFloors.records[0].consumed === false, "result floor helper should not mutate source session");
+    assertSmoke(floorResult.session.travelV2PendingStationResultFloors.records[0].consumed === true, "applied floor should be consumed");
+  }
+  const ignoredFloor = applyTravelV2PendingStationResultFloorToOutcome(applyTravelV2PendingStationResultFloorToOutcome(floorSession, "navigator", "failure", 0).session, "navigator", "failure", 0);
+  assertSmoke(ignoredFloor.resultFloorChange === null, "consumed floor should be ignored on later calls");
+  assertEqual(applyTravelV2PendingStationResultFloorToOutcome(floorSession, "engineer", "failure", 1).effectiveOutcomeKey, "failure", "wrong-round result floor should be ignored");
+
   return {
     ok: true,
     checked: [
@@ -522,7 +581,9 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
       "completed-session-blocked",
       "corrected-outcome-finalizes",
       "final-event-round-ready-metadata",
-      "no-side-effects-called"
+      "no-side-effects-called",
+      "station-roll-bonus-resolution-and-consumption",
+      "station-result-floor-application-and-consumption"
     ]
   };
 }

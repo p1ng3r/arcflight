@@ -311,7 +311,15 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     travelV2PendingStationActionBonuses: {
       records: [
         { bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationKey: "engineer", sourceStationLabel: "Engineer", targetStationKey: "navigator", targetStationLabel: "Navigator", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true, auditRecord: { secret: true } },
+        { bonusKey: "greaterOpeningBonus", bonusType: "circumstance", bonusValue: 3, sourceCardId: "card-greater", sourceCardLabel: "Greater Opening", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 1, previewRoundNumber: 2, consumed: false, playerSafe: true, readOnly: true },
         { bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationKey: "navigator", sourceStationLabel: "Navigator", targetStationKey: "engineer", targetStationLabel: "Engineer", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, consumed: true, consumedRoundIndex: 1, consumedStationKey: "engineer", playerSafe: true, readOnly: true, gmText: "secret" }
+      ],
+      playerSafe: true,
+      readOnly: true
+    },
+    travelV2PendingStationResultFloors: {
+      records: [
+        { resultFloor: "success", sourceCardId: "card-legendary", sourceCardLabel: "Legendary Event", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 1, previewRoundNumber: 2, consumed: false, playerSafe: true, readOnly: true }
       ],
       playerSafe: true,
       readOnly: true
@@ -321,14 +329,17 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   const supportPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, session: supportSourceSession });
   assertEqual(JSON.stringify(supportSourceSession), supportBefore, "Support preview preparation should not mutate the source session");
   assertSmoke(supportPanel.supportBonusStatusAvailable, "Support bonus status section should be available when only bonus records exist");
-  assertEqual(supportPanel.travelV2PendingStationActionBonuses.records.length, 2, "pending Support bonus display should include pending and consumed records");
+  assertEqual(supportPanel.travelV2PendingStationActionBonuses.records.length, 3, "pending Support bonus display should include pending card, pending Support, and consumed records");
+  assertEqual(supportPanel.travelV2StationRollBonusState.stations[0].selectedBonusValue, 3, "station roll bonus state should select highest same-round circumstance bonus");
+  assertSmoke(supportPanel.travelV2StationRollBonusState.stations[0].suppressed.some((record) => record.bonusKey === "support"), "station roll bonus state should expose suppressed non-stacking Support bonus");
+  assertEqual(supportPanel.travelV2StationResultFloorState.stations[0].predictedFloorEffect.effectiveOutcomeKey, "success", "station result floor state should expose predicted effective outcome");
   const pendingSupport = supportPanel.travelV2PendingStationActionBonuses.records.find((record) => record.status === "pending");
   assertSmoke(pendingSupport?.readableLabel.includes("Engineer supports Navigator") && pendingSupport.bonusValue === 1 && pendingSupport.bonusType === "circumstance" && pendingSupport.statusLabel === "Pending", "pending Support bonus render state includes safe label/value/status");
   const consumedSupport = supportPanel.travelV2PendingStationActionBonuses.records.find((record) => record.status === "consumed");
   assertSmoke(consumedSupport?.consumed === true && consumedSupport.statusLabel === "Consumed" && consumedSupport.sourceStationLabel === "Navigator" && consumedSupport.targetStationLabel === "Engineer", "consumed Support bonus render state is marked consumed with safe source and target labels");
   const appliedSupport = supportPanel.travelV2AppliedStationActionBonuses.records[0];
   assertSmoke(appliedSupport?.status === "applied" && appliedSupport.statusLabel === "Applied" && appliedSupport.sourceStationKey === "engineer" && appliedSupport.targetStationKey === "navigator" && appliedSupport.bonusValue === 1 && appliedSupport.playerSafe === true && appliedSupport.readOnly === true, "applied Support bonus render state includes safe source/target/value/status");
-  const supportPanelJson = JSON.stringify({ pending: supportPanel.travelV2PendingStationActionBonuses, applied: supportPanel.travelV2AppliedStationActionBonuses });
+  const supportPanelJson = JSON.stringify({ pending: supportPanel.travelV2PendingStationActionBonuses, applied: supportPanel.travelV2AppliedStationActionBonuses, roll: supportPanel.travelV2StationRollBonusState, floor: supportPanel.travelV2StationResultFloorState });
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!supportPanelJson.includes(forbidden), `Support bonus preview state should not include forbidden player-safe term ${forbidden}`);
   }
@@ -587,6 +598,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "pre-application-correction-controls-hidden",
       "station-benefit-display-state",
       "support-bonus-status-render-state",
+      "station-roll-bonus-state-render-state",
+      "station-result-floor-state-render-state",
       "event-approach-effects-render-state",
       "event-approach-contributions-render-state",
       "event-approach-contribution-tally-render-state",

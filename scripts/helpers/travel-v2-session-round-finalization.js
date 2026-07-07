@@ -665,6 +665,197 @@ function appendPendingStationResultFloor(session = {}, record = {}) {
   };
 }
 
+function pendingRecordAppliesToRound(record = {}, roundIndex = 0) {
+  const expectedRound = Number(roundIndex);
+  if (!Number.isInteger(expectedRound)) return false;
+  for (const key of ["appliesToRoundIndex", "nextRoundIndex"]) {
+    if (record?.[key] === null || record?.[key] === undefined || record?.[key] === "") continue;
+    const value = Number(record[key]);
+    return Number.isInteger(value) && value === expectedRound;
+  }
+  if (record?.roundIndex !== null && record?.roundIndex !== undefined && record?.roundIndex !== "") {
+    const value = Number(record.roundIndex);
+    return Number.isInteger(value) && value === expectedRound;
+  }
+  if (record?.previewRoundIndex !== null && record?.previewRoundIndex !== undefined && record?.previewRoundIndex !== "") {
+    const value = Number(record.previewRoundIndex);
+    return Number.isInteger(value) && value === expectedRound;
+  }
+  return false;
+}
+
+function pendingRecordAuditId(record = {}, index = 0) {
+  return optionalString(record.id) ?? optionalString(record.recordId) ?? optionalString(record.bonusId) ?? optionalString(record.sourceCardId) ?? `${record.bonusKey || record.resultFloor || "pending"}-${index}`;
+}
+
+function stationLabelForSession(session = {}, stationKey = "") {
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const round = Array.isArray(session?.event?.rounds) && isPlainObject(session.event.rounds[roundIndex]) ? session.event.rounds[roundIndex] : {};
+  return stationLabel(round, stationKey);
+}
+
+function sanitizePendingStationActionBonusCandidate(record = {}, index = 0) {
+  const bonusValue = Number(record?.bonusValue);
+  const bonusType = safeKey(record?.bonusType) || "circumstance";
+  const targetStationKey = safeKey(record?.targetStationKey);
+  if (!targetStationKey || !Number.isFinite(bonusValue)) return null;
+  return {
+    recordId: pendingRecordAuditId(record, index),
+    recordIndex: index,
+    bonusKey: safeKey(record?.bonusKey) || "stationActionBonus",
+    bonusType,
+    bonusValue,
+    sourceLabel: optionalString(record?.sourceCardLabel) ?? optionalString(record?.sourceStationLabel) ?? optionalString(record?.sourceLabel) ?? humanizeIdentifier(record?.bonusKey || "bonus"),
+    sourceCardId: optionalString(record?.sourceCardId) ?? "",
+    sourceCardLabel: optionalString(record?.sourceCardLabel) ?? "",
+    sourceStationKey: safeKey(record?.sourceStationKey),
+    sourceStationLabel: optionalString(record?.sourceStationLabel) ?? "",
+    targetStationKey,
+    targetStationLabel: optionalString(record?.targetStationLabel) ?? humanizeIdentifier(targetStationKey),
+    roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : (Number.isInteger(Number(record?.previewRoundIndex)) ? Number(record.previewRoundIndex) : null),
+    roundNumber: record?.roundNumber ?? record?.previewRoundNumber ?? null,
+    appliesToRoundIndex: Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : null,
+    nextRoundIndex: Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : null,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2StationRollBonusState(session = {}, stationKey = "", roundIndex = 0) {
+  const targetStationKey = safeKey(stationKey);
+  const targetRoundIndex = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
+  const roundNumber = targetRoundIndex + 1;
+  const candidates = recordsFromContainer(session?.travelV2PendingStationActionBonuses)
+    .map((record, index) => ({ record, index, candidate: sanitizePendingStationActionBonusCandidate(record, index) }))
+    .filter(({ record, candidate }) => candidate && record?.consumed !== true && candidate.targetStationKey === targetStationKey && pendingRecordAppliesToRound(record, targetRoundIndex))
+    .map(({ candidate }) => candidate);
+  const selected = [];
+  const suppressed = [];
+  const byType = new Map();
+  for (const candidate of candidates) {
+    const group = byType.get(candidate.bonusType) ?? [];
+    group.push(candidate);
+    byType.set(candidate.bonusType, group);
+  }
+  for (const [bonusType, group] of byType.entries()) {
+    const sorted = [...group].sort((a, b) => (Number(b.bonusValue) - Number(a.bonusValue)) || (a.recordIndex - b.recordIndex));
+    const winner = bonusType === "circumstance" ? sorted[0] : null;
+    if (winner) {
+      selected.push({ ...winner, selected: true });
+      suppressed.push(...sorted.slice(1).map((record) => ({ ...record, suppressed: true, suppressedReason: `${humanizeIdentifier(bonusType)} bonuses do not stack.`, suppressedBy: winner.recordId, suppressedByRecordId: winner.recordId })));
+    } else {
+      selected.push(...sorted.map((record) => ({ ...record, selected: true })));
+    }
+  }
+  const totalAppliedBonus = selected.reduce((total, record) => total + Number(record.bonusValue || 0), 0);
+  const primary = selected[0] ?? null;
+  return {
+    stationKey: targetStationKey,
+    stationLabel: primary?.targetStationLabel || stationLabelForSession(session, targetStationKey),
+    roundIndex: targetRoundIndex,
+    roundNumber,
+    bonusType: primary?.bonusType ?? "",
+    selectedBonusValue: primary?.bonusValue ?? 0,
+    selectedSourceLabel: primary?.sourceLabel ?? "",
+    selectedSourceCardId: primary?.sourceCardId ?? "",
+    candidates: cloneData(candidates),
+    selected: cloneData(selected),
+    applied: cloneData(selected),
+    suppressed: cloneData(suppressed),
+    totalAppliedBonus,
+    hasBonus: selected.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function resolveTravelV2BestStationRollBonuses(session = {}, roundIndex = 0) {
+  const records = recordsFromContainer(session?.travelV2PendingStationActionBonuses);
+  const stationKeys = Array.from(new Set(records.map((record) => safeKey(record?.targetStationKey)).filter(Boolean)));
+  const states = stationKeys.map((stationKey) => prepareTravelV2StationRollBonusState(session, stationKey, roundIndex));
+  return { roundIndex: Number(roundIndex), roundNumber: Number(roundIndex) + 1, stations: states, records: states, hasBonuses: states.some((state) => state.hasBonus), playerSafe: true, readOnly: true };
+}
+
+export function applyTravelV2PendingStationActionBonusToStationRollPreview(preview = {}, bonusState = {}) {
+  return { ...cloneData(preview), travelV2StationRollBonusState: cloneData(bonusState), stationRollBonusState: cloneData(bonusState), totalModifier: Number(preview?.totalModifier ?? 0) + Number(bonusState?.totalAppliedBonus ?? 0), playerSafe: true, readOnly: true };
+}
+
+export function consumeTravelV2PendingStationActionBonusRecord(session = {}, recordId = "", options = {}) {
+  const nextSession = cloneData(session);
+  const records = recordsFromContainer(nextSession.travelV2PendingStationActionBonuses);
+  const updated = records.map((record, index) => pendingRecordAuditId(record, index) === recordId ? { ...cloneData(record), consumed: true, consumedRoundIndex: options.roundIndex ?? record.roundIndex ?? record.previewRoundIndex ?? null, consumedStationKey: options.stationKey ?? record.targetStationKey ?? "" } : cloneData(record));
+  nextSession.travelV2PendingStationActionBonuses = { ...(isPlainObject(nextSession.travelV2PendingStationActionBonuses) ? nextSession.travelV2PendingStationActionBonuses : {}), records: updated, hasRecords: updated.length > 0, playerSafe: true, readOnly: true };
+  return nextSession;
+}
+
+export function consumeTravelV2PendingStationActionBonusesForStationRoll(session = {}, stationKey = "", roundIndex = 0, options = {}) {
+  const state = prepareTravelV2StationRollBonusState(session, stationKey, roundIndex);
+  const selectedIds = new Set(state.selected.map((record) => record.recordId));
+  const suppressedById = new Map(state.suppressed.map((record) => [record.recordId, record.suppressedByRecordId || record.suppressedBy]));
+  const nextSession = cloneData(session);
+  const records = recordsFromContainer(nextSession.travelV2PendingStationActionBonuses);
+  const updated = records.map((record, index) => {
+    const id = pendingRecordAuditId(record, index);
+    if (selectedIds.has(id)) return { ...cloneData(record), consumed: true, consumedRoundIndex: Number(roundIndex), consumedStationKey: stationKey, consumedByRoll: true };
+    if (suppressedById.has(id)) return { ...cloneData(record), consumed: true, consumedRoundIndex: Number(roundIndex), consumedStationKey: stationKey, suppressed: true, suppressedBy: suppressedById.get(id), consumedByRoll: true };
+    return cloneData(record);
+  });
+  nextSession.travelV2PendingStationActionBonuses = { ...(isPlainObject(nextSession.travelV2PendingStationActionBonuses) ? nextSession.travelV2PendingStationActionBonuses : {}), records: updated, hasRecords: updated.length > 0, playerSafe: true, readOnly: true };
+  return { ok: true, session: nextSession, bonusState: state, consumedRecordIds: [...selectedIds, ...suppressedById.keys()], playerSafe: true, readOnly: true };
+}
+
+function sanitizePendingStationResultFloorCandidate(record = {}, index = 0) {
+  const targetStationKey = safeKey(record?.targetStationKey);
+  const resultFloor = normalizeStationOutcomeKey(record?.resultFloor);
+  if (!targetStationKey || !resultFloor) return null;
+  return {
+    recordId: pendingRecordAuditId(record, index),
+    recordIndex: index,
+    targetStationKey,
+    targetStationLabel: optionalString(record?.targetStationLabel) ?? humanizeIdentifier(targetStationKey),
+    resultFloor,
+    sourceCardId: optionalString(record?.sourceCardId) ?? "",
+    sourceCardLabel: optionalString(record?.sourceCardLabel) ?? "",
+    sourceLabel: optionalString(record?.sourceCardLabel) ?? optionalString(record?.sourceLabel) ?? "Result Floor",
+    roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : (Number.isInteger(Number(record?.previewRoundIndex)) ? Number(record.previewRoundIndex) : null),
+    roundNumber: record?.roundNumber ?? record?.previewRoundNumber ?? null,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2StationResultFloorState(session = {}, stationKey = "", roundIndex = 0, options = {}) {
+  const targetStationKey = safeKey(stationKey);
+  const targetRoundIndex = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
+  const floors = recordsFromContainer(session?.travelV2PendingStationResultFloors)
+    .map((record, index) => ({ record, candidate: sanitizePendingStationResultFloorCandidate(record, index) }))
+    .filter(({ record, candidate }) => candidate && record?.consumed !== true && candidate.targetStationKey === targetStationKey && pendingRecordAppliesToRound(record, targetRoundIndex))
+    .map(({ candidate }) => candidate);
+  const selected = floors[0] ?? null;
+  const outcomeKey = normalizeStationOutcomeKey(options.outcomeKey ?? getTravelV2StationResultForRound(session, targetStationKey, targetRoundIndex));
+  const preview = selected && outcomeKey ? previewTravelV2ResultFloor(outcomeKey, selected.resultFloor) : null;
+  const predicted = preview ? { beforeOutcomeKey: preview.before, afterOutcomeKey: preview.after, effectiveOutcomeKey: preview.after, changed: preview.before !== preview.after, resultFloor: selected.resultFloor, playerSafe: true, readOnly: true } : null;
+  return { stationKey: targetStationKey, stationLabel: selected?.targetStationLabel || stationLabelForSession(session, targetStationKey), roundIndex: targetRoundIndex, roundNumber: targetRoundIndex + 1, pendingFloors: cloneData(floors), selectedFloor: cloneData(selected), resultFloor: selected?.resultFloor ?? "", sourceCardId: selected?.sourceCardId ?? "", sourceLabel: selected?.sourceLabel ?? "", predictedFloorEffect: predicted, hasPendingFloor: Boolean(selected), playerSafe: true, readOnly: true };
+}
+
+export function applyTravelV2PendingStationResultFloorToOutcome(session = {}, stationKey = "", outcomeKey = "", roundIndex = 0, options = {}) {
+  const before = normalizeStationOutcomeKey(outcomeKey);
+  if (!safeKey(stationKey) || !before) return { ok: false, outcomeKey: before, effectiveOutcomeKey: before, resultFloorChange: null, session: cloneData(session), blockedReason: "Station and outcome are required.", playerSafe: true, readOnly: true };
+  const state = prepareTravelV2StationResultFloorState(session, stationKey, roundIndex, { outcomeKey: before });
+  if (!state.selectedFloor) return { ok: true, outcomeKey: before, effectiveOutcomeKey: before, resultFloorChange: null, session: cloneData(session), playerSafe: true, readOnly: true };
+  const preview = previewTravelV2ResultFloor(before, state.selectedFloor.resultFloor);
+  const change = { beforeOutcomeKey: before, afterOutcomeKey: preview.after, outcomeKey: before, effectiveOutcomeKey: preview.after, resultFloor: state.selectedFloor.resultFloor, sourceCardId: state.selectedFloor.sourceCardId, sourceLabel: state.selectedFloor.sourceLabel, appliedRoundIndex: Number(roundIndex), appliedRoundNumber: Number(roundIndex) + 1, changed: before !== preview.after, playerSafe: true, readOnly: true };
+  const nextSession = cloneData(session);
+  const records = recordsFromContainer(nextSession.travelV2PendingStationResultFloors);
+  const updated = records.map((record, index) => pendingRecordAuditId(record, index) === state.selectedFloor.recordId ? { ...cloneData(record), consumed: true, consumedRoundIndex: Number(roundIndex), consumedStationKey: stationKey, effectiveOutcomeKey: preview.after, beforeOutcomeKey: before } : cloneData(record));
+  nextSession.travelV2PendingStationResultFloors = { ...(isPlainObject(nextSession.travelV2PendingStationResultFloors) ? nextSession.travelV2PendingStationResultFloors : {}), records: updated, hasRecords: updated.length > 0, playerSafe: true, readOnly: true };
+  return { ok: true, outcomeKey: before, effectiveOutcomeKey: preview.after, resultFloorChange: change, session: nextSession, playerSafe: true, readOnly: true };
+}
+
+export function consumeTravelV2PendingStationResultFloorForStationRoll(session = {}, stationKey = "", outcomeKey = "", roundIndex = 0, options = {}) {
+  return applyTravelV2PendingStationResultFloorToOutcome(session, stationKey, outcomeKey, roundIndex, options);
+}
+
 function consumeTravelV2ActiveCard(session = {}, sourceCardId = "") {
   const activeCards = normalizeTravelV2ActiveCardRecords(session.travelV2ActiveCards);
   let consumedCardRecord = null;
