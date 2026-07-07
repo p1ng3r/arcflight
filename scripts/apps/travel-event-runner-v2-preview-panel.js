@@ -5,7 +5,7 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
-import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers } from "../helpers/travel-v2-session-round-finalization.js";
+import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers, sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers } from "../helpers/travel-v2-session-round-finalization.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 15;
 
@@ -121,13 +121,17 @@ function normalizeActiveTravelCards(session, ...containers) {
     mergedRecords.push(...sanitizeTravelV2ActiveCardsForPlayers(container).records);
   }
   const normalized = sanitizeTravelV2ActiveCardPreviewForPlayers(mergedRecords, session);
+  const applicationPreviews = sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers(normalized, session);
   return {
     ...normalized,
     title: "Active Travel Cards",
     subtitle: normalized.records.length > 0
       ? `${normalized.records.length} pending Difficulty Bid card${normalized.records.length === 1 ? "" : "s"} available for a future card-application pass.`
       : "No active Travel v2 cards have been created yet.",
-    available: normalized.records.length > 0
+    available: normalized.records.length > 0,
+    applicationPreviews,
+    activeCardApplicationPreviews: applicationPreviews,
+    travelV2ActiveCardApplicationPreviews: applicationPreviews
   };
 }
 
@@ -785,6 +789,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const travelV2ActiveCards = normalizeActiveTravelCards(runnerSession, runnerSession?.travelV2ActiveCards, latestResolutionRecord?.travelV2ActiveCards, latestFinalizationResult?.travelV2ActiveCards);
+  const travelV2ActiveCardApplicationPreviews = travelV2ActiveCards.travelV2ActiveCardApplicationPreviews;
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available || stationActionEventApproachTallyStatus.available;
@@ -839,6 +844,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2AppliedStationActionBonuses: appliedStationActionBonuses,
     travelV2ActiveCards,
     activeTravelCards: travelV2ActiveCards,
+    travelV2ActiveCardApplicationPreviews,
+    activeCardApplicationPreviews: travelV2ActiveCardApplicationPreviews,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,

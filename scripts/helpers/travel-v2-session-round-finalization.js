@@ -11,11 +11,23 @@ export const TRAVEL_V2_EVENT_APPROACH_TALLY_STATUS_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION = 1;
+export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
 export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending"]);
 export const TRAVEL_V2_ACTIVE_CARD_TIMING_TYPES = Object.freeze(["beforeRoll", "afterFailure"]);
 export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_STATUSES = Object.freeze(["needsTarget", "waitingForLock", "playable", "missedWindow", "waitingForTrigger", "triggerReady", "noTrigger"]);
+export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES = Object.freeze({
+  circumstanceBonusPreview: "circumstanceBonusPreview",
+  degreeUpgradePreview: "degreeUpgradePreview",
+  resultFloorPreview: "resultFloorPreview"
+});
+export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS = Object.freeze({
+  minorOpeningBonus: "minorOpeningBonus",
+  greaterOpeningBonus: "greaterOpeningBonus",
+  heroicDegreeUpgrade: "heroicDegreeUpgrade",
+  legendarySuccessFloor: "legendarySuccessFloor"
+});
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -392,6 +404,157 @@ export function prepareTravelV2ActiveCardsPreviewState(container = {}, session =
 
 export function sanitizeTravelV2ActiveCardPreviewForPlayers(container = {}, session = {}) {
   return prepareTravelV2ActiveCardsPreviewState(container, session);
+}
+
+
+function activeCardApplicationPreviewSegment(value = "", fallback = "unknown") {
+  const segment = String(value ?? "").trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return segment || fallback;
+}
+
+function activeCardApplicationPreviewId(card = {}, effectKey = "") {
+  return ["travel-v2-card-application-preview", activeCardApplicationPreviewSegment(card.cardId ?? card.id, "unknown-card"), safeKey(effectKey) || "unknown-effect", Number.isInteger(Number(card.previewRoundIndex)) ? Number(card.previewRoundIndex) : "unknown-round", safeKey(card.targetStationKey) || "no-target"].join(":");
+}
+
+function activeCardApplicationTypeLabel(applicationType = "") {
+  return {
+    circumstanceBonusPreview: "Circumstance Bonus Preview",
+    degreeUpgradePreview: "Degree Upgrade Preview",
+    resultFloorPreview: "Result Floor Preview"
+  }[applicationType] ?? humanizeIdentifier(applicationType || "application preview");
+}
+
+function activeCardApplicationEffectLabel(effectKey = "") {
+  return {
+    minorOpeningBonus: "Minor Opening Bonus",
+    greaterOpeningBonus: "Greater Opening Bonus",
+    heroicDegreeUpgrade: "Heroic Degree Upgrade",
+    legendarySuccessFloor: "Legendary Success Floor"
+  }[effectKey] ?? humanizeIdentifier(effectKey || "application effect");
+}
+
+function blockedActiveCardApplicationReason(card = {}, requiredStatus = "playable", extraReason = "") {
+  if (!card.hasTargetStation) return card.targetStatus === "invalidTarget" ? "Target station is unavailable." : "Target station is required.";
+  if (card.previewStatus !== requiredStatus) return `Card preview status is ${activeCardPreviewStatusLabel(card.previewStatus)}; expected ${activeCardPreviewStatusLabel(requiredStatus)}.`;
+  return extraReason;
+}
+
+export function previewTravelV2DegreeUpgrade(result = "") {
+  const before = normalizeStationOutcomeKey(result);
+  const after = before === "criticalFailure" ? "failure" : (before === "failure" ? "success" : "");
+  return { before, after, canApplyPreview: Boolean(after), playerSafe: true, readOnly: true };
+}
+
+export function previewTravelV2ResultFloor(result = "", floor = "success") {
+  const before = normalizeStationOutcomeKey(result);
+  const normalizedFloor = normalizeStationOutcomeKey(floor) || "success";
+  const order = { criticalFailure: 0, failure: 1, success: 2, criticalSuccess: 3 };
+  const after = before ? (order[before] < order[normalizedFloor] ? normalizedFloor : before) : "";
+  return { before, after, resultFloor: normalizedFloor, preservesCriticalSuccess: true, canApplyPreview: true, playerSafe: true, readOnly: true };
+}
+
+export function previewTravelV2CircumstanceBonusCard(cardKey = "") {
+  const key = safeKey(cardKey);
+  const bonusValue = key === "greaterOpening" ? 3 : (key === "minorOpening" ? 1 : 0);
+  return { bonusType: bonusValue ? "circumstance" : "", bonusValue, canApplyPreview: bonusValue > 0, playerSafe: true, readOnly: true };
+}
+
+export function prepareTravelV2ActiveCardApplicationPreviewRecord(card = {}) {
+  const cardKey = safeKey(card.cardKey ?? card.rewardKey);
+  let applicationType = "";
+  let effectKey = "";
+  let effectSummary = "";
+  let bonusType = "";
+  let bonusValue = null;
+  let targetResultBefore = card.stationResult || "";
+  let targetResultAfter = "";
+  let resultFloor = "";
+  let canApplyPreview = false;
+  let blockedReason = "";
+
+  if (cardKey === "minorOpening" || cardKey === "greaterOpening") {
+    applicationType = TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES.circumstanceBonusPreview;
+    effectKey = cardKey === "minorOpening" ? TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.minorOpeningBonus : TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.greaterOpeningBonus;
+    const bonus = previewTravelV2CircumstanceBonusCard(cardKey);
+    bonusType = bonus.bonusType;
+    bonusValue = bonus.bonusValue;
+    blockedReason = blockedActiveCardApplicationReason(card, "playable");
+    canApplyPreview = !blockedReason && bonus.canApplyPreview;
+    effectSummary = `Would create a future +${bonusValue} ${bonusType} bonus for ${card.targetStationLabel || "the target station"} roll.`;
+  } else if (cardKey === "heroicEvent") {
+    applicationType = TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES.degreeUpgradePreview;
+    effectKey = TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.heroicDegreeUpgrade;
+    const upgrade = previewTravelV2DegreeUpgrade(card.stationResult);
+    targetResultBefore = upgrade.before;
+    targetResultAfter = upgrade.after;
+    blockedReason = blockedActiveCardApplicationReason(card, "triggerReady", upgrade.canApplyPreview ? "" : "Target station result is not failure or critical failure.");
+    canApplyPreview = !blockedReason && upgrade.canApplyPreview;
+    effectSummary = targetResultAfter ? `Would improve ${card.targetStationLabel || "the target station"} result from ${humanizeIdentifier(targetResultBefore)} to ${humanizeIdentifier(targetResultAfter)}.` : "Would improve a target station failure or critical failure by one degree when trigger-ready.";
+  } else if (cardKey === "legendaryEvent") {
+    applicationType = TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES.resultFloorPreview;
+    effectKey = TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.legendarySuccessFloor;
+    const floor = previewTravelV2ResultFloor(card.stationResult, "success");
+    targetResultBefore = floor.before;
+    targetResultAfter = floor.after;
+    resultFloor = floor.resultFloor;
+    blockedReason = blockedActiveCardApplicationReason(card, "playable");
+    canApplyPreview = !blockedReason;
+    effectSummary = `Would set ${card.targetStationLabel || "the target station"} result floor to Success when that station rolls; Critical Success remains Critical Success.`;
+  }
+  if (!applicationType || !effectKey) return null;
+  return {
+    previewId: activeCardApplicationPreviewId(card, effectKey),
+    id: activeCardApplicationPreviewId(card, effectKey),
+    sourceCardId: card.cardId ?? card.id ?? "",
+    cardKey,
+    rewardKey: card.rewardKey ?? cardKey,
+    cardLabel: card.cardLabel ?? humanizeIdentifier(cardKey),
+    sourceStationKey: card.sourceStationKey ?? "",
+    sourceStationLabel: card.sourceStationLabel ?? "",
+    targetStationKey: card.targetStationKey ?? "",
+    targetStationLabel: card.targetStationLabel ?? "",
+    createdRoundIndex: Number.isInteger(Number(card.roundIndex)) ? Number(card.roundIndex) : null,
+    createdRoundNumber: card.roundNumber ?? null,
+    previewRoundIndex: Number.isInteger(Number(card.previewRoundIndex)) ? Number(card.previewRoundIndex) : null,
+    previewRoundNumber: card.previewRoundNumber ?? null,
+    previewStatus: card.previewStatus ?? "",
+    previewStatusLabel: card.previewStatusLabel ?? activeCardPreviewStatusLabel(card.previewStatus),
+    applicationType,
+    applicationTypeLabel: activeCardApplicationTypeLabel(applicationType),
+    effectKey,
+    effectLabel: activeCardApplicationEffectLabel(effectKey),
+    effectSummary,
+    targetResultBefore,
+    targetResultAfter,
+    bonusType,
+    bonusValue,
+    resultFloor,
+    preservesCriticalSuccess: cardKey === "legendaryEvent",
+    requiresGMConfirmation: true,
+    canApplyPreview,
+    blockedReason: canApplyPreview ? "" : blockedReason,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2ActiveCardApplicationPreviewState(activeCardPreviewState = {}, session = {}) {
+  const source = activeCardPreviewState?.version === TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION
+    ? activeCardPreviewState
+    : prepareTravelV2ActiveCardsPreviewState(activeCardPreviewState, session);
+  const records = [];
+  const seen = new Set();
+  for (const card of recordsFromContainer(source)) {
+    const record = prepareTravelV2ActiveCardApplicationPreviewRecord(card);
+    if (!record || seen.has(record.previewId)) continue;
+    seen.add(record.previewId);
+    records.push(record);
+  }
+  return { version: TRAVEL_V2_ACTIVE_CARD_APPLICATION_PREVIEW_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
+}
+
+export function sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers(activeCardPreviewState = {}, session = {}) {
+  return prepareTravelV2ActiveCardApplicationPreviewState(activeCardPreviewState, session);
 }
 
 export function prepareTravelV2DifficultyBidCardRecord(stationRow = {}) {
@@ -942,6 +1105,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, stationActionEventApproachTallyStatus, pendingStationActionBonuses, travelV2ActiveCards }, options);
   const finalizedSession = appendTravelV2ActiveCardRecordsToSession(appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses), travelV2ActiveCards);
   const mergedTravelV2ActiveCards = normalizeTravelV2ActiveCardRecords(finalizedSession.travelV2ActiveCards);
+  const travelV2ActiveCardPreviewState = prepareTravelV2ActiveCardsPreviewState(mergedTravelV2ActiveCards, finalizedSession);
+  const travelV2ActiveCardApplicationPreviews = prepareTravelV2ActiveCardApplicationPreviewState(travelV2ActiveCardPreviewState, finalizedSession);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
 
@@ -971,6 +1136,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     pendingStationActionBonuses: cloneData(pendingStationActionBonuses),
     travelV2PendingStationActionBonuses: cloneData(pendingStationActionBonuses),
     travelV2ActiveCards: cloneData(mergedTravelV2ActiveCards),
+    travelV2ActiveCardApplicationPreviews: cloneData(travelV2ActiveCardApplicationPreviews),
+    activeCardApplicationPreviews: cloneData(travelV2ActiveCardApplicationPreviews),
     activeCardRecords: cloneData(mergedTravelV2ActiveCards.records),
     createdTravelV2ActiveCards: cloneData(travelV2ActiveCards),
     createdActiveCardRecords: cloneData(travelV2ActiveCards.records)

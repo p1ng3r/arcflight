@@ -11,6 +11,7 @@ import {
   prepareTravelV2DifficultyBidPreview,
   prepareTravelV2DifficultyBidRewardPreview,
   prepareTravelV2ActiveCardsPreviewState,
+  prepareTravelV2ActiveCardApplicationPreviewState,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -275,6 +276,46 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(invalidTarget.records[0].targetStatus, "invalidTarget", "unavailable target station should normalize safely");
   const previewJson = JSON.stringify(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator", gmText: "secret" })], previewBaseSession));
   assertSmoke(!previewJson.includes("gmText") && !previewJson.includes("secret"), "active card preview state should remain player-safe");
+
+  const minorApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "minorOpening", rewardKey: "minorOpening", targetStationKey: "navigator" })], previewBaseSession), previewBaseSession);
+  assertEqual(minorApplicationPreview.records.length, 1, "minor opening playable card should create one application preview");
+  assertEqual(minorApplicationPreview.records[0].applicationType, "circumstanceBonusPreview", "minor opening application preview should be a circumstance bonus preview");
+  assertEqual(minorApplicationPreview.records[0].bonusType, "circumstance", "minor opening application preview should use circumstance bonus type");
+  assertEqual(minorApplicationPreview.records[0].bonusValue, 1, "minor opening application preview should grant future +1");
+  assertSmoke(minorApplicationPreview.records[0].requiresGMConfirmation === true && minorApplicationPreview.records[0].canApplyPreview === true, "minor opening application preview should require GM confirmation and be apply-ready");
+  assertSmoke(!JSON.stringify(minorApplicationPreview).includes("pendingStationActionBonuses"), "minor opening application preview should not create actual pending bonuses");
+
+  const greaterApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "greaterOpening", rewardKey: "greaterOpening", targetStationKey: "navigator" })], previewBaseSession), previewBaseSession);
+  assertEqual(greaterApplicationPreview.records[0].applicationType, "circumstanceBonusPreview", "greater opening application preview should be a circumstance bonus preview");
+  assertEqual(greaterApplicationPreview.records[0].bonusValue, 3, "greater opening application preview should grant future +3");
+
+  const heroicFailureApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "failure" } }] })));
+  assertEqual(heroicFailureApplicationPreview.records[0].applicationType, "degreeUpgradePreview", "heroic event failure should create degree upgrade preview");
+  assertEqual(heroicFailureApplicationPreview.records[0].targetResultBefore, "failure", "heroic event failure preview should record before result");
+  assertEqual(heroicFailureApplicationPreview.records[0].targetResultAfter, "success", "heroic event failure preview should record after result");
+
+  const heroicCriticalFailureApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "criticalFailure" } }] })));
+  assertEqual(heroicCriticalFailureApplicationPreview.records[0].targetResultBefore, "criticalFailure", "heroic event critical failure preview should record before result");
+  assertEqual(heroicCriticalFailureApplicationPreview.records[0].targetResultAfter, "failure", "heroic event critical failure preview should record after result");
+
+  const heroicSuccessApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "success" } }] })));
+  assertSmoke(heroicSuccessApplicationPreview.records[0].canApplyPreview === false && Boolean(heroicSuccessApplicationPreview.records[0].blockedReason), "heroic event success should be represented as blocked when previewed");
+  const heroicNoTargetApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent" })], previewBaseSession));
+  assertSmoke(heroicNoTargetApplicationPreview.records[0].canApplyPreview === false && Boolean(heroicNoTargetApplicationPreview.records[0].blockedReason), "heroic event without target should be blocked when previewed");
+
+  const legendaryApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "legendaryEvent", rewardKey: "legendaryEvent", targetStationKey: "navigator" })], previewBaseSession), previewBaseSession);
+  assertEqual(legendaryApplicationPreview.records[0].applicationType, "resultFloorPreview", "legendary event should create result floor preview");
+  assertEqual(legendaryApplicationPreview.records[0].resultFloor, "success", "legendary event should preview success result floor");
+  assertSmoke(legendaryApplicationPreview.records[0].preservesCriticalSuccess === true, "legendary event should preserve possible critical successes");
+
+  const duplicateApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "minorOpening", rewardKey: "minorOpening", targetStationKey: "navigator" }), pendingActiveCard({ cardKey: "minorOpening", rewardKey: "minorOpening", targetStationKey: "navigator" })], previewBaseSession), previewBaseSession);
+  assertEqual(duplicateApplicationPreview.records.length, 1, "application preview state should dedupe stable preview ids");
+  const invalidApplicationPreview = prepareTravelV2ActiveCardApplicationPreviewState(invalidTarget, previewBaseSession);
+  assertSmoke(invalidApplicationPreview.records[0].canApplyPreview === false && Boolean(invalidApplicationPreview.records[0].blockedReason), "invalid target station should create no apply-ready preview");
+  const applicationPreviewJson = JSON.stringify(legendaryApplicationPreview);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!applicationPreviewJson.includes(forbidden), `application preview state should not include forbidden player-safe term ${forbidden}`);
+  }
 
   const futureRoundSession = createRunnerSessionFixture({
     currentRoundIndex: 1,
