@@ -151,6 +151,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(!missingActionBlocked.result.stationActionSummary, "missing station action should block before station action summary generation");
     assertSmoke(!missingActionBlocked.result.stationActionSupportEffects && !missingActionBlocked.result.stationActionEventApproachEffects && !missingActionBlocked.result.stationActionEffects, "missing station action should block before station action effects are generated");
     assertSmoke(!missingActionBlocked.result.pendingStationActionBonuses, "missing station action should block before pending bonuses are generated");
+    assertSmoke(!missingActionBlocked.result.stationActionEventApproachContributions && !missingActionBlocked.result.eventApproachContributions, "missing station action should block before Event Approach contributions are generated");
     assertSmoke(missingActionBlocked.result.playerMessage.includes("selected and locked"), "blocked result should include safe player-facing lock-in message");
     assertSmoke(missingActionBlocked.result.gmMessage.includes("captain"), "blocked result should include readable GM-facing station reason");
     assertEqual(snapshot(missingActionApplied.nextSession), missingActionBefore, "missing action guard should not mutate input session");
@@ -207,6 +208,35 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(navigatorEventApproach?.stationOutcome === "success", "Event Approach effect should include safe station result when available");
     assertSmoke(navigatorEventApproach?.playerSafe === true && navigatorEventApproach.readOnly === true, "Event Approach effect should be player-safe and read-only");
     assertSmoke(resolutionRecord.stationActionEventApproachEffects.effects.some((effect) => effect.sourceStationKey === "navigator"), "Event Approach effect should be present on round resolution record");
+    const eventApproachContributions = successful.result.stationActionEventApproachContributions;
+    assertSmoke(eventApproachContributions?.hasRecords === true && eventApproachContributions.records.length === 4, "ready locked Event Approach actions should record Event Approach contributions");
+    const navigatorContribution = eventApproachContributions.records.find((record) => record.sourceStationKey === "navigator");
+    assertSmoke(navigatorContribution?.sourceStationLabel === "Navigator", "Event Approach contribution should include safe source station label");
+    assertSmoke(navigatorContribution?.contributionKey === "eventApproach" && navigatorContribution.contributionType === "eventApproach", "Event Approach contribution should include safe contribution key and type");
+    assertSmoke(navigatorContribution?.contributionLabel.includes("Event Approach") && navigatorContribution.contributionLabel.includes("+1"), "Event Approach contribution should include safe readable contribution label");
+    assertSmoke(navigatorContribution?.stationOutcome === "success" && navigatorContribution.contributionValue === 1, "Event Approach success should create a +1 contribution");
+    assertSmoke(navigatorContribution?.playerSafe === true && navigatorContribution.readOnly === true, "Event Approach contribution should be player-safe and read-only");
+    assertSmoke(resolutionRecord.stationActionEventApproachContributions.records.some((record) => record.sourceStationKey === "navigator"), "Event Approach contribution should be present on round resolution record");
+    assertSmoke(successful.result.eventApproachContributions.records.length === eventApproachContributions.records.length, "Event Approach contribution alias should be present on finalization result");
+    const eventApproachContributionJson = JSON.stringify(eventApproachContributions);
+    for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+      assertSmoke(!eventApproachContributionJson.includes(forbidden), `Event Approach contributions should not include forbidden player-safe term ${forbidden}`);
+    }
+    for (const [outcome, expected] of [["criticalSuccess", 2], ["failure", 0], ["criticalFailure", -1], ["mystery", 0]]) {
+      const variant = createRunnerSessionFixture();
+      variant.roundResults[0].stationResults.navigator = outcome;
+      const variantApplied = prepareTravelV2PressureApplicationRunnerUpdate(variant, { selectedOutcomeKey: "failure", now: `2026-01-01T00:00:04.${Math.abs(expected)}00Z` });
+      const variantFinalized = prepareTravelV2RoundFinalizationRunnerUpdate(variantApplied.nextSession, { now: `2026-01-01T00:00:05.${Math.abs(expected)}00Z` });
+      const variantContribution = variantFinalized.result.stationActionEventApproachContributions.records.find((record) => record.sourceStationKey === "navigator");
+      assertSmoke(variantContribution?.contributionValue === expected, `Event Approach ${outcome} should create contribution ${expected}`);
+      if (outcome === "mystery") assertSmoke(variantContribution.stationOutcome === "unknown" && variantContribution.contributionLabel.includes("Unknown Result"), "unknown Event Approach outcome should create safe 0 contribution label");
+    }
+    const missingOutcome = createRunnerSessionFixture();
+    delete missingOutcome.roundResults[0].stationResults.navigator;
+    const missingOutcomeApplied = prepareTravelV2PressureApplicationRunnerUpdate(missingOutcome, { selectedOutcomeKey: "failure", now: "2026-01-01T00:00:06.000Z" });
+    const missingOutcomeFinalized = prepareTravelV2RoundFinalizationRunnerUpdate(missingOutcomeApplied.nextSession, { now: "2026-01-01T00:00:07.000Z" });
+    const missingOutcomeContribution = missingOutcomeFinalized.result.stationActionEventApproachContributions.records.find((record) => record.sourceStationKey === "navigator");
+    assertSmoke(missingOutcomeContribution?.contributionValue === 0 && missingOutcomeContribution.stationOutcome === "unknown", "missing Event Approach outcome should create safe 0 contribution");
     const eventApproachJson = JSON.stringify(eventApproachEffects);
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!eventApproachJson.includes(forbidden), `Event Approach effects should not include forbidden player-safe term ${forbidden}`);
@@ -345,6 +375,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(template.includes("travelV2StationActionResolutionSummary"), "template should render finalized station action summary when available");
     assertSmoke(template.includes("travelV2StationActionSupportEffects"), "template should render finalized station action Support effects when available");
     assertSmoke(template.includes("travelV2PendingStationActionBonuses"), "template should render pending Support bonuses when available");
+    assertSmoke(template.includes("travelV2StationActionEventApproachContributions"), "template should render Event Approach contributions when available");
     assertSmoke(template.includes("state.travelV2PreviewPanel.travelV2RoundFinalizationState"), "template should use prepared finalization state");
     assertSmoke(template.includes("finalizeDisabled"), "template should use prepared disabled state");
     assertSmoke(!template.includes("data-arcflight-runner-complete") || template.includes("data-arcflight-travel-v2-round-finalize"), "finalization control should not replace or add event completion behavior");
@@ -367,6 +398,9 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
         "support-target-safe-summary",
         "support-effect-result-and-record",
         "support-pending-bonus-result-record-session",
+        "event-approach-contribution-result-record",
+        "event-approach-contribution-outcome-values",
+        "event-approach-contribution-player-safe-redacted",
         "support-effect-render-state",
         "support-pending-bonus-render-state",
         "invalid-support-target-safe-warning",
@@ -381,6 +415,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
         "no-chat-socket-actor-item-side-effects",
         "render-state-does-not-finalize",
         "visible-template-controls",
+        "visible-template-event-approach-contributions",
         "aggregate-smoke-includes-suite",
         "app-internal-action-wiring"
       ]
