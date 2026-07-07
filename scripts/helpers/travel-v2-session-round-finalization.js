@@ -8,6 +8,9 @@ export const TRAVEL_V2_PENDING_STATION_ACTION_BONUSES_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTIONS_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTION_TALLY_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_STATUS_VERSION = 1;
+export const TRAVEL_V2_DIFFICULTY_BID_VERSION = 1;
+export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
+export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -64,6 +67,102 @@ function actionLabel(action = {}, actionKey = "") {
     ?? optionalString(action.actionLabel)
     ?? optionalString(action.name)
     ?? humanizeIdentifier(actionKey || "station-action");
+}
+
+
+const TRAVEL_V2_DIFFICULTY_BID_CONFIG = Object.freeze({
+  none: Object.freeze({ label: "No Bid", dcModifier: 0 }),
+  minor: Object.freeze({ label: "Minor Bid", dcModifier: 2 }),
+  greater: Object.freeze({ label: "Greater Bid", dcModifier: 5 }),
+  extreme: Object.freeze({ label: "Extreme Bid", dcModifier: 8 })
+});
+
+const TRAVEL_V2_DIFFICULTY_BID_REWARD_LADDER = Object.freeze({
+  minor: Object.freeze({ success: "minorOpening", criticalSuccess: "greaterOpening" }),
+  greater: Object.freeze({ success: "greaterOpening", criticalSuccess: "heroicEvent" }),
+  extreme: Object.freeze({ success: "heroicEvent", criticalSuccess: "legendaryEvent" })
+});
+
+function numberOrZero(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+export function normalizeTravelV2DifficultyBid(value = "none") {
+  const key = safeKey(isPlainObject(value) ? (value.difficultyBidKey ?? value.bidKey ?? value.key) : value);
+  const difficultyBidKey = TRAVEL_V2_DIFFICULTY_BID_KEYS.includes(key) ? key : "none";
+  const config = TRAVEL_V2_DIFFICULTY_BID_CONFIG[difficultyBidKey];
+  return {
+    version: TRAVEL_V2_DIFFICULTY_BID_VERSION,
+    difficultyBidKey,
+    difficultyBidLabel: config.label,
+    difficultyBidDcModifier: config.dcModifier,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function getTravelV2DifficultyBidDcModifier(value = "none") {
+  return normalizeTravelV2DifficultyBid(value).difficultyBidDcModifier;
+}
+
+export function prepareTravelV2DifficultyBidRewardPreview(bid = "none", outcomeKey = "") {
+  const normalizedBid = normalizeTravelV2DifficultyBid(bid);
+  const stationOutcome = normalizeStationOutcomeKey(outcomeKey);
+  const rewardKey = TRAVEL_V2_DIFFICULTY_BID_REWARD_LADDER[normalizedBid.difficultyBidKey]?.[stationOutcome] ?? "";
+  const hasReward = Boolean(rewardKey);
+  const hasBacklashPreview = normalizedBid.difficultyBidKey !== "none" && stationOutcome === "criticalFailure";
+  return {
+    version: TRAVEL_V2_DIFFICULTY_BID_VERSION,
+    difficultyBidKey: normalizedBid.difficultyBidKey,
+    difficultyBidLabel: normalizedBid.difficultyBidLabel,
+    stationOutcome: stationOutcome || "unknown",
+    rewardKey,
+    rewardLabel: rewardKey ? humanizeIdentifier(rewardKey) : "No Bid Reward",
+    hasReward,
+    backlashPreview: hasBacklashPreview ? {
+      placeholder: true,
+      label: "Optional GM-facing backlash preview placeholder",
+      summary: "Critical failure creates no bid reward. Any backlash remains an optional GM-facing preview for a later pass.",
+      playerSafe: true,
+      readOnly: true
+    } : null,
+    hasBacklashPreview,
+    summary: hasReward
+      ? `${normalizedBid.difficultyBidLabel} ${humanizeIdentifier(stationOutcome)} preview: ${humanizeIdentifier(rewardKey)}.`
+      : (hasBacklashPreview ? `${normalizedBid.difficultyBidLabel} Critical Failure preview: no reward; optional backlash placeholder only.` : `${normalizedBid.difficultyBidLabel} preview: no reward.`),
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2DifficultyBidPreview({ bid = "none", baseDC = 0, stationDcModifier = 0, outcomeKey = "" } = {}) {
+  const normalizedBid = normalizeTravelV2DifficultyBid(bid);
+  const baseDcValue = numberOrZero(baseDC);
+  const stationModifierValue = numberOrZero(stationDcModifier);
+  const bidModifierValue = normalizedBid.difficultyBidDcModifier;
+  const effectiveDc = baseDcValue + stationModifierValue + bidModifierValue;
+  const rewardPreview = prepareTravelV2DifficultyBidRewardPreview(normalizedBid, outcomeKey);
+  return {
+    ...normalizedBid,
+    difficultyBidRewardPreview: rewardPreview,
+    effectiveDcPreview: {
+      baseDC: baseDcValue,
+      stationDcModifier: stationModifierValue,
+      bidDcModifier: bidModifierValue,
+      effectiveDC: effectiveDc,
+      parts: [
+        { key: "baseDC", label: "Base DC", value: baseDcValue },
+        { key: "stationDcModifier", label: "Station Modifier", value: stationModifierValue },
+        { key: "bidDcModifier", label: "Bid Modifier", value: bidModifierValue }
+      ],
+      summary: `Effective DC preview: ${baseDcValue} base ${stationModifierValue >= 0 ? "+" : ""}${stationModifierValue} station ${bidModifierValue >= 0 ? "+" : ""}${bidModifierValue} bid = ${effectiveDc}.`,
+      playerSafe: true,
+      readOnly: true
+    },
+    playerSafe: true,
+    readOnly: true
+  };
 }
 
 function isSupportActionSummaryRow(row = {}) {
@@ -432,6 +531,13 @@ export function prepareTravelV2StationActionResolutionSummary(session = {}, opti
     const commitment = isPlainObject(roundResult.stationOrderCommitments?.[stationKey]) ? roundResult.stationOrderCommitments[stationKey] : {};
     const selectedActionKey = safeKey(action.actionKey ?? action.key ?? action.action ?? action.type);
     const selectedActionType = safeKey(action.type ?? action.actionType ?? selectedActionKey);
+    const stationDcModifier = round.stationPrompts?.[stationKey]?.dcModifier ?? round.stationPrompts?.[stationKey]?.dcMod ?? action.dcModifier ?? action.dcMod ?? 0;
+    const difficultyBidPreview = prepareTravelV2DifficultyBidPreview({
+      bid: action.difficultyBidKey ?? action.difficultyBid ?? action.bidKey ?? action.bid ?? "none",
+      baseDC: session?.event?.baseDC ?? round.baseDC ?? 0,
+      stationDcModifier,
+      outcomeKey: roundResult.stationResults?.[stationKey] ?? round.stationSummary?.[stationKey]?.degree ?? round.stationSummary?.[stationKey]?.outcomeKey ?? ""
+    });
     const targetStationKey = safeKey(action.targetStationKey ?? action.targetStation ?? "");
     const hasTarget = targetStationKey && activeStationKeys.has(targetStationKey);
     return {
@@ -440,6 +546,11 @@ export function prepareTravelV2StationActionResolutionSummary(session = {}, opti
       selectedActionKey,
       selectedActionType,
       selectedActionLabel: actionLabel(action, selectedActionKey || selectedActionType),
+      difficultyBidKey: difficultyBidPreview.difficultyBidKey,
+      difficultyBidLabel: difficultyBidPreview.difficultyBidLabel,
+      difficultyBidDcModifier: difficultyBidPreview.difficultyBidDcModifier,
+      difficultyBidRewardPreview: difficultyBidPreview.difficultyBidRewardPreview,
+      effectiveDcPreview: difficultyBidPreview.effectiveDcPreview,
       targetStationKey: hasTarget ? targetStationKey : "",
       targetStationLabel: hasTarget ? stationLabel(round, targetStationKey) : "",
       selectedSkillLabel: optionalString(action.selectedSkillLabel) ?? optionalString(action.skillLabel) ?? optionalString(action.approachLabel) ?? optionalString(action.selectedApproachLabel) ?? "",

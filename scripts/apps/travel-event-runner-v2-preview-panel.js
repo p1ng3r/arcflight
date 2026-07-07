@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 14;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 15;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -82,6 +82,13 @@ function normalizeStationActionResolutionSummary(summary = null) {
     selectedActionKey: row?.selectedActionKey ?? "",
     selectedActionType: row?.selectedActionType ?? "",
     selectedActionLabel: row?.selectedActionLabel || humanizeIdentifier(row?.selectedActionKey || row?.selectedActionType || "station action"),
+    difficultyBidKey: row?.difficultyBidKey ?? "none",
+    difficultyBidLabel: row?.difficultyBidLabel ?? "No Bid",
+    difficultyBidDcModifier: Number.isFinite(Number(row?.difficultyBidDcModifier)) ? Number(row.difficultyBidDcModifier) : 0,
+    difficultyBidRewardPreview: row?.difficultyBidRewardPreview ?? null,
+    hasDifficultyBidRewardPreview: Boolean(row?.difficultyBidRewardPreview),
+    effectiveDcPreview: row?.effectiveDcPreview ?? null,
+    hasEffectiveDcPreview: Boolean(row?.effectiveDcPreview),
     targetStationKey: row?.targetStationKey ?? "",
     targetStationLabel: row?.targetStationLabel ?? "",
     hasTargetStation: Boolean(row?.targetStationKey && row?.targetStationLabel),

@@ -1,6 +1,11 @@
 import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import {
   finalizeTravelV2RoundOnRunnerSession,
+  getTravelV2DifficultyBidDcModifier,
+  normalizeTravelV2DifficultyBid,
+  prepareTravelV2DifficultyBidPreview,
+  prepareTravelV2DifficultyBidRewardPreview,
+  TRAVEL_V2_DIFFICULTY_BID_KEYS,
   TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION
 } from "./travel-v2-session-round-finalization.js";
 
@@ -63,6 +68,43 @@ function applicationRecord(overrides = {}) {
 export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION, 1, "session round finalization version should be 1");
 
+
+  for (const [key, modifier] of [["none", 0], ["minor", 2], ["greater", 5], ["extreme", 8]]) {
+    const normalized = normalizeTravelV2DifficultyBid(key);
+    assertEqual(normalized.difficultyBidKey, key, `${key} bid should normalize to itself`);
+    assertEqual(normalized.difficultyBidDcModifier, modifier, `${key} bid should expose expected DC modifier`);
+    assertSmoke(normalized.playerSafe && normalized.readOnly, `${key} normalized bid should be player-safe/read-only`);
+    assertEqual(getTravelV2DifficultyBidDcModifier(key), modifier, `${key} modifier helper should match config`);
+  }
+  assertEqual(TRAVEL_V2_DIFFICULTY_BID_KEYS.join(","), "none,minor,greater,extreme", "bid key list should expose all supported levels");
+  assertEqual(normalizeTravelV2DifficultyBid("missing").difficultyBidKey, "none", "invalid bid should normalize to none");
+  assertEqual(normalizeTravelV2DifficultyBid(undefined).difficultyBidKey, "none", "missing bid should normalize to none");
+
+  for (const [bid, outcome, reward] of [
+    ["minor", "success", "minorOpening"],
+    ["minor", "criticalSuccess", "greaterOpening"],
+    ["greater", "success", "greaterOpening"],
+    ["greater", "criticalSuccess", "heroicEvent"],
+    ["extreme", "success", "heroicEvent"],
+    ["extreme", "criticalSuccess", "legendaryEvent"]
+  ]) {
+    const preview = prepareTravelV2DifficultyBidRewardPreview(bid, outcome);
+    assertEqual(preview.rewardKey, reward, `${bid} + ${outcome} should preview ${reward}`);
+    assertSmoke(preview.hasReward, `${bid} + ${outcome} should have reward preview`);
+    assertSmoke(preview.playerSafe && preview.readOnly, `${bid} + ${outcome} reward preview should be player-safe/read-only`);
+  }
+  assertSmoke(!prepareTravelV2DifficultyBidRewardPreview("extreme", "failure").hasReward, "failure should create no bid reward");
+  const criticalFailureBidPreview = prepareTravelV2DifficultyBidRewardPreview("extreme", "criticalFailure");
+  assertSmoke(!criticalFailureBidPreview.hasReward, "critical failure should create no bid reward");
+  assertSmoke(criticalFailureBidPreview.hasBacklashPreview && criticalFailureBidPreview.backlashPreview?.placeholder, "critical failure should expose only backlash preview placeholder");
+  const previewSource = { bid: "greater", baseDC: 20, stationDcModifier: -1, outcomeKey: "success" };
+  const previewSourceBefore = snapshot(previewSource);
+  const bidPreview = prepareTravelV2DifficultyBidPreview(previewSource);
+  assertEqual(bidPreview.effectiveDcPreview.effectiveDC, 24, "effective DC preview should include base, station, and bid modifiers");
+  assertEqual(bidPreview.difficultyBidRewardPreview.rewardKey, "greaterOpening", "effective DC preview should include reward preview");
+  assertSmoke(bidPreview.playerSafe && bidPreview.readOnly && bidPreview.effectiveDcPreview.playerSafe && bidPreview.effectiveDcPreview.readOnly, "difficulty bid preview should be player-safe/read-only");
+  assertEqual(snapshot(previewSource), previewSourceBefore, "preview helper should not mutate source options");
+
   const missingResult = finalizeTravelV2RoundOnRunnerSession(null);
   assertSmoke(!missingResult.ok && !missingResult.finalized, "missing session should block without throwing");
   assertEqual(missingResult.session, null, "missing session block should preserve input session reference");
@@ -93,9 +135,25 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(result.roundResolutionRecord.stationSummary.engineer.outcomeKey, "mixed", "record should include station summary snapshot");
   assertEqual(result.roundResolutionRecord.notes, "Reviewed", "record should include optional notes");
   assertEqual(result.roundResolutionRecord.reason, "round-end", "record should include optional reason");
+  const navigatorSummary = result.stationActionSummary.stations.find((row) => row.stationKey === "navigator");
+  assertEqual(navigatorSummary.difficultyBidKey, "none", "missing station bid should normalize to none in summary");
+  assertEqual(navigatorSummary.effectiveDcPreview.effectiveDC, 0, "summary should expose read-only effective DC preview even when no base DC exists");
 
   result.roundResolutionRecord.pressureApplicationRecord.outcomeKey = "changed";
   assertEqual(result.session.travelV2PressureApplications.records[0].outcomeKey, "mixed", "record snapshots should not be live references");
+
+  const bidSession = createRunnerSessionFixture({
+    event: { ...createRunnerSessionFixture().event, baseDC: 20, rounds: [{ ...createRunnerSessionFixture().event.rounds[0], stationPrompts: { navigator: { stationName: "Navigator", dcModifier: 1 } } }, createRunnerSessionFixture().event.rounds[1]] },
+    roundResults: [{ ...lockedRoundResult(), stationActions: { ...lockedRoundResult().stationActions, navigator: { actionKey: "eventApproach", label: "Event Approach", difficultyBidKey: "extreme" } }, stationResults: { navigator: "criticalSuccess" } }, lockedRoundResult()],
+    travelV2PressureApplications: { records: [applicationRecord()] }
+  });
+  const bidSessionBefore = snapshot(bidSession);
+  const bidResult = finalizeTravelV2RoundOnRunnerSession(bidSession, { now: "2026-06-19T00:00:00.500Z" });
+  const bidNavigatorSummary = bidResult.stationActionSummary.stations.find((row) => row.stationKey === "navigator");
+  assertEqual(snapshot(bidSession), bidSessionBefore, "finalization bid preview should not mutate source session/action/round data");
+  assertEqual(bidNavigatorSummary.difficultyBidKey, "extreme", "summary should include declared bid key");
+  assertEqual(bidNavigatorSummary.effectiveDcPreview.effectiveDC, 29, "summary effective DC preview should include base DC, station modifier, and bid modifier");
+  assertEqual(bidNavigatorSummary.difficultyBidRewardPreview.rewardKey, "legendaryEvent", "summary should include read-only reward preview ladder result");
 
   const duplicateResult = finalizeTravelV2RoundOnRunnerSession(result.session, { now: "2026-06-19T00:00:01.000Z" });
   assertSmoke(!duplicateResult.ok && !duplicateResult.finalized, "duplicate finalization should block");
@@ -134,6 +192,10 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
     item: { update() { throw new Error("item update should not be called"); } },
     socket: { emit() { throw new Error("socket emit should not be called"); } },
     chat: { create() { throw new Error("chat create should not be called"); } },
+    journal: { create() { throw new Error("journal create should not be called"); } },
+    scene: { update() { throw new Error("scene update should not be called"); } },
+    token: { update() { throw new Error("token update should not be called"); } },
+    combat: { update() { throw new Error("combat update should not be called"); } },
     playerStationCards: { update() { throw new Error("player station cards should not be called"); } }
   }), { now: "2026-06-19T00:00:04.000Z" });
   assertSmoke(sideEffectResult.ok, "side-effect sentinels should not be called during finalization");
@@ -142,6 +204,9 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
     ok: true,
     checked: [
       "session-round-finalization-version",
+      "difficulty-bid-normalization",
+      "difficulty-bid-reward-ladder",
+      "difficulty-bid-preview-player-safe-read-only",
       "missing-session-block",
       "without-pressure-application-block",
       "with-pressure-application-finalizes",
