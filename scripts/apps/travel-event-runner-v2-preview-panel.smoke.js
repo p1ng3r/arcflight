@@ -387,7 +387,11 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
             auditRecord: { secret: true }
           }
         }]
-      }
+      },
+      roundResults: [{
+        stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
+        stationResults: {}
+      }]
     }
   });
   assertSmoke(eventApproachPanel.stationActionEffectsAvailable, "Event Approach effects should make station action effects section available");
@@ -419,6 +423,10 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     ...appState,
     session: {
       ...appState.session,
+      roundResults: [{
+        stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
+        stationResults: {}
+      }],
       travelV2ActiveCards: {
         version: 1,
         records: [{
@@ -435,6 +443,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
           status: "pending",
           timingHint: "Play after station actions are locked but before the target station rolls.",
           effectPreviewText: "Future effect: target station cannot resolve worse than success.",
+          targetStationKey: "engineer",
+          targetStationLabel: "Engineer",
           playerSafe: true,
           readOnly: true,
           gmText: "secret",
@@ -450,6 +460,9 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   const activeCard = activeCardsPanel.travelV2ActiveCards.records[0];
   assertSmoke(activeCard.rewardKey === "legendaryEvent" && activeCard.cardLabel === "Legendary Event" && activeCard.status === "pending", "active card preview should include safe card key, label, and status");
   assertSmoke(activeCard.playerSafe === true && activeCard.readOnly === true && activeCard.effectPreviewText.includes("Future effect"), "active card preview should be player-safe, read-only, and preview-only");
+  assertSmoke(activeCard.hasTargetStation === true && activeCard.targetStationKey === "engineer", "active card preview should expose target station state");
+  assertSmoke(activeCard.timingType === "beforeRoll" && activeCard.previewStatus === "playable" && activeCard.playablePreview === true, "active card preview should expose before-roll readiness state");
+  assertSmoke(Array.isArray(activeCard.availableTargetStations) && activeCard.availableTargetStations.some((option) => option.stationKey === "engineer"), "active card preview should expose safe target station options");
   const activeCardsPanelJson = JSON.stringify(activeCardsPanel.travelV2ActiveCards);
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!activeCardsPanelJson.includes(forbidden), `Active card preview state should not include forbidden player-safe term ${forbidden}`);

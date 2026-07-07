@@ -8,6 +8,7 @@ import {
   prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary,
   prepareTravelV2DifficultyBidPreview,
   prepareTravelV2DifficultyBidRewardPreview,
+  prepareTravelV2ActiveCardsPreviewState,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -241,6 +242,37 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   const unsafeSanitized = sanitizeTravelV2ActiveCardsForPlayers({ records: [pendingActiveCard({ gmText: "secret", auditRecord: { secret: true } })] });
   const unsafeSanitizedJson = JSON.stringify(unsafeSanitized);
   assertSmoke(!unsafeSanitizedJson.includes("gmText") && !unsafeSanitizedJson.includes("auditRecord") && !unsafeSanitizedJson.includes("secret"), "active card sanitizer should strip GM/internal fields");
+
+  const previewBaseSession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }] });
+  const previewWithoutTarget = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard()], previewBaseSession);
+  assertEqual(previewWithoutTarget.records[0].previewStatus, "needsTarget", "active card without target should need target");
+  assertSmoke(snapshot(previewBaseSession) === snapshot(createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }] })), "active card preview helper should not mutate source session data");
+
+  for (const cardKey of ["minorOpening", "greaterOpening", "legendaryEvent"]) {
+    const preview = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey, rewardKey: cardKey, targetStationKey: "navigator" })], previewBaseSession);
+    assertEqual(preview.records[0].previewStatus, "playable", `${cardKey} with locked actions and no target result should be playable`);
+    assertSmoke(preview.records[0].playablePreview === true, `${cardKey} should set playable preview`);
+  }
+
+  const rolledBeforeRoll = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "success" } }] }));
+  assertEqual(rolledBeforeRoll.records[0].previewStatus, "missedWindow", "before-roll active card with target already rolled should miss window");
+  const beforeLock = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ stationOrderCommitments: {}, stationResults: {} }] }));
+  assertEqual(beforeLock.records[0].previewStatus, "waitingForLock", "before-roll active card before lock should wait for lock");
+
+  const heroicNoResult = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], previewBaseSession);
+  assertEqual(heroicNoResult.records[0].previewStatus, "waitingForTrigger", "heroic event with no result should wait for trigger");
+  for (const result of ["failure", "criticalFailure"]) {
+    const heroic = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: result } }] }));
+    assertEqual(heroic.records[0].previewStatus, "triggerReady", `heroic event with ${result} should be trigger-ready`);
+  }
+  for (const result of ["success", "criticalSuccess"]) {
+    const heroic = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", targetStationKey: "navigator" })], createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: result } }] }));
+    assertEqual(heroic.records[0].previewStatus, "noTrigger", `heroic event with ${result} should have no trigger`);
+  }
+  const invalidTarget = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "missing" })], previewBaseSession);
+  assertEqual(invalidTarget.records[0].targetStatus, "invalidTarget", "unavailable target station should normalize safely");
+  const previewJson = JSON.stringify(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator", gmText: "secret" })], previewBaseSession));
+  assertSmoke(!previewJson.includes("gmText") && !previewJson.includes("secret"), "active card preview state should remain player-safe");
 
   const duplicateResult = finalizeTravelV2RoundOnRunnerSession(result.session, { now: "2026-06-19T00:00:01.000Z" });
   assertSmoke(!duplicateResult.ok && !duplicateResult.finalized, "duplicate finalization should block");
