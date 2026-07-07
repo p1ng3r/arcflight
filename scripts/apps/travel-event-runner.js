@@ -2,6 +2,7 @@ import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-ev
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
+import { applyTravelV2ActiveCardPreviewFromPanelState } from "./travel-event-runner-v2-preview-panel.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
@@ -109,6 +110,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-pressure-apply]",
   "[data-arcflight-travel-v2-pressure-correct]",
   "[data-arcflight-travel-v2-round-finalize]",
+  "[data-arcflight-travel-v2-active-card-apply]",
   "[data-arcflight-travel-v2-event-complete]",
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-final-outcome-apply]",
@@ -406,6 +408,18 @@ export function prepareTravelV2EventOutcomeApplicationRunnerUpdate(currentSessio
     nextSession: shouldUpdateSession ? result.session : currentSession,
     shouldUpdateSession,
     shouldRerender: shouldUpdateSession
+  };
+}
+
+export function prepareTravelV2ActiveCardApplicationRunnerUpdate(currentSession, options = {}) {
+  const previewId = typeof options.previewId === "string" ? options.previewId.trim() : "";
+  const result = applyTravelV2ActiveCardPreviewFromPanelState(currentSession, previewId, options);
+  const shouldUpdateSession = result?.ok === true && result?.applied === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: true
   };
 }
 
@@ -826,6 +840,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-runner-send-mission-board")) return this.#sendPlayerMissionBoard();
     if (target.hasAttribute("data-arcflight-guided-action")) return this.#runGuidedAction(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-apply")) return this.#applyTravelV2Pressure(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-active-card-apply")) return this.applyTravelV2ActiveCardPreview(target);
     if (target.hasAttribute("data-arcflight-travel-v2-pressure-correct")) return this.#correctTravelV2Pressure(target);
     if (target.hasAttribute("data-arcflight-travel-v2-round-finalize")) return this.finalizeTravelV2Round();
     if (target.hasAttribute("data-arcflight-travel-v2-event-complete")) return this.completeTravelV2Event();
@@ -1258,6 +1273,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     }
 
     this.statusMessage = update.result?.blockedReasons?.[0] ?? update.result?.error ?? "Travel v2 pressure application was blocked.";
+    return update.shouldRerender ? this.render(true) : update;
+  }
+
+  async applyTravelV2ActiveCardPreview(targetOrOptions = {}) {
+    const dataset = targetOrOptions?.dataset ?? {};
+    const previewId = typeof targetOrOptions?.previewId === "string" ? targetOrOptions.previewId : (dataset.arcflightTravelV2ActiveCardApply ?? dataset.previewId ?? "");
+    const update = prepareTravelV2ActiveCardApplicationRunnerUpdate(this.session, { previewId, user: globalThis.game?.user, isGM: globalThis.game?.user?.isGM === true, now: new Date().toISOString() });
+    this.uiState.travelV2ActiveCardApplicationResult = update.result;
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = `Applied Travel v2 active card: ${humanizeIdentifier(update.result?.appliedCardRecord?.effectKey ?? "card")}.`;
+      return this.render(true);
+    }
+    this.statusMessage = update.result?.blockedReason ?? update.result?.blockedReasons?.[0] ?? "Travel v2 active card application was blocked.";
     return update.shouldRerender ? this.render(true) : update;
   }
 
