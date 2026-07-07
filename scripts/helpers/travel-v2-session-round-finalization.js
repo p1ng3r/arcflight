@@ -9,8 +9,10 @@ export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTIONS_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTION_TALLY_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_STATUS_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_VERSION = 1;
+export const TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
+export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -81,6 +83,29 @@ const TRAVEL_V2_DIFFICULTY_BID_REWARD_LADDER = Object.freeze({
   minor: Object.freeze({ success: "minorOpening", criticalSuccess: "greaterOpening" }),
   greater: Object.freeze({ success: "greaterOpening", criticalSuccess: "heroicEvent" }),
   extreme: Object.freeze({ success: "heroicEvent", criticalSuccess: "legendaryEvent" })
+});
+
+const TRAVEL_V2_ACTIVE_CARD_CONFIG = Object.freeze({
+  minorOpening: Object.freeze({
+    cardLabel: "Minor Opening",
+    timingHint: "Play after station actions are locked and before the target station rolls.",
+    effectPreviewText: "Future effect: grant +1 circumstance bonus to one target station roll."
+  }),
+  greaterOpening: Object.freeze({
+    cardLabel: "Greater Opening",
+    timingHint: "Play after station actions are locked and before the target station rolls.",
+    effectPreviewText: "Future effect: grant +3 circumstance bonus to one target station roll."
+  }),
+  heroicEvent: Object.freeze({
+    cardLabel: "Heroic Event",
+    timingHint: "Triggers when the target station rolls failure or critical failure.",
+    effectPreviewText: "Future effect: improve one target station failure or critical failure by one degree."
+  }),
+  legendaryEvent: Object.freeze({
+    cardLabel: "Legendary Event",
+    timingHint: "Play after station actions are locked but before the target station rolls.",
+    effectPreviewText: "Future effect: target station cannot resolve worse than success."
+  })
 });
 
 function numberOrZero(value) {
@@ -163,6 +188,94 @@ export function prepareTravelV2DifficultyBidPreview({ bid = "none", baseDC = 0, 
     playerSafe: true,
     readOnly: true
   };
+}
+
+function activeCardId({ roundIndex = null, sourceStationKey = "", sourceBidKey = "", sourceResult = "", rewardKey = "" } = {}) {
+  return ["travel-v2-card", roundIndex ?? "unknown-round", sourceStationKey || "unknown-station", sourceBidKey || "no-bid", sourceResult || "unknown-result", rewardKey || "no-reward"].join(":");
+}
+
+export function normalizeTravelV2ActiveCardRecords(container = {}) {
+  const records = recordsFromContainer(container)
+    .filter((record) => isPlainObject(record))
+    .map((record) => {
+      const rewardKey = TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS.includes(safeKey(record.rewardKey ?? record.cardKey)) ? safeKey(record.rewardKey ?? record.cardKey) : "";
+      const config = TRAVEL_V2_ACTIVE_CARD_CONFIG[rewardKey] ?? {};
+      const roundIndex = Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null;
+      const sourceStationKey = safeKey(record.sourceStationKey);
+      const sourceBidKey = TRAVEL_V2_DIFFICULTY_BID_KEYS.includes(safeKey(record.sourceBidKey ?? record.difficultyBidKey)) ? safeKey(record.sourceBidKey ?? record.difficultyBidKey) : "none";
+      const sourceResult = normalizeStationOutcomeKey(record.sourceResult ?? record.stationOutcome);
+      const cardId = optionalString(record.cardId ?? record.id) ?? activeCardId({ roundIndex, sourceStationKey, sourceBidKey, sourceResult, rewardKey });
+      return {
+        cardId,
+        id: cardId,
+        cardKey: rewardKey,
+        rewardKey,
+        cardLabel: optionalString(record.cardLabel ?? record.rewardLabel) ?? config.cardLabel ?? humanizeIdentifier(rewardKey || "travel card"),
+        sourceStationKey,
+        sourceStationLabel: optionalString(record.sourceStationLabel) ?? humanizeIdentifier(sourceStationKey || "station"),
+        sourceBidKey,
+        sourceBidLabel: optionalString(record.sourceBidLabel ?? record.difficultyBidLabel) ?? normalizeTravelV2DifficultyBid(sourceBidKey).difficultyBidLabel,
+        sourceResult: sourceResult || "unknown",
+        roundIndex,
+        roundNumber: record.roundNumber ?? null,
+        status: TRAVEL_V2_ACTIVE_CARD_STATUSES.includes(safeKey(record.status)) ? safeKey(record.status) : "pending",
+        timingHint: optionalString(record.timingHint) ?? config.timingHint ?? "",
+        effectPreviewText: optionalString(record.effectPreviewText) ?? config.effectPreviewText ?? "",
+        targetStationKey: safeKey(record.targetStationKey),
+        targetStationLabel: optionalString(record.targetStationLabel) ?? "",
+        playerSafe: true,
+        readOnly: true
+      };
+    })
+    .filter((record) => record.rewardKey);
+  const deduped = [];
+  const seen = new Set();
+  for (const record of records) {
+    if (seen.has(record.cardId)) continue;
+    seen.add(record.cardId);
+    deduped.push(record);
+  }
+  return {
+    version: TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
+    records: deduped,
+    hasRecords: deduped.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2DifficultyBidCardRecord(stationRow = {}) {
+  const preview = isPlainObject(stationRow?.difficultyBidRewardPreview) ? stationRow.difficultyBidRewardPreview : null;
+  const rewardKey = safeKey(preview?.rewardKey);
+  if (preview?.hasReward !== true || !TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS.includes(rewardKey)) return null;
+  const sourceStationKey = safeKey(stationRow.stationKey);
+  const sourceBidKey = normalizeTravelV2DifficultyBid(stationRow.difficultyBidKey).difficultyBidKey;
+  const sourceResult = normalizeStationOutcomeKey(stationRow.stationResult ?? preview.stationOutcome);
+  const roundIndex = Number.isInteger(Number(stationRow.roundIndex)) ? Number(stationRow.roundIndex) : null;
+  const config = TRAVEL_V2_ACTIVE_CARD_CONFIG[rewardKey];
+  return normalizeTravelV2ActiveCardRecords([{
+    cardId: activeCardId({ roundIndex, sourceStationKey, sourceBidKey, sourceResult, rewardKey }),
+    cardKey: rewardKey,
+    rewardKey,
+    cardLabel: config.cardLabel,
+    sourceStationKey,
+    sourceStationLabel: stationRow.stationLabel,
+    sourceBidKey,
+    sourceBidLabel: stationRow.difficultyBidLabel,
+    sourceResult,
+    roundIndex,
+    roundNumber: stationRow.roundNumber ?? null,
+    status: "pending",
+    timingHint: config.timingHint,
+    effectPreviewText: config.effectPreviewText,
+    targetStationKey: stationRow.targetStationKey,
+    targetStationLabel: stationRow.targetStationLabel
+  }]).records[0] ?? null;
+}
+
+export function prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary(stationActionSummary = {}) {
+  const stations = Array.isArray(stationActionSummary?.stations) ? stationActionSummary.stations : [];
+  return normalizeTravelV2ActiveCardRecords(stations.map(prepareTravelV2DifficultyBidCardRecord).filter(Boolean));
 }
 
 function isSupportActionSummaryRow(row = {}) {
@@ -427,6 +540,7 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
   const eventApproachContributions = isPlainObject(finalizationState.stationActionEventApproachContributions) ? finalizationState.stationActionEventApproachContributions : null;
   const eventApproachContributionTally = isPlainObject(finalizationState.stationActionEventApproachContributionTally) ? finalizationState.stationActionEventApproachContributionTally : null;
   const eventApproachTallyStatus = isPlainObject(finalizationState.stationActionEventApproachTallyStatus) ? finalizationState.stationActionEventApproachTallyStatus : null;
+  const activeCards = isPlainObject(finalizationState.travelV2ActiveCards) ? finalizationState.travelV2ActiveCards : null;
   const stationActionEffects = [
     ...(supportEffects?.effects ?? []),
     ...(eventApproachEffects?.effects ?? [])
@@ -451,7 +565,9 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
     stationActionEventApproachTallyStatus: eventApproachTallyStatus ? cloneData(eventApproachTallyStatus) : null,
     eventApproachTallyStatus: eventApproachTallyStatus ? cloneData(eventApproachTallyStatus) : null,
     stationActionEffects: cloneData(stationActionEffects),
-    pendingStationActionBonuses: finalizationState.pendingStationActionBonuses ? cloneData(finalizationState.pendingStationActionBonuses) : null
+    pendingStationActionBonuses: finalizationState.pendingStationActionBonuses ? cloneData(finalizationState.pendingStationActionBonuses) : null,
+    travelV2ActiveCards: activeCards ? cloneData(activeCards) : null,
+    activeCardRecords: activeCards ? cloneData(activeCards.records) : []
   };
   const notes = optionalString(options.notes);
   const reason = optionalString(options.reason);
@@ -487,6 +603,32 @@ function appendPendingStationActionBonuses(session = {}, pendingStationActionBon
       readOnly: true
     }
   };
+}
+
+export function appendTravelV2ActiveCardRecordsToSession(session = {}, activeCards = {}) {
+  const incoming = normalizeTravelV2ActiveCardRecords(activeCards).records;
+  const existingContainer = normalizeTravelV2ActiveCardRecords(session?.travelV2ActiveCards);
+  const existingIds = new Set(existingContainer.records.map((record) => record.cardId));
+  const merged = [...existingContainer.records];
+  for (const record of incoming) {
+    if (existingIds.has(record.cardId)) continue;
+    existingIds.add(record.cardId);
+    merged.push(record);
+  }
+  return {
+    ...session,
+    travelV2ActiveCards: {
+      version: TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
+      records: cloneData(merged),
+      hasRecords: merged.length > 0,
+      playerSafe: true,
+      readOnly: true
+    }
+  };
+}
+
+export function sanitizeTravelV2ActiveCardsForPlayers(container = {}) {
+  return normalizeTravelV2ActiveCardRecords(container);
 }
 
 
@@ -645,8 +787,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const stationActionEventApproachContributionTally = prepareTravelV2StationActionEventApproachContributionTally(stationActionEventApproachContributions);
   const stationActionEventApproachTallyStatus = prepareTravelV2StationActionEventApproachTallyStatus(stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects);
-  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, stationActionEventApproachTallyStatus, pendingStationActionBonuses }, options);
-  const finalizedSession = appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses);
+  const travelV2ActiveCards = prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary(stationActionSummary);
+  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, stationActionEventApproachTallyStatus, pendingStationActionBonuses, travelV2ActiveCards }, options);
+  const finalizedSession = appendTravelV2ActiveCardRecordsToSession(appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses), travelV2ActiveCards);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
 
@@ -674,7 +817,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     stationActionEffects: cloneData(stationActionEffects),
     stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings),
     pendingStationActionBonuses: cloneData(pendingStationActionBonuses),
-    travelV2PendingStationActionBonuses: cloneData(pendingStationActionBonuses)
+    travelV2PendingStationActionBonuses: cloneData(pendingStationActionBonuses),
+    travelV2ActiveCards: cloneData(travelV2ActiveCards),
+    activeCardRecords: cloneData(travelV2ActiveCards.records)
   };
 }
 

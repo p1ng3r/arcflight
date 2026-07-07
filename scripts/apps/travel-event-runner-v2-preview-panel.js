@@ -5,6 +5,7 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
+import { sanitizeTravelV2ActiveCardsForPlayers } from "../helpers/travel-v2-session-round-finalization.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 15;
 
@@ -111,6 +112,18 @@ function normalizeStationActionResolutionSummary(summary = null) {
     stationCount: stations.length,
     playerSafe: true,
     readOnly: true
+  };
+}
+
+function normalizeActiveTravelCards(container = null) {
+  const normalized = sanitizeTravelV2ActiveCardsForPlayers(container);
+  return {
+    ...normalized,
+    title: "Active Travel Cards",
+    subtitle: normalized.records.length > 0
+      ? `${normalized.records.length} pending Difficulty Bid card${normalized.records.length === 1 ? "" : "s"} available for a future card-application pass.`
+      : "No active Travel v2 cards have been created yet.",
+    available: normalized.records.length > 0
   };
 }
 
@@ -767,6 +780,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
+  const travelV2ActiveCards = normalizeActiveTravelCards(latestFinalizationResult?.travelV2ActiveCards ?? latestResolutionRecord?.travelV2ActiveCards ?? runnerSession?.travelV2ActiveCards);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available || stationActionEventApproachTallyStatus.available;
@@ -819,6 +833,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2PendingStationActionBonuses: pendingStationActionBonuses,
     appliedStationActionBonuses,
     travelV2AppliedStationActionBonuses: appliedStationActionBonuses,
+    travelV2ActiveCards,
+    activeTravelCards: travelV2ActiveCards,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,
