@@ -347,6 +347,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
             effects: [{ sourceStationKey: "navigator", sourceStationLabel: "Navigator", effectKey: "eventApproach", effectType: "eventApproach", effectLabel: "Navigator uses Event Approach.", selectedSkillLabel: "Piloting Lore", stationOutcome: "success", playerSafe: true, readOnly: true, gmText: "secret", auditRecord: { secret: true } }],
             playerSafe: true,
             readOnly: true
+          },
+          stationActionEventApproachContributions: {
+            roundIndex: 0,
+            roundNumber: 1,
+            records: [{ sourceStationKey: "navigator", sourceStationLabel: "Navigator", contributionKey: "eventApproach", contributionType: "eventApproach", contributionValue: 1, contributionLabel: "Navigator Event Approach using Piloting Lore: Success (+1).", selectedSkillLabel: "Piloting Lore", stationOutcome: "success", playerSafe: true, readOnly: true, gmText: "secret", auditRecord: { secret: true } }],
+            playerSafe: true,
+            readOnly: true
           }
         }]
       }
@@ -357,7 +364,11 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   const eventApproachEffect = eventApproachPanel.travelV2StationActionEventApproachEffects.effects[0];
   assertSmoke(eventApproachEffect.sourceStationLabel === "Navigator", "Event Approach preview effect should include safe source station label");
   assertSmoke(eventApproachEffect.effectLabel.includes("Event Approach") && eventApproachEffect.selectedSkillLabel === "Piloting Lore" && eventApproachEffect.stationOutcome === "success", "Event Approach preview effect should include safe readable labels and result");
-  const eventApproachPanelJson = JSON.stringify(eventApproachPanel.travelV2StationActionEventApproachEffects);
+  assertSmoke(eventApproachPanel.travelV2StationActionEventApproachContributions.hasRecords, "Event Approach contributions should be exposed in preview render state");
+  const eventApproachContribution = eventApproachPanel.travelV2StationActionEventApproachContributions.records[0];
+  assertSmoke(eventApproachContribution.sourceStationLabel === "Navigator", "Event Approach preview contribution should include safe source station label");
+  assertSmoke(eventApproachContribution.contributionLabel.includes("Event Approach") && eventApproachContribution.contributionValue === 1 && eventApproachContribution.valueLabel === "+1", "Event Approach preview contribution should include safe readable label and value");
+  const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions });
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
   }
@@ -378,6 +389,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "station-benefit-display-state",
       "support-bonus-status-render-state",
       "event-approach-effects-render-state",
+      "event-approach-contributions-render-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",

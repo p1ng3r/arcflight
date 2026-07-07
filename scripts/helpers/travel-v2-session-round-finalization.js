@@ -5,6 +5,7 @@ export const TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_RESOLUTION_SUMMARY_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_EFFECTS_VERSION = 1;
 export const TRAVEL_V2_PENDING_STATION_ACTION_BONUSES_VERSION = 1;
+export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTIONS_VERSION = 1;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -155,6 +156,64 @@ export function prepareTravelV2StationActionEventApproachEffects(stationActionSu
   };
 }
 
+const EVENT_APPROACH_CONTRIBUTION_VALUES = Object.freeze({
+  criticalSuccess: 2,
+  success: 1,
+  failure: 0,
+  criticalFailure: -1
+});
+
+function normalizeStationOutcomeKey(value) {
+  const key = safeKey(value);
+  if (Object.prototype.hasOwnProperty.call(EVENT_APPROACH_CONTRIBUTION_VALUES, key)) return key;
+  return "";
+}
+
+function eventApproachContributionLabel(sourceStationLabel = "Station", stationOutcome = "", contributionValue = 0, selectedSkillLabel = "") {
+  const outcomeLabel = stationOutcome ? humanizeIdentifier(stationOutcome) : "Unknown Result";
+  const valueLabel = `${contributionValue > 0 ? "+" : ""}${contributionValue}`;
+  const approachText = selectedSkillLabel ? ` using ${selectedSkillLabel}` : "";
+  return `${sourceStationLabel} Event Approach${approachText}: ${outcomeLabel} (${valueLabel}).`;
+}
+
+export function prepareTravelV2StationActionEventApproachContributions(stationActionEventApproachEffects = {}) {
+  const effects = Array.isArray(stationActionEventApproachEffects?.effects) ? stationActionEventApproachEffects.effects : [];
+  const records = [];
+  for (const effect of effects) {
+    const sourceStationKey = safeKey(effect?.sourceStationKey);
+    if (!sourceStationKey) continue;
+    const sourceStationLabel = optionalString(effect?.sourceStationLabel) ?? humanizeIdentifier(sourceStationKey);
+    const selectedSkillLabel = optionalString(effect?.selectedSkillLabel) ?? "";
+    const stationOutcome = normalizeStationOutcomeKey(effect?.stationOutcome);
+    const contributionValue = stationOutcome ? EVENT_APPROACH_CONTRIBUTION_VALUES[stationOutcome] : 0;
+    const roundIndex = Number.isInteger(Number(effect?.roundIndex)) ? Number(effect.roundIndex) : (Number.isInteger(Number(stationActionEventApproachEffects?.roundIndex)) ? Number(stationActionEventApproachEffects.roundIndex) : null);
+    const roundNumber = effect?.roundNumber ?? stationActionEventApproachEffects?.roundNumber ?? null;
+    records.push({
+      sourceStationKey,
+      sourceStationLabel,
+      contributionKey: "eventApproach",
+      contributionType: "eventApproach",
+      stationOutcome: stationOutcome || "unknown",
+      contributionValue,
+      contributionLabel: eventApproachContributionLabel(sourceStationLabel, stationOutcome, contributionValue, selectedSkillLabel),
+      selectedSkillLabel,
+      roundIndex,
+      roundNumber,
+      playerSafe: true,
+      readOnly: true
+    });
+  }
+  return {
+    version: TRAVEL_V2_EVENT_APPROACH_CONTRIBUTIONS_VERSION,
+    roundIndex: Number.isInteger(Number(stationActionEventApproachEffects?.roundIndex)) ? Number(stationActionEventApproachEffects.roundIndex) : null,
+    roundNumber: stationActionEventApproachEffects?.roundNumber ?? null,
+    records,
+    hasRecords: records.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 export function prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects = {}) {
   const effects = Array.isArray(stationActionSupportEffects?.effects) ? stationActionSupportEffects.effects : [];
   const bonuses = [];
@@ -205,6 +264,7 @@ function recordsFromContainer(container) {
 function createRoundResolutionRecord(finalizationState = {}, options = {}) {
   const supportEffects = isPlainObject(finalizationState.stationActionSupportEffects) ? finalizationState.stationActionSupportEffects : null;
   const eventApproachEffects = isPlainObject(finalizationState.stationActionEventApproachEffects) ? finalizationState.stationActionEventApproachEffects : null;
+  const eventApproachContributions = isPlainObject(finalizationState.stationActionEventApproachContributions) ? finalizationState.stationActionEventApproachContributions : null;
   const stationActionEffects = [
     ...(supportEffects?.effects ?? []),
     ...(eventApproachEffects?.effects ?? [])
@@ -222,6 +282,8 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
     stationActionSummary: finalizationState.stationActionSummary ? cloneData(finalizationState.stationActionSummary) : null,
     stationActionSupportEffects: supportEffects ? cloneData(supportEffects) : null,
     stationActionEventApproachEffects: eventApproachEffects ? cloneData(eventApproachEffects) : null,
+    stationActionEventApproachContributions: eventApproachContributions ? cloneData(eventApproachContributions) : null,
+    eventApproachContributions: eventApproachContributions ? cloneData(eventApproachContributions) : null,
     stationActionEffects: cloneData(stationActionEffects),
     pendingStationActionBonuses: finalizationState.pendingStationActionBonuses ? cloneData(finalizationState.pendingStationActionBonuses) : null
   };
@@ -401,8 +463,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const stationActionSupportEffects = prepareTravelV2StationActionSupportEffects(stationActionSummary);
   const stationActionEventApproachEffects = prepareTravelV2StationActionEventApproachEffects(stationActionSummary);
   const stationActionEffects = [...stationActionSupportEffects.effects, ...stationActionEventApproachEffects.effects];
+  const stationActionEventApproachContributions = prepareTravelV2StationActionEventApproachContributions(stationActionEventApproachEffects);
   const pendingStationActionBonuses = prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects);
-  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, pendingStationActionBonuses }, options);
+  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, pendingStationActionBonuses }, options);
   const finalizedSession = appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
@@ -422,6 +485,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     stationActionSummary: cloneData(stationActionSummary),
     stationActionSupportEffects: cloneData(stationActionSupportEffects),
     stationActionEventApproachEffects: cloneData(stationActionEventApproachEffects),
+    stationActionEventApproachContributions: cloneData(stationActionEventApproachContributions),
+    eventApproachContributions: cloneData(stationActionEventApproachContributions),
     stationActionEffects: cloneData(stationActionEffects),
     stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings),
     pendingStationActionBonuses: cloneData(pendingStationActionBonuses),

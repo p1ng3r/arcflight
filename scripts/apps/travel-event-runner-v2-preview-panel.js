@@ -140,6 +140,48 @@ function normalizeStationActionEventApproachEffects(eventApproachEffects = null)
   };
 }
 
+function normalizeStationActionEventApproachContributions(eventApproachContributions = null) {
+  const recordsSource = Array.isArray(eventApproachContributions) ? eventApproachContributions : eventApproachContributions?.records;
+  const records = Array.isArray(recordsSource) ? recordsSource.map((record) => {
+    const sourceStationKey = record?.sourceStationKey ?? "";
+    const sourceStationLabel = record?.sourceStationLabel || humanizeIdentifier(sourceStationKey || "source station");
+    const contributionValue = Number.isFinite(Number(record?.contributionValue)) ? Number(record.contributionValue) : 0;
+    const valueLabel = `${contributionValue > 0 ? "+" : ""}${contributionValue}`;
+    const stationOutcome = record?.stationOutcome ?? "unknown";
+    return {
+      sourceStationKey,
+      sourceStationLabel,
+      contributionKey: record?.contributionKey ?? "eventApproach",
+      contributionType: record?.contributionType ?? "eventApproach",
+      stationOutcome,
+      hasStationOutcome: Boolean(stationOutcome && stationOutcome !== "unknown"),
+      contributionValue,
+      valueLabel,
+      contributionLabel: record?.contributionLabel || `${sourceStationLabel} Event Approach: ${humanizeIdentifier(stationOutcome || "unknown result")} (${valueLabel}).`,
+      selectedSkillLabel: record?.selectedSkillLabel ?? "",
+      hasSelectedSkillLabel: Boolean(record?.selectedSkillLabel),
+      roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : (Number.isInteger(Number(eventApproachContributions?.roundIndex)) ? Number(eventApproachContributions.roundIndex) : null),
+      roundNumber: record?.roundNumber ?? eventApproachContributions?.roundNumber ?? null,
+      playerSafe: true,
+      readOnly: true
+    };
+  }) : [];
+  return {
+    available: records.length > 0,
+    title: "Event Approach Contributions",
+    subtitle: records.length > 0
+      ? `Round ${eventApproachContributions?.roundNumber ?? records[0]?.roundNumber ?? "?"} read-only Event Approach contributions captured for later resolution.`
+      : "No Event Approach contributions have been captured yet.",
+    roundIndex: Number.isInteger(Number(eventApproachContributions?.roundIndex)) ? Number(eventApproachContributions.roundIndex) : null,
+    roundNumber: eventApproachContributions?.roundNumber ?? records[0]?.roundNumber ?? null,
+    records,
+    hasRecords: records.length > 0,
+    recordCount: records.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function normalizeStationActionSupportEffects(supportEffects = null) {
   const effectsSource = Array.isArray(supportEffects) ? supportEffects : supportEffects?.effects;
   const effects = Array.isArray(effectsSource) ? effectsSource.map((effect) => ({
@@ -644,10 +686,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
   const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
   const stationActionEventApproachEffects = normalizeStationActionEventApproachEffects(latestFinalizationResult?.stationActionEventApproachEffects ?? latestResolutionRecord?.stationActionEventApproachEffects);
+  const stationActionEventApproachContributions = normalizeStationActionEventApproachContributions(latestFinalizationResult?.stationActionEventApproachContributions ?? latestFinalizationResult?.eventApproachContributions ?? latestResolutionRecord?.stationActionEventApproachContributions ?? latestResolutionRecord?.eventApproachContributions);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
-  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available;
+  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available;
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -685,6 +728,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionSupportEffects: stationActionSupportEffects,
     stationActionEventApproachEffects,
     travelV2StationActionEventApproachEffects: stationActionEventApproachEffects,
+    stationActionEventApproachContributions,
+    travelV2StationActionEventApproachContributions: stationActionEventApproachContributions,
     supportBonusStatusAvailable,
     stationActionEffectsAvailable,
     pendingStationActionBonuses,
