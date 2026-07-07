@@ -18,6 +18,14 @@ function snapshot(value) {
   return JSON.stringify(value);
 }
 
+function lockedRoundResult() {
+  const stations = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
+  return {
+    stationActions: Object.fromEntries(stations.map((stationKey) => [stationKey, { actionKey: "eventApproach", label: "Event Approach" }])),
+    stationOrderCommitments: Object.fromEntries(stations.map((stationKey) => [stationKey, { committed: true }]))
+  };
+}
+
 function createRunnerSessionFixture(overrides = {}) {
   return {
     status: "active",
@@ -30,6 +38,7 @@ function createRunnerSessionFixture(overrides = {}) {
           primaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.HULL,
           secondaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES,
           pressureStation: "engineer",
+          activeStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
           stationSummary: { engineer: { outcomeKey: "mixed", pressure: 1 } }
         },
         {
@@ -37,10 +46,12 @@ function createRunnerSessionFixture(overrides = {}) {
           title: "Session Round Finalization Test 2",
           primaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.CREW,
           secondaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.MORALE,
-          pressureStation: "pilot"
+          pressureStation: "engineer",
+          activeStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"]
         }
       ]
     },
+    roundResults: [lockedRoundResult(), lockedRoundResult()],
     ...overrides
   };
 }
