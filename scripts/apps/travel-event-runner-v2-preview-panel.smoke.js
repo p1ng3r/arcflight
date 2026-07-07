@@ -462,6 +462,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(activeCard.playerSafe === true && activeCard.readOnly === true && activeCard.effectPreviewText.includes("Future effect"), "active card preview should be player-safe, read-only, and preview-only");
   assertSmoke(activeCard.hasTargetStation === true && activeCard.targetStationKey === "engineer", "active card preview should expose target station state");
   assertSmoke(activeCard.timingType === "beforeRoll" && activeCard.previewStatus === "playable" && activeCard.playablePreview === true, "active card preview should expose before-roll readiness state");
+  assertSmoke(activeCard.previewRoundIndex === 0 && activeCard.previewRoundNumber === 1, "active card preview should expose the play/preview round separately from created round");
   assertSmoke(Array.isArray(activeCard.availableTargetStations) && activeCard.availableTargetStations.some((option) => option.stationKey === "engineer"), "active card preview should expose safe target station options");
   const activeCardsPanelJson = JSON.stringify(activeCardsPanel.travelV2ActiveCards);
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {

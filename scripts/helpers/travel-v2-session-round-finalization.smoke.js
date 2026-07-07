@@ -2,6 +2,8 @@ import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import {
   finalizeTravelV2RoundOnRunnerSession,
   getTravelV2DifficultyBidDcModifier,
+  getTravelV2StationResultForRound,
+  isTravelV2RoundActionsLocked,
   normalizeTravelV2ActiveCardRecords,
   normalizeTravelV2DifficultyBid,
   prepareTravelV2DifficultyBidCardRecord,
@@ -273,6 +275,46 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(invalidTarget.records[0].targetStatus, "invalidTarget", "unavailable target station should normalize safely");
   const previewJson = JSON.stringify(prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ targetStationKey: "navigator", gmText: "secret" })], previewBaseSession));
   assertSmoke(!previewJson.includes("gmText") && !previewJson.includes("secret"), "active card preview state should remain player-safe");
+
+  const futureRoundSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: { navigator: "success" } },
+      { ...lockedRoundResult(), stationResults: {} }
+    ]
+  });
+  const oldBeforeRollCard = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ roundIndex: 0, roundNumber: 1, targetStationKey: "navigator" })], futureRoundSession);
+  assertEqual(oldBeforeRollCard.records[0].previewStatus, "playable", "existing before-roll card should evaluate current round instead of stale created round");
+  assertEqual(oldBeforeRollCard.records[0].previewRoundIndex, 1, "active card preview should expose current preview round index");
+  assertEqual(oldBeforeRollCard.records[0].previewRoundNumber, 2, "active card preview should expose current preview round number");
+
+  const oldHeroicFailedCurrentRound = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", roundIndex: 0, roundNumber: 1, targetStationKey: "navigator" })], createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: {} },
+      { ...lockedRoundResult(), stationResults: { navigator: "failure" } }
+    ]
+  }));
+  assertEqual(oldHeroicFailedCurrentRound.records[0].previewStatus, "triggerReady", "existing heroic card should trigger from current round failure");
+
+  const oldHeroicStaleFailure = prepareTravelV2ActiveCardsPreviewState([pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", roundIndex: 0, roundNumber: 1, targetStationKey: "navigator" })], createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: { navigator: "failure" } },
+      { ...lockedRoundResult(), stationResults: {} }
+    ]
+  }));
+  assertEqual(oldHeroicStaleFailure.records[0].previewStatus, "waitingForTrigger", "existing heroic card should ignore stale created-round failure");
+
+  const implicitIndexSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [
+      { ...lockedRoundResult(), stationResults: { navigator: "success" } },
+      { stationOrderCommitments: {}, stationResults: { navigator: "failure" } }
+    ]
+  });
+  assertSmoke(isTravelV2RoundActionsLocked(implicitIndexSession, 1) === false, "action lock lookup should use roundResults[1] when records lack explicit roundIndex");
+  assertEqual(getTravelV2StationResultForRound(implicitIndexSession, "navigator", 1), "failure", "station result lookup should use roundResults[1] when records lack explicit roundIndex");
 
   const duplicateResult = finalizeTravelV2RoundOnRunnerSession(result.session, { now: "2026-06-19T00:00:01.000Z" });
   assertSmoke(!duplicateResult.ok && !duplicateResult.finalized, "duplicate finalization should block");

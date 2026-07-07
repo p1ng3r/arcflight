@@ -302,10 +302,29 @@ function currentRoundContext(session = {}) {
   return { roundIndex, roundNumber, round };
 }
 
+function roundResultForIndex(session = {}, roundIndex = 0) {
+  const records = recordsFromContainer(session?.roundResults);
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
+  return records.find((record) => Number.isInteger(Number(record?.roundIndex)) && Number(record.roundIndex) === index)
+    ?? records[index]
+    ?? {};
+}
+
+export function resolveTravelV2ActiveCardPreviewRound(session = {}, card = {}) {
+  const context = currentRoundContext(session);
+  return {
+    previewRoundIndex: context.roundIndex,
+    previewRoundNumber: context.roundNumber,
+    round: context.round,
+    createdRoundIndex: Number.isInteger(Number(card?.roundIndex)) ? Number(card.roundIndex) : null,
+    createdRoundNumber: card?.roundNumber ?? null
+  };
+}
+
 export function isTravelV2RoundActionsLocked(session = {}, roundIndex = null) {
   const { roundIndex: currentIndex } = currentRoundContext(session);
   const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : currentIndex;
-  const result = recordsFromContainer(session?.roundResults).find((record) => Number(record?.roundIndex ?? index) === index) ?? recordsFromContainer(session?.roundResults)[index];
+  const result = roundResultForIndex(session, index);
   if (isPlainObject(result?.stationOrderCommitments)) {
     return TRAVEL_V2_ALPHA_CORE_STATION_KEYS.every((stationKey) => result.stationOrderCommitments[stationKey]?.committed === true || result.stationOrderCommitments[stationKey]?.locked === true);
   }
@@ -319,7 +338,7 @@ export function getTravelV2StationResultForRound(session = {}, stationKey = "", 
   if (!key) return "";
   const { roundIndex: currentIndex, round } = currentRoundContext(session);
   const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : currentIndex;
-  const candidates = [recordsFromContainer(session?.roundResults).find((record, recordIndex) => Number(record?.roundIndex ?? recordIndex) === index), round].filter(Boolean);
+  const candidates = [roundResultForIndex(session, index), round].filter(Boolean);
   for (const candidate of candidates) {
     const value = candidate?.stationResults?.[key] ?? candidate?.stationSummary?.[key]?.degree ?? candidate?.stationSummary?.[key]?.outcomeKey ?? candidate?.stations?.[key]?.result;
     const normalized = normalizeStationOutcomeKey(value);
@@ -349,7 +368,8 @@ export function prepareTravelV2ActiveCardPlayPreview(card = {}, session = {}) {
   let playablePreview = false;
   let triggerReadyPreview = false;
   let waitingForTrigger = false;
-  const stationResult = target.hasTargetStation ? getTravelV2StationResultForRound(session, target.targetStationKey, card.roundIndex) : "";
+  const { previewRoundIndex, previewRoundNumber } = resolveTravelV2ActiveCardPreviewRound(session, card);
+  const stationResult = target.hasTargetStation ? getTravelV2StationResultForRound(session, target.targetStationKey, previewRoundIndex) : "";
   const stationRolled = Boolean(stationResult);
   if (target.hasTargetStation && timingType === "afterFailure") {
     if (!stationRolled) { previewStatus = "waitingForTrigger"; waitingForTrigger = true; }
@@ -357,11 +377,11 @@ export function prepareTravelV2ActiveCardPlayPreview(card = {}, session = {}) {
     else previewStatus = "noTrigger";
   } else if (target.hasTargetStation) {
     if (stationRolled) previewStatus = "missedWindow";
-    else if (isTravelV2RoundActionsLocked(session, card.roundIndex)) { previewStatus = "playable"; playablePreview = true; }
+    else if (isTravelV2RoundActionsLocked(session, previewRoundIndex)) { previewStatus = "playable"; playablePreview = true; }
     else previewStatus = "waitingForLock";
   }
   const config = TRAVEL_V2_ACTIVE_CARD_CONFIG[card.rewardKey ?? card.cardKey] ?? {};
-  return { ...target, timingType, playWindowKey: config.playWindowKey ?? "", playWindowLabel: config.playWindowLabel ?? "", playablePreview, triggerReadyPreview, waitingForTrigger, previewStatus, previewStatusLabel: activeCardPreviewStatusLabel(previewStatus), stationResult: stationResult || "", playerSafe: true, readOnly: true };
+  return { ...target, previewRoundIndex, previewRoundNumber, timingType, playWindowKey: config.playWindowKey ?? "", playWindowLabel: config.playWindowLabel ?? "", playablePreview, triggerReadyPreview, waitingForTrigger, previewStatus, previewStatusLabel: activeCardPreviewStatusLabel(previewStatus), stationResult: stationResult || "", playerSafe: true, readOnly: true };
 }
 
 export function prepareTravelV2ActiveCardsPreviewState(container = {}, session = {}) {
