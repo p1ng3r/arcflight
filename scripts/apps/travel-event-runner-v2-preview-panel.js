@@ -107,6 +107,40 @@ function normalizeStationActionResolutionSummary(summary = null) {
   };
 }
 
+function normalizeStationActionSupportEffects(supportEffects = null) {
+  const effectsSource = Array.isArray(supportEffects) ? supportEffects : supportEffects?.effects;
+  const effects = Array.isArray(effectsSource) ? effectsSource.map((effect) => ({
+    sourceStationKey: effect?.sourceStationKey ?? "",
+    sourceStationLabel: effect?.sourceStationLabel || humanizeIdentifier(effect?.sourceStationKey || "source station"),
+    targetStationKey: effect?.targetStationKey ?? "",
+    targetStationLabel: effect?.targetStationLabel || humanizeIdentifier(effect?.targetStationKey || "target station"),
+    effectKey: effect?.effectKey ?? "support",
+    effectType: effect?.effectType ?? "support",
+    effectLabel: effect?.effectLabel || `${effect?.sourceStationLabel || "Source station"} supports ${effect?.targetStationLabel || "target station"}.`,
+    roundIndex: Number.isInteger(Number(effect?.roundIndex)) ? Number(effect.roundIndex) : null,
+    roundNumber: effect?.roundNumber ?? supportEffects?.roundNumber ?? null,
+    playerSafe: true,
+    readOnly: true
+  })) : [];
+  const warnings = Array.isArray(supportEffects?.warnings) ? supportEffects.warnings.filter((warning) => typeof warning === "string" && warning.trim()).map((warning) => warning.trim()) : [];
+  return {
+    available: effects.length > 0 || warnings.length > 0,
+    title: "Station Action Effects",
+    subtitle: effects.length > 0
+      ? `Round ${supportEffects?.roundNumber ?? effects[0]?.roundNumber ?? "?"} read-only Support effects captured for later resolution.`
+      : "No station action effects have been captured yet.",
+    roundIndex: Number.isInteger(Number(supportEffects?.roundIndex)) ? Number(supportEffects.roundIndex) : null,
+    roundNumber: supportEffects?.roundNumber ?? effects[0]?.roundNumber ?? null,
+    effects,
+    warnings,
+    hasEffects: effects.length > 0,
+    hasWarnings: warnings.length > 0,
+    effectCount: effects.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function normalizeEventCompletionReadiness(state = null, latestResult = null) {
   const eventRoundCount = Number(state?.eventRoundCount) || 0;
   const finalizedRoundCount = Number(state?.finalizedRoundCount) || 0;
@@ -498,6 +532,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const resolutionRecords = recordsFromContainer(runnerSession?.travelV2RoundResolutions);
   const latestResolutionRecord = resolutionRecords.length > 0 ? resolutionRecords[resolutionRecords.length - 1] : null;
   const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
+  const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -531,6 +566,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     roundFinalization: travelV2RoundFinalizationState,
     stationActionResolutionSummary,
     travelV2StationActionResolutionSummary: stationActionResolutionSummary,
+    stationActionSupportEffects,
+    travelV2StationActionSupportEffects: stationActionSupportEffects,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,

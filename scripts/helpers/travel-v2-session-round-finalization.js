@@ -3,6 +3,7 @@ import { TRAVEL_V2_ALPHA_CORE_STATION_KEYS, checkTravelV2StationActionLockInRead
 
 export const TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_RESOLUTION_SUMMARY_VERSION = 1;
+export const TRAVEL_V2_STATION_ACTION_EFFECTS_VERSION = 1;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -61,6 +62,58 @@ function actionLabel(action = {}, actionKey = "") {
     ?? humanizeIdentifier(actionKey || "station-action");
 }
 
+function isSupportActionSummaryRow(row = {}) {
+  return row?.selectedActionKey === "support" || row?.selectedActionType === "support";
+}
+
+function buildSafeSupportWarning(sourceStationLabel = "Station") {
+  return `${sourceStationLabel} selected Support, but no valid target station was available; no Support effect was recorded.`;
+}
+
+export function prepareTravelV2StationActionSupportEffects(stationActionSummary = {}) {
+  const stations = Array.isArray(stationActionSummary?.stations) ? stationActionSummary.stations : [];
+  const activeStationKeys = new Set(TRAVEL_V2_ALPHA_CORE_STATION_KEYS);
+  const stationLabels = new Map(stations
+    .filter((row) => activeStationKeys.has(row?.stationKey))
+    .map((row) => [row.stationKey, optionalString(row.stationLabel) ?? humanizeIdentifier(row.stationKey)]));
+  const effects = [];
+  const warnings = [];
+  for (const row of stations) {
+    const sourceStationKey = safeKey(row?.stationKey);
+    if (!activeStationKeys.has(sourceStationKey) || !isSupportActionSummaryRow(row)) continue;
+    const sourceStationLabel = stationLabels.get(sourceStationKey) ?? humanizeIdentifier(sourceStationKey);
+    const targetStationKey = safeKey(row?.targetStationKey);
+    const targetStationLabel = stationLabels.get(targetStationKey);
+    if (!targetStationKey || !activeStationKeys.has(targetStationKey) || targetStationKey === sourceStationKey || !targetStationLabel) {
+      warnings.push(buildSafeSupportWarning(sourceStationLabel));
+      continue;
+    }
+    effects.push({
+      sourceStationKey,
+      sourceStationLabel,
+      targetStationKey,
+      targetStationLabel,
+      effectKey: "support",
+      effectType: "support",
+      effectLabel: `${sourceStationLabel} supports ${targetStationLabel}.`,
+      roundIndex: Number.isInteger(Number(stationActionSummary.roundIndex)) ? Number(stationActionSummary.roundIndex) : (Number.isInteger(Number(row?.roundIndex)) ? Number(row.roundIndex) : null),
+      roundNumber: stationActionSummary.roundNumber ?? row?.roundNumber ?? null,
+      playerSafe: true,
+      readOnly: true
+    });
+  }
+  return {
+    version: TRAVEL_V2_STATION_ACTION_EFFECTS_VERSION,
+    roundIndex: Number.isInteger(Number(stationActionSummary?.roundIndex)) ? Number(stationActionSummary.roundIndex) : null,
+    roundNumber: stationActionSummary?.roundNumber ?? null,
+    effects,
+    warnings,
+    hasEffects: effects.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function recordsFromContainer(container) {
   if (Array.isArray(container)) return container;
   if (Array.isArray(container?.records)) return container.records;
@@ -68,6 +121,7 @@ function recordsFromContainer(container) {
 }
 
 function createRoundResolutionRecord(finalizationState = {}, options = {}) {
+  const supportEffects = isPlainObject(finalizationState.stationActionSupportEffects) ? finalizationState.stationActionSupportEffects : null;
   const record = {
     roundIndex: finalizationState.roundIndex,
     roundNumber: finalizationState.roundNumber,
@@ -78,7 +132,9 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
     pressureApplicationRecord: cloneData(finalizationState.pressureApplicationRecord),
     correctionRecord: finalizationState.correctionRecord ? cloneData(finalizationState.correctionRecord) : null,
     stationSummary: finalizationState.stationSummary ? cloneData(finalizationState.stationSummary) : null,
-    stationActionSummary: finalizationState.stationActionSummary ? cloneData(finalizationState.stationActionSummary) : null
+    stationActionSummary: finalizationState.stationActionSummary ? cloneData(finalizationState.stationActionSummary) : null,
+    stationActionSupportEffects: supportEffects ? cloneData(supportEffects) : null,
+    stationActionEffects: supportEffects ? cloneData(supportEffects.effects ?? []) : []
   };
   const notes = optionalString(options.notes);
   const reason = optionalString(options.reason);
@@ -234,7 +290,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
 
   const clonedSession = cloneData(session);
   const stationActionSummary = prepareTravelV2StationActionResolutionSummary(session, { ...options, roundIndex: finalizationStateBefore.roundIndex });
-  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary }, options);
+  const stationActionSupportEffects = prepareTravelV2StationActionSupportEffects(stationActionSummary);
+  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects }, options);
   const finalizedSession = appendRoundResolutionRecord(clonedSession, roundResolutionRecord);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
@@ -251,7 +308,10 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     isEventCompleteReady: finalizationStateAfter.isEventCompleteReady === true,
     finalizationStateBefore,
     finalizationStateAfter,
-    stationActionSummary: cloneData(stationActionSummary)
+    stationActionSummary: cloneData(stationActionSummary),
+    stationActionSupportEffects: cloneData(stationActionSupportEffects),
+    stationActionEffects: cloneData(stationActionSupportEffects.effects),
+    stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings)
   };
 }
 
