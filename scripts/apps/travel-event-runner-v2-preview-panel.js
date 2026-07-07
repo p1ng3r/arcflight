@@ -107,6 +107,39 @@ function normalizeStationActionResolutionSummary(summary = null) {
   };
 }
 
+function normalizeStationActionEventApproachEffects(eventApproachEffects = null) {
+  const effectsSource = Array.isArray(eventApproachEffects) ? eventApproachEffects : eventApproachEffects?.effects;
+  const effects = Array.isArray(effectsSource) ? effectsSource.map((effect) => ({
+    sourceStationKey: effect?.sourceStationKey ?? "",
+    sourceStationLabel: effect?.sourceStationLabel || humanizeIdentifier(effect?.sourceStationKey || "source station"),
+    effectKey: effect?.effectKey ?? "eventApproach",
+    effectType: effect?.effectType ?? "eventApproach",
+    effectLabel: effect?.effectLabel || `${effect?.sourceStationLabel || "Source station"} uses Event Approach.`,
+    selectedSkillLabel: effect?.selectedSkillLabel ?? "",
+    hasSelectedSkillLabel: Boolean(effect?.selectedSkillLabel),
+    stationOutcome: effect?.stationOutcome ?? "",
+    hasStationOutcome: Boolean(effect?.stationOutcome),
+    roundIndex: Number.isInteger(Number(effect?.roundIndex)) ? Number(effect.roundIndex) : null,
+    roundNumber: effect?.roundNumber ?? eventApproachEffects?.roundNumber ?? null,
+    playerSafe: true,
+    readOnly: true
+  })) : [];
+  return {
+    available: effects.length > 0,
+    title: "Event Approach Effects",
+    subtitle: effects.length > 0
+      ? `Round ${eventApproachEffects?.roundNumber ?? effects[0]?.roundNumber ?? "?"} read-only Event Approach effects captured for later resolution.`
+      : "No Event Approach effects have been captured yet.",
+    roundIndex: Number.isInteger(Number(eventApproachEffects?.roundIndex)) ? Number(eventApproachEffects.roundIndex) : null,
+    roundNumber: eventApproachEffects?.roundNumber ?? effects[0]?.roundNumber ?? null,
+    effects,
+    hasEffects: effects.length > 0,
+    effectCount: effects.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function normalizeStationActionSupportEffects(supportEffects = null) {
   const effectsSource = Array.isArray(supportEffects) ? supportEffects : supportEffects?.effects;
   const effects = Array.isArray(effectsSource) ? effectsSource.map((effect) => ({
@@ -610,9 +643,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const latestResolutionRecord = resolutionRecords.length > 0 ? resolutionRecords[resolutionRecords.length - 1] : null;
   const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
   const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
+  const stationActionEventApproachEffects = normalizeStationActionEventApproachEffects(latestFinalizationResult?.stationActionEventApproachEffects ?? latestResolutionRecord?.stationActionEventApproachEffects);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
+  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available;
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -648,7 +683,10 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionResolutionSummary: stationActionResolutionSummary,
     stationActionSupportEffects,
     travelV2StationActionSupportEffects: stationActionSupportEffects,
+    stationActionEventApproachEffects,
+    travelV2StationActionEventApproachEffects: stationActionEventApproachEffects,
     supportBonusStatusAvailable,
+    stationActionEffectsAvailable,
     pendingStationActionBonuses,
     travelV2PendingStationActionBonuses: pendingStationActionBonuses,
     appliedStationActionBonuses,

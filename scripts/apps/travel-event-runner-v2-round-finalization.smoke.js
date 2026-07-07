@@ -149,7 +149,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     const missingActionBlocked = prepareTravelV2RoundFinalizationRunnerUpdate(missingActionApplied.nextSession, { now: "2026-01-01T00:00:01.200Z" });
     assertSmoke(!missingActionBlocked.result.ok && !missingActionBlocked.result.finalized, "missing station action should block finalization");
     assertSmoke(!missingActionBlocked.result.stationActionSummary, "missing station action should block before station action summary generation");
-    assertSmoke(!missingActionBlocked.result.stationActionSupportEffects && !missingActionBlocked.result.stationActionEffects, "missing station action should block before Support effects are generated");
+    assertSmoke(!missingActionBlocked.result.stationActionSupportEffects && !missingActionBlocked.result.stationActionEventApproachEffects && !missingActionBlocked.result.stationActionEffects, "missing station action should block before station action effects are generated");
     assertSmoke(!missingActionBlocked.result.pendingStationActionBonuses, "missing station action should block before pending bonuses are generated");
     assertSmoke(missingActionBlocked.result.playerMessage.includes("selected and locked"), "blocked result should include safe player-facing lock-in message");
     assertSmoke(missingActionBlocked.result.gmMessage.includes("captain"), "blocked result should include readable GM-facing station reason");
@@ -197,8 +197,20 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(supportEffect.sourceStationKey === "engineer" && supportEffect.sourceStationLabel === "Engineer", "Support effect should include safe source station key and label");
     assertSmoke(supportEffect.targetStationKey === "navigator" && supportEffect.targetStationLabel === "Navigator", "Support effect should include safe target station key and label");
     assertSmoke(supportEffect.effectKey === "support" && supportEffect.effectType === "support" && supportEffect.playerSafe === true && supportEffect.readOnly === true, "Support effect should use safe read-only Support metadata");
-    assertSmoke(successful.result.stationActionEffects.length === 1, "Support effect should be present on finalization result flat effects");
-    assertSmoke(resolutionRecord.stationActionSupportEffects.effects.length === 1 && resolutionRecord.stationActionEffects.length === 1, "Support effect should be present on round resolution record");
+    assertSmoke(successful.result.stationActionEffects.length === 5, "Support and Event Approach effects should be present on finalization result flat effects");
+    assertSmoke(resolutionRecord.stationActionSupportEffects.effects.length === 1 && resolutionRecord.stationActionEffects.length === 5, "Support and Event Approach effects should be present on round resolution record");
+    const eventApproachEffects = successful.result.stationActionEventApproachEffects;
+    assertSmoke(eventApproachEffects?.hasEffects === true && eventApproachEffects.effects.length === 4, "ready locked Event Approach actions should record Event Approach effects");
+    const navigatorEventApproach = eventApproachEffects.effects.find((effect) => effect.sourceStationKey === "navigator");
+    assertSmoke(navigatorEventApproach?.sourceStationLabel === "Navigator", "Event Approach effect should include safe source station label");
+    assertSmoke(navigatorEventApproach?.effectKey === "eventApproach" && navigatorEventApproach.effectType === "eventApproach" && navigatorEventApproach.effectLabel.includes("Event Approach"), "Event Approach effect should include safe readable action/effect label");
+    assertSmoke(navigatorEventApproach?.stationOutcome === "success", "Event Approach effect should include safe station result when available");
+    assertSmoke(navigatorEventApproach?.playerSafe === true && navigatorEventApproach.readOnly === true, "Event Approach effect should be player-safe and read-only");
+    assertSmoke(resolutionRecord.stationActionEventApproachEffects.effects.some((effect) => effect.sourceStationKey === "navigator"), "Event Approach effect should be present on round resolution record");
+    const eventApproachJson = JSON.stringify(eventApproachEffects);
+    for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+      assertSmoke(!eventApproachJson.includes(forbidden), `Event Approach effects should not include forbidden player-safe term ${forbidden}`);
+    }
     const pendingBonuses = successful.result.pendingStationActionBonuses;
     assertSmoke(pendingBonuses?.hasRecords === true && pendingBonuses.records.length === 1, "valid Support effect should create one pending Support bonus");
     const pendingBonus = pendingBonuses.records[0];

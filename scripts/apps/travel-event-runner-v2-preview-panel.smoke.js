@@ -332,6 +332,36 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     assertSmoke(!supportPanelJson.includes(forbidden), `Support bonus preview state should not include forbidden player-safe term ${forbidden}`);
   }
 
+
+  const eventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      travelV2RoundResolutions: {
+        records: [{
+          roundIndex: 0,
+          roundNumber: 1,
+          stationActionEventApproachEffects: {
+            roundIndex: 0,
+            roundNumber: 1,
+            effects: [{ sourceStationKey: "navigator", sourceStationLabel: "Navigator", effectKey: "eventApproach", effectType: "eventApproach", effectLabel: "Navigator uses Event Approach.", selectedSkillLabel: "Piloting Lore", stationOutcome: "success", playerSafe: true, readOnly: true, gmText: "secret", auditRecord: { secret: true } }],
+            playerSafe: true,
+            readOnly: true
+          }
+        }]
+      }
+    }
+  });
+  assertSmoke(eventApproachPanel.stationActionEffectsAvailable, "Event Approach effects should make station action effects section available");
+  assertSmoke(eventApproachPanel.travelV2StationActionEventApproachEffects.hasEffects, "Event Approach effects should be exposed in preview render state");
+  const eventApproachEffect = eventApproachPanel.travelV2StationActionEventApproachEffects.effects[0];
+  assertSmoke(eventApproachEffect.sourceStationLabel === "Navigator", "Event Approach preview effect should include safe source station label");
+  assertSmoke(eventApproachEffect.effectLabel.includes("Event Approach") && eventApproachEffect.selectedSkillLabel === "Piloting Lore" && eventApproachEffect.stationOutcome === "success", "Event Approach preview effect should include safe readable labels and result");
+  const eventApproachPanelJson = JSON.stringify(eventApproachPanel.travelV2StationActionEventApproachEffects);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
+  }
+
   return {
     ok: true,
     checked: [
@@ -347,6 +377,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "pre-application-correction-controls-hidden",
       "station-benefit-display-state",
       "support-bonus-status-render-state",
+      "event-approach-effects-render-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",
