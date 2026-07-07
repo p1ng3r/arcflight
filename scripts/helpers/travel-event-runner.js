@@ -25,6 +25,7 @@ import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setT
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
+import { inspectTravelV2StationActionLockInFinalizationGuard } from "./travel-v2-session-round-finalization.js";
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
@@ -4106,9 +4107,11 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
   const hasFinalizationRecord = Boolean(roundFinalizationState.finalizationRecord);
   const errors = [];
   const warnings = [];
+  const lockInGuard = inspectTravelV2StationActionLockInFinalizationGuard(activeSession, options);
   if (unresolvedStations.length > 0) errors.push("Resolve active stations before finalizing this round.");
   if (pendingReactionRecords.length > 0) errors.push("Resolve pending Focus reaction prompts before finalizing this round.");
   if (rerollNeededRecords.length > 0) errors.push("Resolve accepted Focus rerolls before finalizing this round.");
+  if (lockInGuard.ready !== true) errors.push(lockInGuard.gmMessage);
   for (const record of rerollNeededRecords) {
     if (!stationResults[record.stationKey]) errors.push(`${record.stationKey} requires a Focus reroll result before round resolution.`);
   }
@@ -4148,6 +4151,9 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
       roundResolutionReady: errors.length === 0,
       roundResolutionBlocked: errors.length > 0,
       roundResolutionBlockers: errors,
+      roundResolutionPlayerMessage: lockInGuard.playerMessage,
+      roundResolutionPlayerBlockers: lockInGuard.ready === true ? [] : lockInGuard.playerBlockedReasons,
+      stationActionLockInReadyForFinalization: lockInGuard.ready === true,
       roundResolutionWarningLabel: errors[0] ?? "Round can be finalized.",
       canFinalizeCurrentRound: canResolveRound,
       canAdvanceCurrentRound: canAdvanceRound,

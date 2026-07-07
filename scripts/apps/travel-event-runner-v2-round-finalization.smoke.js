@@ -21,7 +21,26 @@ function recordsFrom(container) {
   return [];
 }
 
+function lockedStationActionsFixture({ unlockedStation = "", missingStation = "", invalidStation = "" } = {}) {
+  const stations = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
+  const stationActions = {};
+  const stationOrderCommitments = {};
+  for (const stationKey of stations) {
+    if (stationKey === missingStation) continue;
+    stationActions[stationKey] = { actionKey: "eventApproach", label: "Event Approach" };
+    stationOrderCommitments[stationKey] = { committed: stationKey !== unlockedStation };
+  }
+  if (invalidStation) {
+    stationActions[invalidStation] = { actionKey: "eventApproach", label: "Hidden Action" };
+    stationOrderCommitments[invalidStation] = { committed: true };
+  }
+  return { stationActions, stationOrderCommitments };
+}
+
 function createRunnerSessionFixture(overrides = {}) {
+  const lockIn = lockedStationActionsFixture(overrides.lockInOptions);
+  const cleanOverrides = { ...overrides };
+  delete cleanOverrides.lockInOptions;
   return {
     key: "runner-finalization-fixture",
     status: "active",
@@ -38,11 +57,18 @@ function createRunnerSessionFixture(overrides = {}) {
           primaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.HULL,
           secondaryPressure: ARCFLIGHT_TRAVEL_RESOURCES.SUPPLIES,
           pressureStation: "engineer",
+          activeStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
           stationSummary: { engineer: { degree: "failure" } }
         }
       ]
     },
-    ...overrides
+    roundResults: [
+      {
+        stationResults: { captain: "success", navigator: "success", engineer: "failure", veilwarden: "success", watchmaster: "success" },
+        ...lockIn
+      }
+    ],
+    ...cleanOverrides
   };
 }
 
@@ -106,6 +132,28 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(!blocked.result.ok && !blocked.result.finalized, "round without pressure application should block");
     assertSmoke(!blocked.shouldUpdateSession, "blocked round should not request session replacement");
     assertEqual(snapshot(noPressure), noPressureBefore, "blocked round should not mutate input session");
+
+    const missingActionSession = createRunnerSessionFixture({ lockInOptions: { missingStation: "captain" } });
+    const missingActionApplied = prepareTravelV2PressureApplicationRunnerUpdate(missingActionSession, { selectedOutcomeKey: "failure", now: "2026-01-01T00:00:01.100Z" });
+    const missingActionBefore = snapshot(missingActionApplied.nextSession);
+    const missingActionBlocked = prepareTravelV2RoundFinalizationRunnerUpdate(missingActionApplied.nextSession, { now: "2026-01-01T00:00:01.200Z" });
+    assertSmoke(!missingActionBlocked.result.ok && !missingActionBlocked.result.finalized, "missing station action should block finalization");
+    assertSmoke(missingActionBlocked.result.playerMessage.includes("selected and locked"), "blocked result should include safe player-facing lock-in message");
+    assertSmoke(missingActionBlocked.result.gmMessage.includes("captain"), "blocked result should include readable GM-facing station reason");
+    assertEqual(snapshot(missingActionApplied.nextSession), missingActionBefore, "missing action guard should not mutate input session");
+
+    const unlockedSession = createRunnerSessionFixture({ lockInOptions: { unlockedStation: "navigator" } });
+    const unlockedApplied = prepareTravelV2PressureApplicationRunnerUpdate(unlockedSession, { selectedOutcomeKey: "failure", now: "2026-01-01T00:00:01.300Z" });
+    const unlockedBlocked = prepareTravelV2RoundFinalizationRunnerUpdate(unlockedApplied.nextSession, { now: "2026-01-01T00:00:01.400Z" });
+    assertSmoke(!unlockedBlocked.result.ok && !unlockedBlocked.result.finalized, "unlocked station action should block finalization");
+    assertSmoke(unlockedBlocked.result.gmMessage.includes("navigator"), "unlocked station block should identify station for GM");
+
+    const invalidStationSession = createRunnerSessionFixture({ lockInOptions: { invalidStation: "secret" } });
+    const invalidStationApplied = prepareTravelV2PressureApplicationRunnerUpdate(invalidStationSession, { selectedOutcomeKey: "failure", now: "2026-01-01T00:00:01.500Z" });
+    const invalidStationBlocked = prepareTravelV2RoundFinalizationRunnerUpdate(invalidStationApplied.nextSession, { now: "2026-01-01T00:00:01.600Z" });
+    assertSmoke(!invalidStationBlocked.result.ok && !invalidStationBlocked.result.finalized, "invalid station key should block finalization safely");
+    const playerBlockJson = JSON.stringify({ message: invalidStationBlocked.result.playerMessage, reasons: invalidStationBlocked.result.playerBlockedReasons });
+    assertSmoke(!playerBlockJson.includes("gmOnly") && !playerBlockJson.includes("auditRecord") && !playerBlockJson.includes("secret"), "player-facing lock-in block should not leak GM-only validation details or invalid raw station keys");
 
     const source = createRunnerSessionFixture();
     const sourceBefore = snapshot(source);
@@ -179,6 +227,10 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
         "runner-helper-exported",
         "missing-session-blocked",
         "no-pressure-application-blocked",
+        "missing-station-action-lock-in-blocked",
+        "unlocked-station-action-lock-in-blocked",
+        "invalid-station-key-lock-in-blocked",
+        "player-safe-lock-in-block-redacted",
         "successful-finalization-replaces-session",
         "duplicate-finalization-non-destructive",
         "completed-session-blocked",
