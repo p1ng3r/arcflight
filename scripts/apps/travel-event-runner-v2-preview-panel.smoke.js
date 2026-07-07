@@ -454,6 +454,23 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!activeCardsPanelJson.includes(forbidden), `Active card preview state should not include forbidden player-safe term ${forbidden}`);
   }
+  const activeCardsWithEmptyLatestPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: activeCardsPanel.session ?? {
+      ...appState.session,
+      travelV2ActiveCards: {
+        records: [activeCard],
+        playerSafe: true,
+        readOnly: true
+      }
+    },
+    travelV2RoundFinalizationResult: {
+      ok: true,
+      finalized: true,
+      travelV2ActiveCards: { version: 1, records: [], playerSafe: true, readOnly: true }
+    }
+  });
+  assertEqual(activeCardsWithEmptyLatestPanel.travelV2ActiveCards.records.length, 1, "active card preview should keep existing session card when latest finalization has no created cards");
 
   return {
     ok: true,
@@ -474,6 +491,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "event-approach-contributions-render-state",
       "event-approach-contribution-tally-render-state",
       "active-card-preview-render-state",
+      "active-card-merged-preview-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",

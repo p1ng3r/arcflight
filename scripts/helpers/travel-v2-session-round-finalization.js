@@ -790,6 +790,7 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const travelV2ActiveCards = prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary(stationActionSummary);
   const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, stationActionEventApproachTallyStatus, pendingStationActionBonuses, travelV2ActiveCards }, options);
   const finalizedSession = appendTravelV2ActiveCardRecordsToSession(appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses), travelV2ActiveCards);
+  const mergedTravelV2ActiveCards = normalizeTravelV2ActiveCardRecords(finalizedSession.travelV2ActiveCards);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
 
@@ -818,8 +819,10 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings),
     pendingStationActionBonuses: cloneData(pendingStationActionBonuses),
     travelV2PendingStationActionBonuses: cloneData(pendingStationActionBonuses),
-    travelV2ActiveCards: cloneData(travelV2ActiveCards),
-    activeCardRecords: cloneData(travelV2ActiveCards.records)
+    travelV2ActiveCards: cloneData(mergedTravelV2ActiveCards),
+    activeCardRecords: cloneData(mergedTravelV2ActiveCards.records),
+    createdTravelV2ActiveCards: cloneData(travelV2ActiveCards),
+    createdActiveCardRecords: cloneData(travelV2ActiveCards.records)
   };
 }
 

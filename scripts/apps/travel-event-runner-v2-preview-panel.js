@@ -115,8 +115,12 @@ function normalizeStationActionResolutionSummary(summary = null) {
   };
 }
 
-function normalizeActiveTravelCards(container = null) {
-  const normalized = sanitizeTravelV2ActiveCardsForPlayers(container);
+function normalizeActiveTravelCards(...containers) {
+  const mergedRecords = [];
+  for (const container of containers) {
+    mergedRecords.push(...sanitizeTravelV2ActiveCardsForPlayers(container).records);
+  }
+  const normalized = sanitizeTravelV2ActiveCardsForPlayers(mergedRecords);
   return {
     ...normalized,
     title: "Active Travel Cards",
@@ -780,7 +784,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
-  const travelV2ActiveCards = normalizeActiveTravelCards(latestFinalizationResult?.travelV2ActiveCards ?? latestResolutionRecord?.travelV2ActiveCards ?? runnerSession?.travelV2ActiveCards);
+  const travelV2ActiveCards = normalizeActiveTravelCards(runnerSession?.travelV2ActiveCards, latestResolutionRecord?.travelV2ActiveCards, latestFinalizationResult?.travelV2ActiveCards);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available || stationActionEventApproachTallyStatus.available;
