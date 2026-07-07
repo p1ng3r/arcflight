@@ -464,9 +464,16 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(activeCard.timingType === "beforeRoll" && activeCard.previewStatus === "playable" && activeCard.playablePreview === true, "active card preview should expose before-roll readiness state");
   assertSmoke(activeCard.previewRoundIndex === 0 && activeCard.previewRoundNumber === 1, "active card preview should expose the play/preview round separately from created round");
   assertSmoke(Array.isArray(activeCard.availableTargetStations) && activeCard.availableTargetStations.some((option) => option.stationKey === "engineer"), "active card preview should expose safe target station options");
+  assertSmoke(activeCardsPanel.travelV2ActiveCardApplicationPreviews.hasRecords, "panel should expose active card application previews at top level");
+  assertSmoke(activeCardsPanel.activeCardApplicationPreviews === activeCardsPanel.travelV2ActiveCardApplicationPreviews, "panel should expose active card application preview alias");
+  const activeCardApplicationPreview = activeCardsPanel.travelV2ActiveCardApplicationPreviews.records[0];
+  assertSmoke(activeCardApplicationPreview.applicationType === "resultFloorPreview" && activeCardApplicationPreview.resultFloor === "success", "panel should expose legendary result floor application preview");
+  assertSmoke(activeCardApplicationPreview.requiresGMConfirmation === true && activeCardApplicationPreview.canApplyPreview === true, "panel application preview should require GM confirmation and be apply-ready");
+  assertSmoke(activeCardApplicationPreview.playerSafe === true && activeCardApplicationPreview.readOnly === true, "panel application preview should be player-safe and read-only");
   const activeCardsPanelJson = JSON.stringify(activeCardsPanel.travelV2ActiveCards);
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!activeCardsPanelJson.includes(forbidden), `Active card preview state should not include forbidden player-safe term ${forbidden}`);
+    assertSmoke(!JSON.stringify(activeCardsPanel.travelV2ActiveCardApplicationPreviews).includes(forbidden), `Active card application preview state should not include forbidden player-safe term ${forbidden}`);
   }
   const activeCardsWithEmptyLatestPanel = prepareTravelEventRunnerV2PreviewPanelState({
     ...appState,
