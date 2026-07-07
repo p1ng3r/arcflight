@@ -38,6 +38,8 @@ import {
   loadTravelEventRunnerSessionFromLibrary,
   prepareTravelEventEffectApplicationState,
   prepareTravelEventRunnerState,
+  prepareTravelV2StationActionLockRunnerUpdate,
+  prepareTravelV2StationActionUnlockRunnerUpdate,
   retreatTravelEventRunnerRoundPhase,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
@@ -134,6 +136,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-order-reorder-request]",
   "[data-arcflight-travel-v2-order-commit-request]",
   "[data-arcflight-travel-v2-order-persist-request]",
+  "[data-arcflight-travel-v2-station-action-lock]",
+  "[data-arcflight-travel-v2-station-action-unlock]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
@@ -462,6 +466,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2AutoSaveResult: null,
       travelV2RoundActionOrderCommitResult: null,
       travelV2RoundActionOrderPersistResult: null,
+      travelV2StationActionLockResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
       travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
@@ -637,6 +642,50 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return update;
   }
 
+  async lockTravelV2StationAction(targetOrOptions = {}) {
+    const dataset = targetOrOptions?.dataset ?? {};
+    const stationKey = typeof targetOrOptions.stationKey === "string" ? targetOrOptions.stationKey : (dataset.stationKey ?? "");
+    const update = prepareTravelV2StationActionLockRunnerUpdate(this.session, {
+      stationKey,
+      user: targetOrOptions.user ?? globalThis.game?.user,
+      isGM: targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true
+    });
+    this.uiState.travelV2StationActionLockResult = update.result;
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = update.result?.message ?? "Station action locked in local runner state.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = update.result?.errors?.[0] ?? "Station action lock was blocked.";
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return update;
+  }
+
+  async unlockTravelV2StationAction(targetOrOptions = {}) {
+    const dataset = targetOrOptions?.dataset ?? {};
+    const stationKey = typeof targetOrOptions.stationKey === "string" ? targetOrOptions.stationKey : (dataset.stationKey ?? "");
+    const allowUnlock = targetOrOptions.allowUnlock === true || dataset.allowUnlock === "true";
+    const update = prepareTravelV2StationActionUnlockRunnerUpdate(this.session, {
+      stationKey,
+      allowUnlock,
+      user: targetOrOptions.user ?? globalThis.game?.user,
+      isGM: targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true
+    });
+    this.uiState.travelV2StationActionLockResult = update.result;
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = update.result?.message ?? "Station action unlocked in local runner state.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = update.result?.errors?.[0] ?? "Station action unlock was blocked.";
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return update;
+  }
+
   async persistCommittedTravelV2RoundActionOrder(options = {}) {
     const result = await persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary(this.session, {
       ...options,
@@ -781,6 +830,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-order-persist-request")) return this.persistCommittedTravelV2RoundActionOrder();
+    if (target.hasAttribute("data-arcflight-travel-v2-station-action-lock")) return this.lockTravelV2StationAction(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-station-action-unlock")) return this.unlockTravelV2StationAction(target);
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();
@@ -2354,6 +2405,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.uiState.travelV2StationBenefitUseReviewRequested = false;
     this.uiState.travelV2RoundActionOrderCommitResult = null;
     this.uiState.travelV2RoundActionOrderPersistResult = null;
+    this.uiState.travelV2StationActionLockResult = null;
     this.uiState.travelV2RoundActionOrderReorderRequested = false;
     this.uiState.travelV2ProposedRoundActionOrder = [];
   }
