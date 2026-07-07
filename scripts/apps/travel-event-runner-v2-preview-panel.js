@@ -182,6 +182,38 @@ function normalizeStationActionEventApproachContributions(eventApproachContribut
   };
 }
 
+function normalizeStationActionEventApproachContributionTally(eventApproachContributionTally = null) {
+  const totalContributionValue = Number.isFinite(Number(eventApproachContributionTally?.totalContributionValue)) ? Number(eventApproachContributionTally.totalContributionValue) : 0;
+  const valueLabel = `${totalContributionValue > 0 ? "+" : ""}${totalContributionValue}`;
+  const contributionCount = Number.isInteger(Number(eventApproachContributionTally?.contributionCount)) ? Number(eventApproachContributionTally.contributionCount) : 0;
+  const contributingStationLabels = Array.isArray(eventApproachContributionTally?.contributingStationLabels)
+    ? eventApproachContributionTally.contributingStationLabels.filter((label) => typeof label === "string" && label.trim()).map((label) => label.trim())
+    : [];
+  return {
+    available: contributionCount > 0 || eventApproachContributionTally?.hasContributions === true,
+    title: "Event Approach Contribution Tally",
+    subtitle: contributionCount > 0
+      ? `Round ${eventApproachContributionTally?.roundNumber ?? "?"} read-only Event Approach contribution tally captured for later resolution.`
+      : "No Event Approach contribution tally has been captured yet.",
+    tallyKey: eventApproachContributionTally?.tallyKey ?? "eventApproach",
+    tallyType: eventApproachContributionTally?.tallyType ?? "eventApproach",
+    tallyLabel: eventApproachContributionTally?.tallyLabel || `Event Approach contribution tally: ${valueLabel} from ${contributionCount} contribution${contributionCount === 1 ? "" : "s"}.`,
+    totalContributionValue,
+    valueLabel,
+    contributionCount,
+    positiveContributionCount: Number.isInteger(Number(eventApproachContributionTally?.positiveContributionCount)) ? Number(eventApproachContributionTally.positiveContributionCount) : 0,
+    zeroContributionCount: Number.isInteger(Number(eventApproachContributionTally?.zeroContributionCount)) ? Number(eventApproachContributionTally.zeroContributionCount) : 0,
+    negativeContributionCount: Number.isInteger(Number(eventApproachContributionTally?.negativeContributionCount)) ? Number(eventApproachContributionTally.negativeContributionCount) : 0,
+    contributingStationLabels,
+    contributingStationLabelText: contributingStationLabels.join(", "),
+    hasContributingStationLabels: contributingStationLabels.length > 0,
+    roundIndex: Number.isInteger(Number(eventApproachContributionTally?.roundIndex)) ? Number(eventApproachContributionTally.roundIndex) : null,
+    roundNumber: eventApproachContributionTally?.roundNumber ?? null,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function normalizeStationActionSupportEffects(supportEffects = null) {
   const effectsSource = Array.isArray(supportEffects) ? supportEffects : supportEffects?.effects;
   const effects = Array.isArray(effectsSource) ? effectsSource.map((effect) => ({
@@ -687,10 +719,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
   const stationActionEventApproachEffects = normalizeStationActionEventApproachEffects(latestFinalizationResult?.stationActionEventApproachEffects ?? latestResolutionRecord?.stationActionEventApproachEffects);
   const stationActionEventApproachContributions = normalizeStationActionEventApproachContributions(latestFinalizationResult?.stationActionEventApproachContributions ?? latestFinalizationResult?.eventApproachContributions ?? latestResolutionRecord?.stationActionEventApproachContributions ?? latestResolutionRecord?.eventApproachContributions);
+  const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
-  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available;
+  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available;
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -730,6 +763,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionEventApproachEffects: stationActionEventApproachEffects,
     stationActionEventApproachContributions,
     travelV2StationActionEventApproachContributions: stationActionEventApproachContributions,
+    stationActionEventApproachContributionTally,
+    travelV2StationActionEventApproachContributionTally: stationActionEventApproachContributionTally,
     supportBonusStatusAvailable,
     stationActionEffectsAvailable,
     pendingStationActionBonuses,

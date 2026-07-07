@@ -756,6 +756,12 @@
                 {{/each}}
               </ul>
             {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.available}}
+              <h5>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.title}}</h5>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.subtitle}}</p>
+              <p><strong>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.valueLabel}}</strong> <span class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.tallyLabel}}</span></p>
+              <p class="arcflight-sheet__hint">Contributions: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.contributionCount}} · Positive: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.positiveContributionCount}} · Zero: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.zeroContributionCount}} · Negative: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.negativeContributionCount}}{{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.hasContributingStationLabels}} · Stations: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.contributingStationLabelText}}{{/if}}</p>
+            {{/if}}
             {{#if state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.hasRecords}}
               <h5>{{state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.title}}</h5>
               <ul>

@@ -354,6 +354,23 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
             records: [{ sourceStationKey: "navigator", sourceStationLabel: "Navigator", contributionKey: "eventApproach", contributionType: "eventApproach", contributionValue: 1, contributionLabel: "Navigator Event Approach using Piloting Lore: Success (+1).", selectedSkillLabel: "Piloting Lore", stationOutcome: "success", playerSafe: true, readOnly: true, gmText: "secret", auditRecord: { secret: true } }],
             playerSafe: true,
             readOnly: true
+          },
+          stationActionEventApproachContributionTally: {
+            roundIndex: 0,
+            roundNumber: 1,
+            tallyKey: "eventApproach",
+            tallyType: "eventApproach",
+            tallyLabel: "Event Approach contribution tally: +1 from 1 contribution.",
+            totalContributionValue: 1,
+            contributionCount: 1,
+            positiveContributionCount: 1,
+            zeroContributionCount: 0,
+            negativeContributionCount: 0,
+            contributingStationLabels: ["Navigator"],
+            playerSafe: true,
+            readOnly: true,
+            gmText: "secret",
+            auditRecord: { secret: true }
           }
         }]
       }
@@ -368,7 +385,12 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   const eventApproachContribution = eventApproachPanel.travelV2StationActionEventApproachContributions.records[0];
   assertSmoke(eventApproachContribution.sourceStationLabel === "Navigator", "Event Approach preview contribution should include safe source station label");
   assertSmoke(eventApproachContribution.contributionLabel.includes("Event Approach") && eventApproachContribution.contributionValue === 1 && eventApproachContribution.valueLabel === "+1", "Event Approach preview contribution should include safe readable label and value");
-  const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions });
+  assertSmoke(eventApproachPanel.travelV2StationActionEventApproachContributionTally.available, "Event Approach contribution tally should be exposed in preview render state");
+  const eventApproachTally = eventApproachPanel.travelV2StationActionEventApproachContributionTally;
+  assertSmoke(eventApproachTally.totalContributionValue === 1 && eventApproachTally.valueLabel === "+1" && eventApproachTally.contributionCount === 1, "Event Approach preview tally should include safe total and contribution count");
+  assertSmoke(eventApproachTally.positiveContributionCount === 1 && eventApproachTally.zeroContributionCount === 0 && eventApproachTally.negativeContributionCount === 0, "Event Approach preview tally should include safe sign counts");
+  assertSmoke(eventApproachTally.contributingStationLabelText === "Navigator" && eventApproachTally.tallyLabel.includes("Event Approach"), "Event Approach preview tally should include safe station labels and readable label");
+  const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions, tally: eventApproachPanel.travelV2StationActionEventApproachContributionTally });
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
   }
@@ -390,6 +412,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "support-bonus-status-render-state",
       "event-approach-effects-render-state",
       "event-approach-contributions-render-state",
+      "event-approach-contribution-tally-render-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",
