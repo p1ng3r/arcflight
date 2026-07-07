@@ -738,6 +738,14 @@
                 {{#each state.travelV2PreviewPanel.travelV2StationActionSupportEffects.warnings}}<li>{{this}}</li>{{/each}}
               </ul>
             {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.hasRecords}}
+              <h5>{{state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.title}}</h5>
+              <ul>
+                {{#each state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.records}}
+                  <li><strong>{{targetStationLabel}}</strong>: {{bonusLabel}} <span class="arcflight-sheet__hint">{{stateLabel}}</span></li>
+                {{/each}}
+              </ul>
+            {{/if}}
           </div>
         {{/if}}
         <div class="arcflight-travel-runner-mvp__v2-event-readiness" aria-label="Travel v2 event completion readiness">

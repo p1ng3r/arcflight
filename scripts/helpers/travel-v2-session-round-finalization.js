@@ -4,6 +4,7 @@ import { TRAVEL_V2_ALPHA_CORE_STATION_KEYS, checkTravelV2StationActionLockInRead
 export const TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_RESOLUTION_SUMMARY_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_EFFECTS_VERSION = 1;
+export const TRAVEL_V2_PENDING_STATION_ACTION_BONUSES_VERSION = 1;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -114,6 +115,47 @@ export function prepareTravelV2StationActionSupportEffects(stationActionSummary 
   };
 }
 
+export function prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects = {}) {
+  const effects = Array.isArray(stationActionSupportEffects?.effects) ? stationActionSupportEffects.effects : [];
+  const bonuses = [];
+  for (const effect of effects) {
+    const sourceStationKey = safeKey(effect?.sourceStationKey);
+    const targetStationKey = safeKey(effect?.targetStationKey);
+    const sourceStationLabel = optionalString(effect?.sourceStationLabel) ?? humanizeIdentifier(sourceStationKey);
+    const targetStationLabel = optionalString(effect?.targetStationLabel) ?? humanizeIdentifier(targetStationKey);
+    if (!sourceStationKey || !targetStationKey || sourceStationKey === targetStationKey || !sourceStationLabel || !targetStationLabel) continue;
+    const roundIndex = Number.isInteger(Number(effect?.roundIndex)) ? Number(effect.roundIndex) : (Number.isInteger(Number(stationActionSupportEffects?.roundIndex)) ? Number(stationActionSupportEffects.roundIndex) : null);
+    const roundNumber = effect?.roundNumber ?? stationActionSupportEffects?.roundNumber ?? null;
+    const appliesToRoundIndex = roundIndex === null ? null : roundIndex + 1;
+    bonuses.push({
+      sourceStationKey,
+      sourceStationLabel,
+      targetStationKey,
+      targetStationLabel,
+      bonusKey: "support",
+      bonusType: "circumstance",
+      bonusValue: 1,
+      bonusLabel: `Support from ${sourceStationLabel}: +1 circumstance bonus for ${targetStationLabel}.`,
+      roundIndex,
+      roundNumber,
+      appliesToRoundIndex,
+      nextRoundIndex: appliesToRoundIndex,
+      consumed: false,
+      playerSafe: true,
+      readOnly: true
+    });
+  }
+  return {
+    version: TRAVEL_V2_PENDING_STATION_ACTION_BONUSES_VERSION,
+    roundIndex: Number.isInteger(Number(stationActionSupportEffects?.roundIndex)) ? Number(stationActionSupportEffects.roundIndex) : null,
+    roundNumber: stationActionSupportEffects?.roundNumber ?? null,
+    records: bonuses,
+    hasRecords: bonuses.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function recordsFromContainer(container) {
   if (Array.isArray(container)) return container;
   if (Array.isArray(container?.records)) return container.records;
@@ -134,7 +176,8 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
     stationSummary: finalizationState.stationSummary ? cloneData(finalizationState.stationSummary) : null,
     stationActionSummary: finalizationState.stationActionSummary ? cloneData(finalizationState.stationActionSummary) : null,
     stationActionSupportEffects: supportEffects ? cloneData(supportEffects) : null,
-    stationActionEffects: supportEffects ? cloneData(supportEffects.effects ?? []) : []
+    stationActionEffects: supportEffects ? cloneData(supportEffects.effects ?? []) : [],
+    pendingStationActionBonuses: finalizationState.pendingStationActionBonuses ? cloneData(finalizationState.pendingStationActionBonuses) : null
   };
   const notes = optionalString(options.notes);
   const reason = optionalString(options.reason);
@@ -151,6 +194,23 @@ function appendRoundResolutionRecord(session = {}, roundResolutionRecord = {}) {
     travelV2RoundResolutions: {
       ...(isPlainObject(existingContainer) ? existingContainer : {}),
       records: [...cloneData(existingRecords), cloneData(roundResolutionRecord)]
+    }
+  };
+}
+
+function appendPendingStationActionBonuses(session = {}, pendingStationActionBonuses = {}) {
+  const pendingRecords = recordsFromContainer(pendingStationActionBonuses);
+  if (pendingRecords.length === 0) return session;
+  const existingContainer = session.travelV2PendingStationActionBonuses;
+  const existingRecords = recordsFromContainer(existingContainer);
+  return {
+    ...session,
+    travelV2PendingStationActionBonuses: {
+      ...(isPlainObject(existingContainer) ? existingContainer : {}),
+      version: TRAVEL_V2_PENDING_STATION_ACTION_BONUSES_VERSION,
+      records: [...cloneData(existingRecords), ...cloneData(pendingRecords)],
+      playerSafe: true,
+      readOnly: true
     }
   };
 }
@@ -291,8 +351,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const clonedSession = cloneData(session);
   const stationActionSummary = prepareTravelV2StationActionResolutionSummary(session, { ...options, roundIndex: finalizationStateBefore.roundIndex });
   const stationActionSupportEffects = prepareTravelV2StationActionSupportEffects(stationActionSummary);
-  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects }, options);
-  const finalizedSession = appendRoundResolutionRecord(clonedSession, roundResolutionRecord);
+  const pendingStationActionBonuses = prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects);
+  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, pendingStationActionBonuses }, options);
+  const finalizedSession = appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
 
@@ -311,7 +372,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     stationActionSummary: cloneData(stationActionSummary),
     stationActionSupportEffects: cloneData(stationActionSupportEffects),
     stationActionEffects: cloneData(stationActionSupportEffects.effects),
-    stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings)
+    stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings),
+    pendingStationActionBonuses: cloneData(pendingStationActionBonuses),
+    travelV2PendingStationActionBonuses: cloneData(pendingStationActionBonuses)
   };
 }
 

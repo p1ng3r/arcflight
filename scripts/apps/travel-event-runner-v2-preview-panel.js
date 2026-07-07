@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 11;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 12;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -136,6 +136,42 @@ function normalizeStationActionSupportEffects(supportEffects = null) {
     hasEffects: effects.length > 0,
     hasWarnings: warnings.length > 0,
     effectCount: effects.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizePendingStationActionBonuses(pendingBonuses = null) {
+  const recordsSource = Array.isArray(pendingBonuses) ? pendingBonuses : pendingBonuses?.records;
+  const records = Array.isArray(recordsSource) ? recordsSource.map((record) => ({
+    sourceStationKey: record?.sourceStationKey ?? "",
+    sourceStationLabel: record?.sourceStationLabel || humanizeIdentifier(record?.sourceStationKey || "source station"),
+    targetStationKey: record?.targetStationKey ?? "",
+    targetStationLabel: record?.targetStationLabel || humanizeIdentifier(record?.targetStationKey || "target station"),
+    bonusKey: record?.bonusKey ?? "support",
+    bonusType: record?.bonusType ?? "circumstance",
+    bonusValue: Number.isFinite(Number(record?.bonusValue)) ? Number(record.bonusValue) : 1,
+    bonusLabel: record?.bonusLabel || `Support from ${record?.sourceStationLabel || "source station"}: +1 circumstance bonus for ${record?.targetStationLabel || "target station"}.`,
+    roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : null,
+    roundNumber: record?.roundNumber ?? pendingBonuses?.roundNumber ?? null,
+    appliesToRoundIndex: Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : (Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : null),
+    nextRoundIndex: Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : (Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : null),
+    consumed: record?.consumed === true,
+    stateLabel: record?.consumed === true ? "Consumed" : "Pending",
+    playerSafe: true,
+    readOnly: true
+  })) : [];
+  return {
+    available: records.length > 0,
+    title: "Pending Support Bonuses",
+    subtitle: records.length > 0
+      ? "Read-only Support bonuses are pending for later station-check logic."
+      : "No pending Support bonuses have been captured yet.",
+    roundIndex: Number.isInteger(Number(pendingBonuses?.roundIndex)) ? Number(pendingBonuses.roundIndex) : null,
+    roundNumber: pendingBonuses?.roundNumber ?? records[0]?.roundNumber ?? null,
+    records,
+    hasRecords: records.length > 0,
+    recordCount: records.length,
     playerSafe: true,
     readOnly: true
   };
@@ -533,6 +569,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const latestResolutionRecord = resolutionRecords.length > 0 ? resolutionRecords[resolutionRecords.length - 1] : null;
   const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
   const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
+  const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -568,6 +605,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionResolutionSummary: stationActionResolutionSummary,
     stationActionSupportEffects,
     travelV2StationActionSupportEffects: stationActionSupportEffects,
+    pendingStationActionBonuses,
+    travelV2PendingStationActionBonuses: pendingStationActionBonuses,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,

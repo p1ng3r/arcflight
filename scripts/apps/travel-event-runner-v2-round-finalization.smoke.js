@@ -149,6 +149,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(!missingActionBlocked.result.ok && !missingActionBlocked.result.finalized, "missing station action should block finalization");
     assertSmoke(!missingActionBlocked.result.stationActionSummary, "missing station action should block before station action summary generation");
     assertSmoke(!missingActionBlocked.result.stationActionSupportEffects && !missingActionBlocked.result.stationActionEffects, "missing station action should block before Support effects are generated");
+    assertSmoke(!missingActionBlocked.result.pendingStationActionBonuses, "missing station action should block before pending bonuses are generated");
     assertSmoke(missingActionBlocked.result.playerMessage.includes("selected and locked"), "blocked result should include safe player-facing lock-in message");
     assertSmoke(missingActionBlocked.result.gmMessage.includes("captain"), "blocked result should include readable GM-facing station reason");
     assertEqual(snapshot(missingActionApplied.nextSession), missingActionBefore, "missing action guard should not mutate input session");
@@ -197,6 +198,20 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(supportEffect.effectKey === "support" && supportEffect.effectType === "support" && supportEffect.playerSafe === true && supportEffect.readOnly === true, "Support effect should use safe read-only Support metadata");
     assertSmoke(successful.result.stationActionEffects.length === 1, "Support effect should be present on finalization result flat effects");
     assertSmoke(resolutionRecord.stationActionSupportEffects.effects.length === 1 && resolutionRecord.stationActionEffects.length === 1, "Support effect should be present on round resolution record");
+    const pendingBonuses = successful.result.pendingStationActionBonuses;
+    assertSmoke(pendingBonuses?.hasRecords === true && pendingBonuses.records.length === 1, "valid Support effect should create one pending Support bonus");
+    const pendingBonus = pendingBonuses.records[0];
+    assertSmoke(pendingBonus.sourceStationKey === "engineer" && pendingBonus.sourceStationLabel === "Engineer", "pending Support bonus should include safe source station label");
+    assertSmoke(pendingBonus.targetStationKey === "navigator" && pendingBonus.targetStationLabel === "Navigator", "pending Support bonus should include safe target station label");
+    assertSmoke(pendingBonus.bonusKey === "support" && pendingBonus.bonusType === "circumstance" && pendingBonus.bonusValue === 1, "pending Support bonus should carry the narrow +1 circumstance support modifier metadata");
+    assertSmoke(pendingBonus.consumed === false && pendingBonus.playerSafe === true && pendingBonus.readOnly === true, "pending Support bonus should be unconsumed player-safe read-only state");
+    assertSmoke(pendingBonus.appliesToRoundIndex === 1 && pendingBonus.nextRoundIndex === 1, "pending Support bonus should point at the next round index");
+    assertSmoke(resolutionRecord.pendingStationActionBonuses.records.length === 1, "pending Support bonus should be present on round resolution record");
+    assertSmoke(recordsFrom(successful.nextSession.travelV2PendingStationActionBonuses).length === 1, "pending Support bonus should be stored on cloned finalized session");
+    const pendingBonusJson = JSON.stringify(pendingBonuses);
+    for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+      assertSmoke(!pendingBonusJson.includes(forbidden), `pending Support bonuses should not include forbidden player-safe term ${forbidden}`);
+    }
     const supportEffectsJson = JSON.stringify(supportEffects);
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!supportEffectsJson.includes(forbidden), `Support effects should not include forbidden player-safe term ${forbidden}`);
@@ -208,6 +223,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     const invalidTargetFinalized = prepareTravelV2RoundFinalizationRunnerUpdate(invalidTargetApplied.nextSession, { now: "2026-01-01T00:00:03.200Z" });
     assertSmoke(invalidTargetFinalized.result.ok && invalidTargetFinalized.result.finalized, "self-targeted Support should not block finalization after guard passes");
     assertSmoke(invalidTargetFinalized.result.stationActionSupportEffects.effects.length === 0, "invalid Support target should not create an unsafe effect");
+    assertSmoke(invalidTargetFinalized.result.pendingStationActionBonuses.records.length === 0, "invalid Support target should not create a pending bonus");
     assertSmoke(invalidTargetFinalized.result.stationActionSupportEffects.warnings.some((warning) => warning.includes("Engineer") && warning.includes("no valid target station")), "invalid Support target should record a safe warning");
     assertEqual(snapshot(invalidTargetApplied.nextSession), invalidTargetBefore, "invalid Support target finalization should not mutate pressure-applied source session");
     const invalidTargetJson = JSON.stringify(invalidTargetFinalized.result.stationActionSupportEffects);
@@ -250,6 +266,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(appStateAfterFinalize.travelV2PreviewPanel.travelV2StationActionResolutionSummary.hasStations, "runner render state should expose finalized station action summary");
     assertSmoke(appStateAfterFinalize.travelV2PreviewPanel.travelV2StationActionResolutionSummary.stations.some((row) => row.stationKey === "engineer" && row.targetStationLabel === "Navigator"), "runner render state should expose safe Support target display");
     assertSmoke(appStateAfterFinalize.travelV2PreviewPanel.travelV2StationActionSupportEffects.effects.some((row) => row.sourceStationLabel === "Engineer" && row.targetStationLabel === "Navigator"), "runner render state should expose safe Support effect display");
+    assertSmoke(appStateAfterFinalize.travelV2PreviewPanel.travelV2PendingStationActionBonuses.records.some((row) => row.sourceStationLabel === "Engineer" && row.targetStationLabel === "Navigator" && row.bonusValue === 1), "runner render state should expose safe pending Support bonus display");
     const renderStateJson = JSON.stringify(appStateAfterFinalize.travelV2PreviewPanel);
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!renderStateJson.includes(forbidden), `player-safe render state should not include forbidden internal term ${forbidden}`);
@@ -272,6 +289,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(template.includes("data-arcflight-travel-v2-round-finalize"), "template should include visible round finalization control");
     assertSmoke(template.includes("travelV2StationActionResolutionSummary"), "template should render finalized station action summary when available");
     assertSmoke(template.includes("travelV2StationActionSupportEffects"), "template should render finalized station action Support effects when available");
+    assertSmoke(template.includes("travelV2PendingStationActionBonuses"), "template should render pending Support bonuses when available");
     assertSmoke(template.includes("state.travelV2PreviewPanel.travelV2RoundFinalizationState"), "template should use prepared finalization state");
     assertSmoke(template.includes("finalizeDisabled"), "template should use prepared disabled state");
     assertSmoke(!template.includes("data-arcflight-runner-complete") || template.includes("data-arcflight-travel-v2-round-finalize"), "finalization control should not replace or add event completion behavior");
@@ -293,7 +311,9 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
         "summary-includes-travel-five",
         "support-target-safe-summary",
         "support-effect-result-and-record",
+        "support-pending-bonus-result-record-session",
         "support-effect-render-state",
+        "support-pending-bonus-render-state",
         "invalid-support-target-safe-warning",
         "support-effect-player-safe-redacted",
         "station-action-summary-player-safe-redacted",
