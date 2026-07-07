@@ -2,9 +2,15 @@ import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import {
   finalizeTravelV2RoundOnRunnerSession,
   getTravelV2DifficultyBidDcModifier,
+  normalizeTravelV2ActiveCardRecords,
   normalizeTravelV2DifficultyBid,
+  prepareTravelV2DifficultyBidCardRecord,
+  prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary,
   prepareTravelV2DifficultyBidPreview,
   prepareTravelV2DifficultyBidRewardPreview,
+  sanitizeTravelV2ActiveCardsForPlayers,
+  TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
+  TRAVEL_V2_ACTIVE_CARD_STATUSES,
   TRAVEL_V2_DIFFICULTY_BID_KEYS,
   TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION
 } from "./travel-v2-session-round-finalization.js";
@@ -65,8 +71,32 @@ function applicationRecord(overrides = {}) {
   return { roundIndex: 0, roundNumber: 1, outcomeKey: "mixed", requestCount: 1, ...overrides };
 }
 
+function pendingActiveCard(overrides = {}) {
+  return {
+    cardId: "travel-v2-card:0:captain:minor:success:minorOpening",
+    cardKey: "minorOpening",
+    rewardKey: "minorOpening",
+    cardLabel: "Minor Opening",
+    sourceStationKey: "captain",
+    sourceStationLabel: "Captain",
+    sourceBidKey: "minor",
+    sourceBidLabel: "Minor Bid",
+    sourceResult: "success",
+    roundIndex: 0,
+    roundNumber: 1,
+    status: "pending",
+    timingHint: "Play after station actions are locked and before the target station rolls.",
+    effectPreviewText: "Future effect: grant +1 circumstance bonus to one target station roll.",
+    playerSafe: true,
+    readOnly: true,
+    ...overrides
+  };
+}
+
 export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION, 1, "session round finalization version should be 1");
+  assertEqual(TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION, 1, "active card records version should be 1");
+  assertEqual(TRAVEL_V2_ACTIVE_CARD_STATUSES.join(","), "pending", "active card statuses should expose pending");
 
 
   for (const [key, modifier] of [["none", 0], ["minor", 2], ["greater", 5], ["extreme", 8]]) {
@@ -92,11 +122,27 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
     assertEqual(preview.rewardKey, reward, `${bid} + ${outcome} should preview ${reward}`);
     assertSmoke(preview.hasReward, `${bid} + ${outcome} should have reward preview`);
     assertSmoke(preview.playerSafe && preview.readOnly, `${bid} + ${outcome} reward preview should be player-safe/read-only`);
+    const record = prepareTravelV2DifficultyBidCardRecord({
+      stationKey: "navigator",
+      stationLabel: "Navigator",
+      difficultyBidKey: bid,
+      difficultyBidLabel: `${bid} bid`,
+      stationResult: outcome,
+      difficultyBidRewardPreview: preview,
+      roundIndex: 0,
+      roundNumber: 1
+    });
+    assertEqual(record.rewardKey, reward, `${bid} + ${outcome} should create ${reward} card record`);
+    assertEqual(record.status, "pending", `${bid} + ${outcome} card should be pending`);
+    assertSmoke(record.playerSafe && record.readOnly, `${bid} + ${outcome} card should be player-safe/read-only`);
   }
   assertSmoke(!prepareTravelV2DifficultyBidRewardPreview("extreme", "failure").hasReward, "failure should create no bid reward");
+  assertEqual(prepareTravelV2DifficultyBidCardRecord({ stationKey: "navigator", difficultyBidKey: "extreme", stationResult: "failure", difficultyBidRewardPreview: prepareTravelV2DifficultyBidRewardPreview("extreme", "failure") }), null, "failure should create no card record");
   const criticalFailureBidPreview = prepareTravelV2DifficultyBidRewardPreview("extreme", "criticalFailure");
   assertSmoke(!criticalFailureBidPreview.hasReward, "critical failure should create no bid reward");
   assertSmoke(criticalFailureBidPreview.hasBacklashPreview && criticalFailureBidPreview.backlashPreview?.placeholder, "critical failure should expose only backlash preview placeholder");
+  assertEqual(prepareTravelV2DifficultyBidCardRecord({ stationKey: "navigator", difficultyBidKey: "extreme", stationResult: "criticalFailure", difficultyBidRewardPreview: criticalFailureBidPreview }), null, "critical failure should create no card record");
+  assertSmoke(normalizeTravelV2ActiveCardRecords().records.length === 0, "active card normalization should tolerate missing saved-session data");
   const previewSource = { bid: "greater", baseDC: 20, stationDcModifier: -1, outcomeKey: "success" };
   const previewSourceBefore = snapshot(previewSource);
   const bidPreview = prepareTravelV2DifficultyBidPreview(previewSource);
@@ -154,6 +200,47 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(bidNavigatorSummary.difficultyBidKey, "extreme", "summary should include declared bid key");
   assertEqual(bidNavigatorSummary.effectiveDcPreview.effectiveDC, 29, "summary effective DC preview should include base DC, station modifier, and bid modifier");
   assertEqual(bidNavigatorSummary.difficultyBidRewardPreview.rewardKey, "legendaryEvent", "summary should include read-only reward preview ladder result");
+  assertEqual(bidResult.travelV2ActiveCards.records.length, 1, "successful bid finalization should create one active card container record");
+  assertEqual(bidResult.travelV2ActiveCards.records[0].rewardKey, "legendaryEvent", "extreme critical success should create legendary event active card");
+  assertEqual(bidResult.session.travelV2ActiveCards.records.length, 1, "finalized session should include active card container");
+  assertEqual(bidResult.roundResolutionRecord.travelV2ActiveCards.records[0].rewardKey, "legendaryEvent", "round resolution should snapshot active card records");
+  assertSmoke(sanitizeTravelV2ActiveCardsForPlayers(bidResult.session.travelV2ActiveCards).records[0].playerSafe, "sanitized active cards should remain player-safe");
+  const bidSecondAppend = finalizeTravelV2RoundOnRunnerSession(bidResult.session, { now: "2026-06-19T00:00:00.750Z" });
+  assertSmoke(!bidSecondAppend.ok, "second finalization of bid round should block");
+  assertEqual(bidSecondAppend.session.travelV2ActiveCards.records.length, 1, "duplicate finalization should not duplicate active cards");
+  const cardSummarySource = { roundIndex: 0, roundNumber: 1, stations: [bidNavigatorSummary, bidNavigatorSummary] };
+  const cardSummaryBefore = snapshot(cardSummarySource);
+  const cardRecords = prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary(cardSummarySource);
+  assertEqual(cardRecords.records.length, 1, "card summary helper should dedupe stable active card ids");
+  assertEqual(snapshot(cardSummarySource), cardSummaryBefore, "card record helpers should not mutate source summary data");
+
+  const existingCard = pendingActiveCard();
+  const noNewCardResult = finalizeTravelV2RoundOnRunnerSession(createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    travelV2ActiveCards: { records: [existingCard], playerSafe: true, readOnly: true },
+    travelV2PressureApplications: { records: [applicationRecord({ roundIndex: 1, roundNumber: 2, outcomeKey: "success" })] }
+  }), { now: "2026-06-19T00:00:00.800Z" });
+  assertSmoke(noNewCardResult.ok, "round with existing active card and no new bid card should finalize");
+  assertEqual(noNewCardResult.createdTravelV2ActiveCards.records.length, 0, "no-reward finalization should report zero newly created cards");
+  assertEqual(noNewCardResult.travelV2ActiveCards.records.length, 1, "finalization result should expose existing merged active card when no new card is created");
+  assertEqual(noNewCardResult.activeCardRecords[0].cardId, existingCard.cardId, "merged finalization active-card records should include existing card id");
+  const oldPlusNewResult = finalizeTravelV2RoundOnRunnerSession({
+    ...bidSession,
+    travelV2ActiveCards: { records: [existingCard], playerSafe: true, readOnly: true }
+  }, { now: "2026-06-19T00:00:00.900Z" });
+  assertSmoke(oldPlusNewResult.ok, "round with existing active card and new bid card should finalize");
+  assertEqual(oldPlusNewResult.createdTravelV2ActiveCards.records.length, 1, "bid finalization should preserve newly created card container separately");
+  assertEqual(oldPlusNewResult.travelV2ActiveCards.records.length, 2, "merged finalization active-card pile should include old and new cards");
+  const duplicateGeneratedCardId = oldPlusNewResult.createdActiveCardRecords[0].cardId;
+  const duplicateExistingResult = finalizeTravelV2RoundOnRunnerSession({
+    ...bidSession,
+    travelV2ActiveCards: { records: [pendingActiveCard({ cardId: duplicateGeneratedCardId, id: duplicateGeneratedCardId, rewardKey: "legendaryEvent", cardKey: "legendaryEvent", cardLabel: "Legendary Event", sourceStationKey: "navigator", sourceStationLabel: "Navigator", sourceBidKey: "extreme", sourceBidLabel: "Extreme Bid", sourceResult: "criticalSuccess", roundIndex: 0, roundNumber: 1 })], playerSafe: true, readOnly: true }
+  }, { now: "2026-06-19T00:00:00.950Z" });
+  assertSmoke(duplicateExistingResult.ok, "round with duplicate existing active card id should finalize");
+  assertEqual(duplicateExistingResult.travelV2ActiveCards.records.length, 1, "merged finalization active-card pile should dedupe duplicate stable ids");
+  const unsafeSanitized = sanitizeTravelV2ActiveCardsForPlayers({ records: [pendingActiveCard({ gmText: "secret", auditRecord: { secret: true } })] });
+  const unsafeSanitizedJson = JSON.stringify(unsafeSanitized);
+  assertSmoke(!unsafeSanitizedJson.includes("gmText") && !unsafeSanitizedJson.includes("auditRecord") && !unsafeSanitizedJson.includes("secret"), "active card sanitizer should strip GM/internal fields");
 
   const duplicateResult = finalizeTravelV2RoundOnRunnerSession(result.session, { now: "2026-06-19T00:00:01.000Z" });
   assertSmoke(!duplicateResult.ok && !duplicateResult.finalized, "duplicate finalization should block");
@@ -206,7 +293,10 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
       "session-round-finalization-version",
       "difficulty-bid-normalization",
       "difficulty-bid-reward-ladder",
+      "difficulty-bid-active-card-records",
       "difficulty-bid-preview-player-safe-read-only",
+      "active-card-normalization",
+      "active-card-merged-finalization-result",
       "missing-session-block",
       "without-pressure-application-block",
       "with-pressure-application-finalizes",

@@ -415,6 +415,63 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
   }
 
+  const activeCardsPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      travelV2ActiveCards: {
+        version: 1,
+        records: [{
+          cardId: "travel-v2-card:0:navigator:extreme:criticalSuccess:legendaryEvent",
+          rewardKey: "legendaryEvent",
+          cardLabel: "Legendary Event",
+          sourceStationKey: "navigator",
+          sourceStationLabel: "Navigator",
+          sourceBidKey: "extreme",
+          sourceBidLabel: "Extreme Bid",
+          sourceResult: "criticalSuccess",
+          roundIndex: 0,
+          roundNumber: 1,
+          status: "pending",
+          timingHint: "Play after station actions are locked but before the target station rolls.",
+          effectPreviewText: "Future effect: target station cannot resolve worse than success.",
+          playerSafe: true,
+          readOnly: true,
+          gmText: "secret",
+          auditRecord: { secret: true }
+        }],
+        playerSafe: true,
+        readOnly: true
+      }
+    }
+  });
+  assertSmoke(activeCardsPanel.travelV2ActiveCards.available, "active card preview summary should be available when session cards exist");
+  assertEqual(activeCardsPanel.travelV2ActiveCards.records.length, 1, "active card preview summary should expose session card records");
+  const activeCard = activeCardsPanel.travelV2ActiveCards.records[0];
+  assertSmoke(activeCard.rewardKey === "legendaryEvent" && activeCard.cardLabel === "Legendary Event" && activeCard.status === "pending", "active card preview should include safe card key, label, and status");
+  assertSmoke(activeCard.playerSafe === true && activeCard.readOnly === true && activeCard.effectPreviewText.includes("Future effect"), "active card preview should be player-safe, read-only, and preview-only");
+  const activeCardsPanelJson = JSON.stringify(activeCardsPanel.travelV2ActiveCards);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!activeCardsPanelJson.includes(forbidden), `Active card preview state should not include forbidden player-safe term ${forbidden}`);
+  }
+  const activeCardsWithEmptyLatestPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: activeCardsPanel.session ?? {
+      ...appState.session,
+      travelV2ActiveCards: {
+        records: [activeCard],
+        playerSafe: true,
+        readOnly: true
+      }
+    },
+    travelV2RoundFinalizationResult: {
+      ok: true,
+      finalized: true,
+      travelV2ActiveCards: { version: 1, records: [], playerSafe: true, readOnly: true }
+    }
+  });
+  assertEqual(activeCardsWithEmptyLatestPanel.travelV2ActiveCards.records.length, 1, "active card preview should keep existing session card when latest finalization has no created cards");
+
   return {
     ok: true,
     checked: [
@@ -433,6 +490,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "event-approach-effects-render-state",
       "event-approach-contributions-render-state",
       "event-approach-contribution-tally-render-state",
+      "active-card-preview-render-state",
+      "active-card-merged-preview-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",
