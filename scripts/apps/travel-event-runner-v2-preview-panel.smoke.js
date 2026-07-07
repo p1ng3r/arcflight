@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 12, "panel version should be 12");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 13, "panel version should be 13");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -286,6 +286,52 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(liveCompletedPanel.travelV2FollowUps.records.some((record) => record.title === "Lantern Rescued Cleanly"), "live completed panel should stage summary final outcome text as a follow-up card");
   assertSmoke(liveCompletedPanel.travelV2FollowUps.records.every((record) => record.actionsDisabled), "live completed staged follow-up cards should disable actions until saved");
 
+
+  const supportSourceSession = {
+    ...appState.session,
+    currentRoundIndex: 1,
+    event: {
+      ...appState.session.event,
+      rounds: [
+        ...appState.session.event.rounds,
+        { roundNumber: 2, activeStations: ["navigator", "engineer"], stationPrompts: { navigator: { stationName: "Navigator" }, engineer: { stationName: "Engineer" } } }
+      ]
+    },
+    roundResults: [
+      { roundNumber: 1, stationResults: { engineer: "success" } },
+      {
+        roundNumber: 2,
+        stationResults: { navigator: "success" },
+        stationCheckAppliedBonuses: {
+          navigator: [{ bonusKey: "support", bonusType: "circumstance", bonusValue: 1, bonusLabel: "Engineer supports Navigator: +1 circumstance bonus.", sourceStationKey: "engineer", sourceStationLabel: "Engineer", targetStationKey: "navigator", targetStationLabel: "Navigator", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, playerSafe: true, auditRecord: { secret: true } }]
+        }
+      }
+    ],
+    travelV2PendingStationActionBonuses: {
+      records: [
+        { bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationKey: "engineer", sourceStationLabel: "Engineer", targetStationKey: "navigator", targetStationLabel: "Navigator", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true, auditRecord: { secret: true } },
+        { bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationKey: "navigator", sourceStationLabel: "Navigator", targetStationKey: "engineer", targetStationLabel: "Engineer", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, consumed: true, consumedRoundIndex: 1, consumedStationKey: "engineer", playerSafe: true, readOnly: true, gmText: "secret" }
+      ],
+      playerSafe: true,
+      readOnly: true
+    }
+  };
+  const supportBefore = JSON.stringify(supportSourceSession);
+  const supportPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, session: supportSourceSession });
+  assertEqual(JSON.stringify(supportSourceSession), supportBefore, "Support preview preparation should not mutate the source session");
+  assertSmoke(supportPanel.supportBonusStatusAvailable, "Support bonus status section should be available when only bonus records exist");
+  assertEqual(supportPanel.travelV2PendingStationActionBonuses.records.length, 2, "pending Support bonus display should include pending and consumed records");
+  const pendingSupport = supportPanel.travelV2PendingStationActionBonuses.records.find((record) => record.status === "pending");
+  assertSmoke(pendingSupport?.readableLabel.includes("Engineer supports Navigator") && pendingSupport.bonusValue === 1 && pendingSupport.bonusType === "circumstance" && pendingSupport.statusLabel === "Pending", "pending Support bonus render state includes safe label/value/status");
+  const consumedSupport = supportPanel.travelV2PendingStationActionBonuses.records.find((record) => record.status === "consumed");
+  assertSmoke(consumedSupport?.consumed === true && consumedSupport.statusLabel === "Consumed" && consumedSupport.sourceStationLabel === "Navigator" && consumedSupport.targetStationLabel === "Engineer", "consumed Support bonus render state is marked consumed with safe source and target labels");
+  const appliedSupport = supportPanel.travelV2AppliedStationActionBonuses.records[0];
+  assertSmoke(appliedSupport?.status === "applied" && appliedSupport.statusLabel === "Applied" && appliedSupport.sourceStationKey === "engineer" && appliedSupport.targetStationKey === "navigator" && appliedSupport.bonusValue === 1 && appliedSupport.playerSafe === true && appliedSupport.readOnly === true, "applied Support bonus render state includes safe source/target/value/status");
+  const supportPanelJson = JSON.stringify({ pending: supportPanel.travelV2PendingStationActionBonuses, applied: supportPanel.travelV2AppliedStationActionBonuses });
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!supportPanelJson.includes(forbidden), `Support bonus preview state should not include forbidden player-safe term ${forbidden}`);
+  }
+
   return {
     ok: true,
     checked: [
@@ -300,6 +346,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "row-application-controls",
       "pre-application-correction-controls-hidden",
       "station-benefit-display-state",
+      "support-bonus-status-render-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",
