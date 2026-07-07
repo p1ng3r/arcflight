@@ -346,12 +346,23 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     travelV2RoundActionOrderCommitResult: uiState.travelV2RoundActionOrderCommitResult ?? null,
     travelV2RoundActionOrderPersistResult: uiState.travelV2RoundActionOrderPersistResult ?? null,
+    travelV2StationActionLockResult: uiState.travelV2StationActionLockResult ?? null,
+    travelV2StationActionLockPersistResult: uiState.travelV2StationActionLockPersistResult ?? null,
     travelV2RoundActionOrderReorderRequested: uiState.travelV2RoundActionOrderReorderRequested === true,
     travelV2ProposedRoundActionOrder: Array.isArray(uiState.travelV2ProposedRoundActionOrder) ? uiState.travelV2ProposedRoundActionOrder : [],
     dismissedGuidedQueueKeys: Array.isArray(uiState.dismissedGuidedQueueKeys) ? uiState.dismissedGuidedQueueKeys : [],
     travelV2CompletedSessionHistory: prepareTravelV2CompletedSessionHistoryState(state.sessionLibrary, { actor, includeGmSummary: canManageTravelV2Consequences }),
     compactRoundLabel: state.hasSession ? (state.isCompleted ? "Completed" : `Round ${state.currentRoundNumber}`) : "No active round"
   };
+  if (appState.stationActionLockIn && typeof appState.stationActionLockIn === "object") {
+    const localLockStationKey = typeof uiState.travelV2StationActionLockResult?.stationKey === "string" ? uiState.travelV2StationActionLockResult.stationKey : "";
+    appState.stationActionLockIn = {
+      ...appState.stationActionLockIn,
+      firstChangedStationKey: localLockStationKey || appState.stationActionLockIn.firstChangedStationKey || "",
+      canPersist: canManageTravelV2Consequences && Boolean(localLockStationKey || appState.stationActionLockIn.firstChangedStationKey),
+      persistenceStatus: uiState.travelV2StationActionLockPersistResult ?? null
+    };
+  }
   const appStateWithLifecycleDisplay = applyTravelV2ActiveHazardLifecycleDisplayToRenderState(appState, { travelV2HazardCandidateControlResult, user }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithResponseActionWiring = applyTravelV2ResponseActionWiringToRenderState(appStateWithLifecycleDisplay, { user }, { user, includeGmReview: canManageTravelV2Consequences });
   const appStateWithStationImpactBehavior = applyTravelV2StationImpactBehaviorToRenderState(appStateWithResponseActionWiring, { user, stations: appStateWithResponseActionWiring.stations }, { user, includeGmReview: canManageTravelV2Consequences });

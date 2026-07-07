@@ -44,6 +44,7 @@ import {
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
+  persistTravelV2StationActionLockInToRunnerSessionLibrary,
   commitTravelEventRunnerStationOrder,
   setTravelEventRunnerStationAction,
   setTravelEventRunnerRoundPhase,
@@ -138,6 +139,7 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-order-persist-request]",
   "[data-arcflight-travel-v2-station-action-lock]",
   "[data-arcflight-travel-v2-station-action-unlock]",
+  "[data-arcflight-travel-v2-station-action-lock-persist]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
@@ -467,6 +469,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2RoundActionOrderCommitResult: null,
       travelV2RoundActionOrderPersistResult: null,
       travelV2StationActionLockResult: null,
+      travelV2StationActionLockPersistResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
       travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
@@ -686,6 +689,29 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return update;
   }
 
+  async persistTravelV2StationActionLockIn(targetOrOptions = {}) {
+    const dataset = targetOrOptions?.dataset ?? {};
+    const stationKey = typeof targetOrOptions.stationKey === "string" ? targetOrOptions.stationKey : (dataset.stationKey ?? "");
+    const result = await persistTravelV2StationActionLockInToRunnerSessionLibrary(this.session, {
+      ...targetOrOptions,
+      stationKey,
+      user: targetOrOptions.user ?? globalThis.game?.user,
+      isGM: targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true,
+      persistRequested: true
+    });
+    this.uiState.travelV2StationActionLockPersistResult = result;
+    if (result.ok === true && result.persisted === true) {
+      this.session = result.session ?? this.session;
+      this.selectedSessionKey = result.entry?.key ?? this.session?.key ?? this.selectedSessionKey;
+      this.statusMessage = result.summaryText || "Station action lock state persisted to the saved runner session.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = result.summaryText || result.blockedReasons?.[0] || "Station action lock persistence was blocked.";
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return result;
+  }
+
   async persistCommittedTravelV2RoundActionOrder(options = {}) {
     const result = await persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary(this.session, {
       ...options,
@@ -832,6 +858,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-order-persist-request")) return this.persistCommittedTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-station-action-lock")) return this.lockTravelV2StationAction(target);
     if (target.hasAttribute("data-arcflight-travel-v2-station-action-unlock")) return this.unlockTravelV2StationAction(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-station-action-lock-persist")) return this.persistTravelV2StationActionLockIn(target);
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();
