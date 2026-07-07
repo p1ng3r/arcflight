@@ -40,13 +40,12 @@ import {
   prepareTravelEventRunnerState,
   prepareTravelV2StationActionLockRunnerUpdate,
   prepareTravelV2StationActionUnlockRunnerUpdate,
+  prepareTravelV2StationActionSubmissionRunnerUpdate,
   retreatTravelEventRunnerRoundPhase,
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
   persistTravelV2StationActionLockInToRunnerSessionLibrary,
-  commitTravelEventRunnerStationOrder,
-  setTravelEventRunnerStationAction,
   setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
   clearTravelEventRunnerStationResult,
@@ -1852,13 +1851,13 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const supportTarget = optionKey.startsWith("support:")
       ? this.session?.roundResults?.[roundIndex]?.stationActions?.[stationKey]?.targetStationKey || this.session?.event?.rounds?.[roundIndex]?.activeStations?.find?.((key) => key !== stationKey) || ""
       : "";
-    const updated = commitTravelEventRunnerStationOrder(this.session, roundIndex, stationKey, optionKey, supportTarget ? { targetStationKey: supportTarget } : {});
-    if (!updated.ok) {
-      this.statusMessage = updated.errors?.[0] ?? "Station skill approach was not updated.";
+    const updated = prepareTravelV2StationActionSubmissionRunnerUpdate(this.session, { roundIndex, stationKey, optionKey, ...(supportTarget ? { targetStationKey: supportTarget } : {}), user: globalThis.game?.user });
+    if (!updated.result?.ok) {
+      this.statusMessage = updated.result?.errors?.[0] ?? "Station skill approach was not updated.";
       ui.notifications?.warn?.(this.statusMessage);
     } else {
-      this.session = updated.session;
-      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.session = updated.nextSession;
+      this.selectedSessionKey = updated.nextSession.key ?? this.selectedSessionKey;
       this.statusMessage = `Selected station option for ${humanizeIdentifier(stationKey)}.`;
     }
     return this.render(true);
@@ -1868,13 +1867,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     const roundIndex = Number(select.dataset.roundIndex);
     const stationKey = select.dataset.stationKey ?? "";
     const targetStationKey = select.value ?? "";
-    const updated = setTravelEventRunnerStationAction(this.session, roundIndex, stationKey, "support", { targetStationKey });
-    if (!updated.ok) {
-      this.statusMessage = updated.errors?.[0] ?? "Support target was not updated.";
+    const optionKey = targetStationKey ? `support:${targetStationKey}` : "";
+    const updated = prepareTravelV2StationActionSubmissionRunnerUpdate(this.session, { roundIndex, stationKey, optionKey, targetStationKey, user: globalThis.game?.user });
+    if (!updated.result?.ok) {
+      this.statusMessage = updated.result?.errors?.[0] ?? "Support target was not updated.";
       ui.notifications?.warn?.(this.statusMessage);
     } else {
-      this.session = updated.session;
-      this.selectedSessionKey = updated.session.key ?? this.selectedSessionKey;
+      this.session = updated.nextSession;
+      this.selectedSessionKey = updated.nextSession.key ?? this.selectedSessionKey;
       this.statusMessage = `Selected Support target for ${humanizeIdentifier(stationKey)}.`;
     }
     return this.render(true);
