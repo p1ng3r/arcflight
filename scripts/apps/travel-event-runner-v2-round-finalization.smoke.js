@@ -1,4 +1,5 @@
 import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
+import { setTravelEventRunnerStationResult } from "../helpers/travel-event-runner.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 
 function assertSmoke(condition, message) {
@@ -208,6 +209,48 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(pendingBonus.appliesToRoundIndex === 1 && pendingBonus.nextRoundIndex === 1, "pending Support bonus should point at the next round index");
     assertSmoke(resolutionRecord.pendingStationActionBonuses.records.length === 1, "pending Support bonus should be present on round resolution record");
     assertSmoke(recordsFrom(successful.nextSession.travelV2PendingStationActionBonuses).length === 1, "pending Support bonus should be stored on cloned finalized session");
+
+    const stationCheckSource = JSON.parse(JSON.stringify(successful.nextSession));
+    stationCheckSource.currentRoundIndex = 1;
+    stationCheckSource.event.rounds.push({
+      number: 2,
+      title: "Support Consumption Round",
+      activeStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
+      stationPrompts: { captain: { stationName: "Captain" }, navigator: { stationName: "Navigator" }, engineer: { stationName: "Engineer" }, veilwarden: { stationName: "Veilwarden" }, watchmaster: { stationName: "Watchmaster" } },
+      stationSummary: {}
+    });
+    stationCheckSource.roundResults.push({
+      roundIndex: 1,
+      roundNumber: 2,
+      stationResults: { captain: null, navigator: null, engineer: null, veilwarden: null, watchmaster: null },
+      stationActions: { captain: { type: "eventApproach" }, navigator: { type: "eventApproach" }, engineer: { type: "eventApproach" }, veilwarden: { type: "eventApproach" }, watchmaster: { type: "eventApproach" } },
+      stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } }
+    });
+    const stationCheckBefore = snapshot(stationCheckSource);
+    const navigatorCheck = setTravelEventRunnerStationResult(stationCheckSource, 1, "navigator", "success", { now: "2026-01-01T00:00:03.500Z" });
+    assertSmoke(navigatorCheck.ok, "matching target station check should resolve with pending Support bonus consumption");
+    assertEqual(snapshot(stationCheckSource), stationCheckBefore, "Support bonus consumption should not mutate source session");
+    const appliedBonuses = navigatorCheck.session.roundResults[1].stationCheckAppliedBonuses.navigator;
+    assertSmoke(appliedBonuses.length === 1, "matching target station should apply one pending Support bonus");
+    assertSmoke(appliedBonuses[0].sourceStationKey === "engineer" && appliedBonuses[0].sourceStationLabel === "Engineer" && appliedBonuses[0].targetStationKey === "navigator" && appliedBonuses[0].targetStationLabel === "Navigator", "applied Support bonus should include safe source and target labels");
+    assertSmoke(appliedBonuses[0].bonusValue === 1 && appliedBonuses[0].bonusType === "circumstance" && appliedBonuses[0].playerSafe === true, "applied Support bonus should include the safe +1 circumstance metadata");
+    assertSmoke(recordsFrom(navigatorCheck.session.travelV2PendingStationActionBonuses)[0].consumed === true, "consumed pending Support bonus should be marked consumed in cloned session");
+    const repeatedCheck = setTravelEventRunnerStationResult(navigatorCheck.session, 1, "navigator", "criticalSuccess", { now: "2026-01-01T00:00:03.600Z" });
+    assertSmoke(repeatedCheck.ok && !repeatedCheck.session.roundResults[1].stationCheckAppliedBonuses?.navigator, "already consumed Support bonus should not apply again");
+    const wrongStationSource = JSON.parse(stationCheckBefore);
+    const wrongStationCheck = setTravelEventRunnerStationResult(wrongStationSource, 1, "captain", "success", { now: "2026-01-01T00:00:03.700Z" });
+    assertSmoke(wrongStationCheck.ok && !wrongStationCheck.session.roundResults[1].stationCheckAppliedBonuses?.captain, "wrong target station should not consume pending Support bonus");
+    assertSmoke(recordsFrom(wrongStationCheck.session.travelV2PendingStationActionBonuses)[0].consumed === false, "wrong target station should leave pending Support bonus unconsumed");
+    const wrongRoundSource = JSON.parse(stationCheckBefore);
+    wrongRoundSource.travelV2PendingStationActionBonuses.records[0].appliesToRoundIndex = 2;
+    wrongRoundSource.travelV2PendingStationActionBonuses.records[0].nextRoundIndex = 2;
+    const wrongRoundCheck = setTravelEventRunnerStationResult(wrongRoundSource, 1, "navigator", "success", { now: "2026-01-01T00:00:03.800Z" });
+    assertSmoke(wrongRoundCheck.ok && !wrongRoundCheck.session.roundResults[1].stationCheckAppliedBonuses?.navigator, "wrong applicable round should not consume pending Support bonus");
+    assertSmoke(recordsFrom(wrongRoundCheck.session.travelV2PendingStationActionBonuses)[0].consumed === false, "wrong applicable round should leave pending Support bonus unconsumed");
+    const appliedBonusJson = JSON.stringify({ appliedBonuses, pendingBonuses: navigatorCheck.session.travelV2PendingStationActionBonuses });
+    for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+      assertSmoke(!appliedBonusJson.includes(forbidden), `applied Support bonus state should not include forbidden player-safe term ${forbidden}`);
+    }
     const pendingBonusJson = JSON.stringify(pendingBonuses);
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!pendingBonusJson.includes(forbidden), `pending Support bonuses should not include forbidden player-safe term ${forbidden}`);
