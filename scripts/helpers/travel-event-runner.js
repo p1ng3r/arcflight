@@ -2866,6 +2866,62 @@ export async function persistCommittedTravelV2RoundActionOrderToRunnerSessionLib
   return orderPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, persistedRecord: cloneData(committed.record) });
 }
 
+function stationActionLockPersistenceResult(ok, data = {}) {
+  const blockedReasons = Array.isArray(data.blockedReasons) ? data.blockedReasons : [];
+  const duplicate = data.duplicate === true;
+  const persisted = ok === true && data.persisted === true;
+  return {
+    ...data,
+    ok: ok === true,
+    blocked: ok !== true,
+    persisted,
+    duplicate,
+    blockedReasons,
+    summaryText: typeof data.summaryText === "string" && data.summaryText.length > 0
+      ? data.summaryText
+      : (ok ? (duplicate ? "Station action lock state was already persisted; no saved session data changed." : "Station action lock state was persisted to the saved runner session.") : (blockedReasons[0] ?? "Station action lock persistence was blocked."))
+  };
+}
+
+export async function persistTravelV2StationActionLockInToRunnerSessionLibrary(session, options = {}) {
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const persistRequested = options.persistRequested === true || options.travelV2StationActionLockPersistRequested === true;
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  const blockedReasons = [];
+  if (!isGm) blockedReasons.push("Only the GM can persist station action lock state.");
+  if (!persistRequested) blockedReasons.push("Explicit station action lock persist request is required.");
+  if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
+  const normalized = isPlainObject(session) ? normalizeTravelEventRunnerSession(session, options) : null;
+  if (normalized && (!normalized.ok || !normalized.session)) blockedReasons.push(...(normalized.errors?.length ? normalized.errors : ["Travel Event Runner session is invalid."]));
+  const activeSession = normalized?.session ?? null;
+  if (activeSession?.status === "completed") blockedReasons.push("Completed Travel Event Runner sessions cannot persist station action lock changes.");
+  const roundIndex = Number.isInteger(Number(activeSession?.currentRoundIndex)) ? Number(activeSession.currentRoundIndex) : -1;
+  const round = activeSession?.event?.rounds?.[roundIndex] ?? null;
+  const roundResult = activeSession?.roundResults?.[roundIndex] ?? null;
+  const stationOrder = Array.isArray(round?.activeStations) ? round.activeStations : [];
+  if (!stationKey) blockedReasons.push("Station action lock persistence requires a station key.");
+  else if (!stationOrder.includes(stationKey)) blockedReasons.push(`Invalid or inactive station key: ${stationKey}.`);
+  else if (!roundResult?.stationActions?.[stationKey]) blockedReasons.push(`${formatTravelEventRunnerStationName(stationKey)} has no selected action to persist.`);
+  if (blockedReasons.length > 0) return stationActionLockPersistenceResult(false, { blockedReasons, session: isGm && activeSession ? cloneData(activeSession) : null, stationKey });
+
+  const library = getTravelEventRunnerSessionLibrary(options);
+  const key = typeof options.key === "string" && options.key.length > 0 ? options.key : (typeof activeSession.key === "string" ? activeSession.key : "");
+  const existingEntry = findRunnerSessionLibraryEntry(library, key);
+  const savedSession = isPlainObject(existingEntry?.session) ? cloneData(existingEntry.session) : cloneData(activeSession);
+  const nextCommitment = cloneData(activeSession.roundResults[roundIndex].stationOrderCommitments?.[stationKey] ?? {});
+  const priorCommitment = savedSession.roundResults?.[roundIndex]?.stationOrderCommitments?.[stationKey] ?? null;
+  if (JSON.stringify(priorCommitment) === JSON.stringify(nextCommitment)) {
+    return stationActionLockPersistenceResult(true, { persisted: false, duplicate: true, library: cloneData(library), entry: existingEntry ? cloneData(existingEntry) : null, session: cloneData(savedSession), stationKey });
+  }
+  const nextSession = cloneData(savedSession);
+  if (!Array.isArray(nextSession.roundResults)) nextSession.roundResults = [];
+  if (!isPlainObject(nextSession.roundResults[roundIndex])) nextSession.roundResults[roundIndex] = {};
+  nextSession.roundResults[roundIndex].stationOrderCommitments = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments ?? {}), [stationKey]: nextCommitment };
+  const saved = await saveTravelEventRunnerSessionToLibrary(nextSession, { ...options, key: key || nextSession.key, overwrite: true });
+  if (!saved.ok) return stationActionLockPersistenceResult(false, { blockedReasons: saved.errors?.length ? saved.errors : ["Existing Travel Event Runner session save path blocked station action lock persistence."], warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry ?? null, session: isGm ? saved.session ?? cloneData(nextSession) : null, stationKey });
+  return stationActionLockPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, stationKey });
+}
+
 export function loadTravelEventRunnerSessionFromLibrary(sessionKey, options = {}) {
   const library = getTravelEventRunnerSessionLibrary(options);
   const entry = findRunnerSessionLibraryEntry(library, sessionKey);
@@ -3162,6 +3218,7 @@ function prepareTravelEventRunnerStationActionLockInRenderState(helperState = {}
   const validationMessages = Array.isArray(helperState.validationErrors)
     ? helperState.validationErrors.map(formatTravelEventRunnerStationActionLockValidationMessage)
     : [];
+  const firstChangedStationKey = rows.find((row) => row.hasAction)?.stationKey ?? "";
 
   return {
     ...helperState,
@@ -3173,6 +3230,9 @@ function prepareTravelEventRunnerStationActionLockInRenderState(helperState = {}
       : "Not ready: all required station actions must be selected and locked before resolution.",
     validationMessages,
     hasValidationMessages: validationMessages.length > 0,
+    canPersist: canManageLocks && Boolean(firstChangedStationKey),
+    firstChangedStationKey,
+    persistenceStatus: options.travelV2StationActionLockPersistResult ?? null,
     blockedReason: ready ? "" : "Resolution requires all required station actions to be selected and locked."
   };
 }

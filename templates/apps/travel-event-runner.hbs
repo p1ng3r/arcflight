@@ -657,6 +657,12 @@
             </div>
             <span class="arcflight-travel-safety-chip">{{state.stationActionLockIn.statusLabel}}</span>
           </div>
+          {{#if state.isGM}}
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-travel-v2-station-action-lock-persist data-station-key="{{state.stationActionLockIn.firstChangedStationKey}}" {{#unless state.stationActionLockIn.canPersist}}disabled{{/unless}} title="GM-only: explicitly persists the selected local station action lock/unlock state through the saved runner session path. Does not update actors, items, journals, chat, sockets, scenes, tokens, compendia, or world data outside the runner session library.">Persist Station Lock State</button>
+              {{#if state.travelV2StationActionLockPersistResult}}<span class="arcflight-sheet__hint">{{state.travelV2StationActionLockPersistResult.summaryText}}</span>{{/if}}
+            </div>
+          {{/if}}
           <table class="arcflight-travel-runner-mvp__table">
             <thead><tr><th>Station</th><th>Selected Action</th><th>Lock State</th><th>Status</th><th>Controls</th></tr></thead>
             <tbody>
