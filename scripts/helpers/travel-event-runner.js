@@ -25,6 +25,8 @@ import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setT
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
+import { inspectTravelV2StationActionLockInFinalizationGuard } from "./travel-v2-session-round-finalization.js";
+import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
@@ -2865,6 +2867,62 @@ export async function persistCommittedTravelV2RoundActionOrderToRunnerSessionLib
   return orderPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, persistedRecord: cloneData(committed.record) });
 }
 
+function stationActionLockPersistenceResult(ok, data = {}) {
+  const blockedReasons = Array.isArray(data.blockedReasons) ? data.blockedReasons : [];
+  const duplicate = data.duplicate === true;
+  const persisted = ok === true && data.persisted === true;
+  return {
+    ...data,
+    ok: ok === true,
+    blocked: ok !== true,
+    persisted,
+    duplicate,
+    blockedReasons,
+    summaryText: typeof data.summaryText === "string" && data.summaryText.length > 0
+      ? data.summaryText
+      : (ok ? (duplicate ? "Station action lock state was already persisted; no saved session data changed." : "Station action lock state was persisted to the saved runner session.") : (blockedReasons[0] ?? "Station action lock persistence was blocked."))
+  };
+}
+
+export async function persistTravelV2StationActionLockInToRunnerSessionLibrary(session, options = {}) {
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const persistRequested = options.persistRequested === true || options.travelV2StationActionLockPersistRequested === true;
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  const blockedReasons = [];
+  if (!isGm) blockedReasons.push("Only the GM can persist station action lock state.");
+  if (!persistRequested) blockedReasons.push("Explicit station action lock persist request is required.");
+  if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
+  const normalized = isPlainObject(session) ? normalizeTravelEventRunnerSession(session, options) : null;
+  if (normalized && (!normalized.ok || !normalized.session)) blockedReasons.push(...(normalized.errors?.length ? normalized.errors : ["Travel Event Runner session is invalid."]));
+  const activeSession = normalized?.session ?? null;
+  if (activeSession?.status === "completed") blockedReasons.push("Completed Travel Event Runner sessions cannot persist station action lock changes.");
+  const roundIndex = Number.isInteger(Number(activeSession?.currentRoundIndex)) ? Number(activeSession.currentRoundIndex) : -1;
+  const round = activeSession?.event?.rounds?.[roundIndex] ?? null;
+  const roundResult = activeSession?.roundResults?.[roundIndex] ?? null;
+  const stationOrder = Array.isArray(round?.activeStations) ? round.activeStations : [];
+  if (!stationKey) blockedReasons.push("Station action lock persistence requires a station key.");
+  else if (!stationOrder.includes(stationKey)) blockedReasons.push(`Invalid or inactive station key: ${stationKey}.`);
+  else if (!roundResult?.stationActions?.[stationKey]) blockedReasons.push(`${formatTravelEventRunnerStationName(stationKey)} has no selected action to persist.`);
+  if (blockedReasons.length > 0) return stationActionLockPersistenceResult(false, { blockedReasons, session: isGm && activeSession ? cloneData(activeSession) : null, stationKey });
+
+  const library = getTravelEventRunnerSessionLibrary(options);
+  const key = typeof options.key === "string" && options.key.length > 0 ? options.key : (typeof activeSession.key === "string" ? activeSession.key : "");
+  const existingEntry = findRunnerSessionLibraryEntry(library, key);
+  const savedSession = isPlainObject(existingEntry?.session) ? cloneData(existingEntry.session) : cloneData(activeSession);
+  const nextCommitment = cloneData(activeSession.roundResults[roundIndex].stationOrderCommitments?.[stationKey] ?? {});
+  const priorCommitment = savedSession.roundResults?.[roundIndex]?.stationOrderCommitments?.[stationKey] ?? null;
+  if (JSON.stringify(priorCommitment) === JSON.stringify(nextCommitment)) {
+    return stationActionLockPersistenceResult(true, { persisted: false, duplicate: true, library: cloneData(library), entry: existingEntry ? cloneData(existingEntry) : null, session: cloneData(savedSession), stationKey });
+  }
+  const nextSession = cloneData(savedSession);
+  if (!Array.isArray(nextSession.roundResults)) nextSession.roundResults = [];
+  if (!isPlainObject(nextSession.roundResults[roundIndex])) nextSession.roundResults[roundIndex] = {};
+  nextSession.roundResults[roundIndex].stationOrderCommitments = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments ?? {}), [stationKey]: nextCommitment };
+  const saved = await saveTravelEventRunnerSessionToLibrary(nextSession, { ...options, key: key || nextSession.key, overwrite: true });
+  if (!saved.ok) return stationActionLockPersistenceResult(false, { blockedReasons: saved.errors?.length ? saved.errors : ["Existing Travel Event Runner session save path blocked station action lock persistence."], warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry ?? null, session: isGm ? saved.session ?? cloneData(nextSession) : null, stationKey });
+  return stationActionLockPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, stationKey });
+}
+
 export function loadTravelEventRunnerSessionFromLibrary(sessionKey, options = {}) {
   const library = getTravelEventRunnerSessionLibrary(options);
   const entry = findRunnerSessionLibraryEntry(library, sessionKey);
@@ -3083,6 +3141,288 @@ function preparePlayerSafeRunnerSession(session = null, options = {}) {
   return safe;
 }
 
+
+function formatTravelEventRunnerStationActionLockValidationMessage(entry = {}) {
+  if (typeof entry === "string") return entry;
+  if (typeof entry?.message === "string" && entry.message.trim()) return entry.message.trim();
+
+  const stationKey = typeof entry?.stationKey === "string" ? entry.stationKey : "";
+  const stationLabel = stationKey ? stationKey.replace(/[-_]+/g, " ") : "Station";
+
+  switch (entry?.code) {
+    case "invalidStationKey":
+      return `Invalid station key: ${stationKey || "unknown"}.`;
+    case "missingRequiredStation":
+      return `Required station is missing: ${stationKey || "unknown"}.`;
+    case "missingStationAction":
+      return `${stationLabel}: missing station action.`;
+    case "stationActionUnlocked":
+      return `${stationLabel}: station action must be locked before resolution.`;
+    case "resolveBeforeLockIn":
+      return "Attempted resolution before lock-in: all required station actions must be selected and locked before resolution.";
+    default:
+      return "Station action lock-in is not ready.";
+  }
+}
+
+function formatTravelEventRunnerStationActionLabel(action = null) {
+  if (!action) return "No action selected";
+  if (typeof action.label === "string" && action.label.trim()) return action.label.trim();
+  if (typeof action.name === "string" && action.name.trim()) return action.name.trim();
+  if (typeof action.actionLabel === "string" && action.actionLabel.trim()) return action.actionLabel.trim();
+  if (typeof action.actionKey === "string" && action.actionKey.trim()) return action.actionKey.trim();
+  if (typeof action.key === "string" && action.key.trim()) return action.key.trim();
+  return "Selected action";
+}
+
+function formatTravelEventRunnerStationName(stationKey = "") {
+  return stationKey
+    ? stationKey.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "Station";
+}
+
+
+function getTravelEventRunnerSavedSessionForLockStatus(session = null, options = {}) {
+  const library = options.runnerSessionLibrary ?? options.library ?? null;
+  const sessionKey = typeof session?.key === "string" ? session.key : "";
+  if (!sessionKey || !library || typeof library !== "object") return null;
+  const entry = library.sessions?.[sessionKey] ?? null;
+  return entry?.session && typeof entry.session === "object" ? entry.session : null;
+}
+
+function prepareTravelEventRunnerStationActionPersistenceMetadata(session = null, roundIndex = 0, stationKey = "", locked = false, options = {}) {
+  const persistResult = options.travelV2StationActionLockPersistResult ?? null;
+  if (persistResult?.ok === true && persistResult?.stationKey === stationKey) {
+    if (persistResult.persisted === true) return { persistenceState: "saved", persistenceLabel: "Saved", persistenceMessage: "This station lock state was explicitly saved." };
+    if (persistResult.duplicate === true) return { persistenceState: "saved", persistenceLabel: "Already saved", persistenceMessage: "This station lock state already matches the saved runner session." };
+  }
+  const savedSession = getTravelEventRunnerSavedSessionForLockStatus(session, options);
+  const savedCommitment = savedSession?.roundResults?.[roundIndex]?.stationOrderCommitments?.[stationKey] ?? null;
+  if (!savedCommitment || typeof savedCommitment !== "object") return { persistenceState: "unknown", persistenceLabel: "Save status unavailable", persistenceMessage: "Saved runner lock state is not available in this view." };
+  const savedLocked = savedCommitment.committed === true || savedCommitment.locked === true;
+  if (savedLocked === locked) return { persistenceState: "saved", persistenceLabel: "Saved", persistenceMessage: "This lock state matches the saved runner session." };
+  return { persistenceState: "local", persistenceLabel: "Unsaved local change", persistenceMessage: "This lock state is local until the GM explicitly persists it." };
+}
+
+function prepareTravelEventRunnerStationActionLockInRenderState(helperState = {}, options = {}) {
+  const ready = helperState.readyToResolve === true || helperState.ready === true;
+  const isGm = completionChecklistUserIsGm(options);
+  const stationRows = Array.isArray(helperState.stations)
+    ? helperState.stations
+    : (helperState.stations && typeof helperState.stations === "object" ? Object.values(helperState.stations) : []);
+
+  const canManageLocks = isGm;
+  const rows = stationRows.map((row) => {
+    const action = row.action ?? null;
+    const stationKey = row.stationKey ?? action?.stationKey ?? "";
+    const actionKey = action?.actionKey ?? action?.key ?? "";
+    const locked = row.locked === true;
+
+    return {
+      stationKey,
+      stationName: formatTravelEventRunnerStationName(stationKey),
+      stationPresent: true,
+      action,
+      actionKey,
+      actionLabel: formatTravelEventRunnerStationActionLabel(action),
+      hasAction: Boolean(action),
+      locked,
+      lockState: !action ? "missing" : (locked ? "locked" : "unlocked"),
+      lockStateLabel: !action ? "Missing action" : (locked ? "Locked" : "Unlocked"),
+      statusLabel: !action ? "Missing action" : (locked ? "Locked action" : "Unlocked action"),
+      readinessLabel: action && locked ? "Ready" : "Not ready",
+      selectedActionLabel: action ? `Selected: ${formatTravelEventRunnerStationActionLabel(action)}` : "Missing action",
+      message: !action ? "Missing action: select a station action before lock-in." : (!locked ? "Unlocked action: GM lock-in is required before finalization." : "Locked action: ready for finalization."),
+      canLock: Boolean(action) && !locked && canManageLocks,
+      canUnlock: Boolean(action) && locked && canManageLocks,
+      lockActionLabel: "Lock Action",
+      unlockActionLabel: "Unlock Action",
+      lockDisabledReason: !action ? "Select a station action before locking." : (locked ? "Station action is already locked." : (canManageLocks ? "" : "Only the GM can lock this station action in the runner.")),
+      unlockDisabledReason: !action ? "Select a station action before unlocking." : (!locked ? "Station action is not locked." : (canManageLocks ? "" : "Only the GM can unlock this station action in the runner.")),
+      canSubmit: row.canSubmit === true || options.stationActionSubmissionAccess?.[stationKey] === true,
+      submissionStatusLabel: (row.canSubmit === true || options.stationActionSubmissionAccess?.[stationKey] === true) ? (locked ? "Submission blocked: action is locked" : "Submission open") : "Submission blocked",
+      submissionHelpText: (row.canSubmit === true || options.stationActionSubmissionAccess?.[stationKey] === true) ? (locked ? "Ask the GM to unlock this station action before changing it." : "You may submit a station action selection for this station.") : "Ask the GM to choose or assign this station action.",
+      ...prepareTravelEventRunnerStationActionPersistenceMetadata(options.session, options.roundIndex ?? 0, stationKey, locked, options)
+    };
+  });
+
+  const validationMessages = Array.isArray(helperState.validationErrors)
+    ? helperState.validationErrors.map(formatTravelEventRunnerStationActionLockValidationMessage)
+    : [];
+  const firstChangedStationKey = rows.find((row) => row.hasAction && row.persistenceState === "local")?.stationKey ?? rows.find((row) => row.hasAction)?.stationKey ?? "";
+
+  return {
+    ...helperState,
+    rows,
+    ready,
+    statusLabel: ready ? "Ready to resolve" : "Not ready to resolve",
+    readinessText: ready
+      ? "Ready to resolve: all required station actions are selected and locked."
+      : (isGm ? "Finalization blocked: all required station actions must be selected and locked before resolution." : "Waiting on station action lock-in before the round can be finalized."),
+    validationMessages,
+    hasValidationMessages: validationMessages.length > 0,
+    localChangeCount: rows.filter((row) => row.persistenceState === "local").length,
+    savedCount: rows.filter((row) => row.persistenceState === "saved").length,
+    hasLocalChanges: rows.some((row) => row.persistenceState === "local"),
+    hasSavedState: rows.some((row) => row.persistenceState === "saved"),
+    canPersist: canManageLocks && Boolean(firstChangedStationKey),
+    firstChangedStationKey,
+    persistenceStatus: options.travelV2StationActionLockPersistResult ?? null,
+    blockedReason: ready ? "" : (isGm ? "Finalization is blocked until every required station has a selected, locked action." : "Round finalization is waiting for the GM to complete station action lock-in."),
+    playerSafeBlockedReason: ready ? "" : "Round finalization is waiting for station action lock-in."
+  };
+}
+
+function prepareTravelEventRunnerStationActionLockInState(session = null, currentRound = null, currentRoundResult = null, options = {}) {
+  const requiredStationKeys = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
+  const stationOrder = Array.isArray(currentRound?.activeStations) && currentRound.activeStations.length > 0
+    ? currentRound.activeStations
+    : requiredStationKeys;
+
+  const stationActions = currentRoundResult?.stationActions ?? {};
+  const stationOrderCommitments = currentRoundResult?.stationOrderCommitments ?? {};
+
+  const stations = Object.fromEntries(stationOrder.map((stationKey) => {
+    const actionChoice = stationActions?.[stationKey] ?? {};
+    const commitment = stationOrderCommitments?.[stationKey] ?? {};
+    const locked = commitment?.committed === true || commitment?.locked === true || actionChoice?.locked === true;
+
+    return [
+      stationKey,
+      {
+        ...actionChoice,
+        actionKey: actionChoice?.actionKey ?? actionChoice?.key ?? actionChoice?.type ?? actionChoice?.action ?? "",
+        label: actionChoice?.label ?? actionChoice?.actionLabel ?? actionChoice?.name ?? "",
+        locked,
+        canSubmit: canUserSubmitTravelV2StationAction(session, stationKey, options) && !locked
+      }
+    ];
+  }));
+
+  const helperOptions = { ...options, requiredStationKeys, stationOrder };
+  const source = { stationOrder, activeStations: stationOrder, stations };
+
+  const helperState = completionChecklistUserIsGm(options)
+    ? prepareGmTravelV2StationActionLockState(source, helperOptions)
+    : preparePlayerSafeTravelV2StationActionLockState(source, helperOptions);
+
+  const stationActionSubmissionAccess = Object.fromEntries(stationOrder.map((stationKey) => [stationKey, canUserSubmitTravelV2StationAction(session, stationKey, options)]));
+  return prepareTravelEventRunnerStationActionLockInRenderState(helperState, { ...options, session, roundIndex: session?.currentRoundIndex ?? 0, stationActionSubmissionAccess });
+}
+
+
+function travelEventRunnerSubmissionUserId(options = {}) {
+  if (typeof options.user?.id === "string" && options.user.id) return options.user.id;
+  if (typeof options.userId === "string" && options.userId) return options.userId;
+  return globalThis.game?.user?.id ?? "";
+}
+
+function canUserSubmitTravelV2StationAction(session = null, stationKey = "", options = {}) {
+  if (completionChecklistUserIsGm(options)) return true;
+  const userId = travelEventRunnerSubmissionUserId(options);
+  if (!userId) return false;
+  const controllers = normalizeNpcStationControllers(session?.npcStationControllers);
+  return controllers?.[stationKey]?.userId === userId;
+}
+
+function stationActionSubmissionBlocked(message, currentSession, options = {}) {
+  const isGm = completionChecklistUserIsGm(options);
+  return {
+    result: { ok: false, errors: [message], warnings: [], message },
+    nextSession: isGm ? cloneData(currentSession) : currentSession,
+    shouldUpdateSession: false,
+    shouldRerender: false
+  };
+}
+
+export function prepareTravelV2StationActionSubmissionRunnerUpdate(currentSession, options = {}) {
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  const optionKey = typeof options.optionKey === "string" ? options.optionKey.trim() : "";
+  if (!stationKey) return stationActionSubmissionBlocked("Station action submission requires a station key.", currentSession, options);
+  if (!optionKey) return stationActionSubmissionBlocked("Station action submission requires an action option.", currentSession, options);
+  const normalized = normalizeTravelEventRunnerSession(currentSession, options);
+  if (!normalized.ok || !normalized.session) return stationActionSubmissionBlocked(normalized.errors?.[0] ?? "Travel Event Runner session is invalid.", currentSession, options);
+  if (normalized.session.status === "completed") return stationActionSubmissionBlocked("Completed Travel Event Runner sessions cannot change station actions.", currentSession, options);
+
+  const roundIndex = Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : normalized.session.currentRoundIndex;
+  const round = normalized.session.event?.rounds?.[roundIndex] ?? null;
+  const roundResult = normalized.session.roundResults?.[roundIndex] ?? null;
+  if (!round || !roundResult) return stationActionSubmissionBlocked(`Travel runner round ${roundIndex} does not exist.`, currentSession, options);
+  if (!Array.isArray(round.activeStations) || !round.activeStations.includes(stationKey)) return stationActionSubmissionBlocked(`Station "${stationKey}" is not active in round ${roundIndex + 1}.`, currentSession, options);
+  if (!canUserSubmitTravelV2StationAction(normalized.session, stationKey, options)) return stationActionSubmissionBlocked(`You are not assigned to operate ${formatTravelEventRunnerStationName(stationKey)} in this runner session. Ask the GM to choose or assign this station action.`, currentSession, options);
+
+  const commitment = normalizeStationOrderCommitments(roundResult, round)[stationKey];
+  if (commitment?.committed === true && !completionChecklistUserIsGm(options)) return stationActionSubmissionBlocked(`${formatTravelEventRunnerStationName(stationKey)} is locked. Ask the GM to unlock it before changing the station action.`, currentSession, options);
+  if (commitment?.committed === true && options.allowLockedChange !== true) return stationActionSubmissionBlocked(`${formatTravelEventRunnerStationName(stationKey)} is locked. Unlock it before changing the station action.`, currentSession, options);
+
+  const update = commitTravelEventRunnerStationOrder(normalized.session, roundIndex, stationKey, optionKey, options);
+  if (!update.ok) return stationActionSubmissionBlocked(update.errors?.[0] ?? "Station action submission was blocked.", currentSession, options);
+  const nextSession = cloneData(update.session);
+  nextSession.roundResults[roundIndex].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[roundIndex], round);
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = {
+    ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}),
+    committed: false,
+    source: ""
+  };
+  return {
+    result: { ok: true, errors: [], warnings: [], stationKey, locked: false, persisted: false, message: `${formatTravelEventRunnerStationName(stationKey)} station action selected. Lock and persistence remain GM-controlled.` },
+    nextSession,
+    shouldUpdateSession: true,
+    shouldRerender: true
+  };
+}
+
+export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, options = {}) {
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  if (!stationKey) return { result: { ok: false, errors: ["Station action lock requires a station key."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const normalized = normalizeTravelEventRunnerSession(currentSession, options);
+  if (!normalized.ok || !normalized.session) return { result: { ok: false, errors: normalized.errors?.length ? normalized.errors : ["Travel Event Runner session is invalid."], warnings: normalized.warnings ?? [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  if (normalized.session.status === "completed") return { result: { ok: false, errors: ["Completed Travel Event Runner sessions cannot lock station actions."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  if (!completionChecklistUserIsGm(options)) return { result: { ok: false, errors: ["Only the GM can lock station actions in the runner."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+
+  const roundIndex = normalized.session.currentRoundIndex;
+  const currentRound = normalized.session.event.rounds[roundIndex];
+  const currentRoundResult = normalized.session.roundResults[roundIndex];
+  const stationOrder = Array.isArray(currentRound?.activeStations) ? currentRound.activeStations : [];
+  if (!stationOrder.includes(stationKey)) return { result: { ok: false, errors: [`Invalid or inactive station key: ${stationKey}.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const action = currentRoundResult?.stationActions?.[stationKey] ?? null;
+  if (!action) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} has no selected action to lock.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+
+  const source = { stationOrder, activeStations: stationOrder, stations: Object.fromEntries(stationOrder.map((key) => [key, { ...(currentRoundResult.stationActions?.[key] ?? {}), locked: currentRoundResult.stationOrderCommitments?.[key]?.committed === true }])) };
+  const lockedState = lockTravelV2StationAction(source, stationKey);
+  if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true };
+  nextSession.updatedAt = nowIso(options);
+  return { result: { ok: true, errors: [], warnings: [], stationKey, locked: true, message: `${formatTravelEventRunnerStationName(stationKey)} station action locked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
+}
+
+export function prepareTravelV2StationActionUnlockRunnerUpdate(currentSession, options = {}) {
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  if (!stationKey) return { result: { ok: false, errors: ["Station action unlock requires a station key."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const normalized = normalizeTravelEventRunnerSession(currentSession, options);
+  if (!normalized.ok || !normalized.session) return { result: { ok: false, errors: normalized.errors?.length ? normalized.errors : ["Travel Event Runner session is invalid."], warnings: normalized.warnings ?? [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  if (normalized.session.status === "completed") return { result: { ok: false, errors: ["Completed Travel Event Runner sessions cannot unlock station actions."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  if (!completionChecklistUserIsGm(options)) return { result: { ok: false, errors: ["Only the GM can unlock station actions in the runner."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  if (options.allowUnlock !== true) return { result: { ok: false, errors: ["Unlock requires explicit GM allowUnlock authorization."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+
+  const roundIndex = normalized.session.currentRoundIndex;
+  const currentRound = normalized.session.event.rounds[roundIndex];
+  const currentRoundResult = normalized.session.roundResults[roundIndex];
+  const stationOrder = Array.isArray(currentRound?.activeStations) ? currentRound.activeStations : [];
+  if (!stationOrder.includes(stationKey)) return { result: { ok: false, errors: [`Invalid or inactive station key: ${stationKey}.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const action = currentRoundResult?.stationActions?.[stationKey] ?? null;
+  if (!action) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} has no selected action to unlock.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+
+  const source = { stationOrder, activeStations: stationOrder, stations: Object.fromEntries(stationOrder.map((key) => [key, { ...(currentRoundResult.stationActions?.[key] ?? {}), locked: currentRoundResult.stationOrderCommitments?.[key]?.committed === true }])) };
+  const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true });
+  if (unlockedState.stations?.[stationKey]?.locked === true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be unlocked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const nextSession = cloneData(normalized.session);
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false };
+  nextSession.updatedAt = nowIso(options);
+  return { result: { ok: true, errors: [], warnings: [], stationKey, locked: false, message: `${formatTravelEventRunnerStationName(stationKey)} station action unlocked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
+}
+
 export function prepareTravelEventRunnerState(session = null, options = {}) {
   const libraryState = prepareTravelEventRunnerLibraryState(options);
   const sessionLibraryOptions = Object.hasOwn(options, "runnerSessionLibrary") ? { ...options, library: options.runnerSessionLibrary } : options;
@@ -3095,6 +3435,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
   const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
+  const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -3153,6 +3494,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2ShipScars: prepareTravelV2ShipScarsPanelState(activeSession),
     travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
     roundSummaryCard,
+    stationActionLockIn,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,
@@ -3864,9 +4206,11 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
   const hasFinalizationRecord = Boolean(roundFinalizationState.finalizationRecord);
   const errors = [];
   const warnings = [];
+  const lockInGuard = inspectTravelV2StationActionLockInFinalizationGuard(activeSession, options);
   if (unresolvedStations.length > 0) errors.push("Resolve active stations before finalizing this round.");
   if (pendingReactionRecords.length > 0) errors.push("Resolve pending Focus reaction prompts before finalizing this round.");
   if (rerollNeededRecords.length > 0) errors.push("Resolve accepted Focus rerolls before finalizing this round.");
+  if (lockInGuard.ready !== true) errors.push(lockInGuard.gmMessage);
   for (const record of rerollNeededRecords) {
     if (!stationResults[record.stationKey]) errors.push(`${record.stationKey} requires a Focus reroll result before round resolution.`);
   }
@@ -3906,6 +4250,9 @@ function collectTravelV2RoundResolutionBlockers(session = {}, options = {}) {
       roundResolutionReady: errors.length === 0,
       roundResolutionBlocked: errors.length > 0,
       roundResolutionBlockers: errors,
+      roundResolutionPlayerMessage: lockInGuard.playerMessage,
+      roundResolutionPlayerBlockers: lockInGuard.ready === true ? [] : lockInGuard.playerBlockedReasons,
+      stationActionLockInReadyForFinalization: lockInGuard.ready === true,
       roundResolutionWarningLabel: errors[0] ?? "Round can be finalized.",
       canFinalizeCurrentRound: canResolveRound,
       canAdvanceCurrentRound: canAdvanceRound,

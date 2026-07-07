@@ -1,4 +1,5 @@
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
+import { TRAVEL_V2_ALPHA_CORE_STATION_KEYS, checkTravelV2StationActionLockInReady } from "./travel-v2-station-action-lock-in.js";
 
 export const TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION = 1;
 
@@ -66,6 +67,59 @@ function appendRoundResolutionRecord(session = {}, roundResolutionRecord = {}) {
   };
 }
 
+
+function currentRoundLockInSource(session = {}) {
+  const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Math.min(Math.max(Number(session.currentRoundIndex), 0), Math.max(rounds.length - 1, 0)) : 0;
+  const round = rounds[roundIndex] && typeof rounds[roundIndex] === "object" && !Array.isArray(rounds[roundIndex]) ? rounds[roundIndex] : {};
+  const roundResult = Array.isArray(session?.roundResults) && session.roundResults[roundIndex] && typeof session.roundResults[roundIndex] === "object" && !Array.isArray(session.roundResults[roundIndex]) ? session.roundResults[roundIndex] : {};
+  const stationOrder = Array.from(new Set([
+    ...(Array.isArray(round.activeStations) ? round.activeStations : []),
+    ...TRAVEL_V2_ALPHA_CORE_STATION_KEYS
+  ].filter((key) => typeof key === "string" && key.trim()).map((key) => key.trim())));
+  const actions = isPlainObject(roundResult.stationActions) ? roundResult.stationActions : {};
+  const commitments = isPlainObject(roundResult.stationOrderCommitments) ? roundResult.stationOrderCommitments : {};
+  const stationKeys = Array.from(new Set([...stationOrder, ...Object.keys(actions), ...Object.keys(commitments)]));
+  const stations = {};
+  for (const stationKey of stationKeys) {
+    const action = isPlainObject(actions[stationKey]) ? actions[stationKey] : {};
+    const commitment = isPlainObject(commitments[stationKey]) ? commitments[stationKey] : {};
+    stations[stationKey] = {
+      ...cloneData(action),
+      actionKey: action.actionKey ?? action.key ?? action.type ?? action.action ?? "",
+      label: action.label ?? action.actionLabel ?? action.name ?? "",
+      locked: commitment.committed === true || commitment.locked === true || action.locked === true
+    };
+  }
+  return { stationOrder, activeStations: stationOrder, stations };
+}
+
+function formatLockInGuardMessage(entry = {}) {
+  const stationKey = typeof entry?.stationKey === "string" && entry.stationKey ? entry.stationKey : "unknown";
+  switch (entry?.code) {
+    case "invalidStationKey": return `Invalid required station key for Travel v2 round resolution: ${stationKey}.`;
+    case "missingRequiredStation": return `Required Travel Five station is missing before round resolution: ${stationKey}.`;
+    case "missingStationAction": return `Required Travel Five station has no selected action before round resolution: ${stationKey}.`;
+    case "stationActionUnlocked": return `Required Travel Five station action is not locked before round resolution: ${stationKey}.`;
+    case "resolveBeforeLockIn": return "Station action lock-in is not ready: all required Travel Five station actions must be selected and locked before round resolution.";
+    default: return typeof entry?.message === "string" && entry.message.trim() ? entry.message.trim() : "Station action lock-in is not ready for round resolution.";
+  }
+}
+
+export function inspectTravelV2StationActionLockInFinalizationGuard(session = {}, options = {}) {
+  const source = currentRoundLockInSource(session);
+  const readiness = checkTravelV2StationActionLockInReady(source, { ...options, requiredStationKeys: TRAVEL_V2_ALPHA_CORE_STATION_KEYS, stationOrder: source.stationOrder });
+  const gmMessages = Array.from(new Set((readiness.validationErrors ?? []).map(formatLockInGuardMessage)));
+  const ready = readiness.ready === true && gmMessages.length === 0;
+  return {
+    ready,
+    gmMessage: ready ? "Station action lock-in is ready for round resolution." : (gmMessages[0] ?? "Station action lock-in is not ready for round resolution."),
+    playerMessage: ready ? "Station actions are ready for round resolution." : "Round resolution is waiting for all required station actions to be selected and locked.",
+    blockedReasons: ready ? [] : gmMessages,
+    playerBlockedReasons: ready ? [] : ["Round resolution is waiting for all required station actions to be selected and locked."]
+  };
+}
+
 function stateSummary(finalizationState = {}) {
   return {
     lifecycleState: finalizationState.lifecycleState,
@@ -92,6 +146,17 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
 
   if (finalizationStateBefore.canFinalize !== true) {
     return blockedResult(session, finalizationStateBefore, finalizationStateBefore.blockedReasons[0]);
+  }
+
+  const lockInGuard = inspectTravelV2StationActionLockInFinalizationGuard(session, options);
+  if (lockInGuard.ready !== true) {
+    return {
+      ...blockedResult(session, { ...finalizationStateBefore, blockedReasons: lockInGuard.blockedReasons }, lockInGuard.gmMessage),
+      stationActionLockInReady: false,
+      gmMessage: lockInGuard.gmMessage,
+      playerMessage: lockInGuard.playerMessage,
+      playerBlockedReasons: lockInGuard.playerBlockedReasons
+    };
   }
 
   const clonedSession = cloneData(session);

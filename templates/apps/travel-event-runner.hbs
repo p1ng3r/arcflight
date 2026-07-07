@@ -649,6 +649,51 @@
         {{#if state.travelV2PreviewPanel.pressureApplication.hasFeedback}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.pressureApplication.feedbackText}}</p>
         {{/if}}
+        <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe" aria-label="Station Action Lock-In">
+          <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
+            <div>
+              <strong>Station Action Lock-In</strong>
+              <p class="arcflight-sheet__hint">{{state.stationActionLockIn.readinessText}}</p>
+              {{#if state.stationActionLockIn.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{#if state.isGM}}{{state.stationActionLockIn.blockedReason}}{{else}}{{state.stationActionLockIn.playerSafeBlockedReason}}{{/if}}</p>{{/if}}
+            </div>
+            <span class="arcflight-travel-safety-chip">{{state.stationActionLockIn.statusLabel}}</span>
+            {{#if state.stationActionLockIn.hasLocalChanges}}<span class="arcflight-travel-safety-chip">Unsaved local changes: {{state.stationActionLockIn.localChangeCount}}</span>{{/if}}
+            {{#if state.stationActionLockIn.hasSavedState}}<span class="arcflight-travel-safety-chip">Saved states: {{state.stationActionLockIn.savedCount}}</span>{{/if}}
+          </div>
+          {{#if state.isGM}}
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-travel-v2-station-action-lock-persist data-station-key="{{state.stationActionLockIn.firstChangedStationKey}}" {{#unless state.stationActionLockIn.canPersist}}disabled{{/unless}} title="GM-only: explicitly persists the selected local station action lock/unlock state through the saved runner session path. Does not update actors, items, journals, chat, sockets, scenes, tokens, compendia, or world data outside the runner session library.">Persist Station Lock State</button>
+              {{#if state.travelV2StationActionLockPersistResult}}<span class="arcflight-sheet__hint">{{state.travelV2StationActionLockPersistResult.summaryText}}</span>{{/if}}
+            </div>
+          {{/if}}
+          <table class="arcflight-travel-runner-mvp__table">
+            <thead><tr><th>Station</th><th>Selected Action</th><th>Lock State</th><th>Save State</th><th>Status</th><th>{{#if state.isGM}}GM Controls{{else}}Submission{{/if}}</th></tr></thead>
+            <tbody>
+              {{#each state.stationActionLockIn.rows}}
+                <tr>
+                  <td><strong>{{stationName}}</strong><br><span class="arcflight-sheet__hint">{{stationKey}}</span></td>
+                  <td>{{#if hasAction}}{{selectedActionLabel}}<br><span class="arcflight-sheet__hint">{{actionKey}}</span>{{else}}<span class="arcflight-sheet__hint">Missing action</span>{{/if}}</td>
+                  <td>{{lockStateLabel}}</td>
+                  <td>{{persistenceLabel}}<br><span class="arcflight-sheet__hint">{{persistenceMessage}}</span></td>
+                  <td>{{statusLabel}}<br><span class="arcflight-sheet__hint">{{message}}</span>{{#unless ../state.isGM}}<br><span class="arcflight-sheet__hint">{{submissionStatusLabel}} — {{submissionHelpText}}</span>{{/unless}}</td>
+                  <td>
+                    {{#if ../state.isGM}}
+                      {{#if canLock}}<button type="button" data-arcflight-travel-v2-station-action-lock data-station-key="{{stationKey}}">{{lockActionLabel}}</button>{{else}}{{#if lockDisabledReason}}<span class="arcflight-sheet__hint">{{lockDisabledReason}}</span>{{/if}}{{/if}}
+                      {{#if canUnlock}}<button type="button" data-arcflight-travel-v2-station-action-unlock data-station-key="{{stationKey}}" data-allow-unlock="true">{{unlockActionLabel}}</button>{{else}}{{#if unlockDisabledReason}}<span class="arcflight-sheet__hint">{{unlockDisabledReason}}</span>{{/if}}{{/if}}
+                    {{else}}
+                      <span class="arcflight-sheet__hint">{{submissionStatusLabel}}</span>
+                    {{/if}}
+                  </td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+          {{#if state.stationActionLockIn.hasValidationMessages}}
+            <ul class="arcflight-sheet__hint">
+              {{#each state.stationActionLockIn.validationMessages}}<li>{{this}}</li>{{/each}}
+            </ul>
+          {{/if}}
+        </section>
         <div class="arcflight-travel-runner-mvp__v2-finalize" aria-label="Travel v2 round finalization">
           <div>
             <strong>Round Finalization</strong>

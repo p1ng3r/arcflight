@@ -18,7 +18,20 @@ function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 round resolution readiness smoke check failed: ${message}`);
 }
 
-
+function withLockedTravelFiveActions(session) {
+  const stations = ["captain", "navigator", "engineer", "veilwarden", "watchmaster"];
+  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0;
+  const roundResults = Array.isArray(session.roundResults) ? session.roundResults.map((entry) => ({ ...entry })) : [];
+  const current = { ...(roundResults[roundIndex] ?? {}) };
+  current.stationActions = { ...(current.stationActions ?? {}) };
+  current.stationOrderCommitments = { ...(current.stationOrderCommitments ?? {}) };
+  for (const stationKey of stations) {
+    current.stationActions[stationKey] = { ...(current.stationActions[stationKey] ?? {}), actionKey: current.stationActions[stationKey]?.actionKey ?? "eventApproach", label: current.stationActions[stationKey]?.label ?? "Event Approach" };
+    current.stationOrderCommitments[stationKey] = { ...(current.stationOrderCommitments[stationKey] ?? {}), committed: true };
+  }
+  roundResults[roundIndex] = current;
+  return { ...session, roundResults };
+}
 
 export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   const created = createTravelEventRunnerSession(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { key: "round-resolution-readiness-session", now: "2026-06-29T00:00:00.000Z" });
@@ -58,12 +71,12 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   }
 
   const forcedCreated = createTravelEventRunnerSession(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { key: "round-resolution-force-helper-session", now: "2026-06-29T00:00:00.000Z" });
-  const forcedRound = forceTravelV2RoundResolved(forcedCreated.session, {}, { playerSafeState: {} });
+  const forcedRound = forceTravelV2RoundResolved(withLockedTravelFiveActions(forcedCreated.session), {}, { playerSafeState: {} });
   assertSmoke(forcedRound.ok && forcedRound.resolvedStationCount === forcedRound.activeStationCount, "forceTravelV2RoundResolved resolves all active stations through station result logic");
-  assertSmoke(forcedRound.readiness.ok === true && forcedRound.readiness.unresolvedStationCount === 0, "forced success round is readiness-clean by default");
+  assertSmoke(forcedRound.readiness.ok === true && forcedRound.readiness.unresolvedStationCount === 0, "forced success round is readiness-clean when station actions are locked");
 
   session = {
-    ...session,
+    ...withLockedTravelFiveActions(session),
     travelV2PressureApplications: { records: [{ roundIndex: 0, roundNumber: 1, outcomeKey: "success", requestCount: 1, createdAt: "2026-06-29T00:05:00.000Z" }] },
     travelV2PendingConsequenceQueue: { records: [{ queueKey: "gm-only:1", status: "pending", label: "GM-only queue label", queueGroup: "readyToApply", internalSeverity: "major" }] }
   };
@@ -88,7 +101,7 @@ export function runTravelV2RoundResolutionReadinessSmokeChecks() {
   const gmAppState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } });
   assertSmoke(gmAppState.canManageTravelV2Consequences === true && Array.isArray(gmAppState.pendingConsequenceQueue.items), "GM app state retains pending consequence queue readiness controls");
   const flowCreated = createTravelEventRunnerSession(LANTERN_IN_THE_STATIC_SAMPLE_EVENT, { key: "round-resolution-finalize-flow-session", now: "2026-06-29T00:00:00.000Z" });
-  const flowResolved = forceTravelV2RoundResolved(flowCreated.session, { defaultResult: "success" }, { playerSafeState: {} });
+  const flowResolved = forceTravelV2RoundResolved(withLockedTravelFiveActions(flowCreated.session), { defaultResult: "success" }, { playerSafeState: {} });
   assertSmoke(flowResolved.ok, "full finalize/consequence flow resolves stations through the force helper before finalization");
   const pressureApplied = applyTravelV2PressureToRunnerSession(flowResolved.session, { selectedOutcomeKey: "success", now: "2026-06-29T00:06:00.000Z" });
   assertSmoke(pressureApplied.ok && pressureApplied.applied, "full finalize/consequence flow applies pressure through the real session helper");
