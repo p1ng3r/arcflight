@@ -658,7 +658,7 @@
             <span class="arcflight-travel-safety-chip">{{state.stationActionLockIn.statusLabel}}</span>
           </div>
           <table class="arcflight-travel-runner-mvp__table">
-            <thead><tr><th>Station</th><th>Selected Action</th><th>Lock State</th><th>Status</th></tr></thead>
+            <thead><tr><th>Station</th><th>Selected Action</th><th>Lock State</th><th>Status</th><th>Controls</th></tr></thead>
             <tbody>
               {{#each state.stationActionLockIn.rows}}
                 <tr>
@@ -666,6 +666,10 @@
                   <td>{{#if hasAction}}{{actionLabel}}<br><span class="arcflight-sheet__hint">{{actionKey}}</span>{{else}}<span class="arcflight-sheet__hint">No action selected</span>{{/if}}</td>
                   <td>{{lockStateLabel}}</td>
                   <td>{{message}}</td>
+                  <td>
+                    {{#if canLock}}<button type="button" data-arcflight-travel-v2-station-action-lock data-station-key="{{stationKey}}">{{lockActionLabel}}</button>{{else}}{{#if lockDisabledReason}}<span class="arcflight-sheet__hint">{{lockDisabledReason}}</span>{{/if}}{{/if}}
+                    {{#if canUnlock}}<button type="button" data-arcflight-travel-v2-station-action-unlock data-station-key="{{stationKey}}" data-allow-unlock="true">{{unlockActionLabel}}</button>{{else}}{{#if unlockDisabledReason}}<span class="arcflight-sheet__hint">{{unlockDisabledReason}}</span>{{/if}}{{/if}}
+                  </td>
                 </tr>
               {{/each}}
             </tbody>
