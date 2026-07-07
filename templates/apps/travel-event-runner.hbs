@@ -722,7 +722,7 @@
             </ul>
           </div>
         {{/if}}
-        {{#if state.travelV2PreviewPanel.supportBonusStatusAvailable}}
+        {{#if state.travelV2PreviewPanel.stationActionEffectsAvailable}}
           <div class="arcflight-travel-runner-mvp__v2-round-summary" aria-label="Finalized Travel v2 station action effects">
             <h4>{{state.travelV2PreviewPanel.travelV2StationActionSupportEffects.title}}</h4>
             <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionSupportEffects.subtitle}}</p>
@@ -737,6 +737,36 @@
               <ul class="arcflight-sheet__hint">
                 {{#each state.travelV2PreviewPanel.travelV2StationActionSupportEffects.warnings}}<li>{{this}}</li>{{/each}}
               </ul>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachEffects.hasEffects}}
+              <h5>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachEffects.title}}</h5>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachEffects.subtitle}}</p>
+              <ul>
+                {{#each state.travelV2PreviewPanel.travelV2StationActionEventApproachEffects.effects}}
+                  <li><strong>{{sourceStationLabel}}</strong>: {{effectLabel}}{{#if hasSelectedSkillLabel}} <span class="arcflight-sheet__hint">Approach: {{selectedSkillLabel}}</span>{{/if}}{{#if hasStationOutcome}} <span class="arcflight-sheet__hint">Result: {{stationOutcome}}</span>{{/if}}</li>
+                {{/each}}
+              </ul>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachContributions.hasRecords}}
+              <h5>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributions.title}}</h5>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributions.subtitle}}</p>
+              <ul>
+                {{#each state.travelV2PreviewPanel.travelV2StationActionEventApproachContributions.records}}
+                  <li><strong>{{sourceStationLabel}}</strong>: {{contributionLabel}} <span class="arcflight-sheet__hint">Value: {{valueLabel}}{{#if hasSelectedSkillLabel}} · Approach: {{selectedSkillLabel}}{{/if}}{{#if hasStationOutcome}} · Result: {{stationOutcome}}{{/if}}</span></li>
+                {{/each}}
+              </ul>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.available}}
+              <h5>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.title}}</h5>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.subtitle}}</p>
+              <p><strong>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.valueLabel}}</strong> <span class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.tallyLabel}}</span></p>
+              <p class="arcflight-sheet__hint">Contributions: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.contributionCount}} · Positive: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.positiveContributionCount}} · Zero: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.zeroContributionCount}} · Negative: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.negativeContributionCount}}{{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.hasContributingStationLabels}} · Stations: {{state.travelV2PreviewPanel.travelV2StationActionEventApproachContributionTally.contributingStationLabelText}}{{/if}}</p>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.available}}
+              <h5>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.title}}</h5>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.subtitle}}</p>
+              <p class="arcflight-{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.statusTone}}"><strong>{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.statusLabel}}</strong> <span class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.previewLabel}}</span></p>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.travelV2StationActionEventApproachTallyStatus.previewMessage}}</p>
             {{/if}}
             {{#if state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.hasRecords}}
               <h5>{{state.travelV2PreviewPanel.travelV2PendingStationActionBonuses.title}}</h5>
