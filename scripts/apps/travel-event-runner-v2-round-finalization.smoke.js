@@ -153,6 +153,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(!missingActionBlocked.result.pendingStationActionBonuses, "missing station action should block before pending bonuses are generated");
     assertSmoke(!missingActionBlocked.result.stationActionEventApproachContributions && !missingActionBlocked.result.eventApproachContributions, "missing station action should block before Event Approach contributions are generated");
     assertSmoke(!missingActionBlocked.result.stationActionEventApproachContributionTally && !missingActionBlocked.result.eventApproachContributionTally, "missing station action should block before Event Approach tally is generated");
+    assertSmoke(!missingActionBlocked.result.stationActionEventApproachTallyStatus && !missingActionBlocked.result.eventApproachTallyStatus, "missing station action should block before Event Approach tally status is generated");
     assertSmoke(missingActionBlocked.result.playerMessage.includes("selected and locked"), "blocked result should include safe player-facing lock-in message");
     assertSmoke(missingActionBlocked.result.gmMessage.includes("captain"), "blocked result should include readable GM-facing station reason");
     assertEqual(snapshot(missingActionApplied.nextSession), missingActionBefore, "missing action guard should not mutate input session");
@@ -228,11 +229,18 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(eventApproachContributionTally?.playerSafe === true && eventApproachContributionTally.readOnly === true, "Event Approach tally should be player-safe and read-only");
     assertSmoke(resolutionRecord.stationActionEventApproachContributionTally?.totalContributionValue === eventApproachContributionTally.totalContributionValue, "Event Approach tally should be present on round resolution record");
     assertSmoke(successful.result.eventApproachContributionTally.totalContributionValue === eventApproachContributionTally.totalContributionValue, "Event Approach tally alias should be present on finalization result");
+    const eventApproachTallyStatus = successful.result.stationActionEventApproachTallyStatus;
+    assertSmoke(eventApproachTallyStatus?.statusKey === "partialProgress" && eventApproachTallyStatus.statusLabel === "Partial Progress", "Event Approach tally status should interpret +2 as Partial Progress");
+    assertSmoke(eventApproachTallyStatus?.statusTone && eventApproachTallyStatus.totalContributionValue === 2 && eventApproachTallyStatus.valueLabel === "+2", "Event Approach tally status should include tone and total contribution value");
+    assertSmoke(eventApproachTallyStatus?.previewLabel.includes("preview") && eventApproachTallyStatus.previewMessage.includes("read-only") && eventApproachTallyStatus.previewMessage.includes("not applied yet"), "Event Approach tally status should include safe readable not-applied preview text");
+    assertSmoke(eventApproachTallyStatus?.roundIndex === 0 && eventApproachTallyStatus.roundNumber === 1 && eventApproachTallyStatus.playerSafe === true && eventApproachTallyStatus.readOnly === true, "Event Approach tally status should include round metadata and safe read-only markers");
+    assertSmoke(resolutionRecord.stationActionEventApproachTallyStatus?.statusKey === eventApproachTallyStatus.statusKey, "Event Approach tally status should be present on round resolution record");
+    assertSmoke(successful.result.eventApproachTallyStatus.statusKey === eventApproachTallyStatus.statusKey, "Event Approach tally status alias should be present on finalization result");
     const eventApproachContributionJson = JSON.stringify(eventApproachContributions);
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!eventApproachContributionJson.includes(forbidden), `Event Approach contributions should not include forbidden player-safe term ${forbidden}`);
     }
-    const eventApproachContributionTallyJson = JSON.stringify(eventApproachContributionTally);
+    const eventApproachContributionTallyJson = JSON.stringify({ tally: eventApproachContributionTally, status: eventApproachTallyStatus });
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!eventApproachContributionTallyJson.includes(forbidden), `Event Approach tally should not include forbidden player-safe term ${forbidden}`);
     }
@@ -245,6 +253,25 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
       assertSmoke(variantContribution?.contributionValue === expected, `Event Approach ${outcome} should create contribution ${expected}`);
       if (outcome === "mystery") assertSmoke(variantContribution.stationOutcome === "unknown" && variantContribution.contributionLabel.includes("Unknown Result"), "unknown Event Approach outcome should create safe 0 contribution label");
     }
+
+    for (const [label, stationResults, expectedKey, expectedLabel] of [
+      ["strong", { captain: "success", navigator: "success", engineer: "failure", veilwarden: "success", watchmaster: "success" }, "strongProgress", "Strong Progress"],
+      ["partial", { captain: "failure", navigator: "success", engineer: "failure", veilwarden: "failure", watchmaster: "failure" }, "partialProgress", "Partial Progress"],
+      ["none", { captain: "failure", navigator: "failure", engineer: "failure", veilwarden: "failure", watchmaster: "failure" }, "noNetProgress", "No Net Progress"],
+      ["setback", { captain: "criticalFailure", navigator: "criticalFailure", engineer: "failure", veilwarden: "criticalFailure", watchmaster: "criticalFailure" }, "setback", "Setback"]
+    ]) {
+      const bandSession = createRunnerSessionFixture();
+      bandSession.roundResults[0].stationResults = stationResults;
+      const beforeBand = snapshot(bandSession);
+      const bandApplied = prepareTravelV2PressureApplicationRunnerUpdate(bandSession, { selectedOutcomeKey: "failure", now: `2026-01-01T00:00:08.${label.length}00Z` });
+      const bandFinalized = prepareTravelV2RoundFinalizationRunnerUpdate(bandApplied.nextSession, { now: `2026-01-01T00:00:09.${label.length}00Z` });
+      const bandStatus = bandFinalized.result.stationActionEventApproachTallyStatus;
+      assertSmoke(bandStatus?.statusKey === expectedKey && bandStatus.statusLabel === expectedLabel, `Event Approach tally status should create ${expectedLabel}`);
+      assertSmoke(bandStatus.previewLabel.includes(expectedLabel) && bandStatus.previewMessage.includes("not applied yet"), `${expectedLabel} status should include readable not-applied preview text`);
+      assertSmoke(recordsFrom(bandFinalized.nextSession.travelV2RoundResolutions)[0].stationActionEventApproachTallyStatus.statusKey === expectedKey, `${expectedLabel} status should be stored on round resolution record`);
+      assertEqual(snapshot(bandSession), beforeBand, `${expectedLabel} status generation should not mutate source session`);
+    }
+
     const missingOutcome = createRunnerSessionFixture();
     delete missingOutcome.roundResults[0].stationResults.navigator;
     const missingOutcomeApplied = prepareTravelV2PressureApplicationRunnerUpdate(missingOutcome, { selectedOutcomeKey: "failure", now: "2026-01-01T00:00:06.000Z" });
@@ -391,6 +418,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     assertSmoke(template.includes("travelV2PendingStationActionBonuses"), "template should render pending Support bonuses when available");
     assertSmoke(template.includes("travelV2StationActionEventApproachContributions"), "template should render Event Approach contributions when available");
     assertSmoke(template.includes("travelV2StationActionEventApproachContributionTally"), "template should render Event Approach contribution tally when available");
+    assertSmoke(template.includes("travelV2StationActionEventApproachTallyStatus"), "template should render Event Approach tally status when available");
     assertSmoke(template.includes("state.travelV2PreviewPanel.travelV2RoundFinalizationState"), "template should use prepared finalization state");
     assertSmoke(template.includes("finalizeDisabled"), "template should use prepared disabled state");
     assertSmoke(!template.includes("data-arcflight-runner-complete") || template.includes("data-arcflight-travel-v2-round-finalize"), "finalization control should not replace or add event completion behavior");

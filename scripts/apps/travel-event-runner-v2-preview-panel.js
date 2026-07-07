@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 13;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 14;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -209,6 +209,44 @@ function normalizeStationActionEventApproachContributionTally(eventApproachContr
     hasContributingStationLabels: contributingStationLabels.length > 0,
     roundIndex: Number.isInteger(Number(eventApproachContributionTally?.roundIndex)) ? Number(eventApproachContributionTally.roundIndex) : null,
     roundNumber: eventApproachContributionTally?.roundNumber ?? null,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeStationActionEventApproachTallyStatus(eventApproachTallyStatus = null, fallbackTally = null) {
+  const totalContributionValue = Number.isFinite(Number(eventApproachTallyStatus?.totalContributionValue))
+    ? Number(eventApproachTallyStatus.totalContributionValue)
+    : (Number.isFinite(Number(fallbackTally?.totalContributionValue)) ? Number(fallbackTally.totalContributionValue) : 0);
+  const valueLabel = `${totalContributionValue > 0 ? "+" : ""}${totalContributionValue}`;
+  const fallbackBand = totalContributionValue >= 3
+    ? { statusKey: "strongProgress", statusLabel: "Strong Progress", statusTone: "safe" }
+    : (totalContributionValue >= 1
+      ? { statusKey: "partialProgress", statusLabel: "Partial Progress", statusTone: "warning" }
+      : (totalContributionValue === 0
+        ? { statusKey: "noNetProgress", statusLabel: "No Net Progress", statusTone: "neutral" }
+        : { statusKey: "setback", statusLabel: "Setback", statusTone: "danger" }));
+  const statusKey = eventApproachTallyStatus?.statusKey ?? fallbackBand.statusKey;
+  const statusLabel = eventApproachTallyStatus?.statusLabel ?? fallbackBand.statusLabel;
+  const statusTone = eventApproachTallyStatus?.statusTone ?? eventApproachTallyStatus?.statusCategory ?? fallbackBand.statusTone;
+  const contributionCount = Number.isInteger(Number(fallbackTally?.contributionCount)) ? Number(fallbackTally.contributionCount) : 0;
+  const available = eventApproachTallyStatus?.playerSafe === true || fallbackTally?.available === true || contributionCount > 0 || fallbackTally?.hasContributions === true;
+  return {
+    available,
+    title: "Event Approach Tally Status",
+    subtitle: available
+      ? `Round ${eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? "?"} read-only Event Approach tally status captured for preview only; not applied yet.`
+      : "No Event Approach tally status preview has been captured yet.",
+    statusKey,
+    statusLabel,
+    statusTone,
+    statusCategory: statusTone,
+    totalContributionValue,
+    valueLabel,
+    previewLabel: eventApproachTallyStatus?.previewLabel || `${statusLabel} preview: ${valueLabel} Event Approach tally captured for later resolution.`,
+    previewMessage: eventApproachTallyStatus?.previewMessage || `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.`,
+    roundIndex: Number.isInteger(Number(eventApproachTallyStatus?.roundIndex)) ? Number(eventApproachTallyStatus.roundIndex) : (Number.isInteger(Number(fallbackTally?.roundIndex)) ? Number(fallbackTally.roundIndex) : null),
+    roundNumber: eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? null,
     playerSafe: true,
     readOnly: true
   };
@@ -720,10 +758,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachEffects = normalizeStationActionEventApproachEffects(latestFinalizationResult?.stationActionEventApproachEffects ?? latestResolutionRecord?.stationActionEventApproachEffects);
   const stationActionEventApproachContributions = normalizeStationActionEventApproachContributions(latestFinalizationResult?.stationActionEventApproachContributions ?? latestFinalizationResult?.eventApproachContributions ?? latestResolutionRecord?.stationActionEventApproachContributions ?? latestResolutionRecord?.eventApproachContributions);
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
+  const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
-  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available;
+  const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available || stationActionEventApproachTallyStatus.available;
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -765,6 +804,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionEventApproachContributions: stationActionEventApproachContributions,
     stationActionEventApproachContributionTally,
     travelV2StationActionEventApproachContributionTally: stationActionEventApproachContributionTally,
+    stationActionEventApproachTallyStatus,
+    travelV2StationActionEventApproachTallyStatus: stationActionEventApproachTallyStatus,
     supportBonusStatusAvailable,
     stationActionEffectsAvailable,
     pendingStationActionBonuses,

@@ -7,6 +7,7 @@ export const TRAVEL_V2_STATION_ACTION_EFFECTS_VERSION = 1;
 export const TRAVEL_V2_PENDING_STATION_ACTION_BONUSES_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTIONS_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_CONTRIBUTION_TALLY_VERSION = 1;
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_STATUS_VERSION = 1;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -244,6 +245,36 @@ export function prepareTravelV2StationActionEventApproachContributionTally(stati
   };
 }
 
+function eventApproachTallyStatusBand(totalContributionValue = 0) {
+  if (totalContributionValue >= 3) return { statusKey: "strongProgress", statusLabel: "Strong Progress", statusTone: "safe" };
+  if (totalContributionValue >= 1) return { statusKey: "partialProgress", statusLabel: "Partial Progress", statusTone: "warning" };
+  if (totalContributionValue === 0) return { statusKey: "noNetProgress", statusLabel: "No Net Progress", statusTone: "neutral" };
+  return { statusKey: "setback", statusLabel: "Setback", statusTone: "danger" };
+}
+
+export function prepareTravelV2StationActionEventApproachTallyStatus(eventApproachContributionTally = {}) {
+  const totalContributionValue = Number.isFinite(Number(eventApproachContributionTally?.totalContributionValue)) ? Number(eventApproachContributionTally.totalContributionValue) : 0;
+  const valueLabel = `${totalContributionValue > 0 ? "+" : ""}${totalContributionValue}`;
+  const { statusKey, statusLabel, statusTone } = eventApproachTallyStatusBand(totalContributionValue);
+  const roundIndex = Number.isInteger(Number(eventApproachContributionTally?.roundIndex)) ? Number(eventApproachContributionTally.roundIndex) : null;
+  const roundNumber = eventApproachContributionTally?.roundNumber ?? null;
+  return {
+    version: TRAVEL_V2_EVENT_APPROACH_TALLY_STATUS_VERSION,
+    statusKey,
+    statusLabel,
+    statusTone,
+    statusCategory: statusTone,
+    totalContributionValue,
+    valueLabel,
+    previewLabel: `${statusLabel} preview: ${valueLabel} Event Approach tally captured for later resolution.`,
+    previewMessage: `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.`,
+    roundIndex,
+    roundNumber,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 export function prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects = {}) {
   const effects = Array.isArray(stationActionSupportEffects?.effects) ? stationActionSupportEffects.effects : [];
   const bonuses = [];
@@ -296,6 +327,7 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
   const eventApproachEffects = isPlainObject(finalizationState.stationActionEventApproachEffects) ? finalizationState.stationActionEventApproachEffects : null;
   const eventApproachContributions = isPlainObject(finalizationState.stationActionEventApproachContributions) ? finalizationState.stationActionEventApproachContributions : null;
   const eventApproachContributionTally = isPlainObject(finalizationState.stationActionEventApproachContributionTally) ? finalizationState.stationActionEventApproachContributionTally : null;
+  const eventApproachTallyStatus = isPlainObject(finalizationState.stationActionEventApproachTallyStatus) ? finalizationState.stationActionEventApproachTallyStatus : null;
   const stationActionEffects = [
     ...(supportEffects?.effects ?? []),
     ...(eventApproachEffects?.effects ?? [])
@@ -317,6 +349,8 @@ function createRoundResolutionRecord(finalizationState = {}, options = {}) {
     eventApproachContributions: eventApproachContributions ? cloneData(eventApproachContributions) : null,
     stationActionEventApproachContributionTally: eventApproachContributionTally ? cloneData(eventApproachContributionTally) : null,
     eventApproachContributionTally: eventApproachContributionTally ? cloneData(eventApproachContributionTally) : null,
+    stationActionEventApproachTallyStatus: eventApproachTallyStatus ? cloneData(eventApproachTallyStatus) : null,
+    eventApproachTallyStatus: eventApproachTallyStatus ? cloneData(eventApproachTallyStatus) : null,
     stationActionEffects: cloneData(stationActionEffects),
     pendingStationActionBonuses: finalizationState.pendingStationActionBonuses ? cloneData(finalizationState.pendingStationActionBonuses) : null
   };
@@ -498,8 +532,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const stationActionEffects = [...stationActionSupportEffects.effects, ...stationActionEventApproachEffects.effects];
   const stationActionEventApproachContributions = prepareTravelV2StationActionEventApproachContributions(stationActionEventApproachEffects);
   const stationActionEventApproachContributionTally = prepareTravelV2StationActionEventApproachContributionTally(stationActionEventApproachContributions);
+  const stationActionEventApproachTallyStatus = prepareTravelV2StationActionEventApproachTallyStatus(stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects);
-  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, pendingStationActionBonuses }, options);
+  const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, stationActionEventApproachTallyStatus, pendingStationActionBonuses }, options);
   const finalizedSession = appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses);
   const finalizationStateAfter = prepareTravelV2RoundFinalizationState(finalizedSession, options);
   const lifecycleState = finalizationStateAfter.lifecycleState;
@@ -523,6 +558,8 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     eventApproachContributions: cloneData(stationActionEventApproachContributions),
     stationActionEventApproachContributionTally: cloneData(stationActionEventApproachContributionTally),
     eventApproachContributionTally: cloneData(stationActionEventApproachContributionTally),
+    stationActionEventApproachTallyStatus: cloneData(stationActionEventApproachTallyStatus),
+    eventApproachTallyStatus: cloneData(stationActionEventApproachTallyStatus),
     stationActionEffects: cloneData(stationActionEffects),
     stationActionEffectWarnings: cloneData(stationActionSupportEffects.warnings),
     pendingStationActionBonuses: cloneData(pendingStationActionBonuses),

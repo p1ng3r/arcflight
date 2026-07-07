@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 13, "panel version should be 13");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 14, "panel version should be 14");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -371,6 +371,20 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
             readOnly: true,
             gmText: "secret",
             auditRecord: { secret: true }
+          },
+          stationActionEventApproachTallyStatus: {
+            roundIndex: 0,
+            roundNumber: 1,
+            statusKey: "partialProgress",
+            statusLabel: "Partial Progress",
+            statusTone: "warning",
+            totalContributionValue: 1,
+            previewLabel: "Partial Progress preview: +1 Event Approach tally captured for later resolution.",
+            previewMessage: "Partial Progress preview: +1 Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.",
+            playerSafe: true,
+            readOnly: true,
+            gmText: "secret",
+            auditRecord: { secret: true }
           }
         }]
       }
@@ -390,7 +404,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(eventApproachTally.totalContributionValue === 1 && eventApproachTally.valueLabel === "+1" && eventApproachTally.contributionCount === 1, "Event Approach preview tally should include safe total and contribution count");
   assertSmoke(eventApproachTally.positiveContributionCount === 1 && eventApproachTally.zeroContributionCount === 0 && eventApproachTally.negativeContributionCount === 0, "Event Approach preview tally should include safe sign counts");
   assertSmoke(eventApproachTally.contributingStationLabelText === "Navigator" && eventApproachTally.tallyLabel.includes("Event Approach"), "Event Approach preview tally should include safe station labels and readable label");
-  const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions, tally: eventApproachPanel.travelV2StationActionEventApproachContributionTally });
+  assertSmoke(eventApproachPanel.travelV2StationActionEventApproachTallyStatus.available, "Event Approach tally status should be exposed in preview render state");
+  const eventApproachStatus = eventApproachPanel.travelV2StationActionEventApproachTallyStatus;
+  assertSmoke(eventApproachStatus.statusKey === "partialProgress" && eventApproachStatus.statusLabel === "Partial Progress" && eventApproachStatus.statusTone === "warning", "Event Approach preview status should include safe status key label and tone");
+  assertSmoke(eventApproachStatus.totalContributionValue === 1 && eventApproachStatus.previewLabel.includes("captured") && eventApproachStatus.previewMessage.includes("read-only") && eventApproachStatus.previewMessage.includes("not applied yet"), "Event Approach preview status should include total and readable not-applied message");
+  const fallbackStatusPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, travelV2RoundFinalizationResult: { stationActionEventApproachContributionTally: { roundIndex: 0, roundNumber: 1, totalContributionValue: -1, contributionCount: 1, hasContributions: true, playerSafe: true, readOnly: true } } });
+  assertSmoke(fallbackStatusPanel.travelV2StationActionEventApproachTallyStatus.statusKey === "setback", "Event Approach preview status should fall back from tally when status object is absent");
+  const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions, tally: eventApproachPanel.travelV2StationActionEventApproachContributionTally, status: eventApproachPanel.travelV2StationActionEventApproachTallyStatus });
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
   }
