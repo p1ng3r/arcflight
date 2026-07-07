@@ -14,9 +14,11 @@ export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
-export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending"]);
+export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending", "consumed", "applied"]);
+export const TRAVEL_V2_APPLIED_ACTIVE_CARDS_VERSION = 1;
+export const TRAVEL_V2_PENDING_STATION_RESULT_FLOORS_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_TIMING_TYPES = Object.freeze(["beforeRoll", "afterFailure"]);
-export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_STATUSES = Object.freeze(["needsTarget", "waitingForLock", "playable", "missedWindow", "waitingForTrigger", "triggerReady", "noTrigger"]);
+export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_STATUSES = Object.freeze(["needsTarget", "waitingForLock", "playable", "missedWindow", "waitingForTrigger", "triggerReady", "noTrigger", "consumed"]);
 export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES = Object.freeze({
   circumstanceBonusPreview: "circumstanceBonusPreview",
   degreeUpgradePreview: "degreeUpgradePreview",
@@ -314,12 +316,17 @@ function currentRoundContext(session = {}) {
   return { roundIndex, roundNumber, round };
 }
 
-function roundResultForIndex(session = {}, roundIndex = 0) {
-  const records = recordsFromContainer(session?.roundResults);
+function roundResultEntryForIndex(session = {}, roundIndex = 0) {
+  const records = Array.isArray(session?.roundResults) ? session.roundResults : recordsFromContainer(session?.roundResults);
   const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
-  return records.find((record) => Number.isInteger(Number(record?.roundIndex)) && Number(record.roundIndex) === index)
-    ?? records[index]
-    ?? {};
+  const explicitIndex = records.findIndex((record) => Number.isInteger(Number(record?.roundIndex)) && Number(record.roundIndex) === index);
+  if (explicitIndex >= 0) return { record: records[explicitIndex], arrayIndex: explicitIndex, roundIndex: index };
+  if (records[index]) return { record: records[index], arrayIndex: index, roundIndex: index };
+  return { record: {}, arrayIndex: index, roundIndex: index };
+}
+
+function roundResultForIndex(session = {}, roundIndex = 0) {
+  return roundResultEntryForIndex(session, roundIndex).record ?? {};
 }
 
 export function resolveTravelV2ActiveCardPreviewRound(session = {}, card = {}) {
@@ -398,7 +405,28 @@ export function prepareTravelV2ActiveCardPlayPreview(card = {}, session = {}) {
 
 export function prepareTravelV2ActiveCardsPreviewState(container = {}, session = {}) {
   const normalized = normalizeTravelV2ActiveCardRecords(container);
-  const records = normalized.records.map((record) => ({ ...record, ...prepareTravelV2ActiveCardPlayPreview(record, session), status: "pending", playerSafe: true, readOnly: true }));
+  const records = normalized.records.map((record) => {
+    const { previewRoundIndex, previewRoundNumber, createdRoundIndex, createdRoundNumber } = resolveTravelV2ActiveCardPreviewRound(session, record);
+    const playPreview = record.status === "pending"
+      ? prepareTravelV2ActiveCardPlayPreview(record, session)
+      : {
+        ...prepareTravelV2ActiveCardTargetPreview(record, session),
+        previewRoundIndex,
+        previewRoundNumber,
+        createdRoundIndex,
+        createdRoundNumber,
+        timingType: activeCardTimingType(record.rewardKey ?? record.cardKey),
+        playablePreview: false,
+        triggerReadyPreview: false,
+        waitingForTrigger: false,
+        previewStatus: "consumed",
+        previewStatusLabel: "Consumed",
+        stationResult: "",
+        playerSafe: true,
+        readOnly: true
+      };
+    return { ...record, ...playPreview, status: record.status, playerSafe: true, readOnly: true };
+  });
   return { version: TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
 }
 
@@ -555,6 +583,192 @@ export function prepareTravelV2ActiveCardApplicationPreviewState(activeCardPrevi
 
 export function sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers(activeCardPreviewState = {}, session = {}) {
   return prepareTravelV2ActiveCardApplicationPreviewState(activeCardPreviewState, session);
+}
+
+function blockedTravelV2ActiveCardApplyResult(session, blockedReason = "Application blocked.") {
+  return { ok: false, applied: false, blocked: true, blockedReason, session: cloneData(session), playerSafe: true, readOnly: true };
+}
+
+function findCurrentTravelV2ActiveCardApplicationPreview(session = {}, previewId = "") {
+  const id = optionalString(previewId) ?? "";
+  if (!id) return null;
+  const previewState = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(session?.travelV2ActiveCards, session), session);
+  return previewState.records.find((record) => record.previewId === id || record.id === id) ?? null;
+}
+
+function appliedActiveCardId(preview = {}) {
+  return ["travel-v2-applied-card", activeCardApplicationPreviewSegment(preview.sourceCardId, "unknown-card"), activeCardApplicationPreviewSegment(preview.effectKey, "unknown-effect"), Number.isInteger(Number(preview.previewRoundIndex)) ? Number(preview.previewRoundIndex) : "unknown-round", activeCardApplicationPreviewSegment(preview.targetStationKey, "no-target")].join(":");
+}
+
+function normalizeTravelV2AppliedActiveCards(container = {}) {
+  const records = recordsFromContainer(container).filter(isPlainObject).map((record) => ({
+    ...cloneData(record),
+    playerSafe: true,
+    readOnly: true
+  }));
+  return { version: TRAVEL_V2_APPLIED_ACTIVE_CARDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
+}
+
+function appendTravelV2AppliedActiveCardRecord(session = {}, record = {}) {
+  const existing = normalizeTravelV2AppliedActiveCards(session.travelV2AppliedActiveCards);
+  const records = [...existing.records, cloneData(record)];
+  return {
+    ...session,
+    travelV2AppliedActiveCards: { version: TRAVEL_V2_APPLIED_ACTIVE_CARDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true }
+  };
+}
+
+function buildPendingStationActionBonusFromCardPreview(preview = {}) {
+  const value = Number(preview.bonusValue);
+  if (preview.applicationType !== TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES.circumstanceBonusPreview || !Number.isFinite(value) || value <= 0) return null;
+  return {
+    sourceCardId: preview.sourceCardId,
+    sourceCardLabel: preview.cardLabel,
+    targetStationKey: preview.targetStationKey,
+    targetStationLabel: preview.targetStationLabel,
+    bonusKey: preview.effectKey,
+    bonusType: "circumstance",
+    bonusValue: value,
+    bonusLabel: `${preview.cardLabel}: +${value} circumstance bonus for ${preview.targetStationLabel || "target station"}.`,
+    previewRoundIndex: preview.previewRoundIndex,
+    previewRoundNumber: preview.previewRoundNumber,
+    roundIndex: preview.previewRoundIndex,
+    roundNumber: preview.previewRoundNumber,
+    consumed: false,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function buildPendingResultFloorFromCardPreview(preview = {}) {
+  if (preview.applicationType !== TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES.resultFloorPreview || preview.effectKey !== TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.legendarySuccessFloor) return null;
+  return {
+    sourceCardId: preview.sourceCardId,
+    sourceCardLabel: preview.cardLabel,
+    targetStationKey: preview.targetStationKey,
+    targetStationLabel: preview.targetStationLabel,
+    resultFloor: "success",
+    timing: "beforeTargetRoll",
+    previewRoundIndex: preview.previewRoundIndex,
+    previewRoundNumber: preview.previewRoundNumber,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function appendPendingStationResultFloor(session = {}, record = {}) {
+  const existing = recordsFromContainer(session.travelV2PendingStationResultFloors);
+  const records = [...cloneData(existing), cloneData(record)];
+  return {
+    ...session,
+    travelV2PendingStationResultFloors: { version: TRAVEL_V2_PENDING_STATION_RESULT_FLOORS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true }
+  };
+}
+
+function consumeTravelV2ActiveCard(session = {}, sourceCardId = "") {
+  const activeCards = normalizeTravelV2ActiveCardRecords(session.travelV2ActiveCards);
+  let consumedCardRecord = null;
+  const records = activeCards.records.map((record) => {
+    if (record.cardId !== sourceCardId && record.id !== sourceCardId) return record;
+    consumedCardRecord = { ...record, status: "consumed", playablePreview: false, triggerReadyPreview: false, waitingForTrigger: false, previewStatus: "consumed", previewStatusLabel: "Consumed", playerSafe: true, readOnly: true };
+    return consumedCardRecord;
+  });
+  return {
+    session: { ...session, travelV2ActiveCards: { version: TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true } },
+    consumedCardRecord
+  };
+}
+
+function applyHeroicStationResultChange(session = {}, preview = {}) {
+  const before = getTravelV2StationResultForRound(session, preview.targetStationKey, preview.previewRoundIndex);
+  const after = before === "criticalFailure" ? "failure" : (before === "failure" ? "success" : "");
+  if (!after) return { blockedReason: "Target station result is not failure or critical failure." };
+  const roundIndex = Number.isInteger(Number(preview.previewRoundIndex)) ? Number(preview.previewRoundIndex) : 0;
+  const roundResults = Array.isArray(session.roundResults) ? cloneData(session.roundResults) : [];
+  const { record, arrayIndex } = roundResultEntryForIndex({ roundResults }, roundIndex);
+  while (roundResults.length <= arrayIndex) roundResults.push({});
+  const roundResult = isPlainObject(record) ? cloneData(record) : {};
+  roundResult.roundIndex = roundIndex;
+  roundResult.stationResults = isPlainObject(roundResult.stationResults) ? roundResult.stationResults : {};
+  roundResult.stationResults[preview.targetStationKey] = after;
+  if (isPlainObject(roundResult.stationSummary?.[preview.targetStationKey])) {
+    roundResult.stationSummary[preview.targetStationKey].degree = after;
+    roundResult.stationSummary[preview.targetStationKey].outcomeKey = after;
+  }
+  roundResults[arrayIndex] = roundResult;
+  return { session: { ...session, roundResults }, stationResultChange: { targetStationKey: preview.targetStationKey, targetStationLabel: preview.targetStationLabel, roundIndex, roundNumber: preview.previewRoundNumber, before, after, playerSafe: true, readOnly: true } };
+}
+
+export function applyTravelV2ActiveCardApplicationPreviewToSession(session = {}, previewId = "", options = {}) {
+  if (!isPlainObject(session)) return blockedTravelV2ActiveCardApplyResult(session, "Travel v2 session is required.");
+  if (options?.confirmedByGM !== true) return blockedTravelV2ActiveCardApplyResult(session, "GM confirmation is required.");
+  const id = optionalString(options?.previewId) ?? optionalString(previewId) ?? "";
+  const preview = findCurrentTravelV2ActiveCardApplicationPreview(session, id);
+  if (!preview) return blockedTravelV2ActiveCardApplyResult(session, "Active card application preview was not found.");
+  if (preview.canApplyPreview !== true) return blockedTravelV2ActiveCardApplyResult(session, preview.blockedReason || "Active card application preview is not apply-ready.");
+  const sourceCard = normalizeTravelV2ActiveCardRecords(session.travelV2ActiveCards).records.find((record) => record.cardId === preview.sourceCardId || record.id === preview.sourceCardId);
+  if (!sourceCard) return blockedTravelV2ActiveCardApplyResult(session, "Source active card was not found.");
+  if (sourceCard.status !== "pending") return blockedTravelV2ActiveCardApplyResult(session, "Source active card is already consumed.");
+
+  let nextSession = cloneData(session);
+  let pendingStationActionBonusRecord = null;
+  let pendingResultFloorRecord = null;
+  let stationResultChange = null;
+
+  if (preview.effectKey === TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.minorOpeningBonus || preview.effectKey === TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.greaterOpeningBonus) {
+    pendingStationActionBonusRecord = buildPendingStationActionBonusFromCardPreview(preview);
+    nextSession = appendPendingStationActionBonuses(nextSession, { records: [pendingStationActionBonusRecord] });
+  } else if (preview.effectKey === TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.heroicDegreeUpgrade) {
+    const heroic = applyHeroicStationResultChange(nextSession, preview);
+    if (heroic.blockedReason) return blockedTravelV2ActiveCardApplyResult(session, heroic.blockedReason);
+    nextSession = heroic.session;
+    stationResultChange = heroic.stationResultChange;
+  } else if (preview.effectKey === TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS.legendarySuccessFloor) {
+    pendingResultFloorRecord = buildPendingResultFloorFromCardPreview(preview);
+    nextSession = appendPendingStationResultFloor(nextSession, pendingResultFloorRecord);
+  } else {
+    return blockedTravelV2ActiveCardApplyResult(session, "Unsupported active card application effect.");
+  }
+
+  const appliedAt = timestampFromOptions(options);
+  const { session: consumedSession, consumedCardRecord } = consumeTravelV2ActiveCard(nextSession, preview.sourceCardId);
+  nextSession = consumedSession;
+  const appliedCardRecord = {
+    appliedId: appliedActiveCardId(preview),
+    id: appliedActiveCardId(preview),
+    previewId: preview.previewId,
+    sourceCardId: preview.sourceCardId,
+    cardKey: preview.cardKey,
+    rewardKey: preview.rewardKey,
+    cardLabel: preview.cardLabel,
+    applicationType: preview.applicationType,
+    effectKey: preview.effectKey,
+    effectSummary: preview.effectSummary,
+    sourceStationKey: preview.sourceStationKey,
+    sourceStationLabel: preview.sourceStationLabel,
+    targetStationKey: preview.targetStationKey,
+    targetStationLabel: preview.targetStationLabel,
+    previewRoundIndex: preview.previewRoundIndex,
+    previewRoundNumber: preview.previewRoundNumber,
+    appliedRoundIndex: preview.previewRoundIndex,
+    appliedRoundNumber: preview.previewRoundNumber,
+    ...(stationResultChange ? { targetResultBefore: stationResultChange.before, targetResultAfter: stationResultChange.after } : {}),
+    ...(pendingStationActionBonusRecord ? { bonusType: pendingStationActionBonusRecord.bonusType, bonusValue: pendingStationActionBonusRecord.bonusValue } : {}),
+    ...(pendingResultFloorRecord ? { resultFloor: pendingResultFloorRecord.resultFloor } : {}),
+    appliedAt,
+    requiresGMConfirmation: true,
+    confirmed: true,
+    playerSafe: true,
+    readOnly: true
+  };
+  nextSession = appendTravelV2AppliedActiveCardRecord(nextSession, appliedCardRecord);
+  const refreshedActiveCardPreviewState = prepareTravelV2ActiveCardsPreviewState(nextSession.travelV2ActiveCards, nextSession);
+  nextSession = {
+    ...nextSession,
+    travelV2ActiveCardApplicationPreviews: prepareTravelV2ActiveCardApplicationPreviewState(refreshedActiveCardPreviewState, nextSession),
+    activeCardApplicationPreviews: prepareTravelV2ActiveCardApplicationPreviewState(refreshedActiveCardPreviewState, nextSession)
+  };
+  return { ok: true, applied: true, blocked: false, blockedReason: "", session: cloneData(nextSession), appliedCardRecord: cloneData(appliedCardRecord), consumedCardRecord: cloneData(consumedCardRecord), ...(pendingStationActionBonusRecord ? { pendingStationActionBonusRecord: cloneData(pendingStationActionBonusRecord) } : {}), ...(pendingResultFloorRecord ? { pendingResultFloorRecord: cloneData(pendingResultFloorRecord) } : {}), ...(stationResultChange ? { stationResultChange: cloneData(stationResultChange) } : {}), playerSafe: true, readOnly: true };
 }
 
 export function prepareTravelV2DifficultyBidCardRecord(stationRow = {}) {

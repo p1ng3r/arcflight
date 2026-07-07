@@ -1,5 +1,6 @@
 import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import {
+  applyTravelV2ActiveCardApplicationPreviewToSession,
   finalizeTravelV2RoundOnRunnerSession,
   getTravelV2DifficultyBidDcModifier,
   getTravelV2StationResultForRound,
@@ -100,7 +101,7 @@ function pendingActiveCard(overrides = {}) {
 export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION, 1, "session round finalization version should be 1");
   assertEqual(TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION, 1, "active card records version should be 1");
-  assertEqual(TRAVEL_V2_ACTIVE_CARD_STATUSES.join(","), "pending", "active card statuses should expose pending");
+  assertEqual(TRAVEL_V2_ACTIVE_CARD_STATUSES.join(","), "pending,consumed,applied", "active card statuses should expose pending and consumed states");
 
 
   for (const [key, modifier] of [["none", 0], ["minor", 2], ["greater", 5], ["extreme", 8]]) {
@@ -316,6 +317,103 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!applicationPreviewJson.includes(forbidden), `application preview state should not include forbidden player-safe term ${forbidden}`);
   }
+  const minorApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }], travelV2ActiveCards: { records: [pendingActiveCard({ targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
+  const minorPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(minorApplySession.travelV2ActiveCards, minorApplySession), minorApplySession).records[0].previewId;
+  const missingConfirmationApply = applyTravelV2ActiveCardApplicationPreviewToSession(minorApplySession, minorPreviewId, { now: "2026-06-19T00:00:05.000Z" });
+  assertSmoke(!missingConfirmationApply.ok && missingConfirmationApply.blocked, "active card application should require explicit GM confirmation");
+  const invalidPreviewApply = applyTravelV2ActiveCardApplicationPreviewToSession(minorApplySession, "missing-preview", { confirmedByGM: true });
+  assertSmoke(!invalidPreviewApply.ok && invalidPreviewApply.blocked, "invalid active card application preview id should block safely");
+  const minorApply = applyTravelV2ActiveCardApplicationPreviewToSession(minorApplySession, minorPreviewId, { confirmedByGM: true, gmUserId: "gm-should-not-leak", now: "2026-06-19T00:00:05.000Z" });
+  assertSmoke(minorApply.ok && minorApply.applied && !minorApply.blocked, "minor opening application should apply with GM confirmation");
+  assertEqual(minorApply.pendingStationActionBonusRecord.bonusValue, 1, "minor opening application should create pending +1 bonus");
+  assertEqual(minorApply.pendingStationActionBonusRecord.bonusType, "circumstance", "minor opening application should create circumstance bonus");
+  assertEqual(minorApply.consumedCardRecord.status, "consumed", "minor opening application should consume active card");
+  assertEqual(minorApply.session.travelV2ActiveCards.records.length, 1, "consumed active card should remain in session records");
+  assertEqual(minorApply.session.travelV2ActiveCards.records[0].status, "consumed", "session active card record should be consumed");
+  assertEqual(minorApply.session.travelV2AppliedActiveCards.records.length, 1, "minor opening application should append applied card record");
+  assertSmoke(!minorApply.stationResultChange && !minorApply.session.roundResults[0].stationResults.navigator, "minor opening should not mutate station result data");
+  assertEqual(snapshot(minorApplySession.roundResults[0].stationResults), snapshot({}), "minor opening application should not mutate source session");
+  const consumedPreview = prepareTravelV2ActiveCardsPreviewState(minorApply.session.travelV2ActiveCards, minorApply.session).records[0];
+  assertSmoke(consumedPreview.status === "consumed" && consumedPreview.playablePreview === false && consumedPreview.triggerReadyPreview === false, "consumed cards should not be apply-ready in recomputed preview state");
+
+  const greaterApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }], travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "greaterOpening", rewardKey: "greaterOpening", cardLabel: "Greater Opening", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
+  const greaterPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(greaterApplySession.travelV2ActiveCards, greaterApplySession), greaterApplySession).records[0].previewId;
+  const greaterApply = applyTravelV2ActiveCardApplicationPreviewToSession(greaterApplySession, greaterPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:06.000Z" });
+  assertSmoke(greaterApply.ok, "greater opening application should apply with GM confirmation");
+  assertEqual(greaterApply.pendingStationActionBonusRecord.bonusValue, 3, "greater opening application should create pending +3 bonus");
+  assertEqual(greaterApply.session.travelV2AppliedActiveCards.records.length, 1, "greater opening application should append applied card record");
+
+  for (const [beforeResult, afterResult] of [["failure", "success"], ["criticalFailure", "failure"]]) {
+    const heroicApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: beforeResult } }], travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
+    const heroicPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(heroicApplySession.travelV2ActiveCards, heroicApplySession), heroicApplySession).records[0].previewId;
+    const heroicApply = applyTravelV2ActiveCardApplicationPreviewToSession(heroicApplySession, heroicPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:07.000Z" });
+    assertSmoke(heroicApply.ok, `heroic event application should apply to ${beforeResult}`);
+    assertEqual(heroicApply.stationResultChange.before, beforeResult, "heroic event applied record should include before result");
+    assertEqual(heroicApply.stationResultChange.after, afterResult, "heroic event should improve target result by one degree");
+    assertEqual(heroicApply.session.roundResults[0].stationResults.navigator, afterResult, "heroic event should update cloned session round result");
+    assertEqual(heroicApply.appliedCardRecord.targetResultBefore, beforeResult, "heroic applied card record should include before result");
+    assertEqual(heroicApply.appliedCardRecord.targetResultAfter, afterResult, "heroic applied card record should include after result");
+    assertEqual(heroicApply.consumedCardRecord.status, "consumed", "heroic event should consume active card");
+    assertEqual(heroicApplySession.roundResults[0].stationResults.navigator, beforeResult, "heroic application should not mutate source session");
+    const consumedAgain = applyTravelV2ActiveCardApplicationPreviewToSession(heroicApply.session, heroicPreviewId, { confirmedByGM: true });
+    assertSmoke(!consumedAgain.ok && consumedAgain.blocked, "already consumed heroic card should block reapplication");
+  }
+  const explicitRoundIndexHeroicSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [{ roundIndex: 1, ...lockedRoundResult(), stationResults: { navigator: "failure" } }],
+    travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true }
+  });
+  const explicitRoundIndexBefore = snapshot(explicitRoundIndexHeroicSession);
+  const explicitRoundIndexHeroicPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(explicitRoundIndexHeroicSession.travelV2ActiveCards, explicitRoundIndexHeroicSession), explicitRoundIndexHeroicSession).records[0].previewId;
+  const explicitRoundIndexHeroicApply = applyTravelV2ActiveCardApplicationPreviewToSession(explicitRoundIndexHeroicSession, explicitRoundIndexHeroicPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:07.500Z" });
+  assertSmoke(explicitRoundIndexHeroicApply.ok, "heroic event should apply when preview uses an explicit roundIndex record stored at a different array position");
+  assertEqual(explicitRoundIndexHeroicApply.session.roundResults.length, 1, "heroic explicit roundIndex apply should not create a duplicate array-position record");
+  assertEqual(explicitRoundIndexHeroicApply.session.roundResults[0].roundIndex, 1, "heroic explicit roundIndex apply should preserve target roundIndex on updated record");
+  assertEqual(explicitRoundIndexHeroicApply.session.roundResults[0].stationResults.navigator, "success", "heroic explicit roundIndex apply should update the explicit record read by preview lookup");
+  assertEqual(getTravelV2StationResultForRound(explicitRoundIndexHeroicApply.session, "navigator", 1), "success", "station result lookup should read upgraded explicit roundIndex result after apply");
+  assertEqual(snapshot(explicitRoundIndexHeroicSession), explicitRoundIndexBefore, "heroic explicit roundIndex apply should not mutate source session");
+  const explicitRoundIndexConsumedAgain = applyTravelV2ActiveCardApplicationPreviewToSession(explicitRoundIndexHeroicApply.session, explicitRoundIndexHeroicPreviewId, { confirmedByGM: true });
+  assertSmoke(!explicitRoundIndexConsumedAgain.ok && explicitRoundIndexConsumedAgain.blocked, "consumed explicit roundIndex heroic card should block replay");
+
+  const indexPositionHeroicSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [lockedRoundResult(), { ...lockedRoundResult(), stationResults: { navigator: "failure" } }],
+    travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true }
+  });
+  const indexPositionHeroicBefore = snapshot(indexPositionHeroicSession);
+  const indexPositionHeroicPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(indexPositionHeroicSession.travelV2ActiveCards, indexPositionHeroicSession), indexPositionHeroicSession).records[0].previewId;
+  const indexPositionHeroicApply = applyTravelV2ActiveCardApplicationPreviewToSession(indexPositionHeroicSession, indexPositionHeroicPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:07.750Z" });
+  assertSmoke(indexPositionHeroicApply.ok, "heroic event should apply using array-position fallback when no explicit roundIndex record exists");
+  assertEqual(indexPositionHeroicApply.session.roundResults[1].roundIndex, 1, "heroic array-position fallback should set target roundIndex on updated record");
+  assertEqual(indexPositionHeroicApply.session.roundResults[1].stationResults.navigator, "success", "heroic array-position fallback should update roundResults[1]");
+  assertEqual(getTravelV2StationResultForRound(indexPositionHeroicApply.session, "navigator", 1), "success", "station result lookup should read upgraded array-position fallback result after apply");
+  assertEqual(snapshot(indexPositionHeroicSession), indexPositionHeroicBefore, "heroic array-position fallback should not mutate source session");
+
+  const heroicSuccessApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "success" } }], travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
+  const heroicSuccessPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(heroicSuccessApplySession.travelV2ActiveCards, heroicSuccessApplySession), heroicSuccessApplySession).records[0].previewId;
+  const heroicSuccessApply = applyTravelV2ActiveCardApplicationPreviewToSession(heroicSuccessApplySession, heroicSuccessPreviewId, { confirmedByGM: true });
+  assertSmoke(!heroicSuccessApply.ok && heroicSuccessApply.blocked, "heroic event application should block when target result is success");
+
+  const legendaryApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }], travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "legendaryEvent", rewardKey: "legendaryEvent", cardLabel: "Legendary Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
+  const legendaryPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(legendaryApplySession.travelV2ActiveCards, legendaryApplySession), legendaryApplySession).records[0].previewId;
+  const legendaryApply = applyTravelV2ActiveCardApplicationPreviewToSession(legendaryApplySession, legendaryPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(legendaryApply.ok, "legendary event application should apply with GM confirmation");
+  assertEqual(legendaryApply.pendingResultFloorRecord.resultFloor, "success", "legendary event should create success result-floor record");
+  assertEqual(legendaryApply.consumedCardRecord.status, "consumed", "legendary event should consume active card");
+  assertSmoke(!legendaryApply.stationResultChange && !legendaryApply.session.roundResults[0].stationResults.navigator, "legendary event should not immediately mutate station result data");
+  assertEqual(legendaryApply.session.travelV2AppliedActiveCards.records.length, 1, "legendary event should append applied card record");
+
+  const supportRegressionSession = createRunnerSessionFixture({ travelV2PressureApplications: { records: [applicationRecord()] } });
+  const supportBefore = finalizeTravelV2RoundOnRunnerSession(supportRegressionSession, { now: "2026-06-19T00:00:09.000Z" });
+  const supportAfter = finalizeTravelV2RoundOnRunnerSession(supportRegressionSession, { now: "2026-06-19T00:00:09.000Z" });
+  assertEqual(snapshot(supportAfter.pendingStationActionBonuses), snapshot(supportBefore.pendingStationActionBonuses), "support pending bonus behavior should remain unchanged by card apply helper");
+  assertEqual(snapshot(supportAfter.eventApproachContributionTally), snapshot(supportBefore.eventApproachContributionTally), "event approach tally behavior should remain unchanged by card apply helper");
+
+  const applyJson = JSON.stringify(minorApply);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions", "gm-should-not-leak"]) {
+    assertSmoke(!applyJson.includes(forbidden), `active card apply result should not include forbidden player-safe term ${forbidden}`);
+  }
+
 
   const futureRoundSession = createRunnerSessionFixture({
     currentRoundIndex: 1,
@@ -412,6 +510,7 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
       "difficulty-bid-preview-player-safe-read-only",
       "active-card-normalization",
       "active-card-merged-finalization-result",
+      "active-card-gm-confirmed-apply-flow",
       "missing-session-block",
       "without-pressure-application-block",
       "with-pressure-application-finalizes",
