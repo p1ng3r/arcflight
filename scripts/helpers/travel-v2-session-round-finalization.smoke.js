@@ -358,6 +358,37 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
     const consumedAgain = applyTravelV2ActiveCardApplicationPreviewToSession(heroicApply.session, heroicPreviewId, { confirmedByGM: true });
     assertSmoke(!consumedAgain.ok && consumedAgain.blocked, "already consumed heroic card should block reapplication");
   }
+  const explicitRoundIndexHeroicSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [{ roundIndex: 1, ...lockedRoundResult(), stationResults: { navigator: "failure" } }],
+    travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true }
+  });
+  const explicitRoundIndexBefore = snapshot(explicitRoundIndexHeroicSession);
+  const explicitRoundIndexHeroicPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(explicitRoundIndexHeroicSession.travelV2ActiveCards, explicitRoundIndexHeroicSession), explicitRoundIndexHeroicSession).records[0].previewId;
+  const explicitRoundIndexHeroicApply = applyTravelV2ActiveCardApplicationPreviewToSession(explicitRoundIndexHeroicSession, explicitRoundIndexHeroicPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:07.500Z" });
+  assertSmoke(explicitRoundIndexHeroicApply.ok, "heroic event should apply when preview uses an explicit roundIndex record stored at a different array position");
+  assertEqual(explicitRoundIndexHeroicApply.session.roundResults.length, 1, "heroic explicit roundIndex apply should not create a duplicate array-position record");
+  assertEqual(explicitRoundIndexHeroicApply.session.roundResults[0].roundIndex, 1, "heroic explicit roundIndex apply should preserve target roundIndex on updated record");
+  assertEqual(explicitRoundIndexHeroicApply.session.roundResults[0].stationResults.navigator, "success", "heroic explicit roundIndex apply should update the explicit record read by preview lookup");
+  assertEqual(getTravelV2StationResultForRound(explicitRoundIndexHeroicApply.session, "navigator", 1), "success", "station result lookup should read upgraded explicit roundIndex result after apply");
+  assertEqual(snapshot(explicitRoundIndexHeroicSession), explicitRoundIndexBefore, "heroic explicit roundIndex apply should not mutate source session");
+  const explicitRoundIndexConsumedAgain = applyTravelV2ActiveCardApplicationPreviewToSession(explicitRoundIndexHeroicApply.session, explicitRoundIndexHeroicPreviewId, { confirmedByGM: true });
+  assertSmoke(!explicitRoundIndexConsumedAgain.ok && explicitRoundIndexConsumedAgain.blocked, "consumed explicit roundIndex heroic card should block replay");
+
+  const indexPositionHeroicSession = createRunnerSessionFixture({
+    currentRoundIndex: 1,
+    roundResults: [lockedRoundResult(), { ...lockedRoundResult(), stationResults: { navigator: "failure" } }],
+    travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true }
+  });
+  const indexPositionHeroicBefore = snapshot(indexPositionHeroicSession);
+  const indexPositionHeroicPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(indexPositionHeroicSession.travelV2ActiveCards, indexPositionHeroicSession), indexPositionHeroicSession).records[0].previewId;
+  const indexPositionHeroicApply = applyTravelV2ActiveCardApplicationPreviewToSession(indexPositionHeroicSession, indexPositionHeroicPreviewId, { confirmedByGM: true, now: "2026-06-19T00:00:07.750Z" });
+  assertSmoke(indexPositionHeroicApply.ok, "heroic event should apply using array-position fallback when no explicit roundIndex record exists");
+  assertEqual(indexPositionHeroicApply.session.roundResults[1].roundIndex, 1, "heroic array-position fallback should set target roundIndex on updated record");
+  assertEqual(indexPositionHeroicApply.session.roundResults[1].stationResults.navigator, "success", "heroic array-position fallback should update roundResults[1]");
+  assertEqual(getTravelV2StationResultForRound(indexPositionHeroicApply.session, "navigator", 1), "success", "station result lookup should read upgraded array-position fallback result after apply");
+  assertEqual(snapshot(indexPositionHeroicSession), indexPositionHeroicBefore, "heroic array-position fallback should not mutate source session");
+
   const heroicSuccessApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "success" } }], travelV2ActiveCards: { records: [pendingActiveCard({ cardKey: "heroicEvent", rewardKey: "heroicEvent", cardLabel: "Heroic Event", targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
   const heroicSuccessPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(heroicSuccessApplySession.travelV2ActiveCards, heroicSuccessApplySession), heroicSuccessApplySession).records[0].previewId;
   const heroicSuccessApply = applyTravelV2ActiveCardApplicationPreviewToSession(heroicSuccessApplySession, heroicSuccessPreviewId, { confirmedByGM: true });

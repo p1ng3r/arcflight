@@ -18,7 +18,7 @@ export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending", "consume
 export const TRAVEL_V2_APPLIED_ACTIVE_CARDS_VERSION = 1;
 export const TRAVEL_V2_PENDING_STATION_RESULT_FLOORS_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_TIMING_TYPES = Object.freeze(["beforeRoll", "afterFailure"]);
-export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_STATUSES = Object.freeze(["needsTarget", "waitingForLock", "playable", "missedWindow", "waitingForTrigger", "triggerReady", "noTrigger"]);
+export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_STATUSES = Object.freeze(["needsTarget", "waitingForLock", "playable", "missedWindow", "waitingForTrigger", "triggerReady", "noTrigger", "consumed"]);
 export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_TYPES = Object.freeze({
   circumstanceBonusPreview: "circumstanceBonusPreview",
   degreeUpgradePreview: "degreeUpgradePreview",
@@ -316,12 +316,17 @@ function currentRoundContext(session = {}) {
   return { roundIndex, roundNumber, round };
 }
 
-function roundResultForIndex(session = {}, roundIndex = 0) {
-  const records = recordsFromContainer(session?.roundResults);
+function roundResultEntryForIndex(session = {}, roundIndex = 0) {
+  const records = Array.isArray(session?.roundResults) ? session.roundResults : recordsFromContainer(session?.roundResults);
   const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
-  return records.find((record) => Number.isInteger(Number(record?.roundIndex)) && Number(record.roundIndex) === index)
-    ?? records[index]
-    ?? {};
+  const explicitIndex = records.findIndex((record) => Number.isInteger(Number(record?.roundIndex)) && Number(record.roundIndex) === index);
+  if (explicitIndex >= 0) return { record: records[explicitIndex], arrayIndex: explicitIndex, roundIndex: index };
+  if (records[index]) return { record: records[index], arrayIndex: index, roundIndex: index };
+  return { record: {}, arrayIndex: index, roundIndex: index };
+}
+
+function roundResultForIndex(session = {}, roundIndex = 0) {
+  return roundResultEntryForIndex(session, roundIndex).record ?? {};
 }
 
 export function resolveTravelV2ActiveCardPreviewRound(session = {}, card = {}) {
@@ -680,15 +685,17 @@ function applyHeroicStationResultChange(session = {}, preview = {}) {
   if (!after) return { blockedReason: "Target station result is not failure or critical failure." };
   const roundIndex = Number.isInteger(Number(preview.previewRoundIndex)) ? Number(preview.previewRoundIndex) : 0;
   const roundResults = Array.isArray(session.roundResults) ? cloneData(session.roundResults) : [];
-  while (roundResults.length <= roundIndex) roundResults.push({});
-  const roundResult = isPlainObject(roundResults[roundIndex]) ? roundResults[roundIndex] : {};
+  const { record, arrayIndex } = roundResultEntryForIndex({ roundResults }, roundIndex);
+  while (roundResults.length <= arrayIndex) roundResults.push({});
+  const roundResult = isPlainObject(record) ? cloneData(record) : {};
+  roundResult.roundIndex = roundIndex;
   roundResult.stationResults = isPlainObject(roundResult.stationResults) ? roundResult.stationResults : {};
   roundResult.stationResults[preview.targetStationKey] = after;
   if (isPlainObject(roundResult.stationSummary?.[preview.targetStationKey])) {
     roundResult.stationSummary[preview.targetStationKey].degree = after;
     roundResult.stationSummary[preview.targetStationKey].outcomeKey = after;
   }
-  roundResults[roundIndex] = roundResult;
+  roundResults[arrayIndex] = roundResult;
   return { session: { ...session, roundResults }, stationResultChange: { targetStationKey: preview.targetStationKey, targetStationLabel: preview.targetStationLabel, roundIndex, roundNumber: preview.previewRoundNumber, before, after, playerSafe: true, readOnly: true } };
 }
 
