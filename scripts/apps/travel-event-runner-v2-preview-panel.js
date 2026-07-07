@@ -6,7 +6,7 @@ import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/tr
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 12;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 13;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -141,26 +141,43 @@ function normalizeStationActionSupportEffects(supportEffects = null) {
   };
 }
 
-function normalizePendingStationActionBonuses(pendingBonuses = null) {
-  const recordsSource = Array.isArray(pendingBonuses) ? pendingBonuses : pendingBonuses?.records;
-  const records = Array.isArray(recordsSource) ? recordsSource.map((record) => ({
-    sourceStationKey: record?.sourceStationKey ?? "",
-    sourceStationLabel: record?.sourceStationLabel || humanizeIdentifier(record?.sourceStationKey || "source station"),
-    targetStationKey: record?.targetStationKey ?? "",
-    targetStationLabel: record?.targetStationLabel || humanizeIdentifier(record?.targetStationKey || "target station"),
+function normalizeSupportBonusRecord(record = {}, fallback = {}, forcedStatus = "") {
+  const sourceStationKey = record?.sourceStationKey ?? "";
+  const targetStationKey = record?.targetStationKey ?? fallback.targetStationKey ?? "";
+  const sourceStationLabel = record?.sourceStationLabel || humanizeIdentifier(sourceStationKey || "source station");
+  const targetStationLabel = record?.targetStationLabel || humanizeIdentifier(targetStationKey || "target station");
+  const bonusValue = Number.isFinite(Number(record?.bonusValue)) ? Number(record.bonusValue) : 1;
+  const status = forcedStatus || (record?.consumed === true ? "consumed" : "pending");
+  const statusLabel = status === "applied" ? "Applied" : (status === "consumed" ? "Consumed" : "Pending");
+  const bonusType = record?.bonusType ?? "circumstance";
+  return {
+    sourceStationKey,
+    sourceStationLabel,
+    targetStationKey,
+    targetStationLabel,
     bonusKey: record?.bonusKey ?? "support",
-    bonusType: record?.bonusType ?? "circumstance",
-    bonusValue: Number.isFinite(Number(record?.bonusValue)) ? Number(record.bonusValue) : 1,
-    bonusLabel: record?.bonusLabel || `Support from ${record?.sourceStationLabel || "source station"}: +1 circumstance bonus for ${record?.targetStationLabel || "target station"}.`,
-    roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : null,
-    roundNumber: record?.roundNumber ?? pendingBonuses?.roundNumber ?? null,
+    bonusType,
+    bonusValue,
+    bonusLabel: record?.bonusLabel || `${sourceStationLabel} supports ${targetStationLabel}: +${bonusValue} ${bonusType} bonus.`,
+    readableLabel: record?.readableLabel || `${sourceStationLabel} supports ${targetStationLabel}: +${bonusValue} ${bonusType} bonus`,
+    status,
+    statusLabel,
+    stateLabel: statusLabel,
+    pending: status === "pending",
+    applied: status === "applied",
+    consumed: status === "consumed",
+    roundIndex: Number.isInteger(Number(record?.roundIndex)) ? Number(record.roundIndex) : (Number.isInteger(Number(fallback.roundIndex)) ? Number(fallback.roundIndex) : null),
+    roundNumber: record?.roundNumber ?? fallback.roundNumber ?? null,
     appliesToRoundIndex: Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : (Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : null),
     nextRoundIndex: Number.isInteger(Number(record?.nextRoundIndex)) ? Number(record.nextRoundIndex) : (Number.isInteger(Number(record?.appliesToRoundIndex)) ? Number(record.appliesToRoundIndex) : null),
-    consumed: record?.consumed === true,
-    stateLabel: record?.consumed === true ? "Consumed" : "Pending",
     playerSafe: true,
     readOnly: true
-  })) : [];
+  };
+}
+
+function normalizePendingStationActionBonuses(pendingBonuses = null) {
+  const recordsSource = Array.isArray(pendingBonuses) ? pendingBonuses : pendingBonuses?.records;
+  const records = Array.isArray(recordsSource) ? recordsSource.map((record) => normalizeSupportBonusRecord(record, pendingBonuses, record?.consumed === true ? "consumed" : "pending")) : [];
   return {
     available: records.length > 0,
     title: "Pending Support Bonuses",
@@ -169,6 +186,30 @@ function normalizePendingStationActionBonuses(pendingBonuses = null) {
       : "No pending Support bonuses have been captured yet.",
     roundIndex: Number.isInteger(Number(pendingBonuses?.roundIndex)) ? Number(pendingBonuses.roundIndex) : null,
     roundNumber: pendingBonuses?.roundNumber ?? records[0]?.roundNumber ?? null,
+    records,
+    hasRecords: records.length > 0,
+    recordCount: records.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeAppliedStationActionBonuses(roundResults = []) {
+  const records = [];
+  if (!Array.isArray(roundResults)) return { available: false, title: "Applied Support Bonuses", subtitle: "No Support bonuses have been applied to station checks yet.", records, hasRecords: false, recordCount: 0, playerSafe: true, readOnly: true };
+  roundResults.forEach((roundResult, roundIndex) => {
+    const appliedByStation = isPlainObject(roundResult?.stationCheckAppliedBonuses) ? roundResult.stationCheckAppliedBonuses : {};
+    for (const [stationKey, stationBonuses] of Object.entries(appliedByStation)) {
+      const bonuses = Array.isArray(stationBonuses) ? stationBonuses : [];
+      bonuses.filter((bonus) => bonus?.bonusKey === "support").forEach((bonus) => {
+        records.push(normalizeSupportBonusRecord(bonus, { targetStationKey: stationKey, roundIndex, roundNumber: roundResult?.roundNumber ?? roundIndex + 1 }, "applied"));
+      });
+    }
+  });
+  return {
+    available: records.length > 0,
+    title: "Applied Support Bonuses",
+    subtitle: records.length > 0 ? "Read-only Support bonuses applied to station checks." : "No Support bonuses have been applied to station checks yet.",
     records,
     hasRecords: records.length > 0,
     recordCount: records.length,
@@ -570,6 +611,8 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionResolutionSummary = normalizeStationActionResolutionSummary(latestFinalizationResult?.stationActionSummary ?? latestResolutionRecord?.stationActionSummary);
   const stationActionSupportEffects = normalizeStationActionSupportEffects(latestFinalizationResult?.stationActionSupportEffects ?? latestResolutionRecord?.stationActionSupportEffects);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
+  const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
+  const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const latestEventCompletionResult = isPlainObject(appState.travelV2EventCompletionResult) ? appState.travelV2EventCompletionResult : null;
   const travelV2EventCompletionReadiness = normalizeEventCompletionReadiness(
     isPlainObject(runnerSession) ? prepareTravelV2EventCompletionReadiness(runnerSession) : null,
@@ -605,8 +648,11 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionResolutionSummary: stationActionResolutionSummary,
     stationActionSupportEffects,
     travelV2StationActionSupportEffects: stationActionSupportEffects,
+    supportBonusStatusAvailable,
     pendingStationActionBonuses,
     travelV2PendingStationActionBonuses: pendingStationActionBonuses,
+    appliedStationActionBonuses,
+    travelV2AppliedStationActionBonuses: appliedStationActionBonuses,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,
