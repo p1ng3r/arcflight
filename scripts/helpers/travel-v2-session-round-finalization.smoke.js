@@ -21,6 +21,7 @@ import {
   consumeTravelV2PendingStationActionBonusesForStationRoll,
   applyTravelV2PendingStationResultFloorToOutcome,
   prepareTravelV2StationResultFloorState,
+  prepareTravelV2EventApproachTallyApplicationPreview,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -618,6 +619,38 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(fallbackRoundResolution.session.roundResults.length, 2, "array-position fallback station roll resolution should preserve round result length");
   assertEqual(fallbackRoundResolution.session.roundResults[1].stationResults.navigator, "success", "array-position fallback station roll resolution should update requested array position when no explicit roundIndex record exists");
 
+  const eventApproachApplyPreviewSource = {
+    currentRoundIndex: 1,
+    travelV2RoundResolutions: { records: [
+      { roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: -1, contributionCount: 1, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "old secret" } },
+      { roundIndex: 1, roundNumber: 2, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 3, contributionCount: 2, positiveContributionCount: 2, hasContributions: true, contributingStationLabels: ["Navigator", "Engineer"], roundIndex: 1, roundNumber: 2, gmText: "hidden", applyPayload: { secret: true } } }
+    ] }
+  };
+  const eventApproachApplyPreviewSnapshot = snapshot(eventApproachApplyPreviewSource);
+  const eventApproachApplyPreview = prepareTravelV2EventApproachTallyApplicationPreview(eventApproachApplyPreviewSource, { roundIndex: 1 });
+  assertEqual(eventApproachApplyPreview.playerState.status, "readyForFutureGmApply", "finalized Event Approach tally should produce future GM apply readiness");
+  assertEqual(eventApproachApplyPreview.playerState.sourceTally.totalContributionValue, 3, "preview should preserve readable source tally total");
+  assertEqual(eventApproachApplyPreview.playerState.records[0].effectPreview.delta, 3, "preview record should show inert progress delta");
+  assertSmoke(!eventApproachApplyPreview.playerState.canApply, "Event Approach tally preview should not expose apply behavior");
+  assertSmoke(!eventApproachApplyPreview.playerState.applied, "Event Approach tally preview should not mark effects applied");
+  assertSmoke(eventApproachApplyPreview.gmState.gmReview.resolutionRecordFound, "GM state should include review context");
+  assertSmoke(!JSON.stringify(eventApproachApplyPreview.playerState).includes("gmText"), "player Event Approach preview should redact gmText");
+  assertSmoke(!JSON.stringify(eventApproachApplyPreview.playerState).includes("applyPayload"), "player Event Approach preview should redact apply payloads");
+  eventApproachApplyPreview.playerState.sourceTally.totalContributionValue = 99;
+  const eventApproachApplyPreviewCloneCheck = prepareTravelV2EventApproachTallyApplicationPreview(eventApproachApplyPreviewSource, { roundIndex: 1 });
+  assertEqual(eventApproachApplyPreviewCloneCheck.playerState.sourceTally.totalContributionValue, 3, "Event Approach preview output should be clone-safe");
+  assertEqual(snapshot(eventApproachApplyPreviewSource), eventApproachApplyPreviewSnapshot, "Event Approach preview should not mutate source session");
+
+  const eventApproachBlockedPreview = prepareTravelV2EventApproachTallyApplicationPreview({ currentRoundIndex: 0, travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "pending", eventApproachContributionTally: { totalContributionValue: 1, contributionCount: 1, hasContributions: true, roundIndex: 0, roundNumber: 1 } }] } }, { roundIndex: 0 });
+  assertEqual(eventApproachBlockedPreview.playerState.status, "blocked", "unfinalized Event Approach tally should be blocked");
+  assertSmoke(eventApproachBlockedPreview.playerState.blockedReason.includes("not finalized"), "blocked preview should explain unfinalized tally");
+  const eventApproachEmptyPreview = prepareTravelV2EventApproachTallyApplicationPreview({}, {});
+  assertEqual(eventApproachEmptyPreview.playerState.status, "blocked", "empty Event Approach preview should be blocked safely");
+  const eventApproachPartialPreview = prepareTravelV2EventApproachTallyApplicationPreview({ currentRoundIndex: 5, eventApproachContributionTally: { totalContributionValue: "bad", gmOnly: true } }, {});
+  assertEqual(eventApproachPartialPreview.playerState.sourceTally.totalContributionValue, 0, "partial old Event Approach preview should normalize malformed tally values");
+  assertSmoke(!JSON.stringify(eventApproachPartialPreview.playerState).includes("gmOnly"), "partial old Event Approach player preview should redact unsafe fields");
+
+
   return {
     ok: true,
     checked: [
@@ -642,7 +675,8 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
       "final-event-round-ready-metadata",
       "no-side-effects-called",
       "station-roll-bonus-resolution-and-consumption",
-      "station-result-floor-application-and-consumption"
+      "station-result-floor-application-and-consumption",
+      "event-approach-tally-application-preview"
     ]
   };
 }

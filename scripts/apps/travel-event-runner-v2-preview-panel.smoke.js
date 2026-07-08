@@ -48,7 +48,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 16, "panel version should be 16");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 17, "panel version should be 17");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -71,6 +71,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(panel.travelV2RoundFinalizationState.finalizeDisabled, "panel should disable finalization before pressure application");
   assertSmoke(panel.travelV2RoundFinalizationState.footerText.includes("no effective pressure application"), "panel should explain blocked finalization");
   assertSmoke(panel.travelV2EventCompletionReadiness, "panel should expose event completion readiness summary");
+  assertSmoke(panel.travelV2EventApproachTallyApplicationPreview, "panel should expose Event Approach tally application preview state");
+  assertEqual(panel.travelV2EventApproachTallyApplicationPreview.status, "blocked", "unfinalized panel Event Approach apply preview should be blocked");
   assertEqual(panel.travelV2EventCompletionReadiness.eventRoundCount, 1, "readiness should count event rounds");
   assertSmoke(!panel.travelV2EventCompletionReadiness.eventReady, "unfinalized panel should not be event-ready");
   assertSmoke(panel.rows.every((row) => row.canApplyPressure && !row.pressureApplyDisabled), "preview rows should render enabled apply controls before application");
@@ -154,6 +156,35 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertEqual(stationBenefitPanel.stationBenefitDisplay.rows[1].requestAvailabilityLabel, "Not ready", "disabled rows should be represented safely");
   assertSmoke(JSON.stringify(stationBenefitPanel.stationBenefitDisplay).includes("gmText") === false, "station benefit panel state should remain player-safe");
 
+
+  const finalizedEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      currentRoundIndex: 0,
+      travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 2, contributionCount: 2, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM hidden", applyPayload: { secret: true } } }] }
+    }
+  });
+  assertEqual(finalizedEventApproachPanel.eventApproachTallyApplicationPreview.status, "readyForFutureGmApply", "finalized panel Event Approach apply preview should be ready for future GM apply");
+  assertEqual(finalizedEventApproachPanel.eventApproachTallyApplicationPreview.records[0].effectPreview.delta, 2, "panel Event Approach apply preview should expose inert delta");
+  assertSmoke(!finalizedEventApproachPanel.eventApproachTallyApplicationPreview.canApply, "panel Event Approach apply preview should not expose apply behavior");
+  assertSmoke(!JSON.stringify(finalizedEventApproachPanel.eventApproachTallyApplicationPreview).includes("gmText"), "panel Event Approach apply preview should redact GM text");
+  assertSmoke(!JSON.stringify(finalizedEventApproachPanel.eventApproachTallyApplicationPreview).includes("applyPayload"), "panel Event Approach apply preview should redact apply payloads");
+
+  const advancedRoundEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      currentRoundIndex: 1,
+      travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 4, contributionCount: 3, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM previous round", applyPayload: { secret: true } } }] }
+    }
+  });
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.status, "readyForFutureGmApply", "advanced current round panel should use latest finalized resolution record before current round fallback");
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.roundIndex, 0, "advanced current round panel should preserve finalized round index");
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.sourceTally.totalContributionValue, 4, "advanced current round panel should use the finalized previous-round tally");
+  assertSmoke(!advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.canApply, "advanced current round panel should not expose apply behavior");
+  assertSmoke(!JSON.stringify(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview).includes("gmText"), "advanced current round preview should redact GM text");
+  assertSmoke(!JSON.stringify(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview).includes("applyPayload"), "advanced current round preview should redact apply payloads");
 
   const orderedPanel = prepareTravelEventRunnerV2PreviewPanelState({
     ...appState,

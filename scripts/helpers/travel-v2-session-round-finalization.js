@@ -12,6 +12,7 @@ export const TRAVEL_V2_DIFFICULTY_BID_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_PREVIEW_VERSION = 1;
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
 export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending", "consumed", "applied"]);
@@ -1322,6 +1323,145 @@ export function prepareTravelV2StationActionEventApproachTallyStatus(eventApproa
     playerSafe: true,
     readOnly: true
   };
+}
+
+
+const EVENT_APPROACH_PLAYER_SAFE_FORBIDDEN_KEYS = Object.freeze([
+  "auditRecord", "commitRecords", "userId", "userName", "gmText", "gmSummary", "gmMechanicalNotes", "gmReview",
+  "explicitGmApplyEffect", "sessionLocalEffect", "internalMutation", "targetActorId", "targetActorUuid", "applyPayload",
+  "before", "after", "queueInternals", "mutationScope", "secret", "pendingConsequenceQueue", "gmOnly",
+  "unrevealedHazard", "catalogSuggestions"
+]);
+
+function stripEventApproachPlayerUnsafeKeys(value) {
+  if (Array.isArray(value)) return value.map((entry) => stripEventApproachPlayerUnsafeKeys(entry));
+  if (!isPlainObject(value)) return cloneData(value);
+  const output = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (EVENT_APPROACH_PLAYER_SAFE_FORBIDDEN_KEYS.includes(key)) continue;
+    output[key] = stripEventApproachPlayerUnsafeKeys(entry);
+  }
+  return output;
+}
+
+function findEventApproachTallyResolutionRecord(session = {}, options = {}) {
+  const records = recordsFromContainer(session?.travelV2RoundResolutions);
+  const explicitRoundIndex = Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : null;
+  const candidates = explicitRoundIndex === null
+    ? records
+    : records.filter((record) => Number(record?.roundIndex) === explicitRoundIndex);
+  return candidates.length > 0 ? candidates[candidates.length - 1] : null;
+}
+
+function normalizeEventApproachApplicationSourceTally(tally = null, fallback = {}) {
+  const source = isPlainObject(tally) ? tally : {};
+  const totalContributionValue = Number.isFinite(Number(source.totalContributionValue)) ? Number(source.totalContributionValue) : 0;
+  const contributionCount = Number.isInteger(Number(source.contributionCount)) ? Number(source.contributionCount) : 0;
+  return {
+    version: source.version ?? TRAVEL_V2_EVENT_APPROACH_CONTRIBUTION_TALLY_VERSION,
+    tallyKey: source.tallyKey ?? "eventApproach",
+    tallyType: source.tallyType ?? "eventApproach",
+    tallyLabel: optionalString(source.tallyLabel) ?? `Event Approach contribution tally: ${totalContributionValue > 0 ? "+" : ""}${totalContributionValue} from ${contributionCount} contribution${contributionCount === 1 ? "" : "s"}.`,
+    totalContributionValue,
+    contributionCount,
+    positiveContributionCount: Number.isInteger(Number(source.positiveContributionCount)) ? Number(source.positiveContributionCount) : 0,
+    zeroContributionCount: Number.isInteger(Number(source.zeroContributionCount)) ? Number(source.zeroContributionCount) : 0,
+    negativeContributionCount: Number.isInteger(Number(source.negativeContributionCount)) ? Number(source.negativeContributionCount) : 0,
+    contributingStationLabels: Array.isArray(source.contributingStationLabels) ? source.contributingStationLabels.filter((label) => typeof label === "string" && label.trim()).map((label) => label.trim()) : [],
+    roundIndex: Number.isInteger(Number(source.roundIndex)) ? Number(source.roundIndex) : (Number.isInteger(Number(fallback.roundIndex)) ? Number(fallback.roundIndex) : null),
+    roundNumber: source.roundNumber ?? fallback.roundNumber ?? null,
+    hasContributions: source.hasContributions === true || contributionCount > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function eventApproachApplicationPreviewRecordFromTally(sourceTally = {}, finalized = false, blockedReason = "") {
+  const total = Number.isFinite(Number(sourceTally.totalContributionValue)) ? Number(sourceTally.totalContributionValue) : 0;
+  const valueLabel = `${total > 0 ? "+" : ""}${total}`;
+  const ready = finalized && sourceTally.hasContributions === true;
+  return {
+    id: ["travel-v2-event-approach-apply-preview", Number.isInteger(Number(sourceTally.roundIndex)) ? Number(sourceTally.roundIndex) : "unknown-round"].join(":"),
+    previewId: ["travel-v2-event-approach-apply-preview", Number.isInteger(Number(sourceTally.roundIndex)) ? Number(sourceTally.roundIndex) : "unknown-round"].join(":"),
+    previewType: "eventApproachTallyApplication",
+    status: ready ? "readyForFutureGmApply" : "blocked",
+    statusLabel: ready ? "Ready for Future GM Apply" : "Blocked / Not Ready",
+    blockedReason: ready ? "" : (blockedReason || "Event Approach tally is not finalized."),
+    roundIndex: sourceTally.roundIndex,
+    roundNumber: sourceTally.roundNumber,
+    title: "Event Approach Tally Apply Preview",
+    summary: ready
+      ? `If the GM applies this in a future slice, the finalized Event Approach tally would adjust event progress by ${valueLabel}.`
+      : "No Event Approach tally application can be previewed until the round tally is finalized.",
+    effectPreview: {
+      effectKey: "eventApproachProgressDeltaPreview",
+      effectLabel: "Event progress delta preview",
+      delta: total,
+      valueLabel,
+      appliesOnFutureGmConfirmation: true,
+      applied: false,
+      readOnly: true,
+      playerSafe: true
+    },
+    applicationAvailable: false,
+    canApply: false,
+    applied: false,
+    reviewOnly: true,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2EventApproachTallyApplicationPreview(session = {}, options = {}) {
+  const sourceSession = isPlainObject(session) ? session : {};
+  const resolutionRecord = findEventApproachTallyResolutionRecord(sourceSession, options);
+  const explicitRoundIndex = Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : null;
+  const fallbackRoundIndex = explicitRoundIndex ?? (Number.isInteger(Number(sourceSession?.currentRoundIndex)) ? Number(sourceSession.currentRoundIndex) : null);
+  const fallbackRoundNumber = resolutionRecord?.roundNumber ?? (fallbackRoundIndex === null ? null : fallbackRoundIndex + 1);
+  const rawTally = resolutionRecord?.stationActionEventApproachContributionTally
+    ?? resolutionRecord?.eventApproachContributionTally
+    ?? sourceSession?.stationActionEventApproachContributionTally
+    ?? sourceSession?.eventApproachContributionTally
+    ?? null;
+  const sourceTally = normalizeEventApproachApplicationSourceTally(rawTally, { roundIndex: fallbackRoundIndex, roundNumber: fallbackRoundNumber });
+  const finalized = resolutionRecord?.lifecycleState === "finalized" || resolutionRecord?.status === "finalized" || resolutionRecord?.finalized === true;
+  const blockedReason = !resolutionRecord
+    ? "No finalized round resolution record was found for the requested round."
+    : (!sourceTally.hasContributions ? "No finalized Event Approach contributions were found for this round." : "Event Approach tally is not finalized.");
+  const record = eventApproachApplicationPreviewRecordFromTally(sourceTally, finalized, blockedReason);
+  const records = [record];
+  const playerState = stripEventApproachPlayerUnsafeKeys({
+    version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_PREVIEW_VERSION,
+    previewType: "eventApproachTallyApplication",
+    status: record.status,
+    statusLabel: record.statusLabel,
+    readyForFutureGmApply: record.status === "readyForFutureGmApply",
+    blocked: record.status !== "readyForFutureGmApply",
+    blockedReason: record.blockedReason,
+    roundIndex: sourceTally.roundIndex,
+    roundNumber: sourceTally.roundNumber,
+    sourceTally,
+    records,
+    hasRecords: records.length > 0,
+    applicationAvailable: false,
+    canApply: false,
+    applied: false,
+    reviewOnly: true,
+    playerSafe: true,
+    readOnly: true
+  });
+  const gmState = {
+    ...cloneData(playerState),
+    playerSafe: false,
+    gmReview: {
+      resolutionRecordFound: Boolean(resolutionRecord),
+      requestedRoundIndex: explicitRoundIndex,
+      sourceTally: cloneData(sourceTally),
+      notes: "Review-only. This slice does not implement GM apply flow or mutate session/world data."
+    },
+    readOnly: true
+  };
+  return { version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_PREVIEW_VERSION, playerState: cloneData(playerState), gmState: cloneData(gmState), playerSafe: true, readOnly: true };
 }
 
 export function prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects = {}) {
