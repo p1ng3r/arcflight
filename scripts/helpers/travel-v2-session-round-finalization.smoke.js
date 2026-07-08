@@ -709,7 +709,7 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   };
   const eventApproachApplyPreviewSnapshot = snapshot(eventApproachApplyPreviewSource);
   const eventApproachApplyPreview = prepareTravelV2EventApproachTallyApplicationPreview(eventApproachApplyPreviewSource, { roundIndex: 1 });
-  assertEqual(eventApproachApplyPreview.playerState.status, "readyForFutureGmApply", "finalized Event Approach tally should produce future GM apply readiness");
+  assertEqual(eventApproachApplyPreview.playerState.status, "ready", "finalized Event Approach tally should produce GM review readiness");
   assertEqual(eventApproachApplyPreview.playerState.sourceTally.totalContributionValue, 3, "preview should preserve readable source tally total");
   assertEqual(eventApproachApplyPreview.playerState.records[0].effectPreview.delta, 3, "preview record should show inert progress delta");
   assertSmoke(!eventApproachApplyPreview.playerState.canApply, "Event Approach tally preview should not expose apply behavior");
