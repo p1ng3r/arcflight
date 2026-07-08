@@ -14,6 +14,8 @@ export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION = 1;
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES = Object.freeze(["eventApproachTallyApplication"]);
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_STATUSES = Object.freeze(["readyForGmApply", "applied", "blocked"]);
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
 export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending", "consumed", "applied"]);
@@ -1480,7 +1482,7 @@ function normalizeEventApproachApplicationStatus(record = {}) {
   return "readyForGmApply";
 }
 
-function normalizeEventApproachTallyApplicationRecord(record = {}, fallback = {}) {
+export function prepareTravelV2EventApproachTallyApplicationRecord(record = {}, fallback = {}) {
   const source = isPlainObject(record) ? record : {};
   const sourceTally = normalizeEventApproachApplicationSourceTally(source.sourceTally ?? source.sourceTallySummary ?? source.tally ?? source, fallback);
   const id = eventApproachApplicationRecordId({ ...source, sourceTally });
@@ -1488,12 +1490,14 @@ function normalizeEventApproachTallyApplicationRecord(record = {}, fallback = {}
   const valueLabel = `${total > 0 ? "+" : ""}${total}`;
   const status = normalizeEventApproachApplicationStatus(source);
   const applied = status === "applied";
+  const recordType = TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES.includes(source.recordType) ? source.recordType : "eventApproachTallyApplication";
   return stripEventApproachPlayerUnsafeKeys({
     version: source.version ?? TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
     id,
     recordId: id,
     previewId: optionalString(source.previewId) ?? id,
-    applicationType: "eventApproachTallyApplication",
+    recordType,
+    applicationType: recordType,
     status,
     statusLabel: applied ? "Applied" : (status === "blocked" ? "Blocked" : "Ready for GM Apply"),
     applied,
@@ -1502,6 +1506,7 @@ function normalizeEventApproachTallyApplicationRecord(record = {}, fallback = {}
     appliedByFlow: optionalString(source.appliedByFlow) ?? "",
     sourceRoundIndex: Number.isInteger(Number(source.sourceRoundIndex)) ? Number(source.sourceRoundIndex) : sourceTally.roundIndex,
     sourceRoundNumber: source.sourceRoundNumber ?? sourceTally.roundNumber ?? null,
+    sourceTallyKey: optionalString(source.sourceTallyKey) ?? sourceTally.tallyKey ?? "eventApproach",
     sourceTallySummary: source.sourceTallySummary ?? sourceTally.tallyLabel,
     sourceTally,
     progressDeltaPreview: {
@@ -1527,7 +1532,7 @@ export function normalizeTravelV2EventApproachTallyApplicationRecords(container 
   const seen = new Set();
   for (const record of sourceRecords) {
     if (!isPlainObject(record)) continue;
-    const normalized = normalizeEventApproachTallyApplicationRecord(record);
+    const normalized = prepareTravelV2EventApproachTallyApplicationRecord(record);
     if (seen.has(normalized.id)) continue;
     seen.add(normalized.id);
     records.push(normalized);
@@ -1540,13 +1545,24 @@ function blockedEventApproachTallyApplyResult(session, blockedReason = "Event Ap
   return { ok: false, applied: false, blocked: true, blockedReason, session: clonedSession, playerSafe: true, readOnly: true };
 }
 
+export function appendTravelV2EventApproachTallyApplicationRecordToSession(session = {}, record = {}) {
+  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session?.travelV2EventApproachTallyApplicationRecords ?? []);
+  const normalized = prepareTravelV2EventApproachTallyApplicationRecord(record);
+  const records = existing.records.filter((entry) => entry.id !== normalized.id);
+  records.push(normalized);
+  return {
+    ...cloneData(isPlainObject(session) ? session : {}),
+    travelV2EventApproachTallyApplicationRecords: { version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true }
+  };
+}
+
 export function applyTravelV2EventApproachTallyApplicationRecordToSession(session = {}, recordId = "", options = {}) {
   if (!isPlainObject(session)) return blockedEventApproachTallyApplyResult(session, "Travel v2 session is required.");
   if (options?.confirmedByGM !== true) return blockedEventApproachTallyApplyResult(session, "GM confirmation is required.");
   const id = optionalString(options?.id ?? options?.recordId) ?? optionalString(recordId) ?? "";
   if (!id) return blockedEventApproachTallyApplyResult(session, "Event Approach tally application record id is required.");
 
-  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session.travelV2EventApproachTallyApplications ?? session.eventApproachTallyApplications ?? []);
+  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session.travelV2EventApproachTallyApplicationRecords ?? []);
   const target = existing.records.find((record) => record.id === id || record.recordId === id || record.previewId === id);
   if (!target) return blockedEventApproachTallyApplyResult(session, "Event Approach tally application record was not found.");
 
@@ -1554,7 +1570,7 @@ export function applyTravelV2EventApproachTallyApplicationRecordToSession(sessio
   const appliedAtRound = Number.isInteger(Number(options.appliedAtRound))
     ? Number(options.appliedAtRound)
     : (Number.isInteger(Number(session.currentRoundIndex)) ? Number(session.currentRoundIndex) : target.sourceRoundIndex);
-  const appliedRecord = normalizeEventApproachTallyApplicationRecord({
+  const appliedRecord = prepareTravelV2EventApproachTallyApplicationRecord({
     ...target,
     status: "applied",
     applied: true,
@@ -1567,8 +1583,7 @@ export function applyTravelV2EventApproachTallyApplicationRecordToSession(sessio
   const nextContainer = { version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
   const nextSession = {
     ...cloneData(session),
-    travelV2EventApproachTallyApplications: nextContainer,
-    eventApproachTallyApplications: cloneData(nextContainer)
+    travelV2EventApproachTallyApplicationRecords: nextContainer
   };
   return { ok: true, applied: true, blocked: false, blockedReason: "", session: cloneData(nextSession), appliedRecord: cloneData(appliedRecord), playerSafe: true, readOnly: true };
 }
