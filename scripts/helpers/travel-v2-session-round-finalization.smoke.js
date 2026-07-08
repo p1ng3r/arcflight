@@ -26,6 +26,8 @@ import {
   prepareTravelV2StationResultFloorState,
   prepareTravelV2EventApproachTallyApplicationPreview,
   applyTravelV2EventApproachTallyApplicationRecordToSession,
+  prepareTravelV2EventApproachTallyApplicationRecordControls,
+  applyTravelV2EventApproachTallyApplicationRecordControlToSession,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -368,6 +370,18 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
     token: { update() { throw new Error("token update should not be called by Event Approach tally apply"); } },
     combat: { update() { throw new Error("combat update should not be called by Event Approach tally apply"); } }
   });
+  const eventApproachPanelControls = prepareTravelV2EventApproachTallyApplicationRecordControls(eventApproachApplySession, { isGM: true });
+  assertSmoke(eventApproachPanelControls.canApplyAny === true, "ready Event Approach tally application record should expose GM apply control availability");
+  assertEqual(eventApproachPanelControls.records[0].recordId, eventApproachApplyRecord.id, "Event Approach tally application control should target canonical record id");
+  assertSmoke(eventApproachPanelControls.records[0].canApply === true && eventApproachPanelControls.records[0].requiresExplicitConfirmation === true, "ready record exposes explicit confirmation apply control metadata");
+  const blockedPanelApply = applyTravelV2EventApproachTallyApplicationRecordControlToSession(eventApproachApplySession, eventApproachApplyRecord.id, { now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!blockedPanelApply.ok && blockedPanelApply.blocked, "Event Approach panel control apply should block without explicit GM confirmation");
+  const playerSafePanelControls = prepareTravelV2EventApproachTallyApplicationRecordControls(eventApproachApplySession);
+  assertSmoke(playerSafePanelControls.records[0].canApply === false && playerSafePanelControls.records[0].readOnly === true, "player-safe Event Approach tally controls should remain read-only");
+  const playerSafePanelControlsJson = JSON.stringify(playerSafePanelControls);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!playerSafePanelControlsJson.includes(forbidden), `player-safe Event Approach tally controls should not include forbidden term ${forbidden}`);
+  }
   const eventApproachApplyBefore = snapshot(eventApproachApplySession);
   const eventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApplySession, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
   assertSmoke(eventApproachApply.ok && eventApproachApply.applied, "valid Event Approach tally application record should apply with GM confirmation");
@@ -383,6 +397,9 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(eventApproachApply.appliedRecord.sourceTallySummary.totalContributionValue, 2, "Event Approach tally source summary should survive after apply");
   assertEqual(eventApproachApply.appliedRecord.sourceTallySummary.contributingStationLabels[1], "Navigator", "Event Approach tally source station labels should remain readable after apply");
   assertEqual(eventApproachApply.appliedRecord.progressDeltaPreview, 2, "Event Approach tally progress delta preview should remain session-local and inert after apply");
+  const appliedPanelControls = prepareTravelV2EventApproachTallyApplicationRecordControls(eventApproachApply.session, { isGM: true });
+  assertSmoke(appliedPanelControls.records[0].applied === true && appliedPanelControls.records[0].canApply === false, "confirmed Event Approach panel apply marks record applied and disables re-apply control");
+  assertSmoke(appliedPanelControls.records[0].reviewOnly === true && appliedPanelControls.records[0].readOnly === true, "applied Event Approach panel control should become review-only and read-only");
   const repeatedEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApply.session, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
   assertSmoke(repeatedEventApproachApply.ok && repeatedEventApproachApply.applied, "repeated Event Approach tally apply should be stable/idempotent");
   assertEqual(repeatedEventApproachApply.session.travelV2EventApproachTallyApplicationRecords.records.length, 1, "repeated Event Approach tally apply should not duplicate records");

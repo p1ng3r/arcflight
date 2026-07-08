@@ -1621,6 +1621,64 @@ export function applyTravelV2EventApproachTallyApplicationRecordToSession(sessio
   return { ok: true, applied: true, blocked: false, blockedReason: "", session: cloneData(nextSession), appliedRecord: cloneData(appliedRecord), playerSafe: true, readOnly: true };
 }
 
+function eventApproachApplicationRecordControlFromRecord(record = {}, { includeGmReview = false } = {}) {
+  const applied = record.applied === true || record.status === "applied";
+  const ready = !applied && record.status !== "blocked";
+  const base = {
+    recordId: record.id,
+    recordType: record.recordType,
+    status: applied ? "applied" : (ready ? "ready" : "blocked"),
+    statusLabel: applied ? "Applied" : (ready ? "Ready for GM Apply" : "Blocked"),
+    lifecycleStatus: applied ? "applied" : (ready ? "readyForGmConfirmation" : "blocked"),
+    sourceRoundIndex: record.sourceRoundIndex,
+    sourceRoundNumber: record.sourceRoundNumber,
+    progressDeltaPreview: record.progressDeltaPreview,
+    summary: `Event Approach tally ${record.progressDeltaPreview > 0 ? "+" : ""}${record.progressDeltaPreview} from round ${record.sourceRoundNumber ?? record.sourceRoundIndex ?? "unknown"}.`,
+    canApply: includeGmReview && ready,
+    requiresExplicitConfirmation: ready,
+    confirmationPrompt: ready ? "Apply this Event Approach tally application record to the session-local record state?" : "",
+    actionKey: includeGmReview && ready ? "applyEventApproachTallyApplicationRecord" : "reviewEventApproachTallyApplicationRecord",
+    applied,
+    reviewOnly: applied || !ready,
+    readOnly: applied || !includeGmReview,
+    sessionLocalOnly: true,
+    playerSafe: !includeGmReview
+  };
+  return includeGmReview ? base : stripEventApproachPlayerUnsafeKeys({ ...base, canApply: false, actionKey: "reviewEventApproachTallyApplicationRecord", readOnly: true, playerSafe: true });
+}
+
+export function prepareTravelV2EventApproachTallyApplicationRecordControls(session = {}, options = {}) {
+  const includeGmReview = options.includeGmReview === true || options.isGM === true;
+  const normalized = normalizeTravelV2EventApproachTallyApplicationRecords(isPlainObject(session) ? session.travelV2EventApproachTallyApplicationRecords : {});
+  const controls = normalized.records.map((record) => eventApproachApplicationRecordControlFromRecord(record, { includeGmReview }));
+  const readyCount = controls.filter((control) => control.status === "ready").length;
+  const appliedCount = controls.filter((control) => control.status === "applied").length;
+  return stripEventApproachPlayerUnsafeKeys({
+    version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
+    panelKey: "eventApproachTallyApplicationRecords",
+    title: "Event Approach Tally Applications",
+    status: readyCount > 0 ? "ready" : (appliedCount > 0 ? "reviewOnly" : "empty"),
+    records: controls,
+    readyCount,
+    appliedCount,
+    hasRecords: controls.length > 0,
+    canApplyAny: includeGmReview && readyCount > 0,
+    requiresExplicitConfirmation: readyCount > 0,
+    sessionLocalOnly: true,
+    playerSafe: !includeGmReview,
+    readOnly: !includeGmReview
+  });
+}
+
+export function applyTravelV2EventApproachTallyApplicationRecordControlToSession(session = {}, recordId = "", options = {}) {
+  if (options?.confirmedByGM !== true) return blockedEventApproachTallyApplyResult(session, "Explicit GM confirmation is required before applying an Event Approach tally application record.");
+  return applyTravelV2EventApproachTallyApplicationRecordToSession(session, recordId, {
+    ...options,
+    confirmedByGM: true,
+    appliedByFlow: optionalString(options.appliedByFlow) ?? "gm-event-approach-tally-panel-control"
+  });
+}
+
 export function prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects = {}) {
   const effects = Array.isArray(stationActionSupportEffects?.effects) ? stationActionSupportEffects.effects : [];
   const bonuses = [];
