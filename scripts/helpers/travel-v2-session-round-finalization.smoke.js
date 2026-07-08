@@ -25,15 +25,13 @@ import {
   applyTravelV2PendingStationResultFloorToOutcome,
   prepareTravelV2StationResultFloorState,
   prepareTravelV2EventApproachTallyApplicationPreview,
-  normalizeTravelV2EventApproachTallyApplicationRecords,
   applyTravelV2EventApproachTallyApplicationRecordToSession,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
   TRAVEL_V2_DIFFICULTY_BID_KEYS,
   TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
-  TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION
-} from "./travel-v2-session-round-finalization.js";
+  TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION} from "./travel-v2-session-round-finalization.js";
 
 function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 session round finalization smoke check failed: ${message}`);
@@ -342,19 +340,23 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   const missingEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "missing-record", { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
   assertSmoke(!missingEventApproachApply.ok && missingEventApproachApply.blocked, "missing Event Approach tally application record should block safely");
   assertSmoke(missingEventApproachApply.session !== null, "missing Event Approach apply should return a safe cloned session shape");
-  const eventApproachApplyRecord = {
-    id: "travel-v2-event-approach-apply:0",
-    recordType: "eventApproachTallyApplication",
-    status: "readyForGmApply",
-    sourceRoundIndex: 0,
-    sourceRoundNumber: 1,
-    sourceTallyKey: "eventApproach",
-    sourceTallySummary: "Event Approach contribution tally: +2 from 2 contributions.",
-    sourceTally: { tallyKey: "eventApproach", tallyType: "eventApproach", totalContributionValue: 2, contributionCount: 2, contributingStationLabels: ["Captain", "Navigator"], roundIndex: 0, roundNumber: 1, playerSafe: true, readOnly: true },
-    progressDeltaPreview: { delta: 2 },
+
+  const eventApproachApplySourceTally = {
+    tallyKey: "eventApproach",
+    tallyType: "eventApproach",
+    totalContributionValue: 2,
+    contributionCount: 2,
+    positiveContributionCount: 2,
+    contributingStationLabels: ["Captain", "Navigator"],
+    roundIndex: 0,
+    roundNumber: 1,
+    hasContributions: true,
     playerSafe: true,
     readOnly: true
   };
+  const eventApproachApplyRecord = prepareTravelV2EventApproachTallyApplicationRecord(eventApproachApplySourceTally, {
+    id: "travel-v2-event-approach-apply-record:0:eventApproach:2"
+  });
   const eventApproachApplySession = createRunnerSessionFixture({
     travelV2EventApproachTallyApplicationRecords: { records: [eventApproachApplyRecord], playerSafe: true, readOnly: true },
     actor: { update() { throw new Error("actor update should not be called by Event Approach tally apply"); } },
@@ -378,9 +380,9 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertSmoke(eventApproachApply.appliedRecord.applied === true, "Event Approach tally applied record should flag applied lifecycle");
   assertEqual(eventApproachApply.appliedRecord.appliedAtRound, 1, "Event Approach tally applied record should store applied round metadata");
   assertEqual(eventApproachApply.appliedRecord.appliedAt, "2026-06-19T00:00:08.000Z", "Event Approach tally applied record should store applied timestamp");
-  assertEqual(eventApproachApply.appliedRecord.sourceTallySummary, eventApproachApplyRecord.sourceTallySummary, "Event Approach tally source summary should survive after apply");
-  assertEqual(eventApproachApply.appliedRecord.sourceTally.totalContributionValue, 2, "Event Approach tally source data should remain readable after apply");
-  assertEqual(eventApproachApply.appliedRecord.progressDeltaPreview.delta, 2, "Event Approach tally progress delta preview should remain session-local and inert after apply");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallySummary.totalContributionValue, 2, "Event Approach tally source summary should survive after apply");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallySummary.contributingStationLabels[1], "Navigator", "Event Approach tally source station labels should remain readable after apply");
+  assertEqual(eventApproachApply.appliedRecord.progressDeltaPreview, 2, "Event Approach tally progress delta preview should remain session-local and inert after apply");
   const repeatedEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApply.session, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
   assertSmoke(repeatedEventApproachApply.ok && repeatedEventApproachApply.applied, "repeated Event Approach tally apply should be stable/idempotent");
   assertEqual(repeatedEventApproachApply.session.travelV2EventApproachTallyApplicationRecords.records.length, 1, "repeated Event Approach tally apply should not duplicate records");

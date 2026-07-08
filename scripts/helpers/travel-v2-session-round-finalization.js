@@ -1475,7 +1475,10 @@ export function normalizeTravelV2EventApproachTallyApplicationRecords(container 
         progressDeltaPreview,
         applied,
         appliedAtRound: applied ? (record.appliedAtRound ?? null) : null,
-        reviewOnly: record.reviewOnly !== false,
+        appliedAt: applied ? (optionalString(record.appliedAt) ?? "") : "",
+        appliedByFlow: applied ? (optionalString(record.appliedByFlow) ?? "") : "",
+        confirmed: applied ? record.confirmed === true : false,
+        reviewOnly: applied ? false : record.reviewOnly !== false,
         playerSafe: true,
         readOnly: true
       };
@@ -1575,92 +1578,9 @@ export function prepareTravelV2EventApproachTallyApplicationPreview(session = {}
 }
 
 
-function eventApproachApplicationRecordId(record = {}) {
-  const explicitId = optionalString(record.id ?? record.recordId ?? record.previewId);
-  if (explicitId) return explicitId;
-  const sourceTally = normalizeEventApproachApplicationSourceTally(record.sourceTally ?? record.sourceTallySummary ?? record, record);
-  return ["travel-v2-event-approach-apply", Number.isInteger(Number(sourceTally.roundIndex)) ? Number(sourceTally.roundIndex) : "unknown-round"].join(":");
-}
-
-function normalizeEventApproachApplicationStatus(record = {}) {
-  if (record.applied === true || record.status === "applied") return "applied";
-  if (record.status === "blocked") return "blocked";
-  if (record.status === "ready" || record.status === "readyForGmApply" || record.status === "readyForFutureGmApply") return "readyForGmApply";
-  return "readyForGmApply";
-}
-
-export function prepareTravelV2EventApproachTallyApplicationRecord(record = {}, fallback = {}) {
-  const source = isPlainObject(record) ? record : {};
-  const sourceTally = normalizeEventApproachApplicationSourceTally(source.sourceTally ?? source.sourceTallySummary ?? source.tally ?? source, fallback);
-  const id = eventApproachApplicationRecordId({ ...source, sourceTally });
-  const total = Number.isFinite(Number(source.progressDeltaPreview?.delta)) ? Number(source.progressDeltaPreview.delta) : sourceTally.totalContributionValue;
-  const valueLabel = `${total > 0 ? "+" : ""}${total}`;
-  const status = normalizeEventApproachApplicationStatus(source);
-  const applied = status === "applied";
-  const recordType = TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES.includes(source.recordType) ? source.recordType : "eventApproachTallyApplication";
-  return stripEventApproachPlayerUnsafeKeys({
-    version: source.version ?? TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
-    id,
-    recordId: id,
-    previewId: optionalString(source.previewId) ?? id,
-    recordType,
-    applicationType: recordType,
-    status,
-    statusLabel: applied ? "Applied" : (status === "blocked" ? "Blocked" : "Ready for GM Apply"),
-    applied,
-    appliedAtRound: Number.isInteger(Number(source.appliedAtRound)) ? Number(source.appliedAtRound) : null,
-    appliedAt: optionalString(source.appliedAt) ?? "",
-    appliedByFlow: optionalString(source.appliedByFlow) ?? "",
-    sourceRoundIndex: Number.isInteger(Number(source.sourceRoundIndex)) ? Number(source.sourceRoundIndex) : sourceTally.roundIndex,
-    sourceRoundNumber: source.sourceRoundNumber ?? sourceTally.roundNumber ?? null,
-    sourceTallyKey: optionalString(source.sourceTallyKey) ?? sourceTally.tallyKey ?? "eventApproach",
-    sourceTallySummary: source.sourceTallySummary ?? sourceTally.tallyLabel,
-    sourceTally,
-    progressDeltaPreview: {
-      effectKey: "eventApproachProgressDeltaPreview",
-      effectLabel: "Event progress delta preview",
-      delta: total,
-      valueLabel,
-      applied,
-      inert: true,
-      playerSafe: true,
-      readOnly: true
-    },
-    requiresGMConfirmation: true,
-    confirmed: applied,
-    playerSafe: true,
-    readOnly: true
-  });
-}
-
-export function normalizeTravelV2EventApproachTallyApplicationRecords(container = {}) {
-  const sourceRecords = recordsFromContainer(container);
-  const records = [];
-  const seen = new Set();
-  for (const record of sourceRecords) {
-    if (!isPlainObject(record)) continue;
-    const normalized = prepareTravelV2EventApproachTallyApplicationRecord(record);
-    if (seen.has(normalized.id)) continue;
-    seen.add(normalized.id);
-    records.push(normalized);
-  }
-  return { version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
-}
-
 function blockedEventApproachTallyApplyResult(session, blockedReason = "Event Approach tally application blocked.") {
   const clonedSession = isPlainObject(session) ? cloneData(session) : session;
   return { ok: false, applied: false, blocked: true, blockedReason, session: clonedSession, playerSafe: true, readOnly: true };
-}
-
-export function appendTravelV2EventApproachTallyApplicationRecordToSession(session = {}, record = {}) {
-  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session?.travelV2EventApproachTallyApplicationRecords ?? []);
-  const normalized = prepareTravelV2EventApproachTallyApplicationRecord(record);
-  const records = existing.records.filter((entry) => entry.id !== normalized.id);
-  records.push(normalized);
-  return {
-    ...cloneData(isPlainObject(session) ? session : {}),
-    travelV2EventApproachTallyApplicationRecords: { version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true }
-  };
 }
 
 export function applyTravelV2EventApproachTallyApplicationRecordToSession(session = {}, recordId = "", options = {}) {
@@ -1669,28 +1589,34 @@ export function applyTravelV2EventApproachTallyApplicationRecordToSession(sessio
   const id = optionalString(options?.id ?? options?.recordId) ?? optionalString(recordId) ?? "";
   if (!id) return blockedEventApproachTallyApplyResult(session, "Event Approach tally application record id is required.");
 
-  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session.travelV2EventApproachTallyApplicationRecords ?? []);
-  const target = existing.records.find((record) => record.id === id || record.recordId === id || record.previewId === id);
+  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session.travelV2EventApproachTallyApplicationRecords);
+  const target = existing.records.find((record) => record.id === id);
   if (!target) return blockedEventApproachTallyApplyResult(session, "Event Approach tally application record was not found.");
 
   const appliedAt = timestampFromOptions(options);
   const appliedAtRound = Number.isInteger(Number(options.appliedAtRound))
     ? Number(options.appliedAtRound)
     : (Number.isInteger(Number(session.currentRoundIndex)) ? Number(session.currentRoundIndex) : target.sourceRoundIndex);
-  const appliedRecord = prepareTravelV2EventApproachTallyApplicationRecord({
-    ...target,
+  const appliedRecord = {
+    ...cloneData(target),
     status: "applied",
     applied: true,
-    appliedAt,
     appliedAtRound,
+    appliedAt,
     appliedByFlow: optionalString(options.appliedByFlow) ?? "gm-event-approach-tally-apply",
-    confirmed: true
-  });
-  const records = existing.records.map((record) => (record.id === target.id ? appliedRecord : record));
-  const nextContainer = { version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION, records, hasRecords: records.length > 0, playerSafe: true, readOnly: true };
-  const nextSession = {
-    ...cloneData(session),
-    travelV2EventApproachTallyApplicationRecords: nextContainer
+    confirmed: true,
+    reviewOnly: false,
+    playerSafe: true,
+    readOnly: true
+  };
+  const records = existing.records.map((record) => record.id === target.id ? appliedRecord : cloneData(record));
+  const nextSession = cloneData(session);
+  nextSession.travelV2EventApproachTallyApplicationRecords = {
+    version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
+    records: cloneData(records),
+    hasRecords: records.length > 0,
+    playerSafe: true,
+    readOnly: true
   };
   return { ok: true, applied: true, blocked: false, blockedReason: "", session: cloneData(nextSession), appliedRecord: cloneData(appliedRecord), playerSafe: true, readOnly: true };
 }
