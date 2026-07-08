@@ -339,7 +339,7 @@ function normalizeStationActionEventApproachTallyStatus(eventApproachTallyStatus
     available,
     title: "Event Approach Tally Status",
     subtitle: available
-      ? `Round ${eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? "?"} read-only Event Approach tally status captured for preview only; not applied yet.`
+      ? `Round ${eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? "?"} read-only Event Approach tally status captured for preview and effective-outcome resolution.`
       : "No Event Approach tally status preview has been captured yet.",
     statusKey,
     statusLabel,
@@ -348,7 +348,7 @@ function normalizeStationActionEventApproachTallyStatus(eventApproachTallyStatus
     totalContributionValue,
     valueLabel,
     previewLabel: eventApproachTallyStatus?.previewLabel || `${statusLabel} preview: ${valueLabel} Event Approach tally captured for later resolution.`,
-    previewMessage: eventApproachTallyStatus?.previewMessage || `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.`,
+    previewMessage: eventApproachTallyStatus?.previewMessage || `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only. Event completion reads effective station outcomes after roll bonus and result-floor resolution.`,
     roundIndex: Number.isInteger(Number(eventApproachTallyStatus?.roundIndex)) ? Number(eventApproachTallyStatus.roundIndex) : (Number.isInteger(Number(fallbackTally?.roundIndex)) ? Number(fallbackTally.roundIndex) : null),
     roundNumber: eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? null,
     playerSafe: true,

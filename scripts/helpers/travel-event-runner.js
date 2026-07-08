@@ -2272,9 +2272,13 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
       selectedStationOptionLabels: normalizeSelectedStationOptionLabels(source, event.rounds[index]),
       stationActions: normalizeStationActions(source, event.rounds[index]),
       stationOrderCommitments: normalizeStationOrderCommitments(source, event.rounds[index]),
-      stationCheckAppliedBonuses: isPlainObject(source?.stationCheckAppliedBonuses) ? cloneData(source.stationCheckAppliedBonuses) : undefined
+      stationCheckAppliedBonuses: isPlainObject(source?.stationCheckAppliedBonuses) ? cloneData(source.stationCheckAppliedBonuses) : undefined,
+      stationSummary: isPlainObject(source?.stationSummary) ? cloneData(source.stationSummary) : undefined,
+      stationRollResolutions: isPlainObject(source?.stationRollResolutions) ? cloneData(source.stationRollResolutions) : undefined
     };
-    if (normalizedRoundResult.stationCheckAppliedBonuses === undefined) delete normalizedRoundResult.stationCheckAppliedBonuses;
+    for (const optionalRoundResultKey of ["stationCheckAppliedBonuses", "stationSummary", "stationRollResolutions"]) {
+      if (normalizedRoundResult[optionalRoundResultKey] === undefined) delete normalizedRoundResult[optionalRoundResultKey];
+    }
     return normalizedRoundResult;
   });
   const normalized = {
@@ -2314,10 +2318,14 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2EventCompletion: isPlainObject(session.travelV2EventCompletion) ? cloneData(session.travelV2EventCompletion) : undefined,
     travelV2EventOutcomeApplication: isPlainObject(session.travelV2EventOutcomeApplication) ? cloneData(session.travelV2EventOutcomeApplication) : undefined,
     travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined,
+    travelV2ActiveCards: isPlainObject(session.travelV2ActiveCards) || Array.isArray(session.travelV2ActiveCards) ? cloneData(session.travelV2ActiveCards) : undefined,
+    travelV2AppliedActiveCards: isPlainObject(session.travelV2AppliedActiveCards) || Array.isArray(session.travelV2AppliedActiveCards) ? cloneData(session.travelV2AppliedActiveCards) : undefined,
+    travelV2ActiveCardApplicationPreviews: isPlainObject(session.travelV2ActiveCardApplicationPreviews) || Array.isArray(session.travelV2ActiveCardApplicationPreviews) ? cloneData(session.travelV2ActiveCardApplicationPreviews) : undefined,
+    activeCardApplicationPreviews: isPlainObject(session.activeCardApplicationPreviews) || Array.isArray(session.activeCardApplicationPreviews) ? cloneData(session.activeCardApplicationPreviews) : undefined,
     travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined,
     travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined
   };
-  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
+  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };

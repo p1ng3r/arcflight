@@ -232,7 +232,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     const eventApproachTallyStatus = successful.result.stationActionEventApproachTallyStatus;
     assertSmoke(eventApproachTallyStatus?.statusKey === "partialProgress" && eventApproachTallyStatus.statusLabel === "Partial Progress", "Event Approach tally status should interpret +2 as Partial Progress");
     assertSmoke(eventApproachTallyStatus?.statusTone && eventApproachTallyStatus.totalContributionValue === 2 && eventApproachTallyStatus.valueLabel === "+2", "Event Approach tally status should include tone and total contribution value");
-    assertSmoke(eventApproachTallyStatus?.previewLabel.includes("preview") && eventApproachTallyStatus.previewMessage.includes("read-only") && eventApproachTallyStatus.previewMessage.includes("not applied yet"), "Event Approach tally status should include safe readable not-applied preview text");
+    assertSmoke(eventApproachTallyStatus?.previewLabel.includes("preview") && eventApproachTallyStatus.previewMessage.includes("read-only") && eventApproachTallyStatus.previewMessage.includes("effective station outcomes"), "Event Approach tally status should include safe readable effective-outcome preview text");
     assertSmoke(eventApproachTallyStatus?.roundIndex === 0 && eventApproachTallyStatus.roundNumber === 1 && eventApproachTallyStatus.playerSafe === true && eventApproachTallyStatus.readOnly === true, "Event Approach tally status should include round metadata and safe read-only markers");
     assertSmoke(resolutionRecord.stationActionEventApproachTallyStatus?.statusKey === eventApproachTallyStatus.statusKey, "Event Approach tally status should be present on round resolution record");
     assertSmoke(successful.result.eventApproachTallyStatus.statusKey === eventApproachTallyStatus.statusKey, "Event Approach tally status alias should be present on finalization result");
@@ -267,7 +267,7 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
       const bandFinalized = prepareTravelV2RoundFinalizationRunnerUpdate(bandApplied.nextSession, { now: `2026-01-01T00:00:09.${label.length}00Z` });
       const bandStatus = bandFinalized.result.stationActionEventApproachTallyStatus;
       assertSmoke(bandStatus?.statusKey === expectedKey && bandStatus.statusLabel === expectedLabel, `Event Approach tally status should create ${expectedLabel}`);
-      assertSmoke(bandStatus.previewLabel.includes(expectedLabel) && bandStatus.previewMessage.includes("not applied yet"), `${expectedLabel} status should include readable not-applied preview text`);
+      assertSmoke(bandStatus.previewLabel.includes(expectedLabel) && bandStatus.previewMessage.includes("effective station outcomes"), `${expectedLabel} status should include readable effective-outcome preview text`);
       assertSmoke(recordsFrom(bandFinalized.nextSession.travelV2RoundResolutions)[0].stationActionEventApproachTallyStatus.statusKey === expectedKey, `${expectedLabel} status should be stored on round resolution record`);
       assertEqual(snapshot(bandSession), beforeBand, `${expectedLabel} status generation should not mutate source session`);
     }

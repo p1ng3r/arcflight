@@ -106,7 +106,7 @@ const TRAVEL_V2_ACTIVE_CARD_CONFIG = Object.freeze({
   minorOpening: Object.freeze({
     cardLabel: "Minor Opening",
     timingHint: "Play after station actions are locked and before the target station rolls.",
-    effectPreviewText: "Future effect: grant +1 circumstance bonus to one target station roll.",
+    effectPreviewText: "Creates a +1 circumstance bonus for one target station roll after GM confirmation.",
     timingType: "beforeRoll",
     playWindowKey: "afterLockBeforeRoll",
     playWindowLabel: "After lock, before target roll"
@@ -114,7 +114,7 @@ const TRAVEL_V2_ACTIVE_CARD_CONFIG = Object.freeze({
   greaterOpening: Object.freeze({
     cardLabel: "Greater Opening",
     timingHint: "Play after station actions are locked and before the target station rolls.",
-    effectPreviewText: "Future effect: grant +3 circumstance bonus to one target station roll.",
+    effectPreviewText: "Creates a +3 circumstance bonus for one target station roll after GM confirmation.",
     timingType: "beforeRoll",
     playWindowKey: "afterLockBeforeRoll",
     playWindowLabel: "After lock, before target roll"
@@ -122,7 +122,7 @@ const TRAVEL_V2_ACTIVE_CARD_CONFIG = Object.freeze({
   heroicEvent: Object.freeze({
     cardLabel: "Heroic Event",
     timingHint: "Triggers when the target station rolls failure or critical failure.",
-    effectPreviewText: "Future effect: improve one target station failure or critical failure by one degree.",
+    effectPreviewText: "Improves one target station failure or critical failure by one degree after GM confirmation.",
     timingType: "afterFailure",
     playWindowKey: "afterTargetFailure",
     playWindowLabel: "After target failure"
@@ -130,7 +130,7 @@ const TRAVEL_V2_ACTIVE_CARD_CONFIG = Object.freeze({
   legendaryEvent: Object.freeze({
     cardLabel: "Legendary Event",
     timingHint: "Play after station actions are locked but before the target station rolls.",
-    effectPreviewText: "Future effect: target station cannot resolve worse than success.",
+    effectPreviewText: "Sets a success result floor for one target station roll after GM confirmation.",
     timingType: "beforeRoll",
     playWindowKey: "afterLockBeforeRoll",
     playWindowLabel: "After lock, before target roll"
@@ -1316,7 +1316,7 @@ export function prepareTravelV2StationActionEventApproachTallyStatus(eventApproa
     totalContributionValue,
     valueLabel,
     previewLabel: `${statusLabel} preview: ${valueLabel} Event Approach tally captured for later resolution.`,
-    previewMessage: `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.`,
+    previewMessage: `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only. Event completion reads effective station outcomes after roll bonus and result-floor resolution.`,
     roundIndex,
     roundNumber,
     playerSafe: true,
