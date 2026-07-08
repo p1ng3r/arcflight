@@ -16,19 +16,21 @@ Arcflight has accumulated historical plans, Codex prompts, task notes, and roadm
 8. `docs/GLOSSARY.md` — canonical term reference.
 9. `docs/DECISIONS.md` — canonical decision log.
 
-## Historical and support documents
+## Historical, legacy, and support documents
 
-The following folders may contain useful historical context, but they are not the active roadmap unless explicitly referenced by the source-of-truth docs above:
+The following folders and files may contain useful historical context, but they are not the active roadmap unless explicitly referenced by the source-of-truth docs above:
 
+- `docs/LEGACY-DOCS.md`
 - `docs/codex/`
 - `docs/codex-tasks/`
 - `docs/agents/`
+- `docs/travel-v2/`
 - old phase plans
 - old PR prompts
 - old closeout notes
 - superseded implementation plans
 
-Historical documents should not override current source-of-truth docs.
+Historical and legacy documents should not override current source-of-truth docs.
 
 ## Rules for future docs
 
@@ -43,7 +45,7 @@ Historical documents should not override current source-of-truth docs.
 
 ## Current cleanup goal
 
-The current docs cleanup goal is to create one clear documentation spine:
+The current docs cleanup goal is to maintain one clear documentation spine:
 
 - `docs/DOCS-INDEX.md`
 - `docs/ARCFLIGHT-BIBLE.md`
