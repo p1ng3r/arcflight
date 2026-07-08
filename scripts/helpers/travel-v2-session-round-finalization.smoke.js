@@ -25,6 +25,8 @@ import {
   applyTravelV2PendingStationResultFloorToOutcome,
   prepareTravelV2StationResultFloorState,
   prepareTravelV2EventApproachTallyApplicationPreview,
+  normalizeTravelV2EventApproachTallyApplicationRecords,
+  applyTravelV2EventApproachTallyApplicationRecordToSession,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
@@ -329,6 +331,62 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   const applicationPreviewJson = JSON.stringify(legendaryApplicationPreview);
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!applicationPreviewJson.includes(forbidden), `application preview state should not include forbidden player-safe term ${forbidden}`);
+  }
+
+
+  assertEqual(normalizeTravelV2EventApproachTallyApplicationRecords().records.length, 0, "Event Approach tally application record normalization should tolerate empty input");
+  const missingConfirmationEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "missing-record", { now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!missingConfirmationEventApproachApply.ok && missingConfirmationEventApproachApply.blocked, "Event Approach tally apply should require explicit GM confirmation");
+  const missingIdEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "", { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!missingIdEventApproachApply.ok && missingIdEventApproachApply.blocked, "missing Event Approach tally application record id should block safely");
+  const missingEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "missing-record", { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!missingEventApproachApply.ok && missingEventApproachApply.blocked, "missing Event Approach tally application record should block safely");
+  assertSmoke(missingEventApproachApply.session !== null, "missing Event Approach apply should return a safe cloned session shape");
+  const eventApproachApplyRecord = {
+    id: "travel-v2-event-approach-apply:0",
+    recordType: "eventApproachTallyApplication",
+    status: "readyForGmApply",
+    sourceRoundIndex: 0,
+    sourceRoundNumber: 1,
+    sourceTallyKey: "eventApproach",
+    sourceTallySummary: "Event Approach contribution tally: +2 from 2 contributions.",
+    sourceTally: { tallyKey: "eventApproach", tallyType: "eventApproach", totalContributionValue: 2, contributionCount: 2, contributingStationLabels: ["Captain", "Navigator"], roundIndex: 0, roundNumber: 1, playerSafe: true, readOnly: true },
+    progressDeltaPreview: { delta: 2 },
+    playerSafe: true,
+    readOnly: true
+  };
+  const eventApproachApplySession = createRunnerSessionFixture({
+    travelV2EventApproachTallyApplicationRecords: { records: [eventApproachApplyRecord], playerSafe: true, readOnly: true },
+    actor: { update() { throw new Error("actor update should not be called by Event Approach tally apply"); } },
+    item: { update() { throw new Error("item update should not be called by Event Approach tally apply"); } },
+    socket: { emit() { throw new Error("socket emit should not be called by Event Approach tally apply"); } },
+    chat: { create() { throw new Error("chat create should not be called by Event Approach tally apply"); } },
+    journal: { create() { throw new Error("journal create should not be called by Event Approach tally apply"); } },
+    scene: { update() { throw new Error("scene update should not be called by Event Approach tally apply"); } },
+    token: { update() { throw new Error("token update should not be called by Event Approach tally apply"); } },
+    combat: { update() { throw new Error("combat update should not be called by Event Approach tally apply"); } }
+  });
+  const eventApproachApplyBefore = snapshot(eventApproachApplySession);
+  const eventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApplySession, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(eventApproachApply.ok && eventApproachApply.applied, "valid Event Approach tally application record should apply with GM confirmation");
+  assertSmoke(eventApproachApply.session !== eventApproachApplySession, "Event Approach tally apply should return a cloned session");
+  assertEqual(snapshot(eventApproachApplySession), eventApproachApplyBefore, "Event Approach tally apply should not mutate source session");
+  assertEqual(eventApproachApply.appliedRecord.id, eventApproachApplyRecord.id, "Event Approach tally applied record should preserve canonical id");
+  assertEqual(eventApproachApply.appliedRecord.recordType, "eventApproachTallyApplication", "Event Approach tally applied record should preserve record type");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallyKey, "eventApproach", "Event Approach tally applied record should preserve source tally key");
+  assertEqual(eventApproachApply.appliedRecord.status, "applied", "Event Approach tally applied record should move to applied status");
+  assertSmoke(eventApproachApply.appliedRecord.applied === true, "Event Approach tally applied record should flag applied lifecycle");
+  assertEqual(eventApproachApply.appliedRecord.appliedAtRound, 1, "Event Approach tally applied record should store applied round metadata");
+  assertEqual(eventApproachApply.appliedRecord.appliedAt, "2026-06-19T00:00:08.000Z", "Event Approach tally applied record should store applied timestamp");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallySummary, eventApproachApplyRecord.sourceTallySummary, "Event Approach tally source summary should survive after apply");
+  assertEqual(eventApproachApply.appliedRecord.sourceTally.totalContributionValue, 2, "Event Approach tally source data should remain readable after apply");
+  assertEqual(eventApproachApply.appliedRecord.progressDeltaPreview.delta, 2, "Event Approach tally progress delta preview should remain session-local and inert after apply");
+  const repeatedEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApply.session, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(repeatedEventApproachApply.ok && repeatedEventApproachApply.applied, "repeated Event Approach tally apply should be stable/idempotent");
+  assertEqual(repeatedEventApproachApply.session.travelV2EventApproachTallyApplicationRecords.records.length, 1, "repeated Event Approach tally apply should not duplicate records");
+  const eventApproachApplyJson = JSON.stringify(eventApproachApply);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!eventApproachApplyJson.includes(forbidden), `Event Approach tally apply result should not include forbidden player-safe term ${forbidden}`);
   }
   const minorApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }], travelV2ActiveCards: { records: [pendingActiveCard({ targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
   const minorPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(minorApplySession.travelV2ActiveCards, minorApplySession), minorApplySession).records[0].previewId;
