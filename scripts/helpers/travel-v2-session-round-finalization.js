@@ -880,9 +880,10 @@ function writeTravelV2StationRollResolutionToSession(session = {}, stationKey = 
   const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
   const nextSession = cloneData(session);
   const roundResults = Array.isArray(nextSession.roundResults) ? nextSession.roundResults : [];
-  while (roundResults.length <= index) roundResults.push({});
-  const roundResult = isPlainObject(roundResults[index]) ? roundResults[index] : {};
-  roundResult.roundIndex = Number.isInteger(Number(roundResult.roundIndex)) ? Number(roundResult.roundIndex) : index;
+  const { record, arrayIndex } = roundResultEntryForIndex({ roundResults }, index);
+  while (roundResults.length <= arrayIndex) roundResults.push({});
+  const roundResult = isPlainObject(record) ? cloneData(record) : {};
+  roundResult.roundIndex = index;
   roundResult.roundNumber = roundResult.roundNumber ?? index + 1;
   roundResult.stationResults = isPlainObject(roundResult.stationResults) ? roundResult.stationResults : {};
   roundResult.stationSummary = isPlainObject(roundResult.stationSummary) ? roundResult.stationSummary : {};
@@ -906,15 +907,17 @@ function writeTravelV2StationRollResolutionToSession(session = {}, stationKey = 
     suppressedStationRollBonuses: cloneData(resolution.stationRollBonusState?.suppressed ?? []),
     resultFloorState: cloneData(resolution.resultFloorState),
     resultFloorChange: cloneData(resolution.resultFloorChange),
+    outcomeOnlyResolution: resolution.outcomeOnlyResolution === true,
+    bonusAffectsOutcome: resolution.bonusAffectsOutcome === true,
     playerSafe: true,
     readOnly: true
   };
   roundResult.stationRollResolutions[key] = cloneData(resolution);
+  roundResult.stationCheckAppliedBonuses = isPlainObject(roundResult.stationCheckAppliedBonuses) ? roundResult.stationCheckAppliedBonuses : {};
   if ((resolution.stationRollBonusState?.selected ?? []).length > 0) {
-    roundResult.stationCheckAppliedBonuses = isPlainObject(roundResult.stationCheckAppliedBonuses) ? roundResult.stationCheckAppliedBonuses : {};
     roundResult.stationCheckAppliedBonuses[key] = cloneData(resolution.stationRollBonusState.selected);
   }
-  roundResults[index] = roundResult;
+  roundResults[arrayIndex] = roundResult;
   nextSession.roundResults = roundResults;
   return nextSession;
 }
@@ -927,13 +930,21 @@ export function resolveTravelV2StationRollWithPendingEffects(session = {}, stati
   const rawRollTotal = firstFiniteNumber(rollData.rawRollTotal, rollData.rollTotal, rollData.total);
   const rawModifier = firstFiniteNumber(rollData.rawModifier, rollData.modifier, rollData.totalModifier);
   if (!key) return { ok: false, session: cloneData(session), stationKey: key, roundIndex, blockedReason: "Station is required.", playerSafe: true, readOnly: true };
-  const stationRollBonusState = prepareTravelV2StationRollBonusState(session, key, roundIndex);
-  const appliedBonusTotal = Number(stationRollBonusState.totalAppliedBonus ?? 0);
+  const pendingBonusState = prepareTravelV2StationRollBonusState(session, key, roundIndex);
+  const dc = firstFiniteNumber(rollData.dc, rollData.targetDc, options.dc, options.targetDc);
+  const hasRollTotalAndDc = rawRollTotal != null && dc != null;
+  const appliedBonusTotal = hasRollTotalAndDc ? Number(pendingBonusState.totalAppliedBonus ?? 0) : 0;
   const effectiveRollTotal = rawRollTotal == null ? null : rawRollTotal + appliedBonusTotal;
   const effectiveModifier = rawModifier == null ? null : rawModifier + appliedBonusTotal;
-  const dc = firstFiniteNumber(rollData.dc, rollData.targetDc, options.dc, options.targetDc);
-  const rawOutcomeKey = normalizeStationOutcomeKey(rollData.rawOutcomeKey ?? rollData.outcomeKey ?? rollData.resultKey) || stationOutcomeFromRollTotal(effectiveRollTotal, dc);
-  const consumedStationRollBonuses = consumeTravelV2PendingStationActionBonusesForStationRoll(session, key, roundIndex);
+  const providedOutcomeKey = normalizeStationOutcomeKey(rollData.rawOutcomeKey ?? rollData.outcomeKey ?? rollData.resultKey);
+  const rawOutcomeKey = hasRollTotalAndDc ? stationOutcomeFromRollTotal(effectiveRollTotal, dc) : providedOutcomeKey;
+  const outcomeOnlyResolution = !hasRollTotalAndDc;
+  const stationRollBonusState = outcomeOnlyResolution
+    ? { ...cloneData(pendingBonusState), selected: [], applied: [], suppressed: [], selectedBonusValue: 0, selectedSourceLabel: "", selectedSourceCardId: "", totalAppliedBonus: 0, hasBonus: false, outcomeOnlyResolution: true, bonusAffectsOutcome: false, bonusConsumptionSkippedReason: "Manual outcome-only station resolution did not include roll total and DC data.", playerSafe: true, readOnly: true }
+    : pendingBonusState;
+  const consumedStationRollBonuses = outcomeOnlyResolution
+    ? { ok: true, session: cloneData(session), bonusState: stationRollBonusState, consumedRecordIds: [], outcomeOnlyResolution: true, bonusAffectsOutcome: false, playerSafe: true, readOnly: true }
+    : consumeTravelV2PendingStationActionBonusesForStationRoll(session, key, roundIndex);
   const floorState = prepareTravelV2StationResultFloorState(consumedStationRollBonuses.session, key, roundIndex, { outcomeKey: rawOutcomeKey });
   const floorResult = applyTravelV2PendingStationResultFloorToOutcome(consumedStationRollBonuses.session, key, rawOutcomeKey, roundIndex);
   const effectiveOutcomeKey = floorResult.effectiveOutcomeKey || rawOutcomeKey;
@@ -954,6 +965,8 @@ export function resolveTravelV2StationRollWithPendingEffects(session = {}, stati
     consumedStationRollBonuses: cloneData(consumedStationRollBonuses),
     resultFloorState: cloneData(floorState),
     resultFloorChange: cloneData(floorResult.resultFloorChange),
+    outcomeOnlyResolution,
+    bonusAffectsOutcome: !outcomeOnlyResolution,
     playerSafe: true,
     readOnly: true
   };

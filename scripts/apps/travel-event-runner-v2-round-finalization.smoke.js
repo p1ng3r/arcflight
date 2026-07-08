@@ -310,15 +310,16 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
       stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } }
     });
     const stationCheckBefore = snapshot(stationCheckSource);
-    const navigatorCheck = setTravelEventRunnerStationResult(stationCheckSource, 1, "navigator", "success", { now: "2026-01-01T00:00:03.500Z" });
-    assertSmoke(navigatorCheck.ok, "matching target station check should resolve with pending Support bonus consumption");
+    const navigatorCheck = setTravelEventRunnerStationResult(stationCheckSource, 1, "navigator", "failure", { now: "2026-01-01T00:00:03.500Z", rawRollTotal: 19, dc: 20 });
+    assertSmoke(navigatorCheck.ok, "matching target station check should resolve with pending Support bonus consumption when roll total/DC are provided");
+    assertEqual(navigatorCheck.session.roundResults[1].stationResults.navigator, "success", "Support bonus should affect runner outcome when roll total/DC are provided");
     assertEqual(snapshot(stationCheckSource), stationCheckBefore, "Support bonus consumption should not mutate source session");
     const appliedBonuses = navigatorCheck.session.roundResults[1].stationCheckAppliedBonuses.navigator;
     assertSmoke(appliedBonuses.length === 1, "matching target station should apply one pending Support bonus");
     assertSmoke(appliedBonuses[0].sourceStationKey === "engineer" && appliedBonuses[0].sourceStationLabel === "Engineer" && appliedBonuses[0].targetStationKey === "navigator" && appliedBonuses[0].targetStationLabel === "Navigator", "applied Support bonus should include safe source and target labels");
     assertSmoke(appliedBonuses[0].bonusValue === 1 && appliedBonuses[0].bonusType === "circumstance" && appliedBonuses[0].playerSafe === true, "applied Support bonus should include the safe +1 circumstance metadata");
     assertSmoke(recordsFrom(navigatorCheck.session.travelV2PendingStationActionBonuses)[0].consumed === true, "consumed pending Support bonus should be marked consumed in cloned session");
-    const repeatedCheck = setTravelEventRunnerStationResult(navigatorCheck.session, 1, "navigator", "criticalSuccess", { now: "2026-01-01T00:00:03.600Z" });
+    const repeatedCheck = setTravelEventRunnerStationResult(navigatorCheck.session, 1, "navigator", "criticalSuccess", { now: "2026-01-01T00:00:03.600Z", rawRollTotal: 30, dc: 20 });
     assertSmoke(repeatedCheck.ok && !repeatedCheck.session.roundResults[1].stationCheckAppliedBonuses?.navigator, "already consumed Support bonus should not apply again");
     const wrongStationSource = JSON.parse(stationCheckBefore);
     const wrongStationCheck = setTravelEventRunnerStationResult(wrongStationSource, 1, "captain", "success", { now: "2026-01-01T00:00:03.700Z" });
@@ -330,6 +331,28 @@ export async function runTravelEventRunnerV2RoundFinalizationSmokeChecks() {
     const wrongRoundCheck = setTravelEventRunnerStationResult(wrongRoundSource, 1, "navigator", "success", { now: "2026-01-01T00:00:03.800Z" });
     assertSmoke(wrongRoundCheck.ok && !wrongRoundCheck.session.roundResults[1].stationCheckAppliedBonuses?.navigator, "wrong applicable round should not consume pending Support bonus");
     assertSmoke(recordsFrom(wrongRoundCheck.session.travelV2PendingStationActionBonuses)[0].consumed === false, "wrong applicable round should leave pending Support bonus unconsumed");
+    const greaterStackSource = JSON.parse(stationCheckBefore);
+    greaterStackSource.travelV2PendingStationActionBonuses.records.push({ id: "greater-opening-runner", bonusKey: "greaterOpeningBonus", bonusType: "circumstance", bonusValue: 3, sourceCardId: "greater-card", sourceCardLabel: "Greater Opening", targetStationKey: "navigator", previewRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true });
+    const greaterStackCheck = setTravelEventRunnerStationResult(greaterStackSource, 1, "navigator", "failure", { now: "2026-01-01T00:00:03.850Z", rawRollTotal: 19, dc: 20 });
+    assertSmoke(greaterStackCheck.ok, "runner path should resolve stacked pending bonuses with roll total/DC");
+    assertEqual(greaterStackCheck.session.roundResults[1].stationResults.navigator, "success", "Greater Opening should raise raw total 19 versus DC 20 to an effective success");
+    assertEqual(greaterStackCheck.session.roundResults[1].stationSummary.navigator.appliedBonusTotal, 3, "runner path should apply only the highest same-roll circumstance bonus");
+    assertSmoke(recordsFrom(greaterStackCheck.session.travelV2PendingStationActionBonuses).find((record) => record.id === "greater-opening-runner")?.consumed === true, "selected Greater Opening should be consumed in runner path");
+    assertSmoke(recordsFrom(greaterStackCheck.session.travelV2PendingStationActionBonuses).find((record) => record.bonusKey === "support")?.suppressed === true, "lower Support bonus should be suppressed and consumed in runner path");
+
+    const outcomeOnlySource = JSON.parse(stationCheckBefore);
+    const outcomeOnlyCheck = setTravelEventRunnerStationResult(outcomeOnlySource, 1, "navigator", "success", { now: "2026-01-01T00:00:03.875Z" });
+    assertSmoke(outcomeOnlyCheck.ok, "runner path should allow explicit outcome-only station result setting");
+    assertEqual(outcomeOnlyCheck.session.roundResults[1].stationResults.navigator, "success", "outcome-only station result should keep the manually entered outcome");
+    assertSmoke(outcomeOnlyCheck.session.roundResults[1].stationSummary.navigator.outcomeOnlyResolution === true && outcomeOnlyCheck.session.roundResults[1].stationSummary.navigator.bonusAffectsOutcome === false, "outcome-only station result should clearly mark that bonuses did not affect the outcome");
+    assertSmoke(recordsFrom(outcomeOnlyCheck.session.travelV2PendingStationActionBonuses)[0].consumed === false, "outcome-only station result should not consume pending Support or Opening bonuses without roll total/DC");
+
+    const outcomeOnlyFloorSource = JSON.parse(stationCheckBefore);
+    outcomeOnlyFloorSource.travelV2PendingStationResultFloors = { records: [{ id: "runner-floor", resultFloor: "success", targetStationKey: "navigator", previewRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true }] };
+    const outcomeOnlyFloorCheck = setTravelEventRunnerStationResult(outcomeOnlyFloorSource, 1, "navigator", "failure", { now: "2026-01-01T00:00:03.890Z" });
+    assertSmoke(outcomeOnlyFloorCheck.ok, "runner outcome-only path should still apply pending Legendary floors");
+    assertEqual(outcomeOnlyFloorCheck.session.roundResults[1].stationResults.navigator, "success", "Legendary floor should upgrade outcome-only failure to success");
+    assertSmoke(recordsFrom(outcomeOnlyFloorCheck.session.travelV2PendingStationResultFloors).find((record) => record.id === "runner-floor")?.consumed === true, "Legendary floor should be consumed in outcome-only runner path");
     const appliedBonusJson = JSON.stringify({ appliedBonuses, pendingBonuses: navigatorCheck.session.travelV2PendingStationActionBonuses });
     for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
       assertSmoke(!appliedBonusJson.includes(forbidden), `applied Support bonus state should not include forbidden player-safe term ${forbidden}`);

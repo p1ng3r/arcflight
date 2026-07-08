@@ -600,6 +600,24 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(eventApproachNoFloor.records.find((record) => record.sourceStationKey === "navigator")?.stationOutcome, "failure", "Event Approach behavior should remain unchanged without a floor");
   assertEqual(eventApproachNoFloor.records.find((record) => record.sourceStationKey === "navigator")?.contributionValue, 0, "Event Approach failure contribution should remain unchanged without a floor");
 
+
+  const explicitRoundSource = {
+    currentRoundIndex: 1,
+    roundResults: [{ roundIndex: 1, stationResults: { navigator: "failure" }, stationSummary: { navigator: { outcomeKey: "failure" } } }],
+    travelV2PendingStationResultFloors: { records: [{ id: "explicit-floor", resultFloor: "success", targetStationKey: "navigator", previewRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true }] }
+  };
+  const explicitRoundSnapshot = snapshot(explicitRoundSource);
+  const explicitRoundResolution = resolveTravelV2StationRollWithPendingEffects(explicitRoundSource, "navigator", { rawOutcomeKey: "failure" }, { roundIndex: 1 });
+  assertEqual(explicitRoundResolution.session.roundResults.length, 1, "explicit roundIndex station roll resolution should not create a duplicate array-position round result");
+  assertEqual(explicitRoundResolution.session.roundResults[0].roundIndex, 1, "explicit roundIndex station roll resolution should update the matching record in place");
+  assertEqual(getTravelV2StationResultForRound(explicitRoundResolution.session, "navigator", 1), "success", "station result lookup should read the updated explicit roundIndex effective result");
+  assertEqual(snapshot(explicitRoundSource), explicitRoundSnapshot, "explicit roundIndex station roll resolution should not mutate source session");
+
+  const fallbackRoundSource = { currentRoundIndex: 1, roundResults: [{}, { stationResults: { navigator: "failure" } }] };
+  const fallbackRoundResolution = resolveTravelV2StationRollWithPendingEffects(fallbackRoundSource, "navigator", { rawOutcomeKey: "success" }, { roundIndex: 1 });
+  assertEqual(fallbackRoundResolution.session.roundResults.length, 2, "array-position fallback station roll resolution should preserve round result length");
+  assertEqual(fallbackRoundResolution.session.roundResults[1].stationResults.navigator, "success", "array-position fallback station roll resolution should update requested array position when no explicit roundIndex record exists");
+
   return {
     ok: true,
     checked: [

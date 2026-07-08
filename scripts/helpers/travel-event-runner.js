@@ -2314,9 +2314,10 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2EventCompletion: isPlainObject(session.travelV2EventCompletion) ? cloneData(session.travelV2EventCompletion) : undefined,
     travelV2EventOutcomeApplication: isPlainObject(session.travelV2EventOutcomeApplication) ? cloneData(session.travelV2EventOutcomeApplication) : undefined,
     travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined,
-    travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined
+    travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined,
+    travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined
   };
-  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2PendingStationActionBonuses"]) {
+  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -4159,8 +4160,20 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   let nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
   if (isPlainObject(nextSession.roundResults[index].stationCheckAppliedBonuses)) delete nextSession.roundResults[index].stationCheckAppliedBonuses[stationKey];
+  let rollResolution = null;
   if (result !== "skipped") {
-    const rollResolution = resolveTravelV2StationRollWithPendingEffects(nextSession, stationKey, { rawOutcomeKey: result }, { ...options, roundIndex: index });
+    const rollData = {
+      rawOutcomeKey: result,
+      rawRollTotal: options.rawRollTotal,
+      rollTotal: options.rollTotal,
+      total: options.total,
+      dc: options.dc,
+      targetDc: options.targetDc,
+      rawModifier: options.rawModifier,
+      modifier: options.modifier,
+      totalModifier: options.totalModifier
+    };
+    rollResolution = resolveTravelV2StationRollWithPendingEffects(nextSession, stationKey, rollData, { ...options, roundIndex: index });
     if (!rollResolution.ok) return { ok: false, errors: [rollResolution.blockedReason ?? "Could not resolve Travel v2 station roll effects."], warnings: [], session: nextSession };
     nextSession = cloneData(rollResolution.session);
   }
@@ -4190,6 +4203,13 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const supportBacklashUpdate = syncTravelV2SupportBacklashRecordsForStationResult(nextSession, index, stationKey, options);
   if (!supportBacklashUpdate.ok) return supportBacklashUpdate;
   Object.assign(nextSession, supportBacklashUpdate.session);
+  if (rollResolution?.session?.roundResults?.[index] && nextSession.roundResults?.[index]) {
+    const resolvedRound = rollResolution.session.roundResults[index];
+    nextSession.roundResults[index].stationSummary = { ...(isPlainObject(nextSession.roundResults[index].stationSummary) ? nextSession.roundResults[index].stationSummary : {}), ...(isPlainObject(resolvedRound.stationSummary) ? cloneData(resolvedRound.stationSummary) : {}) };
+    nextSession.roundResults[index].stationRollResolutions = { ...(isPlainObject(nextSession.roundResults[index].stationRollResolutions) ? nextSession.roundResults[index].stationRollResolutions : {}), ...(isPlainObject(resolvedRound.stationRollResolutions) ? cloneData(resolvedRound.stationRollResolutions) : {}) };
+    if (isPlainObject(resolvedRound.stationResults)) nextSession.roundResults[index].stationResults = { ...(isPlainObject(nextSession.roundResults[index].stationResults) ? nextSession.roundResults[index].stationResults : {}), ...cloneData(resolvedRound.stationResults) };
+    if (isPlainObject(resolvedRound.stationCheckAppliedBonuses)) nextSession.roundResults[index].stationCheckAppliedBonuses = cloneData(resolvedRound.stationCheckAppliedBonuses);
+  }
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
