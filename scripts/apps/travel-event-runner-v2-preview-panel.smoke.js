@@ -165,7 +165,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 2, contributionCount: 2, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM hidden", applyPayload: { secret: true } } }] }
     }
   });
-  assertEqual(finalizedEventApproachPanel.eventApproachTallyApplicationPreview.status, "readyForFutureGmApply", "finalized panel Event Approach apply preview should be ready for future GM apply");
+  assertEqual(finalizedEventApproachPanel.eventApproachTallyApplicationPreview.status, "ready", "finalized panel Event Approach apply preview should be ready for GM review");
   assertEqual(finalizedEventApproachPanel.eventApproachTallyApplicationPreview.records[0].effectPreview.delta, 2, "panel Event Approach apply preview should expose inert delta");
   assertSmoke(!finalizedEventApproachPanel.eventApproachTallyApplicationPreview.canApply, "panel Event Approach apply preview should not expose apply behavior");
   assertSmoke(!JSON.stringify(finalizedEventApproachPanel.eventApproachTallyApplicationPreview).includes("gmText"), "panel Event Approach apply preview should redact GM text");
@@ -179,7 +179,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 4, contributionCount: 3, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM previous round", applyPayload: { secret: true } } }] }
     }
   });
-  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.status, "readyForFutureGmApply", "advanced current round panel should use latest finalized resolution record before current round fallback");
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.status, "ready", "advanced current round panel should use latest finalized resolution record before current round fallback");
   assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.roundIndex, 0, "advanced current round panel should preserve finalized round index");
   assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.sourceTally.totalContributionValue, 4, "advanced current round panel should use the finalized previous-round tally");
   assertSmoke(!advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.canApply, "advanced current round panel should not expose apply behavior");

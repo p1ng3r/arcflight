@@ -36,7 +36,7 @@ export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS = Object.freeze({
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES = Object.freeze({
   eventApproachTallyApplication: "eventApproachTallyApplication"
 });
-export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_STATUSES = Object.freeze(["reviewOnly", "applied", "blocked"]);
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_STATUSES = Object.freeze(["reviewOnly", "ready", "applied", "blocked"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -1390,8 +1390,8 @@ function eventApproachApplicationPreviewRecordFromTally(sourceTally = {}, finali
     id: ["travel-v2-event-approach-apply-preview", Number.isInteger(Number(sourceTally.roundIndex)) ? Number(sourceTally.roundIndex) : "unknown-round"].join(":"),
     previewId: ["travel-v2-event-approach-apply-preview", Number.isInteger(Number(sourceTally.roundIndex)) ? Number(sourceTally.roundIndex) : "unknown-round"].join(":"),
     previewType: "eventApproachTallyApplication",
-    status: ready ? "readyForFutureGmApply" : "blocked",
-    statusLabel: ready ? "Ready for Future GM Apply" : "Blocked / Not Ready",
+    status: ready ? "ready" : "blocked",
+    statusLabel: ready ? "Ready for GM Review" : "Blocked / Not Ready",
     blockedReason: ready ? "" : (blockedReason || "Event Approach tally is not finalized."),
     roundIndex: sourceTally.roundIndex,
     roundNumber: sourceTally.roundNumber,
@@ -1548,8 +1548,8 @@ export function prepareTravelV2EventApproachTallyApplicationPreview(session = {}
     previewType: "eventApproachTallyApplication",
     status: record.status,
     statusLabel: record.statusLabel,
-    readyForFutureGmApply: record.status === "readyForFutureGmApply",
-    blocked: record.status !== "readyForFutureGmApply",
+    ready: record.status === "ready",
+    blocked: record.status !== "ready",
     blockedReason: record.blockedReason,
     roundIndex: sourceTally.roundIndex,
     roundNumber: sourceTally.roundNumber,
@@ -1570,7 +1570,7 @@ export function prepareTravelV2EventApproachTallyApplicationPreview(session = {}
       resolutionRecordFound: Boolean(resolutionRecord),
       requestedRoundIndex: explicitRoundIndex,
       sourceTally: cloneData(sourceTally),
-      notes: "Review-only. This slice does not implement GM apply flow or mutate session/world data."
+      notes: "Review-only preview. Applying requires explicit GM confirmation and updates only this session-local application record."
     },
     readOnly: true
   };
@@ -1592,6 +1592,9 @@ export function applyTravelV2EventApproachTallyApplicationRecordToSession(sessio
   const existing = normalizeTravelV2EventApproachTallyApplicationRecords(session.travelV2EventApproachTallyApplicationRecords);
   const target = existing.records.find((record) => record.id === id);
   if (!target) return blockedEventApproachTallyApplyResult(session, "Event Approach tally application record was not found.");
+  if (target.applied === true || target.status === "applied") {
+    return { ok: true, applied: true, duplicate: true, blocked: false, blockedReason: "", session: cloneData(session), appliedRecord: cloneData(target), playerSafe: true, readOnly: true };
+  }
 
   const appliedAt = timestampFromOptions(options);
   const appliedAtRound = Number.isInteger(Number(options.appliedAtRound))
@@ -1629,14 +1632,13 @@ function eventApproachApplicationRecordControlFromRecord(record = {}, { includeG
     recordType: record.recordType,
     status: applied ? "applied" : (ready ? "ready" : "blocked"),
     statusLabel: applied ? "Applied" : (ready ? "Ready for GM Apply" : "Blocked"),
-    lifecycleStatus: applied ? "applied" : (ready ? "readyForGmConfirmation" : "blocked"),
+    lifecycleStatus: applied ? "applied" : (ready ? "ready" : "blocked"),
     sourceRoundIndex: record.sourceRoundIndex,
     sourceRoundNumber: record.sourceRoundNumber,
     progressDeltaPreview: record.progressDeltaPreview,
     summary: `Event Approach tally ${record.progressDeltaPreview > 0 ? "+" : ""}${record.progressDeltaPreview} from round ${record.sourceRoundNumber ?? record.sourceRoundIndex ?? "unknown"}.`,
     canApply: includeGmReview && ready,
-    requiresExplicitConfirmation: ready,
-    confirmationPrompt: ready ? "Apply this Event Approach tally application record to the session-local record state?" : "",
+    ...(includeGmReview ? { requiresExplicitConfirmation: ready, confirmationPrompt: ready ? "Apply this Event Approach tally application record to the session-local record state?" : "" } : {}),
     actionKey: includeGmReview && ready ? "applyEventApproachTallyApplicationRecord" : "reviewEventApproachTallyApplicationRecord",
     applied,
     reviewOnly: applied || !ready,
@@ -1659,7 +1661,7 @@ export function prepareTravelV2EventApproachTallyApplicationRecordControls(sessi
     version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
     panelKey: "eventApproachTallyApplicationRecords",
     title: "Event Approach Tally Applications",
-    status: readyCount > 0 ? "ready" : (appliedCount > 0 ? "reviewOnly" : "empty"),
+    status: readyCount > 0 ? "ready" : (appliedCount > 0 ? "applied" : (controls.length > 0 ? "reviewOnly" : "blocked")),
     records: controls,
     readyCount,
     appliedCount,
