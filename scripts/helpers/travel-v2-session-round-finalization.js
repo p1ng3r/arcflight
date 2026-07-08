@@ -856,6 +856,111 @@ export function consumeTravelV2PendingStationResultFloorForStationRoll(session =
   return applyTravelV2PendingStationResultFloorToOutcome(session, stationKey, outcomeKey, roundIndex, options);
 }
 
+
+function stationOutcomeFromRollTotal(total, dc) {
+  const rollTotal = Number(total);
+  const targetDc = Number(dc);
+  if (!Number.isFinite(rollTotal) || !Number.isFinite(targetDc)) return "";
+  if (rollTotal >= targetDc + 10) return "criticalSuccess";
+  if (rollTotal >= targetDc) return "success";
+  if (rollTotal <= targetDc - 10) return "criticalFailure";
+  return "failure";
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function writeTravelV2StationRollResolutionToSession(session = {}, stationKey = "", roundIndex = 0, resolution = {}) {
+  const key = safeKey(stationKey);
+  const index = Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0;
+  const nextSession = cloneData(session);
+  const roundResults = Array.isArray(nextSession.roundResults) ? nextSession.roundResults : [];
+  while (roundResults.length <= index) roundResults.push({});
+  const roundResult = isPlainObject(roundResults[index]) ? roundResults[index] : {};
+  roundResult.roundIndex = Number.isInteger(Number(roundResult.roundIndex)) ? Number(roundResult.roundIndex) : index;
+  roundResult.roundNumber = roundResult.roundNumber ?? index + 1;
+  roundResult.stationResults = isPlainObject(roundResult.stationResults) ? roundResult.stationResults : {};
+  roundResult.stationSummary = isPlainObject(roundResult.stationSummary) ? roundResult.stationSummary : {};
+  roundResult.stationRollResolutions = isPlainObject(roundResult.stationRollResolutions) ? roundResult.stationRollResolutions : {};
+  roundResult.stationResults[key] = resolution.effectiveOutcomeKey;
+  const existingSummary = isPlainObject(roundResult.stationSummary[key]) ? roundResult.stationSummary[key] : {};
+  roundResult.stationSummary[key] = {
+    ...existingSummary,
+    stationKey: key,
+    rawOutcomeKey: resolution.rawOutcomeKey,
+    outcomeKey: resolution.effectiveOutcomeKey,
+    effectiveOutcomeKey: resolution.effectiveOutcomeKey,
+    degree: resolution.effectiveOutcomeKey,
+    rawRollTotal: resolution.rawRollTotal,
+    appliedBonusTotal: resolution.appliedBonusTotal,
+    effectiveRollTotal: resolution.effectiveRollTotal,
+    rawModifier: resolution.rawModifier,
+    effectiveModifier: resolution.effectiveModifier,
+    stationRollBonusState: cloneData(resolution.stationRollBonusState),
+    selectedStationRollBonuses: cloneData(resolution.stationRollBonusState?.selected ?? []),
+    suppressedStationRollBonuses: cloneData(resolution.stationRollBonusState?.suppressed ?? []),
+    resultFloorState: cloneData(resolution.resultFloorState),
+    resultFloorChange: cloneData(resolution.resultFloorChange),
+    playerSafe: true,
+    readOnly: true
+  };
+  roundResult.stationRollResolutions[key] = cloneData(resolution);
+  if ((resolution.stationRollBonusState?.selected ?? []).length > 0) {
+    roundResult.stationCheckAppliedBonuses = isPlainObject(roundResult.stationCheckAppliedBonuses) ? roundResult.stationCheckAppliedBonuses : {};
+    roundResult.stationCheckAppliedBonuses[key] = cloneData(resolution.stationRollBonusState.selected);
+  }
+  roundResults[index] = roundResult;
+  nextSession.roundResults = roundResults;
+  return nextSession;
+}
+
+export function resolveTravelV2StationRollWithPendingEffects(session = {}, stationKey = "", rollData = {}, options = {}) {
+  const key = safeKey(stationKey);
+  const roundIndex = Number.isInteger(Number(options.roundIndex ?? rollData.roundIndex))
+    ? Number(options.roundIndex ?? rollData.roundIndex)
+    : (Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0);
+  const rawRollTotal = firstFiniteNumber(rollData.rawRollTotal, rollData.rollTotal, rollData.total);
+  const rawModifier = firstFiniteNumber(rollData.rawModifier, rollData.modifier, rollData.totalModifier);
+  if (!key) return { ok: false, session: cloneData(session), stationKey: key, roundIndex, blockedReason: "Station is required.", playerSafe: true, readOnly: true };
+  const stationRollBonusState = prepareTravelV2StationRollBonusState(session, key, roundIndex);
+  const appliedBonusTotal = Number(stationRollBonusState.totalAppliedBonus ?? 0);
+  const effectiveRollTotal = rawRollTotal == null ? null : rawRollTotal + appliedBonusTotal;
+  const effectiveModifier = rawModifier == null ? null : rawModifier + appliedBonusTotal;
+  const dc = firstFiniteNumber(rollData.dc, rollData.targetDc, options.dc, options.targetDc);
+  const rawOutcomeKey = normalizeStationOutcomeKey(rollData.rawOutcomeKey ?? rollData.outcomeKey ?? rollData.resultKey) || stationOutcomeFromRollTotal(effectiveRollTotal, dc);
+  const consumedStationRollBonuses = consumeTravelV2PendingStationActionBonusesForStationRoll(session, key, roundIndex);
+  const floorState = prepareTravelV2StationResultFloorState(consumedStationRollBonuses.session, key, roundIndex, { outcomeKey: rawOutcomeKey });
+  const floorResult = applyTravelV2PendingStationResultFloorToOutcome(consumedStationRollBonuses.session, key, rawOutcomeKey, roundIndex);
+  const effectiveOutcomeKey = floorResult.effectiveOutcomeKey || rawOutcomeKey;
+  const resolution = {
+    ok: true,
+    stationKey: key,
+    roundIndex,
+    roundNumber: roundIndex + 1,
+    rawRollTotal,
+    rawModifier,
+    appliedBonusTotal,
+    effectiveRollTotal,
+    effectiveModifier,
+    rawOutcomeKey,
+    outcomeKey: effectiveOutcomeKey,
+    effectiveOutcomeKey,
+    stationRollBonusState: cloneData(stationRollBonusState),
+    consumedStationRollBonuses: cloneData(consumedStationRollBonuses),
+    resultFloorState: cloneData(floorState),
+    resultFloorChange: cloneData(floorResult.resultFloorChange),
+    playerSafe: true,
+    readOnly: true
+  };
+  const updatedSession = writeTravelV2StationRollResolutionToSession(floorResult.session, key, roundIndex, resolution);
+  return { ...resolution, session: updatedSession };
+}
+
 function consumeTravelV2ActiveCard(session = {}, sourceCardId = "") {
   const activeCards = normalizeTravelV2ActiveCardRecords(session.travelV2ActiveCards);
   let consumedCardRecord = null;

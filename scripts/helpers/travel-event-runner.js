@@ -25,7 +25,7 @@ import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setT
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
-import { inspectTravelV2StationActionLockInFinalizationGuard } from "./travel-v2-session-round-finalization.js";
+import { inspectTravelV2StationActionLockInFinalizationGuard, resolveTravelV2StationRollWithPendingEffects } from "./travel-v2-session-round-finalization.js";
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
@@ -4159,16 +4159,19 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   let nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
   if (isPlainObject(nextSession.roundResults[index].stationCheckAppliedBonuses)) delete nextSession.roundResults[index].stationCheckAppliedBonuses[stationKey];
+  if (result !== "skipped") {
+    const rollResolution = resolveTravelV2StationRollWithPendingEffects(nextSession, stationKey, { rawOutcomeKey: result }, { ...options, roundIndex: index });
+    if (!rollResolution.ok) return { ok: false, errors: [rollResolution.blockedReason ?? "Could not resolve Travel v2 station roll effects."], warnings: [], session: nextSession };
+    nextSession = cloneData(rollResolution.session);
+  }
+  const effectiveResult = nextSession.roundResults[index].stationResults[stationKey] ?? result;
   const stationAction = normalizeTravelStationAction(nextSession.roundResults[index].stationActions?.[stationKey], stationKey, nextSession.event.rounds[index]);
   if (stationAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE && stationAction.hazardRecordId) {
-    const hazardUpdate = resolveTravelV2HazardResponse(nextSession, stationAction.hazardRecordId, stationKey, result, { ...options, roundIndex: index });
+    const hazardUpdate = resolveTravelV2HazardResponse(nextSession, stationAction.hazardRecordId, stationKey, effectiveResult, { ...options, roundIndex: index });
     if (!hazardUpdate.ok) return { ...hazardUpdate, warnings: hazardUpdate.warnings ?? [] };
     nextSession = cloneData(hazardUpdate.session);
-    nextSession.roundResults[index].stationResults[stationKey] = result;
+    nextSession.roundResults[index].stationResults[stationKey] = effectiveResult;
   }
-  const supportBonusUpdate = applyTravelV2PendingSupportBonusToStationCheck(nextSession, index, stationKey, options);
-  if (!supportBonusUpdate.ok) return supportBonusUpdate;
-  Object.assign(nextSession, supportBonusUpdate.session);
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);

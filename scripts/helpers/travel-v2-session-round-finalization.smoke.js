@@ -13,7 +13,11 @@ import {
   prepareTravelV2DifficultyBidRewardPreview,
   prepareTravelV2ActiveCardsPreviewState,
   prepareTravelV2ActiveCardApplicationPreviewState,
+  prepareTravelV2StationActionResolutionSummary,
+  prepareTravelV2StationActionEventApproachEffects,
+  prepareTravelV2StationActionEventApproachContributions,
   prepareTravelV2StationRollBonusState,
+  resolveTravelV2StationRollWithPendingEffects,
   consumeTravelV2PendingStationActionBonusesForStationRoll,
   applyTravelV2PendingStationResultFloorToOutcome,
   prepareTravelV2StationResultFloorState,
@@ -558,6 +562,43 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   const ignoredFloor = applyTravelV2PendingStationResultFloorToOutcome(applyTravelV2PendingStationResultFloorToOutcome(floorSession, "navigator", "failure", 0).session, "navigator", "failure", 0);
   assertSmoke(ignoredFloor.resultFloorChange === null, "consumed floor should be ignored on later calls");
   assertEqual(applyTravelV2PendingStationResultFloorToOutcome(floorSession, "engineer", "failure", 1).effectiveOutcomeKey, "failure", "wrong-round result floor should be ignored");
+
+  const stationRollSource = {
+    currentRoundIndex: 0,
+    roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "failure" } }],
+    travelV2PendingStationActionBonuses: { records: [
+      { id: "support-roll", bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationLabel: "Engineer", targetStationKey: "navigator", nextRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true },
+      { id: "greater-roll", bonusKey: "greaterOpeningBonus", bonusType: "circumstance", bonusValue: 3, sourceCardId: "card-greater", sourceCardLabel: "Greater Opening", targetStationKey: "navigator", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true }
+    ] },
+    travelV2PendingStationResultFloors: { records: [
+      { id: "legendary-roll", resultFloor: "success", sourceCardId: "card-legendary", sourceCardLabel: "Legendary Event", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true }
+    ] }
+  };
+  const stationRollSnapshot = snapshot(stationRollSource);
+  const stationRollResolution = resolveTravelV2StationRollWithPendingEffects(stationRollSource, "navigator", { rawRollTotal: 14, dc: 20 }, { roundIndex: 0 });
+  assertSmoke(stationRollResolution.ok, "station roll resolver should succeed");
+  assertEqual(stationRollResolution.rawRollTotal, 14, "station roll resolver should preserve raw roll total");
+  assertEqual(stationRollResolution.appliedBonusTotal, 3, "station roll resolver should apply only highest circumstance bonus");
+  assertEqual(stationRollResolution.effectiveRollTotal, 17, "station roll resolver should add selected bonus to effective total");
+  assertEqual(stationRollResolution.rawOutcomeKey, "failure", "station roll resolver should calculate raw outcome from effective total before floors");
+  assertEqual(stationRollResolution.effectiveOutcomeKey, "success", "station roll resolver should apply Legendary floor to effective outcome");
+  assertEqual(stationRollResolution.session.roundResults[0].stationResults.navigator, "success", "station results should store effective outcome for downstream logic");
+  assertEqual(stationRollResolution.session.roundResults[0].stationSummary.navigator.rawOutcomeKey, "failure", "station summary should preserve raw outcome");
+  assertEqual(stationRollResolution.session.roundResults[0].stationSummary.navigator.effectiveOutcomeKey, "success", "station summary should preserve effective outcome");
+  assertSmoke(stationRollResolution.session.roundResults[0].stationSummary.navigator.selectedStationRollBonuses.some((record) => record.recordId === "greater-roll"), "round result should store selected bonus audit data");
+  assertSmoke(stationRollResolution.session.roundResults[0].stationSummary.navigator.suppressedStationRollBonuses.some((record) => record.recordId === "support-roll"), "round result should store suppressed bonus audit data");
+  assertSmoke(stationRollResolution.session.travelV2PendingStationActionBonuses.records.find((record) => record.id === "greater-roll")?.consumed === true, "selected bonus records should be consumed after station roll resolution");
+  assertSmoke(stationRollResolution.session.travelV2PendingStationActionBonuses.records.find((record) => record.id === "support-roll")?.suppressed === true, "suppressed bonus records should be consumed and marked suppressed after station roll resolution");
+  assertSmoke(stationRollResolution.session.travelV2PendingStationResultFloors.records.find((record) => record.id === "legendary-roll")?.consumed === true, "floor record should be consumed after station roll resolution");
+  assertEqual(snapshot(stationRollSource), stationRollSnapshot, "station roll resolver should not mutate source session");
+
+  const eventApproachFloorSession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: { navigator: "failure", captain: "success", engineer: "failure", veilwarden: "success", watchmaster: "failure" } }] });
+  const eventApproachFloorResolved = resolveTravelV2StationRollWithPendingEffects({ ...eventApproachFloorSession, travelV2PendingStationResultFloors: { records: [{ id: "legendary-event-approach", resultFloor: "success", targetStationKey: "navigator", previewRoundIndex: 0, consumed: false, playerSafe: true, readOnly: true }] } }, "navigator", { rawOutcomeKey: "failure" }, { roundIndex: 0 });
+  const eventApproachEffective = prepareTravelV2StationActionEventApproachContributions(prepareTravelV2StationActionEventApproachEffects(prepareTravelV2StationActionResolutionSummary(eventApproachFloorResolved.session, { roundIndex: 0 })));
+  assertEqual(eventApproachEffective.records.find((record) => record.sourceStationKey === "navigator")?.stationOutcome, "success", "Event Approach tally should see effective outcome when floor applies");
+  const eventApproachNoFloor = prepareTravelV2StationActionEventApproachContributions(prepareTravelV2StationActionEventApproachEffects(prepareTravelV2StationActionResolutionSummary(eventApproachFloorSession, { roundIndex: 0 })));
+  assertEqual(eventApproachNoFloor.records.find((record) => record.sourceStationKey === "navigator")?.stationOutcome, "failure", "Event Approach behavior should remain unchanged without a floor");
+  assertEqual(eventApproachNoFloor.records.find((record) => record.sourceStationKey === "navigator")?.contributionValue, 0, "Event Approach failure contribution should remain unchanged without a floor");
 
   return {
     ok: true,
