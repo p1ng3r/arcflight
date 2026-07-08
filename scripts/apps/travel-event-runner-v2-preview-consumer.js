@@ -16,6 +16,7 @@ import { applyTravelV2StationImpactModifierReviewToRenderState } from "../helper
 import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
 import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
 import { prepareTravelV2EventSetupStakesState } from "../helpers/travel-v2-event-setup-stakes.js";
+import { prepareTravelV2EventApproachTallyApplicationRecordControls } from "../helpers/travel-v2-session-round-finalization.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 4;
 
@@ -311,6 +312,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2ActiveHazardHandoffReviewRequested: uiState.travelV2ActiveHazardHandoffReviewRequested === true,
     travelV2ActiveHazardHandoffReviewRequest: uiState.travelV2ActiveHazardHandoffReviewRequest ?? null
   }, { user, includeGmReview: true }) : null;
+  const travelV2EventApproachTallyApplicationControls = prepareTravelV2EventApproachTallyApplicationRecordControls(session, { isGM: canManageTravelV2Consequences });
   const travelV2HazardCandidateControlResult = canManageTravelV2Consequences ? prepareTravelV2HazardCandidateControlGmState({
     travelV2ActiveHazardHandoffReview,
     travelV2HazardCandidateControlRequested: uiState.travelV2HazardCandidateControlRequested === true,
@@ -330,6 +332,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     sessionActionsExpanded: uiState.sessionActionsExpanded === true,
     compactRunner: uiState.compactRunner === true,
     travelV2SetupStakes,
+    travelV2EventApproachTallyApplicationControls,
     travelV2PressureApplicationResult: uiState.travelV2PressureApplicationResult ?? null,
     travelV2PressureCorrectionResult: uiState.travelV2PressureCorrectionResult ?? null,
     travelV2RoundFinalizationResult: uiState.travelV2RoundFinalizationResult ?? null,

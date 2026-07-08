@@ -6,6 +6,7 @@ import {
   prepareTravelEventRunnerAppStateWithTravelV2Preview,
   TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION
 } from "./travel-event-runner-v2-preview-consumer.js";
+import { applyTravelV2EventApproachTallyApplicationRecordControlToSession } from "../helpers/travel-v2-session-round-finalization.js";
 
 function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 runner app preview consumer smoke check failed: ${message}`);
@@ -133,6 +134,36 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertSmoke(gmState.travelV2GmFlowStatus.disabledActions.advanceRound, "GM flow status includes blocked advance disabled reason");
   assertSmoke(gmState.travelV2SetupStakes.hasGmFacingNotes, "GM setup state may include separated GM-facing notes");
   assertSmoke(JSON.stringify(gmState.travelV2SetupStakes.gmFacing).includes("Voice Thief"), "GM setup state retains hidden hazards separately");
+
+  const eventApproachControlRecord = {
+    id: "travel-v2-event-approach-apply-record:0:eventApproach:2",
+    recordType: "eventApproachTallyApplication",
+    status: "reviewOnly",
+    sourceRoundIndex: 0,
+    sourceRoundNumber: 1,
+    sourceTallyKey: "eventApproach",
+    sourceTallySummary: { tallyKey: "eventApproach", tallyType: "eventApproach", totalContributionValue: 2, contributionCount: 2, positiveContributionCount: 2, contributingStationLabels: ["Captain", "Navigator"], hasContributions: true, roundIndex: 0, roundNumber: 1, playerSafe: true, readOnly: true },
+    progressDeltaPreview: 2,
+    applied: false,
+    reviewOnly: true,
+    playerSafe: true,
+    readOnly: true
+  };
+  const eventApproachControlSession = { event: createRunnerEventFixture(), currentRoundIndex: 0, travelV2EventApproachTallyApplicationRecords: { records: [eventApproachControlRecord], playerSafe: true, readOnly: true } };
+  const eventApproachGmState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: eventApproachControlSession, user: { isGM: true } });
+  assertSmoke(eventApproachGmState.travelV2EventApproachTallyApplicationControls.hasRecords, "GM app state includes Event Approach tally application controls");
+  assertSmoke(eventApproachGmState.travelV2PreviewPanel.travelV2EventApproachTallyApplicationControls.hasRecords, "GM panel state includes Event Approach tally application controls");
+  assertSmoke(eventApproachGmState.travelV2EventApproachTallyApplicationControls.records[0].canApply === true && eventApproachGmState.travelV2EventApproachTallyApplicationControls.records[0].requiresExplicitConfirmation === true, "ready GM Event Approach controls can apply and require explicit confirmation");
+  const eventApproachPlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: eventApproachControlSession, user: { isGM: false } });
+  assertSmoke(eventApproachPlayerState.travelV2EventApproachTallyApplicationControls.records[0].canApply === false && eventApproachPlayerState.travelV2EventApproachTallyApplicationControls.records[0].readOnly === true, "non-GM Event Approach controls are read-only");
+  assertSmoke(eventApproachPlayerState.travelV2PreviewPanel.travelV2EventApproachTallyApplicationControls.records[0].canApply === false && eventApproachPlayerState.travelV2PreviewPanel.travelV2EventApproachTallyApplicationControls.records[0].readOnly === true, "non-GM panel Event Approach controls are read-only");
+  const eventApproachPlayerJson = JSON.stringify(eventApproachPlayerState.travelV2EventApproachTallyApplicationControls) + JSON.stringify(eventApproachPlayerState.travelV2PreviewPanel.travelV2EventApproachTallyApplicationControls);
+  for (const forbidden of ["confirmationPrompt", "requiresExplicitConfirmation", "auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!eventApproachPlayerJson.includes(forbidden), `non-GM Event Approach controls exclude ${forbidden}`);
+  }
+  const eventApproachControlApply = applyTravelV2EventApproachTallyApplicationRecordControlToSession(eventApproachControlSession, eventApproachControlRecord.id, { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  const eventApproachControlReapply = applyTravelV2EventApproachTallyApplicationRecordControlToSession(eventApproachControlApply.session, eventApproachControlRecord.id, { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(eventApproachControlApply.ok && eventApproachControlReapply.ok && eventApproachControlReapply.session.travelV2EventApproachTallyApplicationRecords.records.length === 1, "confirmed Event Approach control wrapper apply remains idempotent");
   const invalidRoundSetupState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: { ...createRunnerEventFixture(), roundCount: 2 } }, user: { isGM: false } });
   assertSmoke(!invalidRoundSetupState.travelV2SetupStakes.ok && invalidRoundSetupState.travelV2SetupStakes.hasValidationMessages, "invalid round count produces safe setup validation state");
   const missingCoreSetupState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: { ...createRunnerEventFixture(), availableCoreStations: ["captain", "navigator", "engineer", "veilwarden"] } }, user: { isGM: false } });
@@ -254,7 +285,8 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "pressure-ready-after-skipped",
       "gm-flow-status-strip",
       "gm-disabled-action-reasons",
-      "gm-visible-finalize-round-action"
+      "gm-visible-finalize-round-action",
+      "event-approach-tally-application-controls"
     ]
   };
 }

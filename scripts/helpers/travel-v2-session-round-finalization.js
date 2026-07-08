@@ -1644,7 +1644,9 @@ function eventApproachApplicationRecordControlFromRecord(record = {}, { includeG
     sessionLocalOnly: true,
     playerSafe: !includeGmReview
   };
-  return includeGmReview ? base : stripEventApproachPlayerUnsafeKeys({ ...base, canApply: false, actionKey: "reviewEventApproachTallyApplicationRecord", readOnly: true, playerSafe: true });
+  if (includeGmReview) return base;
+  const { confirmationPrompt, requiresExplicitConfirmation, ...playerBase } = base;
+  return stripEventApproachPlayerUnsafeKeys({ ...playerBase, canApply: false, actionKey: "reviewEventApproachTallyApplicationRecord", readOnly: true, playerSafe: true });
 }
 
 export function prepareTravelV2EventApproachTallyApplicationRecordControls(session = {}, options = {}) {
@@ -1663,7 +1665,7 @@ export function prepareTravelV2EventApproachTallyApplicationRecordControls(sessi
     appliedCount,
     hasRecords: controls.length > 0,
     canApplyAny: includeGmReview && readyCount > 0,
-    requiresExplicitConfirmation: readyCount > 0,
+    ...(includeGmReview ? { requiresExplicitConfirmation: readyCount > 0 } : {}),
     sessionLocalOnly: true,
     playerSafe: !includeGmReview,
     readOnly: !includeGmReview
