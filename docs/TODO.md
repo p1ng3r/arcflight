@@ -6,14 +6,14 @@ The roadmap lives in `docs/ROADMAP.md`. Permanent design rules live in `docs/ARC
 
 ## Now
 
-- Create the docs source-of-truth spine.
+- Review and land the docs source-of-truth spine.
 - Update README to point to the source-of-truth docs.
 - Audit existing Travel v2 documentation for stale roadmap language.
 - Mark superseded roadmap/task notes as historical or move them under `docs/archive/`.
-- Write the first clear Travel v2 table-use guide in `docs/TRAVEL-V2.md`.
 
 ## Next
 
+- Write the first clear Travel v2 table-use guide in `docs/TRAVEL-V2.md`.
 - Review `docs/codex/` and `docs/codex-tasks/` for historical-only prompt files.
 - Decide which Travel v2 phase plans remain useful reference material.
 - Create a builder/importer schema gap list.
