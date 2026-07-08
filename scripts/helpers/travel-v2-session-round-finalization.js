@@ -14,8 +14,6 @@ export const TRAVEL_V2_ACTIVE_CARD_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_PREVIEW_VERSION = 1;
 export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION = 1;
-export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES = Object.freeze(["eventApproachTallyApplication"]);
-export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_STATUSES = Object.freeze(["readyForGmApply", "applied", "blocked"]);
 export const TRAVEL_V2_DIFFICULTY_BID_KEYS = Object.freeze(["none", "minor", "greater", "extreme"]);
 export const TRAVEL_V2_DIFFICULTY_BID_REWARD_KEYS = Object.freeze(["minorOpening", "greaterOpening", "heroicEvent", "legendaryEvent"]);
 export const TRAVEL_V2_ACTIVE_CARD_STATUSES = Object.freeze(["pending", "consumed", "applied"]);
@@ -34,6 +32,11 @@ export const TRAVEL_V2_ACTIVE_CARD_APPLICATION_EFFECTS = Object.freeze({
   heroicDegreeUpgrade: "heroicDegreeUpgrade",
   legendarySuccessFloor: "legendarySuccessFloor"
 });
+
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES = Object.freeze({
+  eventApproachTallyApplication: "eventApproachTallyApplication"
+});
+export const TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_STATUSES = Object.freeze(["reviewOnly", "applied", "blocked"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -1413,6 +1416,110 @@ function eventApproachApplicationPreviewRecordFromTally(sourceTally = {}, finali
     playerSafe: true,
     readOnly: true
   };
+}
+
+
+function eventApproachTallyApplicationRecordId({ sourceRoundIndex = null, sourceTallyKey = "eventApproach", progressDeltaPreview = 0 } = {}) {
+  return [
+    "travel-v2-event-approach-apply-record",
+    Number.isInteger(Number(sourceRoundIndex)) ? Number(sourceRoundIndex) : "unknown-round",
+    safeKey(sourceTallyKey) || "eventApproach",
+    Number.isFinite(Number(progressDeltaPreview)) ? Number(progressDeltaPreview) : 0
+  ].join(":");
+}
+
+function eventApproachTallySummaryFromSource(sourceTally = {}) {
+  const tally = normalizeEventApproachApplicationSourceTally(sourceTally);
+  return {
+    tallyKey: tally.tallyKey,
+    tallyType: tally.tallyType,
+    tallyLabel: tally.tallyLabel,
+    totalContributionValue: tally.totalContributionValue,
+    contributionCount: tally.contributionCount,
+    positiveContributionCount: tally.positiveContributionCount,
+    zeroContributionCount: tally.zeroContributionCount,
+    negativeContributionCount: tally.negativeContributionCount,
+    contributingStationLabels: cloneData(tally.contributingStationLabels),
+    hasContributions: tally.hasContributions,
+    roundIndex: tally.roundIndex,
+    roundNumber: tally.roundNumber,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function normalizeTravelV2EventApproachTallyApplicationRecords(container = {}) {
+  const records = recordsFromContainer(container)
+    .filter(isPlainObject)
+    .map((record) => {
+      const sourceTallySummary = eventApproachTallySummaryFromSource(record.sourceTallySummary ?? record.sourceTally ?? record.tally ?? record.eventApproachContributionTally ?? {});
+      const sourceRoundIndex = Number.isInteger(Number(record.sourceRoundIndex ?? record.roundIndex ?? sourceTallySummary.roundIndex)) ? Number(record.sourceRoundIndex ?? record.roundIndex ?? sourceTallySummary.roundIndex) : null;
+      const sourceRoundNumber = record.sourceRoundNumber ?? record.roundNumber ?? sourceTallySummary.roundNumber ?? null;
+      sourceTallySummary.roundIndex = sourceRoundIndex;
+      sourceTallySummary.roundNumber = sourceRoundNumber;
+      const sourceTallyKey = safeKey(record.sourceTallyKey ?? sourceTallySummary.tallyKey) || "eventApproach";
+      const progressDeltaPreview = Number.isFinite(Number(record.progressDeltaPreview ?? record.effectPreview?.delta ?? sourceTallySummary.totalContributionValue)) ? Number(record.progressDeltaPreview ?? record.effectPreview?.delta ?? sourceTallySummary.totalContributionValue) : 0;
+      const applied = record.applied === true;
+      const requestedStatus = safeKey(record.status ?? record.lifecycleStatus);
+      const status = applied ? "applied" : (TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_STATUSES.includes(requestedStatus) ? requestedStatus : "reviewOnly");
+      const id = optionalString(record.id) ?? eventApproachTallyApplicationRecordId({ sourceRoundIndex, sourceTallyKey, progressDeltaPreview });
+      return {
+        id,
+        recordType: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORD_TYPES.eventApproachTallyApplication,
+        status,
+        sourceType: "eventApproachContributionTally",
+        sourceRoundIndex,
+        sourceRoundNumber,
+        sourceTallyKey,
+        sourceTallySummary,
+        progressDeltaPreview,
+        applied,
+        appliedAtRound: applied ? (record.appliedAtRound ?? null) : null,
+        reviewOnly: record.reviewOnly !== false,
+        playerSafe: true,
+        readOnly: true
+      };
+    });
+  return {
+    version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
+    records: cloneData(records),
+    hasRecords: records.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+export function prepareTravelV2EventApproachTallyApplicationRecord(sourceTally = {}, options = {}) {
+  const normalizedTally = normalizeEventApproachApplicationSourceTally(sourceTally, options);
+  return normalizeTravelV2EventApproachTallyApplicationRecords({ records: [{
+    id: options.id,
+    status: options.status ?? "reviewOnly",
+    sourceRoundIndex: normalizedTally.roundIndex,
+    sourceRoundNumber: normalizedTally.roundNumber,
+    sourceTallyKey: normalizedTally.tallyKey,
+    sourceTallySummary: normalizedTally,
+    progressDeltaPreview: normalizedTally.totalContributionValue,
+    applied: false,
+    appliedAtRound: null,
+    reviewOnly: true
+  }] }).records[0];
+}
+
+export function appendTravelV2EventApproachTallyApplicationRecordToSession(session = {}, sourceTally = {}, options = {}) {
+  const nextSession = cloneData(isPlainObject(session) ? session : {});
+  const existing = normalizeTravelV2EventApproachTallyApplicationRecords(nextSession.travelV2EventApproachTallyApplicationRecords);
+  const record = prepareTravelV2EventApproachTallyApplicationRecord(sourceTally, options);
+  const records = existing.records.some((entry) => entry.id === record.id)
+    ? existing.records.map((entry) => entry.id === record.id ? record : entry)
+    : [...existing.records, record];
+  nextSession.travelV2EventApproachTallyApplicationRecords = {
+    version: TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
+    records: cloneData(records),
+    hasRecords: records.length > 0,
+    playerSafe: true,
+    readOnly: true
+  };
+  return nextSession;
 }
 
 export function prepareTravelV2EventApproachTallyApplicationPreview(session = {}, options = {}) {
