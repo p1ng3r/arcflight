@@ -171,6 +171,21 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(!JSON.stringify(finalizedEventApproachPanel.eventApproachTallyApplicationPreview).includes("gmText"), "panel Event Approach apply preview should redact GM text");
   assertSmoke(!JSON.stringify(finalizedEventApproachPanel.eventApproachTallyApplicationPreview).includes("applyPayload"), "panel Event Approach apply preview should redact apply payloads");
 
+  const advancedRoundEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      currentRoundIndex: 1,
+      travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 4, contributionCount: 3, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM previous round", applyPayload: { secret: true } } }] }
+    }
+  });
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.status, "readyForFutureGmApply", "advanced current round panel should use latest finalized resolution record before current round fallback");
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.roundIndex, 0, "advanced current round panel should preserve finalized round index");
+  assertEqual(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.sourceTally.totalContributionValue, 4, "advanced current round panel should use the finalized previous-round tally");
+  assertSmoke(!advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview.canApply, "advanced current round panel should not expose apply behavior");
+  assertSmoke(!JSON.stringify(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview).includes("gmText"), "advanced current round preview should redact GM text");
+  assertSmoke(!JSON.stringify(advancedRoundEventApproachPanel.eventApproachTallyApplicationPreview).includes("applyPayload"), "advanced current round preview should redact apply payloads");
+
   const orderedPanel = prepareTravelEventRunnerV2PreviewPanelState({
     ...appState,
     session: {

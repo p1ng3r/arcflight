@@ -893,7 +893,17 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributions = normalizeStationActionEventApproachContributions(latestFinalizationResult?.stationActionEventApproachContributions ?? latestFinalizationResult?.eventApproachContributions ?? latestResolutionRecord?.stationActionEventApproachContributions ?? latestResolutionRecord?.eventApproachContributions);
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
-  const eventApproachTallyApplicationPreview = isPlainObject(runnerSession) ? prepareTravelV2EventApproachTallyApplicationPreview(runnerSession, { roundIndex: latestFinalizationResult?.roundIndex ?? runnerSession?.currentRoundIndex }) : prepareTravelV2EventApproachTallyApplicationPreview({}, {});
+  const eventApproachTallyApplicationPreviewRoundIndex = Number.isInteger(Number(latestFinalizationResult?.roundIndex))
+    ? Number(latestFinalizationResult.roundIndex)
+    : (Number.isInteger(Number(latestResolutionRecord?.roundIndex))
+      ? Number(latestResolutionRecord.roundIndex)
+      : (Number.isInteger(Number(runnerSession?.currentRoundIndex)) ? Number(runnerSession.currentRoundIndex) : null));
+  const eventApproachTallyApplicationPreview = isPlainObject(runnerSession)
+    ? prepareTravelV2EventApproachTallyApplicationPreview(
+      runnerSession,
+      eventApproachTallyApplicationPreviewRoundIndex === null ? {} : { roundIndex: eventApproachTallyApplicationPreviewRoundIndex }
+    )
+    : prepareTravelV2EventApproachTallyApplicationPreview({}, {});
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const stationRollRoundIndex = Number.isInteger(Number(runnerSession?.currentRoundIndex)) ? Number(runnerSession.currentRoundIndex) : Number(preview.roundIndex ?? 0);
   const stationRollBonusState = normalizeStationRollBonusState(runnerSession, stationRollRoundIndex);
