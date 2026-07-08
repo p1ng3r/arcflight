@@ -392,7 +392,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
             statusTone: "warning",
             totalContributionValue: 1,
             previewLabel: "Partial Progress preview: +1 Event Approach tally captured for later resolution.",
-            previewMessage: "Partial Progress preview: +1 Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.",
+            previewMessage: "Partial Progress preview: +1 Event Approach tally captured as read-only. Event completion reads effective station outcomes after roll bonus and result-floor resolution.",
             playerSafe: true,
             readOnly: true,
             gmText: "secret",
@@ -423,7 +423,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(eventApproachPanel.travelV2StationActionEventApproachTallyStatus.available, "Event Approach tally status should be exposed in preview render state");
   const eventApproachStatus = eventApproachPanel.travelV2StationActionEventApproachTallyStatus;
   assertSmoke(eventApproachStatus.statusKey === "partialProgress" && eventApproachStatus.statusLabel === "Partial Progress" && eventApproachStatus.statusTone === "warning", "Event Approach preview status should include safe status key label and tone");
-  assertSmoke(eventApproachStatus.totalContributionValue === 1 && eventApproachStatus.previewLabel.includes("captured") && eventApproachStatus.previewMessage.includes("read-only") && eventApproachStatus.previewMessage.includes("not applied yet"), "Event Approach preview status should include total and readable not-applied message");
+  assertSmoke(eventApproachStatus.totalContributionValue === 1 && eventApproachStatus.previewLabel.includes("captured") && eventApproachStatus.previewMessage.includes("read-only") && eventApproachStatus.previewMessage.includes("effective station outcomes"), "Event Approach preview status should include total and readable effective-outcome message");
   const fallbackStatusPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, travelV2RoundFinalizationResult: { stationActionEventApproachContributionTally: { roundIndex: 0, roundNumber: 1, totalContributionValue: -1, contributionCount: 1, hasContributions: true, playerSafe: true, readOnly: true } } });
   assertSmoke(fallbackStatusPanel.travelV2StationActionEventApproachTallyStatus.statusKey === "setback", "Event Approach preview status should fall back from tally when status object is absent");
   const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions, tally: eventApproachPanel.travelV2StationActionEventApproachContributionTally, status: eventApproachPanel.travelV2StationActionEventApproachTallyStatus });
