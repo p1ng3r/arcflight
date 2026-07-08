@@ -25,11 +25,11 @@ Done when:
 - `docs/TODO.md` defines active work.
 - historical docs are either linked, updated, marked superseded, or archived.
 
-Next slice:
+Next slices:
 
-- Create source-of-truth docs spine.
-- Then update README to point to the docs spine.
-- Then audit stale Travel v2 docs and archive/mark superseded material.
+- Review and land the source-of-truth docs spine.
+- Update README to point to the docs spine.
+- Audit stale Travel v2 docs and archive or mark superseded material.
 
 ## Phase 2 — Travel v2 stabilization and documentation
 
