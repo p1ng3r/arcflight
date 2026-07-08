@@ -5,9 +5,9 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
-import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers, sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers, applyTravelV2ActiveCardApplicationPreviewToSession, resolveTravelV2BestStationRollBonuses, prepareTravelV2StationResultFloorState } from "../helpers/travel-v2-session-round-finalization.js";
+import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers, sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers, applyTravelV2ActiveCardApplicationPreviewToSession, resolveTravelV2BestStationRollBonuses, prepareTravelV2StationResultFloorState, prepareTravelV2EventApproachTallyApplicationPreview, prepareTravelV2EventApproachTallyApplicationRecordControls } from "../helpers/travel-v2-session-round-finalization.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 16;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 17;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -893,6 +893,20 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributions = normalizeStationActionEventApproachContributions(latestFinalizationResult?.stationActionEventApproachContributions ?? latestFinalizationResult?.eventApproachContributions ?? latestResolutionRecord?.stationActionEventApproachContributions ?? latestResolutionRecord?.eventApproachContributions);
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
+  const eventApproachTallyApplicationPreviewRoundIndex = Number.isInteger(Number(latestFinalizationResult?.roundIndex))
+    ? Number(latestFinalizationResult.roundIndex)
+    : (Number.isInteger(Number(latestResolutionRecord?.roundIndex))
+      ? Number(latestResolutionRecord.roundIndex)
+      : (Number.isInteger(Number(runnerSession?.currentRoundIndex)) ? Number(runnerSession.currentRoundIndex) : null));
+  const eventApproachTallyApplicationPreview = isPlainObject(runnerSession)
+    ? prepareTravelV2EventApproachTallyApplicationPreview(
+      runnerSession,
+      eventApproachTallyApplicationPreviewRoundIndex === null ? {} : { roundIndex: eventApproachTallyApplicationPreviewRoundIndex }
+    )
+    : prepareTravelV2EventApproachTallyApplicationPreview({}, {});
+  const eventApproachTallyApplicationControls = isPlainObject(appState.travelV2EventApproachTallyApplicationControls)
+    ? appState.travelV2EventApproachTallyApplicationControls
+    : prepareTravelV2EventApproachTallyApplicationRecordControls(runnerSession, { isGM: appState.isGM === true });
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
   const stationRollRoundIndex = Number.isInteger(Number(runnerSession?.currentRoundIndex)) ? Number(runnerSession.currentRoundIndex) : Number(preview.roundIndex ?? 0);
   const stationRollBonusState = normalizeStationRollBonusState(runnerSession, stationRollRoundIndex);
@@ -948,6 +962,10 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     travelV2StationActionEventApproachContributionTally: stationActionEventApproachContributionTally,
     stationActionEventApproachTallyStatus,
     travelV2StationActionEventApproachTallyStatus: stationActionEventApproachTallyStatus,
+    eventApproachTallyApplicationPreview: eventApproachTallyApplicationPreview.playerState,
+    travelV2EventApproachTallyApplicationPreview: eventApproachTallyApplicationPreview.playerState,
+    eventApproachTallyApplicationControls,
+    travelV2EventApproachTallyApplicationControls: eventApproachTallyApplicationControls,
     supportBonusStatusAvailable,
     stationActionEffectsAvailable,
     pendingStationActionBonuses,

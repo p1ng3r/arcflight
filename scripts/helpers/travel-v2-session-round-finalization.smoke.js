@@ -5,7 +5,10 @@ import {
   getTravelV2DifficultyBidDcModifier,
   getTravelV2StationResultForRound,
   isTravelV2RoundActionsLocked,
+  appendTravelV2EventApproachTallyApplicationRecordToSession,
   normalizeTravelV2ActiveCardRecords,
+  normalizeTravelV2EventApproachTallyApplicationRecords,
+  prepareTravelV2EventApproachTallyApplicationRecord,
   normalizeTravelV2DifficultyBid,
   prepareTravelV2DifficultyBidCardRecord,
   prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary,
@@ -21,12 +24,16 @@ import {
   consumeTravelV2PendingStationActionBonusesForStationRoll,
   applyTravelV2PendingStationResultFloorToOutcome,
   prepareTravelV2StationResultFloorState,
+  prepareTravelV2EventApproachTallyApplicationPreview,
+  applyTravelV2EventApproachTallyApplicationRecordToSession,
+  prepareTravelV2EventApproachTallyApplicationRecordControls,
+  applyTravelV2EventApproachTallyApplicationRecordControlToSession,
   sanitizeTravelV2ActiveCardsForPlayers,
   TRAVEL_V2_ACTIVE_CARD_RECORDS_VERSION,
   TRAVEL_V2_ACTIVE_CARD_STATUSES,
   TRAVEL_V2_DIFFICULTY_BID_KEYS,
-  TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION
-} from "./travel-v2-session-round-finalization.js";
+  TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION,
+  TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION} from "./travel-v2-session-round-finalization.js";
 
 function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 session round finalization smoke check failed: ${message}`);
@@ -325,6 +332,81 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!applicationPreviewJson.includes(forbidden), `application preview state should not include forbidden player-safe term ${forbidden}`);
   }
+
+
+  assertEqual(normalizeTravelV2EventApproachTallyApplicationRecords().records.length, 0, "Event Approach tally application record normalization should tolerate empty input");
+  const missingConfirmationEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "missing-record", { now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!missingConfirmationEventApproachApply.ok && missingConfirmationEventApproachApply.blocked, "Event Approach tally apply should require explicit GM confirmation");
+  const missingIdEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "", { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!missingIdEventApproachApply.ok && missingIdEventApproachApply.blocked, "missing Event Approach tally application record id should block safely");
+  const missingEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(createRunnerSessionFixture(), "missing-record", { confirmedByGM: true, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!missingEventApproachApply.ok && missingEventApproachApply.blocked, "missing Event Approach tally application record should block safely");
+  assertSmoke(missingEventApproachApply.session !== null, "missing Event Approach apply should return a safe cloned session shape");
+
+  const eventApproachApplySourceTally = {
+    tallyKey: "eventApproach",
+    tallyType: "eventApproach",
+    totalContributionValue: 2,
+    contributionCount: 2,
+    positiveContributionCount: 2,
+    contributingStationLabels: ["Captain", "Navigator"],
+    roundIndex: 0,
+    roundNumber: 1,
+    hasContributions: true,
+    playerSafe: true,
+    readOnly: true
+  };
+  const eventApproachApplyRecord = prepareTravelV2EventApproachTallyApplicationRecord(eventApproachApplySourceTally, {
+    id: "travel-v2-event-approach-apply-record:0:eventApproach:2"
+  });
+  const eventApproachApplySession = createRunnerSessionFixture({
+    travelV2EventApproachTallyApplicationRecords: { records: [eventApproachApplyRecord], playerSafe: true, readOnly: true },
+    actor: { update() { throw new Error("actor update should not be called by Event Approach tally apply"); } },
+    item: { update() { throw new Error("item update should not be called by Event Approach tally apply"); } },
+    socket: { emit() { throw new Error("socket emit should not be called by Event Approach tally apply"); } },
+    chat: { create() { throw new Error("chat create should not be called by Event Approach tally apply"); } },
+    journal: { create() { throw new Error("journal create should not be called by Event Approach tally apply"); } },
+    scene: { update() { throw new Error("scene update should not be called by Event Approach tally apply"); } },
+    token: { update() { throw new Error("token update should not be called by Event Approach tally apply"); } },
+    combat: { update() { throw new Error("combat update should not be called by Event Approach tally apply"); } }
+  });
+  const eventApproachPanelControls = prepareTravelV2EventApproachTallyApplicationRecordControls(eventApproachApplySession, { isGM: true });
+  assertSmoke(eventApproachPanelControls.canApplyAny === true, "ready Event Approach tally application record should expose GM apply control availability");
+  assertEqual(eventApproachPanelControls.records[0].recordId, eventApproachApplyRecord.id, "Event Approach tally application control should target canonical record id");
+  assertSmoke(eventApproachPanelControls.records[0].canApply === true && eventApproachPanelControls.records[0].requiresExplicitConfirmation === true, "ready record exposes explicit confirmation apply control metadata");
+  const blockedPanelApply = applyTravelV2EventApproachTallyApplicationRecordControlToSession(eventApproachApplySession, eventApproachApplyRecord.id, { now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(!blockedPanelApply.ok && blockedPanelApply.blocked, "Event Approach panel control apply should block without explicit GM confirmation");
+  const playerSafePanelControls = prepareTravelV2EventApproachTallyApplicationRecordControls(eventApproachApplySession);
+  assertSmoke(playerSafePanelControls.records[0].canApply === false && playerSafePanelControls.records[0].readOnly === true, "player-safe Event Approach tally controls should remain read-only");
+  const playerSafePanelControlsJson = JSON.stringify(playerSafePanelControls);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!playerSafePanelControlsJson.includes(forbidden), `player-safe Event Approach tally controls should not include forbidden term ${forbidden}`);
+  }
+  const eventApproachApplyBefore = snapshot(eventApproachApplySession);
+  const eventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApplySession, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(eventApproachApply.ok && eventApproachApply.applied, "valid Event Approach tally application record should apply with GM confirmation");
+  assertSmoke(eventApproachApply.session !== eventApproachApplySession, "Event Approach tally apply should return a cloned session");
+  assertEqual(snapshot(eventApproachApplySession), eventApproachApplyBefore, "Event Approach tally apply should not mutate source session");
+  assertEqual(eventApproachApply.appliedRecord.id, eventApproachApplyRecord.id, "Event Approach tally applied record should preserve canonical id");
+  assertEqual(eventApproachApply.appliedRecord.recordType, "eventApproachTallyApplication", "Event Approach tally applied record should preserve record type");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallyKey, "eventApproach", "Event Approach tally applied record should preserve source tally key");
+  assertEqual(eventApproachApply.appliedRecord.status, "applied", "Event Approach tally applied record should move to applied status");
+  assertSmoke(eventApproachApply.appliedRecord.applied === true, "Event Approach tally applied record should flag applied lifecycle");
+  assertEqual(eventApproachApply.appliedRecord.appliedAtRound, 1, "Event Approach tally applied record should store applied round metadata");
+  assertEqual(eventApproachApply.appliedRecord.appliedAt, "2026-06-19T00:00:08.000Z", "Event Approach tally applied record should store applied timestamp");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallySummary.totalContributionValue, 2, "Event Approach tally source summary should survive after apply");
+  assertEqual(eventApproachApply.appliedRecord.sourceTallySummary.contributingStationLabels[1], "Navigator", "Event Approach tally source station labels should remain readable after apply");
+  assertEqual(eventApproachApply.appliedRecord.progressDeltaPreview, 2, "Event Approach tally progress delta preview should remain session-local and inert after apply");
+  const appliedPanelControls = prepareTravelV2EventApproachTallyApplicationRecordControls(eventApproachApply.session, { isGM: true });
+  assertSmoke(appliedPanelControls.records[0].applied === true && appliedPanelControls.records[0].canApply === false, "confirmed Event Approach panel apply marks record applied and disables re-apply control");
+  assertSmoke(appliedPanelControls.records[0].reviewOnly === true && appliedPanelControls.records[0].readOnly === true, "applied Event Approach panel control should become review-only and read-only");
+  const repeatedEventApproachApply = applyTravelV2EventApproachTallyApplicationRecordToSession(eventApproachApply.session, eventApproachApplyRecord.id, { confirmedByGM: true, appliedAtRound: 1, now: "2026-06-19T00:00:08.000Z" });
+  assertSmoke(repeatedEventApproachApply.ok && repeatedEventApproachApply.applied, "repeated Event Approach tally apply should be stable/idempotent");
+  assertEqual(repeatedEventApproachApply.session.travelV2EventApproachTallyApplicationRecords.records.length, 1, "repeated Event Approach tally apply should not duplicate records");
+  const eventApproachApplyJson = JSON.stringify(eventApproachApply);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!eventApproachApplyJson.includes(forbidden), `Event Approach tally apply result should not include forbidden player-safe term ${forbidden}`);
+  }
   const minorApplySession = createRunnerSessionFixture({ roundResults: [{ ...lockedRoundResult(), stationResults: {} }], travelV2ActiveCards: { records: [pendingActiveCard({ targetStationKey: "navigator", targetStationLabel: "Navigator" })], playerSafe: true, readOnly: true } });
   const minorPreviewId = prepareTravelV2ActiveCardApplicationPreviewState(prepareTravelV2ActiveCardsPreviewState(minorApplySession.travelV2ActiveCards, minorApplySession), minorApplySession).records[0].previewId;
   const missingConfirmationApply = applyTravelV2ActiveCardApplicationPreviewToSession(minorApplySession, minorPreviewId, { now: "2026-06-19T00:00:05.000Z" });
@@ -618,6 +700,76 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
   assertEqual(fallbackRoundResolution.session.roundResults.length, 2, "array-position fallback station roll resolution should preserve round result length");
   assertEqual(fallbackRoundResolution.session.roundResults[1].stationResults.navigator, "success", "array-position fallback station roll resolution should update requested array position when no explicit roundIndex record exists");
 
+  const eventApproachApplyPreviewSource = {
+    currentRoundIndex: 1,
+    travelV2RoundResolutions: { records: [
+      { roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: -1, contributionCount: 1, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "old secret" } },
+      { roundIndex: 1, roundNumber: 2, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 3, contributionCount: 2, positiveContributionCount: 2, hasContributions: true, contributingStationLabels: ["Navigator", "Engineer"], roundIndex: 1, roundNumber: 2, gmText: "hidden", applyPayload: { secret: true } } }
+    ] }
+  };
+  const eventApproachApplyPreviewSnapshot = snapshot(eventApproachApplyPreviewSource);
+  const eventApproachApplyPreview = prepareTravelV2EventApproachTallyApplicationPreview(eventApproachApplyPreviewSource, { roundIndex: 1 });
+  assertEqual(eventApproachApplyPreview.playerState.status, "ready", "finalized Event Approach tally should produce GM review readiness");
+  assertEqual(eventApproachApplyPreview.playerState.sourceTally.totalContributionValue, 3, "preview should preserve readable source tally total");
+  assertEqual(eventApproachApplyPreview.playerState.records[0].effectPreview.delta, 3, "preview record should show inert progress delta");
+  assertSmoke(!eventApproachApplyPreview.playerState.canApply, "Event Approach tally preview should not expose apply behavior");
+  assertSmoke(!eventApproachApplyPreview.playerState.applied, "Event Approach tally preview should not mark effects applied");
+  assertSmoke(eventApproachApplyPreview.gmState.gmReview.resolutionRecordFound, "GM state should include review context");
+  assertSmoke(!JSON.stringify(eventApproachApplyPreview.playerState).includes("gmText"), "player Event Approach preview should redact gmText");
+  assertSmoke(!JSON.stringify(eventApproachApplyPreview.playerState).includes("applyPayload"), "player Event Approach preview should redact apply payloads");
+  eventApproachApplyPreview.playerState.sourceTally.totalContributionValue = 99;
+  const eventApproachApplyPreviewCloneCheck = prepareTravelV2EventApproachTallyApplicationPreview(eventApproachApplyPreviewSource, { roundIndex: 1 });
+  assertEqual(eventApproachApplyPreviewCloneCheck.playerState.sourceTally.totalContributionValue, 3, "Event Approach preview output should be clone-safe");
+  assertEqual(snapshot(eventApproachApplyPreviewSource), eventApproachApplyPreviewSnapshot, "Event Approach preview should not mutate source session");
+
+  const eventApproachBlockedPreview = prepareTravelV2EventApproachTallyApplicationPreview({ currentRoundIndex: 0, travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "pending", eventApproachContributionTally: { totalContributionValue: 1, contributionCount: 1, hasContributions: true, roundIndex: 0, roundNumber: 1 } }] } }, { roundIndex: 0 });
+  assertEqual(eventApproachBlockedPreview.playerState.status, "blocked", "unfinalized Event Approach tally should be blocked");
+  assertSmoke(eventApproachBlockedPreview.playerState.blockedReason.includes("not finalized"), "blocked preview should explain unfinalized tally");
+  const eventApproachEmptyPreview = prepareTravelV2EventApproachTallyApplicationPreview({}, {});
+  assertEqual(eventApproachEmptyPreview.playerState.status, "blocked", "empty Event Approach preview should be blocked safely");
+  const eventApproachPartialPreview = prepareTravelV2EventApproachTallyApplicationPreview({ currentRoundIndex: 5, eventApproachContributionTally: { totalContributionValue: "bad", gmOnly: true } }, {});
+  assertEqual(eventApproachPartialPreview.playerState.sourceTally.totalContributionValue, 0, "partial old Event Approach preview should normalize malformed tally values");
+  assertSmoke(!JSON.stringify(eventApproachPartialPreview.playerState).includes("gmOnly"), "partial old Event Approach player preview should redact unsafe fields");
+
+  const emptyApplyRecords = normalizeTravelV2EventApproachTallyApplicationRecords();
+  assertEqual(emptyApplyRecords.version, TRAVEL_V2_EVENT_APPROACH_TALLY_APPLICATION_RECORDS_VERSION, "empty Event Approach application records should expose helper version");
+  assertEqual(emptyApplyRecords.records.length, 0, "empty Event Approach application records should be safe");
+  assertSmoke(emptyApplyRecords.playerSafe && emptyApplyRecords.readOnly, "empty Event Approach application records should remain inert/read-only");
+
+  const looseApplyRecords = normalizeTravelV2EventApproachTallyApplicationRecords({ records: [
+    { roundIndex: "2", roundNumber: 3, effectPreview: { delta: "4" }, tally: { totalContributionValue: "4", contributionCount: "2", contributingStationLabels: [" Navigator ", ""], gmText: "hidden" }, applied: false, auditRecord: { secret: true } }
+  ] });
+  assertEqual(looseApplyRecords.records.length, 1, "loose Event Approach application records should normalize safely");
+  assertEqual(looseApplyRecords.records[0].sourceRoundIndex, 2, "loose Event Approach application record should normalize source round index");
+  assertEqual(looseApplyRecords.records[0].sourceRoundNumber, 3, "loose Event Approach application record should normalize source round number");
+  assertEqual(looseApplyRecords.records[0].progressDeltaPreview, 4, "loose Event Approach application record should normalize progress preview");
+  assertEqual(looseApplyRecords.records[0].sourceTallySummary.contributingStationLabels[0], "Navigator", "loose Event Approach application record should preserve readable source tally context");
+  assertSmoke(looseApplyRecords.records[0].playerSafe && looseApplyRecords.records[0].readOnly && looseApplyRecords.records[0].reviewOnly && !looseApplyRecords.records[0].applied, "loose Event Approach application record should remain inert/read-only");
+  const looseApplyRecordsJson = JSON.stringify(looseApplyRecords);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!looseApplyRecordsJson.includes(forbidden), `Event Approach application records should not include forbidden player-safe term ${forbidden}`);
+  }
+
+  const sourceTally = eventApproachApplyPreviewCloneCheck.playerState.sourceTally;
+  const preparedApplyRecord = prepareTravelV2EventApproachTallyApplicationRecord(sourceTally);
+  assertEqual(preparedApplyRecord.sourceTallySummary.totalContributionValue, 3, "prepared Event Approach application record should preserve source tally total");
+  assertEqual(preparedApplyRecord.progressDeltaPreview, 3, "prepared Event Approach application record should preview the tally delta");
+  assertEqual(preparedApplyRecord.status, "reviewOnly", "prepared Event Approach application record should have explicit review-only lifecycle");
+  assertSmoke(!preparedApplyRecord.applied && preparedApplyRecord.appliedAtRound === null, "prepared Event Approach application record should not mark world application");
+
+  const applyRecordSession = { currentRoundIndex: 1, eventApproachContributionTally: sourceTally };
+  const applyRecordSessionSnapshot = snapshot(applyRecordSession);
+  const applyRecordResult = appendTravelV2EventApproachTallyApplicationRecordToSession(applyRecordSession, sourceTally);
+  assertSmoke(applyRecordResult !== applyRecordSession, "Event Approach application record append should return a cloned session");
+  assertEqual(snapshot(applyRecordSession), applyRecordSessionSnapshot, "Event Approach application record append should not mutate source session");
+  assertEqual(applyRecordResult.travelV2EventApproachTallyApplicationRecords.records.length, 1, "Event Approach application record append should add one session-local record");
+  assertEqual(applyRecordResult.travelV2EventApproachTallyApplicationRecords.records[0].sourceTallySummary.totalContributionValue, 3, "appended Event Approach application record should keep source tally summary");
+  applyRecordResult.travelV2EventApproachTallyApplicationRecords.records[0].sourceTallySummary.totalContributionValue = 99;
+  const applyRecordSecondResult = appendTravelV2EventApproachTallyApplicationRecordToSession(applyRecordResult, sourceTally);
+  assertEqual(applyRecordSecondResult.travelV2EventApproachTallyApplicationRecords.records.length, 1, "Event Approach application record append should keep deterministic ids stable and avoid duplicates");
+  assertEqual(applyRecordSecondResult.travelV2EventApproachTallyApplicationRecords.records[0].sourceTallySummary.totalContributionValue, 3, "Event Approach application record append should normalize existing cloned record state");
+
+
   return {
     ok: true,
     checked: [
@@ -642,7 +794,8 @@ export function runTravelV2SessionRoundFinalizationSmokeChecks() {
       "final-event-round-ready-metadata",
       "no-side-effects-called",
       "station-roll-bonus-resolution-and-consumption",
-      "station-result-floor-application-and-consumption"
+      "station-result-floor-application-and-consumption",
+      "event-approach-tally-application-preview"
     ]
   };
 }
