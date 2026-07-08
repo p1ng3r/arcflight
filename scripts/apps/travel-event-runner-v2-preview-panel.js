@@ -5,8 +5,9 @@ import { prepareTravelV2EventOutcomePackage } from "../helpers/travel-v2-event-o
 import { prepareTravelV2ActorApplicationPreviewFromSession } from "../helpers/travel-v2-actor-application-bridge.js";
 import { prepareTravelV2FollowUpState } from "../helpers/travel-v2-followups.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
+import { sanitizeTravelV2ActiveCardsForPlayers, sanitizeTravelV2ActiveCardPreviewForPlayers, sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers, applyTravelV2ActiveCardApplicationPreviewToSession, resolveTravelV2BestStationRollBonuses, prepareTravelV2StationResultFloorState } from "../helpers/travel-v2-session-round-finalization.js";
 
-export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 14;
+export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION = 16;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -82,6 +83,13 @@ function normalizeStationActionResolutionSummary(summary = null) {
     selectedActionKey: row?.selectedActionKey ?? "",
     selectedActionType: row?.selectedActionType ?? "",
     selectedActionLabel: row?.selectedActionLabel || humanizeIdentifier(row?.selectedActionKey || row?.selectedActionType || "station action"),
+    difficultyBidKey: row?.difficultyBidKey ?? "none",
+    difficultyBidLabel: row?.difficultyBidLabel ?? "No Bid",
+    difficultyBidDcModifier: Number.isFinite(Number(row?.difficultyBidDcModifier)) ? Number(row.difficultyBidDcModifier) : 0,
+    difficultyBidRewardPreview: row?.difficultyBidRewardPreview ?? null,
+    hasDifficultyBidRewardPreview: Boolean(row?.difficultyBidRewardPreview),
+    effectiveDcPreview: row?.effectiveDcPreview ?? null,
+    hasEffectiveDcPreview: Boolean(row?.effectiveDcPreview),
     targetStationKey: row?.targetStationKey ?? "",
     targetStationLabel: row?.targetStationLabel ?? "",
     hasTargetStation: Boolean(row?.targetStationKey && row?.targetStationLabel),
@@ -105,6 +113,102 @@ function normalizeStationActionResolutionSummary(summary = null) {
     playerSafe: true,
     readOnly: true
   };
+}
+
+function normalizeActiveTravelCards(session, ...containers) {
+  const mergedRecords = [];
+  for (const container of containers) {
+    mergedRecords.push(...sanitizeTravelV2ActiveCardsForPlayers(container).records);
+  }
+  const normalized = sanitizeTravelV2ActiveCardPreviewForPlayers(mergedRecords, session);
+  const applicationPreviews = prepareTravelV2ActiveCardApplicationControls(sanitizeTravelV2ActiveCardApplicationPreviewsForPlayers(normalized, session), session, { isGM: session?.isGM === true });
+  return {
+    ...normalized,
+    title: "Active Travel Cards",
+    subtitle: normalized.records.length > 0
+      ? `${normalized.records.length} pending Difficulty Bid card${normalized.records.length === 1 ? "" : "s"} available for a future card-application pass.`
+      : "No active Travel v2 cards have been created yet.",
+    available: normalized.records.length > 0,
+    applicationPreviews,
+    activeCardApplicationPreviews: applicationPreviews,
+    travelV2ActiveCardApplicationPreviews: applicationPreviews
+  };
+}
+
+export function activeCardApplicationControlLabel(preview = {}) {
+  const effectKey = String(preview?.effectKey ?? "");
+  if (effectKey === "minorOpeningBonus") return "Apply +1 Opening";
+  if (effectKey === "greaterOpeningBonus") return "Apply +3 Opening";
+  if (effectKey === "heroicDegreeUpgrade") return "Apply Heroic Upgrade";
+  if (effectKey === "legendarySuccessFloor") return "Arm Success Floor";
+  return "Apply Card Preview";
+}
+
+export function canUserApplyTravelV2ActiveCardPreview(preview = {}, session = {}, options = {}) {
+  const isGM = options?.isGM === true || options?.user?.isGM === true;
+  const previewId = typeof preview?.previewId === "string" && preview.previewId.trim() ? preview.previewId.trim() : "";
+  const sourceCardId = typeof preview?.sourceCardId === "string" && preview.sourceCardId.trim() ? preview.sourceCardId.trim() : "";
+  const sourceCard = recordsFromContainer(session?.travelV2ActiveCards).find((record) => record?.cardId === sourceCardId || record?.id === sourceCardId);
+  const blockedReasons = [];
+  if (!isGM) blockedReasons.push("Only the GM can apply active Travel Cards.");
+  if (!previewId) blockedReasons.push("Active card application preview id is required.");
+  if (preview?.requiresGMConfirmation !== true) blockedReasons.push("GM confirmation is required.");
+  if (!sourceCardId) blockedReasons.push("Source active card id is required.");
+  if (sourceCardId && !sourceCard) blockedReasons.push("Source active card was not found.");
+  if (sourceCard && sourceCard.status !== "pending") blockedReasons.push("Source active card is already consumed.");
+  if (preview?.canApplyPreview !== true) blockedReasons.push(preview?.blockedReason || "Active card application preview is not apply-ready.");
+  return {
+    canApply: blockedReasons.length === 0,
+    blockedReason: blockedReasons[0] ?? "",
+    blockedReasons,
+    isGM,
+    sourceCardStatus: sourceCard?.status ?? ""
+  };
+}
+
+export function prepareTravelV2ActiveCardApplicationControls(applicationPreviews = {}, session = {}, options = {}) {
+  const records = recordsFromContainer(applicationPreviews).map((preview) => {
+    const readiness = canUserApplyTravelV2ActiveCardPreview(preview, session, options);
+    const controlLabel = activeCardApplicationControlLabel(preview);
+    const control = {
+      controlKey: preview?.previewId ? `apply-active-card:${preview.previewId}` : "apply-active-card:missing-preview",
+      controlLabel,
+      controlTitle: readiness.canApply ? `${controlLabel} (GM confirmation required)` : (readiness.blockedReason || "Active card application is not available."),
+      enabledForGM: readiness.canApply,
+      disabledForPlayers: true,
+      requiresGMConfirmation: preview?.requiresGMConfirmation === true,
+      canApplyPreview: preview?.canApplyPreview === true && readiness.sourceCardStatus === "pending",
+      blockedReason: readiness.blockedReason,
+      previewId: preview?.previewId ?? "",
+      sourceCardId: preview?.sourceCardId ?? "",
+      applicationType: preview?.applicationType ?? "",
+      effectKey: preview?.effectKey ?? "",
+      playerSafe: true,
+      readOnly: true
+    };
+    return { ...preview, ...control, control };
+  });
+  return { ...applicationPreviews, records, controls: records.map((record) => record.control), hasControls: records.length > 0, playerSafe: true, readOnly: true };
+}
+
+export function applyTravelV2ActiveCardPreviewFromPanelState(appState = {}, previewId = "", options = {}) {
+  const isGM = options?.isGM === true || options?.user?.isGM === true || appState?.isGM === true || appState?.user?.isGM === true;
+  const runnerSession = isPlainObject(options?.runnerSession) ? options.runnerSession : (isPlainObject(appState?.travelV2PressureRunnerSession) ? appState.travelV2PressureRunnerSession : appState?.session);
+  const panel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, session: runnerSession, isGM, user: options?.user ?? appState?.user });
+  const preview = recordsFromContainer(panel.travelV2ActiveCardApplicationPreviews).find((record) => record.previewId === previewId || record.id === previewId);
+  const readiness = canUserApplyTravelV2ActiveCardPreview(preview, runnerSession, { isGM, user: options?.user ?? appState?.user });
+  if (!readiness.canApply) {
+    return { ok: false, applied: false, blocked: true, blockedReason: readiness.blockedReason || "Active card application preview was not found.", session: clonePanelSession(runnerSession), previewPanelState: panel, playerSafe: true, readOnly: true };
+  }
+  const result = applyTravelV2ActiveCardApplicationPreviewToSession(runnerSession, previewId, { confirmedByGM: true, now: options?.now });
+  const nextSession = isPlainObject(result?.session) ? result.session : runnerSession;
+  const previewPanelState = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, session: nextSession, travelV2PressureRunnerSession: nextSession, isGM, user: options?.user ?? appState?.user, travelV2ActiveCardApplicationResult: result });
+  return { ...result, session: nextSession, appState: { ...appState, session: nextSession, travelV2PressureRunnerSession: nextSession, travelV2ActiveCardApplicationResult: result }, previewPanelState, playerSafe: true, readOnly: true };
+}
+
+function clonePanelSession(session = {}) {
+  if (!isPlainObject(session)) return session;
+  return JSON.parse(JSON.stringify(session));
 }
 
 function normalizeStationActionEventApproachEffects(eventApproachEffects = null) {
@@ -235,7 +339,7 @@ function normalizeStationActionEventApproachTallyStatus(eventApproachTallyStatus
     available,
     title: "Event Approach Tally Status",
     subtitle: available
-      ? `Round ${eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? "?"} read-only Event Approach tally status captured for preview only; not applied yet.`
+      ? `Round ${eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? "?"} read-only Event Approach tally status captured for preview and effective-outcome resolution.`
       : "No Event Approach tally status preview has been captured yet.",
     statusKey,
     statusLabel,
@@ -244,7 +348,7 @@ function normalizeStationActionEventApproachTallyStatus(eventApproachTallyStatus
     totalContributionValue,
     valueLabel,
     previewLabel: eventApproachTallyStatus?.previewLabel || `${statusLabel} preview: ${valueLabel} Event Approach tally captured for later resolution.`,
-    previewMessage: eventApproachTallyStatus?.previewMessage || `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.`,
+    previewMessage: eventApproachTallyStatus?.previewMessage || `${statusLabel} preview: ${valueLabel} Event Approach tally captured as read-only. Event completion reads effective station outcomes after roll bonus and result-floor resolution.`,
     roundIndex: Number.isInteger(Number(eventApproachTallyStatus?.roundIndex)) ? Number(eventApproachTallyStatus.roundIndex) : (Number.isInteger(Number(fallbackTally?.roundIndex)) ? Number(fallbackTally.roundIndex) : null),
     roundNumber: eventApproachTallyStatus?.roundNumber ?? fallbackTally?.roundNumber ?? null,
     playerSafe: true,
@@ -358,6 +462,36 @@ function normalizeAppliedStationActionBonuses(roundResults = []) {
     records,
     hasRecords: records.length > 0,
     recordCount: records.length,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeStationRollBonusState(session = {}, roundIndex = 0) {
+  const state = resolveTravelV2BestStationRollBonuses(session, roundIndex);
+  return {
+    ...state,
+    available: state.hasBonuses === true,
+    title: "Station Roll Bonuses",
+    subtitle: state.hasBonuses === true ? "Highest non-stacking circumstance bonuses are selected for station rolls." : "No pending station roll bonuses apply to this round.",
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeStationResultFloorState(session = {}, roundIndex = 0) {
+  const records = recordsFromContainer(session?.travelV2PendingStationResultFloors);
+  const stationKeys = Array.from(new Set(records.map((record) => String(record?.targetStationKey ?? "").trim()).filter(Boolean)));
+  const states = stationKeys.map((stationKey) => prepareTravelV2StationResultFloorState(session, stationKey, roundIndex));
+  return {
+    available: states.some((state) => state.hasPendingFloor),
+    title: "Station Result Floors",
+    subtitle: states.some((state) => state.hasPendingFloor) ? "Pending result floors can improve finalized station outcomes." : "No pending station result floors apply to this round.",
+    roundIndex: Number(roundIndex),
+    roundNumber: Number(roundIndex) + 1,
+    stations: states,
+    records: states,
+    hasRecords: states.length > 0,
     playerSafe: true,
     readOnly: true
   };
@@ -760,6 +894,14 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const stationActionEventApproachContributionTally = normalizeStationActionEventApproachContributionTally(latestFinalizationResult?.stationActionEventApproachContributionTally ?? latestFinalizationResult?.eventApproachContributionTally ?? latestResolutionRecord?.stationActionEventApproachContributionTally ?? latestResolutionRecord?.eventApproachContributionTally);
   const stationActionEventApproachTallyStatus = normalizeStationActionEventApproachTallyStatus(latestFinalizationResult?.stationActionEventApproachTallyStatus ?? latestFinalizationResult?.eventApproachTallyStatus ?? latestResolutionRecord?.stationActionEventApproachTallyStatus ?? latestResolutionRecord?.eventApproachTallyStatus, stationActionEventApproachContributionTally);
   const pendingStationActionBonuses = normalizePendingStationActionBonuses(latestFinalizationResult?.pendingStationActionBonuses ?? latestResolutionRecord?.pendingStationActionBonuses ?? runnerSession?.travelV2PendingStationActionBonuses);
+  const stationRollRoundIndex = Number.isInteger(Number(runnerSession?.currentRoundIndex)) ? Number(runnerSession.currentRoundIndex) : Number(preview.roundIndex ?? 0);
+  const stationRollBonusState = normalizeStationRollBonusState(runnerSession, stationRollRoundIndex);
+  const stationResultFloorState = normalizeStationResultFloorState(runnerSession, stationRollRoundIndex);
+  const travelV2ActiveCards = normalizeActiveTravelCards(runnerSession, runnerSession?.travelV2ActiveCards, latestResolutionRecord?.travelV2ActiveCards, latestFinalizationResult?.travelV2ActiveCards);
+  const travelV2ActiveCardApplicationPreviews = prepareTravelV2ActiveCardApplicationControls(travelV2ActiveCards.travelV2ActiveCardApplicationPreviews, runnerSession, { user: appState.user, isGM: appState.isGM === true });
+  travelV2ActiveCards.applicationPreviews = travelV2ActiveCardApplicationPreviews;
+  travelV2ActiveCards.activeCardApplicationPreviews = travelV2ActiveCardApplicationPreviews;
+  travelV2ActiveCards.travelV2ActiveCardApplicationPreviews = travelV2ActiveCardApplicationPreviews;
   const appliedStationActionBonuses = normalizeAppliedStationActionBonuses(runnerSession?.roundResults);
   const supportBonusStatusAvailable = stationActionSupportEffects.available || pendingStationActionBonuses.hasRecords || appliedStationActionBonuses.hasRecords;
   const stationActionEffectsAvailable = supportBonusStatusAvailable || stationActionEventApproachEffects.available || stationActionEventApproachContributions.available || stationActionEventApproachContributionTally.available || stationActionEventApproachTallyStatus.available;
@@ -810,8 +952,16 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     stationActionEffectsAvailable,
     pendingStationActionBonuses,
     travelV2PendingStationActionBonuses: pendingStationActionBonuses,
+    stationRollBonusState,
+    travelV2StationRollBonusState: stationRollBonusState,
+    stationResultFloorState,
+    travelV2StationResultFloorState: stationResultFloorState,
     appliedStationActionBonuses,
     travelV2AppliedStationActionBonuses: appliedStationActionBonuses,
+    travelV2ActiveCards,
+    activeTravelCards: travelV2ActiveCards,
+    travelV2ActiveCardApplicationPreviews,
+    activeCardApplicationPreviews: travelV2ActiveCardApplicationPreviews,
     travelV2EventCompletionReadiness,
     eventCompletionReadiness: travelV2EventCompletionReadiness,
     travelV2EventOutcomePackage,

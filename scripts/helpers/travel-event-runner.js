@@ -25,7 +25,7 @@ import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setT
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
-import { inspectTravelV2StationActionLockInFinalizationGuard } from "./travel-v2-session-round-finalization.js";
+import { inspectTravelV2StationActionLockInFinalizationGuard, resolveTravelV2StationRollWithPendingEffects } from "./travel-v2-session-round-finalization.js";
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
@@ -2272,9 +2272,13 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
       selectedStationOptionLabels: normalizeSelectedStationOptionLabels(source, event.rounds[index]),
       stationActions: normalizeStationActions(source, event.rounds[index]),
       stationOrderCommitments: normalizeStationOrderCommitments(source, event.rounds[index]),
-      stationCheckAppliedBonuses: isPlainObject(source?.stationCheckAppliedBonuses) ? cloneData(source.stationCheckAppliedBonuses) : undefined
+      stationCheckAppliedBonuses: isPlainObject(source?.stationCheckAppliedBonuses) ? cloneData(source.stationCheckAppliedBonuses) : undefined,
+      stationSummary: isPlainObject(source?.stationSummary) ? cloneData(source.stationSummary) : undefined,
+      stationRollResolutions: isPlainObject(source?.stationRollResolutions) ? cloneData(source.stationRollResolutions) : undefined
     };
-    if (normalizedRoundResult.stationCheckAppliedBonuses === undefined) delete normalizedRoundResult.stationCheckAppliedBonuses;
+    for (const optionalRoundResultKey of ["stationCheckAppliedBonuses", "stationSummary", "stationRollResolutions"]) {
+      if (normalizedRoundResult[optionalRoundResultKey] === undefined) delete normalizedRoundResult[optionalRoundResultKey];
+    }
     return normalizedRoundResult;
   });
   const normalized = {
@@ -2314,9 +2318,14 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2EventCompletion: isPlainObject(session.travelV2EventCompletion) ? cloneData(session.travelV2EventCompletion) : undefined,
     travelV2EventOutcomeApplication: isPlainObject(session.travelV2EventOutcomeApplication) ? cloneData(session.travelV2EventOutcomeApplication) : undefined,
     travelV2ActorApplication: isPlainObject(session.travelV2ActorApplication) ? cloneData(session.travelV2ActorApplication) : undefined,
-    travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined
+    travelV2ActiveCards: isPlainObject(session.travelV2ActiveCards) || Array.isArray(session.travelV2ActiveCards) ? cloneData(session.travelV2ActiveCards) : undefined,
+    travelV2AppliedActiveCards: isPlainObject(session.travelV2AppliedActiveCards) || Array.isArray(session.travelV2AppliedActiveCards) ? cloneData(session.travelV2AppliedActiveCards) : undefined,
+    travelV2ActiveCardApplicationPreviews: isPlainObject(session.travelV2ActiveCardApplicationPreviews) || Array.isArray(session.travelV2ActiveCardApplicationPreviews) ? cloneData(session.travelV2ActiveCardApplicationPreviews) : undefined,
+    activeCardApplicationPreviews: isPlainObject(session.activeCardApplicationPreviews) || Array.isArray(session.activeCardApplicationPreviews) ? cloneData(session.activeCardApplicationPreviews) : undefined,
+    travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined,
+    travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined
   };
-  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2PendingStationActionBonuses"]) {
+  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -4159,16 +4168,31 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   let nextSession = cloneData(normalized.session);
   nextSession.roundResults[index].stationResults[stationKey] = result;
   if (isPlainObject(nextSession.roundResults[index].stationCheckAppliedBonuses)) delete nextSession.roundResults[index].stationCheckAppliedBonuses[stationKey];
+  let rollResolution = null;
+  if (result !== "skipped") {
+    const rollData = {
+      rawOutcomeKey: result,
+      rawRollTotal: options.rawRollTotal,
+      rollTotal: options.rollTotal,
+      total: options.total,
+      dc: options.dc,
+      targetDc: options.targetDc,
+      rawModifier: options.rawModifier,
+      modifier: options.modifier,
+      totalModifier: options.totalModifier
+    };
+    rollResolution = resolveTravelV2StationRollWithPendingEffects(nextSession, stationKey, rollData, { ...options, roundIndex: index });
+    if (!rollResolution.ok) return { ok: false, errors: [rollResolution.blockedReason ?? "Could not resolve Travel v2 station roll effects."], warnings: [], session: nextSession };
+    nextSession = cloneData(rollResolution.session);
+  }
+  const effectiveResult = nextSession.roundResults[index].stationResults[stationKey] ?? result;
   const stationAction = normalizeTravelStationAction(nextSession.roundResults[index].stationActions?.[stationKey], stationKey, nextSession.event.rounds[index]);
   if (stationAction.type === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE && stationAction.hazardRecordId) {
-    const hazardUpdate = resolveTravelV2HazardResponse(nextSession, stationAction.hazardRecordId, stationKey, result, { ...options, roundIndex: index });
+    const hazardUpdate = resolveTravelV2HazardResponse(nextSession, stationAction.hazardRecordId, stationKey, effectiveResult, { ...options, roundIndex: index });
     if (!hazardUpdate.ok) return { ...hazardUpdate, warnings: hazardUpdate.warnings ?? [] };
     nextSession = cloneData(hazardUpdate.session);
-    nextSession.roundResults[index].stationResults[stationKey] = result;
+    nextSession.roundResults[index].stationResults[stationKey] = effectiveResult;
   }
-  const supportBonusUpdate = applyTravelV2PendingSupportBonusToStationCheck(nextSession, index, stationKey, options);
-  if (!supportBonusUpdate.ok) return supportBonusUpdate;
-  Object.assign(nextSession, supportBonusUpdate.session);
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);
@@ -4187,6 +4211,13 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
   const supportBacklashUpdate = syncTravelV2SupportBacklashRecordsForStationResult(nextSession, index, stationKey, options);
   if (!supportBacklashUpdate.ok) return supportBacklashUpdate;
   Object.assign(nextSession, supportBacklashUpdate.session);
+  if (rollResolution?.session?.roundResults?.[index] && nextSession.roundResults?.[index]) {
+    const resolvedRound = rollResolution.session.roundResults[index];
+    nextSession.roundResults[index].stationSummary = { ...(isPlainObject(nextSession.roundResults[index].stationSummary) ? nextSession.roundResults[index].stationSummary : {}), ...(isPlainObject(resolvedRound.stationSummary) ? cloneData(resolvedRound.stationSummary) : {}) };
+    nextSession.roundResults[index].stationRollResolutions = { ...(isPlainObject(nextSession.roundResults[index].stationRollResolutions) ? nextSession.roundResults[index].stationRollResolutions : {}), ...(isPlainObject(resolvedRound.stationRollResolutions) ? cloneData(resolvedRound.stationRollResolutions) : {}) };
+    if (isPlainObject(resolvedRound.stationResults)) nextSession.roundResults[index].stationResults = { ...(isPlainObject(nextSession.roundResults[index].stationResults) ? nextSession.roundResults[index].stationResults : {}), ...cloneData(resolvedRound.stationResults) };
+    if (isPlainObject(resolvedRound.stationCheckAppliedBonuses)) nextSession.roundResults[index].stationCheckAppliedBonuses = cloneData(resolvedRound.stationCheckAppliedBonuses);
+  }
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };

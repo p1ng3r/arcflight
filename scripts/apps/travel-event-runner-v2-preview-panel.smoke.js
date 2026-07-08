@@ -5,6 +5,7 @@ import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 import {
   prepareTravelEventRunnerV2PreviewPanelState,
+  applyTravelV2ActiveCardPreviewFromPanelState,
   TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION
 } from "./travel-event-runner-v2-preview-panel.js";
 
@@ -47,7 +48,7 @@ function createRunnerEventFixture() {
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
-  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 14, "panel version should be 14");
+  assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION, 16, "panel version should be 16");
   const panelSource = fs.readFileSync(PANEL_PATH, "utf8");
   assertSmoke(!panelSource.includes("applyTravelV2PressureToRunnerSession"), "preview panel should not import or execute application helper during state preparation");
   assertSmoke(!panelSource.includes("correctTravelV2PressureApplicationOnRunnerSession"), "preview panel should not import or execute correction helper during state preparation");
@@ -310,7 +311,15 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     travelV2PendingStationActionBonuses: {
       records: [
         { bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationKey: "engineer", sourceStationLabel: "Engineer", targetStationKey: "navigator", targetStationLabel: "Navigator", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, consumed: false, playerSafe: true, readOnly: true, auditRecord: { secret: true } },
+        { bonusKey: "greaterOpeningBonus", bonusType: "circumstance", bonusValue: 3, sourceCardId: "card-greater", sourceCardLabel: "Greater Opening", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 1, previewRoundNumber: 2, consumed: false, playerSafe: true, readOnly: true },
         { bonusKey: "support", bonusType: "circumstance", bonusValue: 1, sourceStationKey: "navigator", sourceStationLabel: "Navigator", targetStationKey: "engineer", targetStationLabel: "Engineer", roundIndex: 0, roundNumber: 1, appliesToRoundIndex: 1, nextRoundIndex: 1, consumed: true, consumedRoundIndex: 1, consumedStationKey: "engineer", playerSafe: true, readOnly: true, gmText: "secret" }
+      ],
+      playerSafe: true,
+      readOnly: true
+    },
+    travelV2PendingStationResultFloors: {
+      records: [
+        { resultFloor: "success", sourceCardId: "card-legendary", sourceCardLabel: "Legendary Event", targetStationKey: "navigator", targetStationLabel: "Navigator", previewRoundIndex: 1, previewRoundNumber: 2, consumed: false, playerSafe: true, readOnly: true }
       ],
       playerSafe: true,
       readOnly: true
@@ -320,14 +329,17 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   const supportPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, session: supportSourceSession });
   assertEqual(JSON.stringify(supportSourceSession), supportBefore, "Support preview preparation should not mutate the source session");
   assertSmoke(supportPanel.supportBonusStatusAvailable, "Support bonus status section should be available when only bonus records exist");
-  assertEqual(supportPanel.travelV2PendingStationActionBonuses.records.length, 2, "pending Support bonus display should include pending and consumed records");
+  assertEqual(supportPanel.travelV2PendingStationActionBonuses.records.length, 3, "pending Support bonus display should include pending card, pending Support, and consumed records");
+  assertEqual(supportPanel.travelV2StationRollBonusState.stations[0].selectedBonusValue, 3, "station roll bonus state should select highest same-round circumstance bonus");
+  assertSmoke(supportPanel.travelV2StationRollBonusState.stations[0].suppressed.some((record) => record.bonusKey === "support"), "station roll bonus state should expose suppressed non-stacking Support bonus");
+  assertEqual(supportPanel.travelV2StationResultFloorState.stations[0].predictedFloorEffect.effectiveOutcomeKey, "success", "station result floor state should expose predicted effective outcome");
   const pendingSupport = supportPanel.travelV2PendingStationActionBonuses.records.find((record) => record.status === "pending");
   assertSmoke(pendingSupport?.readableLabel.includes("Engineer supports Navigator") && pendingSupport.bonusValue === 1 && pendingSupport.bonusType === "circumstance" && pendingSupport.statusLabel === "Pending", "pending Support bonus render state includes safe label/value/status");
   const consumedSupport = supportPanel.travelV2PendingStationActionBonuses.records.find((record) => record.status === "consumed");
   assertSmoke(consumedSupport?.consumed === true && consumedSupport.statusLabel === "Consumed" && consumedSupport.sourceStationLabel === "Navigator" && consumedSupport.targetStationLabel === "Engineer", "consumed Support bonus render state is marked consumed with safe source and target labels");
   const appliedSupport = supportPanel.travelV2AppliedStationActionBonuses.records[0];
   assertSmoke(appliedSupport?.status === "applied" && appliedSupport.statusLabel === "Applied" && appliedSupport.sourceStationKey === "engineer" && appliedSupport.targetStationKey === "navigator" && appliedSupport.bonusValue === 1 && appliedSupport.playerSafe === true && appliedSupport.readOnly === true, "applied Support bonus render state includes safe source/target/value/status");
-  const supportPanelJson = JSON.stringify({ pending: supportPanel.travelV2PendingStationActionBonuses, applied: supportPanel.travelV2AppliedStationActionBonuses });
+  const supportPanelJson = JSON.stringify({ pending: supportPanel.travelV2PendingStationActionBonuses, applied: supportPanel.travelV2AppliedStationActionBonuses, roll: supportPanel.travelV2StationRollBonusState, floor: supportPanel.travelV2StationResultFloorState });
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!supportPanelJson.includes(forbidden), `Support bonus preview state should not include forbidden player-safe term ${forbidden}`);
   }
@@ -380,14 +392,18 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
             statusTone: "warning",
             totalContributionValue: 1,
             previewLabel: "Partial Progress preview: +1 Event Approach tally captured for later resolution.",
-            previewMessage: "Partial Progress preview: +1 Event Approach tally captured as read-only and not applied yet. It does not change pressure, hazards, rewards, resources, DCs, event progress, or completion.",
+            previewMessage: "Partial Progress preview: +1 Event Approach tally captured as read-only. Event completion reads effective station outcomes after roll bonus and result-floor resolution.",
             playerSafe: true,
             readOnly: true,
             gmText: "secret",
             auditRecord: { secret: true }
           }
         }]
-      }
+      },
+      roundResults: [{
+        stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
+        stationResults: {}
+      }]
     }
   });
   assertSmoke(eventApproachPanel.stationActionEffectsAvailable, "Event Approach effects should make station action effects section available");
@@ -407,13 +423,165 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(eventApproachPanel.travelV2StationActionEventApproachTallyStatus.available, "Event Approach tally status should be exposed in preview render state");
   const eventApproachStatus = eventApproachPanel.travelV2StationActionEventApproachTallyStatus;
   assertSmoke(eventApproachStatus.statusKey === "partialProgress" && eventApproachStatus.statusLabel === "Partial Progress" && eventApproachStatus.statusTone === "warning", "Event Approach preview status should include safe status key label and tone");
-  assertSmoke(eventApproachStatus.totalContributionValue === 1 && eventApproachStatus.previewLabel.includes("captured") && eventApproachStatus.previewMessage.includes("read-only") && eventApproachStatus.previewMessage.includes("not applied yet"), "Event Approach preview status should include total and readable not-applied message");
+  assertSmoke(eventApproachStatus.totalContributionValue === 1 && eventApproachStatus.previewLabel.includes("captured") && eventApproachStatus.previewMessage.includes("read-only") && eventApproachStatus.previewMessage.includes("effective station outcomes"), "Event Approach preview status should include total and readable effective-outcome message");
   const fallbackStatusPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, travelV2RoundFinalizationResult: { stationActionEventApproachContributionTally: { roundIndex: 0, roundNumber: 1, totalContributionValue: -1, contributionCount: 1, hasContributions: true, playerSafe: true, readOnly: true } } });
   assertSmoke(fallbackStatusPanel.travelV2StationActionEventApproachTallyStatus.statusKey === "setback", "Event Approach preview status should fall back from tally when status object is absent");
   const eventApproachPanelJson = JSON.stringify({ effects: eventApproachPanel.travelV2StationActionEventApproachEffects, contributions: eventApproachPanel.travelV2StationActionEventApproachContributions, tally: eventApproachPanel.travelV2StationActionEventApproachContributionTally, status: eventApproachPanel.travelV2StationActionEventApproachTallyStatus });
   for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
     assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
   }
+
+  const activeCardsPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: {
+      ...appState.session,
+      roundResults: [{
+        stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
+        stationResults: {}
+      }],
+      travelV2ActiveCards: {
+        version: 1,
+        records: [{
+          cardId: "travel-v2-card:0:navigator:extreme:criticalSuccess:legendaryEvent",
+          rewardKey: "legendaryEvent",
+          cardLabel: "Legendary Event",
+          sourceStationKey: "navigator",
+          sourceStationLabel: "Navigator",
+          sourceBidKey: "extreme",
+          sourceBidLabel: "Extreme Bid",
+          sourceResult: "criticalSuccess",
+          roundIndex: 0,
+          roundNumber: 1,
+          status: "pending",
+          timingHint: "Play after station actions are locked but before the target station rolls.",
+          effectPreviewText: "Future effect: target station cannot resolve worse than success.",
+          targetStationKey: "engineer",
+          targetStationLabel: "Engineer",
+          playerSafe: true,
+          readOnly: true,
+          gmText: "secret",
+          auditRecord: { secret: true }
+        }],
+        playerSafe: true,
+        readOnly: true
+      }
+    }
+  });
+  assertSmoke(activeCardsPanel.travelV2ActiveCards.available, "active card preview summary should be available when session cards exist");
+  assertEqual(activeCardsPanel.travelV2ActiveCards.records.length, 1, "active card preview summary should expose session card records");
+  const activeCard = activeCardsPanel.travelV2ActiveCards.records[0];
+  assertSmoke(activeCard.rewardKey === "legendaryEvent" && activeCard.cardLabel === "Legendary Event" && activeCard.status === "pending", "active card preview should include safe card key, label, and status");
+  assertSmoke(activeCard.playerSafe === true && activeCard.readOnly === true && activeCard.effectPreviewText.includes("Future effect"), "active card preview should be player-safe, read-only, and preview-only");
+  assertSmoke(activeCard.hasTargetStation === true && activeCard.targetStationKey === "engineer", "active card preview should expose target station state");
+  assertSmoke(activeCard.timingType === "beforeRoll" && activeCard.previewStatus === "playable" && activeCard.playablePreview === true, "active card preview should expose before-roll readiness state");
+  assertSmoke(activeCard.previewRoundIndex === 0 && activeCard.previewRoundNumber === 1, "active card preview should expose the play/preview round separately from created round");
+  assertSmoke(Array.isArray(activeCard.availableTargetStations) && activeCard.availableTargetStations.some((option) => option.stationKey === "engineer"), "active card preview should expose safe target station options");
+  assertSmoke(activeCardsPanel.travelV2ActiveCardApplicationPreviews.hasRecords, "panel should expose active card application previews at top level");
+  assertSmoke(activeCardsPanel.activeCardApplicationPreviews === activeCardsPanel.travelV2ActiveCardApplicationPreviews, "panel should expose active card application preview alias");
+  const activeCardApplicationPreview = activeCardsPanel.travelV2ActiveCardApplicationPreviews.records[0];
+  assertSmoke(activeCardApplicationPreview.applicationType === "resultFloorPreview" && activeCardApplicationPreview.resultFloor === "success", "panel should expose legendary result floor application preview");
+  assertSmoke(activeCardApplicationPreview.requiresGMConfirmation === true && activeCardApplicationPreview.canApplyPreview === true, "panel application preview should require GM confirmation and be apply-ready");
+  assertEqual(activeCardApplicationPreview.controlLabel, "Arm Success Floor", "legendary preview should expose clear GM control label");
+  assertSmoke(!activeCardApplicationPreview.enabledForGM, "default/non-GM panel should not enable active card application controls");
+  assertSmoke(activeCardApplicationPreview.disabledForPlayers === true && activeCardApplicationPreview.control.readOnly === true, "application controls should be disabled/read-only for players");
+  assertSmoke(activeCardApplicationPreview.playerSafe === true && activeCardApplicationPreview.readOnly === true, "panel application preview should be player-safe and read-only");
+
+
+  const cardFixtures = [
+    ["minorOpening", "Minor Opening", "Apply +1 Opening", "circumstanceBonusPreview"],
+    ["greaterOpening", "Greater Opening", "Apply +3 Opening", "circumstanceBonusPreview"],
+    ["heroicEvent", "Heroic Event", "Apply Heroic Upgrade", "degreeUpgradePreview"],
+    ["legendaryEvent", "Legendary Event", "Arm Success Floor", "resultFloorPreview"]
+  ];
+  for (const [rewardKey, cardLabel, controlLabel, applicationType] of cardFixtures) {
+    const gmCardSession = {
+        ...appState.session,
+        roundResults: [{
+          stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
+          stationResults: rewardKey === "heroicEvent" ? { navigator: "failure" } : {}
+        }],
+        travelV2ActiveCards: { records: [{ cardId: `card-${rewardKey}`, id: `card-${rewardKey}`, cardKey: rewardKey, rewardKey, cardLabel, sourceStationKey: "captain", sourceStationLabel: "Captain", roundIndex: 0, roundNumber: 1, status: "pending", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true }
+      };
+    const gmCardPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, isGM: true, user: { isGM: true }, session: gmCardSession });
+    const gmPreview = gmCardPanel.travelV2ActiveCardApplicationPreviews.records[0];
+    assertEqual(gmPreview.applicationType, applicationType, `${rewardKey} should expose expected application type`);
+    assertEqual(gmPreview.controlLabel, controlLabel, `${rewardKey} should expose expected control label`);
+    assertSmoke(gmPreview.enabledForGM === true && gmPreview.control.enabledForGM === true, `${rewardKey} GM control should be enabled when apply-ready`);
+    const playerCardPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, session: gmCardSession, isGM: false, user: { isGM: false } });
+    assertSmoke(playerCardPanel.travelV2ActiveCardApplicationPreviews.records[0].enabledForGM === false, `${rewardKey} player panel should never enable apply controls`);
+  }
+
+  const consumedPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    isGM: true,
+    user: { isGM: true },
+    session: { ...appState.session, travelV2ActiveCards: { records: [{ cardId: "consumed-minor", cardKey: "minorOpening", rewardKey: "minorOpening", cardLabel: "Minor Opening", status: "consumed", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true } }
+  });
+  const consumedControl = consumedPanel.travelV2ActiveCardApplicationPreviews.records[0];
+  assertSmoke(consumedControl.enabledForGM === false && consumedControl.blockedReason.includes("consumed"), "consumed card preview control should be disabled with blocked reason");
+
+  const minorApplySession = {
+    ...appState.session,
+    roundResults: [{ stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } }, stationResults: {} }],
+    travelV2ActiveCards: { records: [{ cardId: "apply-minor", id: "apply-minor", cardKey: "minorOpening", rewardKey: "minorOpening", cardLabel: "Minor Opening", status: "pending", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true }
+  };
+  const minorPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, isGM: true, user: { isGM: true }, session: minorApplySession });
+  const minorPreviewId = minorPanel.travelV2ActiveCardApplicationPreviews.records[0].previewId;
+  const minorApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: { isGM: true }, session: minorApplySession }, minorPreviewId, { isGM: true, now: "2026-07-07T00:00:00.000Z" });
+  assertSmoke(minorApplyResult.applied === true, "GM panel apply handler should apply an apply-ready Minor preview");
+  assertSmoke(minorApplyResult.session !== minorApplySession, "GM panel apply handler should return cloned updated session");
+  assertEqual(minorApplySession.travelV2ActiveCards.records[0].status, "pending", "GM panel apply handler should not mutate source session");
+  assertEqual(minorApplyResult.session.travelV2ActiveCards.records[0].status, "consumed", "GM panel apply handler should consume card in returned session");
+  assertEqual(minorApplyResult.session.travelV2PendingStationActionBonuses.records[0].bonusValue, 1, "GM panel Minor apply should create pending +1 circumstance bonus");
+  assertSmoke(minorApplyResult.previewPanelState.travelV2ActiveCardApplicationPreviews.records[0].enabledForGM === false, "after panel apply the consumed card should no longer be apply-ready");
+
+  for (const [rewardKey, cardLabel, expected] of [
+    ["greaterOpening", "Greater Opening", { bonusValue: 3 }],
+    ["heroicEvent", "Heroic Event", { resultAfter: "success" }],
+    ["legendaryEvent", "Legendary Event", { resultFloor: "success" }]
+  ]) {
+    const applySession = {
+      ...appState.session,
+      roundResults: [{ stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } }, stationResults: rewardKey === "heroicEvent" ? { navigator: "failure" } : {} }],
+      travelV2ActiveCards: { records: [{ cardId: `apply-${rewardKey}`, id: `apply-${rewardKey}`, cardKey: rewardKey, rewardKey, cardLabel, status: "pending", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true }
+    };
+    const applyPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, isGM: true, user: { isGM: true }, session: applySession });
+    const applyPreviewId = applyPanel.travelV2ActiveCardApplicationPreviews.records[0].previewId;
+    const applyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: { isGM: true }, session: applySession }, applyPreviewId, { isGM: true, now: "2026-07-07T00:00:01.000Z" });
+    assertSmoke(applyResult.applied === true, `${rewardKey} should apply through the GM panel handler`);
+    assertEqual(applyResult.session.travelV2ActiveCards.records[0].status, "consumed", `${rewardKey} should consume its source card`);
+    if (expected.bonusValue) assertEqual(applyResult.session.travelV2PendingStationActionBonuses.records[0].bonusValue, expected.bonusValue, `${rewardKey} should create expected pending circumstance bonus`);
+    if (expected.resultAfter) assertEqual(applyResult.session.roundResults[0].stationResults.navigator, expected.resultAfter, `${rewardKey} should upgrade cloned station result`);
+    if (expected.resultFloor) assertEqual(applyResult.session.travelV2PendingStationResultFloors.records[0].resultFloor, expected.resultFloor, `${rewardKey} should create expected pending result floor`);
+  }
+
+  const invalidApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: { isGM: true }, session: minorApplySession }, "missing-preview", { isGM: true });
+  assertSmoke(invalidApplyResult.blocked === true && invalidApplyResult.applied === false, "invalid preview id should block safely");
+  const nonGmApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: false, user: { isGM: false }, session: minorApplySession }, minorPreviewId, { isGM: false });
+  assertSmoke(nonGmApplyResult.blocked === true && nonGmApplyResult.blockedReason.includes("GM"), "non-GM apply attempt should block safely");
+
+  const activeCardsPanelJson = JSON.stringify(activeCardsPanel.travelV2ActiveCards);
+  for (const forbidden of ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions"]) {
+    assertSmoke(!activeCardsPanelJson.includes(forbidden), `Active card preview state should not include forbidden player-safe term ${forbidden}`);
+    assertSmoke(!JSON.stringify(activeCardsPanel.travelV2ActiveCardApplicationPreviews).includes(forbidden), `Active card application preview state should not include forbidden player-safe term ${forbidden}`);
+  }
+  const activeCardsWithEmptyLatestPanel = prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    session: activeCardsPanel.session ?? {
+      ...appState.session,
+      travelV2ActiveCards: {
+        records: [activeCard],
+        playerSafe: true,
+        readOnly: true
+      }
+    },
+    travelV2RoundFinalizationResult: {
+      ok: true,
+      finalized: true,
+      travelV2ActiveCards: { version: 1, records: [], playerSafe: true, readOnly: true }
+    }
+  });
+  assertEqual(activeCardsWithEmptyLatestPanel.travelV2ActiveCards.records.length, 1, "active card preview should keep existing session card when latest finalization has no created cards");
 
   return {
     ok: true,
@@ -430,9 +598,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       "pre-application-correction-controls-hidden",
       "station-benefit-display-state",
       "support-bonus-status-render-state",
+      "station-roll-bonus-state-render-state",
+      "station-result-floor-state-render-state",
       "event-approach-effects-render-state",
       "event-approach-contributions-render-state",
       "event-approach-contribution-tally-render-state",
+      "active-card-preview-render-state",
+      "active-card-merged-preview-state",
       "round-action-order-display-state",
       "round-action-order-commit-result-display",
       "round-action-order-commit-result-redaction",
