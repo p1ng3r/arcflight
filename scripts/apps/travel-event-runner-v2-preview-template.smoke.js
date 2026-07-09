@@ -25,6 +25,15 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const css = readUtf8(STYLE_PATH);
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
+  assertIncludes(template, "state.travelV2VisibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
+  assertIncludes(template, "Travel v2 visible stakes", "template should identify the visible stakes panel for accessibility");
+  assertIncludes(template, "Visible Stakes", "template should render the visible stakes panel heading");
+  assertIncludes(template, "state.travelV2VisibleStakes.crisisSummary", "template should render visible stakes crisis summary");
+  assertIncludes(template, "state.travelV2VisibleStakes.threatenedResources", "template should render visible stakes threatened resources");
+  assertIncludes(template, "state.travelV2VisibleStakes.knownDangers", "template should render visible stakes known dangers");
+  assertIncludes(template, "state.travelV2VisibleStakes.knownTells", "template should render visible stakes known tells");
+  assertIncludes(template, "state.travelV2VisibleStakes.availableStations", "template should render visible stakes available stations");
+  assertIncludes(template, "state.travelV2VisibleStakes.safetyNote", "template should render visible stakes player-safe note");
   assertIncludes(template, "data-arcflight-start-travel-event-runner", "template should include local runner session start button");
   assertIncludes(template, "How to start a local runner session", "template should explain the startup path");
   assertIncludes(template, "Local runner session startup diagnostics", "template should render startup diagnostics");
@@ -138,6 +147,9 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   for (const forbidden of ["Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`,`data-action="arcflight-travel-v2-force-apply"`,`data-action="arcflight-travel-v2-apply-unsupported"`,`data-action="arcflight-travel-v2-apply-preview-only"`,`data-action="arcflight-travel-v2-player-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes", "css should style visible stakes panel wrapper");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes-grid", "css should style visible stakes reward/consequence grid");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes-stations", "css should style visible stakes station chips");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--safe", "css should include safe tone hook");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--warning", "css should include warning tone hook");

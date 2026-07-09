@@ -1294,6 +1294,47 @@
   font-style: italic;
 }
 
+.arcflight-travel-runner-mvp__visible-stakes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__visible-stakes header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.arcflight-travel-runner-mvp__visible-stakes h2,
+.arcflight-travel-runner-mvp__visible-stakes p {
+  margin: 0;
+}
+
+.arcflight-travel-runner-mvp__visible-stakes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__visible-stakes-round,
+.arcflight-travel-runner-mvp__visible-stakes-stations span {
+  display: inline-block;
+  border: 1px solid rgba(120, 104, 80, 0.35);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  background: rgba(255, 255, 255, 0.28);
+  white-space: nowrap;
+}
+
+.arcflight-travel-runner-mvp__visible-stakes-stations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .arcflight-travel-runner-mvp__v2-preview {
   display: flex;
   flex-direction: column;
