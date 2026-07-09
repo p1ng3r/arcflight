@@ -85,6 +85,31 @@
     </section>
     {{/if}}
 
+    {{#if state.visibleStakes.hasStakes}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__visible-stakes arcflight-player-safe" aria-label="Travel v2 visible stakes">
+      <header>
+        <div>
+          <p class="arcflight-travel-runner-mvp__eyebrow">Player-safe runtime stakes</p>
+          <h2>Visible Stakes</h2>
+        </div>
+        <span class="arcflight-travel-runner-mvp__visible-stakes-round">Round {{state.visibleStakes.currentRoundNumber}} / {{state.visibleStakes.roundCount}}</span>
+      </header>
+      <p><strong>Event:</strong> {{state.visibleStakes.eventName}}{{#if state.visibleStakes.categoryLabel}} — {{state.visibleStakes.categoryLabel}}{{/if}}</p>
+      {{#if state.visibleStakes.crisisSummary}}<p><strong>Crisis:</strong> {{state.visibleStakes.crisisSummary}}</p>{{/if}}
+      {{#if state.visibleStakes.threatenedResources.length}}<p><strong>Threatened Resources:</strong> {{#each state.visibleStakes.threatenedResources}}{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{else}}{{#if key}}{{key}}{{else}}{{#if title}}{{title}}{{else}}{{#if value}}{{value}}{{else}}{{#if text}}{{text}}{{else}}{{#if summary}}{{summary}}{{else}}{{#if length}}{{.}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{#unless @last}}, {{/unless}}{{/each}}</p>{{/if}}
+      {{#if state.visibleStakes.knownDangers.length}}<p><strong>Known Dangers:</strong> {{#each state.visibleStakes.knownDangers}}{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{else}}{{#if key}}{{key}}{{else}}{{#if title}}{{title}}{{else}}{{#if value}}{{value}}{{else}}{{#if text}}{{text}}{{else}}{{#if summary}}{{summary}}{{else}}{{#if length}}{{.}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
+      {{#if state.visibleStakes.knownTells.length}}<p><strong>Known Tells:</strong> {{#each state.visibleStakes.knownTells}}{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{else}}{{#if key}}{{key}}{{else}}{{#if title}}{{title}}{{else}}{{#if value}}{{value}}{{else}}{{#if text}}{{text}}{{else}}{{#if summary}}{{summary}}{{else}}{{#if length}}{{.}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
+      <div class="arcflight-travel-runner-mvp__visible-stakes-grid">
+        {{#if state.visibleStakes.broadReward}}<p><strong>Broad Reward:</strong> {{state.visibleStakes.broadReward}}</p>{{/if}}
+        {{#if state.visibleStakes.broadConsequence}}<p><strong>Broad Consequence:</strong> {{state.visibleStakes.broadConsequence}}</p>{{/if}}
+      </div>
+      {{#if state.visibleStakes.availableStations.length}}
+        <p class="arcflight-travel-runner-mvp__visible-stakes-stations"><strong>Available Stations:</strong> {{#each state.visibleStakes.availableStations}}<span>{{#if stationName}}{{stationName}}{{else}}{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{else}}{{#if stationKey}}{{stationKey}}{{else}}{{#if key}}{{key}}{{else}}{{#if length}}{{.}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</span>{{/each}}</p>
+      {{/if}}
+      <p class="arcflight-sheet__hint">{{state.visibleStakes.safetyNote}}</p>
+    </section>
+    {{/if}}
+
     {{#if state.travelV2GmFlowStatus}}
     <section class="arcflight-travel-gm-flow-strip arcflight-{{state.travelV2GmFlowStatus.stateTone}} arcflight-gm-only" aria-label="Travel v2 GM flow status">
       <header>
