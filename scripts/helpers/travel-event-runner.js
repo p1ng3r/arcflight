@@ -2135,6 +2135,7 @@ function normalizeEventForRunner(event) {
     categoryLabel: humanizeIdentifier(event?.category),
     baseDC: Number.isFinite(Number(event?.baseDC)) ? Number(event.baseDC) : 0,
     roundCount: Number.isInteger(Number(event?.roundCount)) && Number(event.roundCount) > 0 ? Number(event.roundCount) : rounds.length,
+    visibleStakes: isPlainObject(event?.visibleStakes) ? cloneData(event.visibleStakes) : {},
     rounds,
     finalOutcomes: normalizeFinalOutcomes(event?.finalOutcomes)
   };
@@ -3154,6 +3155,84 @@ function preparePlayerSafeRunnerSession(session = null, options = {}) {
   return safe;
 }
 
+const VISIBLE_STAKES_STRING_KEYS = Object.freeze([
+  "eventGoal",
+  "currentPressure",
+  "dangerThresholds",
+  "successResult",
+  "failureResult",
+  "escalationRisk"
+]);
+
+function normalizeVisibleStakesString(value, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+
+function normalizeVisibleStakesArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim()) : [];
+}
+
+function deriveVisibleStakesStations(event = {}) {
+  const stationKeys = new Set();
+  for (const round of Array.isArray(event.rounds) ? event.rounds : []) {
+    for (const stationKey of Array.isArray(round.activeStations) ? round.activeStations : []) {
+      if (typeof stationKey === "string" && stationKey.trim()) stationKeys.add(stationKey.trim());
+    }
+    for (const card of Array.isArray(round.stationCards) ? round.stationCards : []) {
+      if (typeof card?.stationKey === "string" && card.stationKey.trim()) stationKeys.add(card.stationKey.trim());
+    }
+  }
+  return Array.from(stationKeys).map((stationKey) => ({
+    stationKey,
+    stationName: getStation(stationKey)?.label ?? humanizeIdentifier(stationKey)
+  }));
+}
+
+export function prepareTravelV2VisibleStakesState(session, options = {}) {
+  const hasSession = isPlainObject(session);
+  const event = hasSession && isPlainObject(session.event) ? session.event : {};
+  const explicit = isPlainObject(event.visibleStakes) ? event.visibleStakes : {};
+  const rounds = Array.isArray(event.rounds) ? event.rounds : [];
+  const roundCount = Number.isInteger(Number(explicit.roundCount))
+    ? Math.max(0, Number(explicit.roundCount))
+    : (Number.isInteger(Number(event.roundCount)) ? Math.max(0, Number(event.roundCount)) : rounds.length);
+  const activeRoundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Math.max(0, Number(session.currentRoundIndex)) : 0;
+  const currentRound = rounds[activeRoundIndex] ?? null;
+  const currentRoundNumber = currentRound ? activeRoundIndex + 1 : 0;
+  const currentRoundTitle = normalizeVisibleStakesString(currentRound?.title);
+  const currentRoundStakes = normalizeVisibleStakesString(currentRound?.stakes ?? currentRound?.summary ?? currentRound?.openingVignette);
+
+  const state = {
+    version: 1,
+    hasSession,
+    eventName: normalizeVisibleStakesString(explicit.eventName, normalizeVisibleStakesString(event.name, "No active event")),
+    eventGoal: normalizeVisibleStakesString(explicit.eventGoal, normalizeVisibleStakesString(event.goal ?? event.summary ?? event.description)),
+    roundCount,
+    currentRoundNumber,
+    currentRoundTitle,
+    currentRoundStakes,
+    currentPressure: normalizeVisibleStakesString(explicit.currentPressure),
+    dangerThresholds: normalizeVisibleStakesString(explicit.dangerThresholds),
+    knownHazards: normalizeVisibleStakesArray(explicit.knownHazards),
+    successResult: normalizeVisibleStakesString(explicit.successResult),
+    failureResult: normalizeVisibleStakesString(explicit.failureResult),
+    escalationRisk: normalizeVisibleStakesString(explicit.escalationRisk),
+    currentPendingDecisions: normalizeVisibleStakesArray(explicit.currentPendingDecisions),
+    stations: Array.isArray(explicit.stations) && explicit.stations.length > 0
+      ? explicit.stations.filter(isPlainObject).map((station) => ({
+        stationKey: normalizeVisibleStakesString(station.stationKey ?? station.key),
+        stationName: normalizeVisibleStakesString(station.stationName ?? station.name, humanizeIdentifier(station.stationKey ?? station.key ?? "Station")),
+        summary: normalizeVisibleStakesString(station.summary)
+      })).filter((station) => station.stationKey)
+      : deriveVisibleStakesStations(event)
+  };
+  for (const key of VISIBLE_STAKES_STRING_KEYS) state[`has${key.charAt(0).toUpperCase()}${key.slice(1)}`] = Boolean(state[key]);
+  state.hasKnownHazards = state.knownHazards.length > 0;
+  state.hasCurrentPendingDecisions = state.currentPendingDecisions.length > 0;
+  state.hasStations = state.stations.length > 0;
+  return state;
+}
+
 
 function formatTravelEventRunnerStationActionLockValidationMessage(entry = {}) {
   if (typeof entry === "string") return entry;
@@ -3461,6 +3540,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const finalOutcomeApply = prepareTravelV2FinalOutcomeApplyState(activeSession, options);
   const stagedEffectReview = prepareTravelEventStagedEffectReviewState(activeSession, options);
   const completionChecklist = prepareTravelV2CompletionChecklistState(activeSession, { ...options, summaryOutput, finalOutcomePackageReview, finalOutcomeApply, stagedEffectReview });
+  const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
   const playerSafeSession = preparePlayerSafeRunnerSession(activeSession, options);
   const currentUserIsGm = completionChecklistUserIsGm(options);
   const runnerState = {
@@ -3506,6 +3586,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2Narration: activeSession ? prepareTravelV2RoundNarration(activeSession, activeSession.currentRoundIndex, options) : null,
     travelV2ShipScars: prepareTravelV2ShipScarsPanelState(activeSession),
     travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
+    travelV2VisibleStakes,
+    visibleStakes: travelV2VisibleStakes,
     roundSummaryCard,
     stationActionLockIn,
     roundResolutionReadiness,
