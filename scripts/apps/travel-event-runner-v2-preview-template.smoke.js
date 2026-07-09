@@ -25,15 +25,18 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const css = readUtf8(STYLE_PATH);
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
-  assertIncludes(template, "state.travelV2VisibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
+  assertIncludes(template, "state.visibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
   assertIncludes(template, "Travel v2 visible stakes", "template should identify the visible stakes panel for accessibility");
   assertIncludes(template, "Visible Stakes", "template should render the visible stakes panel heading");
-  assertIncludes(template, "state.travelV2VisibleStakes.crisisSummary", "template should render visible stakes crisis summary");
-  assertIncludes(template, "state.travelV2VisibleStakes.threatenedResources", "template should render visible stakes threatened resources");
-  assertIncludes(template, "state.travelV2VisibleStakes.knownDangers", "template should render visible stakes known dangers");
-  assertIncludes(template, "state.travelV2VisibleStakes.knownTells", "template should render visible stakes known tells");
-  assertIncludes(template, "state.travelV2VisibleStakes.availableStations", "template should render visible stakes available stations");
-  assertIncludes(template, "state.travelV2VisibleStakes.safetyNote", "template should render visible stakes player-safe note");
+  assertIncludes(template, "state.visibleStakes.crisisSummary", "template should render visible stakes crisis summary");
+  assertIncludes(template, "state.visibleStakes.threatenedResources", "template should render visible stakes threatened resources");
+  assertIncludes(template, "state.visibleStakes.knownDangers", "template should render visible stakes known dangers");
+  assertIncludes(template, "state.visibleStakes.knownTells", "template should render visible stakes known tells");
+  assertIncludes(template, "state.visibleStakes.availableStations", "template should render visible stakes available stations");
+  assertIncludes(template, "state.visibleStakes.safetyNote", "template should render visible stakes player-safe note");
+  assertIncludes(template, "{{#if label}}{{label}}", "template should render visible stakes object list labels instead of object stringification");
+  assertIncludes(template, "{{#if key}}{{key}}", "template should render visible stakes object list keys instead of object stringification");
+  assertSmoke(!template.includes("state.travelV2VisibleStakes"), "template should prefer the visibleStakes alias for the runner visible stakes panel");
   assertIncludes(template, "data-arcflight-start-travel-event-runner", "template should include local runner session start button");
   assertIncludes(template, "How to start a local runner session", "template should explain the startup path");
   assertIncludes(template, "Local runner session startup diagnostics", "template should render startup diagnostics");
