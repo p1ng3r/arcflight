@@ -23,6 +23,7 @@ function assertIncludes(source, needle, message) {
 export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const template = readUtf8(TEMPLATE_PATH);
   const css = readUtf8(STYLE_PATH);
+  const visibleStakesTemplate = template.slice(template.indexOf("state.visibleStakes.hasStakes"), template.indexOf("state.travelV2GmFlowStatus"));
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
   assertIncludes(template, "state.visibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
@@ -36,6 +37,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "state.visibleStakes.safetyNote", "template should render visible stakes player-safe note");
   assertIncludes(template, "{{#if label}}{{label}}", "template should render visible stakes object list labels instead of object stringification");
   assertIncludes(template, "{{#if key}}{{key}}", "template should render visible stakes object list keys instead of object stringification");
+  assertIncludes(template, "{{#if length}}{{.}}{{/if}}", "template should retain a primitive string fallback without rendering objects as [object Object]");
+  assertSmoke(!visibleStakesTemplate.includes("{{this}}"), "visible stakes list rendering should not use raw {{this}} values");
   assertSmoke(!template.includes("state.travelV2VisibleStakes"), "template should prefer the visibleStakes alias for the runner visible stakes panel");
   assertIncludes(template, "data-arcflight-start-travel-event-runner", "template should include local runner session start button");
   assertIncludes(template, "How to start a local runner session", "template should explain the startup path");
