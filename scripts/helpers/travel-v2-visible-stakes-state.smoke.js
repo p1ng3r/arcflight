@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeTravelEventRunnerSession, prepareTravelEventRunnerState, prepareTravelV2VisibleStakesState } from "./travel-event-runner.js";
+import { prepareTravelEventRunnerState, prepareTravelV2VisibleStakesState } from "./travel-event-runner.js";
 
 function fixtureSession(extra = {}) {
   return {
@@ -37,10 +37,9 @@ export default async function runTravelV2VisibleStakesStateSmokeChecks() {
 
   const session = fixtureSession();
   const before = JSON.stringify(session);
-  const normalizedSession = normalizeTravelEventRunnerSession(session, { now: "2026-07-09T00:00:00.000Z" }).session;
-  const directState = prepareTravelV2VisibleStakesState(normalizedSession, { now: "2026-07-09T00:00:00.000Z" });
   const runnerState = prepareTravelEventRunnerState(session, { user: { isGM: true }, library: { events: {} }, runnerSessionLibrary: { sessions: {} }, now: "2026-07-09T00:00:00.000Z" });
-  assert.deepEqual(runnerState.travelV2VisibleStakes, directState, "runner state exposes the canonical visible-stakes helper output for the active normalized session");
+  const directState = prepareTravelV2VisibleStakesState(runnerState.session, { now: "2026-07-09T00:00:00.000Z" });
+  assert.deepEqual(runnerState.travelV2VisibleStakes, directState, "runner state exposes the canonical visible-stakes helper output");
   assert.equal(runnerState.travelV2VisibleStakes.eventName, "Storm Front", "runner visible stakes keeps event identity");
   assert.deepEqual(runnerState.travelV2VisibleStakes.availableStations.map((station) => station.stationKey), ["navigator", "engineer"], "runner visible stakes keeps active station list");
   assert.equal(JSON.stringify(session), before, "runner visible-stakes preparation does not mutate input session");
