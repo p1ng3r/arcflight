@@ -3611,6 +3611,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     roundSummaryCard,
     stationActionLockIn,
     travelV2VisibleStakes,
+    visibleStakes: travelV2VisibleStakes,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,
