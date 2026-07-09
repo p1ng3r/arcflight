@@ -126,6 +126,55 @@ function sanitizePublicShipScars(value = []) {
 }
 
 
+
+function sanitizeVisibleStakesList(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => {
+      if (typeof entry === "string") return entry.trim();
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        return {
+          key: sanitizeText(entry.key),
+          label: sanitizeText(entry.label),
+          text: sanitizeText(entry.text),
+          name: sanitizeText(entry.name)
+        };
+      }
+      return "";
+    })
+    .filter((entry) => typeof entry === "string" ? Boolean(entry) : Boolean(entry.key || entry.label || entry.text || entry.name));
+}
+
+function sanitizeVisibleStakesState(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const threatenedResources = sanitizeVisibleStakesList(source.threatenedResources);
+  const knownDangers = sanitizeVisibleStakesList(source.knownDangers);
+  const knownTells = sanitizeVisibleStakesList(source.knownTells);
+  const availableStations = (Array.isArray(source.availableStations) ? source.availableStations : [])
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
+    .map((entry) => ({ stationKey: sanitizeText(entry.stationKey), stationName: sanitizeText(entry.stationName) }))
+    .filter((entry) => entry.stationKey || entry.stationName);
+  const state = {
+    hasStakes: sanitizeBoolean(source.hasStakes),
+    eventKey: sanitizeText(source.eventKey),
+    eventName: sanitizeText(source.eventName),
+    category: sanitizeText(source.category),
+    categoryLabel: sanitizeText(source.categoryLabel),
+    roundCount: Math.max(0, sanitizeInteger(source.roundCount, 0)),
+    currentRoundIndex: Math.max(0, sanitizeInteger(source.currentRoundIndex, 0)),
+    currentRoundNumber: Math.max(0, sanitizeInteger(source.currentRoundNumber, 0)),
+    crisisSummary: sanitizeText(source.crisisSummary),
+    threatenedResources,
+    knownDangers,
+    knownTells,
+    broadReward: typeof source.broadReward === "string" ? source.broadReward : sanitizeText(source.broadReward?.text ?? source.broadReward?.label),
+    broadConsequence: typeof source.broadConsequence === "string" ? source.broadConsequence : sanitizeText(source.broadConsequence?.text ?? source.broadConsequence?.label),
+    availableStations,
+    safetyNote: sanitizeText(source.safetyNote)
+  };
+  state.hasStakes = state.hasStakes || Boolean(state.eventName || state.crisisSummary || state.threatenedResources.length || state.knownDangers.length || state.knownTells.length || state.broadReward || state.broadConsequence);
+  return state;
+}
+
 function sanitizePressureGauges(value = []) {
   return (Array.isArray(value) ? value : [])
     .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
@@ -252,6 +301,8 @@ function sanitizeTravelPlayerStationCardState(state = {}) {
     publicHazards: sanitizePublicHazards(source.publicHazards),
     hasPublicShipScars: sanitizeBoolean(source.hasPublicShipScars) || sanitizePublicShipScars(source.publicShipScars).length > 0,
     publicShipScars: sanitizePublicShipScars(source.publicShipScars),
+    visibleStakes: sanitizeVisibleStakesState(source.visibleStakes),
+    hasVisibleStakes: sanitizeBoolean(source.hasVisibleStakes) || sanitizeVisibleStakesState(source.visibleStakes).hasStakes,
     hasPendingReactionBacklash: sanitizeBoolean(source.hasPendingReactionBacklash),
     pendingReactionBacklashText: sanitizeText(source.pendingReactionBacklashText),
     currentRoundIndex: sanitizeInteger(source.currentRoundIndex, -1),
@@ -1050,6 +1101,8 @@ function sanitizeTravelPlayerMissionBoardState(state = {}) {
     hasPublicHazards: sanitizeBoolean(source.hasPublicHazards) || sanitizePublicHazards(source.publicHazards).length > 0,
     publicShipScars: sanitizePublicShipScars(source.publicShipScars),
     hasPublicShipScars: sanitizeBoolean(source.hasPublicShipScars) || sanitizePublicShipScars(source.publicShipScars).length > 0,
+    visibleStakes: sanitizeVisibleStakesState(source.visibleStakes),
+    hasVisibleStakes: sanitizeBoolean(source.hasVisibleStakes) || sanitizeVisibleStakesState(source.visibleStakes).hasStakes,
     partyAlerts: sanitizePartyAlerts(source.partyAlerts),
     hasPartyAlerts: sanitizeBoolean(source.hasPartyAlerts) || sanitizePartyAlerts(source.partyAlerts).length > 0,
     hudMode: sanitizeText(source.hudMode) || "expanded",

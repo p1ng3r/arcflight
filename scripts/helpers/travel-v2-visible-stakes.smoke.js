@@ -1,4 +1,4 @@
-import { prepareTravelEventRunnerState, prepareTravelV2VisibleStakesState } from "./travel-event-runner.js";
+import { normalizeTravelEventRunnerSession, prepareTravelEventRunnerState, prepareTravelPlayerMissionBoardState, prepareTravelPlayerStationCardState, prepareTravelV2VisibleStakesState } from "./travel-event-runner.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 visible stakes smoke check failed: ${message}`); }
 function snap(value) { return JSON.stringify(value); }
@@ -52,13 +52,27 @@ export async function runTravelV2VisibleStakesSmokeChecks() {
   }
   assertSmoke(state.knownDangers.length === 2 && state.knownDangers.some((danger) => danger.label === "Visible reef"), "visible known dangers remain while hidden hazards do not leak");
   assertSmoke(runnerState.travelV2VisibleStakes?.eventKey === "storm-front", "runner state exposes visible stakes under travelV2VisibleStakes");
-  assertSmoke(playerRunnerState.travelV2VisibleStakes?.eventKey === "storm-front" && playerRunnerState.travelV2VisibleStakes?.eventName === "Storm Front", "non-GM runner state keeps player-safe visible stakes shell");
-  for (const forbidden of ["secret", "gmText", "gmOnly", "applyPayload", "targetActorUuid", "auditRecord", "pendingConsequenceQueue"]) {
+  assertSmoke(playerRunnerState.travelV2VisibleStakes?.knownDangers?.some((danger) => danger.label === "Visible reef"), "non-GM runner state keeps player-safe visible stakes details");
+  for (const forbidden of ["secret", "gmText", "gmOnly", "applyPayload", "targetActorUuid", "auditRecord", "pendingConsequenceQueue", "Hidden ambush"]) {
     assertSmoke(!snap(playerRunnerState.travelV2VisibleStakes).includes(forbidden), `runner visible stakes omits forbidden value: ${forbidden}`);
+  }
+
+  const normalizedSession = normalizeTravelEventRunnerSession(session, { now: "2026-07-09T00:00:00.000Z" }).session;
+  assertSmoke(normalizedSession.event.visibleStakes?.knownDangers?.some((danger) => danger.label === "Visible reef"), "normalized runner session preserves sanitized visible stakes for runtime state");
+  assertSmoke(!snap(normalizedSession.event.visibleStakes).includes("Hidden ambush") && !snap(normalizedSession.event.visibleStakes).includes("gmText"), "normalized event visible stakes are player-safe before runner exposure");
+  const missionBoardState = prepareTravelPlayerMissionBoardState(normalizedSession, { user: { isGM: false } });
+  const stationCardState = prepareTravelPlayerStationCardState(normalizedSession, "navigator", { user: { isGM: false } });
+  assertSmoke(missionBoardState.visibleStakes?.knownDangers?.some((danger) => danger.label === "Visible reef"), "mission board state exposes visible stakes details");
+  assertSmoke(stationCardState.visibleStakes?.knownDangers?.some((danger) => danger.label === "Visible reef"), "station card state exposes visible stakes details");
+  for (const publicState of [missionBoardState.visibleStakes, stationCardState.visibleStakes]) {
+    const publicJson = snap(publicState);
+    for (const forbidden of ["secret", "gmText", "gmOnly", "applyPayload", "targetActorUuid", "auditRecord", "pendingConsequenceQueue", "Hidden ambush"]) {
+      assertSmoke(!publicJson.includes(forbidden), `player visible stakes omits forbidden value: ${forbidden}`);
+    }
   }
   assertSmoke(snap(session) === before, "input session is not mutated");
 
-  return { ok: true, checked: ["minimal-state", "derived-fallbacks", "player-safe-sanitization", "hidden-hazard-filtering", "runner-state-wiring", "input-immutability"] };
+  return { ok: true, checked: ["minimal-state", "derived-fallbacks", "player-safe-sanitization", "hidden-hazard-filtering", "runner-state-wiring", "runtime-session-normalization", "player-state-wiring", "input-immutability"] };
 }
 
 export default runTravelV2VisibleStakesSmokeChecks;

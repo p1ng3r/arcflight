@@ -2135,6 +2135,7 @@ function normalizeEventForRunner(event) {
     categoryLabel: humanizeIdentifier(event?.category),
     baseDC: Number.isFinite(Number(event?.baseDC)) ? Number(event.baseDC) : 0,
     roundCount: Number.isInteger(Number(event?.roundCount)) && Number(event.roundCount) > 0 ? Number(event.roundCount) : rounds.length,
+    visibleStakes: sanitizeVisibleStakesValue(isPlainObject(event?.visibleStakes) ? event.visibleStakes : (isPlainObject(event?.stakes) ? event.stakes : {})),
     rounds,
     finalOutcomes: normalizeFinalOutcomes(event?.finalOutcomes)
   };
@@ -3936,6 +3937,7 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
   const publicShipScars = prepareTravelV2ShipScarsPanelState(activeSession).records
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status }));
+  const visibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
   const stationReactionRecords = normalizeTravelReactionPromptRecords(activeSession?.reactionPrompts, options).records.filter((record) =>
     record.stationKey === station.stationKey
     && record.roundIndex === activeSession?.currentRoundIndex
@@ -4027,6 +4029,8 @@ export function prepareTravelPlayerStationCardState(session = null, stationKey =
     publicHazards,
     hasPublicShipScars: publicShipScars.length > 0,
     publicShipScars,
+    visibleStakes,
+    hasVisibleStakes: visibleStakes.hasStakes === true,
     hasPendingReactionBacklash: Boolean(reactionBacklash),
     pendingReactionBacklashText: reactionBacklash ? "Hard Correction fails to bite; the ship shudders under the strain. The GM must resolve +1 Strain." : "",
     currentRoundIndex: activeSession?.currentRoundIndex ?? -1,
@@ -4136,6 +4140,7 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     .filter((record) => ["applied", "repaired"].includes(record.status) && record.playerVisible !== false && typeof record.playerText === "string" && record.playerText.trim())
     .map((record) => ({ id: record.id, name: record.name, severity: record.severity, category: record.category, playerText: record.playerText, repairRequirement: record.repairRequirement, status: record.status, statusLabel: record.statusLabel }));
   const reactionRecords = normalizeTravelReactionPromptRecords(normalized.session?.reactionPrompts, options).records;
+  const visibleStakes = prepareTravelV2VisibleStakesState(normalized.session, options);
   const stations = (overlayState.stations ?? []).map((station) => {
       const focusSource = prepareTravelStationFocusState(normalized.session, station.stationKey, normalized.session?.currentRoundIndex ?? 0, options);
       const { focusOptions, focusCapacity, focusRemaining } = focusSource;
@@ -4216,6 +4221,8 @@ export function prepareTravelPlayerMissionBoardState(session = null, options = {
     hasPublicHazards: publicHazards.length > 0,
     publicShipScars,
     hasPublicShipScars: publicShipScars.length > 0,
+    visibleStakes,
+    hasVisibleStakes: visibleStakes.hasStakes === true,
     momentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum),
     hasMomentum: sanitizeTravelV2MomentumForPlayers(normalized.session?.travelV2Momentum).value > 0,
     focusBacklash: sanitizeTravelV2FocusBacklashForPlayers(normalized.session?.travelV2FocusBacklashRecords),
