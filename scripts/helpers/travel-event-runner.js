@@ -3550,6 +3550,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
   const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
   const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
+  const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -3609,6 +3610,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
     roundSummaryCard,
     stationActionLockIn,
+    travelV2VisibleStakes,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,
