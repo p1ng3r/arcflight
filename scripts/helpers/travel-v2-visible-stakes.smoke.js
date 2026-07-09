@@ -1,4 +1,4 @@
-import { prepareTravelV2VisibleStakesState } from "./travel-event-runner.js";
+import { prepareTravelEventRunnerState, prepareTravelV2VisibleStakesState } from "./travel-event-runner.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 visible stakes smoke check failed: ${message}`); }
 function snap(value) { return JSON.stringify(value); }
@@ -44,14 +44,21 @@ export async function runTravelV2VisibleStakesSmokeChecks() {
   const session = fixtureSession();
   const before = snap(session);
   const state = prepareTravelV2VisibleStakesState(session, { now: "2026-07-09T00:00:00.000Z" });
+  const runnerState = prepareTravelEventRunnerState(session, { now: "2026-07-09T00:00:00.000Z", user: { isGM: true } });
+  const playerRunnerState = prepareTravelEventRunnerState(session, { now: "2026-07-09T00:00:00.000Z", user: { isGM: false } });
   const serialized = snap(state);
   for (const forbidden of ["secret", "gmText", "gmOnly", "applyPayload", "internalMutation", "targetActorUuid", "auditRecord", "commitRecords", "userId", "userName", "pendingConsequenceQueue", "internalScoring", "Never show", "Hidden ambush"]) {
     assertSmoke(!serialized.includes(forbidden), `forbidden value stripped: ${forbidden}`);
   }
   assertSmoke(state.knownDangers.length === 2 && state.knownDangers.some((danger) => danger.label === "Visible reef"), "visible known dangers remain while hidden hazards do not leak");
+  assertSmoke(runnerState.travelV2VisibleStakes?.eventKey === "storm-front", "runner state exposes visible stakes under travelV2VisibleStakes");
+  assertSmoke(playerRunnerState.travelV2VisibleStakes?.eventKey === "storm-front" && playerRunnerState.travelV2VisibleStakes?.eventName === "Storm Front", "non-GM runner state keeps player-safe visible stakes shell");
+  for (const forbidden of ["secret", "gmText", "gmOnly", "applyPayload", "targetActorUuid", "auditRecord", "pendingConsequenceQueue"]) {
+    assertSmoke(!snap(playerRunnerState.travelV2VisibleStakes).includes(forbidden), `runner visible stakes omits forbidden value: ${forbidden}`);
+  }
   assertSmoke(snap(session) === before, "input session is not mutated");
 
-  return { ok: true, checked: ["minimal-state", "derived-fallbacks", "player-safe-sanitization", "hidden-hazard-filtering", "input-immutability"] };
+  return { ok: true, checked: ["minimal-state", "derived-fallbacks", "player-safe-sanitization", "hidden-hazard-filtering", "runner-state-wiring", "input-immutability"] };
 }
 
 export default runTravelV2VisibleStakesSmokeChecks;
