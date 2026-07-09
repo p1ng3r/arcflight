@@ -37,6 +37,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "state.visibleStakes.safetyNote", "template should render visible stakes player-safe note");
   assertIncludes(template, "{{#if label}}{{label}}", "template should render visible stakes object list labels instead of object stringification");
   assertIncludes(template, "{{#if key}}{{key}}", "template should render visible stakes object list keys instead of object stringification");
+  assertIncludes(template, "{{#if stationName}}{{stationName}}", "template should render visible stakes station names when present");
+  assertIncludes(template, "{{#if stationKey}}{{stationKey}}", "template should fall back to visible stakes station keys when station names are missing");
   assertIncludes(template, "{{#if length}}{{.}}{{/if}}", "template should retain a primitive string fallback without rendering objects as [object Object]");
   assertSmoke(!visibleStakesTemplate.includes("{{this}}"), "visible stakes list rendering should not use raw {{this}} values");
   assertSmoke(!template.includes("state.travelV2VisibleStakes"), "template should prefer the visibleStakes alias for the runner visible stakes panel");

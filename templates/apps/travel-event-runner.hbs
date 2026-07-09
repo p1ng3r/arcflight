@@ -104,7 +104,7 @@
         {{#if state.visibleStakes.broadConsequence}}<p><strong>Broad Consequence:</strong> {{state.visibleStakes.broadConsequence}}</p>{{/if}}
       </div>
       {{#if state.visibleStakes.availableStations.length}}
-        <p class="arcflight-travel-runner-mvp__visible-stakes-stations"><strong>Available Stations:</strong> {{#each state.visibleStakes.availableStations}}<span>{{stationName}}</span>{{/each}}</p>
+        <p class="arcflight-travel-runner-mvp__visible-stakes-stations"><strong>Available Stations:</strong> {{#each state.visibleStakes.availableStations}}<span>{{#if stationName}}{{stationName}}{{else}}{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{else}}{{#if stationKey}}{{stationKey}}{{else}}{{#if key}}{{key}}{{else}}{{#if length}}{{.}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</span>{{/each}}</p>
       {{/if}}
       <p class="arcflight-sheet__hint">{{state.visibleStakes.safetyNote}}</p>
     </section>
