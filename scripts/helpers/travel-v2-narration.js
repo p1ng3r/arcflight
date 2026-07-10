@@ -216,38 +216,68 @@ export function prepareTravelV2RoundNarration(session, roundIndex = undefined, o
 
 export function prepareTravelV2NarrationHookState(session, options = {}) {
   const safeSession = isPlainObject(session) ? session : {};
-  const roundIndex = normalizeRoundIndex(safeSession, options.roundIndex);
-  const narration = sanitizeTravelV2PublicNarration(prepareTravelV2RoundNarration(safeSession, roundIndex, options));
+  const event = isPlainObject(safeSession.event) ? safeSession.event : {};
+  const rounds = Array.isArray(event.rounds) ? event.rounds : [];
+  const currentRoundIndex = normalizeRoundIndex(safeSession, options.roundIndex);
+  const currentRound = rounds[currentRoundIndex] ?? {};
+  const roundCount = Number.isInteger(Number(event.roundCount)) && Number(event.roundCount) > 0 ? Number(event.roundCount) : rounds.length;
+  const category = typeof event.category === "string" ? event.category : "";
+  const phase = typeof currentRound.phase === "string" && currentRound.phase ? currentRound.phase : (typeof currentRound.title === "string" ? currentRound.title : "");
+  const narration = sanitizeTravelV2PublicNarration(prepareTravelV2RoundNarration(safeSession, currentRoundIndex, options));
   const visibleStakes = prepareVisibleStakeHooks(safeSession);
   const publicHazards = publicHazardRecords(safeSession).map(sanitizeTravelV2PublicHazard);
-  const prompts = buildNarrationHookPrompts({ visibleStakes, narration, publicHazards });
+  const availableStations = (Array.isArray(currentRound.activeStations) ? currentRound.activeStations : narration.stationVignettes.map((vignette) => vignette.stationKey))
+    .filter((stationKey, index, stationKeys) => typeof stationKey === "string" && stationKey && stationKeys.indexOf(stationKey) === index)
+    .map((stationKey) => ({ stationKey, stationLabel: stationLabel(stationKey) }));
+  const stationHooks = narration.stationVignettes.map((vignette) => ({
+    stationKey: vignette.stationKey,
+    stationLabel: vignette.stationLabel,
+    actionLabel: vignette.actionLabel,
+    resultLabel: vignette.resultLabel,
+    tone: vignette.tone,
+    publicText: vignette.publicText,
+    complete: vignette.complete === true
+  }));
+  const pressureHooks = Object.entries(safeSession.pressure ?? {})
+    .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0)
+    .map(([key, value]) => ({ key, label: humanizeIdentifier(key), value: Number(value) }));
+  const hazardHooks = publicHazards.map((hazard) => ({ id: hazard.id, name: hazard.name, status: hazard.status, publicSummary: hazard.publicSummary }));
+  const hasRuntimeContext = Boolean(event.key || event.name || rounds.length || stationHooks.length || publicHazards.length);
+  const outcomeHooks = hasRuntimeContext ? [
+    ...(narration.publicWhatHappened ? [{ type: "roundSummary", text: narration.publicWhatHappened }] : []),
+    ...narration.stationOutcomeBullets.map((text, index) => ({ type: "stationOutcome", stationKey: stationHooks[index]?.stationKey ?? "", text })),
+    ...(narration.suggestedReadAloud ? [{ type: "readAloud", text: narration.suggestedReadAloud }] : [])
+  ] : [];
+  const visibleStakesSummary = [
+    visibleStakes.crisisSummary,
+    visibleStakes.threatenedResources.length ? `Threatened: ${visibleStakes.threatenedResources.join(", ")}.` : "",
+    visibleStakes.knownDangers.length ? `Known dangers: ${visibleStakes.knownDangers.join(", ")}.` : "",
+    visibleStakes.knownTells.length ? `Known tells: ${visibleStakes.knownTells.join(", ")}.` : ""
+  ].filter(Boolean).join(" ");
+  const promptSeeds = buildNarrationHookPrompts({ visibleStakes, narration, publicHazards });
+  const hasNarrationHooks = Boolean(event.key || event.name || visibleStakesSummary || availableStations.length || stationHooks.length || pressureHooks.length || hazardHooks.length || outcomeHooks.length || promptSeeds.length);
   return {
-    schemaVersion: 1,
-    eventKey: typeof safeSession?.event?.key === "string" ? safeSession.event.key : "",
-    eventName: typeof safeSession?.event?.name === "string" ? safeSession.event.name : "",
-    sessionKey: typeof safeSession?.key === "string" ? safeSession.key : "",
-    roundIndex,
-    roundNumber: roundIndex + 1,
-    roundTitle: typeof safeSession?.event?.rounds?.[roundIndex]?.title === "string" ? safeSession.event.rounds[roundIndex].title : "",
-    completionState: narration.completionState,
-    complete: narration.complete === true,
-    visibleStakes,
-    stationHooks: narration.stationVignettes.map((vignette) => ({
-      stationKey: vignette.stationKey,
-      stationLabel: vignette.stationLabel,
-      actionLabel: vignette.actionLabel,
-      resultLabel: vignette.resultLabel,
-      tone: vignette.tone,
-      publicText: vignette.publicText,
-      complete: vignette.complete === true
-    })),
-    hazardHooks: publicHazards.map((hazard) => ({ id: hazard.id, name: hazard.name, status: hazard.status, publicSummary: hazard.publicSummary })),
-    momentumHook: narration.momentum,
-    supportHook: narration.support,
-    supportBacklashHook: narration.supportBacklash,
-    focusBacklashHook: narration.focusBacklash,
-    prompts,
-    suggestedReadAloud: narration.publicSuggestedReadAloud || narration.suggestedReadAloud || "",
+    hasNarrationHooks,
+    eventKey: typeof event.key === "string" ? event.key : "",
+    eventName: typeof event.name === "string" ? event.name : "",
+    category,
+    categoryLabel: typeof event.categoryLabel === "string" && event.categoryLabel ? event.categoryLabel : humanizeIdentifier(category),
+    roundCount,
+    currentRoundIndex,
+    currentRoundNumber: currentRoundIndex + 1,
+    phase,
+    phaseLabel: phase ? humanizeIdentifier(phase) : "",
+    crisisSummary: visibleStakes.crisisSummary,
+    visibleStakesSummary,
+    threatenedResources: visibleStakes.threatenedResources,
+    knownDangers: visibleStakes.knownDangers,
+    knownTells: visibleStakes.knownTells,
+    availableStations,
+    stationHooks,
+    pressureHooks,
+    hazardHooks,
+    outcomeHooks,
+    promptSeeds,
     safetyNote: "Player-safe narration hook state only. No persistent changes are applied."
   };
 }
