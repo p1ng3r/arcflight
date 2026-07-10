@@ -23,6 +23,7 @@ import runTravelV2ShipScarsSmokeChecks from "../helpers/travel-v2-ship-scars.smo
 import runTravelV2NarrationSmokeChecks from "../helpers/travel-v2-narration.smoke.js";
 import runTravelV2NarrationHooksSmokeChecks from "../helpers/travel-v2-narration-hooks.smoke.js";
 import runTravelV2NarrationHooksStateSmokeChecks from "../helpers/travel-v2-narration-hooks-state.smoke.js";
+import runTravelV2NarrationHooksRuntimeCloseoutSmokeChecks from "../helpers/travel-v2-narration-hooks-runtime-closeout.smoke.js";
 import runTravelV2StabilizeRepairSmokeChecks from "../helpers/travel-v2-stabilize-repair.smoke.js";
 import runTravelV2MomentumSmokeChecks from "../helpers/travel-v2-momentum.smoke.js";
 import runTravelV2FocusBacklashRecordsSmokeChecks from "../helpers/travel-v2-focus-backlash-records.smoke.js";
@@ -103,6 +104,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 narration", runTravelV2NarrationSmokeChecks],
   ["Travel v2 narration hooks", runTravelV2NarrationHooksSmokeChecks],
   ["Travel v2 narration hooks state", runTravelV2NarrationHooksStateSmokeChecks],
+  ["Travel v2 narration hooks runtime closeout", runTravelV2NarrationHooksRuntimeCloseoutSmokeChecks],
   ["Travel v2 stabilize repair", runTravelV2StabilizeRepairSmokeChecks],
   ["Travel v2 momentum", runTravelV2MomentumSmokeChecks],
   ["Travel v2 focus backlash records", runTravelV2FocusBacklashRecordsSmokeChecks],
