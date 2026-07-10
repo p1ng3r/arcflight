@@ -40,6 +40,43 @@ function supportBacklashNarrationText(record = {}) { const supporting = record.s
 function sanitizePublicFocusBacklashRecord(record = {}) { return { id: record.id ?? "", roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null, stationKey: typeof record.stationKey === "string" ? record.stationKey : "", stationName: typeof record.stationName === "string" ? record.stationName : "", focusKey: typeof record.focusKey === "string" ? record.focusKey : "", focusLabel: typeof record.focusLabel === "string" ? record.focusLabel : "", publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "", publicRiskText: typeof record.publicRiskText === "string" ? record.publicRiskText : "", publicBacklashPreviewText: typeof record.publicBacklashPreviewText === "string" ? record.publicBacklashPreviewText : "", status: ["pending", "applied", "dismissed"].includes(record.status) ? record.status : "pending" }; }
 function sanitizePublicMomentumRecord(record = {}) { return { id: record.id ?? "", roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null, stationKey: typeof record.stationKey === "string" ? record.stationKey : "", source: typeof record.source === "string" ? record.source : "", amount: Number(record.amount) || 0, status: typeof record.status === "string" ? record.status : "", publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "" }; }
 
+
+function sanitizeHookText(value) { return typeof value === "string" ? value.trim() : ""; }
+function sanitizeHookTextList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => {
+    if (typeof entry === "string") return entry.trim();
+    if (isPlainObject(entry)) return sanitizeHookText(entry.label ?? entry.name ?? entry.text ?? entry.summary);
+    return "";
+  }).filter(Boolean);
+}
+
+function prepareVisibleStakeHooks(session = {}) {
+  const stakes = isPlainObject(session?.event?.visibleStakes) ? session.event.visibleStakes : (isPlainObject(session?.event?.stakes) ? session.event.stakes : {});
+  return {
+    crisisSummary: sanitizeHookText(stakes.crisisSummary),
+    threatenedResources: sanitizeHookTextList(stakes.threatenedResources),
+    knownDangers: sanitizeHookTextList(stakes.knownDangers),
+    knownTells: sanitizeHookTextList(stakes.knownTells),
+    broadReward: sanitizeHookText(stakes.broadReward),
+    broadConsequence: sanitizeHookText(stakes.broadConsequence)
+  };
+}
+
+function buildNarrationHookPrompts({ visibleStakes, narration, publicHazards }) {
+  const prompts = [];
+  if (visibleStakes.crisisSummary) prompts.push(`Frame the immediate crisis: ${visibleStakes.crisisSummary}`);
+  if (visibleStakes.threatenedResources.length) prompts.push(`Keep these threatened resources in view: ${visibleStakes.threatenedResources.join(", ")}.`);
+  if (visibleStakes.knownDangers.length) prompts.push(`Use only revealed dangers as pressure cues: ${visibleStakes.knownDangers.join(", ")}.`);
+  if (visibleStakes.knownTells.length) prompts.push(`Echo these table-known tells: ${visibleStakes.knownTells.join(", ")}.`);
+  if (publicHazards.length) prompts.push(`Mention revealed hazards only: ${publicHazards.map((hazard) => hazard.name).filter(Boolean).join(", ")}.`);
+  if (narration.stationVignettes.length) prompts.push(`Spotlight station beats: ${narration.stationVignettes.map((vignette) => vignette.publicText).join(" ")}`);
+  if (narration.momentum.value || narration.momentum.earnedThisRound || narration.momentum.spentThisRound) prompts.push(`Reflect shared Momentum without applying changes: current ${narration.momentum.value}, earned ${narration.momentum.earnedThisRound}, spent ${narration.momentum.spentThisRound}.`);
+  if (visibleStakes.broadReward) prompts.push(`Foreshadow the broad reward: ${visibleStakes.broadReward}`);
+  if (visibleStakes.broadConsequence) prompts.push(`Foreshadow the broad consequence without making it certain: ${visibleStakes.broadConsequence}`);
+  return prompts;
+}
+
 function sanitizePublicStationVignette(vignette = {}) {
   const publicStationLabel = typeof vignette.stationLabel === "string" && vignette.stationLabel ? vignette.stationLabel : stationLabel(vignette.stationKey);
   const resultText = typeof vignette.resultLabel === "string" && vignette.resultLabel ? vignette.resultLabel : resultLabel(vignette.result);
@@ -175,6 +212,44 @@ export function prepareTravelV2RoundNarration(session, roundIndex = undefined, o
   const roundFocusBacklashRecords = focusBacklashRecords(session, index);
   const focusBacklashFacts = { records: roundFocusBacklashRecords.map(cloneData), publicRecords: roundFocusBacklashRecords.map(sanitizePublicFocusBacklashRecord), pendingCount: roundFocusBacklashRecords.filter((record) => record.status === "pending").length, appliedCount: roundFocusBacklashRecords.filter((record) => record.status === "applied").length, dismissedCount: roundFocusBacklashRecords.filter((record) => record.status === "dismissed").length };
   return { roundIndex: index, roundNumber: index + 1, title, completionState: complete ? "complete" : "partial", complete, whatHappened, publicWhatHappened, stationVignettes: vignettes, stationOutcomeBullets: stationBullets, publicStationOutcomeBullets: publicStationVignettes.map((v) => v.publicText), hazardNotes: { active: activeHazards.map(sanitizeTravelV2GmHazard), responded: respondedHazardNames, cleared: clearedHazards.map(sanitizeTravelV2GmHazard), unresolved: unresolvedHazards.map(sanitizeTravelV2GmHazard) }, publicHazardNotes: { revealed: safePublicHazards }, pressureNotes, momentum: momentumFacts, support: supportFacts, supportBacklash: supportBacklashFacts, focusBacklash: focusBacklashFacts, suggestedReadAloud: `${whatHappened}${momentumText}${supportText}${supportBacklashText} ${complete ? "Read the strongest success first, then frame any remaining hazard pressure." : "Ask for the remaining station results before making final consequences sound certain."}`.trim(), publicSuggestedReadAloud: `${publicSuggestedReadAloud}${momentumText}`.trim(), generatedAt: options.now ?? new Date().toISOString() };
+}
+
+export function prepareTravelV2NarrationHookState(session, options = {}) {
+  const safeSession = isPlainObject(session) ? session : {};
+  const roundIndex = normalizeRoundIndex(safeSession, options.roundIndex);
+  const narration = sanitizeTravelV2PublicNarration(prepareTravelV2RoundNarration(safeSession, roundIndex, options));
+  const visibleStakes = prepareVisibleStakeHooks(safeSession);
+  const publicHazards = publicHazardRecords(safeSession).map(sanitizeTravelV2PublicHazard);
+  const prompts = buildNarrationHookPrompts({ visibleStakes, narration, publicHazards });
+  return {
+    schemaVersion: 1,
+    eventKey: typeof safeSession?.event?.key === "string" ? safeSession.event.key : "",
+    eventName: typeof safeSession?.event?.name === "string" ? safeSession.event.name : "",
+    sessionKey: typeof safeSession?.key === "string" ? safeSession.key : "",
+    roundIndex,
+    roundNumber: roundIndex + 1,
+    roundTitle: typeof safeSession?.event?.rounds?.[roundIndex]?.title === "string" ? safeSession.event.rounds[roundIndex].title : "",
+    completionState: narration.completionState,
+    complete: narration.complete === true,
+    visibleStakes,
+    stationHooks: narration.stationVignettes.map((vignette) => ({
+      stationKey: vignette.stationKey,
+      stationLabel: vignette.stationLabel,
+      actionLabel: vignette.actionLabel,
+      resultLabel: vignette.resultLabel,
+      tone: vignette.tone,
+      publicText: vignette.publicText,
+      complete: vignette.complete === true
+    })),
+    hazardHooks: publicHazards.map((hazard) => ({ id: hazard.id, name: hazard.name, status: hazard.status, publicSummary: hazard.publicSummary })),
+    momentumHook: narration.momentum,
+    supportHook: narration.support,
+    supportBacklashHook: narration.supportBacklash,
+    focusBacklashHook: narration.focusBacklash,
+    prompts,
+    suggestedReadAloud: narration.publicSuggestedReadAloud || narration.suggestedReadAloud || "",
+    safetyNote: "Player-safe narration hook state only. No persistent changes are applied."
+  };
 }
 
 export function sanitizeTravelV2PublicNarration(narration) {
