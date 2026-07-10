@@ -23,7 +23,7 @@ import {
 import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
-import { prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
+import { prepareTravelV2NarrationHookState, prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { inspectTravelV2StationActionLockInFinalizationGuard, resolveTravelV2StationRollWithPendingEffects } from "./travel-v2-session-round-finalization.js";
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
@@ -3551,6 +3551,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
   const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
   const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
+  const travelV2NarrationHooks = prepareTravelV2NarrationHookState(activeSession, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -3612,6 +3613,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     stationActionLockIn,
     travelV2VisibleStakes,
     visibleStakes: travelV2VisibleStakes,
+    travelV2NarrationHooks,
+    narrationHooks: travelV2NarrationHooks,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,

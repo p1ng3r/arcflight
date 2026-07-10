@@ -421,28 +421,20 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-019 — Narration Hook Assembly
 
-**Status:** partial  
-**Scope:** Alpha blocker
+**Status:** complete for alpha runtime
+**Scope:** Alpha blocker closeout
 
-**Goal:** Assemble narration from the actual mechanics that happened.
+**Goal:** Assemble narration hooks from the actual mechanics that happened.
 
-**Alpha alignment:** Travel Alpha uses one official dynamic vignette between rounds, assembled from results, with mechanical callouts immediately below it. GM can edit the official vignette before showing it.
+**Alpha alignment:** Travel v2 alpha exposes player-safe narration hooks for the GM to use while framing dynamic round narration.
 
-**Remaining work:**
+**Closeout notes:**
 
-- Include station order.
-- Include best station result.
-- Include worst station result.
-- Include assists and station benefits.
-- Include risk bids.
-- Include hazards and consequences.
-- Include hidden hazard tells when applicable.
-- Include Momentum spends.
-- Include pressure/resource changes.
-- Include next-round hook.
-- Avoid repetitive station-result prose.
-- Add GM edit-before-show flow.
-- Add mechanical callouts below prose.
+- The canonical narration-hook helper prepares player-safe runtime hook state.
+- Runner state exposes the helper output as `travelV2NarrationHooks` and `narrationHooks`.
+- The Travel Event Runner UI displays narration hooks from `state.narrationHooks`.
+- Player-safe smoke coverage guards against GM-only/internal leakage.
+- Slice 04 adds closeout smoke coverage across helper, runner state, template, and CSS contracts.
 
 ### TV2-020 — Final Outcome and Aftermath Expansion
 
