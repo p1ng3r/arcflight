@@ -3089,6 +3089,107 @@ export function prepareTravelV2CompletionChecklistState(session = null, options 
 
 
 
+const VISIBLE_STAKES_OMIT_KEYS = new Set([
+  "hiddenHazards",
+  "pendingConsequenceQueue",
+  "internalScoring",
+  "debugReport",
+  "futureTriggers",
+  "applyPayload",
+  "targetActorUuid",
+  "mutationRecords",
+  "auditRecord",
+  "commitRecords",
+  "userId",
+  "userName",
+  "secret",
+  "gmText",
+  "gmOnly",
+  "internalMutation",
+  "unrevealedHazard",
+  "catalogSuggestions"
+]);
+
+function sanitizeVisibleStakesValue(value) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => !(isPlainObject(entry) && (entry.hidden === true || entry.revealed === false || entry.playerVisible === false || entry.gmOnly === true || entry.unrevealedHazard === true)))
+      .map((entry) => sanitizeVisibleStakesValue(entry))
+      .filter((entry) => entry !== undefined);
+  }
+  if (!isPlainObject(value)) return value;
+  if (value.hidden === true || value.revealed === false || value.playerVisible === false || value.gmOnly === true || value.unrevealedHazard === true) return undefined;
+  const next = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (VISIBLE_STAKES_OMIT_KEYS.has(key)) continue;
+    const safe = sanitizeVisibleStakesValue(entry);
+    if (safe !== undefined) next[key] = safe;
+  }
+  return next;
+}
+
+function firstVisibleStakesValue(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (Array.isArray(value) && value.length > 0) return value;
+    if (isPlainObject(value) && Object.keys(value).length > 0) return value;
+  }
+  return "";
+}
+
+function normalizeVisibleStakesList(value) {
+  const safe = sanitizeVisibleStakesValue(value);
+  if (Array.isArray(safe)) return safe;
+  if (safe === "" || safe == null) return [];
+  return [safe];
+}
+
+function prepareVisibleStakesStations(session) {
+  const event = session?.event ?? {};
+  const currentRound = event.rounds?.[session.currentRoundIndex];
+  const firstRound = event.rounds?.[0];
+  const stationKeys = Array.isArray(currentRound?.activeStations) && currentRound.activeStations.length > 0
+    ? currentRound.activeStations
+    : (Array.isArray(firstRound?.activeStations) && firstRound.activeStations.length > 0 ? firstRound.activeStations : TRAVEL_FIVE_STATION_KEYS);
+  return Array.from(new Set(stationKeys.filter((key) => TRAVEL_FIVE_STATION_KEYS.includes(key)))).map((stationKey) => ({
+    stationKey,
+    stationName: stationNameForRound(currentRound ?? firstRound ?? {}, stationKey)
+  }));
+}
+
+export function prepareTravelV2VisibleStakesState(session, options = {}) {
+  const normalized = normalizeTravelEventRunnerSession(session, options);
+  const sourceSession = normalized.ok ? normalized.session : (isPlainObject(session) ? cloneData(session) : {});
+  const normalizedEvent = sourceSession.event ?? {};
+  const rawEvent = isPlainObject(session?.event) ? session.event : {};
+  const stakes = isPlainObject(rawEvent.visibleStakes) ? rawEvent.visibleStakes : (isPlainObject(rawEvent.stakes) ? rawEvent.stakes : {});
+  const roundCount = Number.isInteger(Number(rawEvent.roundCount)) && Number(rawEvent.roundCount) > 0
+    ? Number(rawEvent.roundCount)
+    : (Number.isInteger(Number(normalizedEvent.roundCount)) && Number(normalizedEvent.roundCount) > 0 ? Number(normalizedEvent.roundCount) : (Array.isArray(normalizedEvent.rounds) ? normalizedEvent.rounds.length : 0));
+  const currentRoundIndex = Number.isInteger(Number(sourceSession.currentRoundIndex)) ? Math.max(0, Number(sourceSession.currentRoundIndex)) : 0;
+  const state = {
+    hasStakes: false,
+    eventKey: typeof normalizedEvent.key === "string" ? normalizedEvent.key : (typeof rawEvent.key === "string" ? rawEvent.key : ""),
+    eventName: typeof normalizedEvent.name === "string" ? normalizedEvent.name : (typeof rawEvent.name === "string" ? rawEvent.name : ""),
+    category: typeof normalizedEvent.category === "string" ? normalizedEvent.category : (typeof rawEvent.category === "string" ? rawEvent.category : ""),
+    categoryLabel: normalizedEvent.categoryLabel || humanizeIdentifier(rawEvent.category),
+    roundCount,
+    currentRoundIndex,
+    currentRoundNumber: currentRoundIndex + 1,
+    crisisSummary: firstVisibleStakesValue(stakes.crisisSummary, stakes.summary, rawEvent.summary, rawEvent.description),
+    threatenedResources: normalizeVisibleStakesList(firstVisibleStakesValue(stakes.threatenedResources, rawEvent.threatenedResources)),
+    knownDangers: normalizeVisibleStakesList(firstVisibleStakesValue(stakes.knownDangers, rawEvent.knownDangers)),
+    knownTells: normalizeVisibleStakesList(firstVisibleStakesValue(stakes.knownTells, rawEvent.knownTells)),
+    broadReward: firstVisibleStakesValue(stakes.broadReward, stakes.reward, rawEvent.broadReward, rawEvent.rewards),
+    broadConsequence: firstVisibleStakesValue(stakes.broadConsequence, stakes.consequence, rawEvent.broadConsequence, rawEvent.consequences),
+    availableStations: prepareVisibleStakesStations(sourceSession),
+    safetyNote: "Player-safe visible stakes only. Hidden hazards, restricted queues, internal scoring, apply payloads, target actor references, mutation records, audit records, and user identity fields are omitted."
+  };
+  const safeState = sanitizeVisibleStakesValue(state);
+  safeState.hasStakes = Boolean(safeState.crisisSummary || safeState.threatenedResources.length || safeState.knownDangers.length || safeState.knownTells.length || safeState.broadReward || safeState.broadConsequence || safeState.eventName);
+  return safeState;
+}
+
 const PLAYER_SAFE_RUNNER_OMIT_KEYS = new Set([
   "travelV2EventOutcomeApplication",
   "travelV2FinalOutcomeShipApplication",
@@ -3449,6 +3550,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
   const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
   const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
+  const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -3508,6 +3610,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
     roundSummaryCard,
     stationActionLockIn,
+    travelV2VisibleStakes,
+    visibleStakes: travelV2VisibleStakes,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,

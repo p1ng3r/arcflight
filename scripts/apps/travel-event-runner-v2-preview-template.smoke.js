@@ -23,8 +23,25 @@ function assertIncludes(source, needle, message) {
 export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const template = readUtf8(TEMPLATE_PATH);
   const css = readUtf8(STYLE_PATH);
+  const visibleStakesTemplate = template.slice(template.indexOf("state.visibleStakes.hasStakes"), template.indexOf("state.travelV2GmFlowStatus"));
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
+  assertIncludes(template, "state.visibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
+  assertIncludes(template, "Travel v2 visible stakes", "template should identify the visible stakes panel for accessibility");
+  assertIncludes(template, "Visible Stakes", "template should render the visible stakes panel heading");
+  assertIncludes(template, "state.visibleStakes.crisisSummary", "template should render visible stakes crisis summary");
+  assertIncludes(template, "state.visibleStakes.threatenedResources", "template should render visible stakes threatened resources");
+  assertIncludes(template, "state.visibleStakes.knownDangers", "template should render visible stakes known dangers");
+  assertIncludes(template, "state.visibleStakes.knownTells", "template should render visible stakes known tells");
+  assertIncludes(template, "state.visibleStakes.availableStations", "template should render visible stakes available stations");
+  assertIncludes(template, "state.visibleStakes.safetyNote", "template should render visible stakes player-safe note");
+  assertIncludes(template, "{{#if label}}{{label}}", "template should render visible stakes object list labels instead of object stringification");
+  assertIncludes(template, "{{#if key}}{{key}}", "template should render visible stakes object list keys instead of object stringification");
+  assertIncludes(template, "{{#if stationName}}{{stationName}}", "template should render visible stakes station names when present");
+  assertIncludes(template, "{{#if stationKey}}{{stationKey}}", "template should fall back to visible stakes station keys when station names are missing");
+  assertIncludes(template, "{{#if length}}{{.}}{{/if}}", "template should retain a primitive string fallback without rendering objects as [object Object]");
+  assertSmoke(!visibleStakesTemplate.includes("{{this}}"), "visible stakes list rendering should not use raw {{this}} values");
+  assertSmoke(!template.includes("state.travelV2VisibleStakes"), "template should prefer the visibleStakes alias for the runner visible stakes panel");
   assertIncludes(template, "data-arcflight-start-travel-event-runner", "template should include local runner session start button");
   assertIncludes(template, "How to start a local runner session", "template should explain the startup path");
   assertIncludes(template, "Local runner session startup diagnostics", "template should render startup diagnostics");
@@ -138,6 +155,9 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   for (const forbidden of ["Undo Apply","Batch Apply",`data-action="apply-all"`,`data-action="undo-apply"`,`data-action="batch-apply"`,`data-action="arcflight-travel-v2-force-apply"`,`data-action="arcflight-travel-v2-apply-unsupported"`,`data-action="arcflight-travel-v2-apply-preview-only"`,`data-action="arcflight-travel-v2-player-apply"`]) assertSmoke(!template.includes(forbidden), `template should not include ${forbidden}`);
 
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview", "css should style preview panel wrapper");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes", "css should style visible stakes panel wrapper");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes-grid", "css should style visible stakes reward/consequence grid");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes-stations", "css should style visible stakes station chips");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--safe", "css should include safe tone hook");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--warning", "css should include warning tone hook");
