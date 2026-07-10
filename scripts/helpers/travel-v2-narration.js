@@ -10,6 +10,10 @@ const RESULT_TONES = Object.freeze({
   criticalFailure: "fresh complication",
   skipped: "not attempted"
 });
+const NARRATION_HOOK_FORBIDDEN_TERMS = Object.freeze(["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions", "hiddenHazards", "debugReport", "futureTriggers"]);
+const NARRATION_HOOK_HIDDEN_FLAGS = Object.freeze(["hidden", "revealed", "playerVisible", "gmOnly", "unrevealedHazard"]);
+const PUBLIC_PRESSURE_RESOURCES = Object.freeze(["Hull", "Strain", "Lifeveil", "Morale", "Supplies"]);
+const PUBLIC_PRESSURE_KEY_ALIASES = Object.freeze({ hull: "Hull", shiphull: "Hull", strain: "Strain", lifeveil: "Lifeveil", lifeveilstrain: "Lifeveil", morale: "Morale", supplies: "Supplies" });
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function cloneData(value) { if (value == null) return value; if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value); if (typeof structuredClone === "function") return structuredClone(value); return JSON.parse(JSON.stringify(value)); }
@@ -41,15 +45,37 @@ function sanitizePublicFocusBacklashRecord(record = {}) { return { id: record.id
 function sanitizePublicMomentumRecord(record = {}) { return { id: record.id ?? "", roundIndex: Number.isInteger(Number(record.roundIndex)) ? Number(record.roundIndex) : null, stationKey: typeof record.stationKey === "string" ? record.stationKey : "", source: typeof record.source === "string" ? record.source : "", amount: Number(record.amount) || 0, status: typeof record.status === "string" ? record.status : "", publicSummary: typeof record.publicSummary === "string" ? record.publicSummary : "" }; }
 
 
-function sanitizeHookText(value) { return typeof value === "string" ? value.trim() : ""; }
+function includesForbiddenHookTerm(value) { return NARRATION_HOOK_FORBIDDEN_TERMS.some((term) => String(value ?? "").includes(term)); }
+function sanitizeHookText(value) {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  return text && !includesForbiddenHookTerm(text) ? text : "";
+}
+function isHiddenHookEntry(entry = {}) {
+  return entry.hidden === true || entry.revealed === false || entry.playerVisible === false || entry.gmOnly === true || entry.unrevealedHazard === true;
+}
+function firstPublicHookText(entry = {}) {
+  if (!isPlainObject(entry) || isHiddenHookEntry(entry)) return "";
+  const safeEntry = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (NARRATION_HOOK_FORBIDDEN_TERMS.includes(key) || NARRATION_HOOK_HIDDEN_FLAGS.includes(key)) continue;
+    safeEntry[key] = value;
+  }
+  return sanitizeHookText(safeEntry.label ?? safeEntry.name ?? safeEntry.text ?? safeEntry.summary);
+}
 function sanitizeHookTextList(value) {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => {
-    if (typeof entry === "string") return entry.trim();
-    if (isPlainObject(entry)) return sanitizeHookText(entry.label ?? entry.name ?? entry.text ?? entry.summary);
-    return "";
+    if (typeof entry === "string") return sanitizeHookText(entry);
+    return firstPublicHookText(entry);
   }).filter(Boolean);
 }
+function publicPressureResourceForKey(key) {
+  const normalized = String(key ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return PUBLIC_PRESSURE_KEY_ALIASES[normalized] ?? "";
+}
+function publicPressurePrompt(resource) { return `Show the visible strain on the ${String(resource ?? "").toLowerCase()}.`; }
+function stationHookPrompt(stationName) { return `Show what the ${stationName} notices as the route shifts.`; }
 
 function prepareVisibleStakeHooks(session = {}) {
   const stakes = isPlainObject(session?.event?.visibleStakes) ? session.event.visibleStakes : (isPlainObject(session?.event?.stakes) ? session.event.stakes : {});
@@ -228,19 +254,25 @@ export function prepareTravelV2NarrationHookState(session, options = {}) {
   const publicHazards = publicHazardRecords(safeSession).map(sanitizeTravelV2PublicHazard);
   const availableStations = (Array.isArray(currentRound.activeStations) ? currentRound.activeStations : narration.stationVignettes.map((vignette) => vignette.stationKey))
     .filter((stationKey, index, stationKeys) => typeof stationKey === "string" && stationKey && stationKeys.indexOf(stationKey) === index)
-    .map((stationKey) => ({ stationKey, stationLabel: stationLabel(stationKey) }));
-  const stationHooks = narration.stationVignettes.map((vignette) => ({
-    stationKey: vignette.stationKey,
-    stationLabel: vignette.stationLabel,
-    actionLabel: vignette.actionLabel,
-    resultLabel: vignette.resultLabel,
-    tone: vignette.tone,
-    publicText: vignette.publicText,
-    complete: vignette.complete === true
-  }));
+    .map((stationKey) => ({ stationKey, stationName: stationLabel(stationKey) }));
+  const stationHooks = narration.stationVignettes.map((vignette) => {
+    const stationName = vignette.stationLabel || stationLabel(vignette.stationKey);
+    return {
+      stationKey: vignette.stationKey,
+      stationName,
+      prompt: stationHookPrompt(stationName),
+      tone: vignette.tone,
+      actionLabel: vignette.actionLabel,
+      resultLabel: vignette.resultLabel,
+      publicText: vignette.publicText,
+      complete: vignette.complete === true
+    };
+  });
   const pressureHooks = Object.entries(safeSession.pressure ?? {})
-    .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0)
-    .map(([key, value]) => ({ key, label: humanizeIdentifier(key), value: Number(value) }));
+    .map(([key, value]) => ({ resource: publicPressureResourceForKey(key), value: Number(value) }))
+    .filter((entry) => PUBLIC_PRESSURE_RESOURCES.includes(entry.resource) && Number.isFinite(entry.value) && entry.value > 0)
+    .filter((entry, index, entries) => entries.findIndex((candidate) => candidate.resource === entry.resource) === index)
+    .map((entry) => ({ resource: entry.resource, prompt: publicPressurePrompt(entry.resource), tone: "pressure" }));
   const hazardHooks = publicHazards.map((hazard) => ({ id: hazard.id, name: hazard.name, status: hazard.status, publicSummary: hazard.publicSummary }));
   const hasRuntimeContext = Boolean(event.key || event.name || rounds.length || stationHooks.length || publicHazards.length);
   const outcomeHooks = hasRuntimeContext ? [
