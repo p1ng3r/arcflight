@@ -404,24 +404,20 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-018 — Visible Stakes Runtime
 
-**Status:** missing / partial  
-**Scope:** Alpha blocker
+**Status:** complete for alpha runtime
+**Scope:** Alpha blocker closeout
 
 **Goal:** Give players and GM a clear view of what is at stake before and during each event.
 
 **Alpha alignment:** Players see general event stakes at setup and sharper round-specific stakes as the event unfolds.
 
-**Remaining work:**
+**Closeout notes:**
 
-- Stakes card projection.
-- Crisis summary.
-- Threatened resource summary.
-- Risk/reward/consequence summary.
-- Round count display.
-- Known hazards or suspicious tells.
-- Player-safe state.
-- GM-only hidden hazard state.
-- Integration with final outcome and aftermath.
+- The canonical visible-stakes helper prepares player-safe runtime state.
+- Runner state exposes the helper output as `travelV2VisibleStakes` and `visibleStakes`.
+- The Travel Event Runner template displays the player-safe visible-stakes panel from `state.visibleStakes`.
+- Hidden GM-only details remain outside the visible-stakes template block.
+- Slice 04 adds aggregate smoke coverage for helper → runner state → runner template wiring.
 
 ### TV2-019 — Narration Hook Assembly
 

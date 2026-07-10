@@ -71,6 +71,7 @@ import runTravelV2StationBenefitUseReviewSmokeChecks from "../helpers/travel-v2-
 import runTravelV2EventSetupStakesSmokeChecks from "../helpers/travel-v2-event-setup-stakes.smoke.js";
 import runTravelV2VisibleStakesSmokeChecks from "../helpers/travel-v2-visible-stakes.smoke.js";
 import runTravelV2VisibleStakesStateSmokeChecks from "../helpers/travel-v2-visible-stakes-state.smoke.js";
+import runTravelV2VisibleStakesRuntimeCloseoutSmokeChecks from "../helpers/travel-v2-visible-stakes-runtime-closeout.smoke.js";
 import runTravelV2StationActionLockInSmokeChecks from "../helpers/travel-v2-station-action-lock-in.smoke.js";
 import runTravelEventRunnerV2StationActionLockInSmokeChecks from "../apps/travel-event-runner-v2-station-action-lock-in.smoke.js";
 
@@ -148,6 +149,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 event setup stakes", runTravelV2EventSetupStakesSmokeChecks],
   ["Travel v2 visible stakes", runTravelV2VisibleStakesSmokeChecks],
   ["Travel v2 visible stakes state", runTravelV2VisibleStakesStateSmokeChecks],
+  ["Travel v2 visible stakes runtime closeout", runTravelV2VisibleStakesRuntimeCloseoutSmokeChecks],
   ["Travel v2 station action lock-in", runTravelV2StationActionLockInSmokeChecks],
   ["Travel event runner v2 station action lock-in", runTravelEventRunnerV2StationActionLockInSmokeChecks],
 ]);
