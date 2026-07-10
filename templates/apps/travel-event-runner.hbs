@@ -110,6 +110,61 @@
     </section>
     {{/if}}
 
+    {{#if state.narrationHooks.hasNarrationHooks}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__narration-hooks arcflight-player-safe" aria-label="Travel v2 narration hooks">
+      <header>
+        <div>
+          <p class="arcflight-travel-runner-mvp__eyebrow">Player-safe narration prompts</p>
+          <h2>Narration Hooks</h2>
+        </div>
+      </header>
+      {{#if state.narrationHooks.visibleStakesSummary}}<p><strong>Visible Stakes Summary:</strong> {{state.narrationHooks.visibleStakesSummary}}</p>{{/if}}
+      {{#if state.narrationHooks.promptSeeds.length}}
+        <div>
+          <strong>Prompt Seeds:</strong>
+          <ul class="arcflight-travel-runner-mvp__narration-hooks-list">
+            {{#each state.narrationHooks.promptSeeds}}<li>{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{else}}{{#if title}}{{title}}{{else}}{{#if value}}{{value}}{{else}}{{#if text}}{{text}}{{else}}{{#if summary}}{{summary}}{{else}}{{#if length}}{{.}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}
+          </ul>
+        </div>
+      {{/if}}
+      <div class="arcflight-travel-runner-mvp__narration-hooks-grid">
+        {{#if state.narrationHooks.stationHooks.length}}
+          <section>
+            <h3>Station Hooks</h3>
+            <ul class="arcflight-travel-runner-mvp__narration-hooks-list">
+              {{#each state.narrationHooks.stationHooks}}<li class="arcflight-travel-runner-mvp__narration-hook"><strong>{{stationName}}</strong>{{#if prompt}} — {{prompt}}{{/if}}{{#if tone}} <span class="arcflight-travel-runner-mvp__narration-hook-tone">{{tone}}</span>{{/if}}</li>{{/each}}
+            </ul>
+          </section>
+        {{/if}}
+        {{#if state.narrationHooks.pressureHooks.length}}
+          <section>
+            <h3>Pressure Hooks</h3>
+            <ul class="arcflight-travel-runner-mvp__narration-hooks-list">
+              {{#each state.narrationHooks.pressureHooks}}<li class="arcflight-travel-runner-mvp__narration-hook"><strong>{{resource}}</strong>{{#if prompt}} — {{prompt}}{{/if}}{{#if tone}} <span class="arcflight-travel-runner-mvp__narration-hook-tone">{{tone}}</span>{{/if}}</li>{{/each}}
+            </ul>
+          </section>
+        {{/if}}
+        {{#if state.narrationHooks.hazardHooks.length}}
+          <section>
+            <h3>Hazard Hooks</h3>
+            <ul class="arcflight-travel-runner-mvp__narration-hooks-list">
+              {{#each state.narrationHooks.hazardHooks}}<li class="arcflight-travel-runner-mvp__narration-hook"><strong>{{name}}</strong>{{#if publicSummary}} — {{publicSummary}}{{/if}}{{#if status}} <span class="arcflight-travel-runner-mvp__narration-hook-tone">{{status}}</span>{{/if}}</li>{{/each}}
+            </ul>
+          </section>
+        {{/if}}
+        {{#if state.narrationHooks.outcomeHooks.length}}
+          <section>
+            <h3>Outcome Hooks</h3>
+            <ul class="arcflight-travel-runner-mvp__narration-hooks-list">
+              {{#each state.narrationHooks.outcomeHooks}}<li class="arcflight-travel-runner-mvp__narration-hook"><strong>{{type}}</strong>{{#if text}} — {{text}}{{/if}}</li>{{/each}}
+            </ul>
+          </section>
+        {{/if}}
+      </div>
+      {{#if state.narrationHooks.safetyNote}}<p class="arcflight-sheet__hint">{{state.narrationHooks.safetyNote}}</p>{{/if}}
+    </section>
+    {{/if}}
+
     {{#if state.travelV2GmFlowStatus}}
     <section class="arcflight-travel-gm-flow-strip arcflight-{{state.travelV2GmFlowStatus.stateTone}} arcflight-gm-only" aria-label="Travel v2 GM flow status">
       <header>

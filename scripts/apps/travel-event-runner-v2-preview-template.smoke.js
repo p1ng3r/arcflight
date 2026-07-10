@@ -24,6 +24,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const template = readUtf8(TEMPLATE_PATH);
   const css = readUtf8(STYLE_PATH);
   const visibleStakesTemplate = template.slice(template.indexOf("state.visibleStakes.hasStakes"), template.indexOf("state.travelV2GmFlowStatus"));
+  const narrationHooksTemplate = template.slice(template.indexOf("state.narrationHooks.hasNarrationHooks"), template.indexOf("state.travelV2GmFlowStatus"));
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
   assertIncludes(template, "state.visibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
@@ -42,6 +43,32 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "{{#if length}}{{.}}{{/if}}", "template should retain a primitive string fallback without rendering objects as [object Object]");
   assertSmoke(!visibleStakesTemplate.includes("{{this}}"), "visible stakes list rendering should not use raw {{this}} values");
   assertSmoke(!template.includes("state.travelV2VisibleStakes"), "template should prefer the visibleStakes alias for the runner visible stakes panel");
+  assertIncludes(template, "state.narrationHooks.hasNarrationHooks", "template should gate narration hooks on prepared runner state");
+  assertIncludes(template, "Narration Hooks", "template should render the narration hooks panel heading");
+  assertIncludes(template, "state.narrationHooks", "template should use the short narrationHooks alias");
+  assertSmoke(!template.includes("state.travelV2NarrationHooks"), "template should not use the long travelV2NarrationHooks state name");
+  for (const field of ["visibleStakesSummary", "promptSeeds", "stationHooks", "pressureHooks", "hazardHooks", "outcomeHooks", "safetyNote"]) assertIncludes(template, `state.narrationHooks.${field}`, `template should render narration hook ${field}`);
+  assertSmoke(!narrationHooksTemplate.includes("{{this}}"), "narration hooks block should not use raw {{this}} values");
+  for (const field of ["stationName", "prompt", "tone", "resource", "name", "publicSummary", "status", "type", "text"]) assertIncludes(narrationHooksTemplate, `{{${field}}}`, `narration hooks block should render safe field ${field}`);
+  for (const forbidden of [
+    "auditRecord",
+    "commitRecords",
+    "userId",
+    "userName",
+    "gmText",
+    "applyPayload",
+    "targetActorUuid",
+    "mutationScope",
+    "internalMutation",
+    "secret",
+    "pendingConsequenceQueue",
+    "gmOnly",
+    "unrevealedHazard",
+    "catalogSuggestions",
+    "hiddenHazards",
+    "debugReport",
+    "futureTriggers"
+  ]) assertSmoke(!narrationHooksTemplate.includes(forbidden), `narration hooks block should not include internal field ${forbidden}`);
   assertIncludes(template, "data-arcflight-start-travel-event-runner", "template should include local runner session start button");
   assertIncludes(template, "How to start a local runner session", "template should explain the startup path");
   assertIncludes(template, "Local runner session startup diagnostics", "template should render startup diagnostics");
@@ -158,6 +185,11 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes", "css should style visible stakes panel wrapper");
   assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes-grid", "css should style visible stakes reward/consequence grid");
   assertIncludes(css, ".arcflight-travel-runner-mvp__visible-stakes-stations", "css should style visible stakes station chips");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__narration-hooks", "css should style narration hooks panel wrapper");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__narration-hooks-grid", "css should style narration hooks grid");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__narration-hooks-list", "css should style narration hooks lists");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__narration-hook", "css should style narration hook entries");
+  assertIncludes(css, ".arcflight-travel-runner-mvp__narration-hook-tone", "css should style narration hook tone chips");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row", "css should style preview rows");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--safe", "css should include safe tone hook");
   assertIncludes(css, ".arcflight-travel-runner-mvp__v2-preview-row--warning", "css should include warning tone hook");

@@ -1335,6 +1335,43 @@
   align-items: center;
 }
 
+.arcflight-travel-runner-mvp__narration-hooks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.arcflight-travel-runner-mvp__narration-hooks h2,
+.arcflight-travel-runner-mvp__narration-hooks h3,
+.arcflight-travel-runner-mvp__narration-hooks p {
+  margin: 0;
+}
+
+.arcflight-travel-runner-mvp__narration-hooks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__narration-hooks-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.arcflight-travel-runner-mvp__narration-hook {
+  margin-bottom: 0.25rem;
+}
+
+.arcflight-travel-runner-mvp__narration-hook-tone {
+  display: inline-block;
+  border: 1px solid rgba(120, 104, 80, 0.35);
+  border-radius: 999px;
+  padding: 0.05rem 0.35rem;
+  background: rgba(255, 255, 255, 0.28);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
 .arcflight-travel-runner-mvp__v2-preview {
   display: flex;
   flex-direction: column;
