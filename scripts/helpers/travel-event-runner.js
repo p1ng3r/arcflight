@@ -31,6 +31,7 @@ import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-cons
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
 import { prepareTravelV2FinalOutcomePackage } from "./travel-v2-final-outcome.js";
 import { prepareTravelV2FinalOutcomePreservationPlan } from "./travel-v2-final-outcome-preservation.js";
+import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-final-outcome-preservation-apply-plan.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -3557,6 +3558,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const travelV2NarrationHooks = prepareTravelV2NarrationHookState(activeSession, options);
   const travelV2FinalOutcome = prepareTravelV2FinalOutcomePackage(activeSession, options);
   const travelV2FinalOutcomePreservation = prepareTravelV2FinalOutcomePreservationPlan(activeSession, options);
+  const travelV2FinalOutcomePreservationApplyPlan = prepareTravelV2FinalOutcomePreservationApplyPlan(activeSession, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -3635,6 +3637,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     finalOutcome: travelV2FinalOutcome,
     travelV2FinalOutcomePreservation,
     finalOutcomePreservation: travelV2FinalOutcomePreservation,
+    travelV2FinalOutcomePreservationApplyPlan,
+    finalOutcomePreservationApplyPlan: travelV2FinalOutcomePreservationApplyPlan,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,
