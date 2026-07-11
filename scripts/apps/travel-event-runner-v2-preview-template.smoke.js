@@ -25,6 +25,7 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const css = readUtf8(STYLE_PATH);
   const visibleStakesTemplate = template.slice(template.indexOf("state.visibleStakes.hasStakes"), template.indexOf("state.travelV2GmFlowStatus"));
   const narrationHooksTemplate = template.slice(template.indexOf("state.narrationHooks.hasNarrationHooks"), template.indexOf("state.travelV2GmFlowStatus"));
+  const finalOutcomeTemplate = template.slice(template.indexOf("state.finalOutcome.hasFinalOutcome"), template.indexOf("Final Outcome Package Review"));
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
   assertIncludes(template, "state.visibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
@@ -104,6 +105,33 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "state.travelV2PreviewPanel.travelV2EventOutcomePackage", "template should render outcome package state");
   assertIncludes(template, "Final Outcome Package Review", "template should include final outcome package review panel");
   assertIncludes(template, "state.finalOutcomePackageReview", "template should render final outcome package review state");
+  assertIncludes(template, "{{#if state.finalOutcome.hasFinalOutcome}}", "template should gate final outcome aftermath on prepared runner state");
+  assertIncludes(template, "Final Outcome &amp; Aftermath", "template should render the final outcome aftermath heading");
+  assertIncludes(template, "state.finalOutcome", "template should use the short finalOutcome alias");
+  assertSmoke(!finalOutcomeTemplate.includes("{{this}}"), "final outcome block should not use raw {{this}} values");
+  assertSmoke(!finalOutcomeTemplate.includes("rawJson"), "final outcome block should not render raw object dumps");
+  for (const field of ["playerSafeSummary", "outcomeSummary", "locationChange.summary", "unresolvedHazards", "resolvedHazards", "consequences", "rewards", "clues", "routeAdvantages", "followUps", "scars", "pressureChanges", "gmReviewPrompts", "safetyNote"]) assertIncludes(template, `state.finalOutcome.${field}`, `template should render final outcome field ${field}`);
+  for (const field of ["name", "label", "title", "text", "summary", "description", "publicText", "playerText", "status", "resource", "direction"]) assertIncludes(finalOutcomeTemplate, `{{${field}}}`, `final outcome block should render safe field ${field}`);
+  for (const cssClass of ["arcflight-travel-runner-mvp__final-outcome", "arcflight-travel-runner-mvp__final-outcome-grid", "arcflight-travel-runner-mvp__final-outcome-list", "arcflight-travel-runner-mvp__final-outcome-item", "arcflight-travel-runner-mvp__final-outcome-note"]) assertSmoke(template.includes(cssClass) || css.includes(`.${cssClass}`), `template or css should include ${cssClass}`);
+  for (const forbidden of [
+    "auditRecord",
+    "commitRecords",
+    "userId",
+    "userName",
+    "gmText",
+    "applyPayload",
+    "targetActorUuid",
+    "mutationScope",
+    "internalMutation",
+    "secret",
+    "pendingConsequenceQueue",
+    "gmOnly",
+    "unrevealedHazard",
+    "catalogSuggestions",
+    "hiddenHazards",
+    "debugReport",
+    "futureTriggers"
+  ]) assertSmoke(!finalOutcomeTemplate.includes(forbidden), `final outcome block should not include internal field ${forbidden}`);
   for (const control of ["data-arcflight-runner-copy-markdown", "data-arcflight-runner-copy-html", "data-arcflight-runner-post-chat", "data-arcflight-runner-create-journal"]) assertIncludes(template, control, `template should keep completed summary output control ${control}`);
   assertIncludes(template, "Event Outcome Package", "template should render outcome package label");
   assertIncludes(template, "data-arcflight-travel-v2-outcome-apply", "template should wire outcome application control");
