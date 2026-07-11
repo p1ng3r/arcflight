@@ -20,6 +20,7 @@ import runTravelV2FinalOutcomePreservationSmokeChecks from "../helpers/travel-v2
 import runTravelV2FinalOutcomePreservationApplyPlanSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-apply-plan.smoke.js";
 import runTravelV2FinalOutcomePreservationApplyPlanStateSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-apply-plan-state.smoke.js";
 import runTravelV2FinalOutcomePreservationSessionApplicationSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-session-application.smoke.js";
+import runTravelV2FinalOutcomePreservationActorPreviewSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-actor-preview.smoke.js";
 import runTravelV2FinalOutcomePreservationStateSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-state.smoke.js";
 import runTravelV2FinalOutcomeStateSmokeChecks from "../helpers/travel-v2-final-outcome-state.smoke.js";
 import runTravelV2SessionEventOutcomeApplicationSmokeChecks from "../helpers/travel-v2-session-event-outcome-application.smoke.js";
@@ -108,6 +109,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 final outcome preservation apply plan", runTravelV2FinalOutcomePreservationApplyPlanSmokeChecks],
   ["Travel v2 final outcome preservation apply plan state", runTravelV2FinalOutcomePreservationApplyPlanStateSmokeChecks],
   ["Travel v2 final outcome preservation session application", runTravelV2FinalOutcomePreservationSessionApplicationSmokeChecks],
+  ["Travel v2 final outcome preservation actor preview", runTravelV2FinalOutcomePreservationActorPreviewSmokeChecks],
   ["Travel v2 final outcome preservation state", runTravelV2FinalOutcomePreservationStateSmokeChecks],
   ["Travel v2 final outcome state", runTravelV2FinalOutcomeStateSmokeChecks],
   ["Travel v2 session event outcome application", runTravelV2SessionEventOutcomeApplicationSmokeChecks],
