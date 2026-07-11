@@ -34,7 +34,18 @@ function safeValue(value) {
   if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
   return undefined;
 }
+function isHiddenEntry(value) {
+  return isPlainObject(value) && (
+    value.hidden === true ||
+    value.gmOnly === true ||
+    value.unrevealedHazard === true ||
+    value.playerVisible === false ||
+    value.revealed === false ||
+    value.public === false
+  );
+}
 function publicEntry(value) {
+  if (isHiddenEntry(value)) return null;
   if (typeof value === "string") return safeString(value);
   if (!isPlainObject(value)) return null;
   const output = {};
@@ -42,7 +53,7 @@ function publicEntry(value) {
   if (!Object.keys(output).length) output.text = safeString(value.name ?? value.label ?? value.title ?? value.text ?? value.summary ?? "");
   return Object.values(output).some((entry) => String(entry ?? "").trim()) ? output : null;
 }
-function collectPublicEntries(...values) { return values.flatMap(recordsFrom).map(publicEntry).filter(Boolean); }
+function collectPublicEntries(...values) { return values.flatMap(recordsFrom).filter((entry) => !isHiddenEntry(entry)).map(publicEntry).filter(Boolean); }
 function finalOutcome(session) { return session?.finalOutcome ?? session?.outcome ?? session?.aftermath ?? session?.event?.finalOutcome ?? session?.event?.outcome ?? session?.event?.aftermath ?? {}; }
 function completionState(session) { return safeString(session?.completionState ?? session?.travelV2EventCompletion?.state ?? session?.status ?? ""); }
 function hasFinalOutcome(session) { return isPlainObject(session) && (session.status === "completed" || session.completed === true || Boolean(session.completedAt) || isPlainObject(session.finalOutcome) || isPlainObject(session.aftermath)); }
@@ -62,8 +73,10 @@ function collectHazards(session) {
   };
 }
 function collectScars(session, outcome) {
-  return normalizeTravelV2ShipScarsState(session?.travelV2ShipScars ?? session?.shipScars ?? outcome.shipScars ?? {}).records
-    .filter((record) => record.playerVisible !== false)
+  const source = session?.travelV2ShipScars ?? session?.shipScars ?? outcome.shipScars ?? {};
+  const hiddenIds = new Set(recordsFrom(source).filter(isHiddenEntry).map((record) => String(record.id ?? record.key ?? record.scarId ?? "")).filter(Boolean));
+  return normalizeTravelV2ShipScarsState(source).records
+    .filter((record) => !isHiddenEntry(record) && !hiddenIds.has(String(record.id ?? record.key ?? record.scarId ?? "")))
     .map((record) => publicEntry({ id: record.id, name: record.name, category: record.category, severity: record.severity, status: record.status, text: record.playerText ?? record.flavorText ?? record.repairRequirement }))
     .filter(Boolean);
 }
@@ -88,6 +101,8 @@ export function prepareTravelV2FinalOutcomePackage(session, options = {}) {
   const category = safeString(source?.event?.category ?? source?.category ?? "");
   const eventName = safeString(source?.event?.name ?? source?.eventName ?? source?.name ?? "");
   const completion = completionState(source);
+  const currentRoundIndex = Number.isInteger(Number(source?.currentRoundIndex)) ? Number(source.currentRoundIndex) : 0;
+  const currentRoundNumber = Number.isInteger(Number(source?.currentRoundNumber)) ? Number(source.currentRoundNumber) : currentRoundIndex + 1;
   const result = {
     hasFinalOutcome: hasFinalOutcome(source),
     eventKey: safeString(source?.event?.key ?? source?.eventKey ?? source?.key ?? ""),
@@ -96,8 +111,8 @@ export function prepareTravelV2FinalOutcomePackage(session, options = {}) {
     categoryLabel: humanize(category),
     roundCount: rounds.length,
     completedRoundCount: completedRounds,
-    currentRoundIndex: Number.isInteger(Number(source?.currentRoundIndex)) ? Number(source.currentRoundIndex) : 0,
-    currentRoundNumber: Number.isInteger(Number(source?.currentRoundNumber)) ? Number(source.currentRoundNumber) : 1,
+    currentRoundIndex,
+    currentRoundNumber,
     completionState: completion,
     locationChange: locationChangeFrom(source, outcome),
     unresolvedHazards: hazards.unresolved,

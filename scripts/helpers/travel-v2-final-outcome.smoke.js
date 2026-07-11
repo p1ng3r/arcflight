@@ -4,7 +4,7 @@ function assertSmoke(condition, message) { if (!condition) throw new Error(`Trav
 function assertEqual(actual, expected, message) { if (actual !== expected) throw new Error(`Travel v2 final outcome smoke check failed: ${message}. Expected ${expected}, got ${actual}.`); }
 function snap(value) { return JSON.stringify(value); }
 const FORBIDDEN = ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions", "hiddenHazards", "debugReport", "futureTriggers"];
-const BAIT = ["HIDDEN_BAIT_VALUE", "Actor.abc123", "User.badgm", "APPLY_PAYLOAD_BAIT", "AUDIT_RECORD_BAIT"];
+const BAIT = ["HIDDEN_BAIT_VALUE", "HIDDEN_ENTRY_BAIT", "Actor.abc123", "User.badgm", "APPLY_PAYLOAD_BAIT", "AUDIT_RECORD_BAIT"];
 
 function fixtureSession() {
   return {
@@ -16,11 +16,14 @@ function fixtureSession() {
     route: { from: "Aster Dock", to: "Stormglass Shoal" },
     finalOutcome: {
       summary: "The crew reaches Stormglass Shoal with useful bearings.",
-      consequences: [{ name: "Bruised timetable", text: "The delay needs GM review.", targetActorUuid: "Actor.abc123", auditRecord: "AUDIT_RECORD_BAIT" }],
-      rewards: ["A clean approach vector"],
-      clues: [{ name: "Lantern echo", publicText: "A signal points deeper into the shoal.", gmText: "HIDDEN_BAIT_VALUE" }],
-      routeAdvantages: [{ name: "Known crosswind", text: "Future piloting can use the landmark." }],
-      followUps: [{ name: "Check the beacon", text: "The GM may frame a later scene.", userId: "User.badgm" }],
+      consequences: [
+        { name: "Bruised timetable", text: "The delay needs GM review.", targetActorUuid: "Actor.abc123", auditRecord: "AUDIT_RECORD_BAIT" },
+        { name: "Hidden consequence", text: "HIDDEN_ENTRY_BAIT", gmOnly: true }
+      ],
+      rewards: ["A clean approach vector", { name: "Hidden reward", text: "HIDDEN_ENTRY_BAIT", hidden: true }],
+      clues: [{ name: "Lantern echo", publicText: "A signal points deeper into the shoal.", gmText: "HIDDEN_BAIT_VALUE" }, { name: "Unrevealed clue", text: "HIDDEN_ENTRY_BAIT", revealed: false }],
+      routeAdvantages: [{ name: "Known crosswind", text: "Future piloting can use the landmark." }, { name: "Private route advantage", text: "HIDDEN_ENTRY_BAIT", playerVisible: false }],
+      followUps: [{ name: "Check the beacon", text: "The GM may frame a later scene.", userId: "User.badgm" }, { name: "Private follow up", text: "HIDDEN_ENTRY_BAIT", public: false }],
       pressureChanges: [{ resource: "hull", value: -1 }, { resource: "secret", value: 99 }, { resource: "morale", value: 1 }]
     },
     travelV2Hazards: { records: [
@@ -28,7 +31,10 @@ function fixtureSession() {
       { id: "hidden-active", hazardId: "hidden-active", name: "HIDDEN_BAIT_VALUE", status: "active", revealed: false, playerText: "Should not appear", gmText: "HIDDEN_BAIT_VALUE", effects: [], responseActions: [] },
       { id: "public-cleared", hazardId: "public-cleared", name: "Cleared Squall", status: "cleared", revealed: true, playerText: "The squall breaks.", effects: [], responseActions: [] }
     ] },
-    shipScars: { records: [{ id: "scar-1", name: "Singing Hull", status: "pending", severity: "minor", playerText: "The hull hums under moonlight.", gmText: "HIDDEN_BAIT_VALUE" }] },
+    shipScars: { records: [
+      { id: "scar-1", name: "Singing Hull", status: "pending", severity: "minor", playerText: "The hull hums under moonlight.", gmText: "HIDDEN_BAIT_VALUE" },
+      { id: "scar-hidden", name: "Hidden Scar", playerText: "HIDDEN_ENTRY_BAIT", gmOnly: true }
+    ] },
     travelV2RoundResolutions: { records: [{ roundNumber: 1 }, { roundNumber: 2 }] },
     auditRecord: "AUDIT_RECORD_BAIT",
     applyPayload: { value: "APPLY_PAYLOAD_BAIT" },
@@ -49,11 +55,17 @@ export async function runTravelV2FinalOutcomeSmokeChecks() {
   assertEqual(pkg.hasFinalOutcome, true, "fixture has final outcome");
   for (const key of ["hasFinalOutcome", "eventKey", "eventName", "category", "categoryLabel", "roundCount", "completedRoundCount", "currentRoundIndex", "currentRoundNumber", "completionState", "locationChange", "unresolvedHazards", "resolvedHazards", "consequences", "rewards", "clues", "routeAdvantages", "followUps", "scars", "pressureChanges", "outcomeSummary", "gmReviewPrompts", "playerSafeSummary", "safetyNote"]) assertSmoke(Object.hasOwn(pkg, key), `required field ${key} exists`);
   assertEqual(pkg.locationChange.summary, "Aster Dock → Stormglass Shoal", "location change is summarized");
+  assertEqual(pkg.currentRoundNumber, 2, "current round number falls back to currentRoundIndex + 1");
   assertEqual(pkg.unresolvedHazards.length, 1, "only revealed unresolved hazards included");
   assertEqual(pkg.unresolvedHazards[0].name, "Static Front", "revealed hazard name included");
   assertEqual(pkg.resolvedHazards.length, 1, "revealed resolved hazards included");
-  assertSmoke(pkg.consequences.length === 1 && pkg.rewards.length === 1 && pkg.clues.length === 1 && pkg.routeAdvantages.length === 1 && pkg.followUps.length === 1, "reviewable aftermath arrays included");
-  assertSmoke(pkg.scars.length === 1 && pkg.pressureChanges.length === 2, "scars and pressure changes are summarized safely");
+  assertEqual(pkg.consequences.length, 1, "only public consequences included");
+  assertEqual(pkg.rewards.length, 1, "only public rewards included");
+  assertEqual(pkg.clues.length, 1, "only public clues included");
+  assertEqual(pkg.routeAdvantages.length, 1, "only public route advantages included");
+  assertEqual(pkg.followUps.length, 1, "only public follow-ups included");
+  assertEqual(pkg.scars.length, 1, "only public scars included");
+  assertSmoke(pkg.pressureChanges.length === 2, "pressure changes are summarized safely");
   assertSmoke(pkg.pressureChanges.every((entry) => ["Hull", "Strain", "Lifeveil", "Morale", "Supplies"].includes(entry.resource)), "pressure changes use public resource names only");
   assertSmoke(pkg.outcomeSummary && pkg.gmReviewPrompts.length && pkg.playerSafeSummary, "deterministic summary fields are present");
   const json = snap(pkg);
