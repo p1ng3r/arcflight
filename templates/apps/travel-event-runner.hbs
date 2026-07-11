@@ -1610,6 +1610,62 @@
     </section>
     {{/if}}
 
+
+    {{#if state.finalOutcomePreservation.hasPlan}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome-preservation" aria-label="Final Outcome Preservation Review">
+      <header>
+        <div>
+          <p class="arcflight-travel-runner-mvp__eyebrow">Review-only preservation plan</p>
+          <h2>Final Outcome Preservation Review</h2>
+        </div>
+      </header>
+      <p class="arcflight-travel-runner-mvp__final-outcome-preservation-note"><strong>Review-only:</strong> Nothing is persisted from this panel. The GM is reviewing what may later be saved to completed event records or attached to the ship.</p>
+      <section>
+        <h3>Completed Event Record</h3>
+        {{#if state.finalOutcomePreservation.completedEventRecord.eventName}}<p><strong>Event:</strong> {{state.finalOutcomePreservation.completedEventRecord.eventName}}</p>{{/if}}
+        {{#if state.finalOutcomePreservation.completedEventRecord.completedAt}}<p><strong>Completed At:</strong> {{state.finalOutcomePreservation.completedEventRecord.completedAt}}</p>{{/if}}
+        {{#if state.finalOutcomePreservation.completedEventRecord.locationChange.summary}}<p><strong>Location Change:</strong> {{state.finalOutcomePreservation.completedEventRecord.locationChange.summary}}</p>{{/if}}
+        {{#if state.finalOutcomePreservation.completedEventRecord.outcomeSummary}}<p><strong>Outcome:</strong> {{state.finalOutcomePreservation.completedEventRecord.outcomeSummary}}</p>{{/if}}
+        {{#if state.finalOutcomePreservation.completedEventRecord.playerSafeSummary}}<p><strong>Player-Safe Summary:</strong> {{state.finalOutcomePreservation.completedEventRecord.playerSafeSummary}}</p>{{/if}}
+      </section>
+      <div class="arcflight-travel-runner-mvp__final-outcome-preservation-grid">
+        <section>
+          <h3>Ship Attachments</h3>
+          {{#if state.finalOutcomePreservation.shipAttachmentCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.shipAttachmentCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Rewards</h3>
+          {{#if state.finalOutcomePreservation.rewardCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.rewardCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Clues</h3>
+          {{#if state.finalOutcomePreservation.clueCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.clueCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Route Advantages</h3>
+          {{#if state.finalOutcomePreservation.routeAdvantageCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.routeAdvantageCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Follow-Ups</h3>
+          {{#if state.finalOutcomePreservation.followUpCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.followUpCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Scars</h3>
+          {{#if state.finalOutcomePreservation.scarCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.scarCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Pressure Changes</h3>
+          {{#if state.finalOutcomePreservation.pressureChangeCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.pressureChangeCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Review Prompts</h3>
+          {{#if state.finalOutcomePreservation.gmReviewPrompts.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-list">{{#each state.finalOutcomePreservation.gmReviewPrompts}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">None prepared.</p>{{/if}}
+        </section>
+      </div>
+      {{#if state.finalOutcomePreservation.safetyNote}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-note">{{state.finalOutcomePreservation.safetyNote}}</p>{{/if}}
+    </section>
+    {{/if}}
+
     <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome-package-review" aria-label="Final Outcome Package Review">
       <h2>Final Outcome Package Review</h2>
       <p class="arcflight-sheet__hint"><strong>{{state.finalOutcomePackageReview.reviewOnlyLabel}}:</strong> This panel is read-only. Actor, item, combat, effect, chat, journal, and socket mutation is deferred to later PRs unless a GM explicitly uses an existing safe session-local action elsewhere.</p>
