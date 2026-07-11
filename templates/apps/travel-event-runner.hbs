@@ -1552,6 +1552,64 @@
       {{/if}}
     </section>
 
+
+    {{#if state.finalOutcome.hasFinalOutcome}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome arcflight-player-safe" aria-label="Final Outcome & Aftermath">
+      <header>
+        <div>
+          <p class="arcflight-travel-runner-mvp__eyebrow">Player-safe aftermath</p>
+          <h2>Final Outcome &amp; Aftermath</h2>
+        </div>
+      </header>
+      {{#if state.finalOutcome.playerSafeSummary}}<p>{{state.finalOutcome.playerSafeSummary}}</p>{{/if}}
+      {{#if state.finalOutcome.outcomeSummary}}<p><strong>Outcome:</strong> {{state.finalOutcome.outcomeSummary}}</p>{{/if}}
+      {{#if state.finalOutcome.locationChange.summary}}<p><strong>Location Change:</strong> {{state.finalOutcome.locationChange.summary}}</p>{{/if}}
+      <div class="arcflight-travel-runner-mvp__final-outcome-grid">
+        <section>
+          <h3>Unresolved Hazards</h3>
+          {{#if state.finalOutcome.unresolvedHazards.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.unresolvedHazards}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if status}} <span>{{status}}</span>{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Resolved Hazards</h3>
+          {{#if state.finalOutcome.resolvedHazards.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.resolvedHazards}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if status}} <span>{{status}}</span>{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Consequences</h3>
+          {{#if state.finalOutcome.consequences.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.consequences}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if status}} <span>{{status}}</span>{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Rewards</h3>
+          {{#if state.finalOutcome.rewards.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.rewards}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if resource}} <span>{{resource}}</span>{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Clues</h3>
+          {{#if state.finalOutcome.clues.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.clues}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Route Advantages</h3>
+          {{#if state.finalOutcome.routeAdvantages.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.routeAdvantages}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Follow-Ups</h3>
+          {{#if state.finalOutcome.followUps.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.followUps}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if status}} <span>{{status}}</span>{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Scars</h3>
+          {{#if state.finalOutcome.scars.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.scars}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if name}}{{name}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{#if status}} <span>{{status}}</span>{{/if}}{{#if publicText}} — {{publicText}}{{else}}{{#if playerText}} — {{playerText}}{{else}}{{#if summary}} — {{summary}}{{else}}{{#if description}} — {{description}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Pressure Changes</h3>
+          {{#if state.finalOutcome.pressureChanges.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.pressureChanges}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if resource}}{{resource}}{{else}}{{#if label}}{{label}}{{else}}{{#if name}}{{name}}{{/if}}{{/if}}{{/if}}{{#if direction}} <span>{{direction}}</span>{{/if}}{{#if summary}} — {{summary}}{{else}}{{#if text}} — {{text}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+        <section>
+          <h3>GM Review Prompts</h3>
+          {{#if state.finalOutcome.gmReviewPrompts.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-list">{{#each state.finalOutcome.gmReviewPrompts}}<li class="arcflight-travel-runner-mvp__final-outcome-item">{{#if text}}{{text}}{{else}}{{#if summary}}{{summary}}{{else}}{{#if label}}{{label}}{{else}}{{#if title}}{{title}}{{/if}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-note">None noted.</p>{{/if}}
+        </section>
+      </div>
+      {{#if state.finalOutcome.safetyNote}}<p class="arcflight-travel-runner-mvp__final-outcome-note">{{state.finalOutcome.safetyNote}}</p>{{/if}}
+    </section>
+    {{/if}}
+
     <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome-package-review" aria-label="Final Outcome Package Review">
       <h2>Final Outcome Package Review</h2>
       <p class="arcflight-sheet__hint"><strong>{{state.finalOutcomePackageReview.reviewOnlyLabel}}:</strong> This panel is read-only. Actor, item, combat, effect, chat, journal, and socket mutation is deferred to later PRs unless a GM explicitly uses an existing safe session-local action elsewhere.</p>
