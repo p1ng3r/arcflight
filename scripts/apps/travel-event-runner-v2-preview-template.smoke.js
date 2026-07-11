@@ -26,7 +26,8 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const visibleStakesTemplate = template.slice(template.indexOf("state.visibleStakes.hasStakes"), template.indexOf("state.travelV2GmFlowStatus"));
   const narrationHooksTemplate = template.slice(template.indexOf("state.narrationHooks.hasNarrationHooks"), template.indexOf("state.travelV2GmFlowStatus"));
   const finalOutcomeTemplate = template.slice(template.indexOf("state.finalOutcome.hasFinalOutcome"), template.indexOf("Final Outcome Preservation Review"));
-  const finalOutcomePreservationTemplate = template.slice(template.indexOf("state.finalOutcomePreservation.hasPlan"), template.indexOf("Final Outcome Package Review"));
+  const finalOutcomePreservationTemplate = template.slice(template.indexOf("state.finalOutcomePreservation.hasPlan"), template.indexOf("Final Outcome Preservation Apply Plan"));
+  const finalOutcomePreservationApplyPlanTemplate = template.slice(template.indexOf("state.finalOutcomePreservationApplyPlan.hasApplyPlan"), template.indexOf("Final Outcome Package Review"));
 
   assertIncludes(template, "state.travelV2PreviewPanel", "template should reference preview panel state");
   assertIncludes(template, "state.visibleStakes.hasStakes", "template should gate visible stakes on prepared runner state");
@@ -161,6 +162,41 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
     "futureTriggers"
   ]) assertSmoke(!finalOutcomePreservationTemplate.includes(forbidden), `final outcome preservation block should not include internal field ${forbidden}`);
   for (const forbidden of ["data-arcflight-travel-v2-outcome-apply", "data-arcflight-runner-create-journal", "data-arcflight-runner-post-chat", "actor.update", ".update("]) assertSmoke(!finalOutcomePreservationTemplate.includes(forbidden), `final outcome preservation block should not include mutation/control text ${forbidden}`);
+
+  assertIncludes(template, "{{#if state.finalOutcomePreservationApplyPlan.hasApplyPlan}}", "template should gate final outcome preservation apply plan on prepared runner state");
+  assertIncludes(template, "Final Outcome Preservation Apply Plan", "template should include final outcome preservation apply plan heading");
+  assertIncludes(template, "state.finalOutcomePreservationApplyPlan", "template should use the short finalOutcomePreservationApplyPlan alias");
+  assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes("{{this}}"), "final outcome preservation apply-plan block should not use raw {{this}} values");
+  assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes("rawJson"), "final outcome preservation apply-plan block should not render raw object dumps");
+  for (const field of ["completedEventRecordAction", "shipAttachmentActions", "skippedCandidates", "actionCount", "safetyNote", "gmReviewPrompts"]) assertIncludes(template, `state.finalOutcomePreservationApplyPlan.${field}`, `template should render final outcome preservation apply-plan field ${field}`);
+  for (const field of ["actionType", "label", "summary", "source", "reason"]) assertIncludes(finalOutcomePreservationApplyPlanTemplate, `{{${field}}}`, `final outcome preservation apply-plan block should render safe field ${field}`);
+  for (const field of ["reviewOnly", "requiresExplicitGmApply", "eligible"]) assertIncludes(finalOutcomePreservationApplyPlanTemplate, field, `final outcome preservation apply-plan block should reference safe boolean field ${field}`);
+  for (const cssClass of ["arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan", "arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-grid", "arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-list", "arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item", "arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note"]) assertSmoke(template.includes(cssClass) || css.includes(`.${cssClass}`), `template or css should include ${cssClass}`);
+  for (const forbidden of [
+    "auditRecord",
+    "commitRecords",
+    "userId",
+    "userName",
+    "gmText",
+    "applyPayload",
+    "targetActorUuid",
+    "mutationScope",
+    "internalMutation",
+    "secret",
+    "pendingConsequenceQueue",
+    "gmOnly",
+    "unrevealedHazard",
+    "catalogSuggestions",
+    "hiddenHazards",
+    "debugReport",
+    "futureTriggers",
+    "HIDDEN_BAIT_VALUE",
+    "HIDDEN_ENTRY_BAIT",
+    "Actor.",
+    "User.",
+    "Compendium."
+  ]) assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes(forbidden), `final outcome preservation apply-plan block should not include internal field ${forbidden}`);
+  for (const forbidden of ["data-arcflight-travel-v2-outcome-apply", "data-arcflight-runner-create-journal", "data-arcflight-runner-post-chat", "data-action", "actor.update", ".update("]) assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes(forbidden), `final outcome preservation apply-plan block should not include mutation/control text ${forbidden}`);
   for (const control of ["data-arcflight-runner-copy-markdown", "data-arcflight-runner-copy-html", "data-arcflight-runner-post-chat", "data-arcflight-runner-create-journal"]) assertIncludes(template, control, `template should keep completed summary output control ${control}`);
   assertIncludes(template, "Event Outcome Package", "template should render outcome package label");
   assertIncludes(template, "data-arcflight-travel-v2-outcome-apply", "template should wire outcome application control");
