@@ -1666,6 +1666,47 @@
     </section>
     {{/if}}
 
+
+    {{#if state.finalOutcomePreservationApplyPlan.hasApplyPlan}}
+    <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan" aria-label="Final Outcome Preservation Apply Plan">
+      <header>
+        <div>
+          <p class="arcflight-travel-runner-mvp__eyebrow">Review-only prepared preservation actions</p>
+          <h2>Final Outcome Preservation Apply Plan</h2>
+        </div>
+      </header>
+      <p class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note"><strong>Review-only:</strong> Nothing is applied or persisted from this panel. These are prepared actions for later explicit GM apply wiring, so the GM can inspect what would later be eligible for preservation.</p>
+      {{#if state.finalOutcomePreservationApplyPlan.actionCount}}<p><strong>Prepared Action Count:</strong> {{state.finalOutcomePreservationApplyPlan.actionCount}}</p>{{/if}}
+      {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction}}
+        <section>
+          <h3>Completed Event Record Action</h3>
+          <article class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item">
+            {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.actionType}}<p><strong>Action Type:</strong> {{state.finalOutcomePreservationApplyPlan.completedEventRecordAction.actionType}}</p>{{/if}}
+            {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.label}}<p><strong>Label:</strong> {{state.finalOutcomePreservationApplyPlan.completedEventRecordAction.label}}</p>{{/if}}
+            {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.summary}}<p><strong>Summary:</strong> {{state.finalOutcomePreservationApplyPlan.completedEventRecordAction.summary}}</p>{{/if}}
+            {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.source}}<p><strong>Source:</strong> {{state.finalOutcomePreservationApplyPlan.completedEventRecordAction.source}}</p>{{/if}}
+            <p>{{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.reviewOnly}}Review-only.{{/if}} {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.requiresExplicitGmApply}}Requires explicit GM apply.{{/if}} {{#if state.finalOutcomePreservationApplyPlan.completedEventRecordAction.eligible}}Eligible for later preservation.{{/if}}</p>
+          </article>
+        </section>
+      {{/if}}
+      <div class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-grid">
+        <section>
+          <h3>Ship Attachment Actions</h3>
+          {{#if state.finalOutcomePreservationApplyPlan.shipAttachmentActions.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-list">{{#each state.finalOutcomePreservationApplyPlan.shipAttachmentActions}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item">{{#if actionType}}<strong>{{actionType}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if summary}}: {{summary}}{{/if}}{{#if source}} <span>Source: {{source}}</span>{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}{{#if requiresExplicitGmApply}} <span>Requires explicit GM apply</span>{{/if}}{{#if eligible}} <span>Eligible</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Skipped Candidates</h3>
+          {{#if state.finalOutcomePreservationApplyPlan.skippedCandidates.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-list">{{#each state.finalOutcomePreservationApplyPlan.skippedCandidates}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item">{{#if type}}<strong>{{type}}</strong>{{/if}}{{#if label}} — {{label}}{{/if}}{{#if reason}}: {{reason}}{{/if}}{{#if reviewOnly}} <span>Review-only</span>{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note">None prepared.</p>{{/if}}
+        </section>
+        <section>
+          <h3>Review Prompts</h3>
+          {{#if state.finalOutcomePreservationApplyPlan.gmReviewPrompts.length}}<ul class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-list">{{#each state.finalOutcomePreservationApplyPlan.gmReviewPrompts}}<li class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item">{{#if label}}{{label}}{{else}}{{#if summary}}{{summary}}{{else}}{{#if text}}{{text}}{{/if}}{{/if}}{{/if}}</li>{{/each}}</ul>{{else}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note">None prepared.</p>{{/if}}
+        </section>
+      </div>
+      {{#if state.finalOutcomePreservationApplyPlan.safetyNote}}<p class="arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note">{{state.finalOutcomePreservationApplyPlan.safetyNote}}</p>{{/if}}
+    </section>
+    {{/if}}
+
     <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__final-outcome-package-review" aria-label="Final Outcome Package Review">
       <h2>Final Outcome Package Review</h2>
       <p class="arcflight-sheet__hint"><strong>{{state.finalOutcomePackageReview.reviewOnlyLabel}}:</strong> This panel is read-only. Actor, item, combat, effect, chat, journal, and socket mutation is deferred to later PRs unless a GM explicitly uses an existing safe session-local action elsewhere.</p>

@@ -2612,3 +2612,29 @@
   color: rgba(247, 233, 198, 0.78);
   font-size: 0.9em;
 }
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan {
+  border-color: rgba(142, 216, 180, 0.4);
+  background: rgba(142, 216, 180, 0.08);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item {
+  margin: 0.25rem 0;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note {
+  margin: 0.35rem 0 0;
+  color: rgba(247, 233, 198, 0.78);
+  font-size: 0.9em;
+}
