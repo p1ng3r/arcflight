@@ -164,7 +164,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-005 — Risk Bid Result Pipeline
 
-**Status:** partial — Slice 01 started the pure foundation; Slice 02 exposes it in runner state as a read-only preview; Slice 03 adds a pure reviewed-candidate bridge; Slice 04 adds a pure queue-review adapter; Slice 05 exposes GM-facing pending review state; Slice 06 adds pure GM insertion-intent preparation.
+**Status:** partial — Slice 01 started the pure foundation; Slice 02 exposes it in runner state as a read-only preview; Slice 03 adds a pure reviewed-candidate bridge; Slice 04 adds a pure queue-review adapter; Slice 05 exposes GM-facing pending review state; Slice 06 adds pure GM insertion-intent preparation; Slice 07 adds pure session-local pending review queue record insertion.
 **Scope:** Alpha blocker
 
 **Goal:** Resolve risk bid outcomes into reviewed Travel v2 effects.
@@ -177,7 +177,8 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Slice 04 adds a pure queue-review adapter that prepares queue-ready review payload shapes from reviewed candidates. It does not insert queues, apply pressure/hazards/consequences, roll dice, or mutate actors/world/session state.
 - Slice 05 exposes those queue-ready review payloads as GM-facing Travel Event Runner pending review state aliases, without inserting queue items, applying payloads, rolling dice, or mutating actors/world/session state.
 - Slice 06 adds a pure GM insertion-intent preparation helper for pending review payloads. It prepares deterministic request objects only, and still does not insert queue items, apply effects, apply pressure/hazards/consequences, award Momentum, create scars, or mutate actors/world/session state.
-- Actual queue insertion, pressure plumbing, hazard plumbing, consequence plumbing, UI/roll integration, and explicit apply/review flow remain open.
+- Slice 07 adds a pure session-local pending risk bid review queue insertion transformer. It returns a cloned session plus a minimal queue patch only, and does not persist data, apply effects, apply pressure/hazards/consequences, award Momentum, create scars, or mutate actors/world/session state.
+- UI/roll integration, persistence wiring / app click handler to save the queue patch, pressure plumbing, hazard plumbing, consequence plumbing, and explicit apply/review flow remain open.
 - Critical success: stronger benefit, Momentum, major progress, or improved reward.
 - Success: selected benefit or progress.
 - Failure: consequence candidate, pressure, hazard progress, station complication, or next-round difficulty.
