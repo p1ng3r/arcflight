@@ -180,3 +180,84 @@ export function clearTravelV2RiskBidSelectionForRunnerSession(session, selection
   void options;
   return { ok: true, cleared: Boolean(clearedRecord), session: cloned, clearedRecord, blockedReasons: [], error: null };
 }
+
+function safeRiskBidNumber(value) {
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+}
+
+function sanitizeRiskBidSelectionForRunnerState(record) {
+  const tier = normalizeTravelV2RiskBidTier(record?.tier);
+  const stationKey = safeString(record?.stationKey);
+  const actionId = safeString(record?.actionId);
+  const roundIndex = safeRiskBidNumber(record?.roundIndex);
+  const roundNumber = safeRiskBidNumber(record?.roundNumber);
+  if (!tier || !stationKey || !actionId || (roundIndex == null && roundNumber == null)) return null;
+  return {
+    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
+    selected: record?.selected !== false,
+    roundIndex,
+    roundNumber,
+    stationKey,
+    actionId,
+    tier,
+    dcModifier: tier,
+    selectedAt: safeString(record?.selectedAt)
+  };
+}
+
+function riskBidContextMatchesRecord(record, context) {
+  if (!record || record.selected === false) return false;
+  if (record.stationKey !== context.stationKey || record.actionId !== context.actionId) return false;
+  if (context.roundIndex != null && record.roundIndex === context.roundIndex) return true;
+  if (context.roundNumber != null && record.roundNumber === context.roundNumber) return true;
+  return false;
+}
+
+function normalizeRiskBidRunnerContext(session, options = {}) {
+  const source = options.travelV2RiskBidContext && typeof options.travelV2RiskBidContext === "object" ? options.travelV2RiskBidContext : null;
+  const stationKey = safeString(source?.stationKey);
+  const actionId = safeString(source?.actionId);
+  const roundIndex = safeRiskBidNumber(source?.roundIndex ?? session?.currentRoundIndex);
+  const roundNumber = safeRiskBidNumber(source?.roundNumber ?? (roundIndex == null ? null : roundIndex + 1));
+  if (!source || !stationKey || !actionId) return { ok: false, blockedReasons: ["missing-station-action-context"], context: { roundIndex, roundNumber, stationKey: "", stationName: "", actionId: "", actionName: "", riskBids: [] } };
+  return {
+    ok: true,
+    blockedReasons: [],
+    context: {
+      roundIndex,
+      roundNumber,
+      stationKey,
+      stationName: safeString(source.stationName),
+      actionId,
+      actionName: safeString(source.actionName),
+      riskBids: Array.isArray(source.riskBids) ? source.riskBids : []
+    }
+  };
+}
+
+export function prepareTravelV2RiskBidRunnerState(session = null, options = {}) {
+  const normalized = normalizeRiskBidRunnerContext(session, options);
+  const prepared = normalized.ok
+    ? prepareTravelV2RiskBidOptionsForStationAction(normalized.context)
+    : prepareTravelV2RiskBidOptionsForStationAction(normalized.context);
+  const blockedReasons = Array.from(new Set([...(prepared.blockedReasons ?? []), ...normalized.blockedReasons]));
+  const records = Array.isArray(session?.travelV2RiskBidSelections?.records) ? session.travelV2RiskBidSelections.records : [];
+  const selectedRecord = normalized.ok
+    ? records.map((record) => sanitizeRiskBidSelectionForRunnerState(record)).find((record) => riskBidContextMatchesRecord(record, normalized.context)) ?? null
+    : null;
+  return freezeRiskBidOutput({
+    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
+    hasRiskBids: prepared.hasRiskBids === true,
+    stationKey: prepared.stationKey,
+    stationName: prepared.stationName,
+    actionId: prepared.actionId,
+    actionName: prepared.actionName,
+    options: prepared.options.map((option) => ({ ...option })),
+    selected: Boolean(selectedRecord),
+    selectedTier: selectedRecord?.tier ?? null,
+    selectedDcModifier: selectedRecord?.dcModifier ?? null,
+    selectedRecord,
+    blockedReasons
+  });
+}

@@ -116,6 +116,73 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(requestedBenefitState.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.ready, true, "preview panel should expose ready review request feedback");
   assertSmoke(requestedBenefitState.travelV2StationBenefitUseReview.gmReview.reviewRequested === true, "GM review state should be available for GM-like users after request");
 
+
+  const riskBidSideEffects = [];
+  const riskBidPrior = { Actor: globalThis.Actor, Item: globalThis.Item, ChatMessage: globalThis.ChatMessage, JournalEntry: globalThis.JournalEntry, game: globalThis.game };
+  globalThis.Actor = { update: () => riskBidSideEffects.push("actor.update"), create: () => riskBidSideEffects.push("Actor.create") };
+  globalThis.Item = { create: () => riskBidSideEffects.push("Item.create") };
+  globalThis.ChatMessage = { create: () => riskBidSideEffects.push("ChatMessage.create") };
+  globalThis.JournalEntry = { create: () => riskBidSideEffects.push("JournalEntry.create") };
+  globalThis.game = { socket: { emit: () => riskBidSideEffects.push("socket.emit") }, user: { isGM: false } };
+  try {
+    const riskBidSession = {
+      event: createRunnerEventFixture(),
+      currentRoundIndex: 0,
+      travelV2RiskBidSelections: {
+        records: [
+          { selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: "+5", selectedAt: "2026-07-12T00:00:00.000Z", gmOnly: true, secret: "bait", actorUuid: "Actor.bad", targetActorUuid: "Actor.target", userId: "u1", userName: "GM", applyPayload: { bad: true }, auditRecord: { bad: true } },
+          { selected: true, roundIndex: 0, stationKey: "engineer", actionId: "repair", tier: 8, selectedAt: "2026-07-12T00:00:01.000Z", secret: "wrong context" }
+        ]
+      }
+    };
+    const riskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: riskBidSession,
+      uiState: {
+        travelV2RiskBidContext: {
+          roundIndex: 0,
+          stationKey: "navigator",
+          stationName: "Navigator",
+          actionId: "plot-course",
+          actionName: "Plot Course",
+          riskBids: [
+            { tier: 2, label: "Skim", text: "Take a small risk.", gmOnly: true },
+            { tier: 5, label: "Thread", text: "Take a moderate risk.", secret: "bait" },
+            { tier: 5, label: "Duplicate", text: "Drop me." },
+            { tier: 3, label: "Invalid", text: "Drop me." },
+            { tier: "+8", label: "Blind", text: "Take a big risk." }
+          ]
+        }
+      },
+      user: { isGM: false }
+    });
+    assertSmoke(riskBidState.travelV2RiskBids, "runner app state exposes travelV2RiskBids");
+    assertSmoke(riskBidState.riskBids, "runner app state exposes short riskBids alias");
+    assertEqual(JSON.stringify(riskBidState.travelV2RiskBids), JSON.stringify(riskBidState.riskBids), "risk bid aliases expose the same player-safe content");
+    assertEqual(riskBidState.riskBids.options.map((option) => option.tier).join(","), "2,5,8", "runner risk bid state exposes only fixed valid tiers and dedupes duplicates");
+    assertSmoke(riskBidState.riskBids.selected === true, "matching session-local risk bid selection is projected");
+    assertEqual(riskBidState.riskBids.selectedTier, 5, "matching selection tier is normalized");
+    assertEqual(riskBidState.riskBids.selectedDcModifier, 5, "matching selection DC modifier is normalized");
+    assertEqual(riskBidState.riskBids.selectedRecord.stationKey, "navigator", "matching selected record uses station context");
+    assertSmoke(!JSON.stringify(riskBidState.riskBids).includes("engineer"), "non-matching risk bid selection is not projected");
+    for (const key of ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"]) assertSmoke(Object.hasOwn(riskBidState.riskBids.selectedRecord, key), `selected risk bid record includes safe key ${key}`);
+    for (const key of ["gmOnly", "secret", "actorUuid", "targetActorUuid", "userId", "userName", "applyPayload", "auditRecord"]) assertSmoke(!Object.hasOwn(riskBidState.riskBids.selectedRecord, key), `selected risk bid record excludes unsafe key ${key}`);
+    const riskBidJson = JSON.stringify(riskBidState.riskBids);
+    for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actor", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
+      assertSmoke(!riskBidJson.includes(forbidden), `runner risk bid state excludes ${forbidden}`);
+    }
+    const missingRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: riskBidSession, user: { isGM: false } });
+    assertSmoke(missingRiskBidState.riskBids.hasRiskBids === false, "missing station/action context has no risk bids");
+    assertSmoke(missingRiskBidState.riskBids.blockedReasons.includes("missing-station-action-context"), "missing station/action context reports safe blocked reason");
+    assertSmoke(missingRiskBidState.riskBids.selected === false && missingRiskBidState.riskBids.selectedRecord === null, "missing context does not project selections");
+    assertEqual(riskBidSideEffects.length, 0, "runner risk bid state exposure does not call mutation APIs");
+  } finally {
+    globalThis.Actor = riskBidPrior.Actor;
+    globalThis.Item = riskBidPrior.Item;
+    globalThis.ChatMessage = riskBidPrior.ChatMessage;
+    globalThis.JournalEntry = riskBidPrior.JournalEntry;
+    globalThis.game = riskBidPrior.game;
+  }
+
   const reorderState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: state.session, uiState: { travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] }, user: { isGM: true } });
   assertSmoke(reorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready, "GM explicit reorder request should produce ready review-only candidate");
   assertEqual(reorderState.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.proposedRows[0].stationName, "Engineer", "proposed order should be visible after explicit GM request");
