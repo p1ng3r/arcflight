@@ -51,7 +51,7 @@ Travel v2 should keep the GM present as voyage director, not replace the GM with
 
 ## Alpha blocker summary
 
-These are the current implementation areas that most directly block the locked Travel Alpha goal:
+These are the implementation areas that most directly define or block the locked Travel Alpha goal; some are complete and kept here for closeout visibility:
 
 - TV2-002 — Inter-Station Help.
 - TV2-003 — Player-Chosen Round Action Order UX polish.
@@ -438,20 +438,19 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-020 — Final Outcome and Aftermath Expansion
 
-**Status:** partial  
-**Scope:** Alpha blocker
+**Status:** complete for alpha runtime
+**Scope:** Alpha blocker closeout
 
 **Goal:** Make event completion produce a useful aftermath package.
 
-**Remaining work:**
+**Closeout notes:**
 
-- Summarize location change.
-- Summarize unresolved hazards.
-- Summarize consequences.
-- Summarize rewards, clues, route advantages, and follow-ups.
-- Summarize scars and pressure changes.
-- Integrate with End-of-Event Resolution dialog.
-- Preserve rewards both in completed event records and attached to the ship where useful.
+- Final outcome aftermath now summarizes completion context, unresolved hazards, consequences, rewards, clues, route advantages, follow-ups, scars, and pressure changes.
+- Runner state exposes final outcome and preservation review state through short aliases for the Travel Event Runner UI.
+- The Travel Event Runner displays Final Outcome & Aftermath, Final Outcome Preservation Review, and Final Outcome Preservation Apply Plan sections.
+- Preservation now has a reviewed apply-plan path, session-local preservation application, selected ship actor preview bridge, and explicit GM controls for previewing selected-ship attachments and applying preservation to the local completed session.
+- The completed-session preservation path remains explicit and GM-facing; actor/world persistence still requires reviewed apply paths.
+- Smoke coverage guards helper output, runner state wiring, template rendering, session-local application, actor-preview safety, forbidden-field leakage, and mutation boundaries.
 
 ### TV2-021 — Player HUD Polish
 
