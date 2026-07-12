@@ -33,6 +33,7 @@ import { prepareTravelV2FinalOutcomePackage } from "./travel-v2-final-outcome.js
 import { prepareTravelV2FinalOutcomePreservationPlan } from "./travel-v2-final-outcome-preservation.js";
 import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-final-outcome-preservation-apply-plan.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
+import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -3554,6 +3555,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
   const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
   const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
+  const travelV2RiskBids = prepareTravelV2RiskBidRunnerState(session ?? activeSession, { ...options, currentRound, currentRoundResult });
   const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
   const travelV2NarrationHooks = prepareTravelV2NarrationHookState(activeSession, options);
   const travelV2FinalOutcome = prepareTravelV2FinalOutcomePackage(activeSession, options);
@@ -3629,6 +3631,8 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     travelV2Momentum: prepareTravelV2MomentumPanelState(activeSession),
     roundSummaryCard,
     stationActionLockIn,
+    travelV2RiskBids,
+    riskBids: travelV2RiskBids,
     travelV2VisibleStakes,
     visibleStakes: travelV2VisibleStakes,
     travelV2NarrationHooks,

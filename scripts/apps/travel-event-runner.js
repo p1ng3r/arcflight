@@ -12,6 +12,7 @@ import { prepareTravelV2FinalOutcomePreservationActorPreview } from "../helpers/
 import { applyTravelV2FinalOutcomeToShip } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
+import { selectTravelV2RiskBidForRunnerSession, clearTravelV2RiskBidSelectionForRunnerSession } from "../helpers/travel-v2-risk-bids.js";
 import { commitTravelV2RoundActionOrderToSession } from "../helpers/travel-v2-round-action-order-state.js";
 import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
@@ -145,6 +146,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-station-action-lock-persist]",
   "[data-arcflight-travel-v2-event-review]",
   "[data-arcflight-travel-v2-narration-refresh]",
+  "[data-arcflight-travel-v2-risk-bid-select]",
+  "[data-arcflight-travel-v2-risk-bid-clear]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
   `[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`,
   `[data-action="arcflight-travel-v2-clear-all-selected-consequences"]`,
@@ -430,6 +433,29 @@ export function prepareTravelV2RoundActionOrderCommitRunnerUpdate(currentSession
     shouldUpdateSession,
     shouldRerender: shouldUpdateSession
   };
+}
+
+
+function prepareTravelV2RiskBidSelectionFromState(riskBids = {}, tier = null) {
+  return {
+    roundIndex: Number.isInteger(riskBids?.roundIndex) ? riskBids.roundIndex : riskBids?.selectedRecord?.roundIndex ?? null,
+    roundNumber: Number.isInteger(riskBids?.roundNumber) ? riskBids.roundNumber : riskBids?.selectedRecord?.roundNumber ?? null,
+    stationKey: typeof riskBids?.stationKey === "string" ? riskBids.stationKey : "",
+    actionId: typeof riskBids?.actionId === "string" ? riskBids.actionId : "",
+    ...(tier == null ? {} : { tier })
+  };
+}
+
+export function prepareTravelV2RiskBidSelectRunnerUpdate(currentSession, riskBids = {}, tier, options = {}) {
+  const result = selectTravelV2RiskBidForRunnerSession(currentSession, prepareTravelV2RiskBidSelectionFromState(riskBids, tier), options);
+  const shouldUpdateSession = result?.session !== undefined && (result.ok === true || result.ok === false);
+  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: true };
+}
+
+export function prepareTravelV2RiskBidClearRunnerUpdate(currentSession, riskBids = {}, options = {}) {
+  const result = clearTravelV2RiskBidSelectionForRunnerSession(currentSession, prepareTravelV2RiskBidSelectionFromState(riskBids), options);
+  const shouldUpdateSession = result?.session !== undefined && (result.ok === true || result.ok === false);
+  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: true };
 }
 
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -868,6 +894,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-station-action-lock-persist")) return this.persistTravelV2StationActionLockIn(target);
     if (target.hasAttribute("data-arcflight-travel-v2-event-review")) return this.#showTravelV2EndOfEventDialog({ complete: false });
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-select")) return this.#selectTravelV2RiskBid(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-clear")) return this.#clearTravelV2RiskBid();
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();
     if (target.dataset.action === "arcflight-travel-v2-apply-all-selected-consequences") return this.#applyAllSelectedPendingConsequences();
     if (target.dataset.action === "arcflight-travel-v2-clear-all-selected-consequences") return this.#clearAllSelectedPendingConsequences();
@@ -892,6 +920,49 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-reaction-backlash-dismiss")) return this.#resolveReaction(target, "dismissBacklash");
   }
 
+
+
+  #getCurrentRiskBidState() {
+    return prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: this.session,
+      selectedEventId: this.selectedEventId,
+      selectedSessionKey: this.selectedSessionKey,
+      actor: this.#getSelectedShipActor(),
+      uiState: this.uiState,
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled(),
+      user: game?.user,
+      summaryOutputStatusMessage: this.statusMessage
+    }).riskBids;
+  }
+
+  async #selectTravelV2RiskBid(target) {
+    const riskBids = this.#getCurrentRiskBidState();
+    const tier = target?.dataset?.riskBidTier ?? "";
+    const update = prepareTravelV2RiskBidSelectRunnerUpdate(this.session, riskBids, tier);
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = update.nextSession?.key ?? this.selectedSessionKey;
+    }
+    this.statusMessage = update.result?.ok
+      ? `Risk bid +${update.result.selectionRecord?.tier ?? tier} selected for ${riskBids.stationName || riskBids.stationKey || "the current station"} / ${riskBids.actionName || riskBids.actionId || "action"} in session-local state only.`
+      : `Risk bid selection blocked: ${update.result?.error ?? "invalid risk bid selection"}.`;
+    globalThis.ui?.notifications?.[update.result?.ok ? "info" : "warn"]?.(this.statusMessage);
+    return this.render(true);
+  }
+
+  async #clearTravelV2RiskBid() {
+    const riskBids = this.#getCurrentRiskBidState();
+    const update = prepareTravelV2RiskBidClearRunnerUpdate(this.session, riskBids);
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = update.nextSession?.key ?? this.selectedSessionKey;
+    }
+    this.statusMessage = update.result?.ok
+      ? (update.result.cleared ? "Risk bid selection cleared for the current station/action in session-local state only." : "No risk bid selection was set for the current station/action.")
+      : `Risk bid clear blocked: ${update.result?.error ?? "invalid risk bid context"}.`;
+    globalThis.ui?.notifications?.[update.result?.ok ? "info" : "warn"]?.(this.statusMessage);
+    return this.render(true);
+  }
 
   async #refreshTravelV2Narration() {
     this.statusMessage = "Round narration refreshed from the current local session state.";
