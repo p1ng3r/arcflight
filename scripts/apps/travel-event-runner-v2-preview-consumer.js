@@ -17,6 +17,7 @@ import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers
 import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
 import { prepareTravelV2EventSetupStakesState } from "../helpers/travel-v2-event-setup-stakes.js";
 import { prepareTravelV2EventApproachTallyApplicationRecordControls } from "../helpers/travel-v2-session-round-finalization.js";
+import { prepareTravelV2RiskBidResultCandidates, prepareTravelV2RiskBidResultPreview, normalizeTravelV2RiskBidResultBand } from "../helpers/travel-v2-risk-bid-results.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 4;
 
@@ -236,6 +237,61 @@ function buildTravelV2GuidedState(state = {}) {
   };
 }
 
+function prepareTravelV2RiskBidResultRunnerPreview(state = {}, uiState = {}) {
+  const riskBids = state.riskBids ?? state.travelV2RiskBids ?? {};
+  const rawResultBand = uiState.travelV2RiskBidResultBand;
+  const normalizedResultBand = normalizeTravelV2RiskBidResultBand(rawResultBand);
+  const selectedRecord = riskBids?.selectedRecord && typeof riskBids.selectedRecord === "object" ? riskBids.selectedRecord : null;
+  const blockedReasons = [];
+  if (!selectedRecord || riskBids.selected !== true) blockedReasons.push("missing-selected-risk-bid");
+  if (rawResultBand === null || rawResultBand === undefined || rawResultBand === "") blockedReasons.push("missing-risk-bid-result-band");
+  else if (!normalizedResultBand) blockedReasons.push("invalid-risk-bid-result-band");
+
+  const input = {
+    selectionRecord: selectedRecord,
+    resultBand: normalizedResultBand,
+    stationKey: riskBids.stationKey ?? selectedRecord?.stationKey ?? "",
+    stationName: riskBids.stationName ?? "",
+    actionId: riskBids.actionId ?? selectedRecord?.actionId ?? "",
+    actionName: riskBids.actionName ?? "",
+    roundIndex: riskBids.roundIndex ?? selectedRecord?.roundIndex ?? null,
+    roundNumber: riskBids.roundNumber ?? selectedRecord?.roundNumber ?? null
+  };
+  const preview = prepareTravelV2RiskBidResultPreview(input);
+  const candidateState = prepareTravelV2RiskBidResultCandidates(input);
+  const combinedBlockedReasons = Array.from(new Set([...blockedReasons, ...(preview.blockedReasons ?? [])].map((reason) => reason === "invalid-result-band" && blockedReasons.includes("missing-risk-bid-result-band") ? "missing-risk-bid-result-band" : reason)));
+  const ok = combinedBlockedReasons.length === 0 && preview.ok === true && candidateState.ok === true;
+  return {
+    version: preview.version,
+    available: ok,
+    ok,
+    hasRiskBidResult: ok,
+    blockedReasons: ok ? [] : combinedBlockedReasons,
+    resultBand: ok ? preview.resultBand : null,
+    tier: ok ? preview.tier : null,
+    dcModifier: ok ? preview.dcModifier : null,
+    dangerLevel: ok ? preview.dangerLevel : "none",
+    stationKey: preview.stationKey,
+    stationName: preview.stationName,
+    actionId: preview.actionId,
+    actionName: preview.actionName,
+    roundIndex: preview.roundIndex,
+    roundNumber: preview.roundNumber,
+    summary: ok ? preview.summary : "Risk bid result is blocked.",
+    playerText: ok ? preview.playerText : "No risk bid result is available for this context.",
+    candidates: ok ? candidateState.candidates.map((candidate) => ({
+      type: candidate.type,
+      severity: candidate.severity,
+      tier: candidate.tier,
+      resultBand: candidate.resultBand,
+      label: candidate.label,
+      text: candidate.text,
+      requiresReview: candidate.requiresReview === true
+    })) : [],
+    gmReviewRequired: ok
+  };
+}
+
 function formatSetupStakesValidation(errors = []) {
   const messages = {
     "round-count-required": "Setup round count is missing.",
@@ -388,7 +444,8 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2StationBenefitUseReviewRequested: uiState.travelV2StationBenefitUseReviewRequested === true
   }, { user, includeGmReview: canManageTravelV2Consequences });
   const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview);
-  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2PreviewPanel: previewPanel };
+  const riskBidResultPreview = prepareTravelV2RiskBidResultRunnerPreview(appStateWithStationBenefitUseReview, uiState);
+  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {
