@@ -42,6 +42,7 @@ import runTravelV2FocusRiskSuppressionSmokeChecks from "../helpers/travel-v2-foc
 import runTravelV2RiskBidsSmokeChecks from "../helpers/travel-v2-risk-bids.smoke.js";
 import runTravelV2RiskBidResultSmokeChecks from "../helpers/travel-v2-risk-bid-results.smoke.js";
 import runTravelV2RiskBidResultBridgeSmokeChecks from "../helpers/travel-v2-risk-bid-result-bridge.smoke.js";
+import runTravelV2RiskBidResultReviewAdapterSmokeChecks from "../helpers/travel-v2-risk-bid-result-review-adapter.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
 import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
@@ -134,6 +135,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 risk bid alpha closeout", runTravelV2RiskBidsSmokeChecks],
   ["Travel v2 risk bid result model", runTravelV2RiskBidResultSmokeChecks],
   ["Travel v2 risk bid result reviewed candidate bridge", runTravelV2RiskBidResultBridgeSmokeChecks],
+  ["Travel v2 risk bid result review adapter", runTravelV2RiskBidResultReviewAdapterSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
   ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks],
