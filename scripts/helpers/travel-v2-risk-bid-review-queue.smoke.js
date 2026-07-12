@@ -99,12 +99,39 @@ export function runTravelV2RiskBidReviewQueueSmokeChecks() {
     const preserved = insertTravelV2RiskBidReviewQueueRecords({ travelV2RiskBidReviewQueue: { records: [unrelated] } }, failureEight, { canReview: true });
     assertSmoke(preserved.queue.records.some((record) => record.queueKey === "unrelated:key"), "existing unrelated records are preserved");
 
-    const counts = prepareTravelV2RiskBidReviewQueueState({}, { queue: { records: [{ ...unrelated, status: "pending" }, { ...unrelated, queueKey: "reviewed", status: "reviewed" }, { ...unrelated, queueKey: "dismissed", status: "dismissed" }, { ...unrelated, queueKey: "applied", status: "applied" }] } });
-    assertEqual(counts.pendingCount, 1, "pending count is correct");
+    const unsafeExistingRecord = {
+      ...unrelated,
+      status: "queued",
+      label: "gmOnly label",
+      text: "hiddenHazards text",
+      stationName: "Actor.bad",
+      tier: "8 secret",
+      gmOnly: true,
+      actorUuid: "Actor.bad",
+      debugReport: "secret debug"
+    };
+    const sanitizedExisting = prepareTravelV2RiskBidReviewQueueState({}, { queue: { records: [unsafeExistingRecord] } });
+    assertEqual(sanitizedExisting.records[0].status, "pending", "invalid existing record status becomes pending");
+    assertEqual(sanitizedExisting.records[0].label, "Risk bid review", "unsafe existing label falls back");
+    assertEqual(sanitizedExisting.records[0].text, "Risk bid review requires GM decision.", "unsafe existing text falls back");
+    assertEqual(sanitizedExisting.records[0].tier, null, "unsafe existing tier becomes null");
+    assertOnlyKeys(sanitizedExisting.records[0], RECORD_KEYS, "unsafe existing record exposes only safe keys after sanitization");
+    assertNoForbiddenOutput(sanitizedExisting, "sanitized existing queue state");
+
+    const duplicateExisting = { ...unsafeExistingRecord, queueKey: insertedFailure.queue.records[0].queueKey, status: "reviewed", label: "Existing safe label", text: "Existing safe text" };
+    const duplicateAfterSanitization = insertTravelV2RiskBidReviewQueueRecords({ travelV2RiskBidReviewQueue: { records: [duplicateExisting] } }, failureEight, { canReview: true });
+    assertSmoke(duplicateAfterSanitization.duplicateCount > 0, "duplicate detection uses sanitized existing queue keys");
+    assertNoForbiddenOutput(duplicateAfterSanitization.queue, "insert queue with unsafe existing records");
+    assertNoForbiddenOutput(duplicateAfterSanitization.sessionPatch, "insert patch with unsafe existing records");
+    assertNoForbiddenOutput(duplicateAfterSanitization.session.travelV2RiskBidReviewQueue, "insert session queue with unsafe existing records");
+    for (const record of duplicateAfterSanitization.queue.records) assertOnlyKeys(record, RECORD_KEYS, "inserted queue with unsafe existing records exposes only safe record keys");
+
+    const counts = prepareTravelV2RiskBidReviewQueueState({}, { queue: { records: [{ ...unrelated, status: "pending" }, { ...unrelated, queueKey: "reviewed", status: "reviewed" }, { ...unrelated, queueKey: "dismissed", status: "dismissed" }, { ...unrelated, queueKey: "applied", status: "applied" }, { ...unrelated, queueKey: "invalid", status: "queued" }] } });
+    assertEqual(counts.pendingCount, 2, "pending count is correct after sanitization");
     assertEqual(counts.reviewedCount, 1, "reviewed count is correct");
     assertEqual(counts.dismissedCount, 1, "dismissed count is correct");
     assertEqual(counts.appliedCount, 1, "applied count is correct");
-    assertEqual(counts.insertedCount, 4, "inserted count is correct");
+    assertEqual(counts.insertedCount, 5, "inserted count is correct after sanitization");
 
     for (const record of insertedFailure.queue.records) assertOnlyKeys(record, RECORD_KEYS, "queue records expose only safe keys");
     const unsafe = prepareTravelV2RiskBidReviewQueueRecord({ payloadType: "applyPayload", candidateType: "actorUuid", severity: "secret", tier: "5 secret", label: "gmOnly label", text: "hiddenHazards text", stationName: "Actor.bad" });
@@ -127,7 +154,7 @@ export function runTravelV2RiskBidReviewQueueSmokeChecks() {
     globalThis.session = prior.session;
   }
 
-  return { checked: ["risk-bid-review-queue-status-normalization", "risk-bid-review-queue-safe-blocking", "risk-bid-review-queue-confirmed-insertion", "risk-bid-review-queue-critical-failure-severe", "risk-bid-review-queue-duplicates-preserve-existing", "risk-bid-review-queue-counts", "risk-bid-review-queue-safe-shape-sanitization", "risk-bid-review-queue-frozen-no-mutation"] };
+  return { checked: ["risk-bid-review-queue-status-normalization", "risk-bid-review-queue-safe-blocking", "risk-bid-review-queue-confirmed-insertion", "risk-bid-review-queue-critical-failure-severe", "risk-bid-review-queue-duplicates-preserve-existing", "risk-bid-review-queue-existing-record-sanitization", "risk-bid-review-queue-counts", "risk-bid-review-queue-safe-shape-sanitization", "risk-bid-review-queue-frozen-no-mutation"] };
 }
 
 export default runTravelV2RiskBidReviewQueueSmokeChecks;

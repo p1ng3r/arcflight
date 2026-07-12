@@ -114,11 +114,12 @@ function makeQueueKey(payload, request, index) {
 export function prepareTravelV2RiskBidReviewQueueRecord(input = {}, options = {}) {
   const request = options?.insertionRequest && typeof options.insertionRequest === "object" ? options.insertionRequest : {};
   const index = safeIntegerOrNull(options?.index) ?? 0;
+  const recordStatus = options?.status === undefined ? "pending" : normalizeTravelV2RiskBidReviewQueueRecordStatus(options.status) || "pending";
   const record = {
     queueVersion: TRAVEL_V2_RISK_BID_REVIEW_QUEUE_VERSION,
     queueKey: safeString(options?.queueKey) || makeQueueKey(input, request, index),
     source: QUEUE_SOURCE,
-    status: "pending",
+    status: recordStatus,
     payloadType: safeString(input?.payloadType),
     candidateType: safeString(input?.candidateType),
     severity: safeString(input?.severity, "standard") || "standard",
@@ -135,20 +136,31 @@ export function prepareTravelV2RiskBidReviewQueueRecord(input = {}, options = {}
     text: safeString(input?.text, SAFE_TEXT_FALLBACK) || SAFE_TEXT_FALLBACK,
     requiresReview: input?.requiresReview === false ? false : true,
     queueReady: true,
-    insertedAt: safeString(options?.insertedAt) || deterministicInsertedAt(request, index),
-    insertionRequestKey: safeString(options?.insertionRequestKey) || makeInsertionRequestKey(request)
+    insertedAt: safeString(options?.insertedAt ?? input?.insertedAt) || deterministicInsertedAt(request, index),
+    insertionRequestKey: safeString(options?.insertionRequestKey ?? input?.insertionRequestKey) || makeInsertionRequestKey(request)
   };
   for (const key of Object.keys(record)) if (!RECORD_KEYS.includes(key)) delete record[key];
   return freezeOutput(record);
 }
 
+function sanitizeExistingQueueRecord(record, index) {
+  if (!record || typeof record !== "object") return prepareTravelV2RiskBidReviewQueueRecord({}, { index });
+  return prepareTravelV2RiskBidReviewQueueRecord(record, {
+    index,
+    queueKey: safeString(record.queueKey),
+    status: record.status,
+    insertedAt: record.insertedAt,
+    insertionRequestKey: record.insertionRequestKey
+  });
+}
+
 export function prepareTravelV2RiskBidReviewQueueState(session = {}, options = {}) {
   const sourceQueue = options?.queue && typeof options.queue === "object" ? options.queue : session?.[QUEUE_SESSION_KEY];
-  const records = Array.isArray(sourceQueue?.records) ? sourceQueue.records.map((record) => ({ ...record })) : [];
+  const records = Array.isArray(sourceQueue?.records) ? sourceQueue.records.map((record, index) => sanitizeExistingQueueRecord(record, index)) : [];
   const counts = { pendingCount: 0, reviewedCount: 0, dismissedCount: 0, appliedCount: 0 };
   for (const record of records) {
-    const status = normalizeTravelV2RiskBidReviewQueueRecordStatus(record?.status);
-    if (status) counts[`${status}Count`] += 1;
+    const status = normalizeTravelV2RiskBidReviewQueueRecordStatus(record?.status) || "pending";
+    counts[`${status}Count`] += 1;
   }
   return freezeOutput({
     version: TRAVEL_V2_RISK_BID_REVIEW_QUEUE_VERSION,
@@ -161,6 +173,7 @@ export function prepareTravelV2RiskBidReviewQueueState(session = {}, options = {
 function baseResult(session, blockedReasons) {
   const sessionCopy = cloneSession(session);
   const queue = prepareTravelV2RiskBidReviewQueueState(sessionCopy);
+  sessionCopy[QUEUE_SESSION_KEY] = queue;
   return freezeOutput({
     version: TRAVEL_V2_RISK_BID_REVIEW_QUEUE_VERSION,
     ok: false,
