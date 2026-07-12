@@ -257,6 +257,8 @@ export function prepareTravelV2RiskBidRunnerState(session = null, options = {}) 
     stationName: prepared.stationName,
     actionId: prepared.actionId,
     actionName: prepared.actionName,
+    roundIndex: normalized.context?.roundIndex ?? null,
+    roundNumber: normalized.context?.roundNumber ?? null,
     options: prepared.options.map((option) => ({ ...option })),
     selected: Boolean(selectedRecord),
     selectedTier: selectedRecord?.tier ?? null,
