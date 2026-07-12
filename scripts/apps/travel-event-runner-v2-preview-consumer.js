@@ -289,7 +289,7 @@ function sanitizeNonGmAppStateValue(value) {
 }
 
 export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false, user = globalThis.game?.user } = {}) {
-  const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor, user });
+  const state = prepareTravelEventRunnerStateWithTravelV2Preview(session, { selectedEventId, selectedSessionKey, actor, user, travelV2RiskBidContext: uiState.travelV2RiskBidContext });
   const canManageTravelV2Consequences = user?.isGM === true;
   const travelV2SetupStakes = buildSetupStakesRenderState(session, { includeGm: canManageTravelV2Consequences });
   const preparedPendingConsequenceQueue = prepareTravelV2PendingConsequenceQueue(session);
