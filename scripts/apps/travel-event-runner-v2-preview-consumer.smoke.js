@@ -130,8 +130,10 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       currentRoundIndex: 0,
       travelV2RiskBidSelections: {
         records: [
-          { selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: "+5", selectedAt: "2026-07-12T00:00:00.000Z", gmOnly: true, secret: "bait", actorUuid: "Actor.bad", targetActorUuid: "Actor.target", userId: "u1", userName: "GM", applyPayload: { bad: true }, auditRecord: { bad: true } },
-          { selected: true, roundIndex: 0, stationKey: "engineer", actionId: "repair", tier: 8, selectedAt: "2026-07-12T00:00:01.000Z", secret: "wrong context" }
+          { selected: true, roundIndex: 0, roundNumber: null, stationKey: "navigator", actionId: "plot-course", tier: "+5", selectedAt: "2026-07-12T00:00:00.000Z", gmOnly: true, secret: "bait", actorUuid: "Actor.bad", targetActorUuid: "Actor.target", userId: "u1", userName: "GM", applyPayload: { bad: true }, auditRecord: { bad: true } },
+          { selected: true, roundIndex: null, roundNumber: null, stationKey: "navigator", actionId: "plot-course", tier: 8, selectedAt: "2026-07-12T00:00:01.000Z", secret: "missing round" },
+          { selected: true, roundIndex: null, roundNumber: 0, stationKey: "navigator", actionId: "plot-course", tier: 2, selectedAt: "2026-07-12T00:00:02.000Z", secret: "round zero bait" },
+          { selected: true, roundIndex: 0, stationKey: "engineer", actionId: "repair", tier: 8, selectedAt: "2026-07-12T00:00:03.000Z", secret: "wrong context" }
         ]
       }
     };
@@ -163,6 +165,7 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertEqual(riskBidState.riskBids.selectedTier, 5, "matching selection tier is normalized");
     assertEqual(riskBidState.riskBids.selectedDcModifier, 5, "matching selection DC modifier is normalized");
     assertEqual(riskBidState.riskBids.selectedRecord.stationKey, "navigator", "matching selected record uses station context");
+    assertEqual(riskBidState.riskBids.selectedRecord.roundNumber, null, "matching selected record preserves null roundNumber instead of coercing to zero");
     assertSmoke(!JSON.stringify(riskBidState.riskBids).includes("engineer"), "non-matching risk bid selection is not projected");
     for (const key of ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"]) assertSmoke(Object.hasOwn(riskBidState.riskBids.selectedRecord, key), `selected risk bid record includes safe key ${key}`);
     for (const key of ["gmOnly", "secret", "actorUuid", "targetActorUuid", "userId", "userName", "applyPayload", "auditRecord"]) assertSmoke(!Object.hasOwn(riskBidState.riskBids.selectedRecord, key), `selected risk bid record excludes unsafe key ${key}`);
@@ -170,6 +173,25 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actor", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
       assertSmoke(!riskBidJson.includes(forbidden), `runner risk bid state excludes ${forbidden}`);
     }
+    const noRoundRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: riskBidSession,
+      uiState: {
+        travelV2RiskBidContext: {
+          roundIndex: null,
+          roundNumber: null,
+          stationKey: "navigator",
+          stationName: "Navigator",
+          actionId: "plot-course",
+          actionName: "Plot Course",
+          riskBids: [{ tier: 2, label: "Skim", text: "Take a small risk." }]
+        }
+      },
+      user: { isGM: false }
+    });
+    assertSmoke(noRoundRiskBidState.riskBids.hasRiskBids === true, "station/action risk bid context without a valid round still prepares safe options");
+    assertSmoke(noRoundRiskBidState.riskBids.blockedReasons.includes("missing-round-context"), "station/action risk bid context without a valid round reports safe blocked reason");
+    assertSmoke(noRoundRiskBidState.riskBids.selected === false && noRoundRiskBidState.riskBids.selectedRecord === null, "station/action context without a valid round does not project null-round or round-zero selections");
+    assertSmoke(!JSON.stringify(noRoundRiskBidState.riskBids).includes('"roundNumber":0'), "station/action context without a valid round does not fabricate roundNumber zero");
     const missingRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: riskBidSession, user: { isGM: false } });
     assertSmoke(missingRiskBidState.riskBids.hasRiskBids === false, "missing station/action context has no risk bids");
     assertSmoke(missingRiskBidState.riskBids.blockedReasons.includes("missing-station-action-context"), "missing station/action context reports safe blocked reason");

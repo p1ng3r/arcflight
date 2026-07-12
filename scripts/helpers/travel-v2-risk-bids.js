@@ -182,8 +182,9 @@ export function clearTravelV2RiskBidSelectionForRunnerSession(session, selection
 }
 
 function safeRiskBidNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
-  return Number.isInteger(number) ? number : null;
+  return Number.isInteger(number) && Number.isFinite(number) ? number : null;
 }
 
 function sanitizeRiskBidSelectionForRunnerState(record) {
@@ -218,12 +219,15 @@ function normalizeRiskBidRunnerContext(session, options = {}) {
   const source = options.travelV2RiskBidContext && typeof options.travelV2RiskBidContext === "object" ? options.travelV2RiskBidContext : null;
   const stationKey = safeString(source?.stationKey);
   const actionId = safeString(source?.actionId);
-  const roundIndex = safeRiskBidNumber(source?.roundIndex ?? session?.currentRoundIndex);
-  const roundNumber = safeRiskBidNumber(source?.roundNumber ?? (roundIndex == null ? null : roundIndex + 1));
+  const sourceHasRoundIndex = source ? Object.hasOwn(source, "roundIndex") : false;
+  const sourceHasRoundNumber = source ? Object.hasOwn(source, "roundNumber") : false;
+  const roundIndex = safeRiskBidNumber(sourceHasRoundIndex ? source.roundIndex : session?.currentRoundIndex);
+  const roundNumber = safeRiskBidNumber(sourceHasRoundNumber ? source.roundNumber : (roundIndex == null ? null : roundIndex + 1));
   if (!source || !stationKey || !actionId) return { ok: false, blockedReasons: ["missing-station-action-context"], context: { roundIndex, roundNumber, stationKey: "", stationName: "", actionId: "", actionName: "", riskBids: [] } };
+  const blockedReasons = roundIndex == null && roundNumber == null ? ["missing-round-context"] : [];
   return {
     ok: true,
-    blockedReasons: [],
+    blockedReasons,
     context: {
       roundIndex,
       roundNumber,
