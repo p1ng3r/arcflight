@@ -29,6 +29,9 @@ import { inspectTravelV2StationActionLockInFinalizationGuard, resolveTravelV2Sta
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
+import { prepareTravelV2FinalOutcomePackage } from "./travel-v2-final-outcome.js";
+import { prepareTravelV2FinalOutcomePreservationPlan } from "./travel-v2-final-outcome-preservation.js";
+import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-final-outcome-preservation-apply-plan.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
@@ -2295,6 +2298,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowIso(options),
     completedAt: typeof session.completedAt === "string" ? session.completedAt : "",
     summary: session.summary && typeof session.summary === "object" ? cloneData(session.summary) : null,
+    finalOutcome: isPlainObject(session.finalOutcome) ? cloneData(session.finalOutcome) : undefined,
     appliedEffects: normalizeTravelEventAppliedEffects(session.appliedEffects),
     ship: normalizeTravelEventRunnerShipSelection(session.ship ?? session.shipSelection ?? session.actor ?? null),
     notes: typeof session.notes === "string" ? session.notes : "",
@@ -2325,7 +2329,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined,
     travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined
   };
-  for (const key of ["travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
+  for (const key of ["finalOutcome", "travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -3552,6 +3556,9 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
   const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
   const travelV2NarrationHooks = prepareTravelV2NarrationHookState(activeSession, options);
+  const travelV2FinalOutcome = prepareTravelV2FinalOutcomePackage(activeSession, options);
+  const travelV2FinalOutcomePreservation = prepareTravelV2FinalOutcomePreservationPlan(activeSession, options);
+  const travelV2FinalOutcomePreservationApplyPlan = prepareTravelV2FinalOutcomePreservationApplyPlan(activeSession, options);
   const stabilizeResolutionReview = prepareTravelStabilizeResolutionReviewState(activeSession, options);
   const pendingStabilizeRows = stabilizeResolutionReview.records.filter((record) => record.isPending);
   const reactionPromptReview = prepareTravelReactionPromptReviewState(activeSession, options);
@@ -3565,6 +3572,17 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const stagedEffectReview = prepareTravelEventStagedEffectReviewState(activeSession, options);
   const completionChecklist = prepareTravelV2CompletionChecklistState(activeSession, { ...options, summaryOutput, finalOutcomePackageReview, finalOutcomeApply, stagedEffectReview });
   const playerSafeSession = preparePlayerSafeRunnerSession(activeSession, options);
+  if (playerSafeSession) playerSafeSession.finalOutcome = {
+    summary: travelV2FinalOutcome.outcomeSummary,
+    locationChange: travelV2FinalOutcome.locationChange,
+    consequences: travelV2FinalOutcome.consequences,
+    rewards: travelV2FinalOutcome.rewards,
+    clues: travelV2FinalOutcome.clues,
+    routeAdvantages: travelV2FinalOutcome.routeAdvantages,
+    followUps: travelV2FinalOutcome.followUps,
+    shipScars: travelV2FinalOutcome.scars,
+    pressureChanges: Array.isArray(activeSession?.finalOutcome?.pressureChanges) ? activeSession.finalOutcome.pressureChanges.map((entry) => ({ resource: String(entry?.resource ?? entry?.key ?? entry?.pressureType ?? "").toLowerCase(), value: Number(entry?.value ?? entry?.amount ?? entry?.delta ?? 0) || 0 })).filter((entry) => ["hull", "strain", "lifeveil", "morale", "supplies"].includes(entry.resource)) : []
+  };
   const currentUserIsGm = completionChecklistUserIsGm(options);
   const runnerState = {
     ok: normalized.ok,
@@ -3615,6 +3633,12 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     visibleStakes: travelV2VisibleStakes,
     travelV2NarrationHooks,
     narrationHooks: travelV2NarrationHooks,
+    travelV2FinalOutcome,
+    finalOutcome: travelV2FinalOutcome,
+    travelV2FinalOutcomePreservation,
+    finalOutcomePreservation: travelV2FinalOutcomePreservation,
+    travelV2FinalOutcomePreservationApplyPlan,
+    finalOutcomePreservationApplyPlan: travelV2FinalOutcomePreservationApplyPlan,
     roundResolutionReadiness,
     roundResolutionReady: roundResolutionReadiness?.roundResolutionReady === true,
     roundResolutionBlocked: roundResolutionReadiness?.roundResolutionBlocked === true,

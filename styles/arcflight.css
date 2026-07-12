@@ -2560,3 +2560,108 @@
   border-color: rgba(120, 180, 255, 0.75);
   box-shadow: 0 0 0 1px rgba(120, 180, 255, 0.28);
 }
+
+.arcflight-travel-runner-mvp__final-outcome {
+  border-color: rgba(89, 220, 191, 0.4);
+  background: rgba(89, 220, 191, 0.08);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-item {
+  margin: 0.25rem 0;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-note {
+  margin: 0.35rem 0 0;
+  color: rgba(247, 233, 198, 0.78);
+  font-size: 0.9em;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation {
+  border-color: rgba(120, 180, 255, 0.4);
+  background: rgba(120, 180, 255, 0.08);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-item {
+  margin: 0.25rem 0;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-note {
+  margin: 0.35rem 0 0;
+  color: rgba(247, 233, 198, 0.78);
+  font-size: 0.9em;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan {
+  border-color: rgba(142, 216, 180, 0.4);
+  background: rgba(142, 216, 180, 0.08);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-item {
+  margin: 0.25rem 0;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-apply-plan-note {
+  margin: 0.35rem 0 0;
+  color: rgba(247, 233, 198, 0.78);
+  font-size: 0.9em;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-controls {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(142, 216, 180, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(10, 32, 28, 0.28);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-result {
+  margin-top: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(247, 233, 198, 0.22);
+  border-radius: 0.45rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-preview {
+  border-color: rgba(120, 180, 255, 0.35);
+}

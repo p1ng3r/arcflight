@@ -15,6 +15,14 @@ import runTravelV2EventCompletionReadinessSmokeChecks from "../helpers/travel-v2
 import runTravelV2SessionEventCompletionSmokeChecks from "../helpers/travel-v2-session-event-completion.smoke.js";
 import runTravelV2CompletedSummaryExportSmokeChecks from "../helpers/travel-v2-completed-summary-export.smoke.js";
 import runTravelV2EventOutcomePackageSmokeChecks from "../helpers/travel-v2-event-outcome-package.smoke.js";
+import runTravelV2FinalOutcomeSmokeChecks from "../helpers/travel-v2-final-outcome.smoke.js";
+import runTravelV2FinalOutcomePreservationSmokeChecks from "../helpers/travel-v2-final-outcome-preservation.smoke.js";
+import runTravelV2FinalOutcomePreservationApplyPlanSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-apply-plan.smoke.js";
+import runTravelV2FinalOutcomePreservationApplyPlanStateSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-apply-plan-state.smoke.js";
+import runTravelV2FinalOutcomePreservationSessionApplicationSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-session-application.smoke.js";
+import runTravelV2FinalOutcomePreservationActorPreviewSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-actor-preview.smoke.js";
+import runTravelV2FinalOutcomePreservationStateSmokeChecks from "../helpers/travel-v2-final-outcome-preservation-state.smoke.js";
+import runTravelV2FinalOutcomeStateSmokeChecks from "../helpers/travel-v2-final-outcome-state.smoke.js";
 import runTravelV2SessionEventOutcomeApplicationSmokeChecks from "../helpers/travel-v2-session-event-outcome-application.smoke.js";
 import runTravelV2ActorApplicationBridgeSmokeChecks from "../helpers/travel-v2-actor-application-bridge.smoke.js";
 import runTravelV2FollowUpsSmokeChecks from "../helpers/travel-v2-followups.smoke.js";
@@ -96,6 +104,14 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 session event completion", runTravelV2SessionEventCompletionSmokeChecks],
   ["Travel v2 completed summary export", runTravelV2CompletedSummaryExportSmokeChecks],
   ["Travel v2 event outcome package", runTravelV2EventOutcomePackageSmokeChecks],
+  ["Travel v2 final outcome", runTravelV2FinalOutcomeSmokeChecks],
+  ["Travel v2 final outcome preservation", runTravelV2FinalOutcomePreservationSmokeChecks],
+  ["Travel v2 final outcome preservation apply plan", runTravelV2FinalOutcomePreservationApplyPlanSmokeChecks],
+  ["Travel v2 final outcome preservation apply plan state", runTravelV2FinalOutcomePreservationApplyPlanStateSmokeChecks],
+  ["Travel v2 final outcome preservation session application", runTravelV2FinalOutcomePreservationSessionApplicationSmokeChecks],
+  ["Travel v2 final outcome preservation actor preview", runTravelV2FinalOutcomePreservationActorPreviewSmokeChecks],
+  ["Travel v2 final outcome preservation state", runTravelV2FinalOutcomePreservationStateSmokeChecks],
+  ["Travel v2 final outcome state", runTravelV2FinalOutcomeStateSmokeChecks],
   ["Travel v2 session event outcome application", runTravelV2SessionEventOutcomeApplicationSmokeChecks],
   ["Travel v2 actor application bridge", runTravelV2ActorApplicationBridgeSmokeChecks],
   ["Travel v2 follow-ups", runTravelV2FollowUpsSmokeChecks],
