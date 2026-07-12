@@ -96,6 +96,27 @@ export function runTravelV2RiskBidQueueInsertionIntentSmokeChecks() {
     assertOnlyKeys(prepared.insertionRequest, REQUEST_KEYS, "insertion request exposes only safe keys");
     for (const payload of prepared.insertionRequest.reviewPayloads) assertOnlyKeys(payload, PAYLOAD_KEYS, "review payload exposes only existing safe payload keys");
 
+    const validPayload = failureEight.reviewPayloads[0];
+    const invalidPayloads = [
+      { ...validPayload, source: "otherSource" },
+      { ...validPayload, payloadType: "freeformReview" },
+      { ...validPayload, candidateType: "freeformCandidate" },
+      { ...validPayload, queueReady: false }
+    ];
+    const mixedPayloads = prepareTravelV2RiskBidQueueInsertionIntent({ ...failureEight, reviewPayloads: [invalidPayloads[0], validPayload, invalidPayloads[1], invalidPayloads[2], invalidPayloads[3]] }, { canReview: true, intentMode: "prepare" });
+    assertSmoke(mixedPayloads.ok && mixedPayloads.insertionRequest.reviewPayloadCount === 1, "mixed valid and invalid payloads drop invalid entries and retain the valid payload");
+    assertEqual(mixedPayloads.insertionRequest.reviewPayloads[0].source, "riskBidResult", "retained mixed payload remains risk-bid sourced");
+    assertEqual(mixedPayloads.insertionRequest.reviewPayloads[0].queueReady, true, "retained mixed payload remains queue-ready");
+
+    for (const [label, payload] of [["invalid source", invalidPayloads[0]], ["invalid payload type", invalidPayloads[1]], ["invalid candidate type", invalidPayloads[2]], ["not queue-ready", invalidPayloads[3]]]) {
+      const dropped = prepareTravelV2RiskBidQueueInsertionIntent({ ...failureEight, reviewPayloads: [payload] }, { canReview: true, intentMode: "prepare" });
+      assertSmoke(!dropped.ok && dropped.insertionRequest === null && dropped.blockedReasons.includes("no-valid-risk-bid-review-payloads"), `${label} payload is dropped and blocks when no valid payloads remain`);
+    }
+
+    const allInvalid = prepareTravelV2RiskBidQueueInsertionIntent({ ...failureEight, reviewPayloads: invalidPayloads }, { canReview: true, intentMode: "prepare" });
+    assertSmoke(!allInvalid.ok && !allInvalid.available && allInvalid.insertionRequest === null && allInvalid.blockedReasons.includes("no-valid-risk-bid-review-payloads"), "all invalid payloads block safely with no insertion request");
+    assertSmoke(prepared.insertionRequest.reviewPayloads.length === failureEight.reviewPayloads.length && prepared.insertionRequest.reviewPayloads.every((payload) => payload.source === "riskBidResult" && payload.queueReady === true), "valid Slice 04 payloads still pass");
+
     const unsafe = prepareTravelV2RiskBidQueueInsertionIntent({ ...failureEight, tier: "8 secret", dcModifier: "applyPayload", resultBand: "failure secret", stationName: "Navigator gmOnly", reviewPayloads: [{ ...failureEight.reviewPayloads[0], label: "secret label", text: "actorUuid hiddenHazards", tier: "bad", dcModifier: "applyPayload", actorUuid: "Actor.bad" }] }, { canReview: true, intentMode: "prepare" });
     assertNoForbiddenOutput(unsafe, "unsafe/freeform string output");
     assertEqual(unsafe.tier, null, "unsafe tier becomes null");
@@ -123,7 +144,7 @@ export function runTravelV2RiskBidQueueInsertionIntentSmokeChecks() {
     globalThis.session = prior.session;
   }
 
-  return { checked: ["risk-bid-queue-insertion-intent-mode-normalization", "risk-bid-queue-insertion-intent-safe-blocking", "risk-bid-queue-insertion-intent-prepare-request", "risk-bid-queue-insertion-intent-confirm-request", "risk-bid-queue-insertion-intent-safe-shape", "risk-bid-queue-insertion-intent-sanitization", "risk-bid-queue-insertion-intent-frozen-no-mutation"] };
+  return { checked: ["risk-bid-queue-insertion-intent-mode-normalization", "risk-bid-queue-insertion-intent-safe-blocking", "risk-bid-queue-insertion-intent-prepare-request", "risk-bid-queue-insertion-intent-confirm-request", "risk-bid-queue-insertion-intent-safe-shape", "risk-bid-queue-insertion-intent-payload-validation", "risk-bid-queue-insertion-intent-sanitization", "risk-bid-queue-insertion-intent-frozen-no-mutation"] };
 }
 
 export default runTravelV2RiskBidQueueInsertionIntentSmokeChecks;

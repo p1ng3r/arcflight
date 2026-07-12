@@ -4,6 +4,38 @@ const INTENT_MODES = Object.freeze(["none", "prepare", "confirm"]);
 const RISK_BID_QUEUE_INSERTION_SOURCE = "riskBidResult";
 const RISK_BID_QUEUE_INSERTION_REQUEST_TYPE = "riskBidReviewQueueInsertion";
 
+const REVIEW_PAYLOAD_TYPES = Object.freeze([
+  "benefitReview",
+  "progressReview",
+  "momentumReview",
+  "rewardReview",
+  "consequenceReview",
+  "pressureReview",
+  "hazardProgressReview",
+  "stationComplicationReview",
+  "nextRoundDifficultyReview",
+  "hazardEscalationReview",
+  "shipScarReview",
+  "severePressureReview",
+  "additionalHazardReview"
+]);
+
+const REVIEW_CANDIDATE_TYPES = Object.freeze([
+  "benefit",
+  "progress",
+  "momentumCandidate",
+  "rewardImprovement",
+  "consequenceCandidate",
+  "pressureCandidate",
+  "hazardProgressCandidate",
+  "stationComplication",
+  "nextRoundDifficulty",
+  "hazardEscalation",
+  "shipScarCandidate",
+  "severePressureCandidate",
+  "additionalHazardCandidate"
+]);
+
 const TOP_LEVEL_KEYS = Object.freeze([
   "version",
   "ok",
@@ -159,11 +191,18 @@ function contextFromPendingReview(pendingReview) {
 
 function sanitizeReviewPayload(payload) {
   if (!payload || typeof payload !== "object") return null;
+  const source = safeString(payload.source);
+  const payloadType = safeString(payload.payloadType);
+  const candidateType = safeString(payload.candidateType);
+  if (source !== RISK_BID_QUEUE_INSERTION_SOURCE) return null;
+  if (payload.queueReady !== true) return null;
+  if (!REVIEW_PAYLOAD_TYPES.includes(payloadType)) return null;
+  if (!REVIEW_CANDIDATE_TYPES.includes(candidateType)) return null;
   return {
     adapterVersion: safeIntegerOrNull(payload.adapterVersion),
-    source: safeString(payload.source),
-    payloadType: safeString(payload.payloadType),
-    candidateType: safeString(payload.candidateType),
+    source,
+    payloadType,
+    candidateType,
     severity: safeString(payload.severity, "standard") || "standard",
     tier: safeRiskBidTierOrNull(payload.tier),
     resultBand: safeString(payload.resultBand) || null,
@@ -177,7 +216,7 @@ function sanitizeReviewPayload(payload) {
     label: safeString(payload.label, "Risk bid review payload"),
     text: safeString(payload.text, "Reviewed risk bid payload requires GM review."),
     requiresReview: payload.requiresReview === false ? false : true,
-    queueReady: payload.queueReady === true
+    queueReady: true
   };
 }
 
@@ -212,7 +251,7 @@ export function prepareTravelV2RiskBidQueueInsertionIntent(input = {}, options =
 
   const context = contextFromPendingReview(pendingReview);
   const reviewPayloads = pendingReview.reviewPayloads.map((payload) => sanitizeReviewPayload(payload)).filter(Boolean);
-  if (reviewPayloads.length === 0) return baseOutput(pendingReview, intentMode, ["missing-review-payloads"]);
+  if (reviewPayloads.length === 0) return baseOutput(pendingReview, intentMode, ["no-valid-risk-bid-review-payloads"]);
 
   const insertionRequest = {
     requestVersion: TRAVEL_V2_RISK_BID_QUEUE_INSERTION_INTENT_VERSION,
