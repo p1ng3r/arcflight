@@ -160,6 +160,10 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(riskBidState.travelV2RiskBids, "runner app state exposes travelV2RiskBids");
     assertSmoke(riskBidState.riskBids, "runner app state exposes short riskBids alias");
     assertEqual(JSON.stringify(riskBidState.travelV2RiskBids), JSON.stringify(riskBidState.riskBids), "risk bid aliases expose the same player-safe content");
+    assertSmoke(riskBidState.travelV2RiskBidResultPreview, "runner app state exposes travelV2RiskBidResultPreview");
+    assertSmoke(riskBidState.riskBidResultPreview, "runner app state exposes short riskBidResultPreview alias");
+    assertEqual(JSON.stringify(riskBidState.travelV2RiskBidResultPreview), JSON.stringify(riskBidState.riskBidResultPreview), "risk bid result preview aliases expose equivalent player-safe content");
+    assertSmoke(!riskBidState.riskBidResultPreview.ok && riskBidState.riskBidResultPreview.blockedReasons.includes("missing-risk-bid-result-band"), "missing result band blocks safely");
     assertEqual(riskBidState.riskBids.options.map((option) => option.tier).join(","), "2,5,8", "runner risk bid state exposes only fixed valid tiers and dedupes duplicates");
     assertSmoke(riskBidState.riskBids.selected === true, "matching session-local risk bid selection is projected");
     assertEqual(riskBidState.riskBids.selectedTier, 5, "matching selection tier is normalized");
@@ -181,6 +185,42 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       user: { isGM: false }
     });
     assertSmoke(unselectedRiskBidState.riskBids.selected === false, "clear button app condition is false without a selection");
+    assertSmoke(unselectedRiskBidState.riskBidResultPreview.blockedReasons.includes("missing-selected-risk-bid"), "missing selected risk bid blocks result preview safely");
+    const failureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
+      uiState: { travelV2RiskBidResultBand: "failure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: false }
+    });
+    assertSmoke(failureEightRiskBidState.riskBidResultPreview.available && failureEightRiskBidState.riskBidResultPreview.ok && failureEightRiskBidState.riskBidResultPreview.hasRiskBidResult, "valid selected risk bid and result band produces an available result preview");
+    assertEqual(failureEightRiskBidState.riskBidResultPreview.tier, 8, "valid result preview preserves fixed tier");
+    assertEqual(failureEightRiskBidState.riskBidResultPreview.resultBand, "failure", "valid result preview preserves result band");
+    assertEqual(failureEightRiskBidState.riskBidResultPreview.dangerLevel, "high", "failure +8 result preview has high danger");
+    assertSmoke(Boolean(failureEightRiskBidState.riskBidResultPreview.summary), "valid result preview includes summary");
+    assertSmoke(Boolean(failureEightRiskBidState.riskBidResultPreview.playerText), "valid result preview includes player text");
+    assertSmoke(failureEightRiskBidState.riskBidResultPreview.candidates.some((candidate) => ["consequenceCandidate", "pressureCandidate", "hazardProgressCandidate", "nextRoundDifficulty"].includes(candidate.type) && candidate.severity === "strong"), "failure +8 preview includes a serious negative candidate");
+    const criticalFailureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
+      uiState: { travelV2RiskBidResultBand: "criticalFailure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: false }
+    });
+    assertEqual(criticalFailureEightRiskBidState.riskBidResultPreview.dangerLevel, "severe", "critical failure +8 result preview has severe danger");
+    assertSmoke(criticalFailureEightRiskBidState.riskBidResultPreview.candidates.some((candidate) => candidate.severity === "severe" && candidate.requiresReview === true), "critical failure +8 preview includes severe reviewed candidates");
+    const invalidBandRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: failureEightRiskBidState.session,
+      uiState: { travelV2RiskBidResultBand: "freeform", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: false }
+    });
+    assertSmoke(!invalidBandRiskBidState.riskBidResultPreview.ok && invalidBandRiskBidState.riskBidResultPreview.blockedReasons.includes("invalid-risk-bid-result-band"), "invalid/freeform result bands block safely");
+    const invalidTierRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 3, dcModifier: 3 }] } },
+      uiState: { travelV2RiskBidResultBand: "failure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", riskBids: [{ tier: 3, label: "Invalid" }] } },
+      user: { isGM: false }
+    });
+    assertSmoke(!invalidTierRiskBidState.riskBidResultPreview.ok && invalidTierRiskBidState.riskBidResultPreview.candidates.length === 0, "invalid/freeform tiers do not produce result candidates");
+    const allowedCandidateKeys = ["type", "severity", "tier", "resultBand", "label", "text", "requiresReview"];
+    for (const candidate of criticalFailureEightRiskBidState.riskBidResultPreview.candidates) assertEqual(Object.keys(candidate).sort().join(","), allowedCandidateKeys.slice().sort().join(","), "candidate objects expose only safe keys");
+    const riskBidResultJson = JSON.stringify(criticalFailureEightRiskBidState.riskBidResultPreview) + JSON.stringify(failureEightRiskBidState.riskBidResultPreview);
+    for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) assertSmoke(!riskBidResultJson.includes(forbidden), `risk bid result preview excludes ${forbidden}`);
     globalThis.foundry ??= { applications: { api: { ApplicationV2: class {}, HandlebarsApplicationMixin: (Base) => Base } }, utils: { deepClone: (value) => JSON.parse(JSON.stringify(value)), escapeHTML: (value) => String(value) } };
     const { prepareTravelV2RiskBidSelectRunnerUpdate, prepareTravelV2RiskBidClearRunnerUpdate } = await import("./travel-event-runner.js");
     const selectedOnce = prepareTravelV2RiskBidSelectRunnerUpdate({ event: createRunnerEventFixture(), currentRoundIndex: 0 }, riskBidState.riskBids, 2, { selectedAt: "2026-07-12T00:00:04.000Z" });
@@ -399,7 +439,8 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "gm-flow-status-strip",
       "gm-disabled-action-reasons",
       "gm-visible-finalize-round-action",
-      "event-approach-tally-application-controls"
+      "event-approach-tally-application-controls",
+      "risk-bid-result-preview"
     ]
   };
 }
