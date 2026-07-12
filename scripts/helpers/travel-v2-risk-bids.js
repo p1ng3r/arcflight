@@ -100,13 +100,40 @@ function validateSessionSelection(selection, requireTier = false) {
   return { blockedReasons, stationKey, actionId, round, tier };
 }
 
+function sanitizeRiskBidSelectionRecord(record) {
+  const tier = normalizeTravelV2RiskBidTier(record?.tier);
+  const stationKey = safeString(record?.stationKey);
+  const actionId = safeString(record?.actionId);
+  const round = normalizeRoundSelection(record);
+
+  if (!tier || !stationKey || !actionId || !round.hasRound) return null;
+
+  return {
+    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
+    selected: record?.selected !== false,
+    roundIndex: round.roundIndex,
+    roundNumber: round.roundNumber,
+    stationKey,
+    actionId,
+    tier,
+    dcModifier: tier,
+    selectedAt: safeString(record?.selectedAt)
+  };
+}
+
 function ensureSelectionContainer(session) {
   const cloned = clonePlain(session);
   const existing = cloned.travelV2RiskBidSelections && typeof cloned.travelV2RiskBidSelections === "object"
     ? cloned.travelV2RiskBidSelections
     : {};
-  const records = Array.isArray(existing.records) ? existing.records.filter((record) => record && typeof record === "object") : [];
-  cloned.travelV2RiskBidSelections = { ...existing, version: TRAVEL_V2_RISK_BID_MODEL_VERSION, records };
+  const rawRecords = Array.isArray(existing.records) ? existing.records : [];
+  const sanitizedRecords = rawRecords
+    .map((record) => sanitizeRiskBidSelectionRecord(record))
+    .filter(Boolean);
+  cloned.travelV2RiskBidSelections = {
+    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
+    records: sanitizedRecords
+  };
   return cloned;
 }
 
