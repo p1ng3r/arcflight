@@ -2,6 +2,7 @@ import { ARCFLIGHT_TRAVEL_RESOURCES } from "../config/constants.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import {
   prepareTravelEventRunnerAppStateWithTravelV2Preview,
   TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION
@@ -186,6 +187,18 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     });
     assertSmoke(unselectedRiskBidState.riskBids.selected === false, "clear button app condition is false without a selection");
     assertSmoke(unselectedRiskBidState.riskBidResultPreview.blockedReasons.includes("missing-selected-risk-bid"), "missing selected risk bid blocks result preview safely");
+    const missingResultBandGmRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
+      uiState: { travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: true }
+    });
+    assertSmoke(!missingResultBandGmRiskBidState.riskBidPendingReview.ok && missingResultBandGmRiskBidState.riskBidPendingReview.blockedReasons.includes("missing-risk-bid-result-band") && missingResultBandGmRiskBidState.riskBidPendingReview.reviewPayloads.length === 0, "missing result band blocks pending review safely");
+    const missingSelectedGmRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [] } },
+      uiState: { travelV2RiskBidResultBand: "failure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: true }
+    });
+    assertSmoke(!missingSelectedGmRiskBidState.riskBidPendingReview.ok && missingSelectedGmRiskBidState.riskBidPendingReview.blockedReasons.includes("missing-selected-risk-bid") && missingSelectedGmRiskBidState.riskBidPendingReview.reviewPayloads.length === 0, "missing selected risk bid blocks pending review safely");
     const failureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
       uiState: { travelV2RiskBidResultBand: "failure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
@@ -198,6 +211,20 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(Boolean(failureEightRiskBidState.riskBidResultPreview.summary), "valid result preview includes summary");
     assertSmoke(Boolean(failureEightRiskBidState.riskBidResultPreview.playerText), "valid result preview includes player text");
     assertSmoke(failureEightRiskBidState.riskBidResultPreview.candidates.some((candidate) => ["consequenceCandidate", "pressureCandidate", "hazardProgressCandidate", "nextRoundDifficulty"].includes(candidate.type) && candidate.severity === "strong"), "failure +8 preview includes a serious negative candidate");
+    assertSmoke(Array.isArray(failureEightRiskBidState.riskBidPendingReview.reviewPayloads) && failureEightRiskBidState.riskBidPendingReview.reviewPayloads.length === 0, "non-GM risk bid pending review does not expose detailed review payloads");
+    const failureEightGmRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
+      uiState: { travelV2RiskBidResultBand: "failure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: true }
+    });
+    assertSmoke(failureEightGmRiskBidState.travelV2RiskBidPendingReview, "GM state exposes travelV2RiskBidPendingReview");
+    assertSmoke(failureEightGmRiskBidState.riskBidPendingReview, "GM state exposes riskBidPendingReview");
+    assertEqual(JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidPendingReview), JSON.stringify(failureEightGmRiskBidState.riskBidPendingReview), "risk bid pending review aliases expose equivalent GM-facing content");
+    assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.available && failureEightGmRiskBidState.riskBidPendingReview.ok && failureEightGmRiskBidState.riskBidPendingReview.hasReviewPayloads, "valid selected risk bid and result band produces an available pending review projection");
+    assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.queueReady === true && failureEightGmRiskBidState.riskBidPendingReview.inserted === false, "pending review projection is queue-ready but not inserted");
+    assertEqual(failureEightGmRiskBidState.riskBidPendingReview.dangerLevel, "high", "failure +8 pending review has high danger");
+    assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.reviewPayloads.length > 0, "failure +8 pending review exposes review payloads for GM");
+    assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.reviewPayloads.every((payload) => payload.source === "riskBidResult" && payload.queueReady === true), "every risk bid pending review payload is risk bid sourced and queue-ready");
     const criticalFailureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
       uiState: { travelV2RiskBidResultBand: "criticalFailure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
@@ -205,22 +232,39 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     });
     assertEqual(criticalFailureEightRiskBidState.riskBidResultPreview.dangerLevel, "severe", "critical failure +8 result preview has severe danger");
     assertSmoke(criticalFailureEightRiskBidState.riskBidResultPreview.candidates.some((candidate) => candidate.severity === "severe" && candidate.requiresReview === true), "critical failure +8 preview includes severe reviewed candidates");
+    const criticalFailureEightGmRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
+      uiState: { travelV2RiskBidResultBand: "criticalFailure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
+      user: { isGM: true }
+    });
+    assertEqual(criticalFailureEightGmRiskBidState.riskBidPendingReview.dangerLevel, "severe", "critical failure +8 pending review has severe danger");
+    const criticalPayloadTypes = criticalFailureEightGmRiskBidState.riskBidPendingReview.reviewPayloads.map((payload) => payload.payloadType);
+    assertSmoke(criticalPayloadTypes.includes("shipScarReview") || criticalPayloadTypes.includes("severePressureReview"), "critical failure +8 pending review includes ship scar or severe pressure review");
+    assertSmoke(criticalPayloadTypes.some((type) => ["additionalHazardReview", "hazardEscalationReview", "consequenceReview"].includes(type)), "critical failure +8 pending review includes an additional serious payload");
+    const allowedReviewPayloadKeys = ["adapterVersion", "source", "payloadType", "candidateType", "severity", "tier", "resultBand", "dangerLevel", "stationKey", "stationName", "actionId", "actionName", "roundIndex", "roundNumber", "label", "text", "requiresReview", "queueReady"];
+    for (const payload of criticalFailureEightGmRiskBidState.riskBidPendingReview.reviewPayloads) assertEqual(Object.keys(payload).sort().join(","), allowedReviewPayloadKeys.slice().sort().join(","), "risk bid pending review payload objects expose only safe keys");
     const invalidBandRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: failureEightRiskBidState.session,
       uiState: { travelV2RiskBidResultBand: "freeform", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", riskBids: [{ tier: 8, label: "Blind" }] } },
-      user: { isGM: false }
+      user: { isGM: true }
     });
     assertSmoke(!invalidBandRiskBidState.riskBidResultPreview.ok && invalidBandRiskBidState.riskBidResultPreview.blockedReasons.includes("invalid-risk-bid-result-band"), "invalid/freeform result bands block safely");
+    assertSmoke(!invalidBandRiskBidState.riskBidPendingReview.ok && invalidBandRiskBidState.riskBidPendingReview.reviewPayloads.length === 0, "invalid/freeform result bands block pending review safely");
     const invalidTierRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 3, dcModifier: 3 }] } },
       uiState: { travelV2RiskBidResultBand: "failure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", riskBids: [{ tier: 3, label: "Invalid" }] } },
-      user: { isGM: false }
+      user: { isGM: true }
     });
     assertSmoke(!invalidTierRiskBidState.riskBidResultPreview.ok && invalidTierRiskBidState.riskBidResultPreview.candidates.length === 0, "invalid/freeform tiers do not produce result candidates");
+    assertSmoke(!invalidTierRiskBidState.riskBidPendingReview.ok && invalidTierRiskBidState.riskBidPendingReview.reviewPayloads.length === 0, "invalid/freeform tiers do not produce review payloads");
     const allowedCandidateKeys = ["type", "severity", "tier", "resultBand", "label", "text", "requiresReview"];
     for (const candidate of criticalFailureEightRiskBidState.riskBidResultPreview.candidates) assertEqual(Object.keys(candidate).sort().join(","), allowedCandidateKeys.slice().sort().join(","), "candidate objects expose only safe keys");
     const riskBidResultJson = JSON.stringify(criticalFailureEightRiskBidState.riskBidResultPreview) + JSON.stringify(failureEightRiskBidState.riskBidResultPreview);
-    for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) assertSmoke(!riskBidResultJson.includes(forbidden), `risk bid result preview excludes ${forbidden}`);
+    const riskBidPendingReviewJson = JSON.stringify(criticalFailureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightRiskBidState.riskBidPendingReview);
+    for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
+      assertSmoke(!riskBidResultJson.includes(forbidden), `risk bid result preview excludes ${forbidden}`);
+      assertSmoke(!riskBidPendingReviewJson.includes(forbidden), `risk bid pending review excludes ${forbidden}`);
+    }
     globalThis.foundry ??= { applications: { api: { ApplicationV2: class {}, HandlebarsApplicationMixin: (Base) => Base } }, utils: { deepClone: (value) => JSON.parse(JSON.stringify(value)), escapeHTML: (value) => String(value) } };
     const { prepareTravelV2RiskBidSelectRunnerUpdate, prepareTravelV2RiskBidClearRunnerUpdate } = await import("./travel-event-runner.js");
     const selectedOnce = prepareTravelV2RiskBidSelectRunnerUpdate({ event: createRunnerEventFixture(), currentRoundIndex: 0 }, riskBidState.riskBids, 2, { selectedAt: "2026-07-12T00:00:04.000Z" });
@@ -237,6 +281,9 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actor", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
       assertSmoke(!riskBidJson.includes(forbidden), `runner risk bid state excludes ${forbidden}`);
     }
+    const changedFiles = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" }).split("\n").filter(Boolean);
+    assertSmoke(!changedFiles.some((file) => file.startsWith("templates/") || file.endsWith(".hbs") || file.endsWith(".css")), "risk bid pending review slice does not change templates or CSS");
+    assertSmoke(!changedFiles.includes("scripts/apps/travel-event-runner.js"), "risk bid pending review slice does not change app click handlers");
     const noRoundRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: riskBidSession,
       uiState: {
@@ -440,7 +487,9 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "gm-disabled-action-reasons",
       "gm-visible-finalize-round-action",
       "event-approach-tally-application-controls",
-      "risk-bid-result-preview"
+      "risk-bid-result-preview",
+      "risk-bid-pending-review",
+      "risk-bid-pending-review-change-scope"
     ]
   };
 }
