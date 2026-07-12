@@ -164,7 +164,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-005 — Risk Bid Result Pipeline
 
-**Status:** partial — Slice 01 started the pure foundation; Slice 02 exposes it in runner state as a read-only preview; Slice 03 adds a pure reviewed-candidate bridge; Slice 04 adds a pure queue-review adapter; Slice 05 exposes GM-facing pending review state; Slice 06 adds pure GM insertion-intent preparation; Slice 07 adds pure session-local pending review queue record insertion; Slice 08 wires GM-only runner persistence for the session-local pending risk bid review queue; Slice 09 adds GM-only UI/template presentation for that pending review queue and its persist action.
+**Status:** partial — Slice 01 started the pure foundation; Slice 02 exposes it in runner state as a read-only preview; Slice 03 adds a pure reviewed-candidate bridge; Slice 04 adds a pure queue-review adapter; Slice 05 exposes GM-facing pending review state; Slice 06 adds pure GM insertion-intent preparation; Slice 07 adds pure session-local pending review queue record insertion; Slice 08 wires GM-only runner persistence for the session-local pending risk bid review queue; Slice 09 adds GM-only UI/template presentation for that pending review queue and its persist action; Slice 10 adds GM-only queued risk bid review decision actions (mark reviewed, dismiss, restore pending, and select/clear for later apply review).
 **Scope:** Alpha blocker
 
 **Goal:** Resolve risk bid outcomes into reviewed Travel v2 effects.
@@ -180,7 +180,8 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Slice 07 adds a pure session-local pending risk bid review queue insertion transformer. It returns a cloned session plus a minimal queue patch only, and does not persist data, apply effects, apply pressure/hazards/consequences, award Momentum, create scars, or mutate actors/world/session state.
 - Slice 08 wires GM-only runner persistence for the session-local pending risk bid review queue through the existing runner session save path. It only saves pending review records and still does not apply pressure, hazards, consequences, Momentum, rewards, scars, actor changes, world changes, chat messages, journal entries, or sockets.
 - Slice 09 adds GM-only Travel Event Runner template presentation for the pending risk bid review queue, safe pending payload/record summaries, the existing persist action, and the persist result message. It does not add new application behavior or mark TV2-005 complete.
-- Risk bid review record decision actions, roll/result integration polish, pressure plumbing, hazard plumbing, consequence plumbing, and explicit apply/review flow remain open.
+- Slice 10 adds GM-only session-local queued risk bid review decision actions: mark reviewed, dismiss, restore pending, select for later apply review, clear one selection, and clear all selections. It does not apply pressure, hazards, consequences, Momentum, rewards, scars, actor changes, world changes, chat messages, journal entries, sockets, or compendium writes.
+- Actual pressure plumbing, actual hazard plumbing, actual consequence plumbing, actual Momentum/reward/scar plumbing, explicit apply/review flow, and final roll/result integration polish remain open.
 - Critical success: stronger benefit, Momentum, major progress, or improved reward.
 - Success: selected benefit or progress.
 - Failure: consequence candidate, pressure, hazard progress, station complication, or next-round difficulty.

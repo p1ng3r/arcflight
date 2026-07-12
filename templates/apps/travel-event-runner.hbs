@@ -770,11 +770,19 @@
               <span class="arcflight-travel-runner-mvp__v2-preview-chip">Dismissed: {{state.riskBidReviewQueue.dismissedCount}}</span>
               <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidReviewQueue.appliedCount}}</span>
               <span class="arcflight-travel-runner-mvp__v2-preview-chip">Records: {{state.riskBidReviewQueue.insertedCount}} / {{state.travelV2RiskBidReviewQueue.insertedCount}}</span>
+              <span class="arcflight-travel-runner-mvp__v2-preview-chip">Selected: {{state.riskBidReviewQueueDecisionState.selectedCount}}</span>
             </div>
             <div class="arcflight-travel-runner-mvp__actions">
               <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-persist {{#unless state.riskBidPendingReview.ok}}disabled {{/unless}}{{#unless state.riskBidPendingReview.hasReviewPayloads}}disabled {{/unless}}{{#unless state.riskBidPendingReview.queueReady}}disabled{{/unless}}>Persist Risk Bid Reviews</button>
               <span class="arcflight-sheet__hint">Creates pending GM review records only. Does not apply pressure, hazards, consequences, Momentum, rewards, or scars.</span>
+              <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-clear-all-selections {{#unless state.riskBidReviewQueueDecisionState.hasSelectedRecords}}disabled{{/unless}}>Clear All Selections</button>
             </div>
+            {{#if state.travelV2RiskBidReviewQueueDecisionResult}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk bid review queue decision result">
+                <p>{{#if state.travelV2RiskBidReviewQueueDecisionResult.ok}}Risk bid review queue decision updated.{{else}}Risk bid review queue decision blocked.{{/if}}</p>
+                <p class="arcflight-sheet__hint">Updated: {{state.travelV2RiskBidReviewQueueDecisionResult.updated}} · Selected: {{state.travelV2RiskBidReviewQueueDecisionResult.selected}} · Cleared: {{state.travelV2RiskBidReviewQueueDecisionResult.cleared}} · Applied: {{state.travelV2RiskBidReviewQueueDecisionResult.applied}}</p>
+              </section>
+            {{/if}}
             {{#if state.travelV2RiskBidReviewQueuePersistResult}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk bid review queue persist result">
                 {{#if state.travelV2RiskBidReviewQueuePersistResult.summaryText}}<p>{{state.travelV2RiskBidReviewQueuePersistResult.summaryText}}</p>{{/if}}
@@ -817,6 +825,12 @@
                       <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{severity}}</span>
                       <span class="arcflight-travel-runner-mvp__v2-preview-chip">Tier {{tier}}</span>
                       <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{dangerLevel}}</span>
+                      {{#if selected}}<span class="arcflight-travel-safety-chip">Selected for later review</span>{{/if}}
+                      <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-status data-queue-key="{{queueKey}}" data-status="reviewed">Mark Reviewed</button>
+                      <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-status data-queue-key="{{queueKey}}" data-status="dismissed">Dismiss</button>
+                      <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-status data-queue-key="{{queueKey}}" data-status="pending">Restore Pending</button>
+                      <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-select data-queue-key="{{queueKey}}">Select for Apply Review</button>
+                      <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-clear-selection data-queue-key="{{queueKey}}" {{#unless selected}}disabled{{/unless}}>Clear Selection</button>
                     </div>
                   </article>
                 {{/each}}
