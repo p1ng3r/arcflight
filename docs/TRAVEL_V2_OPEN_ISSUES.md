@@ -164,13 +164,14 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-005 — Risk Bid Result Pipeline
 
-**Status:** missing  
+**Status:** partial — Slice 01 started the pure foundation.
 **Scope:** Alpha blocker
 
 **Goal:** Resolve risk bid outcomes into reviewed Travel v2 effects.
 
 **Remaining work:**
 
+- Slice 01 adds the pure result model and reviewed candidate preview contract. Queue integration, pressure/hazard/consequence plumbing, and UI/roll integration remain open.
 - Critical success: stronger benefit, Momentum, major progress, or improved reward.
 - Success: selected benefit or progress.
 - Failure: consequence candidate, pressure, hazard progress, station complication, or next-round difficulty.
