@@ -729,6 +729,33 @@
         {{#if state.travelV2PreviewPanel.pressureApplication.hasFeedback}}
           <p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.pressureApplication.feedbackText}}</p>
         {{/if}}
+
+        {{#if state.riskBids.hasRiskBids}}
+          <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__risk-bids arcflight-player-safe" aria-label="Risk Bid">
+            <header>
+              <div>
+                <h2>Risk Bid</h2>
+                {{#if state.riskBids.stationName}}<p class="arcflight-sheet__hint">{{state.riskBids.stationName}}{{#if state.riskBids.actionName}} / {{state.riskBids.actionName}}{{/if}}</p>{{else}}{{#if state.riskBids.actionName}}<p class="arcflight-sheet__hint">{{state.riskBids.actionName}}</p>{{/if}}{{/if}}
+              </div>
+              {{#if state.riskBids.selected}}<span class="arcflight-travel-safety-chip">Selected +{{state.riskBids.selectedTier}}</span>{{/if}}
+            </header>
+            {{#if state.riskBids.blockedReasons.length}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">Current context note: {{#each state.riskBids.blockedReasons}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</p>{{/if}}
+            <div class="arcflight-travel-runner-mvp__risk-bid-options">
+              {{#each state.riskBids.options}}
+                <article class="arcflight-travel-runner-mvp__risk-bid-option {{#if (eq ../state.riskBids.selectedTier tier)}}arcflight-travel-runner-mvp__risk-bid-option--selected{{/if}}">
+                  <div>
+                    <strong>{{label}}</strong>
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip">+{{dcModifier}}</span>
+                    {{#if ../state.riskBids.selected}}{{#if (eq ../state.riskBids.selectedTier tier)}}<span class="arcflight-travel-safety-chip">Selected</span>{{/if}}{{/if}}
+                    {{#if text}}<p>{{text}}</p>{{/if}}
+                  </div>
+                  <button type="button" data-arcflight-travel-v2-risk-bid-select data-risk-bid-tier="{{tier}}">Select +{{dcModifier}}</button>
+                </article>
+              {{/each}}
+            </div>
+            {{#if state.riskBids.selected}}<button type="button" data-arcflight-travel-v2-risk-bid-clear>Clear Risk Bid</button>{{/if}}
+          </section>
+        {{/if}}
         <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe" aria-label="Station Action Lock-In">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>

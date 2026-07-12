@@ -47,7 +47,7 @@ function createRunnerEventFixture() {
   };
 }
 
-export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
+export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   assertEqual(TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION, 4, "consumer version should be 4");
 
   const emptyState = prepareTravelEventRunnerAppStateWithTravelV2Preview();
@@ -169,6 +169,30 @@ export function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(!JSON.stringify(riskBidState.riskBids).includes("engineer"), "non-matching risk bid selection is not projected");
     for (const key of ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"]) assertSmoke(Object.hasOwn(riskBidState.riskBids.selectedRecord, key), `selected risk bid record includes safe key ${key}`);
     for (const key of ["gmOnly", "secret", "actorUuid", "targetActorUuid", "userId", "userName", "applyPayload", "auditRecord"]) assertSmoke(!Object.hasOwn(riskBidState.riskBids.selectedRecord, key), `selected risk bid record excludes unsafe key ${key}`);
+    assertSmoke(riskBidState.riskBids.options.length === 3, "template/app state can render risk bid options from state.riskBids");
+    const runnerTemplate = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../templates/apps/travel-event-runner.hbs"), "utf8");
+    assertSmoke(runnerTemplate.includes("data-arcflight-travel-v2-risk-bid-select") && runnerTemplate.includes('data-risk-bid-tier="{{tier}}"'), "risk bid template exposes select button attributes");
+    assertSmoke(!runnerTemplate.includes('data-risk-bid-tier="3"') && !runnerTemplate.includes('data-risk-bid-tier="{{text}}"'), "risk bid template does not hard-code invalid tier select buttons");
+    assertSmoke(runnerTemplate.includes("{{#if state.riskBids.selected}}<button") && runnerTemplate.includes("data-arcflight-travel-v2-risk-bid-clear"), "risk bid template gates clear button on selected state");
+    assertSmoke(!riskBidState.riskBids.options.some((option) => option.tier === 3), "no select button data can be produced for invalid risk bid tiers");
+    const unselectedRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidSelections: { records: [] } },
+      uiState: { travelV2RiskBidContext: { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", riskBids: [{ tier: 2, label: "Skim" }] } },
+      user: { isGM: false }
+    });
+    assertSmoke(unselectedRiskBidState.riskBids.selected === false, "clear button app condition is false without a selection");
+    globalThis.foundry ??= { applications: { api: { ApplicationV2: class {}, HandlebarsApplicationMixin: (Base) => Base } }, utils: { deepClone: (value) => JSON.parse(JSON.stringify(value)), escapeHTML: (value) => String(value) } };
+    const { prepareTravelV2RiskBidSelectRunnerUpdate, prepareTravelV2RiskBidClearRunnerUpdate } = await import("./travel-event-runner.js");
+    const selectedOnce = prepareTravelV2RiskBidSelectRunnerUpdate({ event: createRunnerEventFixture(), currentRoundIndex: 0 }, riskBidState.riskBids, 2, { selectedAt: "2026-07-12T00:00:04.000Z" });
+    assertSmoke(selectedOnce.result.ok && selectedOnce.nextSession.travelV2RiskBidSelections.records.length === 1, "selecting a risk bid calls selection helper pathway and updates session-local records");
+    const selectedTwice = prepareTravelV2RiskBidSelectRunnerUpdate(selectedOnce.nextSession, riskBidState.riskBids, 8, { selectedAt: "2026-07-12T00:00:05.000Z" });
+    assertEqual(selectedTwice.nextSession.travelV2RiskBidSelections.records.length, 1, "re-selecting same round/station/action replaces rather than duplicates");
+    assertEqual(selectedTwice.nextSession.travelV2RiskBidSelections.records[0].tier, 8, "re-selecting updates the selected risk bid tier");
+    const extraSelection = prepareTravelV2RiskBidSelectRunnerUpdate(selectedTwice.nextSession, { ...riskBidState.riskBids, stationKey: "engineer", actionId: "repair" }, 5, { selectedAt: "2026-07-12T00:00:06.000Z" });
+    const cleared = prepareTravelV2RiskBidClearRunnerUpdate(extraSelection.nextSession, riskBidState.riskBids);
+    assertSmoke(cleared.result.ok && cleared.result.cleared, "clearing calls clear helper pathway");
+    assertEqual(cleared.nextSession.travelV2RiskBidSelections.records.length, 1, "clearing removes only matching selection");
+    assertEqual(cleared.nextSession.travelV2RiskBidSelections.records[0].stationKey, "engineer", "clearing preserves non-matching selections");
     const riskBidJson = JSON.stringify(riskBidState.riskBids);
     for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actor", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
       assertSmoke(!riskBidJson.includes(forbidden), `runner risk bid state excludes ${forbidden}`);
