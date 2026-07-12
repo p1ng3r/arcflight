@@ -164,7 +164,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-005 — Risk Bid Result Pipeline
 
-**Status:** partial — Slice 01 started the pure foundation; Slice 02 exposes it in runner state as a read-only preview.
+**Status:** partial — Slice 01 started the pure foundation; Slice 02 exposes it in runner state as a read-only preview; Slice 03 adds a pure reviewed-candidate bridge.
 **Scope:** Alpha blocker
 
 **Goal:** Resolve risk bid outcomes into reviewed Travel v2 effects.
@@ -173,6 +173,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 - Slice 01 adds the pure result model and reviewed candidate preview contract.
 - Slice 02 exposes the result model in Travel Event Runner state as read-only `travelV2RiskBidResultPreview` / `riskBidResultPreview` aliases fed by session-local/UI state only. It does not apply outcomes, roll dice, insert queue items, or mutate actors/world/session state.
+- Slice 03 adds a pure bridge from risk bid result candidates into normalized reviewed candidate records. It does not insert queues, apply pressure/hazards/consequences, roll dice, or mutate actors/world/session state.
 - Queue integration, pressure plumbing, hazard plumbing, consequence plumbing, UI/roll integration, and explicit apply/review flow remain open.
 - Critical success: stronger benefit, Momentum, major progress, or improved reward.
 - Success: selected benefit or progress.
