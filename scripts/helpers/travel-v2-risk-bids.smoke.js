@@ -59,9 +59,9 @@ export function runTravelV2RiskBidsSmokeChecks() {
   globalThis.game = { socket: { emit: () => sideEffects.push("socket.emit") } };
 
   try {
-    for (const tier of [2, 5, 8]) assertEqual(normalizeTravelV2RiskBidTier(tier), tier, `numeric ${tier} normalizes`);
-    for (const tier of ["+2", "+5", "+8"]) assertEqual(normalizeTravelV2RiskBidTier(tier), Number(tier.slice(1)), `string ${tier} normalizes`);
-    for (const tier of [0, 1, 3, 4, 6, 7, 9, 10, -2, "hard", "custom", ""]) assertEqual(normalizeTravelV2RiskBidTier(tier), null, `invalid tier ${tier} is rejected`);
+    assertEqual(JSON.stringify([2, 5, 8].map((tier) => normalizeTravelV2RiskBidTier(tier))), JSON.stringify([2, 5, 8]), "fixed numeric tiers normalize exactly to 2/5/8");
+    for (const [input, expected] of [["2", 2], ["+2", 2], ["5", 5], ["+5", 5], ["8", 8], ["+8", 8]]) assertEqual(normalizeTravelV2RiskBidTier(input), expected, `string ${input} normalizes`);
+    for (const tier of [0, 1, 3, 4, 6, 7, 9, 10, "high", "", null, undefined]) assertEqual(normalizeTravelV2RiskBidTier(tier), null, `invalid tier ${tier} is rejected`);
 
     const rawBid = { tier: 5, label: "Thread", text: "Valid", gmOnly: true, secret: "do not expose" };
     const prepared = prepareTravelV2RiskBidOptionsForStationAction({
@@ -82,6 +82,9 @@ export function runTravelV2RiskBidsSmokeChecks() {
     assertEqual(prepared.options.length, 3, "invalid and duplicate risk bids are dropped");
     assertEqual(prepared.options.map((option) => option.tier).join(","), "2,5,8", "valid risk bid order is preserved");
     assertSmoke(prepared.options.every((option) => [2, 5, 8].includes(option.tier) && option.dcModifier === option.tier && option.isAllowed === true), "prepared options contain only fixed tiers");
+    for (const option of prepared.options) assertOnlyKeys(option, ["tier", "dcModifier", "label", "text", "isAllowed"], "prepared risk bid option exposes only player-safe fields");
+    assertEqual(prepared.options.map((option) => option.label).join("|"), "Cut|Thread|Blind", "prepared options preserve safe authored labels in deterministic authored order");
+    assertEqual(prepared.options.map((option) => option.text).join("|"), "Small risk.|Valid|Large risk.", "prepared options preserve safe authored text in deterministic authored order");
     assertSmoke(!snap(prepared).includes(snap(rawBid)) && !Object.hasOwn(prepared.options[1], "gmOnly"), "prepared output contains no raw input object dumps");
     assertNoForbiddenOutput(prepared, "prepared risk bid output");
 
@@ -174,7 +177,7 @@ export function runTravelV2RiskBidsSmokeChecks() {
     globalThis.game = prior.game;
   }
 
-  return { ok: true, checked: ["tier-normalization", "invalid-tier-rejection", "prepared-option-sanitization", "prepared-deduplication", "session-selection-cloning", "selection-replacement", "selection-clearing", "blocked-selection-validation", "forbidden-output-guard", "no-side-effects"] };
+  return { ok: true, checked: ["risk-bid-alpha-closeout-tier-normalization", "risk-bid-alpha-closeout-invalid-tier-rejection", "risk-bid-alpha-closeout-prepared-option-sanitization", "risk-bid-alpha-closeout-prepared-deduplication", "risk-bid-alpha-closeout-session-selection-cloning", "risk-bid-alpha-closeout-selection-replacement", "risk-bid-alpha-closeout-selection-clearing", "risk-bid-alpha-closeout-blocked-selection-validation", "risk-bid-alpha-closeout-forbidden-output-guard", "risk-bid-alpha-closeout-no-side-effects"] };
 }
 
 export default runTravelV2RiskBidsSmokeChecks;
