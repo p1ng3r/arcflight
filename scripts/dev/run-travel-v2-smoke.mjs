@@ -129,7 +129,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 support assist records", runTravelV2SupportAssistRecordsSmokeChecks],
   ["Travel v2 support backlash", runTravelV2SupportBacklashSmokeChecks],
   ["Travel v2 focus risk suppression", runTravelV2FocusRiskSuppressionSmokeChecks],
-  ["Travel v2 risk bids", runTravelV2RiskBidsSmokeChecks],
+  ["Travel v2 risk bid alpha closeout", runTravelV2RiskBidsSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
   ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks],

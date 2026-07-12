@@ -141,24 +141,26 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-004 — Risk Bids / Difficulty Bids
 
-**Status:** missing  
+**Status:** complete for alpha runtime on `feature/tv2-004-risk-bids`
 **Scope:** Alpha blocker
 
 **Goal:** Add authored fixed-DC risk bids declared before a station roll.
 
 **Alpha alignment:** Risk bid values are locked as `+2`, `+5`, and `+8`. Risk bids cost nothing up front; the cost is increased danger.
 
-**Remaining work:**
+**Closeout note:** TV2-004 now covers fixed `+2`/`+5`/`+8` tiers, safe option preparation, runner state exposure, current round/station/action selection projection, UI select/clear controls, and session-local storage only. It does not add roll/result resolution, actor/world mutation, or GM-only/player leak fields.
 
-- Add deterministic risk bid data model.
-- Support fixed bid tiers `+2`, `+5`, and `+8`.
-- Attach risk bids to station actions or encounter context.
-- Present risk bid choices before rolling and before consequences are known.
-- Support station-flavored bid names and text.
-- Store selected bid in session-local roll context.
-- Smoke no freeform arbitrary bid values.
+**Completed for alpha runtime:**
 
-**Safety:** Risk bids must not mutate actors directly. They create session-local benefits, consequences, Momentum, hazards, pressure, scars, or modifiers through reviewed paths.
+- Deterministic risk bid data model with fixed bid tiers `+2`, `+5`, and `+8`.
+- Safe authored option preparation that drops invalid tiers, dedupes duplicate tiers, and preserves station-flavored player-safe labels/text.
+- Runner state exposure through `state.travelV2RiskBids` and `state.riskBids`.
+- Current round/station/action selection projection for the runner UI.
+- UI select/clear controls for valid authored bids.
+- Session-local storage only for selected bids.
+- Smoke coverage that rejects freeform arbitrary bid values and guards against GM-only/player leak fields.
+
+**Safety:** Risk bids do not mutate actors or world data. TV2-004 stops at session-local selection and player-safe state projection. Risk bid outcome resolution remains TV2-005.
 
 ### TV2-005 — Risk Bid Result Pipeline
 
