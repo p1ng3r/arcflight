@@ -7,10 +7,15 @@ import {
   isTravelV2RiskBidReviewQueueRecordStatus,
   prepareTravelV2RiskBidReviewQueueRecord,
   insertTravelV2RiskBidReviewQueueRecords,
-  prepareTravelV2RiskBidReviewQueueState
+  prepareTravelV2RiskBidReviewQueueState,
+  updateTravelV2RiskBidReviewQueueRecordStatus,
+  selectTravelV2RiskBidReviewQueueRecord,
+  clearTravelV2RiskBidReviewQueueRecordSelection,
+  clearAllTravelV2RiskBidReviewQueueRecordSelections,
+  prepareTravelV2RiskBidReviewQueueDecisionState
 } from "./travel-v2-risk-bid-review-queue.js";
 
-const RECORD_KEYS = Object.freeze(["queueVersion", "queueKey", "source", "status", "payloadType", "candidateType", "severity", "tier", "resultBand", "dangerLevel", "stationKey", "stationName", "actionId", "actionName", "roundIndex", "roundNumber", "label", "text", "requiresReview", "queueReady", "insertedAt", "insertionRequestKey"]);
+const RECORD_KEYS = Object.freeze(["queueVersion", "queueKey", "source", "status", "payloadType", "candidateType", "severity", "tier", "resultBand", "dangerLevel", "stationKey", "stationName", "actionId", "actionName", "roundIndex", "roundNumber", "label", "text", "requiresReview", "queueReady", "insertedAt", "insertionRequestKey", "selected", "selectedAt", "reviewedAt", "dismissedAt", "decisionNote"]);
 const FORBIDDEN_OUTPUT_TERMS = Object.freeze(["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]);
 
 function assertSmoke(condition, message) {
@@ -95,6 +100,35 @@ export function runTravelV2RiskBidReviewQueueSmokeChecks() {
     assertSmoke(duplicate.duplicateCount > 0, "duplicate insertion skips duplicates");
     assertEqual(duplicate.queue.records.length, insertedFailure.queue.records.length, "duplicate insertion keeps record count stable");
 
+    const firstQueueKey = insertedFailure.queue.records[0].queueKey;
+    const reviewed = updateTravelV2RiskBidReviewQueueRecordStatus(insertedFailure.session, firstQueueKey, "reviewed", { canReview: true, decisionNote: "Reviewed at table" });
+    assertSmoke(reviewed.ok && reviewed.updated && reviewed.applied === false, "GM can mark a pending record reviewed without applying");
+    assertEqual(reviewed.queue.records[0].status, "reviewed", "reviewed status is stored");
+    assertSmoke(Boolean(reviewed.queue.records[0].reviewedAt), "reviewed timestamp is deterministic safe text");
+    const dismissed = updateTravelV2RiskBidReviewQueueRecordStatus(reviewed.session, firstQueueKey, "dismissed", { canReview: true });
+    assertSmoke(dismissed.ok && dismissed.queue.records[0].status === "dismissed", "GM can dismiss a pending/reviewed record");
+    const restored = updateTravelV2RiskBidReviewQueueRecordStatus(dismissed.session, firstQueueKey, "pending", { canReview: true });
+    assertSmoke(restored.ok && restored.queue.records[0].status === "pending", "GM can restore a reviewed/dismissed record to pending");
+    assertSmoke(!updateTravelV2RiskBidReviewQueueRecordStatus(restored.session, firstQueueKey, "applied", { canReview: true }).ok, "attempting to set applied blocks");
+    assertSmoke(!updateTravelV2RiskBidReviewQueueRecordStatus(restored.session, firstQueueKey, "reviewed").ok, "missing GM permission blocks decision status updates");
+    assertSmoke(!updateTravelV2RiskBidReviewQueueRecordStatus(restored.session, "", "reviewed", { canReview: true }).ok, "missing queue key blocks decisions");
+    assertSmoke(!updateTravelV2RiskBidReviewQueueRecordStatus(restored.session, "missing", "reviewed", { canReview: true }).ok, "missing record blocks decisions");
+    assertSmoke(!updateTravelV2RiskBidReviewQueueRecordStatus(restored.session, firstQueueKey, "freeform", { canReview: true }).ok, "invalid/freeform status blocks decisions");
+    const selected = selectTravelV2RiskBidReviewQueueRecord(restored.session, firstQueueKey, { canReview: true, decisionNote: "secret note is unsafe" });
+    assertSmoke(selected.ok && selected.selected && selected.queue.selectedCount === 1, "GM can select a record");
+    assertEqual(selected.queue.records[0].decisionNote, "", "decision note is sanitized");
+    const decisionState = prepareTravelV2RiskBidReviewQueueDecisionState(selected.session, { canReview: true });
+    assertSmoke(decisionState.hasSelectedRecords && decisionState.selectedRecords.length === 1 && decisionState.applied === false, "decision state exposes selected safe records to GM only");
+    const nonGmDecisionState = prepareTravelV2RiskBidReviewQueueDecisionState(selected.session, { canReview: false });
+    assertSmoke(nonGmDecisionState.selectedRecords.length === 0 && nonGmDecisionState.hasSelectedRecords === false, "non-GM decision state does not expose selected records");
+    const clearedOne = clearTravelV2RiskBidReviewQueueRecordSelection(selected.session, firstQueueKey, { canReview: true });
+    assertSmoke(clearedOne.ok && clearedOne.cleared && clearedOne.queue.selectedCount === 0, "GM can clear one selection");
+    const selectedAgain = selectTravelV2RiskBidReviewQueueRecord(restored.session, firstQueueKey, { canReview: true });
+    const clearedAll = clearAllTravelV2RiskBidReviewQueueRecordSelections(selectedAgain.session, { canReview: true });
+    assertSmoke(clearedAll.ok && clearedAll.cleared && clearedAll.queue.selectedCount === 0, "GM can clear all selections");
+    assertOnlyKeys(reviewed.sessionPatch, ["travelV2RiskBidReviewQueue"], "decision sessionPatch only contains queue");
+    assertSmoke(Object.isFrozen(reviewed) && Object.isFrozen(reviewed.queue.records[0]), "decision output is frozen");
+
     const unrelated = prepareTravelV2RiskBidReviewQueueRecord({ payloadType: "benefitReview", candidateType: "benefit", label: "Other", text: "Other review", tier: 2 }, { queueKey: "unrelated:key" });
     const preserved = insertTravelV2RiskBidReviewQueueRecords({ travelV2RiskBidReviewQueue: { records: [unrelated] } }, failureEight, { canReview: true });
     assertSmoke(preserved.queue.records.some((record) => record.queueKey === "unrelated:key"), "existing unrelated records are preserved");
@@ -108,7 +142,10 @@ export function runTravelV2RiskBidReviewQueueSmokeChecks() {
       tier: "8 secret",
       gmOnly: true,
       actorUuid: "Actor.bad",
-      debugReport: "secret debug"
+      debugReport: "secret debug",
+      selected: "yes",
+      selectedAt: "secret selected",
+      decisionNote: "applyPayload note"
     };
     const sanitizedExisting = prepareTravelV2RiskBidReviewQueueState({}, { queue: { records: [unsafeExistingRecord] } });
     assertEqual(sanitizedExisting.records[0].status, "pending", "invalid existing record status becomes pending");

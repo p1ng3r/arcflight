@@ -27,7 +27,12 @@ const RECORD_KEYS = Object.freeze([
   "requiresReview",
   "queueReady",
   "insertedAt",
-  "insertionRequestKey"
+  "insertionRequestKey",
+  "selected",
+  "selectedAt",
+  "reviewedAt",
+  "dismissedAt",
+  "decisionNote"
 ]);
 const FORBIDDEN_OUTPUT_TERMS = Object.freeze([
   "gmOnly",
@@ -137,7 +142,12 @@ export function prepareTravelV2RiskBidReviewQueueRecord(input = {}, options = {}
     requiresReview: input?.requiresReview === false ? false : true,
     queueReady: true,
     insertedAt: safeString(options?.insertedAt ?? input?.insertedAt) || deterministicInsertedAt(request, index),
-    insertionRequestKey: safeString(options?.insertionRequestKey ?? input?.insertionRequestKey) || makeInsertionRequestKey(request)
+    insertionRequestKey: safeString(options?.insertionRequestKey ?? input?.insertionRequestKey) || makeInsertionRequestKey(request),
+    selected: input?.selected === true,
+    selectedAt: input?.selected === true ? safeString(input?.selectedAt) : "",
+    reviewedAt: recordStatus === "reviewed" ? safeString(input?.reviewedAt) : "",
+    dismissedAt: recordStatus === "dismissed" ? safeString(input?.dismissedAt) : "",
+    decisionNote: safeString(input?.decisionNote)
   };
   for (const key of Object.keys(record)) if (!RECORD_KEYS.includes(key)) delete record[key];
   return freezeOutput(record);
@@ -157,10 +167,11 @@ function sanitizeExistingQueueRecord(record, index) {
 export function prepareTravelV2RiskBidReviewQueueState(session = {}, options = {}) {
   const sourceQueue = options?.queue && typeof options.queue === "object" ? options.queue : session?.[QUEUE_SESSION_KEY];
   const records = Array.isArray(sourceQueue?.records) ? sourceQueue.records.map((record, index) => sanitizeExistingQueueRecord(record, index)) : [];
-  const counts = { pendingCount: 0, reviewedCount: 0, dismissedCount: 0, appliedCount: 0 };
+  const counts = { pendingCount: 0, reviewedCount: 0, dismissedCount: 0, appliedCount: 0, selectedCount: 0 };
   for (const record of records) {
     const status = normalizeTravelV2RiskBidReviewQueueRecordStatus(record?.status) || "pending";
     counts[`${status}Count`] += 1;
+    if (record?.selected === true) counts.selectedCount += 1;
   }
   return freezeOutput({
     version: TRAVEL_V2_RISK_BID_REVIEW_QUEUE_VERSION,
@@ -187,6 +198,116 @@ function baseResult(session, blockedReasons) {
     skippedRecords: [],
     session: sessionCopy,
     sessionPatch: {},
+    applied: false
+  });
+}
+
+function deterministicDecisionAt(queueKey, action) {
+  return ["risk-bid-review-decision", safeString(queueKey, "record"), safeString(action, "updated")].join(":");
+}
+function decisionResult(session, { ok = false, updated = false, selected = false, cleared = false, queueKey = "", status = "", blockedReasons = [], queue = null } = {}) {
+  const sessionCopy = cloneSession(session);
+  const safeQueue = queue ?? prepareTravelV2RiskBidReviewQueueState(sessionCopy);
+  sessionCopy[QUEUE_SESSION_KEY] = safeQueue;
+  return freezeOutput({
+    version: TRAVEL_V2_RISK_BID_REVIEW_QUEUE_VERSION,
+    ok,
+    updated,
+    selected,
+    cleared,
+    queueKey: safeString(queueKey),
+    status: safeString(status),
+    blockedReasons: Array.from(new Set(blockedReasons)),
+    queue: safeQueue,
+    session: sessionCopy,
+    sessionPatch: ok ? { [QUEUE_SESSION_KEY]: safeQueue } : {},
+    applied: false
+  });
+}
+function findRecordIndex(records, queueKey) {
+  const safeQueueKey = safeString(queueKey);
+  return safeQueueKey ? records.findIndex((record) => record?.queueKey === safeQueueKey) : -1;
+}
+function blockDecision(session, queueKey, status, reasons) {
+  return decisionResult(session, { queueKey, status, blockedReasons: reasons });
+}
+function prepareDecisionQueue(session) {
+  const sessionCopy = cloneSession(session);
+  const queue = prepareTravelV2RiskBidReviewQueueState(sessionCopy);
+  return { sessionCopy, records: queue.records.map((record) => ({ ...record })) };
+}
+
+export function updateTravelV2RiskBidReviewQueueRecordStatus(session = {}, queueKey = "", status = "", options = {}) {
+  const safeQueueKey = safeString(queueKey);
+  const safeStatus = normalizeTravelV2RiskBidReviewQueueRecordStatus(status);
+  if (options?.canReview !== true) return blockDecision(session, safeQueueKey, safeStatus || safeString(status), ["travel-v2-review-permission-required"]);
+  if (!safeQueueKey) return blockDecision(session, safeQueueKey, safeStatus || safeString(status), ["missing-risk-bid-review-queue-key"]);
+  if (safeString(status) === "applied") return blockDecision(session, safeQueueKey, "applied", ["risk-bid-review-queue-applied-transition-blocked"]);
+  if (!safeStatus || !["pending", "reviewed", "dismissed"].includes(safeStatus)) return blockDecision(session, safeQueueKey, safeString(status), ["invalid-risk-bid-review-queue-status"]);
+  if (!session?.[QUEUE_SESSION_KEY] || typeof session[QUEUE_SESSION_KEY] !== "object") return blockDecision(session, safeQueueKey, safeStatus, ["risk-bid-review-queue-not-found"]);
+  const { sessionCopy, records } = prepareDecisionQueue(session);
+  const recordIndex = findRecordIndex(records, safeQueueKey);
+  if (recordIndex < 0) return blockDecision(session, safeQueueKey, safeStatus, ["risk-bid-review-queue-record-not-found"]);
+  const note = safeString(options?.decisionNote ?? records[recordIndex].decisionNote);
+  const updatedRecord = { ...records[recordIndex], status: safeStatus, decisionNote: note };
+  if (safeStatus === "reviewed") updatedRecord.reviewedAt = safeString(options?.decidedAt) || deterministicDecisionAt(safeQueueKey, "reviewed");
+  else updatedRecord.reviewedAt = "";
+  if (safeStatus === "dismissed") updatedRecord.dismissedAt = safeString(options?.decidedAt) || deterministicDecisionAt(safeQueueKey, "dismissed");
+  else updatedRecord.dismissedAt = "";
+  records[recordIndex] = updatedRecord;
+  const queue = prepareTravelV2RiskBidReviewQueueState(sessionCopy, { queue: { records } });
+  sessionCopy[QUEUE_SESSION_KEY] = queue;
+  return decisionResult(sessionCopy, { ok: true, updated: true, queueKey: safeQueueKey, status: safeStatus, queue });
+}
+
+export function selectTravelV2RiskBidReviewQueueRecord(session = {}, queueKey = "", options = {}) {
+  const safeQueueKey = safeString(queueKey);
+  if (options?.canReview !== true) return blockDecision(session, safeQueueKey, "", ["travel-v2-review-permission-required"]);
+  if (!safeQueueKey) return blockDecision(session, safeQueueKey, "", ["missing-risk-bid-review-queue-key"]);
+  if (!session?.[QUEUE_SESSION_KEY] || typeof session[QUEUE_SESSION_KEY] !== "object") return blockDecision(session, safeQueueKey, "", ["risk-bid-review-queue-not-found"]);
+  const { sessionCopy, records } = prepareDecisionQueue(session);
+  const recordIndex = findRecordIndex(records, safeQueueKey);
+  if (recordIndex < 0) return blockDecision(session, safeQueueKey, "", ["risk-bid-review-queue-record-not-found"]);
+  records[recordIndex] = { ...records[recordIndex], selected: true, selectedAt: safeString(options?.selectedAt) || deterministicDecisionAt(safeQueueKey, "selected"), decisionNote: safeString(options?.decisionNote ?? records[recordIndex].decisionNote) };
+  const queue = prepareTravelV2RiskBidReviewQueueState(sessionCopy, { queue: { records } });
+  sessionCopy[QUEUE_SESSION_KEY] = queue;
+  return decisionResult(sessionCopy, { ok: true, updated: true, selected: true, queueKey: safeQueueKey, status: records[recordIndex].status, queue });
+}
+
+export function clearTravelV2RiskBidReviewQueueRecordSelection(session = {}, queueKey = "", options = {}) {
+  const safeQueueKey = safeString(queueKey);
+  if (options?.canReview !== true) return blockDecision(session, safeQueueKey, "", ["travel-v2-review-permission-required"]);
+  if (!safeQueueKey) return blockDecision(session, safeQueueKey, "", ["missing-risk-bid-review-queue-key"]);
+  if (!session?.[QUEUE_SESSION_KEY] || typeof session[QUEUE_SESSION_KEY] !== "object") return blockDecision(session, safeQueueKey, "", ["risk-bid-review-queue-not-found"]);
+  const { sessionCopy, records } = prepareDecisionQueue(session);
+  const recordIndex = findRecordIndex(records, safeQueueKey);
+  if (recordIndex < 0) return blockDecision(session, safeQueueKey, "", ["risk-bid-review-queue-record-not-found"]);
+  records[recordIndex] = { ...records[recordIndex], selected: false, selectedAt: "", decisionNote: safeString(options?.decisionNote ?? records[recordIndex].decisionNote) };
+  const queue = prepareTravelV2RiskBidReviewQueueState(sessionCopy, { queue: { records } });
+  sessionCopy[QUEUE_SESSION_KEY] = queue;
+  return decisionResult(sessionCopy, { ok: true, updated: true, cleared: true, queueKey: safeQueueKey, status: records[recordIndex].status, queue });
+}
+
+export function clearAllTravelV2RiskBidReviewQueueRecordSelections(session = {}, options = {}) {
+  if (options?.canReview !== true) return blockDecision(session, "", "", ["travel-v2-review-permission-required"]);
+  if (!session?.[QUEUE_SESSION_KEY] || typeof session[QUEUE_SESSION_KEY] !== "object") return blockDecision(session, "", "", ["risk-bid-review-queue-not-found"]);
+  const { sessionCopy, records } = prepareDecisionQueue(session);
+  const nextRecords = records.map((record) => ({ ...record, selected: false, selectedAt: "" }));
+  const queue = prepareTravelV2RiskBidReviewQueueState(sessionCopy, { queue: { records: nextRecords } });
+  sessionCopy[QUEUE_SESSION_KEY] = queue;
+  return decisionResult(sessionCopy, { ok: true, updated: true, cleared: true, queue });
+}
+
+export function prepareTravelV2RiskBidReviewQueueDecisionState(session = {}, options = {}) {
+  const canReview = options?.canReview === true;
+  const queue = prepareTravelV2RiskBidReviewQueueState(session);
+  const selectedRecords = canReview ? queue.records.filter((record) => record.selected === true) : [];
+  return freezeOutput({
+    version: TRAVEL_V2_RISK_BID_REVIEW_QUEUE_VERSION,
+    selectedCount: canReview ? selectedRecords.length : 0,
+    selectedRecords,
+    hasSelectedRecords: canReview && selectedRecords.length > 0,
+    canReview,
     applied: false
   });
 }
