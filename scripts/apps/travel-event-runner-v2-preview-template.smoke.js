@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 const MODULE_ROOT = path.resolve(__dirname, "../..");
 const TEMPLATE_PATH = path.join(MODULE_ROOT, "templates/apps/travel-event-runner.hbs");
 const STYLE_PATH = path.join(MODULE_ROOT, "styles/arcflight.css");
+const APP_PATH = path.join(MODULE_ROOT, "scripts/apps/travel-event-runner.js");
 
 function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 preview template smoke check failed: ${message}`);
@@ -23,6 +24,7 @@ function assertIncludes(source, needle, message) {
 export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   const template = readUtf8(TEMPLATE_PATH);
   const css = readUtf8(STYLE_PATH);
+  const app = readUtf8(APP_PATH);
   const visibleStakesTemplate = template.slice(template.indexOf("state.visibleStakes.hasStakes"), template.indexOf("state.travelV2GmFlowStatus"));
   const narrationHooksTemplate = template.slice(template.indexOf("state.narrationHooks.hasNarrationHooks"), template.indexOf("state.travelV2GmFlowStatus"));
   const finalOutcomeTemplate = template.slice(template.indexOf("state.finalOutcome.hasFinalOutcome"), template.indexOf("Final Outcome Preservation Review"));
@@ -168,6 +170,10 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
   assertIncludes(template, "state.finalOutcomePreservationApplyPlan", "template should use the short finalOutcomePreservationApplyPlan alias");
   assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes("{{this}}"), "final outcome preservation apply-plan block should not use raw {{this}} values");
   assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes("rawJson"), "final outcome preservation apply-plan block should not render raw object dumps");
+  for (const control of ["data-arcflight-travel-v2-preservation-preview-actor", "data-arcflight-travel-v2-preservation-apply-session", "Preview Selected Ship Attachment", "Apply Preservation to Local Session"]) assertIncludes(template, control, `template should include final outcome preservation control ${control}`);
+  for (const text of ["no actor", "local session"]) assertIncludes(finalOutcomePreservationApplyPlanTemplate, text, `final outcome preservation controls should explain ${text}`);
+  for (const field of ["travelV2FinalOutcomePreservationActorPreviewResult", "travelV2FinalOutcomePreservationSessionApplyResult", "completedEventRecordPreview", "shipAttachmentPreviews", "pressureChangePreviews", "manualReviewItems", "applicationRecord", "actionCount"]) assertIncludes(finalOutcomePreservationApplyPlanTemplate, field, `final outcome preservation controls should render safe result field ${field}`);
+  for (const cssClass of ["arcflight-travel-runner-mvp__final-outcome-preservation-controls", "arcflight-travel-runner-mvp__final-outcome-preservation-control-row", "arcflight-travel-runner-mvp__final-outcome-preservation-result", "arcflight-travel-runner-mvp__final-outcome-preservation-preview"]) assertSmoke(template.includes(cssClass) || css.includes(`.${cssClass}`), `template or css should include ${cssClass}`);
   for (const field of ["completedEventRecordAction", "shipAttachmentActions", "skippedCandidates", "actionCount", "safetyNote", "gmReviewPrompts"]) assertIncludes(template, `state.finalOutcomePreservationApplyPlan.${field}`, `template should render final outcome preservation apply-plan field ${field}`);
   for (const field of ["actionType", "label", "summary", "source", "reason"]) assertIncludes(finalOutcomePreservationApplyPlanTemplate, `{{${field}}}`, `final outcome preservation apply-plan block should render safe field ${field}`);
   for (const field of ["reviewOnly", "requiresExplicitGmApply", "eligible"]) assertIncludes(finalOutcomePreservationApplyPlanTemplate, field, `final outcome preservation apply-plan block should reference safe boolean field ${field}`);
@@ -194,9 +200,19 @@ export function runTravelEventRunnerV2PreviewTemplateSmokeChecks() {
     "HIDDEN_ENTRY_BAIT",
     "Actor.",
     "User.",
-    "Compendium."
+    "Compendium.",
+    "updateData",
+    "actor.update"
   ]) assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes(forbidden), `final outcome preservation apply-plan block should not include internal field ${forbidden}`);
   for (const forbidden of ["data-arcflight-travel-v2-outcome-apply", "data-arcflight-runner-create-journal", "data-arcflight-runner-post-chat", "data-action", "actor.update", ".update("]) assertSmoke(!finalOutcomePreservationApplyPlanTemplate.includes(forbidden), `final outcome preservation apply-plan block should not include mutation/control text ${forbidden}`);
+  for (const expected of ["applyTravelV2FinalOutcomePreservationToRunnerSession", "prepareTravelV2FinalOutcomePreservationActorPreview", "data-arcflight-travel-v2-preservation-preview-actor", "data-arcflight-travel-v2-preservation-apply-session"]) assertIncludes(app, expected, `app should wire final outcome preservation ${expected}`);
+  const preservationPreviewMethod = app.slice(app.indexOf("#previewTravelV2FinalOutcomePreservationActor"), app.indexOf("#applyTravelV2FinalOutcomePreservationToSession"));
+  const preservationApplyMethod = app.slice(app.indexOf("#applyTravelV2FinalOutcomePreservationToSession"), app.indexOf("#updateTravelV2ConsequenceFollowupStatus"));
+  assertSmoke(!preservationPreviewMethod.includes("actor.update"), "preservation actor preview method should not call actor.update");
+  assertSmoke(!preservationApplyMethod.includes("actor.update"), "preservation session apply method should not call actor.update");
+  assertSmoke(!preservationPreviewMethod.includes("applyTravelV2ActorApplicationPreview"), "preservation actor preview method should not call actor application mutation bridge");
+  assertSmoke(!preservationApplyMethod.includes("applyTravelV2ActorApplicationPreview"), "preservation session apply method should not call actor application mutation bridge");
+  assertIncludes(app, "no actor, item, chat, journal, socket, scene, token, compendium, or world data was mutated", "app status should include no actor/world mutation language");
   for (const control of ["data-arcflight-runner-copy-markdown", "data-arcflight-runner-copy-html", "data-arcflight-runner-post-chat", "data-arcflight-runner-create-journal"]) assertIncludes(template, control, `template should keep completed summary output control ${control}`);
   assertIncludes(template, "Event Outcome Package", "template should render outcome package label");
   assertIncludes(template, "data-arcflight-travel-v2-outcome-apply", "template should wire outcome application control");
