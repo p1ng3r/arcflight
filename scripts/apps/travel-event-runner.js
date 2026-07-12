@@ -7,6 +7,8 @@ import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/tr
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
 import { completeTravelV2EventOnRunnerSession } from "../helpers/travel-v2-session-event-completion.js";
 import { applyTravelV2EventOutcomePackageToRunnerSession } from "../helpers/travel-v2-session-event-outcome-application.js";
+import { applyTravelV2FinalOutcomePreservationToRunnerSession } from "../helpers/travel-v2-final-outcome-preservation-session-application.js";
+import { prepareTravelV2FinalOutcomePreservationActorPreview } from "../helpers/travel-v2-final-outcome-preservation-actor-preview.js";
 import { applyTravelV2FinalOutcomeToShip } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
@@ -113,6 +115,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-outcome-apply]",
   "[data-arcflight-travel-v2-final-outcome-apply]",
   "[data-arcflight-travel-v2-final-outcome-refresh-apply]",
+  "[data-arcflight-travel-v2-preservation-preview-actor]",
+  "[data-arcflight-travel-v2-preservation-apply-session]",
   "[data-arcflight-travel-v2-actor-apply]",
   "[data-arcflight-travel-v2-follow-up-status]",
   "[data-arcflight-travel-v2-followup-note-status]",
@@ -456,6 +460,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2EventOutcomeApplicationResult: null,
       travelV2ActorApplicationResult: null,
       travelV2FinalOutcomeApplyResult: null,
+      travelV2FinalOutcomePreservationActorPreviewResult: null,
+      travelV2FinalOutcomePreservationSessionApplyResult: null,
       travelV2FollowUpResult: null,
       travelV2FollowUpActionResult: null,
       travelV2HazardDrawResult: null,
@@ -831,6 +837,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-event-complete")) return this.completeTravelV2Event();
     if (target.hasAttribute("data-arcflight-travel-v2-outcome-apply")) return this.applyTravelV2EventOutcomePackage();
     if (target.hasAttribute("data-arcflight-travel-v2-final-outcome-refresh-apply")) return this.render(true);
+    if (target.hasAttribute("data-arcflight-travel-v2-preservation-preview-actor")) return this.#previewTravelV2FinalOutcomePreservationActor();
+    if (target.hasAttribute("data-arcflight-travel-v2-preservation-apply-session")) return this.#applyTravelV2FinalOutcomePreservationToSession();
     if (target.hasAttribute("data-arcflight-travel-v2-final-outcome-apply")) return this.applyTravelV2FinalOutcomeToShip();
     if (target.hasAttribute("data-arcflight-travel-v2-actor-apply")) return this.applyTravelV2ActorApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-follow-up-status")) return this.#updateTravelV2FollowUpStatus(target);
@@ -1489,6 +1497,52 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+
+  async #previewTravelV2FinalOutcomePreservationActor() {
+    if (globalThis.game?.user?.isGM !== true) {
+      this.statusMessage = "Only a GM can preview final outcome preservation ship attachment.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const actor = this.#getSessionShipActor();
+    const result = prepareTravelV2FinalOutcomePreservationActorPreview(this.session, actor, {
+      user: globalThis.game?.user,
+      now: new Date().toISOString()
+    });
+    this.uiState.travelV2FinalOutcomePreservationActorPreviewResult = result;
+    if (result.canPreview === true && result.previewDisabled !== true) {
+      this.statusMessage = "Final outcome preservation ship preview prepared; no actor data was mutated.";
+      ui.notifications?.info?.(this.statusMessage);
+    } else {
+      this.statusMessage = result.blockedReasons?.[0] ?? result.blockedReason ?? "Final outcome preservation ship preview was blocked.";
+      ui.notifications?.warn?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
+
+  async #applyTravelV2FinalOutcomePreservationToSession() {
+    if (globalThis.game?.user?.isGM !== true) {
+      this.statusMessage = "Only a GM can apply final outcome preservation to the local runner session.";
+      ui.notifications?.warn?.(this.statusMessage);
+      return this.render(true);
+    }
+    const result = applyTravelV2FinalOutcomePreservationToRunnerSession(this.session, {
+      user: globalThis.game?.user,
+      appliedAt: new Date().toISOString()
+    });
+    this.uiState.travelV2FinalOutcomePreservationSessionApplyResult = result;
+    if (result.ok === true && result.applied === true) {
+      this.session = result.session;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      await this.#saveCompletedTravelV2SessionForReopen();
+      this.statusMessage = "Final outcome preservation applied to the local completed session; no actor, item, chat, journal, socket, scene, token, compendium, or world data was mutated.";
+      ui.notifications?.info?.(this.statusMessage);
+    } else {
+      this.statusMessage = result.blockedReasons?.[0] ?? result.error ?? "Final outcome preservation local session apply was blocked.";
+      ui.notifications?.warn?.(this.statusMessage);
+    }
+    return this.render(true);
+  }
 
   async #updateTravelV2ConsequenceFollowupStatus(target) {
     if (game?.user?.isGM !== true) {
@@ -2407,6 +2461,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.uiState.travelV2EventOutcomeApplicationResult = null;
     this.uiState.travelV2ActorApplicationResult = null;
     this.uiState.travelV2FinalOutcomeApplyResult = null;
+    this.uiState.travelV2FinalOutcomePreservationActorPreviewResult = null;
+    this.uiState.travelV2FinalOutcomePreservationSessionApplyResult = null;
     this.uiState.travelV2FollowUpResult = null;
     this.uiState.travelV2FollowUpActionResult = null;
     this.uiState.travelV2HazardDrawResult = null;

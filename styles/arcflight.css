@@ -2638,3 +2638,30 @@
   color: rgba(247, 233, 198, 0.78);
   font-size: 0.9em;
 }
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-controls {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(142, 216, 180, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(10, 32, 28, 0.28);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-result {
+  margin-top: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(247, 233, 198, 0.22);
+  border-radius: 0.45rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.arcflight-travel-runner-mvp__final-outcome-preservation-preview {
+  border-color: rgba(120, 180, 255, 0.35);
+}

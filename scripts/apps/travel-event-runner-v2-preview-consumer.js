@@ -339,7 +339,9 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2EventCompletionResult: uiState.travelV2EventCompletionResult ?? null,
     ...(canManageTravelV2Consequences ? {
       travelV2EventOutcomeApplicationResult: uiState.travelV2EventOutcomeApplicationResult ?? null,
-      travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null
+      travelV2ActorApplicationResult: uiState.travelV2ActorApplicationResult ?? null,
+      travelV2FinalOutcomePreservationActorPreviewResult: uiState.travelV2FinalOutcomePreservationActorPreviewResult ?? null,
+      travelV2FinalOutcomePreservationSessionApplyResult: uiState.travelV2FinalOutcomePreservationSessionApplyResult ?? null
     } : {}),
     travelV2PressureRunnerSession: canManageTravelV2Consequences ? session : null,
     isGM: canManageTravelV2Consequences,
