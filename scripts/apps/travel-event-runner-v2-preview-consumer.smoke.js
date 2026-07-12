@@ -225,6 +225,17 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertEqual(failureEightGmRiskBidState.riskBidPendingReview.dangerLevel, "high", "failure +8 pending review has high danger");
     assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.reviewPayloads.length > 0, "failure +8 pending review exposes review payloads for GM");
     assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.reviewPayloads.every((payload) => payload.source === "riskBidResult" && payload.queueReady === true), "every risk bid pending review payload is risk bid sourced and queue-ready");
+    assertSmoke(failureEightGmRiskBidState.travelV2RiskBidReviewQueue, "GM state exposes travelV2RiskBidReviewQueue");
+    assertSmoke(failureEightGmRiskBidState.riskBidReviewQueue, "GM state exposes riskBidReviewQueue");
+    assertEqual(JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewQueue), JSON.stringify(failureEightGmRiskBidState.riskBidReviewQueue), "risk bid review queue aliases expose equivalent GM-facing content");
+    const queuedFailureState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidReviewQueue: { records: [{ source: "riskBidResult", status: "pending", payloadType: "pressureReview", dangerLevel: "high", stationKey: "navigator", actionId: "plot-course", roundIndex: 0, roundNumber: 1, tier: 8, resultBand: "failure" }] } },
+      user: { isGM: true }
+    });
+    assertEqual(queuedFailureState.riskBidReviewQueue.records.length, 1, "GM queue state exposes session-local records");
+    assertEqual(queuedFailureState.riskBidReviewQueue.records[0].status, "pending", "GM queue state preserves pending status");
+    const queuedFailurePlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: queuedFailureState.session, user: { isGM: false } });
+    assertEqual(queuedFailurePlayerState.riskBidReviewQueue.records.length, 0, "non-GM queue state does not expose detailed records");
     const criticalFailureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
       uiState: { travelV2RiskBidResultBand: "criticalFailure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
@@ -261,9 +272,11 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     for (const candidate of criticalFailureEightRiskBidState.riskBidResultPreview.candidates) assertEqual(Object.keys(candidate).sort().join(","), allowedCandidateKeys.slice().sort().join(","), "candidate objects expose only safe keys");
     const riskBidResultJson = JSON.stringify(criticalFailureEightRiskBidState.riskBidResultPreview) + JSON.stringify(failureEightRiskBidState.riskBidResultPreview);
     const riskBidPendingReviewJson = JSON.stringify(criticalFailureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightRiskBidState.riskBidPendingReview);
+    const riskBidQueueJson = JSON.stringify(failureEightGmRiskBidState.riskBidReviewQueue) + JSON.stringify(queuedFailurePlayerState.riskBidReviewQueue);
     for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
       assertSmoke(!riskBidResultJson.includes(forbidden), `risk bid result preview excludes ${forbidden}`);
       assertSmoke(!riskBidPendingReviewJson.includes(forbidden), `risk bid pending review excludes ${forbidden}`);
+      assertSmoke(!riskBidQueueJson.includes(forbidden), `risk bid review queue excludes ${forbidden}`);
     }
     globalThis.foundry ??= { applications: { api: { ApplicationV2: class {}, HandlebarsApplicationMixin: (Base) => Base } }, utils: { deepClone: (value) => JSON.parse(JSON.stringify(value)), escapeHTML: (value) => String(value) } };
     const { prepareTravelV2RiskBidSelectRunnerUpdate, prepareTravelV2RiskBidClearRunnerUpdate } = await import("./travel-event-runner.js");
@@ -283,7 +296,6 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     }
     const changedFiles = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" }).split("\n").filter(Boolean);
     assertSmoke(!changedFiles.some((file) => file.startsWith("templates/") || file.endsWith(".hbs") || file.endsWith(".css")), "risk bid pending review slice does not change templates or CSS");
-    assertSmoke(!changedFiles.includes("scripts/apps/travel-event-runner.js"), "risk bid pending review slice does not change app click handlers");
     const noRoundRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: riskBidSession,
       uiState: {
@@ -444,6 +456,9 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
   const playerSafeQueue = JSON.stringify(queueState.pendingConsequenceQueue.playerSafeItems);
   assertSmoke(!playerSafeQueue.includes("gmItemGroups") && !playerSafeQueue.includes("singleSuggestionSelectionSummary") && !playerSafeQueue.includes("clearSelectionSummary") && !playerSafeQueue.includes("canClearSelectedConsequence") && !playerSafeQueue.includes("appliedEffect") && !playerSafeQueue.includes("selectedConsequenceApplyPreview") && !playerSafeQueue.includes("selectedConsequence") && !playerSafeQueue.includes("applyEffectSummary") && !playerSafeQueue.includes("sourceRecord") && !playerSafeQueue.includes("catalogSuggestions") && !playerSafeQueue.includes("Arkengine Whine") && !playerSafeQueue.includes("appliedEffectMutations") && !playerSafeQueue.includes("consequenceFollowupReview") && !playerSafeQueue.includes("travelV2ConsequenceFollowups") && !playerSafeQueue.includes("followupRecord"), "player-safe state does not expose selection summaries or GM-only apply details");
   const runnerSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "travel-event-runner.js"), "utf8");
+  assertSmoke(runnerSource.includes("[data-arcflight-travel-v2-risk-bid-review-queue-persist]"), "RUNNER_CLICK_SELECTOR includes future risk bid review queue persist selector");
+  assertSmoke(runnerSource.includes('prepareTravelV2RiskBidQueueInsertionIntent(pendingReview, { canReview: true, intentMode: "confirm" })'), "runner handler creates a confirmed risk bid queue insertion intent internally");
+  assertSmoke(runnerSource.includes("insertTravelV2RiskBidReviewQueueRecords(this.session, insertionIntent, { canReview: true })"), "runner handler inserts queue records into cloned session-local state");
   assertSmoke(runnerSource.includes("updateTravelV2ConsequenceFollowupStatus"), "runner imports updateTravelV2ConsequenceFollowupStatus");
   assertSmoke(runnerSource.includes("[data-arcflight-travel-v2-followup-note-status]"), "RUNNER_CLICK_SELECTOR includes follow-up note status selector");
   assertSmoke(runnerSource.includes("updateTravelV2ConsequenceFollowupStatus(this.session, followupKey, status)"), "runner handler calls updateTravelV2ConsequenceFollowupStatus");
@@ -489,6 +504,8 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "event-approach-tally-application-controls",
       "risk-bid-result-preview",
       "risk-bid-pending-review",
+      "risk-bid-review-queue-state",
+      "risk-bid-review-queue-persist-wiring",
       "risk-bid-pending-review-change-scope"
     ]
   };
