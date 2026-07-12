@@ -778,7 +778,7 @@
             {{#if state.travelV2RiskBidReviewQueuePersistResult}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk bid review queue persist result">
                 {{#if state.travelV2RiskBidReviewQueuePersistResult.summaryText}}<p>{{state.travelV2RiskBidReviewQueuePersistResult.summaryText}}</p>{{/if}}
-                <p class="arcflight-sheet__hint">Inserted: {{state.travelV2RiskBidReviewQueuePersistResult.insertedCount}} · Skipped: {{state.travelV2RiskBidReviewQueuePersistResult.skippedCount}} · Duplicate: {{state.travelV2RiskBidReviewQueuePersistResult.duplicateCount}} · Persisted: {{state.travelV2RiskBidReviewQueuePersistResult.inserted}} · Applied: {{state.travelV2RiskBidReviewQueuePersistResult.applied}}</p>
+                <p class="arcflight-sheet__hint">Inserted: {{state.travelV2RiskBidReviewQueuePersistResult.insertedCount}} · Skipped: {{state.travelV2RiskBidReviewQueuePersistResult.skippedCount}} · Duplicate: {{state.travelV2RiskBidReviewQueuePersistResult.duplicateCount}} · Persisted: {{state.travelV2RiskBidReviewQueuePersistResult.persisted}} · Applied: {{state.travelV2RiskBidReviewQueuePersistResult.applied}}</p>
                 <p class="arcflight-sheet__hint">Applied must remain false; these are pending review records only.</p>
               </section>
             {{/if}}

@@ -181,6 +181,8 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(runnerTemplate.includes("{{#if state.riskBids.selected}}<button") && runnerTemplate.includes("data-arcflight-travel-v2-risk-bid-clear"), "risk bid template gates clear button on selected state");
     assertSmoke(runnerTemplate.includes("Risk Bid Review Queue"), "template contains GM-only risk bid review queue section title");
     assertSmoke(runnerTemplate.includes("data-arcflight-travel-v2-risk-bid-review-queue-persist"), "template contains existing risk bid review queue persist selector");
+    assertSmoke(runnerTemplate.includes("state.travelV2RiskBidReviewQueuePersistResult.persisted"), "template displays persisted status from persist result persisted flag");
+    assertSmoke(!runnerTemplate.includes("Persisted: {{state.travelV2RiskBidReviewQueuePersistResult.inserted}}"), "template does not label inserted as persisted");
     const riskBidQueueSectionStart = runnerTemplate.lastIndexOf("{{#if state.isGM}}", runnerTemplate.indexOf("Risk Bid Review Queue"));
     const riskBidQueueTemplateSection = runnerTemplate.slice(riskBidQueueSectionStart, runnerTemplate.indexOf("Station Action Lock-In"));
     assertSmoke(riskBidQueueSectionStart >= 0 && riskBidQueueTemplateSection.includes("arcflight-travel-runner-mvp__risk-bid-review-queue"), "risk bid review queue template is GM-gated");
@@ -239,7 +241,7 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertEqual(JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewQueue), JSON.stringify(failureEightGmRiskBidState.riskBidReviewQueue), "risk bid review queue aliases expose equivalent GM-facing content");
     const failureEightGmPersistResultState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: failureEightGmRiskBidState.session,
-      uiState: { travelV2RiskBidReviewQueuePersistResult: { summaryText: "Queued 1 pending risk bid review.", insertedCount: 1, skippedCount: 0, duplicateCount: 0, inserted: true, applied: false } },
+      uiState: { travelV2RiskBidReviewQueuePersistResult: { summaryText: "Queued 1 pending risk bid review.", insertedCount: 1, skippedCount: 0, duplicateCount: 0, inserted: true, persisted: true, applied: false } },
       user: { isGM: true }
     });
     assertSmoke(failureEightGmPersistResultState.travelV2RiskBidReviewQueuePersistResult, "persist result state is available to GM users");
