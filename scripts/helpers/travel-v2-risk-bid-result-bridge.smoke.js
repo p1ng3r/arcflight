@@ -76,6 +76,37 @@ export function runTravelV2RiskBidResultBridgeSmokeChecks() {
     const allInvalid = prepareTravelV2RiskBidReviewedCandidateBridge({ ...candidateStateFor("failure", 5), candidates: [{ type: "bad" }, { type: "hazard" }] });
     assertSmoke(!allInvalid.ok && !allInvalid.hasReviewedCandidates && allInvalid.blockedReasons.includes("no-valid-reviewed-candidates"), "all invalid candidates block safely");
 
+    const unsafeStrings = prepareTravelV2RiskBidReviewedCandidateBridge({
+      ok: true,
+      hasRiskBidResult: true,
+      resultBand: "failure secret",
+      tier: 8,
+      dcModifier: 8,
+      dangerLevel: "high hiddenHazards",
+      stationKey: "navigator actorUuid",
+      stationName: "Navigator gmOnly",
+      actionId: "plot-course applyPayload",
+      actionName: "Plot Course socket",
+      roundIndex: 0,
+      roundNumber: 1,
+      candidates: [{
+        type: "pressureCandidate",
+        severity: "strong secret",
+        label: "secret applyPayload",
+        text: "actorUuid hiddenHazards",
+        requiresReview: true
+      }],
+      gmReviewRequired: true
+    });
+    assertSmoke(unsafeStrings.ok && unsafeStrings.hasReviewedCandidates, "valid candidate with unsafe strings still bridges");
+    assertEqual(unsafeStrings.reviewedCandidates.length, 1, "unsafe string case keeps the valid candidate");
+    assertOnlyKeys(unsafeStrings.reviewedCandidates[0], REVIEWED_KEYS, "unsafe string reviewed candidate exposes only safe keys");
+    assertEqual(unsafeStrings.reviewedCandidates[0].type, "pressureCandidate", "unsafe string case preserves valid type");
+    assertEqual(unsafeStrings.reviewedCandidates[0].severity, "standard", "unsafe severity falls back to standard");
+    assertEqual(unsafeStrings.reviewedCandidates[0].label, "Risk bid reviewed candidate", "unsafe label uses safe fallback");
+    assertEqual(unsafeStrings.reviewedCandidates[0].text, "Reviewed risk bid candidate requires GM review.", "unsafe text uses safe fallback");
+    assertNoForbiddenOutput(unsafeStrings, "unsafe string bridge output");
+
     for (const blocked of [
       prepareTravelV2RiskBidReviewedCandidateBridge(),
       prepareTravelV2RiskBidReviewedCandidateBridge({ ok: false, hasRiskBidResult: true, candidates: [{ type: "benefit" }] }),

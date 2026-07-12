@@ -33,8 +33,39 @@ const REVIEWED_CANDIDATE_KEYS = Object.freeze([
   "requiresReview"
 ]);
 
-function safeString(value) {
-  return typeof value === "string" ? value.trim() : "";
+const FORBIDDEN_OUTPUT_TERMS = Object.freeze([
+  "gmOnly",
+  "secret",
+  "hiddenHazards",
+  "unrevealedHazard",
+  "futureTriggers",
+  "internalScoring",
+  "debugReport",
+  "auditRecord",
+  "applyPayload",
+  "actorUuid",
+  "targetActorUuid",
+  "userId",
+  "userName",
+  "updateData",
+  "actor.update",
+  "ChatMessage",
+  "JournalEntry",
+  "socket",
+  "Compendium.",
+  "Actor.",
+  "Item."
+]);
+
+function unsafeOutputString(value) {
+  if (typeof value !== "string") return false;
+  return FORBIDDEN_OUTPUT_TERMS.some((term) => value.includes(term));
+}
+
+function safeString(value, fallback = "") {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return unsafeOutputString(trimmed) ? fallback : trimmed;
 }
 
 function safeIntegerOrNull(value) {
@@ -95,7 +126,7 @@ function buildReviewedCandidate(candidate, context) {
     bridgeVersion: TRAVEL_V2_RISK_BID_RESULT_BRIDGE_VERSION,
     source: "riskBidResult",
     type,
-    severity: safeString(candidate?.severity) || "standard",
+    severity: safeString(candidate?.severity, "standard") || "standard",
     tier: context.tier,
     resultBand: context.resultBand,
     dangerLevel: context.dangerLevel,
@@ -103,8 +134,8 @@ function buildReviewedCandidate(candidate, context) {
     actionId: context.actionId,
     roundIndex: context.roundIndex,
     roundNumber: context.roundNumber,
-    label: safeString(candidate?.label),
-    text: safeString(candidate?.text),
+    label: safeString(candidate?.label, "Risk bid reviewed candidate"),
+    text: safeString(candidate?.text, "Reviewed risk bid candidate requires GM review."),
     requiresReview: candidate?.requiresReview === false ? false : true
   };
   for (const key of Object.keys(reviewedCandidate)) {
