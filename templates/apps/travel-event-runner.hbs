@@ -756,6 +756,74 @@
             {{#if state.riskBids.selected}}<button type="button" data-arcflight-travel-v2-risk-bid-clear>Clear Risk Bid</button>{{/if}}
           </section>
         {{/if}}
+        {{#if state.isGM}}
+          <section class="arcflight-travel-runner-mvp__panel arcflight-travel-runner-mvp__risk-bid-review-queue" aria-label="Risk Bid Review Queue">
+            <header>
+              <div>
+                <h2>Risk Bid Review Queue</h2>
+                <p class="arcflight-sheet__hint">GM review records prepared from the current risk bid result. Creates pending records only.</p>
+              </div>
+            </header>
+            <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid review queue summary">
+              <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pending: {{state.riskBidReviewQueue.pendingCount}}</span>
+              <span class="arcflight-travel-runner-mvp__v2-preview-chip">Reviewed: {{state.riskBidReviewQueue.reviewedCount}}</span>
+              <span class="arcflight-travel-runner-mvp__v2-preview-chip">Dismissed: {{state.riskBidReviewQueue.dismissedCount}}</span>
+              <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidReviewQueue.appliedCount}}</span>
+              <span class="arcflight-travel-runner-mvp__v2-preview-chip">Records: {{state.riskBidReviewQueue.insertedCount}} / {{state.travelV2RiskBidReviewQueue.insertedCount}}</span>
+            </div>
+            <div class="arcflight-travel-runner-mvp__actions">
+              <button type="button" data-arcflight-travel-v2-risk-bid-review-queue-persist {{#unless state.riskBidPendingReview.ok}}disabled {{/unless}}{{#unless state.riskBidPendingReview.hasReviewPayloads}}disabled {{/unless}}{{#unless state.riskBidPendingReview.queueReady}}disabled{{/unless}}>Persist Risk Bid Reviews</button>
+              <span class="arcflight-sheet__hint">Creates pending GM review records only. Does not apply pressure, hazards, consequences, Momentum, rewards, or scars.</span>
+            </div>
+            {{#if state.travelV2RiskBidReviewQueuePersistResult}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk bid review queue persist result">
+                {{#if state.travelV2RiskBidReviewQueuePersistResult.summaryText}}<p>{{state.travelV2RiskBidReviewQueuePersistResult.summaryText}}</p>{{/if}}
+                <p class="arcflight-sheet__hint">Inserted: {{state.travelV2RiskBidReviewQueuePersistResult.insertedCount}} · Skipped: {{state.travelV2RiskBidReviewQueuePersistResult.skippedCount}} · Duplicate: {{state.travelV2RiskBidReviewQueuePersistResult.duplicateCount}} · Persisted: {{state.travelV2RiskBidReviewQueuePersistResult.persisted}} · Applied: {{state.travelV2RiskBidReviewQueuePersistResult.applied}}</p>
+                <p class="arcflight-sheet__hint">Applied must remain false; these are pending review records only.</p>
+              </section>
+            {{/if}}
+            {{#if state.riskBidPendingReview.hasReviewPayloads}}
+              <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Pending risk bid review payloads">
+                {{#each state.riskBidPendingReview.reviewPayloads}}
+                  <article class="arcflight-travel-runner-mvp__v2-benefit-row">
+                    <div>
+                      <strong>{{label}}</strong>
+                      {{#if text}}<p>{{text}}</p>{{/if}}
+                    </div>
+                    <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{payloadType}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{candidateType}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{severity}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">Tier {{tier}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{dangerLevel}}</span>
+                    </div>
+                  </article>
+                {{/each}}
+              </div>
+            {{/if}}
+            {{#if state.riskBidReviewQueue.records.length}}
+              <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Current risk bid review queue records">
+                {{#each state.riskBidReviewQueue.records}}
+                  <article class="arcflight-travel-runner-mvp__v2-benefit-row">
+                    <div>
+                      <strong>{{label}}</strong>
+                      {{#if text}}<p>{{text}}</p>{{/if}}
+                      <p class="arcflight-sheet__hint">{{#if stationName}}{{stationName}}{{/if}}{{#if actionName}} / {{actionName}}{{/if}}{{#if roundNumber}} · Round {{roundNumber}}{{/if}}</p>
+                    </div>
+                    <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{status}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{payloadType}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{candidateType}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{severity}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">Tier {{tier}}</span>
+                      <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{dangerLevel}}</span>
+                    </div>
+                  </article>
+                {{/each}}
+              </div>
+            {{/if}}
+          </section>
+        {{/if}}
         <section class="arcflight-travel-runner-mvp__panel arcflight-player-safe" aria-label="Station Action Lock-In">
           <div class="arcflight-travel-runner-mvp__v2-event-readiness-header">
             <div>
