@@ -74,6 +74,12 @@ function safeIntegerOrNull(value) {
   return Number.isInteger(number) && Number.isFinite(number) ? number : null;
 }
 
+function safeRiskBidTierOrNull(value) {
+  if (typeof value === "string" && unsafeOutputString(value)) return null;
+  const number = safeIntegerOrNull(value);
+  return [2, 5, 8].includes(number) ? number : null;
+}
+
 function freezeOutput(value) {
   if (Array.isArray(value)) {
     for (const entry of value) freezeOutput(entry);
@@ -105,8 +111,8 @@ function baseBlockedOutput(candidateState, blockedReasons) {
     hasReviewedCandidates: false,
     blockedReasons: Array.from(new Set(blockedReasons)),
     resultBand: safeString(candidateState?.resultBand) || null,
-    tier: candidateState?.tier ?? null,
-    dcModifier: candidateState?.dcModifier ?? null,
+    tier: safeRiskBidTierOrNull(candidateState?.tier),
+    dcModifier: safeRiskBidTierOrNull(candidateState?.dcModifier),
     dangerLevel: safeString(candidateState?.dangerLevel) || "none",
     stationKey: safeString(candidateState?.stationKey),
     stationName: safeString(candidateState?.stationName),
@@ -153,7 +159,7 @@ export function prepareTravelV2RiskBidReviewedCandidateBridge(input = {}, option
   if (!Array.isArray(candidateState.candidates) || candidateState.candidates.length === 0) return baseBlockedOutput(candidateState, ["missing-risk-bid-result-candidates"]);
 
   const context = {
-    tier: candidateState.tier ?? null,
+    tier: safeRiskBidTierOrNull(candidateState.tier),
     resultBand: safeString(candidateState.resultBand) || null,
     dangerLevel: safeString(candidateState.dangerLevel) || "none",
     stationKey: safeString(candidateState.stationKey),
@@ -171,7 +177,7 @@ export function prepareTravelV2RiskBidReviewedCandidateBridge(input = {}, option
     blockedReasons: [],
     resultBand: context.resultBand,
     tier: context.tier,
-    dcModifier: candidateState.dcModifier ?? null,
+    dcModifier: safeRiskBidTierOrNull(candidateState.dcModifier),
     dangerLevel: context.dangerLevel,
     stationKey: context.stationKey,
     stationName: safeString(candidateState.stationName),

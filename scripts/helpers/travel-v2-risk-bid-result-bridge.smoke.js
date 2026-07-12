@@ -107,6 +107,36 @@ export function runTravelV2RiskBidResultBridgeSmokeChecks() {
     assertEqual(unsafeStrings.reviewedCandidates[0].text, "Reviewed risk bid candidate requires GM review.", "unsafe text uses safe fallback");
     assertNoForbiddenOutput(unsafeStrings, "unsafe string bridge output");
 
+    const unsafeTier = prepareTravelV2RiskBidReviewedCandidateBridge({
+      ok: true,
+      hasRiskBidResult: true,
+      resultBand: "failure",
+      tier: "8 secret",
+      dcModifier: "applyPayload",
+      dangerLevel: "high",
+      stationKey: "navigator",
+      stationName: "Navigator",
+      actionId: "plot-course",
+      actionName: "Plot Course",
+      roundIndex: 0,
+      roundNumber: 1,
+      candidates: [{ type: "pressureCandidate", severity: "strong", label: "Pressure candidate", text: "Reviewed pressure candidate.", requiresReview: true }],
+      gmReviewRequired: true
+    });
+    assertSmoke(unsafeTier.ok && unsafeTier.hasReviewedCandidates, "valid candidate with unsafe tier values still bridges");
+    assertEqual(unsafeTier.tier, null, "unsafe tier falls back to null");
+    assertEqual(unsafeTier.dcModifier, null, "unsafe dcModifier falls back to null");
+    assertEqual(unsafeTier.reviewedCandidates[0].tier, null, "reviewed candidate unsafe tier falls back to null");
+    assertNoForbiddenOutput(unsafeTier, "unsafe tier bridge output");
+
+    for (const tier of [2, "5", 8]) {
+      const bridge = prepareTravelV2RiskBidReviewedCandidateBridge({ ...candidateStateFor("success", Number(tier)), tier, dcModifier: tier });
+      assertSmoke(bridge.ok && bridge.hasReviewedCandidates, `valid tier ${tier} bridges`);
+      assertEqual(bridge.tier, Number(tier), `valid tier ${tier} is preserved`);
+      assertEqual(bridge.dcModifier, Number(tier), `valid dcModifier ${tier} is preserved`);
+      assertSmoke(bridge.reviewedCandidates.every((candidate) => candidate.tier === Number(tier)), `valid reviewed candidate tier ${tier} is preserved`);
+    }
+
     for (const blocked of [
       prepareTravelV2RiskBidReviewedCandidateBridge(),
       prepareTravelV2RiskBidReviewedCandidateBridge({ ok: false, hasRiskBidResult: true, candidates: [{ type: "benefit" }] }),
