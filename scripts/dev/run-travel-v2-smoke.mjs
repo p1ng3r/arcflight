@@ -39,6 +39,7 @@ import runTravelV2SupportActionTargetingSmokeChecks from "../helpers/travel-v2-s
 import runTravelV2SupportAssistRecordsSmokeChecks from "../helpers/travel-v2-support-assist-records.smoke.js";
 import runTravelV2SupportBacklashSmokeChecks from "../helpers/travel-v2-support-backlash.smoke.js";
 import runTravelV2FocusRiskSuppressionSmokeChecks from "../helpers/travel-v2-focus-risk-suppression.smoke.js";
+import runTravelV2RiskBidsSmokeChecks from "../helpers/travel-v2-risk-bids.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
 import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
@@ -128,6 +129,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 support assist records", runTravelV2SupportAssistRecordsSmokeChecks],
   ["Travel v2 support backlash", runTravelV2SupportBacklashSmokeChecks],
   ["Travel v2 focus risk suppression", runTravelV2FocusRiskSuppressionSmokeChecks],
+  ["Travel v2 risk bids", runTravelV2RiskBidsSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
   ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks],
