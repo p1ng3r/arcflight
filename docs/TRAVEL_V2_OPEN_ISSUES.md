@@ -112,6 +112,8 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Slice 01 note:** Event-authored Inter-Station Help action options are now prepared from supported event, round, station-card, and station-prompt definitions; filtered against active stations and station order; exposed through player-safe runner aliases; and surfaced as option-only Inter-Station Help presentation. No assist is created, consumed, rolled, persisted, or applied by this slice.
 
+**Slice 02 note:** Successful explicitly selected authored Inter-Station Help options can now be converted by a pure helper into deterministic, player-safe pending help records with stable dedupe keys, round/order validation, duplicate/block reasons, and inert critical-success strengthening metadata. This slice does not insert records into a queue, consume benefits, roll dice, persist sessions, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
+
 **Remaining work:**
 
 - Create pending benefits from authored Inter-Station Help actions.

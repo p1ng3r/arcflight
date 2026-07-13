@@ -95,6 +95,28 @@ function scrubForbidden(value) {
   return next;
 }
 
+function sanitizeCriticalSuccessMetadata(value) {
+  if (!isPlainObject(value)) return null;
+  const metadata = scrubForbidden({
+    id: text(value.id),
+    key: text(value.key),
+    title: text(value.title ?? value.label ?? value.name),
+    publicText: text(value.publicText ?? value.playerText ?? value.description ?? value.summary),
+    strengthening: text(value.strengthening ?? value.mode ?? value.kind),
+    benefitKind: text(value.benefitKind ?? value.benefitType),
+    magnitude: Number.isFinite(Number(value.magnitude ?? value.value ?? value.amount)) ? Number(value.magnitude ?? value.value ?? value.amount) : undefined,
+    tags: sanitizeTags(value.tags ?? value.tag)
+  });
+  for (const key of Object.keys(metadata)) {
+    if (metadata[key] === undefined || metadata[key] === null || metadata[key] === "" || (Array.isArray(metadata[key]) && metadata[key].length === 0)) delete metadata[key];
+  }
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+function criticalSuccessMetadataFrom(record = {}) {
+  return sanitizeCriticalSuccessMetadata(record.criticalSuccessMetadata ?? record.criticalSuccess ?? record.criticalSuccessStrengthening ?? record.criticalSuccessBenefit);
+}
+
 function currentRoundContext(session = {}, options = {}) {
   const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
   if (rounds.length === 0) return { roundIndex: -1, roundNumber: null, round: null, roundResult: {}, event: isPlainObject(session?.event) ? session.event : {}, blockedReasons: ["missing-travel-event-rounds"] };
@@ -232,6 +254,8 @@ function normalizeAction(entry = {}, index = 0, context = {}, orderState = {}, o
     const tags = sanitizeTags(record.tags ?? record.tag);
     rows.push({
       version: TRAVEL_V2_INTER_STATION_HELP_ACTIONS_VERSION,
+      roundIndex: context.roundIndex,
+      roundNumber: context.roundNumber,
       actionId: actionIdFor(record, sourceStationKey, targetStationKey, index),
       title,
       publicText,
@@ -248,6 +272,8 @@ function normalizeAction(entry = {}, index = 0, context = {}, orderState = {}, o
       unavailableReason: available ? null : "target-station-not-later-in-order",
       tags,
       authoredFrom: text(entry.authoredFrom),
+      stationOrderLocked: orderState.stationOrderLocked === true,
+      ...(criticalSuccessMetadataFrom(record) ? { criticalSuccessMetadata: criticalSuccessMetadataFrom(record) } : {}),
       playerSafe: true,
       reviewOnly: true,
       createsAssist: false,
