@@ -806,6 +806,23 @@
                 </p>
               </section>
             {{/if}}
+            {{#if state.riskBidPressureApply.pressureReady}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Pressure Plumbing">
+                <h3>Risk Bid Pressure Plumbing</h3>
+                <p class="arcflight-sheet__hint">Pressure plumbing only — no actor or world mutation.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid pressure plumbing summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply mode: {{state.riskBidPressureApply.applyMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure records: {{state.riskBidPressureApply.pressureRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure delta total: {{state.riskBidPressureApply.pressureDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Staged: {{state.riskBidPressureApply.staged}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Committed: {{state.riskBidPressureApply.committed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidPressureApply.applied}}</span>
+                  {{#each state.riskBidPressureApply.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidPressureApply.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidPressureApply.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
