@@ -114,9 +114,11 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Slice 02 note:** Successful explicitly selected authored Inter-Station Help options can now be converted by a pure helper into deterministic, player-safe pending help records with stable dedupe keys, round/order validation, duplicate/block reasons, and inert critical-success strengthening metadata. This slice does not insert records into a queue, consume benefits, roll dice, persist sessions, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
 
+**Slice 03 note:** Explicitly requested successful canonical Inter-Station Help pending records can now be inserted once into the existing session-local `session.travelV2PendingStationBenefits` pending station benefit queue with stable queue identity and raw-state dedupe. Slice 03 preserves unrelated queue rows and remains helper-only; it does not consume the benefit, apply a modifier, activate critical-success strengthening, expire records, perform round-end cleanup, add runner interaction, persist Foundry/world data, roll dice, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
+
 **Remaining work:**
 
-- Create pending benefits from authored Inter-Station Help actions.
+- Wire explicit runner/GM interaction for creating pending benefits from authored Inter-Station Help actions.
 - Let later stations consume queued benefits through the existing station benefit/support path.
 - Support critical-success automatic or stronger benefits where authored.
 - Integrate critical-failure backlash.
