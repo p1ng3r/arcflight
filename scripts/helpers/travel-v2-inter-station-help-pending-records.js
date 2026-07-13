@@ -31,7 +31,12 @@ function existingRecordsFrom(value = {}) {
   return [];
 }
 function resultBandFrom(context = {}) { return text(context.resultBand ?? context.result ?? context.outcome ?? context.degreeOfSuccess); }
-function integerOrNull(value) { const number = Number(value); return Number.isInteger(number) ? number : null; }
+function integerOrNull(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+}
 function sameIfBothPresent(left, right) { return !text(left) || !text(right) || text(left) === text(right); }
 function sameIntegerIfBothPresent(left, right) {
   const leftNumber = integerOrNull(left);

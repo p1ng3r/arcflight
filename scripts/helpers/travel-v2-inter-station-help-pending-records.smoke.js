@@ -35,6 +35,7 @@ export default async function runTravelV2InterStationHelpPendingRecordsSmokeChec
   const normal = prepareTravelV2InterStationHelpPendingRecord(session, action, { result: "success", roundIndex: 0, sourceStationKey: "navigator", targetStationKey: "engineer", actionId: "nav-to-engineer" });
   assert.equal(normal.ok, true);
   assert.equal(normal.record.pendingHelpKey, "inter-station-help:0:nav-to-engineer:navigator:engineer");
+  assert.equal(normal.record.roundIndex, 0);
   assert.equal(normal.record.title, "Chart an Engine Line R1");
   assert.equal(normal.record.publicText, "Show the Engineer a stable current in round 1.");
   assert.equal(normal.record.sourceStationName, "Navigator 1");
@@ -44,6 +45,14 @@ export default async function runTravelV2InterStationHelpPendingRecordsSmokeChec
   assert.equal(normal.record.applied, false);
   assert.equal(Object.hasOwn(normal.record, "criticalSuccessMetadata"), false);
   checked.push("normal success prepares deterministic pending record from canonical fields without activating critical metadata");
+
+  for (const malformedRoundIndex of [null, "", "   "]) {
+    const malformedRound = prepareTravelV2InterStationHelpPendingRecord(session, { ...action, roundIndex: malformedRoundIndex }, { result: "success", roundIndex: 0 });
+    assert.equal(malformedRound.ok, false, `malformed action roundIndex ${JSON.stringify(malformedRoundIndex)} should be blocked`);
+    assert.equal(malformedRound.blockedReasons.includes("missing-action-round-context"), true, `malformed action roundIndex ${JSON.stringify(malformedRoundIndex)} should report missing action round context`);
+    assert.equal(malformedRound.record, null, `malformed action roundIndex ${JSON.stringify(malformedRoundIndex)} should not produce a record`);
+  }
+  checked.push("null, blank, and whitespace action round context cannot masquerade as round 0");
 
   const critical = prepareTravelV2InterStationHelpPendingRecord(session, action, { result: "criticalSuccess", roundIndex: 0 });
   assert.equal(critical.ok, true);
