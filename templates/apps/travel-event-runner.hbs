@@ -790,6 +790,48 @@
                 <p class="arcflight-sheet__hint">Applied must remain false; these are pending review records only.</p>
               </section>
             {{/if}}
+            {{#if state.riskBidSelectedReviewPreview.previewRecords.length}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Selected Risk Bid Review Preview">
+                <h3>Selected Risk Bid Review Preview</h3>
+                <p class="arcflight-sheet__hint">Preview only — no effects applied. Selected: {{state.riskBidSelectedReviewPreview.selectedCount}} · Applied: {{state.riskBidSelectedReviewPreview.applied}}</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Selected risk bid review family counts">
+                  {{#if state.riskBidSelectedReviewPreview.hasPressurePreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure preview</span>{{/if}}
+                  {{#if state.riskBidSelectedReviewPreview.hasHazardPreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard preview</span>{{/if}}
+                  {{#if state.riskBidSelectedReviewPreview.hasConsequencePreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence preview</span>{{/if}}
+                  {{#if state.riskBidSelectedReviewPreview.hasBenefitPreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Benefit preview</span>{{/if}}
+                  {{#if state.riskBidSelectedReviewPreview.hasRewardPreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Reward preview</span>{{/if}}
+                  {{#if state.riskBidSelectedReviewPreview.hasMomentumPreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Momentum preview</span>{{/if}}
+                  {{#if state.riskBidSelectedReviewPreview.hasScarPreview}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Scar preview</span>{{/if}}
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Selected risk bid review payload counts">
+                  {{#each state.riskBidSelectedReviewPreview.byPayloadType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">{{@key}}: {{this}}</span>{{/each}}
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Selected risk bid review danger counts">
+                  {{#each state.riskBidSelectedReviewPreview.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Selected risk bid review severity counts">
+                  {{#each state.riskBidSelectedReviewPreview.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Selected risk bid review preview records">
+                  {{#each state.riskBidSelectedReviewPreview.previewRecords}}
+                    <article class="arcflight-travel-runner-mvp__v2-benefit-row">
+                      <div>
+                        <strong>{{label}}</strong>
+                        {{#if text}}<p>{{text}}</p>{{/if}}
+                      </div>
+                      <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">Preview only</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{resolutionFamily}}</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{resolutionType}}</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{payloadType}}</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{severity}}</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{dangerLevel}}</span>
+                      </div>
+                    </article>
+                  {{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidPendingReview.hasReviewPayloads}}
               <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Pending risk bid review payloads">
                 {{#each state.riskBidPendingReview.reviewPayloads}}
