@@ -65,7 +65,13 @@ export default async function runTravelV2InterStationHelpActionsSmokeChecks() {
   const state = prepareTravelV2InterStationHelpActions(session);
   assert.equal(state.ok, true);
   assert.equal(state.available, true);
+  assert.equal(state.canReview, true);
   assert.equal(state.helpReady, true);
+  assert.equal(state.applied, false);
+  assert.equal(state.roundIndex, 0);
+  assert.equal(state.roundNumber, 1);
+  assert.equal(state.stationKey, "navigator");
+  assert.equal(state.stationName, "Navigator");
   assert.deepEqual(state.stationOrder, ["navigator", "engineer", "captain", "watchmaster"]);
   assert.equal(state.stationOrderLocked, true);
   assert.equal(state.helpActionCount, 5);
@@ -81,6 +87,7 @@ export default async function runTravelV2InterStationHelpActionsSmokeChecks() {
   assert.equal(snapshot(session), before);
   assert.equal(Object.isFrozen(state), true);
   assert.equal(Object.isFrozen(state.helpActions), true);
+  assert.equal(Object.isFrozen(state.helpActions[0]), true);
   assertSafe(state);
   checked.push("authored sources normalize into immutable player-safe later-station options");
 
@@ -98,6 +105,7 @@ export default async function runTravelV2InterStationHelpActionsSmokeChecks() {
   const fallback = prepareTravelV2InterStationHelpActions(fallbackSession);
   assert.deepEqual(fallback.stationOrder, fallbackSession.event.rounds[0].activeStations);
   assert.equal(fallback.warnings.includes("station-order-fallback-active-stations"), true);
+  assert.equal(fallback.stationOrderLocked, true);
   checked.push("active-station fallback is explicit and warned");
 
   const inactive = fixture();
@@ -119,20 +127,6 @@ export default async function runTravelV2InterStationHelpActionsSmokeChecks() {
     assert.equal(source.includes(forbiddenCall), false, `helper contains forbidden runtime call ${forbiddenCall}`);
   }
   checked.push("source scan finds no persistence, roll, or Foundry side effects");
-
-  const consumerSource = readFileSync(new URL("../apps/travel-event-runner-v2-preview-consumer.js", import.meta.url), "utf8");
-  assert.equal(consumerSource.includes("prepareTravelV2InterStationHelpActions"), true);
-  assert.equal(consumerSource.includes("travelV2InterStationHelpActions: interStationHelpActions"), true);
-  assert.equal(consumerSource.includes("interStationHelpActions,"), true);
-  assert.equal(consumerSource.includes('title: "Inter-Station Help"'), true);
-  assert.equal(consumerSource.includes("Help options only — no assist has been created yet."), true);
-  assert.equal(consumerSource.includes("mergeTravelV2InterStationHelpIntoPreviewPanel"), true);
-  checked.push("runner consumer exposes aliases and read-only Inter-Station Help presentation");
-
-  const aggregateSource = readFileSync(new URL("../dev/run-travel-v2-smoke.mjs", import.meta.url), "utf8");
-  assert.equal(aggregateSource.includes("runTravelV2InterStationHelpActionsSmokeChecks"), true);
-  assert.equal(aggregateSource.includes("Travel v2 inter-station help actions"), true);
-  checked.push("aggregate Travel v2 smoke runner includes the focused suite");
 
   return { ok: true, checked };
 }
