@@ -823,6 +823,24 @@
                 </div>
               </section>
             {{/if}}
+            {{#if state.riskBidHazardApply.hazardReady}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Hazard Plumbing">
+                <h3>Risk Bid Hazard Plumbing</h3>
+                <p class="arcflight-sheet__hint">Hazard plumbing only — no actor or world mutation.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid hazard plumbing summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply mode: {{state.riskBidHazardApply.applyMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard records: {{state.riskBidHazardApply.hazardRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard delta total: {{state.riskBidHazardApply.hazardDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Staged: {{state.riskBidHazardApply.staged}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Committed: {{state.riskBidHazardApply.committed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidHazardApply.applied}}</span>
+                  {{#each state.riskBidHazardApply.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidHazardApply.byHazardKind}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Kind {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidHazardApply.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidHazardApply.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
