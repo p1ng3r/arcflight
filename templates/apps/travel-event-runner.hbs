@@ -859,6 +859,28 @@
                 </div>
               </section>
             {{/if}}
+            {{#if state.riskBidBenefitRewardApply.positiveReady}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Benefit Momentum Reward Plumbing">
+                <h3>Risk Bid Benefit / Momentum / Reward Plumbing</h3>
+                <p class="arcflight-sheet__hint">Benefit, Momentum, and reward plumbing only — no actor or world mutation.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid benefit Momentum reward plumbing summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply mode: {{state.riskBidBenefitRewardApply.applyMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Positive records: {{state.riskBidBenefitRewardApply.positiveRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Positive delta total: {{state.riskBidBenefitRewardApply.positiveDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Benefit delta total: {{state.riskBidBenefitRewardApply.benefitDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Momentum delta total: {{state.riskBidBenefitRewardApply.momentumDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Reward delta total: {{state.riskBidBenefitRewardApply.rewardDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Staged: {{state.riskBidBenefitRewardApply.staged}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Committed: {{state.riskBidBenefitRewardApply.committed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidBenefitRewardApply.applied}}</span>
+                  {{#each state.riskBidBenefitRewardApply.byResolutionFamily}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Family {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidBenefitRewardApply.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidBenefitRewardApply.byPositiveKind}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Kind {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidBenefitRewardApply.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidBenefitRewardApply.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
