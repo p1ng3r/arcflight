@@ -262,6 +262,9 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     });
     assertSmoke(selectedQueuedFailureState.riskBidReviewPreview.ok && selectedQueuedFailureState.riskBidReviewPreview.hasPreviews, "selected queued risk bid review records produce ready preview package");
     assertEqual(selectedQueuedFailureState.riskBidReviewPreview.previews[0].applied, false, "selected review preview remains preview-only");
+    assertEqual(selectedQueuedFailureState.riskBidReviewPreview.previews[0].resolutionFamily, "pressure", "selected review preview exposes resolution family");
+    assertEqual(selectedQueuedFailureState.riskBidReviewPreview.counts.byResolutionFamily.pressure, 1, "selected review preview groups counts by resolution family");
+    assertEqual(selectedQueuedFailureState.riskBidReviewPreview.resolutionFamilies[0].family, "pressure", "selected review preview exposes resolution family package");
     const queuedFailurePlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: queuedFailureState.session, user: { isGM: false } });
     assertEqual(queuedFailurePlayerState.riskBidReviewQueue.records.length, 0, "non-GM queue state does not expose detailed records");
     assertEqual(queuedFailurePlayerState.riskBidReviewPreview.previews.length, 0, "non-GM review preview does not expose selected records");

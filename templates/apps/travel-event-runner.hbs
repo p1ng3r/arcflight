@@ -793,7 +793,12 @@
             {{#if state.riskBidReviewPreview.hasPreviews}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Selected risk bid review preview">
                 <p>{{state.riskBidReviewPreview.summaryText}}</p>
-                <p class="arcflight-sheet__hint">Preview-only bridge for later GM resolution. Applied: {{state.riskBidReviewPreview.applied}}</p>
+                <p class="arcflight-sheet__hint">Preview-only bridge for later GM resolution. Ready: {{state.riskBidReviewPreview.readyCount}} · Blocked: {{state.riskBidReviewPreview.blockedCount}} · Applied: {{state.riskBidReviewPreview.applied}}</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Selected risk bid review resolution families">
+                  {{#each state.riskBidReviewPreview.resolutionFamilies}}
+                    <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{label}}: {{count}}</span>
+                  {{/each}}
+                </div>
                 <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Selected risk bid review preview records">
                   {{#each state.riskBidReviewPreview.previews}}
                     <article class="arcflight-travel-runner-mvp__v2-benefit-row">
@@ -803,6 +808,7 @@
                       </div>
                       <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
                         <span class="arcflight-travel-runner-mvp__v2-preview-chip">Ready for later resolution</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{resolutionFamily}}</span>
                         <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{payloadType}}</span>
                         <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{severity}}</span>
                         <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{dangerLevel}}</span>

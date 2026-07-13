@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { prepareTravelV2RiskBidReviewQueueRecord } from "./travel-v2-risk-bid-review-queue.js";
-import { prepareTravelV2RiskBidReviewPreviewPackage, applyTravelV2RiskBidReviewPreviewToRenderState, TRAVEL_V2_RISK_BID_REVIEW_PREVIEW_VERSION } from "./travel-v2-risk-bid-review-preview.js";
+import { prepareTravelV2RiskBidSelectedReviewPreview, prepareTravelV2RiskBidReviewPreviewPackage, applyTravelV2RiskBidReviewPreviewToRenderState, TRAVEL_V2_RISK_BID_REVIEW_PREVIEW_VERSION } from "./travel-v2-risk-bid-review-preview.js";
 
 const FORBIDDEN = ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions", "ChatMessage", "JournalEntry", "socket", "Actor.", "Item."];
 
@@ -24,7 +24,7 @@ export function runTravelV2RiskBidReviewPreviewSmokeChecks() {
     const pending = prepareTravelV2RiskBidReviewQueueRecord({ selected: false, payloadType: "consequenceReview", label: "Unselected" }, { queueKey: "risk-bid:1:navigator:plot-course:consequenceReview:1" });
     const session = { marker: "preserve", travelV2RiskBidReviewQueue: { records: [selected, pending] } };
     const originalJson = JSON.stringify(session);
-    const preview = prepareTravelV2RiskBidReviewPreviewPackage(session, { canReview: true });
+    const preview = prepareTravelV2RiskBidSelectedReviewPreview(session, { canReview: true });
     assert.equal(preview.ok, true, "selected record creates ready preview");
     assert.equal(preview.available, true);
     assert.equal(preview.selectedCount, 1);
@@ -34,27 +34,37 @@ export function runTravelV2RiskBidReviewPreviewSmokeChecks() {
     assert.equal(preview.previews[0].applied, false);
     assert.equal(preview.previews[0].resolutionMode, "later-gm-review");
     assert.equal(preview.previews[0].tier, 8);
-    assert.deepEqual(Object.keys(preview.previews[0]).sort(), ["actionId", "actionName", "applied", "candidateType", "dangerLevel", "label", "payloadType", "previewVersion", "queueKey", "readyForResolution", "requiresReview", "resolutionMode", "resultBand", "roundIndex", "roundNumber", "selected", "selectedAt", "severity", "source", "stationKey", "stationName", "status", "text", "tier"].sort());
+    assert.equal(preview.previews[0].resolutionFamily, "pressure");
+    assert.equal(preview.counts.selected, 1);
+    assert.equal(preview.counts.ready, 1);
+    assert.equal(preview.counts.byResolutionFamily.pressure, 1);
+    assert.equal(preview.counts.byStatus.reviewed, 1);
+    assert.equal(preview.resolutionFamilies.length, 1);
+    assert.equal(preview.resolutionFamilies[0].family, "pressure");
+    assert.deepEqual(Object.keys(preview.previews[0]).sort(), ["actionId", "actionName", "applied", "candidateType", "dangerLevel", "label", "payloadType", "previewVersion", "resolutionFamily", "queueKey", "readyForResolution", "requiresReview", "resolutionMode", "resultBand", "roundIndex", "roundNumber", "selected", "selectedAt", "severity", "source", "stationKey", "stationName", "status", "text", "tier"].sort());
     assert.equal(JSON.stringify(session), originalJson, "input session is not mutated");
     assert.equal(Object.isFrozen(preview), true);
     assert.equal(Object.isFrozen(preview.previews[0]), true);
 
-    const player = prepareTravelV2RiskBidReviewPreviewPackage(session, { canReview: false });
+    const aliasPreview = prepareTravelV2RiskBidReviewPreviewPackage(session, { canReview: true });
+    assert.deepEqual(aliasPreview, preview, "legacy package alias delegates to selected review preview");
+
+    const player = prepareTravelV2RiskBidSelectedReviewPreview(session, { canReview: false });
     assert.equal(player.ok, false, "non-GM preview blocks");
     assert.equal(player.previews.length, 0, "non-GM preview exposes no records");
     assert.equal(player.blockedReasons.includes("travel-v2-review-permission-required"), true);
 
-    const noSelection = prepareTravelV2RiskBidReviewPreviewPackage({ travelV2RiskBidReviewQueue: { records: [pending] } }, { canReview: true });
+    const noSelection = prepareTravelV2RiskBidSelectedReviewPreview({ travelV2RiskBidReviewQueue: { records: [pending] } }, { canReview: true });
     assert.equal(noSelection.ok, false, "missing selection blocks safely");
     assert.equal(noSelection.blockedReasons.includes("missing-selected-risk-bid-review-records"), true);
 
     const dismissed = prepareTravelV2RiskBidReviewQueueRecord({ ...selected, selected: true, label: "Dismissed" }, { queueKey: "dismissed", status: "dismissed" });
-    const notReady = prepareTravelV2RiskBidReviewPreviewPackage({ travelV2RiskBidReviewQueue: { records: [dismissed] } }, { canReview: true });
+    const notReady = prepareTravelV2RiskBidSelectedReviewPreview({ travelV2RiskBidReviewQueue: { records: [dismissed] } }, { canReview: true });
     assert.equal(notReady.ok, false, "dismissed selected records are not ready");
     assert.equal(notReady.blockedReasons.includes("selected-risk-bid-review-records-not-ready"), true);
 
     const unsafe = prepareTravelV2RiskBidReviewQueueRecord({ selected: true, label: "gmOnly label", text: "secret text", stationName: "Actor.bad", tier: "8 secret" }, { queueKey: "unsafe" });
-    const unsafePreview = prepareTravelV2RiskBidReviewPreviewPackage({ travelV2RiskBidReviewQueue: { records: [unsafe] } }, { canReview: true });
+    const unsafePreview = prepareTravelV2RiskBidSelectedReviewPreview({ travelV2RiskBidReviewQueue: { records: [unsafe] } }, { canReview: true });
     assertNoForbidden(unsafePreview, "unsafe selected preview");
 
     const rendered = applyTravelV2RiskBidReviewPreviewToRenderState({ session }, {}, { user: { isGM: true } });
@@ -73,7 +83,7 @@ export function runTravelV2RiskBidReviewPreviewSmokeChecks() {
     globalThis.game = prior.game;
     globalThis.world = prior.world;
   }
-  return { checked: ["risk-bid-review-preview-gm-selected", "risk-bid-review-preview-blocking", "risk-bid-review-preview-safe-shape", "risk-bid-review-preview-render-alias", "risk-bid-review-preview-no-side-effects"] };
+  return { checked: ["risk-bid-selected-review-preview-gm-selected", "risk-bid-selected-review-preview-counts-and-families", "risk-bid-review-preview-blocking", "risk-bid-review-preview-safe-shape", "risk-bid-review-preview-render-alias", "risk-bid-review-preview-no-side-effects"] };
 }
 
 export default runTravelV2RiskBidReviewPreviewSmokeChecks;

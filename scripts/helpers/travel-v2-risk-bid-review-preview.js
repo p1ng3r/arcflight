@@ -4,7 +4,8 @@ export const TRAVEL_V2_RISK_BID_REVIEW_PREVIEW_VERSION = 1;
 
 const SAFE_LABEL_FALLBACK = "Risk bid review preview";
 const SAFE_TEXT_FALLBACK = "Selected risk bid review is ready for later GM resolution.";
-const PREVIEW_KEYS = Object.freeze(["previewVersion", "queueKey", "source", "status", "payloadType", "candidateType", "severity", "tier", "resultBand", "dangerLevel", "stationKey", "stationName", "actionId", "actionName", "roundIndex", "roundNumber", "label", "text", "requiresReview", "selected", "selectedAt", "readyForResolution", "resolutionMode", "applied"]);
+const PREVIEW_KEYS = Object.freeze(["previewVersion", "queueKey", "source", "status", "payloadType", "candidateType", "resolutionFamily", "severity", "tier", "resultBand", "dangerLevel", "stationKey", "stationName", "actionId", "actionName", "roundIndex", "roundNumber", "label", "text", "requiresReview", "selected", "selectedAt", "readyForResolution", "resolutionMode", "applied"]);
+const RESOLUTION_FAMILIES = Object.freeze(["pressure", "hazard", "consequence", "shipScar", "benefit", "difficulty", "reward", "other"]);
 const FORBIDDEN_OUTPUT_TERMS = Object.freeze(["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions", "hiddenHazards", "futureTriggers", "internalScoring", "debugReport", "actorUuid", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]);
 
 function unsafeOutputString(value) {
@@ -32,6 +33,63 @@ function freezeOutput(value) {
   else if (value && typeof value === "object") for (const entry of Object.values(value)) freezeOutput(entry);
   return Object.freeze(value);
 }
+function emptyCountMap(keys = []) {
+  return Object.fromEntries(keys.map((key) => [key, 0]));
+}
+function incrementCount(counts, key) {
+  const safeKey = safeString(key) || "unknown";
+  counts[safeKey] = (Number(counts[safeKey]) || 0) + 1;
+}
+function resolutionFamilyFor(record = {}) {
+  const text = `${safeString(record.payloadType)} ${safeString(record.candidateType)}`.toLowerCase();
+  if (text.includes("pressure")) return "pressure";
+  if (text.includes("hazard")) return "hazard";
+  if (text.includes("consequence")) return "consequence";
+  if (text.includes("scar")) return "shipScar";
+  if (text.includes("benefit") || text.includes("progress")) return "benefit";
+  if (text.includes("difficulty")) return "difficulty";
+  if (text.includes("reward") || text.includes("momentum")) return "reward";
+  return "other";
+}
+function buildCounts(records = [], previews = []) {
+  const counts = {
+    selected: records.length,
+    ready: previews.length,
+    blocked: Math.max(0, records.length - previews.length),
+    byStatus: {},
+    byResolutionFamily: emptyCountMap(RESOLUTION_FAMILIES),
+    bySeverity: {},
+    byDangerLevel: {},
+    byResultBand: {},
+    byTier: {}
+  };
+  for (const record of records) {
+    incrementCount(counts.byStatus, record.status);
+    incrementCount(counts.bySeverity, record.severity);
+    incrementCount(counts.byDangerLevel, record.dangerLevel);
+    incrementCount(counts.byResultBand, record.resultBand);
+    incrementCount(counts.byTier, record.tier === null || record.tier === undefined ? "none" : String(record.tier));
+  }
+  for (const preview of previews) incrementCount(counts.byResolutionFamily, preview.resolutionFamily);
+  return freezeOutput(counts);
+}
+function buildResolutionFamilies(previews = []) {
+  const grouped = new Map(RESOLUTION_FAMILIES.map((family) => [family, []]));
+  for (const preview of previews) {
+    const family = RESOLUTION_FAMILIES.includes(preview.resolutionFamily) ? preview.resolutionFamily : "other";
+    grouped.get(family).push(preview);
+  }
+  return freezeOutput(RESOLUTION_FAMILIES.map((family) => {
+    const records = grouped.get(family) ?? [];
+    return {
+      family,
+      label: family === "shipScar" ? "Ship Scar" : `${family.charAt(0).toUpperCase()}${family.slice(1)}`,
+      count: records.length,
+      hasRecords: records.length > 0,
+      records
+    };
+  }).filter((family) => family.hasRecords));
+}
 function previewRecord(record = {}) {
   const preview = {
     previewVersion: TRAVEL_V2_RISK_BID_REVIEW_PREVIEW_VERSION,
@@ -40,6 +98,7 @@ function previewRecord(record = {}) {
     status: safeString(record.status) || "pending",
     payloadType: safeString(record.payloadType),
     candidateType: safeString(record.candidateType),
+    resolutionFamily: resolutionFamilyFor(record),
     severity: safeString(record.severity, "standard") || "standard",
     tier: safeRiskBidTierOrNull(record.tier),
     resultBand: safeString(record.resultBand) || null,
@@ -63,12 +122,15 @@ function previewRecord(record = {}) {
   return freezeOutput(preview);
 }
 
-export function prepareTravelV2RiskBidReviewPreviewPackage(session = {}, options = {}) {
+export function prepareTravelV2RiskBidSelectedReviewPreview(session = {}, options = {}) {
   const canReview = options?.canReview === true;
   const queue = prepareTravelV2RiskBidReviewQueueState(session);
-  if (!canReview) return freezeOutput({ version: TRAVEL_V2_RISK_BID_REVIEW_PREVIEW_VERSION, available: false, ok: false, canReview: false, selectedCount: 0, readyCount: 0, blockedReasons: ["travel-v2-review-permission-required"], summaryText: "Risk bid review preview is GM-only.", previews: [], hasPreviews: false, applied: false });
+  const emptyCounts = buildCounts([], []);
+  if (!canReview) return freezeOutput({ version: TRAVEL_V2_RISK_BID_REVIEW_PREVIEW_VERSION, available: false, ok: false, canReview: false, selectedCount: 0, readyCount: 0, blockedCount: 0, blockedReasons: ["travel-v2-review-permission-required"], summaryText: "Risk bid selected review preview is GM-only.", counts: emptyCounts, resolutionFamilies: [], previews: [], hasPreviews: false, applied: false });
   const selectedRecords = queue.records.filter((record) => record.selected === true);
   const previews = selectedRecords.map(previewRecord).filter((record) => record.readyForResolution === true);
+  const counts = buildCounts(selectedRecords, previews);
+  const resolutionFamilies = buildResolutionFamilies(previews);
   const blockedReasons = [];
   if (selectedRecords.length === 0) blockedReasons.push("missing-selected-risk-bid-review-records");
   if (selectedRecords.length > 0 && previews.length === 0) blockedReasons.push("selected-risk-bid-review-records-not-ready");
@@ -79,18 +141,25 @@ export function prepareTravelV2RiskBidReviewPreviewPackage(session = {}, options
     canReview: true,
     selectedCount: selectedRecords.length,
     readyCount: previews.length,
+    blockedCount: counts.blocked,
     blockedReasons,
-    summaryText: previews.length > 0 ? `${previews.length} selected risk bid review ${previews.length === 1 ? "record is" : "records are"} ready for later GM resolution.` : "Select risk bid review records before preparing a later-resolution preview.",
+    summaryText: previews.length > 0 ? `${previews.length} of ${selectedRecords.length} selected risk bid review ${selectedRecords.length === 1 ? "record is" : "records are"} ready for later GM resolution across ${resolutionFamilies.length} resolution ${resolutionFamilies.length === 1 ? "family" : "families"}.` : "Select ready risk bid review records before preparing a later-resolution preview.",
+    counts,
+    resolutionFamilies,
     previews,
     hasPreviews: previews.length > 0,
     applied: false
   });
 }
 
+export function prepareTravelV2RiskBidReviewPreviewPackage(session = {}, options = {}) {
+  return prepareTravelV2RiskBidSelectedReviewPreview(session, options);
+}
+
 export function applyTravelV2RiskBidReviewPreviewToRenderState(state = {}, input = {}, options = {}) {
   const user = options.user ?? input.user ?? state.user ?? globalThis.game?.user;
   const canReview = options.canReview === true || input.canReview === true || user?.isGM === true;
-  const preview = prepareTravelV2RiskBidReviewPreviewPackage(input.session ?? state.session ?? state, { canReview });
+  const preview = prepareTravelV2RiskBidSelectedReviewPreview(input.session ?? state.session ?? state, { canReview });
   const safePreview = canReview ? preview : { ...preview, previews: [] };
   return { ...state, travelV2RiskBidReviewPreview: safePreview, riskBidReviewPreview: safePreview };
 }
