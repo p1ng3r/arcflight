@@ -240,6 +240,8 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(failureEightGmRiskBidState.riskBidPendingReview.reviewPayloads.every((payload) => payload.source === "riskBidResult" && payload.queueReady === true), "every risk bid pending review payload is risk bid sourced and queue-ready");
     assertSmoke(failureEightGmRiskBidState.travelV2RiskBidReviewQueue, "GM state exposes travelV2RiskBidReviewQueue");
     assertSmoke(failureEightGmRiskBidState.riskBidReviewQueue, "GM state exposes riskBidReviewQueue");
+    assertSmoke(failureEightGmRiskBidState.riskBidReviewPreview && failureEightGmRiskBidState.riskBidReviewPreview.ok === false, "GM state exposes empty riskBidReviewPreview before queue selections");
+    assertEqual(JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewPreview), JSON.stringify(failureEightGmRiskBidState.riskBidReviewPreview), "risk bid review preview aliases expose equivalent GM-facing content");
     assertEqual(JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewQueue), JSON.stringify(failureEightGmRiskBidState.riskBidReviewQueue), "risk bid review queue aliases expose equivalent GM-facing content");
     const failureEightGmPersistResultState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: failureEightGmRiskBidState.session,
@@ -254,8 +256,15 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     });
     assertEqual(queuedFailureState.riskBidReviewQueue.records.length, 1, "GM queue state exposes session-local records");
     assertEqual(queuedFailureState.riskBidReviewQueue.records[0].status, "pending", "GM queue state preserves pending status");
+    const selectedQueuedFailureState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: { ...riskBidSession, travelV2RiskBidReviewQueue: { records: [{ source: "riskBidResult", status: "reviewed", selected: true, selectedAt: "2026-07-13T00:00:00.000Z", payloadType: "pressureReview", candidateType: "pressure", dangerLevel: "high", severity: "strong", stationKey: "navigator", actionId: "plot-course", roundIndex: 0, roundNumber: 1, tier: 8, resultBand: "failure", label: "High risk", text: "Hold for later resolution." }] } },
+      user: { isGM: true }
+    });
+    assertSmoke(selectedQueuedFailureState.riskBidReviewPreview.ok && selectedQueuedFailureState.riskBidReviewPreview.hasPreviews, "selected queued risk bid review records produce ready preview package");
+    assertEqual(selectedQueuedFailureState.riskBidReviewPreview.previews[0].applied, false, "selected review preview remains preview-only");
     const queuedFailurePlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: queuedFailureState.session, user: { isGM: false } });
     assertEqual(queuedFailurePlayerState.riskBidReviewQueue.records.length, 0, "non-GM queue state does not expose detailed records");
+    assertEqual(queuedFailurePlayerState.riskBidReviewPreview.previews.length, 0, "non-GM review preview does not expose selected records");
     const criticalFailureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
       uiState: { travelV2RiskBidResultBand: "criticalFailure", travelV2RiskBidContext: { roundIndex: 0, roundNumber: 1, stationKey: "navigator", stationName: "Navigator", actionId: "plot-course", actionName: "Plot Course", riskBids: [{ tier: 8, label: "Blind" }] } },
@@ -293,11 +302,13 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     const riskBidResultJson = JSON.stringify(criticalFailureEightRiskBidState.riskBidResultPreview) + JSON.stringify(failureEightRiskBidState.riskBidResultPreview);
     const riskBidPendingReviewJson = JSON.stringify(criticalFailureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightRiskBidState.riskBidPendingReview);
     const riskBidQueueJson = JSON.stringify(failureEightGmRiskBidState.riskBidReviewQueue) + JSON.stringify(queuedFailureState.riskBidReviewQueue) + JSON.stringify(queuedFailurePlayerState.riskBidReviewQueue);
+    const riskBidReviewPreviewJson = JSON.stringify(failureEightGmRiskBidState.riskBidReviewPreview) + JSON.stringify(selectedQueuedFailureState.riskBidReviewPreview) + JSON.stringify(queuedFailurePlayerState.riskBidReviewPreview);
     const riskBidPersistResultJson = JSON.stringify(failureEightGmPersistResultState.travelV2RiskBidReviewQueuePersistResult) + JSON.stringify(failureEightRiskBidState.travelV2RiskBidReviewQueuePersistResult);
     for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
       assertSmoke(!riskBidResultJson.includes(forbidden), `risk bid result preview excludes ${forbidden}`);
       assertSmoke(!riskBidPendingReviewJson.includes(forbidden), `risk bid pending review excludes ${forbidden}`);
       assertSmoke(!riskBidQueueJson.includes(forbidden), `risk bid review queue excludes ${forbidden}`);
+      assertSmoke(!riskBidReviewPreviewJson.includes(forbidden), `risk bid review preview excludes ${forbidden}`);
       assertSmoke(!riskBidPersistResultJson.includes(forbidden), `risk bid review queue persist result excludes ${forbidden}`);
     }
     globalThis.foundry ??= { applications: { api: { ApplicationV2: class {}, HandlebarsApplicationMixin: (Base) => Base } }, utils: { deepClone: (value) => JSON.parse(JSON.stringify(value)), escapeHTML: (value) => String(value) } };
@@ -530,6 +541,7 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       "risk-bid-result-preview",
       "risk-bid-pending-review",
       "risk-bid-review-queue-state",
+      "risk-bid-review-preview",
       "risk-bid-review-queue-persist-wiring",
       "risk-bid-pending-review-change-scope"
     ]

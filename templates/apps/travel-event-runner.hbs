@@ -790,6 +790,28 @@
                 <p class="arcflight-sheet__hint">Applied must remain false; these are pending review records only.</p>
               </section>
             {{/if}}
+            {{#if state.riskBidReviewPreview.hasPreviews}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Selected risk bid review preview">
+                <p>{{state.riskBidReviewPreview.summaryText}}</p>
+                <p class="arcflight-sheet__hint">Preview-only bridge for later GM resolution. Applied: {{state.riskBidReviewPreview.applied}}</p>
+                <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Selected risk bid review preview records">
+                  {{#each state.riskBidReviewPreview.previews}}
+                    <article class="arcflight-travel-runner-mvp__v2-benefit-row">
+                      <div>
+                        <strong>{{label}}</strong>
+                        {{#if text}}<p>{{text}}</p>{{/if}}
+                      </div>
+                      <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">Ready for later resolution</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{payloadType}}</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{severity}}</span>
+                        <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{dangerLevel}}</span>
+                      </div>
+                    </article>
+                  {{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidPendingReview.hasReviewPayloads}}
               <div class="arcflight-travel-runner-mvp__v2-benefit-rows" aria-label="Pending risk bid review payloads">
                 {{#each state.riskBidPendingReview.reviewPayloads}}
