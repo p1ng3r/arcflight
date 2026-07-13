@@ -790,6 +790,25 @@
                 <p class="arcflight-sheet__hint">Applied must remain false; these are pending review records only.</p>
               </section>
             {{/if}}
+            {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
+                <h3>Risk Bid Review Apply Intent</h3>
+                <p class="arcflight-sheet__hint">Intent only — no effects applied.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid review apply intent summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Mode: {{state.riskBidReviewApplyIntent.intentMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Selected: {{state.riskBidReviewApplyIntent.selectedCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Intent records: {{state.riskBidReviewApplyIntent.intentRecords.length}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Confirmed: {{state.riskBidReviewApplyIntent.confirmed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply ready: {{state.riskBidReviewApplyIntent.applyReady}}</span>
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid review apply intent resolution family counts">
+                  {{#each state.riskBidReviewApplyIntent.byResolutionFamily}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Family {{@key}}: {{this}}</span>{{/each}}
+                </div>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid review apply intent resolution type counts">
+                  {{#each state.riskBidReviewApplyIntent.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidSelectedReviewPreview.previewRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Selected Risk Bid Review Preview">
                 <h3>Selected Risk Bid Review Preview</h3>
