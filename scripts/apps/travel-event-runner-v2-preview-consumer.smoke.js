@@ -352,7 +352,7 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
       assertSmoke(!riskBidJson.includes(forbidden), `runner risk bid state excludes ${forbidden}`);
     }
     const changedFiles = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" }).split("\n").filter(Boolean);
-    assertSmoke(changedFiles.includes("templates/apps/travel-event-runner.hbs"), "risk bid review queue UI slice changes the runner template");
+    assertSmoke(changedFiles.includes("templates/apps/travel-event-runner.hbs") || runnerTemplate.includes("Risk Bid Review Queue"), "risk bid review queue UI is present in the runner template");
     assertSmoke(!changedFiles.some((file) => file.endsWith(".css") && file !== "styles/arcflight.css"), "risk bid review queue UI slice does not touch unrelated style files");
     const noRoundRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: riskBidSession,

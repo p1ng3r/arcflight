@@ -52,6 +52,12 @@ export function runTravelV2RiskBidReviewApplyIntentSmokeChecks() {
     assert.equal(prepareTravelV2RiskBidReviewApplyIntent({}, { canReview: true }).blockedReasons.includes("risk-bid-review-queue-not-found"), true, "missing queue blocks");
     assert.equal(intentFor([record("pressureReview", { selected: false })]).blockedReasons.includes("missing-selected-risk-bid-review-preview-records"), true, "no selected preview records blocks");
     assert.equal(intentFor([record("pressureReview")], { intentMode: "bogus" }).blockedReasons.includes("invalid-risk-bid-review-apply-intent-mode"), true, "invalid intent mode blocks");
+    const invalidSecretMode = intentFor([record("pressureReview")], { intentMode: "secret" });
+    const invalidApplyPayloadMode = intentFor([record("pressureReview")], { intentMode: "applyPayload" });
+    assert.equal(invalidSecretMode.blockedReasons.includes("invalid-risk-bid-review-apply-intent-mode"), true, "forbidden secret intent mode blocks as invalid");
+    assert.equal(invalidApplyPayloadMode.blockedReasons.includes("invalid-risk-bid-review-apply-intent-mode"), true, "forbidden applyPayload intent mode blocks as invalid");
+    assert.equal(JSON.stringify(invalidSecretMode).includes("secret"), false, "invalid secret mode does not echo forbidden input");
+    assert.equal(JSON.stringify(invalidApplyPayloadMode).includes("applyPayload"), false, "invalid applyPayload mode does not echo forbidden input");
     const none = intentFor([record("pressureReview")], { intentMode: "none" });
     assert.equal(none.intentRecords.length, 0, "none mode returns no records");
     assert.equal(none.blockedReasons.includes("risk-bid-review-apply-intent-mode-none"), true, "none mode blocks with mode-none reason");
@@ -102,3 +108,13 @@ export function runTravelV2RiskBidReviewApplyIntentSmokeChecks() {
 }
 
 export default runTravelV2RiskBidReviewApplyIntentSmokeChecks;
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    const result = runTravelV2RiskBidReviewApplyIntentSmokeChecks();
+    console.log(`Travel v2 risk bid review apply intent smoke checks passed. Checked ${result.checked.length} groups.`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
+}

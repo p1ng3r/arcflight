@@ -26,6 +26,10 @@ function incrementCount(counts, key) {
   const safeKey = safeString(key) || "unknown";
   counts[safeKey] = (Number(counts[safeKey]) || 0) + 1;
 }
+function normalizeIntentMode(value) {
+  const safeMode = safeString(value);
+  return VALID_INTENT_MODES.includes(safeMode) ? safeMode : "";
+}
 function countIntentRecords(intentRecords = []) {
   const byResolutionFamily = {};
   const byResolutionType = {};
@@ -97,10 +101,13 @@ function makeIntentRecord(previewRecord, confirmed) {
 
 export function prepareTravelV2RiskBidReviewApplyIntent(session = {}, options = {}) {
   const canReview = options?.canReview === true;
+  const hasRequestedMode = Object.hasOwn(options ?? {}, "intentMode");
   const requestedMode = options?.intentMode ?? "prepare";
-  const intentMode = typeof requestedMode === "string" ? requestedMode : "prepare";
+  const normalizedMode = normalizeIntentMode(requestedMode);
+  const intentMode = normalizedMode || "prepare";
+  const invalidRequestedMode = hasRequestedMode && !normalizedMode;
   if (!canReview) return shell({ canReview: false, intentMode, blockedReasons: ["travel-v2-review-permission-required"] });
-  if (!VALID_INTENT_MODES.includes(intentMode)) return shell({ canReview: true, intentMode, blockedReasons: ["invalid-risk-bid-review-apply-intent-mode"] });
+  if (invalidRequestedMode) return shell({ canReview: true, intentMode, blockedReasons: ["invalid-risk-bid-review-apply-intent-mode"] });
   if (intentMode === "none") return shell({ canReview: true, intentMode, blockedReasons: ["risk-bid-review-apply-intent-mode-none"] });
   if (!session?.[QUEUE_SESSION_KEY] || typeof session[QUEUE_SESSION_KEY] !== "object") return shell({ canReview: true, intentMode, blockedReasons: ["risk-bid-review-queue-not-found"] });
 
