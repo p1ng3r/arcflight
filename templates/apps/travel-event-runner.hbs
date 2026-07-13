@@ -929,6 +929,36 @@
                 </div>
               </section>
             {{/if}}
+            {{#if state.riskBidResultPipelineCloseout.available}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Result Pipeline Closeout">
+                <h3>Risk Bid Result Pipeline Closeout</h3>
+                <p class="arcflight-sheet__hint">Pipeline closeout only — no actor or world mutation.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid result pipeline closeout summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Closeout ready: {{state.riskBidResultPipelineCloseout.closeoutReady}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Selected count: {{state.riskBidResultPipelineCloseout.selectedCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Gate record count: {{state.riskBidResultPipelineCloseout.gateRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Final record count: {{state.riskBidResultPipelineCloseout.finalRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure: {{state.riskBidResultPipelineCloseout.pressureRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard: {{state.riskBidResultPipelineCloseout.hazardRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence: {{state.riskBidResultPipelineCloseout.consequenceRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Positive: {{state.riskBidResultPipelineCloseout.positiveRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Scar: {{state.riskBidResultPipelineCloseout.scarRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Selected review: {{state.riskBidResultPipelineCloseout.hasSelectedReview}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply intent: {{state.riskBidResultPipelineCloseout.hasApplyIntent}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply gate: {{state.riskBidResultPipelineCloseout.hasApplyGate}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure ready: {{state.riskBidResultPipelineCloseout.hasPressure}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard ready: {{state.riskBidResultPipelineCloseout.hasHazard}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence ready: {{state.riskBidResultPipelineCloseout.hasConsequence}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Positive ready: {{state.riskBidResultPipelineCloseout.hasPositive}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Scar ready: {{state.riskBidResultPipelineCloseout.hasScar}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Final apply: {{state.riskBidResultPipelineCloseout.hasFinalApply}}</span>
+                  {{#each state.riskBidResultPipelineCloseout.byFinalFamily}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Family {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidResultPipelineCloseout.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidResultPipelineCloseout.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidResultPipelineCloseout.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
