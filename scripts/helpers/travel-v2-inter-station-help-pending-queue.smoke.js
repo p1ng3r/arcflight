@@ -5,10 +5,20 @@ import { prepareTravelV2PendingStationBenefitPlayerState } from "./travel-v2-pen
 import { prepareTravelV2StationBenefitUseReviewPlayerState } from "./travel-v2-station-benefit-use-review.js";
 import { queueTravelV2InterStationHelpPendingRecord, TRAVEL_V2_INTER_STATION_HELP_PENDING_QUEUE_VERSION } from "./travel-v2-inter-station-help-pending-queue.js";
 
-const FORBIDDEN = ["auditRecord", "commitRecords", "userId", "userName", "gmText", "applyPayload", "targetActorUuid", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "unrevealedHazard", "catalogSuggestions", "SPOOF", "secret-tag"];
+const FORBIDDEN = ["auditRecord", "commitRecords", "userId", "userName", "gmText", "gmNote", "gmSummary", "applyPayload", "actorId", "actorUuid", "targetActorId", "targetActorUuid", "mutationScope", "internalMutation", "hiddenData", "hiddenHazardData", "resolverUserId", "rawTarget", "secret", "pendingConsequenceQueue", "unrevealedHazard", "catalogSuggestions", "SPOOF", "secret-tag"];
+const ADVERSARIAL_DUPLICATE_FORBIDDEN = ["gmText", "gmNote", "gmSummary", "actorId", "actorUuid", "targetActorId", "targetActorUuid", "hiddenData", "hiddenHazardData", "resolverUserId", "applyPayload", "internalMutation", "rawTarget", "GM SECRET", "PRIVATE NOTE", "HIDDEN SUMMARY", "PRIVATE ACTOR ID", "Actor.private", "Actor.target", "HIDDEN VALUE", "HAZARD SECRET", "PRIVATE USER", "NESTED SECRET", "Actor.raw"];
 const MUTATION_CALLS = [".update(", "setFlag", "unsetFlag", "ChatMessage.create", "JournalEntry.create", "game.settings.set", "socket.emit", "createEmbeddedDocuments", "updateEmbeddedDocuments", "deleteEmbeddedDocuments", "new Roll("];
 function snap(value) { return JSON.stringify(value); }
 function assertSafe(value, label) { const serialized = snap(value); for (const term of FORBIDDEN) assert.equal(serialized.includes(term), false, `${label} leaked ${term}`); }
+function assertNoTerms(value, terms, label) { const serialized = snap(value); for (const term of terms) assert.equal(serialized.includes(term), false, `${label} leaked ${term}`); }
+function assertNotEnqueued(result, originalLength) {
+  assert.equal(result.ok, false);
+  assert.equal(result.queued, false);
+  assert.equal(result.duplicate, false);
+  assert.equal(result.blockedReasons.includes("inter-station-help-queue-insert-not-requested"), true);
+  assert.equal(result.queueRecord, null);
+  assert.equal(result.session.travelV2PendingStationBenefits.length, originalLength);
+}
 function fixtureSession(overrides = {}) {
   return {
     currentRoundIndex: 0,
@@ -33,11 +43,13 @@ export default async function runTravelV2InterStationHelpPendingQueueSmokeChecks
   const context = validContext({ title: "SPOOF TITLE", publicText: "SPOOF TEXT", tags: ["secret-tag"] });
   const beforeContext = snap(context);
 
-  const notRequested = queueTravelV2InterStationHelpPendingRecord(session, action, context);
-  assert.equal(notRequested.ok, false);
-  assert.equal(notRequested.blockedReasons.includes("inter-station-help-queue-insert-not-requested"), true);
-  assert.equal(notRequested.session.travelV2PendingStationBenefits.length, 2);
-  checked.push("no explicit enqueue intent produces no queue insertion");
+  const notRequested = queueTravelV2InterStationHelpPendingRecord(session, action, validContext());
+  assertNotEnqueued(notRequested, 2);
+  const genericCreateRequested = queueTravelV2InterStationHelpPendingRecord(session, action, validContext(), { createRequested: true });
+  assertNotEnqueued(genericCreateRequested, 2);
+  const contextEnqueueRequested = queueTravelV2InterStationHelpPendingRecord(session, action, { ...validContext(), enqueueRequested: true });
+  assertNotEnqueued(contextEnqueueRequested, 2);
+  checked.push("only options.enqueueRequested authorizes insertion; success alone, generic create, and result-context enqueue flags do not enqueue");
 
   const queued = queueTravelV2InterStationHelpPendingRecord(session, { ...action, title: "SPOOF TITLE", publicText: "SPOOF TEXT", sourceStationName: "SPOOF SOURCE", targetStationName: "SPOOF TARGET", tags: ["secret-tag"] }, context, { enqueueRequested: true });
   assert.equal(queued.ok, true);
@@ -70,11 +82,69 @@ export default async function runTravelV2InterStationHelpPendingQueueSmokeChecks
 
   const duplicate = queueTravelV2InterStationHelpPendingRecord(queued.session, action, validContext(), { enqueueRequested: true });
   assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.queued, false);
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.blockedReasons.includes("duplicate-pending-inter-station-help-queue-record"), true);
   assert.equal(duplicate.session.travelV2PendingStationBenefits.length, 3);
   assert.equal(duplicate.session.travelV2PendingStationBenefits[2].queueKey, row.queueKey);
   checked.push("duplicate enqueue does not append another raw row and returns deterministic blocked state");
+
+  const adversarialDuplicateRow = {
+    queueKey: row.queueKey,
+    pendingHelpKey: row.queueKey,
+    dedupeKey: row.queueKey,
+    title: "Canonical safe title",
+    publicText: "Canonical safe public text",
+    playerSafeSummary: "Canonical safe public text",
+    sourceStation: "navigator",
+    sourceStationKey: "navigator",
+    sourceStationName: "Navigator",
+    sourceStationLabel: "Navigator",
+    targetStation: "engineer",
+    targetStationKey: "engineer",
+    targetStationName: "Engineer",
+    targetStationLabel: "Engineer",
+    roundIndex: 0,
+    roundNumber: 1,
+    resultBand: "success",
+    benefitKind: "stationOrderOpening",
+    expires: "endOfRound",
+    status: "pending",
+    tags: ["route"],
+    criticalSuccess: false,
+    playerSafe: true,
+    playerVisible: true,
+    reviewOnly: true,
+    applyAvailable: false,
+    useAvailable: false,
+    applied: false,
+    consumed: false,
+    used: false,
+    gmText: "GM SECRET",
+    gmNote: "PRIVATE NOTE",
+    gmSummary: "HIDDEN SUMMARY",
+    actorId: "PRIVATE ACTOR ID",
+    actorUuid: "Actor.private",
+    targetActorId: "PRIVATE TARGET ID",
+    targetActorUuid: "Actor.target",
+    hiddenData: { secret: "HIDDEN VALUE" },
+    hiddenHazardData: { secret: "HAZARD SECRET" },
+    resolverUserId: "PRIVATE USER",
+    applyPayload: { mutation: true },
+    internalMutation: { target: "PRIVATE" },
+    nested: { rawTarget: { actorUuid: "Actor.raw", secret: "NESTED SECRET" } }
+  };
+  const adversarialSession = fixtureSession({ travelV2PendingStationBenefits: [adversarialDuplicateRow] });
+  const adversarialDuplicate = queueTravelV2InterStationHelpPendingRecord(adversarialSession, action, validContext(), { enqueueRequested: true });
+  assert.equal(adversarialDuplicate.ok, false);
+  assert.equal(adversarialDuplicate.queued, false);
+  assert.equal(adversarialDuplicate.duplicate, true);
+  assert.equal(adversarialDuplicate.blockedReasons.includes("duplicate-pending-inter-station-help-queue-record"), true);
+  assert.equal(adversarialDuplicate.session.travelV2PendingStationBenefits.length, 1);
+  assert.equal(adversarialSession.travelV2PendingStationBenefits.length, 1);
+  assert.equal(adversarialDuplicate.existingQueueRecord.queueKey, row.queueKey);
+  assertNoTerms(adversarialDuplicate, ADVERSARIAL_DUPLICATE_FORBIDDEN, "adversarial duplicate result");
+  checked.push("adversarial duplicate raw queue rows are summarized without echoing private fields anywhere in the helper result");
 
   const critical = queueTravelV2InterStationHelpPendingRecord(fixtureSession(), action, validContext({ result: "criticalSuccess" }), { enqueueRequested: true });
   assert.equal(critical.ok, true);

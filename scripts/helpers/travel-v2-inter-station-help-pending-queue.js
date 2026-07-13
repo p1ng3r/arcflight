@@ -5,6 +5,8 @@ export const TRAVEL_V2_INTER_STATION_HELP_QUEUE_INSERT_NOT_REQUESTED = "inter-st
 export const TRAVEL_V2_INTER_STATION_HELP_QUEUE_DUPLICATE = "duplicate-pending-inter-station-help-queue-record";
 
 const QUEUE_FIELD = "travelV2PendingStationBenefits";
+const DUPLICATE_SUMMARY_KEYS = Object.freeze(["queueKey", "pendingHelpKey", "dedupeKey", "actionId", "authoredActionId", "title", "publicText", "playerSafeSummary", "sourceStation", "sourceStationKey", "sourceStationName", "sourceStationLabel", "targetStation", "targetStationKey", "targetStationName", "targetStationLabel", "roundIndex", "roundNumber", "resultBand", "benefitKind", "expires", "status", "tags", "criticalSuccess", "playerSafe", "playerVisible", "reviewOnly", "applyAvailable", "useAvailable", "applied", "consumed", "used"]);
+const CRITICAL_METADATA_KEYS = Object.freeze(["id", "key", "title", "publicText", "strengthening", "benefitKind", "magnitude", "tags"]);
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function cloneData(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
@@ -15,6 +17,31 @@ function pendingRowsFrom(session = {}) { return Array.isArray(session?.[QUEUE_FI
 function queueIdentityFor(record = {}) { return text(record.pendingHelpKey) || text(record.dedupeKey); }
 function rowMatchesIdentity(row = {}, identity = "") { return Boolean(identity) && [row.queueKey, row.pendingHelpKey, row.dedupeKey].some((value) => text(value) === identity); }
 function prepareUnchangedSession(session = {}) { return isPlainObject(session) ? cloneData(session) : session; }
+function safeCriticalSuccessMetadata(value = {}) {
+  if (!isPlainObject(value)) return null;
+  const safe = {};
+  for (const key of CRITICAL_METADATA_KEYS) {
+    if (!Object.hasOwn(value, key)) continue;
+    if (key === "tags") safe.tags = Array.from(new Set((Array.isArray(value.tags) ? value.tags : [value.tags]).map(text).filter(Boolean)));
+    else safe[key] = cloneData(value[key]);
+  }
+  for (const key of Object.keys(safe)) if (safe[key] === undefined || safe[key] === null || safe[key] === "" || (Array.isArray(safe[key]) && safe[key].length === 0)) delete safe[key];
+  return Object.keys(safe).length > 0 ? safe : null;
+}
+function safeDuplicateQueueSummary(row = {}) {
+  if (!isPlainObject(row)) return null;
+  const summary = {};
+  for (const key of DUPLICATE_SUMMARY_KEYS) {
+    if (Object.hasOwn(row, key)) summary[key] = cloneData(row[key]);
+  }
+  const criticalSuccessMetadata = safeCriticalSuccessMetadata(row.criticalSuccessMetadata);
+  if (criticalSuccessMetadata) summary.criticalSuccessMetadata = criticalSuccessMetadata;
+  return summary;
+}
+function safeDuplicateSession(session = {}) {
+  if (!isPlainObject(session)) return session;
+  return { [QUEUE_FIELD]: pendingRowsFrom(session).map(safeDuplicateQueueSummary).filter(Boolean) };
+}
 function inertQueueRowFromRecord(record = {}) {
   const queueKey = queueIdentityFor(record);
   return {
@@ -60,7 +87,7 @@ function inertQueueRowFromRecord(record = {}) {
 }
 
 export function queueTravelV2InterStationHelpPendingRecord(session = {}, action = {}, resultContext = {}, options = {}) {
-  const enqueueRequested = options.enqueueRequested === true || options.createRequested === true || resultContext?.enqueueRequested === true;
+  const enqueueRequested = options.enqueueRequested === true;
   const unchangedSession = prepareUnchangedSession(session);
   if (!enqueueRequested) {
     return deepFreeze({ version: TRAVEL_V2_INTER_STATION_HELP_PENDING_QUEUE_VERSION, ok: false, queued: false, duplicate: false, blockedReasons: [TRAVEL_V2_INTER_STATION_HELP_QUEUE_INSERT_NOT_REQUESTED], session: unchangedSession, queueField: QUEUE_FIELD, pendingRecord: null, queueRecord: null, applied: false });
@@ -75,7 +102,7 @@ export function queueTravelV2InterStationHelpPendingRecord(session = {}, action 
   const identity = queueIdentityFor(preparation.record);
   const duplicateRecord = existingQueueRows.find((row) => rowMatchesIdentity(row, identity));
   if (duplicateRecord) {
-    return deepFreeze({ version: TRAVEL_V2_INTER_STATION_HELP_PENDING_QUEUE_VERSION, ok: false, queued: false, duplicate: true, blockedReasons: [TRAVEL_V2_INTER_STATION_HELP_QUEUE_DUPLICATE], session: unchangedSession, queueField: QUEUE_FIELD, pendingRecord: cloneData(preparation.record), queueRecord: null, existingQueueRecord: cloneData(duplicateRecord), preparation, applied: false });
+    return deepFreeze({ version: TRAVEL_V2_INTER_STATION_HELP_PENDING_QUEUE_VERSION, ok: false, queued: false, duplicate: true, blockedReasons: [TRAVEL_V2_INTER_STATION_HELP_QUEUE_DUPLICATE], session: safeDuplicateSession(session), queueField: QUEUE_FIELD, pendingRecord: cloneData(preparation.record), queueRecord: null, existingQueueRecord: safeDuplicateQueueSummary(duplicateRecord), preparation, applied: false });
   }
 
   const queueRecord = inertQueueRowFromRecord(preparation.record);
