@@ -110,14 +110,17 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Alpha alignment:** Inter-Station Help must be visible as its own gameplay system. Under the hood it may reuse the pending station benefit queue, but the player-facing flow should read as help created by earlier stations and consumed by later stations.
 
+**Slice 01 note:** Event-authored Inter-Station Help action options are now prepared from supported event, round, station-card, and station-prompt definitions; filtered against active stations and station order; exposed through player-safe runner aliases; and surfaced as option-only Inter-Station Help presentation. No assist is created, consumed, rolled, persisted, or applied by this slice.
+
 **Remaining work:**
 
-- Define event-authored help actions.
-- Let earlier stations create pending benefits for any later station in the same round.
-- Let later stations consume queued benefits through the existing station benefit review path.
-- Support critical-success stronger or automatic benefits where authored.
-- Support critical-failure backlash.
-- Add smoke coverage for creation, queueing, visibility, use, expiration, backlash, and player-safe state.
+- Create pending benefits from authored Inter-Station Help actions.
+- Let later stations consume queued benefits through the existing station benefit/support path.
+- Support critical-success automatic or stronger benefits where authored.
+- Integrate critical-failure backlash.
+- Add expiration and round-end cleanup.
+- Finish player-safe state and table UX polish.
+- Expand smoke coverage for creation, queueing, use, expiration, backlash, and the completed player-safe lifecycle.
 
 ### TV2-003 — Player-Chosen Round Action Order UX Polish
 
