@@ -18,7 +18,7 @@ function fixture(overrides = {}) {
         activeStations: ["navigator", "engineer", "captain", "watchmaster"],
         stationOrder: ["navigator", "engineer", "captain", "watchmaster"],
         stationCards: [
-          { stationKey: "navigator", interStationHelp: [{ id: "plot-bypass", targetStationKey: "engineer", label: "Plot a Bypass", publicText: "Mark a stable line through the debris.", tags: ["route", "opening"], applyPayload: { forbidden: true } }] },
+          { stationKey: "navigator", interStationHelp: [{ id: "plot-bypass", targetStationKey: "engineer", label: "Plot a Bypass", publicText: "Mark a stable line through the debris.", tags: ["route", "opening"], criticalSuccessMetadata: { strengthening: "stronger-opening", publicText: "Engineer gets a cleaner opening.", tags: ["critical"], gmText: "SECRET", applyPayload: { forbidden: true } }, applyPayload: { forbidden: true } }] },
           { stationKey: "engineer", helpActions: [{ id: "bleed-charge", targets: ["captain", "watchmaster"], title: "Bleed the Charge", text: "Reduce the noise so later stations can act.", tags: "systems, opening" }] },
           { stationKey: "watchmaster", supportActions: [{ id: "warn-navigator", targetStationKey: "navigator", title: "Late Warning", description: "This points backward in order." }] }
         ],
@@ -77,7 +77,13 @@ export default async function runTravelV2InterStationHelpActionsSmokeChecks() {
   assert.equal(state.helpActionCount, 5);
   assert.equal(state.availableHelpActionCount, 5);
   assert.equal(state.helpActions.every((row) => row.targetLaterInOrder && row.available && row.applied === false), true);
-  assert.equal(state.helpActions.some((row) => row.actionId === "plot-bypass" && row.sourceStationKey === "navigator" && row.targetStationKey === "engineer"), true);
+  const plotBypass = state.helpActions.find((row) => row.actionId === "plot-bypass" && row.sourceStationKey === "navigator" && row.targetStationKey === "engineer");
+  assert.ok(plotBypass);
+  assert.equal(plotBypass.roundIndex, 0);
+  assert.equal(plotBypass.roundNumber, 1);
+  assert.equal(plotBypass.stationOrderLocked, true);
+  assert.equal(plotBypass.criticalSuccessMetadata.strengthening, "stronger-opening");
+  assert.equal(plotBypass.criticalSuccessMetadata.publicText, "Engineer gets a cleaner opening.");
   assert.equal(state.helpActions.filter((row) => row.actionId === "bleed-charge").length, 2);
   assert.equal(state.helpActions.some((row) => row.actionId === "brace-captain"), true);
   assert.equal(state.helpActions.some((row) => row.actionId === "captain-to-watch"), true);
@@ -89,7 +95,7 @@ export default async function runTravelV2InterStationHelpActionsSmokeChecks() {
   assert.equal(Object.isFrozen(state.helpActions), true);
   assert.equal(Object.isFrozen(state.helpActions[0]), true);
   assertSafe(state);
-  checked.push("authored sources normalize into immutable player-safe later-station options");
+  checked.push("authored sources normalize into immutable player-safe later-station options with round context and critical metadata");
 
   const unavailable = prepareTravelV2InterStationHelpActions(session, { includeUnavailable: true });
   const backward = unavailable.helpActions.find((row) => row.actionId === "warn-navigator");
