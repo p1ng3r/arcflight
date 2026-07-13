@@ -182,6 +182,8 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(runnerTemplate.includes("Risk Bid Review Queue"), "template contains GM-only risk bid review queue section title");
     assertSmoke(runnerTemplate.includes("Selected Risk Bid Review Preview"), "template contains selected risk bid review preview title");
     assertSmoke(runnerTemplate.includes("Risk Bid Review Apply Intent"), "template contains risk bid review apply intent title");
+    assertSmoke(runnerTemplate.includes("Risk Bid Review Apply Gate"), "template contains risk bid review apply gate title");
+    assertSmoke(runnerTemplate.includes("Gate only"), "template contains apply gate safety copy");
     assertSmoke(runnerTemplate.includes("Intent only"), "template contains apply intent safety copy");
     assertSmoke(runnerTemplate.includes("Preview only"), "template marks selected review preview as preview only");
     assertSmoke(runnerTemplate.includes("state.riskBidSelectedReviewPreview.previewRecords"), "template renders selected review preview records");
@@ -251,6 +253,8 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertSmoke(failureEightGmRiskBidState.travelV2RiskBidSelectedReviewPreview, "GM state exposes travelV2RiskBidSelectedReviewPreview");
     assertSmoke(failureEightGmRiskBidState.travelV2RiskBidReviewApplyIntent, "GM state exposes travelV2RiskBidReviewApplyIntent");
     assertSmoke(failureEightGmRiskBidState.riskBidReviewApplyIntent, "GM state exposes riskBidReviewApplyIntent");
+    assertSmoke(failureEightGmRiskBidState.travelV2RiskBidReviewApplyGate, "GM state exposes travelV2RiskBidReviewApplyGate");
+    assertSmoke(failureEightGmRiskBidState.riskBidReviewApplyGate, "GM state exposes riskBidReviewApplyGate");
     assertSmoke(failureEightGmRiskBidState.riskBidSelectedReviewPreview, "GM state exposes riskBidSelectedReviewPreview");
     assertSmoke(failureEightGmRiskBidState.riskBidReviewPreview && failureEightGmRiskBidState.riskBidReviewPreview.ok === false, "GM state exposes empty riskBidReviewPreview before queue selections");
     assertEqual(JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidSelectedReviewPreview), JSON.stringify(failureEightGmRiskBidState.riskBidSelectedReviewPreview), "risk bid selected review preview aliases expose equivalent GM-facing content");
@@ -282,12 +286,18 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     assertEqual(selectedQueuedFailureState.riskBidSelectedReviewPreview.byPayloadType.pressureReview, 1, "selected review preview groups counts by payload type");
     assertEqual(selectedQueuedFailureState.riskBidSelectedReviewPreview.byDangerLevel.high, 1, "selected review preview groups counts by danger level");
     assertEqual(selectedQueuedFailureState.riskBidSelectedReviewPreview.bySeverity.strong, 1, "selected review preview groups counts by severity");
+    assertEqual(selectedQueuedFailureState.riskBidReviewApplyGate.gateMode, "preview", "GM apply gate defaults to preview mode");
+    assertEqual(selectedQueuedFailureState.riskBidReviewApplyGate.gateRecords.length, 1, "GM apply gate exposes safe preview gate records for confirmed intents");
+    assertEqual(selectedQueuedFailureState.riskBidReviewApplyGate.armed, false, "GM apply gate preview is not armed");
+    assertEqual(selectedQueuedFailureState.riskBidReviewApplyGate.gateReady, false, "GM apply gate preview is not gate-ready");
+    assertEqual(selectedQueuedFailureState.riskBidReviewApplyGate.gateRecords[0].gateOnly, true, "GM apply gate records are gate-only");
     assertEqual(selectedQueuedFailureState.riskBidSelectedReviewPreview.hasPressurePreview, true, "selected review preview sets pressure family boolean");
     assertEqual(JSON.stringify(selectedQueuedFailureState.riskBidSelectedReviewPreview), JSON.stringify(selectedQueuedFailureState.riskBidReviewPreview), "canonical selected preview and legacy preview alias match for selected records");
     const queuedFailurePlayerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: queuedFailureState.session, user: { isGM: false } });
     assertEqual(queuedFailurePlayerState.riskBidReviewQueue.records.length, 0, "non-GM queue state does not expose detailed records");
     assertEqual(queuedFailurePlayerState.riskBidSelectedReviewPreview.previewRecords.length, 0, "non-GM selected review preview does not expose selected records");
     assertEqual(queuedFailurePlayerState.riskBidReviewApplyIntent.intentRecords.length, 0, "non-GM apply intent does not expose detailed intent records");
+    assertEqual(queuedFailurePlayerState.riskBidReviewApplyGate.gateRecords.length, 0, "non-GM apply gate does not expose detailed gate records");
     assertEqual(queuedFailurePlayerState.riskBidReviewPreview.previewRecords.length, 0, "non-GM legacy review preview does not expose selected records");
     const criticalFailureEightRiskBidState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
       session: { ...riskBidSession, travelV2RiskBidSelections: { records: [{ selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 8, dcModifier: 8 }] } },
@@ -326,7 +336,7 @@ export async function runTravelEventRunnerV2PreviewConsumerSmokeChecks() {
     const riskBidResultJson = JSON.stringify(criticalFailureEightRiskBidState.riskBidResultPreview) + JSON.stringify(failureEightRiskBidState.riskBidResultPreview);
     const riskBidPendingReviewJson = JSON.stringify(criticalFailureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightGmRiskBidState.riskBidPendingReview) + JSON.stringify(failureEightRiskBidState.riskBidPendingReview);
     const riskBidQueueJson = JSON.stringify(failureEightGmRiskBidState.riskBidReviewQueue) + JSON.stringify(queuedFailureState.riskBidReviewQueue) + JSON.stringify(queuedFailurePlayerState.riskBidReviewQueue);
-    const riskBidReviewPreviewJson = JSON.stringify(failureEightGmRiskBidState.riskBidSelectedReviewPreview) + JSON.stringify(failureEightGmRiskBidState.riskBidReviewPreview) + JSON.stringify(failureEightGmRiskBidState.riskBidReviewApplyIntent) + JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewApplyIntent) + JSON.stringify(selectedQueuedFailureState.riskBidSelectedReviewPreview) + JSON.stringify(selectedQueuedFailureState.riskBidReviewPreview) + JSON.stringify(selectedQueuedFailureState.riskBidReviewApplyIntent) + JSON.stringify(queuedFailurePlayerState.riskBidSelectedReviewPreview) + JSON.stringify(queuedFailurePlayerState.riskBidReviewPreview) + JSON.stringify(queuedFailurePlayerState.riskBidReviewApplyIntent);
+    const riskBidReviewPreviewJson = JSON.stringify(failureEightGmRiskBidState.riskBidSelectedReviewPreview) + JSON.stringify(failureEightGmRiskBidState.riskBidReviewPreview) + JSON.stringify(failureEightGmRiskBidState.riskBidReviewApplyIntent) + JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewApplyIntent) + JSON.stringify(failureEightGmRiskBidState.riskBidReviewApplyGate) + JSON.stringify(failureEightGmRiskBidState.travelV2RiskBidReviewApplyGate) + JSON.stringify(selectedQueuedFailureState.riskBidSelectedReviewPreview) + JSON.stringify(selectedQueuedFailureState.riskBidReviewPreview) + JSON.stringify(selectedQueuedFailureState.riskBidReviewApplyIntent) + JSON.stringify(selectedQueuedFailureState.riskBidReviewApplyGate) + JSON.stringify(queuedFailurePlayerState.riskBidSelectedReviewPreview) + JSON.stringify(queuedFailurePlayerState.riskBidReviewPreview) + JSON.stringify(queuedFailurePlayerState.riskBidReviewApplyIntent) + JSON.stringify(queuedFailurePlayerState.riskBidReviewApplyGate);
     const riskBidPersistResultJson = JSON.stringify(failureEightGmPersistResultState.travelV2RiskBidReviewQueuePersistResult) + JSON.stringify(failureEightRiskBidState.travelV2RiskBidReviewQueuePersistResult);
     for (const forbidden of ["gmOnly", "secret", "hiddenHazards", "unrevealedHazard", "futureTriggers", "internalScoring", "debugReport", "auditRecord", "applyPayload", "actorUuid", "targetActorUuid", "userId", "userName", "updateData", "actor.update", "ChatMessage", "JournalEntry", "socket", "Compendium.", "Actor.", "Item."]) {
       assertSmoke(!riskBidResultJson.includes(forbidden), `risk bid result preview excludes ${forbidden}`);
