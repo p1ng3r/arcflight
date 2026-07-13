@@ -841,6 +841,24 @@
                 </div>
               </section>
             {{/if}}
+            {{#if state.riskBidConsequenceApply.consequenceReady}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Consequence Plumbing">
+                <h3>Risk Bid Consequence Plumbing</h3>
+                <p class="arcflight-sheet__hint">Consequence plumbing only — no actor or world mutation.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid consequence plumbing summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply mode: {{state.riskBidConsequenceApply.applyMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence records: {{state.riskBidConsequenceApply.consequenceRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence delta total: {{state.riskBidConsequenceApply.consequenceDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Staged: {{state.riskBidConsequenceApply.staged}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Committed: {{state.riskBidConsequenceApply.committed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidConsequenceApply.applied}}</span>
+                  {{#each state.riskBidConsequenceApply.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidConsequenceApply.byConsequenceKind}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Kind {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidConsequenceApply.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidConsequenceApply.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
