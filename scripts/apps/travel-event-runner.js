@@ -13,6 +13,8 @@ import { applyTravelV2FinalOutcomeToShip } from "../helpers/travel-v2-event-outc
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
 import { selectTravelV2RiskBidForRunnerSession, clearTravelV2RiskBidSelectionForRunnerSession } from "../helpers/travel-v2-risk-bids.js";
+import { prepareTravelV2RiskBidQueueInsertionIntent } from "../helpers/travel-v2-risk-bid-queue-insertion-intent.js";
+import { clearAllTravelV2RiskBidReviewQueueRecordSelections, clearTravelV2RiskBidReviewQueueRecordSelection, insertTravelV2RiskBidReviewQueueRecords, selectTravelV2RiskBidReviewQueueRecord, updateTravelV2RiskBidReviewQueueRecordStatus } from "../helpers/travel-v2-risk-bid-review-queue.js";
 import { commitTravelV2RoundActionOrderToSession } from "../helpers/travel-v2-round-action-order-state.js";
 import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
@@ -148,6 +150,11 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-narration-refresh]",
   "[data-arcflight-travel-v2-risk-bid-select]",
   "[data-arcflight-travel-v2-risk-bid-clear]",
+  "[data-arcflight-travel-v2-risk-bid-review-queue-persist]",
+  "[data-arcflight-travel-v2-risk-bid-review-queue-status]",
+  "[data-arcflight-travel-v2-risk-bid-review-queue-select]",
+  "[data-arcflight-travel-v2-risk-bid-review-queue-clear-selection]",
+  "[data-arcflight-travel-v2-risk-bid-review-queue-clear-all-selections]",
   `[data-action="arcflight-travel-v2-select-all-single-suggestion-consequences"]`,
   `[data-action="arcflight-travel-v2-apply-all-selected-consequences"]`,
   `[data-action="arcflight-travel-v2-clear-all-selected-consequences"]`,
@@ -501,6 +508,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2RoundActionOrderPersistResult: null,
       travelV2StationActionLockResult: null,
       travelV2StationActionLockPersistResult: null,
+      travelV2RiskBidReviewQueuePersistResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
       travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
@@ -720,6 +728,101 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return update;
   }
 
+
+  async persistTravelV2RiskBidReviewQueue(targetOrOptions = {}) {
+    const isGM = targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true;
+    if (isGM !== true) {
+      const result = { ok: false, inserted: false, insertedCount: 0, skippedCount: 0, duplicateCount: 0, blockedReasons: ["travel-v2-review-permission-required"], queue: { version: 1, records: [], pendingCount: 0, reviewedCount: 0, dismissedCount: 0, appliedCount: 0, insertedCount: 0 }, insertedRecords: [], skippedRecords: [], sessionPatch: {}, applied: false, persisted: false, summaryText: "GM permission is required to persist risk bid review queue records." };
+      this.uiState.travelV2RiskBidReviewQueuePersistResult = result;
+      this.statusMessage = result.summaryText;
+      globalThis.ui?.notifications?.warn?.(this.statusMessage);
+      if (targetOrOptions.render === false) return result;
+      this.render(true);
+      return result;
+    }
+    const state = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+      session: this.session,
+      selectedEventId: this.selectedEventId,
+      selectedSessionKey: this.selectedSessionKey,
+      actor: this.#getSelectedShipActor(),
+      uiState: this.uiState,
+      travelV2DevToolsEnabled: isTravelV2DevToolsEnabled(),
+      user: targetOrOptions.user ?? globalThis.game?.user
+    });
+    const pendingReview = state.riskBidPendingReview ?? state.travelV2RiskBidPendingReview;
+    const insertionIntent = prepareTravelV2RiskBidQueueInsertionIntent(pendingReview, { canReview: true, intentMode: "confirm" });
+    const insertResult = insertTravelV2RiskBidReviewQueueRecords(this.session, insertionIntent, { canReview: true });
+    if (insertResult.ok !== true || insertResult.inserted !== true) {
+      const { session: _blockedSession, ...safeInsertResult } = insertResult;
+      const result = { ...safeInsertResult, persisted: false, summaryText: insertResult.ok === true ? "Risk bid review queue already contains the pending records." : (insertResult.blockedReasons?.[0] ?? "Risk bid review queue persistence was blocked.") };
+      this.uiState.travelV2RiskBidReviewQueuePersistResult = result;
+      this.statusMessage = result.summaryText;
+      globalThis.ui?.notifications?.warn?.(this.statusMessage);
+      if (targetOrOptions.render === false) return result;
+      this.render(true);
+      return result;
+    }
+    const nextSession = insertResult.session ?? this.session;
+    this.session = nextSession;
+    const saveOptions = nextSession?.key ? { key: nextSession.key, overwrite: true } : {};
+    const saved = await saveTravelEventRunnerSessionToLibrary(nextSession, saveOptions);
+    const persisted = saved?.ok === true;
+    if (persisted) {
+      this.session = saved.session ?? nextSession;
+      this.selectedSessionKey = saved.entry?.key ?? this.session?.key ?? this.selectedSessionKey;
+    }
+    const { session: _session, ...safeInsertResult } = insertResult;
+    const result = { ...safeInsertResult, persisted, summaryText: persisted ? `Persisted ${insertResult.insertedCount} pending risk bid review queue record${insertResult.insertedCount === 1 ? "" : "s"}.` : (saved?.errors?.[0] ?? "Risk bid review queue was prepared locally, but runner session save failed.") };
+    this.uiState.travelV2RiskBidReviewQueuePersistResult = result;
+    this.statusMessage = result.summaryText;
+    (persisted ? globalThis.ui?.notifications?.info : globalThis.ui?.notifications?.warn)?.(this.statusMessage);
+    if (targetOrOptions.render === false) return result;
+    this.render(true);
+    return result;
+  }
+
+  #handleTravelV2RiskBidReviewQueueDecision(result, fallbackMessage, render = true) {
+    const { session: nextSession, ...safeResult } = result ?? {};
+    this.uiState.travelV2RiskBidReviewQueueDecisionResult = safeResult;
+    if (result?.ok === true && nextSession) this.session = nextSession;
+    this.statusMessage = result?.ok === true ? fallbackMessage : (result?.blockedReasons?.[0] ?? "Risk bid review queue decision was blocked.");
+    (result?.ok === true ? globalThis.ui?.notifications?.info : globalThis.ui?.notifications?.warn)?.(this.statusMessage);
+    if (render !== false) this.render(true);
+    return result;
+  }
+
+  #updateTravelV2RiskBidReviewQueueStatus(targetOrOptions = {}) {
+    const isGM = targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true;
+    const dataset = targetOrOptions?.dataset ?? {};
+    const queueKey = typeof targetOrOptions.queueKey === "string" ? targetOrOptions.queueKey : (dataset.queueKey ?? "");
+    const status = typeof targetOrOptions.status === "string" ? targetOrOptions.status : (dataset.status ?? "");
+    const result = updateTravelV2RiskBidReviewQueueRecordStatus(this.session, queueKey, status, { canReview: isGM, decisionNote: targetOrOptions.decisionNote });
+    const label = status === "reviewed" ? "marked reviewed" : status === "dismissed" ? "dismissed" : "restored to pending";
+    return this.#handleTravelV2RiskBidReviewQueueDecision(result, `Risk bid review queue record ${label}.`, targetOrOptions.render);
+  }
+
+  #selectTravelV2RiskBidReviewQueueRecord(targetOrOptions = {}) {
+    const isGM = targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true;
+    const dataset = targetOrOptions?.dataset ?? {};
+    const queueKey = typeof targetOrOptions.queueKey === "string" ? targetOrOptions.queueKey : (dataset.queueKey ?? "");
+    const result = selectTravelV2RiskBidReviewQueueRecord(this.session, queueKey, { canReview: isGM, decisionNote: targetOrOptions.decisionNote });
+    return this.#handleTravelV2RiskBidReviewQueueDecision(result, "Risk bid review queue record selected for later apply review.", targetOrOptions.render);
+  }
+
+  #clearTravelV2RiskBidReviewQueueSelection(targetOrOptions = {}) {
+    const isGM = targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true;
+    const dataset = targetOrOptions?.dataset ?? {};
+    const queueKey = typeof targetOrOptions.queueKey === "string" ? targetOrOptions.queueKey : (dataset.queueKey ?? "");
+    const result = clearTravelV2RiskBidReviewQueueRecordSelection(this.session, queueKey, { canReview: isGM, decisionNote: targetOrOptions.decisionNote });
+    return this.#handleTravelV2RiskBidReviewQueueDecision(result, "Risk bid review queue record selection cleared.", targetOrOptions.render);
+  }
+
+  #clearAllTravelV2RiskBidReviewQueueSelections(targetOrOptions = {}) {
+    const isGM = targetOrOptions.isGM ?? globalThis.game?.user?.isGM === true;
+    const result = clearAllTravelV2RiskBidReviewQueueRecordSelections(this.session, { canReview: isGM });
+    return this.#handleTravelV2RiskBidReviewQueueDecision(result, "Risk bid review queue selections cleared.", targetOrOptions.render);
+  }
+
   async persistTravelV2StationActionLockIn(targetOrOptions = {}) {
     const dataset = targetOrOptions?.dataset ?? {};
     const stationKey = typeof targetOrOptions.stationKey === "string" ? targetOrOptions.stationKey : (dataset.stationKey ?? "");
@@ -896,6 +999,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-narration-refresh")) return this.#refreshTravelV2Narration();
     if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-select")) return this.#selectTravelV2RiskBid(target);
     if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-clear")) return this.#clearTravelV2RiskBid();
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-review-queue-persist")) return this.persistTravelV2RiskBidReviewQueue(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-review-queue-status")) return this.#updateTravelV2RiskBidReviewQueueStatus(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-review-queue-select")) return this.#selectTravelV2RiskBidReviewQueueRecord(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-review-queue-clear-selection")) return this.#clearTravelV2RiskBidReviewQueueSelection(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-risk-bid-review-queue-clear-all-selections")) return this.#clearAllTravelV2RiskBidReviewQueueSelections(target);
     if (target.dataset.action === "arcflight-travel-v2-select-all-single-suggestion-consequences") return this.#selectAllSingleSuggestionPendingConsequences();
     if (target.dataset.action === "arcflight-travel-v2-apply-all-selected-consequences") return this.#applyAllSelectedPendingConsequences();
     if (target.dataset.action === "arcflight-travel-v2-clear-all-selected-consequences") return this.#clearAllSelectedPendingConsequences();

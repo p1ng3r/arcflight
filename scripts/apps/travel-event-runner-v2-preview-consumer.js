@@ -17,6 +17,20 @@ import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers
 import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
 import { prepareTravelV2EventSetupStakesState } from "../helpers/travel-v2-event-setup-stakes.js";
 import { prepareTravelV2EventApproachTallyApplicationRecordControls } from "../helpers/travel-v2-session-round-finalization.js";
+import { prepareTravelV2RiskBidResultCandidates, prepareTravelV2RiskBidResultPreview, normalizeTravelV2RiskBidResultBand } from "../helpers/travel-v2-risk-bid-results.js";
+import { prepareTravelV2RiskBidReviewedCandidateBridge } from "../helpers/travel-v2-risk-bid-result-bridge.js";
+import { prepareTravelV2RiskBidQueueReviewPayloads } from "../helpers/travel-v2-risk-bid-result-review-adapter.js";
+import { prepareTravelV2RiskBidReviewQueueDecisionState, prepareTravelV2RiskBidReviewQueueState } from "../helpers/travel-v2-risk-bid-review-queue.js";
+import { prepareTravelV2RiskBidSelectedReviewPreview } from "../helpers/travel-v2-risk-bid-review-preview.js";
+import { prepareTravelV2RiskBidReviewApplyIntent } from "../helpers/travel-v2-risk-bid-review-apply-intent.js";
+import { prepareTravelV2RiskBidReviewApplyGate } from "../helpers/travel-v2-risk-bid-review-apply-gate.js";
+import { prepareTravelV2RiskBidPressureApply } from "../helpers/travel-v2-risk-bid-pressure-apply.js";
+import { prepareTravelV2RiskBidHazardApply } from "../helpers/travel-v2-risk-bid-hazard-apply.js";
+import { prepareTravelV2RiskBidConsequenceApply } from "../helpers/travel-v2-risk-bid-consequence-apply.js";
+import { prepareTravelV2RiskBidBenefitRewardApply } from "../helpers/travel-v2-risk-bid-benefit-reward-apply.js";
+import { prepareTravelV2RiskBidScarApply } from "../helpers/travel-v2-risk-bid-scar-apply.js";
+import { prepareTravelV2RiskBidFinalApply } from "../helpers/travel-v2-risk-bid-final-apply.js";
+import { prepareTravelV2RiskBidResultPipelineCloseout } from "../helpers/travel-v2-risk-bid-result-pipeline-closeout.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 4;
 
@@ -236,6 +250,118 @@ function buildTravelV2GuidedState(state = {}) {
   };
 }
 
+function prepareTravelV2RiskBidResultRunnerPreview(state = {}, uiState = {}) {
+  const riskBids = state.riskBids ?? state.travelV2RiskBids ?? {};
+  const rawResultBand = uiState.travelV2RiskBidResultBand;
+  const normalizedResultBand = normalizeTravelV2RiskBidResultBand(rawResultBand);
+  const selectedRecord = riskBids?.selectedRecord && typeof riskBids.selectedRecord === "object" ? riskBids.selectedRecord : null;
+  const blockedReasons = [];
+  if (!selectedRecord || riskBids.selected !== true) blockedReasons.push("missing-selected-risk-bid");
+  if (rawResultBand === null || rawResultBand === undefined || rawResultBand === "") blockedReasons.push("missing-risk-bid-result-band");
+  else if (!normalizedResultBand) blockedReasons.push("invalid-risk-bid-result-band");
+
+  const input = {
+    selectionRecord: selectedRecord,
+    resultBand: normalizedResultBand,
+    stationKey: riskBids.stationKey ?? selectedRecord?.stationKey ?? "",
+    stationName: riskBids.stationName ?? "",
+    actionId: riskBids.actionId ?? selectedRecord?.actionId ?? "",
+    actionName: riskBids.actionName ?? "",
+    roundIndex: riskBids.roundIndex ?? selectedRecord?.roundIndex ?? null,
+    roundNumber: riskBids.roundNumber ?? selectedRecord?.roundNumber ?? null
+  };
+  const preview = prepareTravelV2RiskBidResultPreview(input);
+  const candidateState = prepareTravelV2RiskBidResultCandidates(input);
+  const combinedBlockedReasons = Array.from(new Set([...blockedReasons, ...(preview.blockedReasons ?? [])].map((reason) => reason === "invalid-result-band" && blockedReasons.includes("missing-risk-bid-result-band") ? "missing-risk-bid-result-band" : reason)));
+  const ok = combinedBlockedReasons.length === 0 && preview.ok === true && candidateState.ok === true;
+  return {
+    version: preview.version,
+    available: ok,
+    ok,
+    hasRiskBidResult: ok,
+    blockedReasons: ok ? [] : combinedBlockedReasons,
+    resultBand: ok ? preview.resultBand : null,
+    tier: ok ? preview.tier : null,
+    dcModifier: ok ? preview.dcModifier : null,
+    dangerLevel: ok ? preview.dangerLevel : "none",
+    stationKey: preview.stationKey,
+    stationName: preview.stationName,
+    actionId: preview.actionId,
+    actionName: preview.actionName,
+    roundIndex: preview.roundIndex,
+    roundNumber: preview.roundNumber,
+    summary: ok ? preview.summary : "Risk bid result is blocked.",
+    playerText: ok ? preview.playerText : "No risk bid result is available for this context.",
+    candidates: ok ? candidateState.candidates.map((candidate) => ({
+      type: candidate.type,
+      severity: candidate.severity,
+      tier: candidate.tier,
+      resultBand: candidate.resultBand,
+      label: candidate.label,
+      text: candidate.text,
+      requiresReview: candidate.requiresReview === true
+    })) : [],
+    gmReviewRequired: ok
+  };
+}
+
+function prepareTravelV2RiskBidPendingReviewProjection(preview = {}, { canReview = false } = {}) {
+  const blockedReasons = Array.isArray(preview?.blockedReasons) ? preview.blockedReasons : [];
+  if (!canReview) {
+    return {
+      version: preview?.version ?? 0,
+      available: false,
+      ok: false,
+      hasReviewPayloads: false,
+      blockedReasons: ["travel-v2-review-permission-required"],
+      resultBand: null,
+      tier: null,
+      dcModifier: null,
+      dangerLevel: "none",
+      stationKey: "",
+      stationName: "",
+      actionId: "",
+      actionName: "",
+      roundIndex: null,
+      roundNumber: null,
+      reviewPayloads: [],
+      gmReviewRequired: false,
+      queueReady: false,
+      inserted: false
+    };
+  }
+  const bridge = prepareTravelV2RiskBidReviewedCandidateBridge(preview);
+  const reviewState = prepareTravelV2RiskBidQueueReviewPayloads(bridge);
+  const reviewPayloads = Array.isArray(reviewState.reviewPayloads) ? reviewState.reviewPayloads : [];
+  const ok = preview?.ok === true && reviewState.ok === true && reviewState.hasReviewPayloads === true && reviewPayloads.length > 0;
+  const combinedBlockedReasons = ok ? [] : Array.from(new Set([
+    ...blockedReasons,
+    ...(Array.isArray(bridge?.blockedReasons) ? bridge.blockedReasons : []),
+    ...(Array.isArray(reviewState?.blockedReasons) ? reviewState.blockedReasons : [])
+  ]));
+  return {
+    version: reviewState.version,
+    available: ok,
+    ok,
+    hasReviewPayloads: ok,
+    blockedReasons: combinedBlockedReasons,
+    resultBand: ok ? reviewState.resultBand : null,
+    tier: ok ? reviewState.tier : null,
+    dcModifier: ok ? reviewState.dcModifier : null,
+    dangerLevel: ok ? reviewState.dangerLevel : "none",
+    stationKey: reviewState.stationKey ?? preview?.stationKey ?? "",
+    stationName: reviewState.stationName ?? preview?.stationName ?? "",
+    actionId: reviewState.actionId ?? preview?.actionId ?? "",
+    actionName: reviewState.actionName ?? preview?.actionName ?? "",
+    roundIndex: reviewState.roundIndex ?? preview?.roundIndex ?? null,
+    roundNumber: reviewState.roundNumber ?? preview?.roundNumber ?? null,
+    reviewPayloads: ok ? reviewPayloads : [],
+    gmReviewRequired: ok && reviewState.gmReviewRequired === true,
+    queueReady: ok,
+    inserted: false
+  };
+}
+
 function formatSetupStakesValidation(errors = []) {
   const messages = {
     "round-count-required": "Setup round count is missing.",
@@ -388,7 +514,22 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2StationBenefitUseReviewRequested: uiState.travelV2StationBenefitUseReviewRequested === true
   }, { user, includeGmReview: canManageTravelV2Consequences });
   const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview);
-  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2PreviewPanel: previewPanel };
+  const riskBidResultPreview = prepareTravelV2RiskBidResultRunnerPreview(appStateWithStationBenefitUseReview, uiState);
+  const riskBidPendingReview = prepareTravelV2RiskBidPendingReviewProjection(riskBidResultPreview, { canReview: canManageTravelV2Consequences });
+  const preparedRiskBidReviewQueue = prepareTravelV2RiskBidReviewQueueState(session);
+  const riskBidReviewQueue = canManageTravelV2Consequences ? preparedRiskBidReviewQueue : { ...preparedRiskBidReviewQueue, records: [] };
+  const riskBidReviewQueueDecisionState = prepareTravelV2RiskBidReviewQueueDecisionState(session, { canReview: canManageTravelV2Consequences });
+  const riskBidSelectedReviewPreview = prepareTravelV2RiskBidSelectedReviewPreview(session, { canReview: canManageTravelV2Consequences });
+  const riskBidReviewApplyIntent = prepareTravelV2RiskBidReviewApplyIntent(session, { canReview: canManageTravelV2Consequences, intentMode: "prepare" });
+  const riskBidReviewApplyGate = prepareTravelV2RiskBidReviewApplyGate(session, { canReview: canManageTravelV2Consequences, gateMode: "preview" });
+  const riskBidPressureApply = prepareTravelV2RiskBidPressureApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
+  const riskBidHazardApply = prepareTravelV2RiskBidHazardApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
+  const riskBidConsequenceApply = prepareTravelV2RiskBidConsequenceApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
+  const riskBidBenefitRewardApply = prepareTravelV2RiskBidBenefitRewardApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
+  const riskBidScarApply = prepareTravelV2RiskBidScarApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
+  const riskBidFinalApply = prepareTravelV2RiskBidFinalApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
+  const riskBidResultPipelineCloseout = prepareTravelV2RiskBidResultPipelineCloseout(session, { canReview: canManageTravelV2Consequences });
+  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewApplyIntent: riskBidReviewApplyIntent, riskBidReviewApplyIntent, travelV2RiskBidReviewApplyGate: riskBidReviewApplyGate, riskBidReviewApplyGate, travelV2RiskBidPressureApply: riskBidPressureApply, riskBidPressureApply, travelV2RiskBidHazardApply: riskBidHazardApply, riskBidHazardApply, travelV2RiskBidConsequenceApply: riskBidConsequenceApply, riskBidConsequenceApply, travelV2RiskBidBenefitRewardApply: riskBidBenefitRewardApply, riskBidBenefitRewardApply, travelV2RiskBidScarApply: riskBidScarApply, riskBidScarApply, travelV2RiskBidFinalApply: riskBidFinalApply, riskBidFinalApply, travelV2RiskBidResultPipelineCloseout: riskBidResultPipelineCloseout, riskBidResultPipelineCloseout, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {

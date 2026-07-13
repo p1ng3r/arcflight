@@ -40,6 +40,21 @@ import runTravelV2SupportAssistRecordsSmokeChecks from "../helpers/travel-v2-sup
 import runTravelV2SupportBacklashSmokeChecks from "../helpers/travel-v2-support-backlash.smoke.js";
 import runTravelV2FocusRiskSuppressionSmokeChecks from "../helpers/travel-v2-focus-risk-suppression.smoke.js";
 import runTravelV2RiskBidsSmokeChecks from "../helpers/travel-v2-risk-bids.smoke.js";
+import runTravelV2RiskBidResultSmokeChecks from "../helpers/travel-v2-risk-bid-results.smoke.js";
+import runTravelV2RiskBidResultBridgeSmokeChecks from "../helpers/travel-v2-risk-bid-result-bridge.smoke.js";
+import runTravelV2RiskBidResultReviewAdapterSmokeChecks from "../helpers/travel-v2-risk-bid-result-review-adapter.smoke.js";
+import runTravelV2RiskBidQueueInsertionIntentSmokeChecks from "../helpers/travel-v2-risk-bid-queue-insertion-intent.smoke.js";
+import runTravelV2RiskBidReviewQueueSmokeChecks from "../helpers/travel-v2-risk-bid-review-queue.smoke.js";
+import runTravelV2RiskBidReviewPreviewSmokeChecks from "../helpers/travel-v2-risk-bid-review-preview.smoke.js";
+import runTravelV2RiskBidReviewApplyIntentSmokeChecks from "../helpers/travel-v2-risk-bid-review-apply-intent.smoke.js";
+import runTravelV2RiskBidReviewApplyGateSmokeChecks from "../helpers/travel-v2-risk-bid-review-apply-gate.smoke.js";
+import runTravelV2RiskBidPressureApplySmokeChecks from "../helpers/travel-v2-risk-bid-pressure-apply.smoke.js";
+import runTravelV2RiskBidHazardApplySmokeChecks from "../helpers/travel-v2-risk-bid-hazard-apply.smoke.js";
+import runTravelV2RiskBidConsequenceApplySmokeChecks from "../helpers/travel-v2-risk-bid-consequence-apply.smoke.js";
+import runTravelV2RiskBidBenefitRewardApplySmokeChecks from "../helpers/travel-v2-risk-bid-benefit-reward-apply.smoke.js";
+import runTravelV2RiskBidScarApplySmokeChecks from "../helpers/travel-v2-risk-bid-scar-apply.smoke.js";
+import runTravelV2RiskBidFinalApplySmokeChecks from "../helpers/travel-v2-risk-bid-final-apply.smoke.js";
+import runTravelV2RiskBidResultPipelineCloseoutSmokeChecks from "../helpers/travel-v2-risk-bid-result-pipeline-closeout.smoke.js";
 import runTravelEventRunnerV2PreviewSmokeChecks from "../helpers/travel-event-runner-v2-preview.smoke.js";
 import runTravelEventRunnerV2PreviewConsumerSmokeChecks from "../apps/travel-event-runner-v2-preview-consumer.smoke.js";
 import runTravelEventRunnerV2PreviewPanelSmokeChecks from "../apps/travel-event-runner-v2-preview-panel.smoke.js";
@@ -130,6 +145,21 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 support backlash", runTravelV2SupportBacklashSmokeChecks],
   ["Travel v2 focus risk suppression", runTravelV2FocusRiskSuppressionSmokeChecks],
   ["Travel v2 risk bid alpha closeout", runTravelV2RiskBidsSmokeChecks],
+  ["Travel v2 risk bid result model", runTravelV2RiskBidResultSmokeChecks],
+  ["Travel v2 risk bid result reviewed candidate bridge", runTravelV2RiskBidResultBridgeSmokeChecks],
+  ["Travel v2 risk bid result review adapter", runTravelV2RiskBidResultReviewAdapterSmokeChecks],
+  ["Travel v2 risk bid queue insertion intent", runTravelV2RiskBidQueueInsertionIntentSmokeChecks],
+  ["Travel v2 risk bid review queue", runTravelV2RiskBidReviewQueueSmokeChecks],
+  ["Travel v2 risk bid selected review preview", runTravelV2RiskBidReviewPreviewSmokeChecks],
+  ["Travel v2 risk bid review apply intent", runTravelV2RiskBidReviewApplyIntentSmokeChecks],
+  ["Travel v2 risk bid review apply gate", runTravelV2RiskBidReviewApplyGateSmokeChecks],
+  ["Travel v2 risk bid pressure apply", runTravelV2RiskBidPressureApplySmokeChecks],
+  ["Travel v2 risk bid hazard apply", runTravelV2RiskBidHazardApplySmokeChecks],
+  ["Travel v2 risk bid consequence apply", runTravelV2RiskBidConsequenceApplySmokeChecks],
+  ["Travel v2 risk bid benefit reward apply", runTravelV2RiskBidBenefitRewardApplySmokeChecks],
+  ["Travel v2 risk bid scar apply", runTravelV2RiskBidScarApplySmokeChecks],
+  ["Travel v2 risk bid final apply", runTravelV2RiskBidFinalApplySmokeChecks],
+  ["Travel v2 risk bid result pipeline closeout", runTravelV2RiskBidResultPipelineCloseoutSmokeChecks],
   ["Travel event runner v2 preview", runTravelEventRunnerV2PreviewSmokeChecks],
   ["Travel event runner v2 preview consumer", runTravelEventRunnerV2PreviewConsumerSmokeChecks],
   ["Travel event runner v2 preview panel", runTravelEventRunnerV2PreviewPanelSmokeChecks],
