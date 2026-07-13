@@ -790,6 +790,22 @@
                 <p class="arcflight-sheet__hint">Applied must remain false; these are pending review records only.</p>
               </section>
             {{/if}}
+            {{#if state.riskBidReviewApplyGate.gateRecords.length}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Gate">
+                <h3>Risk Bid Review Apply Gate</h3>
+                <p class="arcflight-sheet__hint">Gate only — no effects applied.</p>
+                <p class="arcflight-travel-runner-mvp__v2-preview-chips">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Gate mode: {{state.riskBidReviewApplyGate.gateMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Selected: {{state.riskBidReviewApplyGate.selectedCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Intent records: {{state.riskBidReviewApplyGate.intentRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Gate records: {{state.riskBidReviewApplyGate.gateRecords.length}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Armed: {{state.riskBidReviewApplyGate.armed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Gate ready: {{state.riskBidReviewApplyGate.gateReady}}</span>
+                  {{#each state.riskBidReviewApplyGate.byResolutionFamily}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Family {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidReviewApplyGate.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                </p>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
