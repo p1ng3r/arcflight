@@ -22,6 +22,7 @@ import { prepareTravelV2RiskBidReviewedCandidateBridge } from "../helpers/travel
 import { prepareTravelV2RiskBidQueueReviewPayloads } from "../helpers/travel-v2-risk-bid-result-review-adapter.js";
 import { prepareTravelV2RiskBidReviewQueueDecisionState, prepareTravelV2RiskBidReviewQueueState } from "../helpers/travel-v2-risk-bid-review-queue.js";
 import { prepareTravelV2RiskBidSelectedReviewPreview } from "../helpers/travel-v2-risk-bid-review-preview.js";
+import { prepareTravelV2RiskBidReviewApplyIntent } from "../helpers/travel-v2-risk-bid-review-apply-intent.js";
 
 export const TRAVEL_EVENT_RUNNER_V2_PREVIEW_CONSUMER_VERSION = 4;
 
@@ -511,7 +512,8 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const riskBidReviewQueue = canManageTravelV2Consequences ? preparedRiskBidReviewQueue : { ...preparedRiskBidReviewQueue, records: [] };
   const riskBidReviewQueueDecisionState = prepareTravelV2RiskBidReviewQueueDecisionState(session, { canReview: canManageTravelV2Consequences });
   const riskBidSelectedReviewPreview = prepareTravelV2RiskBidSelectedReviewPreview(session, { canReview: canManageTravelV2Consequences });
-  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
+  const riskBidReviewApplyIntent = prepareTravelV2RiskBidReviewApplyIntent(session, { canReview: canManageTravelV2Consequences, intentMode: "prepare" });
+  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewApplyIntent: riskBidReviewApplyIntent, riskBidReviewApplyIntent, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {
