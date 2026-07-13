@@ -899,6 +899,36 @@
                 </div>
               </section>
             {{/if}}
+            {{#if state.riskBidFinalApply.finalReady}}
+              <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Final Apply Preview">
+                <h3>Risk Bid Final Apply Preview</h3>
+                <p class="arcflight-sheet__hint">Final apply preview only — no actor or world mutation.</p>
+                <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Risk bid final apply preview summary">
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Apply mode: {{state.riskBidFinalApply.applyMode}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Final records: {{state.riskBidFinalApply.finalRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure: {{state.riskBidFinalApply.pressureRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard: {{state.riskBidFinalApply.hazardRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence: {{state.riskBidFinalApply.consequenceRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Positive: {{state.riskBidFinalApply.positiveRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Scar: {{state.riskBidFinalApply.scarRecordCount}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Pressure delta: {{state.riskBidFinalApply.pressureDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Hazard delta: {{state.riskBidFinalApply.hazardDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Consequence delta: {{state.riskBidFinalApply.consequenceDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Positive delta: {{state.riskBidFinalApply.positiveDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Benefit delta: {{state.riskBidFinalApply.benefitDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Momentum delta: {{state.riskBidFinalApply.momentumDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Reward delta: {{state.riskBidFinalApply.rewardDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Scar delta: {{state.riskBidFinalApply.scarDeltaTotal}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Staged: {{state.riskBidFinalApply.staged}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Committed: {{state.riskBidFinalApply.committed}}</span>
+                  <span class="arcflight-travel-runner-mvp__v2-preview-chip">Applied: {{state.riskBidFinalApply.applied}}</span>
+                  {{#each state.riskBidFinalApply.byFinalFamily}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Family {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidFinalApply.byResolutionType}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Type {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidFinalApply.byDangerLevel}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Danger {{@key}}: {{this}}</span>{{/each}}
+                  {{#each state.riskBidFinalApply.bySeverity}}<span class="arcflight-travel-runner-mvp__v2-preview-chip">Severity {{@key}}: {{this}}</span>{{/each}}
+                </div>
+              </section>
+            {{/if}}
             {{#if state.riskBidReviewApplyIntent.intentRecords.length}}
               <section class="arcflight-travel-runner-mvp__v2-preview-feedback" aria-label="Risk Bid Review Apply Intent">
                 <h3>Risk Bid Review Apply Intent</h3>
