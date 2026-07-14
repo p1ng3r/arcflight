@@ -134,7 +134,9 @@ export default async function runTravelV2InterStationHelpPendingQueueSmokeChecks
     internalMutation: { target: "PRIVATE" },
     nested: { rawTarget: { actorUuid: "Actor.raw", secret: "NESTED SECRET" } }
   };
-  const adversarialSession = fixtureSession({ travelV2PendingStationBenefits: [adversarialDuplicateRow] });
+  const adversarialSession = fixtureSession({ customSessionMarker: { preserved: true }, travelV2PendingStationBenefits: [adversarialDuplicateRow] });
+  delete adversarialSession.event.rounds[0].stationCards[0].interStationHelp[0].criticalSuccessMetadata.gmText;
+  delete adversarialSession.event.rounds[0].stationCards[0].interStationHelp[0].criticalSuccessMetadata.applyPayload;
   const adversarialDuplicate = queueTravelV2InterStationHelpPendingRecord(adversarialSession, action, validContext(), { enqueueRequested: true });
   assert.equal(adversarialDuplicate.ok, false);
   assert.equal(adversarialDuplicate.queued, false);
@@ -142,9 +144,15 @@ export default async function runTravelV2InterStationHelpPendingQueueSmokeChecks
   assert.equal(adversarialDuplicate.blockedReasons.includes("duplicate-pending-inter-station-help-queue-record"), true);
   assert.equal(adversarialDuplicate.session.travelV2PendingStationBenefits.length, 1);
   assert.equal(adversarialSession.travelV2PendingStationBenefits.length, 1);
+  assert.equal(adversarialDuplicate.session.currentRoundIndex, adversarialSession.currentRoundIndex);
+  assert.deepEqual(adversarialDuplicate.session.event, adversarialSession.event);
+  assert.deepEqual(adversarialDuplicate.session.roundResults, adversarialSession.roundResults);
+  assert.deepEqual(adversarialDuplicate.session.customSessionMarker, { preserved: true });
   assert.equal(adversarialDuplicate.existingQueueRecord.queueKey, row.queueKey);
+  assert.deepEqual(Object.keys(adversarialDuplicate.existingQueueRecord).sort(), ["applied", "applyAvailable", "benefitKind", "consumed", "criticalSuccess", "dedupeKey", "expires", "pendingHelpKey", "playerSafe", "playerSafeSummary", "playerVisible", "publicText", "queueKey", "resultBand", "reviewOnly", "roundIndex", "roundNumber", "sourceStation", "sourceStationKey", "sourceStationLabel", "sourceStationName", "status", "tags", "targetStation", "targetStationKey", "targetStationLabel", "targetStationName", "title", "useAvailable", "used"].sort());
+  assert.deepEqual(Object.keys(adversarialDuplicate.session.travelV2PendingStationBenefits[0]).sort(), Object.keys(adversarialDuplicate.existingQueueRecord).sort());
   assertNoTerms(adversarialDuplicate, ADVERSARIAL_DUPLICATE_FORBIDDEN, "adversarial duplicate result");
-  checked.push("adversarial duplicate raw queue rows are summarized without echoing private fields anywhere in the helper result");
+  checked.push("adversarial duplicate preserves session fields while summarizing queue rows without echoing private fields anywhere in the helper result");
 
   const critical = queueTravelV2InterStationHelpPendingRecord(fixtureSession(), action, validContext({ result: "criticalSuccess" }), { enqueueRequested: true });
   assert.equal(critical.ok, true);

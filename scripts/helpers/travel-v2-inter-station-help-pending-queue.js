@@ -40,7 +40,7 @@ function safeDuplicateQueueSummary(row = {}) {
 }
 function safeDuplicateSession(session = {}) {
   if (!isPlainObject(session)) return session;
-  return { [QUEUE_FIELD]: pendingRowsFrom(session).map(safeDuplicateQueueSummary).filter(Boolean) };
+  return { ...cloneData(session), [QUEUE_FIELD]: pendingRowsFrom(session).map(safeDuplicateQueueSummary).filter(Boolean) };
 }
 function inertQueueRowFromRecord(record = {}) {
   const queueKey = queueIdentityFor(record);
