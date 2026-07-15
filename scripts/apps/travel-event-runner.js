@@ -4,6 +4,7 @@ import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from ".
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
 import { integerOrNull, prepareTravelV2InterStationHelpQueueRunnerUpdate } from "../helpers/travel-v2-inter-station-help-create-review.js";
 import { prepareTravelV2StationBenefitUseRunnerUpdate } from "../helpers/travel-v2-station-benefit-use-review.js";
+import { applyTravelV2InterStationHelpApplicationToSession } from "../helpers/travel-v2-inter-station-help-application.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
@@ -143,6 +144,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-station-benefit-review-request]",
   "[data-arcflight-travel-v2-station-benefit-use]",
+  "[data-arcflight-travel-v2-inter-station-help-application-review]",
+  "[data-arcflight-travel-v2-inter-station-help-application-apply]",
   "[data-arcflight-travel-v2-inter-station-help-review]",
   "[data-arcflight-travel-v2-inter-station-help-queue]",
   "[data-arcflight-travel-v2-order-reorder-request]",
@@ -506,6 +509,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2HazardControlResult: null,
       travelV2HazardCandidateControlResult: null,
       travelV2StationBenefitUseResult: null,
+      travelV2InterStationHelpApplicationResult: null,
+      travelV2InterStationHelpApplicationSelectedQueueKey: null,
+      travelV2InterStationHelpApplicationReviewRequested: false,
       travelV2ShipScarResult: null,
       travelV2DevToolResult: null,
       travelV2AutoSaveResult: null,
@@ -901,6 +907,33 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+
+  #reviewTravelV2InterStationHelpApplication(target) {
+    const queueKey = typeof target?.dataset?.queueKey === "string" ? target.dataset.queueKey.trim() : "";
+    this.uiState.travelV2InterStationHelpApplicationSelectedQueueKey = queueKey;
+    this.uiState.travelV2InterStationHelpApplicationReviewRequested = Boolean(queueKey);
+    this.statusMessage = queueKey ? "Help effect review requested. This does not roll or apply the check." : "Help effect review requires a queue key.";
+    return this.render(true);
+  }
+
+  #applyTravelV2InterStationHelpApplication() {
+    if (globalThis.game?.user?.isGM !== true) {
+      this.uiState.travelV2InterStationHelpApplicationResult = { ok: false, status: "blocked", message: "Only the GM can apply Inter-Station Help effects.", blockedReasons: ["gm-apply-permission-required"] };
+      this.statusMessage = this.uiState.travelV2InterStationHelpApplicationResult.message;
+      return this.render(true);
+    }
+    const update = applyTravelV2InterStationHelpApplicationToSession(this.session ?? {}, { queueKey: this.uiState.travelV2InterStationHelpApplicationSelectedQueueKey }, { canApply: true, applyRequested: true });
+    this.uiState.travelV2InterStationHelpApplicationResult = update.status;
+    this.statusMessage = update.status?.message || update.status?.blockedReasons?.[0] || "Inter-Station Help application was blocked.";
+    if (update.shouldAdoptSession === true) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2InterStationHelpApplicationSelectedQueueKey = null;
+      this.uiState.travelV2InterStationHelpApplicationReviewRequested = false;
+    }
+    return this.render(true);
+  }
+
   async #onRunnerChange(event) {
     const eventSelect = event.target?.closest?.("[data-arcflight-runner-event-select]");
     if (eventSelect && this.element?.contains(eventSelect)) {
@@ -1017,6 +1050,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-review-request")) return this.#requestTravelV2StationBenefitReview(target);
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-use")) return this.#useTravelV2StationBenefit();
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-application-review")) return this.#reviewTravelV2InterStationHelpApplication(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-application-apply")) return this.#applyTravelV2InterStationHelpApplication();
     if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-review")) return this.#reviewTravelV2InterStationHelp(target);
     if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-queue")) return this.#queueTravelV2InterStationHelp();
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);

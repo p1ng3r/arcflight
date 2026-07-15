@@ -46,8 +46,12 @@ function integerOrNull(value) {
 }
 
 function positiveIntegerOrNull(value) {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? number : null;
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (normalized === "" || !/^\d+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function humanizeIdentifier(value) {
@@ -115,6 +119,19 @@ function sanitizeCriticalSuccessMetadata(value) {
 
 function criticalSuccessMetadataFrom(record = {}) {
   return sanitizeCriticalSuccessMetadata(record.criticalSuccessMetadata ?? record.criticalSuccess ?? record.criticalSuccessStrengthening ?? record.criticalSuccessBenefit);
+}
+
+function benefitMetadataFrom(record = {}) {
+  const source = isPlainObject(record.benefit) ? record.benefit : record;
+  const benefitKind = text(source.kind ?? source.benefitKind ?? source.benefitType ?? source.type);
+  const rawMagnitude = source.magnitude ?? source.value ?? source.amount ?? source.dcReduction;
+  const magnitude = positiveIntegerOrNull(rawMagnitude);
+  const expires = text(source.expires ?? source.expiration);
+  return {
+    ...(benefitKind ? { benefitKind } : {}),
+    ...(magnitude !== null ? { magnitude } : {}),
+    ...(expires ? { expires } : {})
+  };
 }
 
 function currentRoundContext(session = {}, options = {}) {
@@ -252,6 +269,7 @@ function normalizeAction(entry = {}, index = 0, context = {}, orderState = {}, o
     const title = text(record.title ?? record.name ?? record.label) || `${stationNameFor(context.round, sourceStationKey)} helps ${stationNameFor(context.round, targetStationKey)}`;
     const publicText = text(record.publicText ?? record.playerText ?? record.description ?? record.text ?? record.helpText ?? record.summary);
     const tags = sanitizeTags(record.tags ?? record.tag);
+    const benefitMetadata = benefitMetadataFrom(record);
     rows.push({
       version: TRAVEL_V2_INTER_STATION_HELP_ACTIONS_VERSION,
       roundIndex: context.roundIndex,
@@ -272,6 +290,7 @@ function normalizeAction(entry = {}, index = 0, context = {}, orderState = {}, o
       unavailableReason: available ? null : "target-station-not-later-in-order",
       tags,
       authoredFrom: text(entry.authoredFrom),
+      ...benefitMetadata,
       stationOrderLocked: orderState.stationOrderLocked === true,
       ...(criticalSuccessMetadataFrom(record) ? { criticalSuccessMetadata: criticalSuccessMetadataFrom(record) } : {}),
       playerSafe: true,
