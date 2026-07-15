@@ -27,6 +27,8 @@ function userFrom(input = {}, options = {}) { return options.user ?? input.user 
 function userSnapshot(userLike) { return { isGM: isGmLike(userLike) }; }
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function nullableText(value) { const next = text(value); return next || null; }
+function strictIntegerOrNull(value) { if (typeof value === "number") return Number.isInteger(value) ? value : null; if (typeof value !== "string" || value.trim() === "") return null; if (!/^-?\d+$/.test(value.trim())) return null; const number = Number(value.trim()); return Number.isInteger(number) ? number : null; }
+function positiveIntegerOrNull(value) { if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null; if (typeof value !== "string") return null; const normalized = value.trim(); if (normalized === "" || !/^\d+$/.test(normalized)) return null; const parsed = Number(normalized); return Number.isInteger(parsed) && parsed > 0 ? parsed : null; }
 function persistentMutation() { return { available: false, reason: PERSISTENCE_REASON }; }
 function inertFlags() { return { reviewOnly: true, useAvailable: false, applyAvailable: false, canReviewEffect: false, applied: false, used: false, consumed: false, dismissed: false, stationCheckMutated: false, rollMutated: false, checkPreviewMutated: false, persistentMutation: persistentMutation() }; }
 function stripForbiddenFields(value) {
@@ -55,6 +57,11 @@ function rowsFrom(input = {}) {
   const sources = [input.pendingStationBenefits, input.travelV2PendingStationBenefits, input.travelV2PendingStationBenefitQueue, input.session?.pendingStationBenefits, input.session?.travelV2PendingStationBenefits];
   return sources.flatMap((source) => Array.isArray(source) ? source : (Array.isArray(source?.rows) ? source.rows : (Array.isArray(source?.items) ? source.items : []))).map(cloneData);
 }
+function applicationRecordsFrom(input = {}) {
+  const session = input?.session ?? input;
+  const container = session?.travelV2InterStationHelpApplications;
+  return Array.isArray(container?.records) ? container.records : [];
+}
 function normalizeBenefitKind(value) { const next = text(value) || "unknown"; return BENEFIT_KINDS.has(next) ? next : "unknown"; }
 function normalizeExpires(value) { const next = text(value) || "unknown"; return EXPIRES_VALUES.has(next) ? next : "unknown"; }
 function normalizeStatus(row = {}, blocked = false) {
@@ -79,6 +86,35 @@ function queueKeyFor(row = {}, index = 0, sourceStation = null, targetStation = 
 function countsFor(rows = []) {
   return { pendingCount: rows.filter((row) => row.status === "pending").length, usedCount: rows.filter((row) => row.status === "used").length, dismissedCount: rows.filter((row) => row.status === "dismissed").length, expiredCount: rows.filter((row) => row.status === "expired").length, blockedCount: rows.filter((row) => row.status === "blocked").length, totalCount: rows.length };
 }
+function appliedHelpRecordFor(row = {}, applicationRecords = [], queueKey = "") {
+  if (row?.applied !== true) return null;
+  const applicationKey = nullableText(row.applicationKey);
+  if (!applicationKey) return null;
+  const rowQueueKey = nullableText(queueKey || row.queueKey);
+  const sourceStationKey = nullableText(row.sourceStationKey ?? row.sourceStation ?? row.stationKey);
+  const targetStationKey = nullableText(row.targetStationKey ?? row.targetStation);
+  const roundIndex = strictIntegerOrNull(row.roundIndex);
+  const matches = (Array.isArray(applicationRecords) ? applicationRecords : []).filter((record) => record?.applied === true
+    && text(record.status) === "applied"
+    && text(record.benefitKind) === "dcReduction"
+    && nullableText(record.applicationKey) === applicationKey
+    && nullableText(record.queueKey) === rowQueueKey
+    && nullableText(record.sourceStationKey) === sourceStationKey
+    && nullableText(record.targetStationKey) === targetStationKey
+    && strictIntegerOrNull(record.roundIndex) === roundIndex);
+  if (matches.length !== 1) return null;
+  const record = matches[0];
+  const baseMagnitude = positiveIntegerOrNull(record.baseMagnitude);
+  const effectiveMagnitude = positiveIntegerOrNull(record.effectiveMagnitude ?? record.magnitude);
+  const criticalMagnitude = positiveIntegerOrNull(record.criticalMagnitude);
+  if (baseMagnitude === null || effectiveMagnitude === null) return null;
+  if (record.strengthened === true) {
+    if (criticalMagnitude === null || criticalMagnitude <= baseMagnitude || effectiveMagnitude !== criticalMagnitude) return null;
+  } else if (effectiveMagnitude !== baseMagnitude || criticalMagnitude !== null) {
+    return null;
+  }
+  return record;
+}
 function rowFromRecord(record, index, stationsByKey, options = {}) {
   const row = isPlainObject(record) ? record : {};
   const sourceStation = nullableText(row.sourceStation ?? row.sourceStationKey ?? row.stationKey);
@@ -93,9 +129,16 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
   const consumed = row.consumed === true;
   const applied = row.applied === true;
   const dismissed = row.dismissed === true || status === "dismissed";
+  const queueKey = queueKeyFor(row, index, sourceStation, targetStation, benefitKind);
+  const appliedRecord = appliedHelpRecordFor(row, options.applicationRecords, queueKey);
+  const appliedMagnitude = appliedRecord ? positiveIntegerOrNull(appliedRecord.effectiveMagnitude ?? appliedRecord.magnitude) : null;
+  const appliedBaseMagnitude = appliedRecord ? positiveIntegerOrNull(appliedRecord.baseMagnitude) : null;
+  const appliedCriticalMagnitude = appliedRecord ? positiveIntegerOrNull(appliedRecord.criticalMagnitude) : null;
+  const appliedStrengthened = appliedRecord?.strengthened === true;
+  const applicationStatusLabel = applied && appliedMagnitude !== null ? `Effect applied: DC −${appliedMagnitude}` : (applied ? "Effect applied" : null);
   const base = stripForbiddenFields({
     pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
-    queueKey: queueKeyFor(row, index, sourceStation, targetStation, benefitKind),
+    queueKey,
     sourceId: row.sourceId ?? null,
     sourceCardId: row.sourceCardId ?? row.actionCardId ?? null,
     benefitCardId: row.benefitCardId ?? row.cardId ?? null,
@@ -117,7 +160,11 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
     consumed,
     applied,
     dismissed,
-    applicationStatusLabel: applied ? "Effect applied" : null,
+    appliedMagnitude,
+    appliedBaseMagnitude,
+    appliedCriticalMagnitude,
+    appliedStrengthened,
+    applicationStatusLabel,
     ...(applied ? { applicationKey: nullableText(row.applicationKey) } : {}),
     ...(status === "blocked" ? { blockedReason: "Pending station benefit record is missing safe display data.", disabledReason: "Pending station benefit is unavailable." } : {})
   });
@@ -134,6 +181,7 @@ export function normalizeTravelV2PendingStationBenefitQueueInput(input = {}, opt
     user: safeUser,
     includeGmReview: (input.includeGmReview === true || options.includeGmReview === true) && safeUser.isGM === true,
     rows: rowsFrom(input),
+    applicationRecords: applicationRecordsFrom(input),
     stations: Array.isArray(input.stations) ? input.stations : []
   });
 }
@@ -142,7 +190,7 @@ export function prepareTravelV2PendingStationBenefitQueueItems(input = {}, optio
   const normalized = normalizeTravelV2PendingStationBenefitQueueInput(input, options);
   const stationsByKey = stationMap(normalized.stations);
   const seen = new Set();
-  const rows = normalized.rows.map((row, index) => rowFromRecord(row, index, stationsByKey, { ...options, user: normalized.user, includeGmReview: normalized.includeGmReview })).filter((row) => {
+  const rows = normalized.rows.map((row, index) => rowFromRecord(row, index, stationsByKey, { ...options, user: normalized.user, includeGmReview: normalized.includeGmReview, applicationRecords: normalized.applicationRecords })).filter((row) => {
     if (seen.has(row.queueKey)) return false;
     seen.add(row.queueKey);
     return true;

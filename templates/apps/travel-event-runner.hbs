@@ -738,7 +738,7 @@
                 <h5>Use Help Review: {{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.title}}</h5>
                 <p>{{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.publicText}}</p>
                 <p class="arcflight-sheet__hint">{{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.sourceStationLabel}} → {{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.targetStationLabel}} · Status: {{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.status}}</p>
-                {{#if state.travelV2StationBenefitUseReview.selectedCandidate.candidate.criticalSuccess}}<p class="arcflight-sheet__hint">Critical-success metadata remains review-only and inert.</p>{{/if}}
+                {{#if state.travelV2StationBenefitUseReview.selectedCandidate.candidate.criticalSuccess}}<p class="arcflight-sheet__hint">Critical-success strengthening will be evaluated during the separate Help Effect review. Using Help here does not yet modify or roll the target check.</p>{{/if}}
                 <p class="arcflight-sheet__hint">Marks this Help used in the local session. No roll or DC modifier is applied by this slice.</p>
                 {{#if state.travelV2StationBenefitUseReview.selectedCandidate.useAvailable}}
                   <button type="button" data-arcflight-travel-v2-station-benefit-use title="Marks this Help used in the local session. No roll or DC modifier is applied by this slice.">Use Help</button>
@@ -753,17 +753,21 @@
                 <h5>Review Help Effect: {{state.travelV2InterStationHelpApplicationReview.title}}</h5>
                 <p>{{state.travelV2InterStationHelpApplicationReview.publicText}}</p>
                 <p class="arcflight-sheet__hint">{{state.travelV2InterStationHelpApplicationReview.sourceStationName}} → {{state.travelV2InterStationHelpApplicationReview.targetStationName}} · Round {{state.travelV2InterStationHelpApplicationReview.roundNumber}}</p>
-                {{#if state.travelV2InterStationHelpApplicationReview.strengthened}}
-                <p><strong>Base Help:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.baseMagnitude}}</p>
-                <p><strong>Critical-success Help:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.criticalMagnitude}}</p>
-                <p><strong>Applied effect:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.effectiveMagnitude}}</p>
+                {{#if state.travelV2InterStationHelpApplicationReview.ok}}
+                  {{#if state.travelV2InterStationHelpApplicationReview.strengthened}}
+                  <p><strong>Base Help:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.baseMagnitude}}</p>
+                  <p><strong>Critical-success Help:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.criticalMagnitude}}</p>
+                  <p><strong>Applied effect:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.effectiveMagnitude}}</p>
+                  {{else}}
+                  <p><strong>Help effect:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.magnitude}}</p>
+                  {{/if}}
+                  {{#if state.travelV2InterStationHelpApplicationReview.fallbackDcPreview}}<p class="arcflight-sheet__hint">Fallback DC preview {{state.travelV2InterStationHelpApplicationReview.fallbackBaseDc}} → {{state.travelV2InterStationHelpApplicationReview.fallbackEffectiveDc}}</p>{{/if}}
+                  {{#if state.travelV2InterStationHelpApplicationReview.criticalSuccessNote}}<p class="arcflight-sheet__hint">{{state.travelV2InterStationHelpApplicationReview.criticalSuccessNote}}</p>{{/if}}
+                  <p class="arcflight-sheet__hint">Apply DC −{{state.travelV2InterStationHelpApplicationReview.magnitude}} to {{state.travelV2InterStationHelpApplicationReview.targetStationName}}'s current station check. This updates session-local check context only and does not roll the check.</p>
+                  {{#if state.travelV2InterStationHelpApplicationReview.applyAvailable}}<button type="button" data-arcflight-travel-v2-inter-station-help-application-apply>Apply Help Effect</button>{{/if}}
                 {{else}}
-                <p><strong>Help effect:</strong> DC −{{state.travelV2InterStationHelpApplicationReview.magnitude}}</p>
+                  <p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2InterStationHelpApplicationReview.blockedReasons}}</p>
                 {{/if}}
-                <p class="arcflight-sheet__hint">Fallback DC preview {{state.travelV2InterStationHelpApplicationReview.fallbackBaseDc}} → {{state.travelV2InterStationHelpApplicationReview.fallbackEffectiveDc}}</p>
-                {{#if state.travelV2InterStationHelpApplicationReview.criticalSuccessNote}}<p class="arcflight-sheet__hint">{{state.travelV2InterStationHelpApplicationReview.criticalSuccessNote}}</p>{{/if}}
-                <p class="arcflight-sheet__hint">Apply DC −{{state.travelV2InterStationHelpApplicationReview.magnitude}} to {{state.travelV2InterStationHelpApplicationReview.targetStationName}}'s current station check. This updates session-local check context only and does not roll the check.</p>
-                {{#if state.travelV2InterStationHelpApplicationReview.applyAvailable}}<button type="button" data-arcflight-travel-v2-inter-station-help-application-apply>Apply Help Effect</button>{{else}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2InterStationHelpApplicationReview.blockedReasons}}</p>{{/if}}
               </article>
             {{/if}}
             {{#if state.travelV2InterStationHelpApplicationResult.message}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2InterStationHelpApplicationResult.message}}</p>{{/if}}
