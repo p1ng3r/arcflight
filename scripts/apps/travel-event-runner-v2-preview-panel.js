@@ -625,6 +625,7 @@ function normalizeStationBenefitDisplay(state = null, options = {}) {
     const appliedBaseMagnitude = positiveIntegerOrNull(row?.appliedBaseMagnitude);
     const appliedCriticalMagnitude = positiveIntegerOrNull(row?.appliedCriticalMagnitude);
     const appliedStrengthened = row?.appliedStrengthened === true;
+    const legacyApplication = row?.legacyApplication === true;
     const applicationStatusLabel = typeof row?.applicationStatusLabel === "string" ? row.applicationStatusLabel.trim() : "";
     const disabledReason = typeof row?.disabledReason === "string" && row.disabledReason.trim()
       ? row.disabledReason.trim()
@@ -645,6 +646,7 @@ function normalizeStationBenefitDisplay(state = null, options = {}) {
       appliedBaseMagnitude,
       appliedCriticalMagnitude,
       appliedStrengthened,
+      legacyApplication,
       applicationStatusLabel,
       canReview,
       useAvailable,

@@ -73,8 +73,28 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   const review = prepareTravelV2InterStationHelpApplicationReview(session, { queueKey }, { canApply: true });
   assert.equal(review.ok, true); assert.equal(review.dcReduction, 2); assert.equal(review.fallbackBaseDc, 21); assert.equal(review.fallbackEffectiveDc, 19); assert.equal(review.applyAvailable, true);
   const applied = applyTravelV2InterStationHelpApplicationToSession(session, { queueKey }, { canApply: true, applyRequested: true, now: "2026-07-15T00:00:00.000Z" });
-  assert.equal(applied.ok, true); assert.equal(applied.shouldAdoptSession, true); assert.equal(snap(session), before); assert.notEqual(applied.nextSession, session); assert.equal(applied.nextSession.travelV2InterStationHelpApplications.records.length, 1); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].applied, true); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].status, "used"); assert.equal(applied.nextSession.roundResults[0].stationResults.engineer, null); assert.equal(applied.nextSession.event.baseDC, 20);
+  assert.equal(applied.ok, true); assert.equal(applied.record.version, 2); assert.equal(applied.shouldAdoptSession, true); assert.equal(snap(session), before); assert.notEqual(applied.nextSession, session); assert.equal(applied.nextSession.travelV2InterStationHelpApplications.records.length, 1); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].applied, true); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].status, "used"); assert.equal(applied.nextSession.roundResults[0].stationResults.engineer, null); assert.equal(applied.nextSession.event.baseDC, 20);
   checked.push("successful application creates one session-local application record without rolling or rewriting base DC");
+
+
+  const legacySession = JSON.parse(snap(applied.nextSession));
+  const legacyRaw = legacySession.travelV2PendingStationBenefits[0];
+  const legacyApplication = { version: 1, applicationKey: legacyRaw.applicationKey, queueKey: legacyRaw.queueKey, pendingHelpKey: legacyRaw.pendingHelpKey, actionId: legacyRaw.actionId, roundIndex: legacyRaw.roundIndex, roundNumber: legacyRaw.roundNumber, sourceStationKey: legacyRaw.sourceStationKey, sourceStationName: legacyRaw.sourceStationName, targetStationKey: legacyRaw.targetStationKey, targetStationName: legacyRaw.targetStationName, benefitKind: "dcReduction", magnitude: 2, status: "applied", applied: true, appliedAt: "2026-07-15T00:00:00.000Z", playerSafe: true };
+  legacySession.travelV2InterStationHelpApplications = { version: 1, records: [legacyApplication] };
+  const legacyAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(legacySession, { roundIndex: 0, stationKey: "engineer" });
+  assert.equal(legacyAdjustment.dcReduction, 2); assert.equal(legacyAdjustment.hasAdjustment, true); assert.equal(legacyAdjustment.applications[0].legacyApplication, true); assert.equal(legacyAdjustment.applications[0].strengthened, false);
+  const legacyGmRow = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: legacySession, user: { isGM: true } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === legacyRaw.queueKey);
+  assert.ok(legacyGmRow); assert.equal(legacyGmRow.appliedMagnitude, 2); assert.equal(legacyGmRow.appliedBaseMagnitude, 2); assert.equal(legacyGmRow.appliedCriticalMagnitude, null); assert.equal(legacyGmRow.appliedStrengthened, false); assert.equal(legacyGmRow.legacyApplication, true); assert.equal(legacyGmRow.applicationStatusLabel, "Effect applied: DC −2");
+  const legacyPlayerRow = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: legacySession, user: { isGM: false } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === legacyRaw.queueKey);
+  assert.ok(legacyPlayerRow); assert.equal(legacyPlayerRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(legacyPlayerRow.canReviewEffect, false); assert.equal(legacyPlayerRow.applyAvailable, false);
+  const legacyBaseMismatch = JSON.parse(snap(legacySession));
+  legacyBaseMismatch.event.rounds[0].stationCards[0].interStationHelp[0].benefit.magnitude = 3;
+  assertNoAdjustment(legacyBaseMismatch, "legacy-authored-base-mismatch");
+  const legacyFailure = JSON.parse(snap(legacySession));
+  legacyFailure.roundResults[0].stationResults.navigator = "failure";
+  assertNoAdjustment(legacyFailure, "legacy-unsuccessful-source");
+  for (const [label, mutate] of Object.entries({ legacyBaseField: (s) => { s.travelV2InterStationHelpApplications.records[0].baseMagnitude = 2; }, legacyEffectiveField: (s) => { s.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 2; }, legacyStrengthenedField: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = false; }, legacyEffectSourceField: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = "base"; }, legacyCriticalSuccessField: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = false; }, incompleteV2: (s) => { s.travelV2InterStationHelpApplications.records[0].version = 2; }, unknownVersion: (s) => { s.travelV2InterStationHelpApplications.records[0].version = 3; } })) { const tamperedLegacy = JSON.parse(snap(legacySession)); mutate(tamperedLegacy); assertNoAdjustment(tamperedLegacy, label); }
+  checked.push("exact Slice 06 legacy application records remain base-only while hybrid or unknown versions contribute zero");
 
   const duplicate = applyTravelV2InterStationHelpApplicationToSession(applied.nextSession, { queueKey }, { canApply: true, applyRequested: true });
   assert.equal(duplicate.ok, false); assert.equal(duplicate.shouldAdoptSession, false); assert.equal(snap(duplicate.nextSession), snap(applied.nextSession));
@@ -147,11 +167,18 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   const criticalReview = prepareTravelV2InterStationHelpApplicationReview(critical, { queueKey: criticalQueueKey }, { canApply: true });
   assert.equal(criticalReview.ok, true); assert.equal(criticalReview.baseMagnitude, 2); assert.equal(criticalReview.criticalMagnitude, 4); assert.equal(criticalReview.effectiveMagnitude, 4); assert.equal(criticalReview.magnitude, 4); assert.equal(criticalReview.dcReduction, 4); assert.equal(criticalReview.strengthened, true); assert.equal(criticalReview.effectSource, "criticalSuccess"); assert.equal(criticalReview.criticalSuccessNote.includes("from DC −2 to DC −4"), true);
   const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey: criticalQueueKey }, { canApply: true, applyRequested: true });
-  assert.equal(crit.ok, true); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records.length, 1);
+  assert.equal(crit.ok, true); assert.equal(crit.record.version, 2); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records.length, 1);
   assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].baseMagnitude, 2); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].criticalMagnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].effectiveMagnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].magnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].strengthened, true); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].strengtheningMode, "replaceMagnitude"); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].effectSource, "criticalSuccess");
   assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 4);
   assert.equal(prepareTravelSceneOverlayState(crit.nextSession).stations.find((station) => station.stationKey === "engineer").effectiveDc, 18);
   assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
+
+
+  const criticalLegacySession = JSON.parse(snap(crit.nextSession));
+  const criticalLegacyRaw = criticalLegacySession.travelV2PendingStationBenefits[0];
+  criticalLegacySession.travelV2InterStationHelpApplications = { version: 1, records: [{ version: 1, applicationKey: criticalLegacyRaw.applicationKey, queueKey: criticalLegacyRaw.queueKey, pendingHelpKey: criticalLegacyRaw.pendingHelpKey, actionId: criticalLegacyRaw.actionId, roundIndex: criticalLegacyRaw.roundIndex, roundNumber: criticalLegacyRaw.roundNumber, sourceStationKey: criticalLegacyRaw.sourceStationKey, sourceStationName: criticalLegacyRaw.sourceStationName, targetStationKey: criticalLegacyRaw.targetStationKey, targetStationName: criticalLegacyRaw.targetStationName, benefitKind: "dcReduction", magnitude: 2, status: "applied", applied: true, appliedAt: "2026-07-15T00:00:00.000Z", playerSafe: true }] };
+  const criticalLegacyAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(criticalLegacySession, { roundIndex: 0, stationKey: "engineer" });
+  assert.equal(criticalLegacyAdjustment.dcReduction, 2); assert.equal(criticalLegacyAdjustment.applications[0].legacyApplication, true); assert.equal(criticalLegacyAdjustment.applications[0].strengthened, false);
 
   const criticalGmAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: crit.nextSession, user: { isGM: true } });
   const criticalGmAppliedRow = criticalGmAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === criticalQueueKey);

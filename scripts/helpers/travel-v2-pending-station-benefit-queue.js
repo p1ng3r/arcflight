@@ -83,6 +83,23 @@ function queueKeyFor(row = {}, index = 0, sourceStation = null, targetStation = 
   const parts = [row.sourceId, row.sourceCardId, row.benefitCardId, sourceStation, targetStation, benefitKind, index].map((part) => text(part) || "none");
   return parts.join(":").replace(/\s+/g, "-").toLowerCase();
 }
+
+function isLegacySlice06Application(record = {}) {
+  if (!isPlainObject(record)) return false;
+  return strictIntegerOrNull(record.version) === 1
+    && record.applied === true
+    && text(record.status) === "applied"
+    && text(record.benefitKind) === "dcReduction"
+    && positiveIntegerOrNull(record.magnitude) !== null
+    && !Object.hasOwn(record, "baseMagnitude")
+    && !Object.hasOwn(record, "effectiveMagnitude")
+    && !Object.hasOwn(record, "criticalMagnitude")
+    && !Object.hasOwn(record, "strengthened")
+    && !Object.hasOwn(record, "strengtheningMode")
+    && !Object.hasOwn(record, "effectSource")
+    && !Object.hasOwn(record, "criticalSuccess");
+}
+
 function countsFor(rows = []) {
   return { pendingCount: rows.filter((row) => row.status === "pending").length, usedCount: rows.filter((row) => row.status === "used").length, dismissedCount: rows.filter((row) => row.status === "dismissed").length, expiredCount: rows.filter((row) => row.status === "expired").length, blockedCount: rows.filter((row) => row.status === "blocked").length, totalCount: rows.length };
 }
@@ -104,14 +121,23 @@ function appliedHelpRecordFor(row = {}, applicationRecords = [], queueKey = "") 
     && strictIntegerOrNull(record.roundIndex) === roundIndex);
   if (matches.length !== 1) return null;
   const record = matches[0];
+  const applicationVersion = strictIntegerOrNull(record.version);
+  if (applicationVersion === 1) {
+    const legacyMagnitude = positiveIntegerOrNull(record.magnitude);
+    if (!isLegacySlice06Application(record) || legacyMagnitude !== positiveIntegerOrNull(row.magnitude)) return null;
+    return record;
+  }
+  if (applicationVersion !== 2) return null;
   const baseMagnitude = positiveIntegerOrNull(record.baseMagnitude);
   const effectiveMagnitude = positiveIntegerOrNull(record.effectiveMagnitude ?? record.magnitude);
   const criticalMagnitude = positiveIntegerOrNull(record.criticalMagnitude);
   if (baseMagnitude === null || effectiveMagnitude === null) return null;
   if (record.strengthened === true) {
+    if (text(record.strengtheningMode) !== "replaceMagnitude" || text(record.effectSource) !== "criticalSuccess" || record.criticalSuccess !== true) return null;
     if (criticalMagnitude === null || criticalMagnitude <= baseMagnitude || effectiveMagnitude !== criticalMagnitude) return null;
-  } else if (effectiveMagnitude !== baseMagnitude || criticalMagnitude !== null) {
-    return null;
+  } else {
+    if (text(record.strengtheningMode) !== "" || text(record.effectSource) !== "base" || record.criticalSuccess !== false) return null;
+    if (effectiveMagnitude !== baseMagnitude || criticalMagnitude !== null) return null;
   }
   return record;
 }
@@ -131,10 +157,11 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
   const dismissed = row.dismissed === true || status === "dismissed";
   const queueKey = queueKeyFor(row, index, sourceStation, targetStation, benefitKind);
   const appliedRecord = appliedHelpRecordFor(row, options.applicationRecords, queueKey);
+  const legacyApplication = isLegacySlice06Application(appliedRecord);
   const appliedMagnitude = appliedRecord ? positiveIntegerOrNull(appliedRecord.effectiveMagnitude ?? appliedRecord.magnitude) : null;
-  const appliedBaseMagnitude = appliedRecord ? positiveIntegerOrNull(appliedRecord.baseMagnitude) : null;
-  const appliedCriticalMagnitude = appliedRecord ? positiveIntegerOrNull(appliedRecord.criticalMagnitude) : null;
-  const appliedStrengthened = appliedRecord?.strengthened === true;
+  const appliedBaseMagnitude = legacyApplication ? appliedMagnitude : (appliedRecord ? positiveIntegerOrNull(appliedRecord.baseMagnitude) : null);
+  const appliedCriticalMagnitude = legacyApplication ? null : (appliedRecord ? positiveIntegerOrNull(appliedRecord.criticalMagnitude) : null);
+  const appliedStrengthened = legacyApplication ? false : appliedRecord?.strengthened === true;
   const applicationStatusLabel = applied && appliedMagnitude !== null ? `Effect applied: DC −${appliedMagnitude}` : (applied ? "Effect applied" : null);
   const base = stripForbiddenFields({
     pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
@@ -164,6 +191,7 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
     appliedBaseMagnitude,
     appliedCriticalMagnitude,
     appliedStrengthened,
+    legacyApplication,
     applicationStatusLabel,
     ...(applied ? { applicationKey: nullableText(row.applicationKey) } : {}),
     ...(status === "blocked" ? { blockedReason: "Pending station benefit record is missing safe display data.", disabledReason: "Pending station benefit is unavailable." } : {})

@@ -1,6 +1,6 @@
 import { prepareTravelV2InterStationHelpActions } from "./travel-v2-inter-station-help-actions.js";
 
-export const TRAVEL_V2_INTER_STATION_HELP_APPLICATION_VERSION = 1;
+export const TRAVEL_V2_INTER_STATION_HELP_APPLICATION_VERSION = 2;
 const SUCCESS = new Set(["success", "criticalSuccess"]);
 const RESOLVED = new Set(["criticalSuccess", "success", "failure", "criticalFailure", "skipped"]);
 
@@ -16,6 +16,23 @@ function nowIso(options = {}) { return typeof options.now === "string" && option
 function queueRecords(session = {}) { return Array.isArray(session?.travelV2PendingStationBenefits) ? session.travelV2PendingStationBenefits : []; }
 function applicationRecords(session = {}) { return Array.isArray(session?.travelV2InterStationHelpApplications?.records) ? session.travelV2InterStationHelpApplications.records : []; }
 function stationResult(session = {}, roundIndex, stationKey = "") { return session?.roundResults?.[roundIndex]?.stationResults?.[stationKey]; }
+
+function isLegacySlice06Application(app = {}) {
+  if (!isPlainObject(app)) return false;
+  return strictIntegerOrNull(app.version) === 1
+    && app.applied === true
+    && text(app.status) === "applied"
+    && text(app.benefitKind) === "dcReduction"
+    && positiveIntegerOrNull(app.magnitude) !== null
+    && !Object.hasOwn(app, "baseMagnitude")
+    && !Object.hasOwn(app, "effectiveMagnitude")
+    && !Object.hasOwn(app, "criticalMagnitude")
+    && !Object.hasOwn(app, "strengthened")
+    && !Object.hasOwn(app, "strengtheningMode")
+    && !Object.hasOwn(app, "effectSource")
+    && !Object.hasOwn(app, "criticalSuccess");
+}
+
 function fallbackBaseDcForReview(session = {}, roundIndex, stationKey = "") {
   const round = session?.event?.rounds?.[roundIndex] ?? {};
   const card = (Array.isArray(round.stationCards) ? round.stationCards : []).find((entry) => text(entry?.stationKey ?? entry?.key) === stationKey) ?? {};
@@ -152,8 +169,8 @@ export function applyTravelV2InterStationHelpApplicationToSession(session = {}, 
   const record = nextSession.travelV2PendingStationBenefits[validation.index];
   const resolved = resolveTravelV2InterStationHelpBenefit({ matchedAction: validation.matchedAction, record: validation.record, sourceResult: stationResult(session, strictIntegerOrNull(validation.record.roundIndex), text(validation.record.sourceStationKey)) });
   if (resolved.ok !== true) return blocked(session, validation.queueKey, resolved.blockedReasons, validation.record);
-  const appRecord = { version: 1, applicationKey: validation.applicationKey, queueKey: validation.queueKey, pendingHelpKey: text(record.pendingHelpKey), actionId: text(record.actionId), roundIndex: strictIntegerOrNull(record.roundIndex), roundNumber: strictIntegerOrNull(record.roundNumber), sourceStationKey: text(record.sourceStationKey), sourceStationName: text(record.sourceStationName), targetStationKey: text(record.targetStationKey), targetStationName: text(record.targetStationName), benefitKind: "dcReduction", baseMagnitude: resolved.baseMagnitude, ...(resolved.criticalMagnitude !== null ? { criticalMagnitude: resolved.criticalMagnitude } : {}), magnitude: resolved.effectiveMagnitude, effectiveMagnitude: resolved.effectiveMagnitude, strengthened: resolved.strengthened, strengtheningMode: resolved.strengtheningMode, effectSource: resolved.effectSource, criticalSuccess: resolved.criticalSuccess, status: "applied", applied: true, appliedAt: timestamp, playerSafe: true };
-  nextSession.travelV2InterStationHelpApplications = { version: 1, records: [...applicationRecords(nextSession), appRecord] };
+  const appRecord = { version: 2, applicationKey: validation.applicationKey, queueKey: validation.queueKey, pendingHelpKey: text(record.pendingHelpKey), actionId: text(record.actionId), roundIndex: strictIntegerOrNull(record.roundIndex), roundNumber: strictIntegerOrNull(record.roundNumber), sourceStationKey: text(record.sourceStationKey), sourceStationName: text(record.sourceStationName), targetStationKey: text(record.targetStationKey), targetStationName: text(record.targetStationName), benefitKind: "dcReduction", baseMagnitude: resolved.baseMagnitude, ...(resolved.criticalMagnitude !== null ? { criticalMagnitude: resolved.criticalMagnitude } : {}), magnitude: resolved.effectiveMagnitude, effectiveMagnitude: resolved.effectiveMagnitude, strengthened: resolved.strengthened, strengtheningMode: resolved.strengtheningMode, effectSource: resolved.effectSource, criticalSuccess: resolved.criticalSuccess, status: "applied", applied: true, appliedAt: timestamp, playerSafe: true };
+  nextSession.travelV2InterStationHelpApplications = { version: 2, records: [...applicationRecords(nextSession), appRecord] };
   Object.assign(record, { applied: true, appliedAt: timestamp, applicationKey: validation.applicationKey });
   nextSession.updatedAt = timestamp; nextSession.summary = null;
   return { version: TRAVEL_V2_INTER_STATION_HELP_APPLICATION_VERSION, ok: true, applied: true, duplicate: false, shouldAdoptSession: true, nextSession, record: cloneData(appRecord), status: { ok: true, applied: true, status: "applied", message: "Inter-Station Help effect applied to session-local check context. No roll was made.", blockedReasons: [], queueKey: validation.queueKey } };
@@ -181,6 +198,15 @@ export function prepareTravelV2InterStationHelpCheckAdjustment(session = {}, opt
     if (text(app.queueKey) !== validation.queueKey || text(app.pendingHelpKey) !== text(validation.record.pendingHelpKey) || text(app.actionId) !== text(validation.record.actionId) || text(app.sourceStationKey) !== text(validation.record.sourceStationKey) || text(app.targetStationKey) !== text(validation.record.targetStationKey) || strictIntegerOrNull(app.roundIndex) !== strictIntegerOrNull(validation.record.roundIndex)) continue;
     const resolved = resolveTravelV2InterStationHelpBenefit({ matchedAction: validation.matchedAction, record: validation.record, sourceResult: stationResult(session, strictIntegerOrNull(validation.record.roundIndex), text(validation.record.sourceStationKey)) });
     if (resolved.ok !== true) continue;
+    const applicationVersion = strictIntegerOrNull(app.version);
+    if (applicationVersion === 1) {
+      if (!isLegacySlice06Application(app)) continue;
+      const legacyMagnitude = positiveIntegerOrNull(app.magnitude);
+      if (legacyMagnitude !== resolved.baseMagnitude) continue;
+      applications.push({ applicationKey: expectedApplicationKey, queueKey: validation.queueKey, title: text(validation.record.title), sourceStationKey: text(validation.record.sourceStationKey), sourceStationName: text(validation.record.sourceStationName), magnitude: resolved.baseMagnitude, baseMagnitude: resolved.baseMagnitude, criticalMagnitude: null, strengthened: false, strengtheningMode: null, effectSource: "base", criticalSuccess: false, legacyApplication: true });
+      continue;
+    }
+    if (applicationVersion !== 2) continue;
     if (positiveIntegerOrNull(app.baseMagnitude) !== resolved.baseMagnitude) continue;
     if (positiveIntegerOrNull(app.effectiveMagnitude ?? app.magnitude) !== resolved.effectiveMagnitude) continue;
     if (positiveIntegerOrNull(app.magnitude) !== resolved.effectiveMagnitude) continue;
@@ -190,7 +216,7 @@ export function prepareTravelV2InterStationHelpCheckAdjustment(session = {}, opt
     if ((app.criticalSuccess === true) !== resolved.criticalSuccess) continue;
     if (resolved.strengthened && positiveIntegerOrNull(app.criticalMagnitude) !== resolved.criticalMagnitude) continue;
     if (!resolved.strengthened && app.criticalMagnitude !== undefined && app.criticalMagnitude !== null) continue;
-    applications.push({ applicationKey: expectedApplicationKey, queueKey: validation.queueKey, title: text(validation.record.title), sourceStationKey: text(validation.record.sourceStationKey), sourceStationName: text(validation.record.sourceStationName), magnitude: resolved.effectiveMagnitude, baseMagnitude: resolved.baseMagnitude, criticalMagnitude: resolved.criticalMagnitude, strengthened: resolved.strengthened, effectSource: resolved.effectSource });
+    applications.push({ applicationKey: expectedApplicationKey, queueKey: validation.queueKey, title: text(validation.record.title), sourceStationKey: text(validation.record.sourceStationKey), sourceStationName: text(validation.record.sourceStationName), magnitude: resolved.effectiveMagnitude, baseMagnitude: resolved.baseMagnitude, criticalMagnitude: resolved.criticalMagnitude, strengthened: resolved.strengthened, strengtheningMode: resolved.strengtheningMode, effectSource: resolved.effectSource, criticalSuccess: resolved.criticalSuccess, legacyApplication: false });
   }
   applications.sort((a, b) => a.applicationKey.localeCompare(b.applicationKey));
   const dcReduction = applications.reduce((sum, app) => sum + app.magnitude, 0);
