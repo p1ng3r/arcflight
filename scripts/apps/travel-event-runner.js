@@ -2,6 +2,9 @@ import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-ev
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
+import { integerOrNull, prepareTravelV2InterStationHelpQueueRunnerUpdate } from "../helpers/travel-v2-inter-station-help-create-review.js";
+import { prepareTravelV2StationBenefitUseRunnerUpdate } from "../helpers/travel-v2-station-benefit-use-review.js";
+import { applyTravelV2InterStationHelpApplicationToSession } from "../helpers/travel-v2-inter-station-help-application.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
@@ -140,6 +143,11 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-dev-copy-debug]",
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-station-benefit-review-request]",
+  "[data-arcflight-travel-v2-station-benefit-use]",
+  "[data-arcflight-travel-v2-inter-station-help-application-review]",
+  "[data-arcflight-travel-v2-inter-station-help-application-apply]",
+  "[data-arcflight-travel-v2-inter-station-help-review]",
+  "[data-arcflight-travel-v2-inter-station-help-queue]",
   "[data-arcflight-travel-v2-order-reorder-request]",
   "[data-arcflight-travel-v2-order-commit-request]",
   "[data-arcflight-travel-v2-order-persist-request]",
@@ -501,6 +509,9 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2HazardControlResult: null,
       travelV2HazardCandidateControlResult: null,
       travelV2StationBenefitUseResult: null,
+      travelV2InterStationHelpApplicationResult: null,
+      travelV2InterStationHelpApplicationSelectedQueueKey: null,
+      travelV2InterStationHelpApplicationReviewRequested: false,
       travelV2ShipScarResult: null,
       travelV2DevToolResult: null,
       travelV2AutoSaveResult: null,
@@ -509,6 +520,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2StationActionLockResult: null,
       travelV2StationActionLockPersistResult: null,
       travelV2RiskBidReviewQueuePersistResult: null,
+      travelV2InterStationHelpSelectedIdentity: null,
+      travelV2InterStationHelpQueueResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
       travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
@@ -874,6 +887,53 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return this.render(true);
   }
 
+  #useTravelV2StationBenefit() {
+    if (globalThis.game?.user?.isGM !== true) {
+      this.uiState.travelV2StationBenefitUseResult = { ok: false, status: "blocked", message: "Only the GM can use Inter-Station Help.", blockedReasons: ["gm-use-permission-required"] };
+      this.statusMessage = this.uiState.travelV2StationBenefitUseResult.message;
+      return this.render(true);
+    }
+    const update = prepareTravelV2StationBenefitUseRunnerUpdate(this.session ?? {}, {
+      queueKey: this.uiState.travelV2StationBenefitUseReviewSelectedQueueKey
+    }, { canUse: true, useRequested: true });
+    this.uiState.travelV2StationBenefitUseResult = update.status;
+    this.statusMessage = update.status?.message || update.status?.blockedReasons?.[0] || "Inter-Station Help use was blocked.";
+    if (update.shouldAdoptSession === true) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2StationBenefitUseReviewSelectedQueueKey = null;
+      this.uiState.travelV2StationBenefitUseReviewRequested = false;
+    }
+    return this.render(true);
+  }
+
+
+  #reviewTravelV2InterStationHelpApplication(target) {
+    const queueKey = typeof target?.dataset?.queueKey === "string" ? target.dataset.queueKey.trim() : "";
+    this.uiState.travelV2InterStationHelpApplicationSelectedQueueKey = queueKey;
+    this.uiState.travelV2InterStationHelpApplicationReviewRequested = Boolean(queueKey);
+    this.statusMessage = queueKey ? "Help effect review requested. This does not roll or apply the check." : "Help effect review requires a queue key.";
+    return this.render(true);
+  }
+
+  #applyTravelV2InterStationHelpApplication() {
+    if (globalThis.game?.user?.isGM !== true) {
+      this.uiState.travelV2InterStationHelpApplicationResult = { ok: false, status: "blocked", message: "Only the GM can apply Inter-Station Help effects.", blockedReasons: ["gm-apply-permission-required"] };
+      this.statusMessage = this.uiState.travelV2InterStationHelpApplicationResult.message;
+      return this.render(true);
+    }
+    const update = applyTravelV2InterStationHelpApplicationToSession(this.session ?? {}, { queueKey: this.uiState.travelV2InterStationHelpApplicationSelectedQueueKey }, { canApply: true, applyRequested: true });
+    this.uiState.travelV2InterStationHelpApplicationResult = update.status;
+    this.statusMessage = update.status?.message || update.status?.blockedReasons?.[0] || "Inter-Station Help application was blocked.";
+    if (update.shouldAdoptSession === true) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2InterStationHelpApplicationSelectedQueueKey = null;
+      this.uiState.travelV2InterStationHelpApplicationReviewRequested = false;
+    }
+    return this.render(true);
+  }
+
   async #onRunnerChange(event) {
     const eventSelect = event.target?.closest?.("[data-arcflight-runner-event-select]");
     if (eventSelect && this.element?.contains(eventSelect)) {
@@ -989,6 +1049,11 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-dev-copy-debug")) return this.#copyTravelV2DebugReport();
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-review-request")) return this.#requestTravelV2StationBenefitReview(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-use")) return this.#useTravelV2StationBenefit();
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-application-review")) return this.#reviewTravelV2InterStationHelpApplication(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-application-apply")) return this.#applyTravelV2InterStationHelpApplication();
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-review")) return this.#reviewTravelV2InterStationHelp(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-queue")) return this.#queueTravelV2InterStationHelp();
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-order-persist-request")) return this.persistCommittedTravelV2RoundActionOrder();
@@ -1029,6 +1094,46 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
 
+
+
+  #interStationHelpIdentityFromTarget(target = {}) {
+    const dataset = target?.dataset ?? {};
+    return {
+      actionId: typeof dataset.actionId === "string" ? dataset.actionId : "",
+      sourceStationKey: typeof dataset.sourceStationKey === "string" ? dataset.sourceStationKey : "",
+      targetStationKey: typeof dataset.targetStationKey === "string" ? dataset.targetStationKey : "",
+      roundIndex: integerOrNull(dataset.roundIndex)
+    };
+  }
+
+  #reviewTravelV2InterStationHelp(target) {
+    if (globalThis.game?.user?.isGM !== true) return this.render(true);
+    this.uiState.travelV2InterStationHelpSelectedIdentity = this.#interStationHelpIdentityFromTarget(target);
+    this.uiState.travelV2InterStationHelpQueueResult = { ok: true, queued: false, duplicate: false, status: "review-ready", message: "Review ready. Queue Help remains a separate explicit GM action.", blockedReasons: [] };
+    this.statusMessage = "Inter-Station Help review selected. No help has been queued.";
+    return this.render(true);
+  }
+
+  #queueTravelV2InterStationHelp() {
+    if (globalThis.game?.user?.isGM !== true) return this.render(true);
+    const update = prepareTravelV2InterStationHelpQueueRunnerUpdate(
+      this.session ?? {},
+      this.uiState.travelV2InterStationHelpSelectedIdentity ?? {},
+      { canQueue: true }
+    );
+    this.uiState.travelV2InterStationHelpQueueResult = update.status;
+    if (update.shouldAdoptSession === true) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2InterStationHelpSelectedIdentity = null;
+      this.statusMessage = "Inter-Station Help queued locally; no world data was persisted.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = update.status?.message ?? "Inter-Station Help queueing was blocked.";
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return this.render(true);
+  }
 
   #getCurrentRiskBidState() {
     return prepareTravelEventRunnerAppStateWithTravelV2Preview({

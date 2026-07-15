@@ -26,6 +26,7 @@ import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, se
 import { prepareTravelV2NarrationHookState, prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { inspectTravelV2StationActionLockInFinalizationGuard, resolveTravelV2StationRollWithPendingEffects } from "./travel-v2-session-round-finalization.js";
+import { applyTravelV2InterStationHelpExpirationToSession } from "./travel-v2-inter-station-help-expiration.js";
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
@@ -34,6 +35,7 @@ import { prepareTravelV2FinalOutcomePreservationPlan } from "./travel-v2-final-o
 import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-final-outcome-preservation-apply-plan.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
+import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -2031,7 +2033,7 @@ function resolveActorStatisticModifier(actor, skill) {
   return resolveActorStatisticDetails(actor, skill).modifier;
 }
 
-function resolveStationDc(row, baseDC) {
+export function resolveStationDc(row, baseDC) {
   const approachDc = Number(row?.selectedApproach?.dc);
   const hazardDcModifier = Number(row?.selectedApproach?.hazardDcModifier ?? row?.hazardDcModifier ?? 0) || 0;
   if (Number.isFinite(approachDc) && approachDc > 0) return { dc: approachDc + hazardDcModifier, source: hazardDcModifier ? "hazard" : "approach" };
@@ -2328,9 +2330,11 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2ActiveCardApplicationPreviews: isPlainObject(session.travelV2ActiveCardApplicationPreviews) || Array.isArray(session.travelV2ActiveCardApplicationPreviews) ? cloneData(session.travelV2ActiveCardApplicationPreviews) : undefined,
     activeCardApplicationPreviews: isPlainObject(session.activeCardApplicationPreviews) || Array.isArray(session.activeCardApplicationPreviews) ? cloneData(session.activeCardApplicationPreviews) : undefined,
     travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined,
-    travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined
+    travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined,
+    travelV2PendingStationBenefits: Array.isArray(session.travelV2PendingStationBenefits) ? cloneData(session.travelV2PendingStationBenefits) : undefined,
+    travelV2InterStationHelpApplications: isPlainObject(session.travelV2InterStationHelpApplications) ? cloneData(session.travelV2InterStationHelpApplications) : undefined
   };
-  for (const key of ["finalOutcome", "travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
+  for (const key of ["finalOutcome", "travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors", "travelV2PendingStationBenefits", "travelV2InterStationHelpApplications"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -2437,7 +2441,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       const baseDc = Number.isFinite(Number(option.dc)) ? Number(option.dc) : null;
       return {
       ...option,
-      dc: baseDc == null ? baseDc : baseDc + hazardDc,
+      dc: baseDc,
       hazardDcModifier: hazardDc,
       suppressedByHazard,
       disabled: suppressedByHazard,
@@ -2455,9 +2459,9 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       skill: selectedStationOption?.skill || eventApproachSelection.skill,
       label: selectedStationOption?.label || eventApproachSelection.label,
       helpText: selectedStationOption?.helpText || eventApproachSelection.helpText,
-      selected: selectedStationOption?.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
-        ? cloneData(selectedStationOption)
-        : eventApproachSelection.selected,
+      dc: selectedStationOption?.dc ?? eventApproachSelection.dc,
+      hazardDcModifier: selectedStationOption?.hazardDcModifier ?? eventApproachSelection.hazardDcModifier ?? 0,
+      selected: selectedStationOption ? cloneData(selectedStationOption) : eventApproachSelection.selected,
       isSelected: Boolean(storedSkill),
       options: eventApproachSelection.options
     };
@@ -3706,7 +3710,11 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const hasSelectedApproach = row.selectedApproach?.isSelected === true;
     const hasResult = Boolean(row.result);
     const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
-    const resolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
+    const baseResolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
+    const helpAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(runnerState.session ?? {}, { roundIndex: runnerState.currentRoundIndex, stationKey: row.stationKey });
+    const helpDcReduction = helpAdjustment.ok === true && helpAdjustment.hasAdjustment === true ? helpAdjustment.dcReduction : 0;
+    const effectiveDc = Number.isFinite(baseResolvedDc.dc) ? Math.max(0, baseResolvedDc.dc - helpDcReduction) : null;
+    const resolvedDc = { ...baseResolvedDc, baseDc: baseResolvedDc.dc, dc: effectiveDc, effectiveDc, helpDcReduction, hasInterStationHelp: helpDcReduction > 0, source: helpDcReduction > 0 ? "interStationHelp" : baseResolvedDc.source, helpAdjustment };
     const assignedActor = row.assignment?.actorId || row.assignment?.actorUuid ? getActorByAssignment(row.assignment, options) : null;
     const selectedStatistic = resolveActorStatisticDetails(assignedActor, row.selectedApproach?.skill);
     const selectedApproachModifier = selectedStatistic.modifier;
@@ -3734,6 +3742,11 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasResultFeedback: Boolean(row.resultFeedback),
       dc: resolvedDc.dc,
       hasDc: Number.isFinite(resolvedDc.dc),
+      baseDc: resolvedDc.baseDc,
+      effectiveDc: resolvedDc.dc,
+      helpDcReduction,
+      hasInterStationHelp: helpDcReduction > 0,
+      helpSummary: helpDcReduction > 0 ? `${resolvedDc.helpAdjustment.applications.map((app) => app.sourceStationName || app.sourceStationKey).filter(Boolean).join(", ") || "Help"} reduces this check's DC by ${helpDcReduction}.` : "",
       dcLabel: Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable",
       dcSource: resolvedDc.source,
       selectedApproachModifier,
@@ -3768,7 +3781,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       npcControllerName: assignmentRow?.npcControllerName || "Unassigned",
       npcControllerOptions: assignmentRow?.npcControllerOptions ?? [],
       approachOptions: (row.stationOptions ?? []).map((approach) => {
-        const optionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
+        const baseOptionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
+        const optionEffectiveDc = Number.isFinite(baseOptionDc.dc) ? Math.max(0, baseOptionDc.dc - helpDcReduction) : null;
+        const optionDc = { ...baseOptionDc, baseDc: baseOptionDc.dc, dc: optionEffectiveDc, effectiveDc: optionEffectiveDc, helpDcReduction, hasInterStationHelp: helpDcReduction > 0 };
         const statistic = resolveActorStatisticDetails(assignedActor, approach.skill);
         const modifier = statistic.modifier;
         const skillLabel = approach.skill ? humanizeIdentifier(approach.skill) : "No statistic";
@@ -4353,6 +4368,14 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
     if (isPlainObject(resolvedRound.stationResults)) nextSession.roundResults[index].stationResults = { ...(isPlainObject(nextSession.roundResults[index].stationResults) ? nextSession.roundResults[index].stationResults : {}), ...cloneData(resolvedRound.stationResults) };
     if (isPlainObject(resolvedRound.stationCheckAppliedBonuses)) nextSession.roundResults[index].stationCheckAppliedBonuses = cloneData(resolvedRound.stationCheckAppliedBonuses);
   }
+  const helpExpiration = applyTravelV2InterStationHelpExpirationToSession(nextSession, {
+    trigger: "targetResolved",
+    roundIndex: index,
+    roundNumber: nextSession.roundResults?.[index]?.roundNumber ?? index + 1,
+    targetStationKey: stationKey,
+    now: nowIso(options)
+  });
+  if (helpExpiration.ok === true && helpExpiration.shouldAdoptSession === true) nextSession = cloneData(helpExpiration.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };

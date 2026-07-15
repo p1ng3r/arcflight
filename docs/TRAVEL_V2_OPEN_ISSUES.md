@@ -110,14 +110,29 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Alpha alignment:** Inter-Station Help must be visible as its own gameplay system. Under the hood it may reuse the pending station benefit queue, but the player-facing flow should read as help created by earlier stations and consumed by later stations.
 
+**Slice 01 note:** Event-authored Inter-Station Help action options are now prepared from supported event, round, station-card, and station-prompt definitions; filtered against active stations and station order; exposed through player-safe runner aliases; and surfaced as option-only Inter-Station Help presentation. No assist is created, consumed, rolled, persisted, or applied by this slice.
+
+**Slice 02 note:** Successful explicitly selected authored Inter-Station Help options can now be converted by a pure helper into deterministic, player-safe pending help records with stable dedupe keys, round/order validation, duplicate/block reasons, and inert critical-success strengthening metadata. This slice does not insert records into a queue, consume benefits, roll dice, persist sessions, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
+
+**Slice 03 note:** Explicitly requested successful canonical Inter-Station Help pending records can now be inserted once into the existing session-local `session.travelV2PendingStationBenefits` pending station benefit queue with stable queue identity and raw-state dedupe. Slice 03 preserves unrelated queue rows and remains helper-only; it does not consume the benefit, apply a modifier, activate critical-success strengthening, expire records, perform round-end cleanup, add runner interaction, persist Foundry/world data, roll dice, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
+
+**Slice 04 note:** Available authored Inter-Station Help options now expose a GM-only Review Help flow. The GM can explicitly Queue Help for canonically successful source-station results through the Slice 03 queue helper, after which the runner adopts the returned session locally and rerenders the existing pending station benefit queue. Non-GM users remain read-only. Slice 04 does not consume help, apply modifiers, alter rolls/DCs, activate critical-success strengthening, handle critical-failure backlash, expire records, perform round-end cleanup, or automatically persist the runner session or world data.
+
+**Slice 05 note:** Pending Inter-Station Help can now be explicitly marked used through the GM station-benefit review flow. The runner re-reads the raw `session.travelV2PendingStationBenefits` record by queue key, validates current round, unresolved target, successful source result, and locked source-before-target order, then adopts the returned cloned session locally. Used records remain visible through the existing queue projection, repeated use is blocked without adoption, and non-GM users remain read-only. Slice 05 does not apply a roll modifier, alter a DC, activate critical-success strengthening, create backlash, expire records, perform round-end cleanup, automatically persist the runner session, or mutate actor/item/world data.
+
+**Slice 06 note:** Authored `dcReduction` Help metadata now survives action preparation and queueing with strict magnitude validation, and a GM can explicitly apply an already-used Help record through a separate Help-effect review. Application creates session-local Inter-Station Help application state, marks only the selected used Help row as applied, and reduces the existing canonical station DC; selected approach, station, event, and hazard DC calculation remains authoritative. Stale or tampered applied records are ignored during effective-DC calculation. Applying the Help effect does not roll the check, record a result, advance the station, persist the runner session, or mutate Foundry actor/item/world data. Critical-success strengthening metadata remains inert, and non-GM users remain read-only with no application capability.
+
+**Slice 07 note:** Authored critical-success `replaceMagnitude` strengthening is now supported only for `dcReduction` Inter-Station Help. The critical magnitude is the final total reduction rather than an additive bonus, normal success continues to use the base magnitude, and unsupported or malformed optional critical metadata falls back to the base Help effect. Stale or tampered critical metadata and application records do not affect DC, the target check remains explicit and is not automatically rolled or resolved, automatic benefits remain deferred, and non-GM users remain read-only.
+
+**Slice 08 note:** Inter-Station Help now has deterministic session-local expiration and round-end cleanup. `afterUse` Help remains mechanically active through the target station check and expires only after the target result is recorded; successful round finalization expires remaining `afterUse` and `endOfRound` Help from that round. Expired records remain visible as lifecycle history, matching applications contribute zero, cleanup is immutable and idempotent, and no rolls, result changes, automatic persistence, or Foundry document mutations are introduced.
+
 **Remaining work:**
 
-- Define event-authored help actions.
-- Let earlier stations create pending benefits for any later station in the same round.
-- Let later stations consume queued benefits through the existing station benefit review path.
-- Support critical-success stronger or automatic benefits where authored.
-- Support critical-failure backlash.
-- Add smoke coverage for creation, queueing, visibility, use, expiration, backlash, and player-safe state.
+- Support authored automatic critical-success benefits.
+- Integrate critical-failure backlash.
+- Support unsupported/custom benefit kinds.
+- Finish final player/table UX polish.
+- Expand smoke coverage for expiration, backlash, custom benefits, and the completed player-safe lifecycle.
 
 ### TV2-003 — Player-Chosen Round Action Order UX Polish
 

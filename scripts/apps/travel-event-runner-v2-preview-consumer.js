@@ -15,6 +15,10 @@ import { applyTravelV2ResponseActionResolutionReviewToRenderState } from "../hel
 import { applyTravelV2StationImpactModifierReviewToRenderState } from "../helpers/travel-v2-station-impact-modifier-review.js";
 import { applyTravelV2PendingStationBenefitQueueToRenderState } from "../helpers/travel-v2-pending-station-benefit-queue.js";
 import { applyTravelV2StationBenefitUseReviewToRenderState } from "../helpers/travel-v2-station-benefit-use-review.js";
+import { prepareTravelV2InterStationHelpActions } from "../helpers/travel-v2-inter-station-help-actions.js";
+import { prepareTravelV2InterStationHelpCreateReviewState, prepareTravelV2InterStationHelpQueueStatus, travelV2InterStationHelpIdentityMatches } from "../helpers/travel-v2-inter-station-help-create-review.js";
+import { prepareTravelV2InterStationHelpApplicationReview } from "../helpers/travel-v2-inter-station-help-application.js";
+export { prepareTravelV2InterStationHelpCreateReviewState };
 import { prepareTravelV2EventSetupStakesState } from "../helpers/travel-v2-event-setup-stakes.js";
 import { prepareTravelV2EventApproachTallyApplicationRecordControls } from "../helpers/travel-v2-session-round-finalization.js";
 import { prepareTravelV2RiskBidResultCandidates, prepareTravelV2RiskBidResultPreview, normalizeTravelV2RiskBidResultBand } from "../helpers/travel-v2-risk-bid-results.js";
@@ -53,7 +57,6 @@ function buildQueueItem(input = {}) {
   const key = input.key || `${input.action || "queue"}:${input.title || "item"}`.replace(/\s+/g, "-").toLowerCase();
   return { ...input, key, buttons: guidedQueueButtons(input.action, input) };
 }
-
 
 function buildPressureGauges(state = {}, pendingScars = []) {
   const configs = [
@@ -408,10 +411,60 @@ function sanitizeNonGmAppStateValue(value) {
   if (!value || typeof value !== "object") return value;
   const next = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (key === "canManageTravelV2Consequences" || key.startsWith("consequenceFlow")) continue;
+    if (key === "canManageTravelV2Consequences" || key.startsWith("consequenceFlow") || key === "travelV2InterStationHelpApplicationReview" || key === "travelV2InterStationHelpApplicationResult") continue;
     next[key] = sanitizeNonGmAppStateValue(entry);
   }
   return next;
+}
+
+function interStationHelpDisplayRow(action = {}, options = {}) {
+  return {
+    queueKey: `inter-station-help-option:${action.actionId || "unknown"}:${action.sourceStationKey || "unknown"}:${action.targetStationKey || "unknown"}`,
+    title: action.title || "Inter-Station Help",
+    displaySummary: action.publicText || "An earlier station can prepare help for this later station.",
+    sourceStationLabel: action.sourceStationName || action.sourceStationKey || "Source station",
+    targetStationLabel: action.targetStationName || action.targetStationKey || "Target station",
+    sourceStationKey: action.sourceStationKey || "",
+    targetStationKey: action.targetStationKey || "",
+    roundIndex: action.roundIndex,
+    roundNumber: action.roundNumber,
+    statusLabel: action.available === true ? "Help option available" : "Help option unavailable",
+    requestAvailabilityLabel: "Options only",
+    useAvailable: action.available === true,
+    canReview: options.canReview === true && action.available === true,
+    selected: options.selectedIdentity ? travelV2InterStationHelpIdentityMatches(action, options.selectedIdentity) : false,
+    disabledReason: action.available === true ? "Review an available help option, then explicitly queue it for a later station." : (action.unavailableReason || "Help option unavailable."),
+    helpOptionOnly: true,
+    actionId: action.actionId || "",
+    tags: Array.isArray(action.tags) ? [...action.tags] : [],
+    playerSafe: true,
+    reviewOnly: true,
+    applied: false
+  };
+}
+
+export function mergeTravelV2InterStationHelpIntoPreviewPanel(previewPanel = {}, helpState = {}, options = {}) {
+  const selectedIdentity = options.selectedIdentity ? selectedHelpIdentityFrom(options.selectedIdentity) : null;
+  const helpRows = Array.isArray(helpState.helpActions) ? helpState.helpActions.map((action) => interStationHelpDisplayRow(action, { canReview: options.canReview === true, selectedIdentity })) : [];
+  if (helpRows.length === 0) return previewPanel;
+  const existingDisplay = previewPanel.stationBenefitDisplay && typeof previewPanel.stationBenefitDisplay === "object" ? previewPanel.stationBenefitDisplay : {};
+  const existingRows = Array.isArray(existingDisplay.rows) ? existingDisplay.rows : [];
+  const stationBenefitDisplay = {
+    ...existingDisplay,
+    title: "Inter-Station Help",
+    subtitle: options.canReview === true ? "Review an available help option, then explicitly queue it for a later station." : "Help options only — no assist has been created yet.",
+    rows: [...helpRows, ...existingRows],
+    hasRows: helpRows.length + existingRows.length > 0,
+    helpOptionCount: helpRows.length,
+    pendingBenefitCount: existingRows.length,
+    playerSafe: true,
+    readOnly: options.canReview !== true
+  };
+  return {
+    ...previewPanel,
+    stationBenefitDisplay,
+    travelV2StationBenefitDisplay: stationBenefitDisplay
+  };
 }
 
 export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = null, selectedEventId = "", selectedSessionKey = "", actor = null, uiState = {}, travelV2DevToolsEnabled = false, user = globalThis.game?.user } = {}) {
@@ -513,7 +566,22 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     selectedQueueKey: uiState.travelV2StationBenefitUseReviewSelectedQueueKey ?? null,
     travelV2StationBenefitUseReviewRequested: uiState.travelV2StationBenefitUseReviewRequested === true
   }, { user, includeGmReview: canManageTravelV2Consequences });
-  const previewPanel = prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview);
+  const interStationHelpActions = prepareTravelV2InterStationHelpActions(session ?? {});
+  const travelV2InterStationHelpQueueStatus = prepareTravelV2InterStationHelpQueueStatus(uiState.travelV2InterStationHelpQueueResult ?? null);
+  const travelV2InterStationHelpApplicationReview = canManageTravelV2Consequences && uiState.travelV2InterStationHelpApplicationReviewRequested === true
+    ? prepareTravelV2InterStationHelpApplicationReview(session ?? {}, { queueKey: uiState.travelV2InterStationHelpApplicationSelectedQueueKey ?? null }, { canApply: true })
+    : null;
+  const travelV2InterStationHelpCreateReview = prepareTravelV2InterStationHelpCreateReviewState(
+    session ?? {},
+    interStationHelpActions,
+    uiState.travelV2InterStationHelpSelectedIdentity ?? {},
+    { canReview: canManageTravelV2Consequences, queueResult: uiState.travelV2InterStationHelpQueueResult ?? null }
+  );
+  const previewPanel = mergeTravelV2InterStationHelpIntoPreviewPanel(
+    prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview),
+    interStationHelpActions,
+    { canReview: canManageTravelV2Consequences, selectedIdentity: uiState.travelV2InterStationHelpSelectedIdentity ?? null }
+  );
   const riskBidResultPreview = prepareTravelV2RiskBidResultRunnerPreview(appStateWithStationBenefitUseReview, uiState);
   const riskBidPendingReview = prepareTravelV2RiskBidPendingReviewProjection(riskBidResultPreview, { canReview: canManageTravelV2Consequences });
   const preparedRiskBidReviewQueue = prepareTravelV2RiskBidReviewQueueState(session);
@@ -529,7 +597,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const riskBidScarApply = prepareTravelV2RiskBidScarApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
   const riskBidFinalApply = prepareTravelV2RiskBidFinalApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
   const riskBidResultPipelineCloseout = prepareTravelV2RiskBidResultPipelineCloseout(session, { canReview: canManageTravelV2Consequences });
-  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewApplyIntent: riskBidReviewApplyIntent, riskBidReviewApplyIntent, travelV2RiskBidReviewApplyGate: riskBidReviewApplyGate, riskBidReviewApplyGate, travelV2RiskBidPressureApply: riskBidPressureApply, riskBidPressureApply, travelV2RiskBidHazardApply: riskBidHazardApply, riskBidHazardApply, travelV2RiskBidConsequenceApply: riskBidConsequenceApply, riskBidConsequenceApply, travelV2RiskBidBenefitRewardApply: riskBidBenefitRewardApply, riskBidBenefitRewardApply, travelV2RiskBidScarApply: riskBidScarApply, riskBidScarApply, travelV2RiskBidFinalApply: riskBidFinalApply, riskBidFinalApply, travelV2RiskBidResultPipelineCloseout: riskBidResultPipelineCloseout, riskBidResultPipelineCloseout, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
+  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2InterStationHelpActions: interStationHelpActions, interStationHelpActions, travelV2InterStationHelpCreateReview: canManageTravelV2Consequences ? travelV2InterStationHelpCreateReview : null, interStationHelpCreateReview: canManageTravelV2Consequences ? travelV2InterStationHelpCreateReview : null, travelV2InterStationHelpQueueResult: canManageTravelV2Consequences ? travelV2InterStationHelpQueueStatus : null, interStationHelpQueueResult: canManageTravelV2Consequences ? travelV2InterStationHelpQueueStatus : null, travelV2StationBenefitUseResult: canManageTravelV2Consequences ? (uiState.travelV2StationBenefitUseResult ?? null) : null, travelV2InterStationHelpApplicationReview, travelV2InterStationHelpApplicationResult: canManageTravelV2Consequences ? (uiState.travelV2InterStationHelpApplicationResult ?? null) : null, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewApplyIntent: riskBidReviewApplyIntent, riskBidReviewApplyIntent, travelV2RiskBidReviewApplyGate: riskBidReviewApplyGate, riskBidReviewApplyGate, travelV2RiskBidPressureApply: riskBidPressureApply, riskBidPressureApply, travelV2RiskBidHazardApply: riskBidHazardApply, riskBidHazardApply, travelV2RiskBidConsequenceApply: riskBidConsequenceApply, riskBidConsequenceApply, travelV2RiskBidBenefitRewardApply: riskBidBenefitRewardApply, riskBidBenefitRewardApply, travelV2RiskBidScarApply: riskBidScarApply, riskBidScarApply, travelV2RiskBidFinalApply: riskBidFinalApply, riskBidFinalApply, travelV2RiskBidResultPipelineCloseout: riskBidResultPipelineCloseout, riskBidResultPipelineCloseout, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {

@@ -28,6 +28,15 @@ function humanizeIdentifier(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function positiveIntegerOrNull(value) {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (normalized === "" || !/^\d+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function normalizeOutcomeTone(row = {}) {
   const outcomeKey = String(row.outcomeKey ?? "");
   if (outcomeKey === "criticalSuccess" || outcomeKey === "success") return "safe";
@@ -590,7 +599,8 @@ function normalizeActorApplicationPreview(state = null, latestResult = null) {
   };
 }
 
-function normalizeStationBenefitDisplay(state = null) {
+function normalizeStationBenefitDisplay(state = null, options = {}) {
+  const isGM = options.isGM === true;
   const selectedCandidate = isPlainObject(state?.selectedCandidate) ? state.selectedCandidate : null;
   const reviewRequest = {
     requested: Boolean(state?.selectedQueueKey),
@@ -606,9 +616,20 @@ function normalizeStationBenefitDisplay(state = null) {
     const status = typeof row?.status === "string" && row.status.trim() ? row.status.trim() : "blocked";
     const useAvailable = row?.useAvailable === true;
     const canReview = row?.canReview === true;
+    const used = row?.used === true || status === "used";
+    const consumed = row?.consumed === true;
+    const applied = row?.applied === true;
+    const canReviewEffect = isGM && row?.canReviewEffect === true;
+    const applyAvailable = isGM && row?.applyAvailable === true;
+    const appliedMagnitude = positiveIntegerOrNull(row?.appliedMagnitude);
+    const appliedBaseMagnitude = positiveIntegerOrNull(row?.appliedBaseMagnitude);
+    const appliedCriticalMagnitude = positiveIntegerOrNull(row?.appliedCriticalMagnitude);
+    const appliedStrengthened = row?.appliedStrengthened === true;
+    const legacyApplication = row?.legacyApplication === true;
+    const applicationStatusLabel = typeof row?.applicationStatusLabel === "string" ? row.applicationStatusLabel.trim() : "";
     const disabledReason = typeof row?.disabledReason === "string" && row.disabledReason.trim()
       ? row.disabledReason.trim()
-      : (useAvailable ? "" : (status === "pending" ? "Use requests are not available in this display-only pass." : `Pending station benefit is ${status}.`));
+      : (useAvailable || canReviewEffect ? "" : (status === "pending" ? "Use requests are not available in this display-only pass." : `Pending station benefit is ${status}.`));
     return {
       queueKey: row?.queueKey ?? null,
       title: row?.title || "Pending station benefit",
@@ -617,10 +638,22 @@ function normalizeStationBenefitDisplay(state = null) {
       displaySummary: row?.playerSafeSummary || row?.publicText || "Station benefit details are unavailable.",
       status,
       statusLabel: status === "pending" ? "Pending" : humanizeIdentifier(status || "blocked"),
-      requestAvailabilityLabel: useAvailable ? "Request available" : (canReview ? "Review only" : "Not ready"),
-      disabledReason,
+      used,
+      consumed,
+      applied,
+      magnitude: positiveIntegerOrNull(row?.magnitude),
+      appliedMagnitude,
+      appliedBaseMagnitude,
+      appliedCriticalMagnitude,
+      appliedStrengthened,
+      legacyApplication,
+      applicationStatusLabel,
       canReview,
       useAvailable,
+      canReviewEffect,
+      applyAvailable,
+      requestAvailabilityLabel: applied ? (applicationStatusLabel || "Effect applied") : (canReviewEffect ? "Effect review available" : (useAvailable ? "Request available" : (canReview ? "Review only" : "Not ready"))),
+      disabledReason,
       reviewOnly: row?.reviewOnly !== false
     };
   }) : [];
@@ -933,7 +966,17 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const actorPreviewSource = isPlainObject(runnerSession) ? prepareTravelV2ActorApplicationPreviewFromSession(runnerSession, appState.actor, { session: runnerSession }) : null;
   const travelV2ActorApplicationPreview = normalizeActorApplicationPreview(actorPreviewSource, latestActorApplicationResult);
   const travelV2FollowUps = prepareTravelV2FollowUpState(appState.actor, latestActorApplicationResult?.applicationRecord ?? actorPreviewSource, { session: runnerSession });
-  const stationBenefitDisplay = normalizeStationBenefitDisplay(appState.travelV2StationBenefitUseReviewPlayerState);
+  const stationBenefitQueueState = appState.isGM === true
+    ? (appState.travelV2PendingStationBenefitQueue ?? appState.travelV2PendingStationBenefitPlayerState)
+    : appState.travelV2PendingStationBenefitPlayerState;
+  const stationBenefitUseReviewState = appState.travelV2StationBenefitUseReviewPlayerState;
+  const stationBenefitQueueRows = Array.isArray(stationBenefitQueueState?.gmRows) && stationBenefitQueueState.gmRows.length > 0
+    ? stationBenefitQueueState.gmRows
+    : (Array.isArray(stationBenefitQueueState?.rows) && stationBenefitQueueState.rows.length > 0 ? stationBenefitQueueState.rows : null);
+  const stationBenefitDisplay = normalizeStationBenefitDisplay({
+    ...stationBenefitUseReviewState,
+    rows: stationBenefitQueueRows ?? stationBenefitUseReviewState?.rows ?? []
+  }, { isGM: appState.isGM === true });
   const currentOrderState = isPlainObject(runnerSession?.travelV2RoundActionOrder?.rounds) ? (runnerSession.travelV2RoundActionOrder.rounds[String(runnerSession.currentRoundIndex ?? 0)] ?? runnerSession.travelV2RoundActionOrder.rounds[runnerSession.currentRoundIndex ?? 0] ?? null) : null;
   const hasCommittedOrder = isPlainObject(currentOrderState) && (Array.isArray(currentOrderState.order) || Array.isArray(currentOrderState.stationOrder));
   const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult, persistResult: appState.travelV2RoundActionOrderPersistResult, hasCommittedOrder });
