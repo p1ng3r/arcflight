@@ -144,9 +144,11 @@ export default async function runTravelV2InterStationHelpExpirationSmokeChecks()
   const cleared = clearTravelEventRunnerStationResult(expiredNormal, 0, "engineer", { now: "2026-07-15T12:30:00.000Z" }); assert.equal(cleared.ok, true); assert.equal(cleared.session.roundResults[0].stationResults.engineer, null); assert.equal(cleared.session.travelV2PendingStationBenefits[0].status, "expired");
   checked.push("result clearing does not resurrect expired Help");
 
-  const display = prepareTravelV2PendingStationBenefitPlayerState({ session: expiredNormal }); const displayRow = display.rows[0]; assert.equal(displayRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(displayRow.expirationStatusLabel, "Expired after target resolution"); assert.equal(displayRow.expired, true); assert.equal(displayRow.expirationTrigger, "targetResolved");
+  const display = prepareTravelV2PendingStationBenefitPlayerState({ session: expiredNormal }); const displayRow = display.rows[0]; assert.equal(displayRow.applicationStatusLabel, "Effect applied: DC −2 · Expired after target resolution"); assert.equal(displayRow.expirationStatusLabel, "Expired after target resolution"); assert.equal(displayRow.expired, true); assert.equal(displayRow.expirationTrigger, "targetResolved");
+  const roundEndDisplaySession = applyTravelV2InterStationHelpExpirationToSession(applyValid(usedSession({ expires: "endOfRound" })), { trigger: "roundFinalized", roundIndex: 0, roundNumber: 1, now: NOW }).session;
+  const roundEndDisplayRow = prepareTravelV2PendingStationBenefitPlayerState({ session: roundEndDisplaySession }).rows[0]; assert.equal(roundEndDisplayRow.applicationStatusLabel, "Effect applied: DC −2 · Expired at round end"); assert.equal(roundEndDisplayRow.expirationStatusLabel, "Expired at round end");
   const gmRow = prepareTravelV2PendingStationBenefitGmState({ session: expiredNormal }, { user: { isGM: true }, includeGmReview: true }).gmRows[0]; assert.equal(gmRow.canReviewEffect, false); assert.equal(gmRow.applyAvailable, false); assert.equal(gmRow.useAvailable, false);
-  checked.push("player-safe applied and expired history remains visible while expired controls remain false");
+  checked.push("player-safe applied and expired history renders target-resolution and round-end lifecycle labels while expired controls remain false");
 
   const blockedFinalizationRow = pendingRecord(baseSession(), { state: "pending" }); const blocked = finalizeTravelV2RoundOnRunnerSession(sessionWithRows([blockedFinalizationRow]), { now: NOW }); assert.equal(blocked.ok, false); assert.equal(blocked.session.travelV2PendingStationBenefits[0].status, "pending");
   checked.push("blocked finalization performs no cleanup");
