@@ -28,7 +28,7 @@ function userSnapshot(userLike) { return { isGM: isGmLike(userLike) }; }
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function nullableText(value) { const next = text(value); return next || null; }
 function persistentMutation() { return { available: false, reason: PERSISTENCE_REASON }; }
-function inertFlags() { return { reviewOnly: true, useAvailable: false, applyAvailable: false, canReviewEffect: false, applied: false, used: false, dismissed: false, stationCheckMutated: false, rollMutated: false, checkPreviewMutated: false, persistentMutation: persistentMutation() }; }
+function inertFlags() { return { reviewOnly: true, useAvailable: false, applyAvailable: false, canReviewEffect: false, applied: false, used: false, consumed: false, dismissed: false, stationCheckMutated: false, rollMutated: false, checkPreviewMutated: false, persistentMutation: persistentMutation() }; }
 function stripForbiddenFields(value) {
   if (Array.isArray(value)) return value.map(stripForbiddenFields);
   if (!value || typeof value !== "object") return value;
@@ -89,6 +89,10 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
   const playerSafeSummary = nullableText(row.playerSafeSummary ?? row.summary ?? row.publicSummary ?? publicText);
   const malformed = !isPlainObject(record) || (!publicText && !playerSafeSummary && !sourceStation && !targetStation && benefitKind === "unknown" && !text(row.title) && !text(row.id));
   const status = normalizeStatus(row, malformed);
+  const used = row.used === true || status === "used";
+  const consumed = row.consumed === true;
+  const applied = row.applied === true;
+  const dismissed = row.dismissed === true || status === "dismissed";
   const base = stripForbiddenFields({
     pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
     queueKey: queueKeyFor(row, index, sourceStation, targetStation, benefitKind),
@@ -109,9 +113,15 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
     playerVisible: true,
     gmOnly: false,
     ...inertFlags(),
-    ...(status === "blocked" ? { blockedReason: "Pending station benefit record is missing safe display data.", disabledReason: "Pending station benefit is review-only and cannot be used in this PR." } : {})
+    used,
+    consumed,
+    applied,
+    dismissed,
+    applicationStatusLabel: applied ? "Effect applied" : null,
+    ...(applied ? { applicationKey: nullableText(row.applicationKey) } : {}),
+    ...(status === "blocked" ? { blockedReason: "Pending station benefit record is missing safe display data.", disabledReason: "Pending station benefit is unavailable." } : {})
   });
-  const gmCanReviewEffect = options.includeGmReview === true && isGmLike(options.user) && status === "used" && row.used === true && row.consumed === true && row.applied !== true && benefitKind === "dcReduction";
+  const gmCanReviewEffect = options.includeGmReview === true && isGmLike(options.user) && status === "used" && used === true && consumed === true && applied !== true && benefitKind === "dcReduction";
   if (!(options.includeGmReview === true && isGmLike(options.user))) return cloneData(base);
   return cloneData({ ...base, canReviewEffect: gmCanReviewEffect, applyAvailable: gmCanReviewEffect, gmReview: { gmText: nullableText(row.gmText), gmSummary: nullableText(row.gmSummary), gmMechanicalNotes: cloneData(row.gmMechanicalNotes ?? null), sourceRecord: cloneData(row) } });
 }

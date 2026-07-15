@@ -32,6 +32,7 @@ function validate(session = {}, selection = {}, options = {}) {
   const reasons = [];
   const allowAlreadyApplied = options.allowAlreadyApplied === true;
   const queueKey = text(selection.queueKey ?? selection.selectedQueueKey);
+  const expectedApplicationKey = applicationKeyFor(queueKey);
   if (!isPlainObject(session)) reasons.push("travel-v2-session-required");
   if (!queueKey) reasons.push("missing-queue-key");
   const matches = queueKey ? queueRecords(session).map((record, index) => ({ record, index })).filter(({ record }) => text(record?.queueKey) === queueKey) : [];
@@ -39,13 +40,14 @@ function validate(session = {}, selection = {}, options = {}) {
   if (matches.length > 1) reasons.push("duplicate-queue-key");
   const match = matches.length === 1 ? matches[0] : null;
   const record = match?.record ?? null;
-  if (!record) return { ok: false, queueKey, reasons: uniqueStrings(reasons), record: null, index: -1, matchedAction: null, fallbackBaseDc: null, applicationKey: applicationKeyFor(queueKey) };
+  if (!record) return { ok: false, queueKey, reasons: uniqueStrings(reasons), record: null, index: -1, matchedAction: null, fallbackBaseDc: null, applicationKey: expectedApplicationKey };
 
   const status = text(record.status);
   const alreadyApplied = record.applied === true;
   if (status !== "used" || record.used !== true || record.consumed !== true) reasons.push("inter-station-help-application-record-not-used");
   if (alreadyApplied && !allowAlreadyApplied) reasons.push("inter-station-help-application-already-applied");
   if (allowAlreadyApplied && alreadyApplied !== true) reasons.push("inter-station-help-application-record-not-applied");
+  if (allowAlreadyApplied && text(record.applicationKey) !== expectedApplicationKey) reasons.push("inter-station-help-application-key-mismatch");
   if (["dismissed", "expired", "blocked"].includes(status) || record.dismissed === true || record.expired === true || record.blocked === true) reasons.push(`inter-station-help-application-record-${status || "blocked"}`);
 
   const currentRoundIndex = strictIntegerOrNull(session.currentRoundIndex);
@@ -85,9 +87,8 @@ function validate(session = {}, selection = {}, options = {}) {
   if (!allowAlreadyApplied && RESOLVED.has(text(stationResult(session, roundIndex, targetStationKey)))) reasons.push("target-station-already-resolved");
   const fallbackBaseDc = roundIndex === null ? null : fallbackBaseDcForReview(session, roundIndex, targetStationKey);
   if (!Number.isFinite(fallbackBaseDc)) reasons.push("missing-base-dc");
-  const appKey = applicationKeyFor(queueKey);
-  if (!allowAlreadyApplied && applicationRecords(session).some((record) => text(record.applicationKey) === appKey)) reasons.push("inter-station-help-application-already-applied");
-  return { ok: reasons.length === 0, queueKey, reasons: uniqueStrings(reasons), record, index: match.index, matchedAction, fallbackBaseDc, applicationKey: appKey };
+  if (!allowAlreadyApplied && applicationRecords(session).some((record) => text(record.applicationKey) === expectedApplicationKey)) reasons.push("inter-station-help-application-already-applied");
+  return { ok: reasons.length === 0, queueKey, reasons: uniqueStrings(reasons), record, index: match.index, matchedAction, fallbackBaseDc, applicationKey: expectedApplicationKey };
 }
 
 export function prepareTravelV2InterStationHelpApplicationReview(session = {}, selection = {}, options = {}) {
@@ -127,14 +128,16 @@ export function prepareTravelV2InterStationHelpCheckAdjustment(session = {}, opt
     if (!appKey || seen.has(appKey)) continue;
     seen.add(appKey);
     if (app.applied !== true || text(app.status) !== "applied" || strictIntegerOrNull(app.roundIndex) !== roundIndex || text(app.targetStationKey) !== stationKey || text(app.benefitKind) !== "dcReduction") continue;
-    const rawRecord = queueRecords(session).find((record) => text(record.queueKey) === text(app.queueKey) && text(record.applicationKey) === appKey);
+    const rawRecord = queueRecords(session).find((record) => text(record.queueKey) === text(app.queueKey));
     if (!rawRecord) continue;
     const validation = validate(session, { queueKey: text(rawRecord.queueKey) }, { ...options, allowAlreadyApplied: true });
     if (validation.ok !== true) continue;
+    const expectedApplicationKey = validation.applicationKey;
+    if (appKey !== expectedApplicationKey || text(rawRecord.applicationKey) !== expectedApplicationKey || text(app.applicationKey) !== expectedApplicationKey) continue;
     if (text(app.queueKey) !== validation.queueKey || text(app.pendingHelpKey) !== text(validation.record.pendingHelpKey) || text(app.actionId) !== text(validation.record.actionId) || text(app.sourceStationKey) !== text(validation.record.sourceStationKey) || text(app.targetStationKey) !== text(validation.record.targetStationKey) || strictIntegerOrNull(app.roundIndex) !== strictIntegerOrNull(validation.record.roundIndex)) continue;
     const canonicalMagnitude = positiveIntegerOrNull(validation.matchedAction?.magnitude);
     if (canonicalMagnitude === null || positiveIntegerOrNull(app.magnitude) !== canonicalMagnitude) continue;
-    applications.push({ applicationKey: appKey, queueKey: validation.queueKey, title: text(validation.record.title), sourceStationKey: text(validation.record.sourceStationKey), sourceStationName: text(validation.record.sourceStationName), magnitude: canonicalMagnitude });
+    applications.push({ applicationKey: expectedApplicationKey, queueKey: validation.queueKey, title: text(validation.record.title), sourceStationKey: text(validation.record.sourceStationKey), sourceStationName: text(validation.record.sourceStationName), magnitude: canonicalMagnitude });
   }
   applications.sort((a, b) => a.applicationKey.localeCompare(b.applicationKey));
   const dcReduction = applications.reduce((sum, app) => sum + app.magnitude, 0);

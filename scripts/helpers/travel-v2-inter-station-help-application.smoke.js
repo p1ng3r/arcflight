@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "../apps/travel-event-runner-v2-preview-consumer.js";
 import { prepareTravelSceneOverlayState, resolveStationDc } from "./travel-event-runner.js";
 import { prepareTravelV2InterStationHelpActions } from "./travel-v2-inter-station-help-actions.js";
 import { prepareTravelV2InterStationHelpPendingRecord } from "./travel-v2-inter-station-help-pending-records.js";
-import { prepareTravelV2PendingStationBenefitPlayerState } from "./travel-v2-pending-station-benefit-queue.js";
+import { prepareTravelV2PendingStationBenefitGmState, prepareTravelV2PendingStationBenefitPlayerState } from "./travel-v2-pending-station-benefit-queue.js";
 import { applyTravelV2InterStationHelpApplicationToSession, prepareTravelV2InterStationHelpApplicationReview, prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
 
 const snap = (v) => JSON.stringify(v);
@@ -72,9 +73,22 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
 
   const adjustment = prepareTravelV2InterStationHelpCheckAdjustment(applied.nextSession, { roundIndex: 0, stationKey: "engineer" });
   assert.equal(adjustment.dcReduction, 2); assert.equal(adjustment.hasAdjustment, true);
+  const expectedApplicationKey = `inter-station-help-application:${queueKey}`;
+  assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].applicationKey, expectedApplicationKey);
+  assert.equal(applied.nextSession.travelV2InterStationHelpApplications.records[0].applicationKey, expectedApplicationKey);
+  const coordinatedKeyTamper = JSON.parse(snap(applied.nextSession));
+  coordinatedKeyTamper.travelV2PendingStationBenefits[0].applicationKey = "tampered-key";
+  coordinatedKeyTamper.travelV2InterStationHelpApplications.records[0].applicationKey = "tampered-key";
+  assertNoAdjustment(coordinatedKeyTamper, "coordinated-application-key-tamper");
+  const missingRawKey = JSON.parse(snap(applied.nextSession));
+  delete missingRawKey.travelV2PendingStationBenefits[0].applicationKey;
+  assertNoAdjustment(missingRawKey, "missing-raw-application-key");
+  const missingAppKey = JSON.parse(snap(applied.nextSession));
+  delete missingAppKey.travelV2InterStationHelpApplications.records[0].applicationKey;
+  assertNoAdjustment(missingAppKey, "missing-application-record-key");
   assertNoAdjustment(applied.nextSession, "watchmaster", "watchmaster");
   for (const [label, mutate] of Object.entries({ rawActionId: (s) => { s.travelV2PendingStationBenefits[0].actionId = "tampered"; }, rawAuthoredActionId: (s) => { s.travelV2PendingStationBenefits[0].authoredActionId = "tampered"; }, rawSource: (s) => { s.travelV2PendingStationBenefits[0].sourceStationKey = "watchmaster"; }, rawTarget: (s) => { s.travelV2PendingStationBenefits[0].targetStationKey = "watchmaster"; }, rawPendingKey: (s) => { s.travelV2PendingStationBenefits[0].pendingHelpKey = "tampered"; }, rawDedupe: (s) => { s.travelV2PendingStationBenefits[0].dedupeKey = "tampered"; }, rawBenefit: (s) => { s.travelV2PendingStationBenefits[0].benefitKind = "automaticSuccess"; }, rawMagnitude: (s) => { s.travelV2PendingStationBenefits[0].magnitude = 20; }, rawExpires: (s) => { s.travelV2PendingStationBenefits[0].expires = "endOfRound"; }, rawRound: (s) => { s.travelV2PendingStationBenefits[0].roundIndex = 1; }, rawAppKey: (s) => { s.travelV2PendingStationBenefits[0].applicationKey = "wrong"; }, authoredRemoved: (s) => { s.event.rounds[0].stationCards[0].interStationHelp = []; }, authoredMagnitude: (s) => { s.event.rounds[0].stationCards[0].interStationHelp[0].benefit.magnitude = 3; }, sourceCleared: (s) => { s.roundResults[0].stationResults.navigator = null; }, sourceFailure: (s) => { s.roundResults[0].stationResults.navigator = "failure"; }, orderUnlocked: (s) => { s.roundResults[0].stationOrderCommitments = {}; }, sourceAfter: (s) => { s.event.rounds[0].stationOrder = ["engineer", "navigator", "watchmaster"]; }, appMagnitude: (s) => { s.travelV2InterStationHelpApplications.records[0].magnitude = 20; }, appSource: (s) => { s.travelV2InterStationHelpApplications.records[0].sourceStationKey = "watchmaster"; }, appTarget: (s) => { s.travelV2InterStationHelpApplications.records[0].targetStationKey = "watchmaster"; }, appQueue: (s) => { s.travelV2InterStationHelpApplications.records[0].queueKey = "wrong"; } })) { const tampered = JSON.parse(snap(applied.nextSession)); mutate(tampered); assertNoAdjustment(tampered, label); }
-  checked.push("applied records are revalidated and tampered raw application or authored state is ignored");
+  checked.push("applied records are revalidated and tampered raw application authored state or deterministic keys are ignored");
 
   const overlaySession = applyValid(withEngineerHazard(usedSession()));
   const overlay = prepareTravelSceneOverlayState(overlaySession);
@@ -89,13 +103,21 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(prepareTravelSceneOverlayState(overlaySession).stations.find((station) => station.stationKey === "watchmaster").hasInterStationHelp, false);
   checked.push("live overlay reduces canonical resolved DCs without replacing selected approach hazard station modifier or event fallback DCs");
 
+  const usedButUnapplied = prepareTravelV2PendingStationBenefitGmState({ session }, { user: { isGM: true }, includeGmReview: true });
+  const unappliedRow = usedButUnapplied.rows.find((row) => row.queueKey === queueKey);
+  assert.equal(unappliedRow.status, "used"); assert.equal(unappliedRow.used, true); assert.equal(unappliedRow.consumed, true); assert.equal(unappliedRow.applied, false); assert.equal(unappliedRow.applicationStatusLabel, null); assert.equal(unappliedRow.canReviewEffect, true); assert.equal(unappliedRow.applyAvailable, true);
+  const gmQueue = prepareTravelV2PendingStationBenefitGmState({ session: applied.nextSession }, { user: { isGM: true }, includeGmReview: true });
+  const gmRow = gmQueue.rows.find((row) => row.queueKey === queueKey);
+  assert.equal(gmRow.status, "used"); assert.equal(gmRow.used, true); assert.equal(gmRow.consumed, true); assert.equal(gmRow.applied, true); assert.equal(gmRow.applicationStatusLabel, "Effect applied"); assert.equal(gmRow.canReviewEffect, false); assert.equal(gmRow.applyAvailable, false);
   const playerQueue = prepareTravelV2PendingStationBenefitPlayerState({ session: applied.nextSession }, { user: { isGM: false } });
   const playerRow = playerQueue.rows.find((row) => row.queueKey === queueKey);
-  assert.equal(playerRow.canReviewEffect, false); assert.equal(playerRow.applyAvailable, false);
+  assert.equal(playerRow.status, "used"); assert.equal(playerRow.used, true); assert.equal(playerRow.consumed, true); assert.equal(playerRow.applied, true); assert.equal(playerRow.applicationStatusLabel, "Effect applied"); assert.equal(playerRow.canReviewEffect, false); assert.equal(playerRow.applyAvailable, false);
+  const templateSource = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
+  assert.equal(templateSource.includes("applicationStatusLabel"), true);
   const playerRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: false }, uiState: { travelV2InterStationHelpApplicationReviewRequested: true, travelV2InterStationHelpApplicationSelectedQueueKey: queueKey, travelV2InterStationHelpApplicationResult: { message: "secret" } } });
   const serializedPlayer = JSON.stringify(playerRender);
   assert.equal(serializedPlayer.includes('"canReviewEffect":true'), false); assert.equal(serializedPlayer.includes('"applyAvailable":true'), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationReview"), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationResult"), false);
-  checked.push("non-GM queue and render state expose no application capability");
+  checked.push("queue projections show accurate applied lifecycle while non-GM state exposes no application capability");
 
   const critical = usedSession(); critical.roundResults[0].stationResults.navigator = "criticalSuccess"; const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey }, { canApply: true, applyRequested: true }); assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2); assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
   checked.push("critical success applies only the normal base reduction");
