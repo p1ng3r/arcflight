@@ -2,8 +2,7 @@ import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-ev
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
-import { prepareTravelV2InterStationHelpActions } from "../helpers/travel-v2-inter-station-help-actions.js";
-import { queueTravelV2InterStationHelpPendingRecord } from "../helpers/travel-v2-inter-station-help-pending-queue.js";
+import { integerOrNull, prepareTravelV2InterStationHelpQueueRunnerUpdate } from "../helpers/travel-v2-inter-station-help-create-review.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
@@ -1041,34 +1040,12 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   #interStationHelpIdentityFromTarget(target = {}) {
     const dataset = target?.dataset ?? {};
-    const roundIndex = Number(dataset.roundIndex);
     return {
       actionId: typeof dataset.actionId === "string" ? dataset.actionId : "",
       sourceStationKey: typeof dataset.sourceStationKey === "string" ? dataset.sourceStationKey : "",
       targetStationKey: typeof dataset.targetStationKey === "string" ? dataset.targetStationKey : "",
-      roundIndex: Number.isInteger(roundIndex) ? roundIndex : null
+      roundIndex: integerOrNull(dataset.roundIndex)
     };
-  }
-
-  #canonicalInterStationHelpResultBand(action = {}) {
-    const roundIndex = Number(action.roundIndex);
-    const sourceStationKey = typeof action.sourceStationKey === "string" ? action.sourceStationKey.trim() : "";
-    if (!Number.isInteger(roundIndex) || !sourceStationKey) return "";
-    const raw = this.session?.roundResults?.[roundIndex]?.stationResults?.[sourceStationKey];
-    if (typeof raw === "string") return raw.trim();
-    if (raw && typeof raw === "object") return String(raw.resultBand ?? raw.result ?? raw.outcome ?? raw.degreeOfSuccess ?? "").trim();
-    return "";
-  }
-
-  #findSelectedInterStationHelpAction() {
-    const selected = this.uiState.travelV2InterStationHelpSelectedIdentity ?? {};
-    const roundIndex = Number(selected.roundIndex);
-    const helpState = prepareTravelV2InterStationHelpActions(this.session ?? {}, { roundIndex: Number.isInteger(roundIndex) ? roundIndex : undefined, includeUnavailable: true });
-    const action = (helpState.helpActions ?? []).find((row) => row.actionId === selected.actionId
-      && row.sourceStationKey === selected.sourceStationKey
-      && row.targetStationKey === selected.targetStationKey
-      && Number(row.roundIndex) === roundIndex);
-    return { helpState, action };
   }
 
   #reviewTravelV2InterStationHelp(target) {
@@ -1081,40 +1058,21 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
 
   #queueTravelV2InterStationHelp() {
     if (globalThis.game?.user?.isGM !== true) return this.render(true);
-    const { action } = this.#findSelectedInterStationHelpAction();
-    if (!action) {
-      this.uiState.travelV2InterStationHelpQueueResult = { ok: false, queued: false, duplicate: false, status: "blocked", message: "Selected help is no longer available.", blockedReasons: ["selected-inter-station-help-action-not-found"] };
-      this.statusMessage = "Selected Inter-Station Help is no longer available.";
-      globalThis.ui?.notifications?.warn?.(this.statusMessage);
-      return this.render(true);
-    }
-    const resultBand = this.#canonicalInterStationHelpResultBand(action);
-    const resultContext = {
-      actionId: action.actionId,
-      sourceStationKey: action.sourceStationKey,
-      targetStationKey: action.targetStationKey,
-      roundIndex: action.roundIndex,
-      roundNumber: action.roundNumber,
-      resultBand
-    };
-    const result = queueTravelV2InterStationHelpPendingRecord(this.session ?? {}, action, resultContext, { enqueueRequested: true });
-    this.uiState.travelV2InterStationHelpQueueResult = {
-      ok: result.ok === true,
-      queued: result.queued === true,
-      duplicate: result.duplicate === true,
-      status: result.queued === true ? "queued" : (result.duplicate === true ? "duplicate" : "blocked"),
-      message: result.queued === true ? "Inter-Station Help queued as a pending station benefit." : (result.duplicate === true ? "Inter-Station Help is already queued." : "Inter-Station Help queueing was blocked."),
-      blockedReasons: Array.isArray(result.blockedReasons) ? [...result.blockedReasons] : []
-    };
-    if (result.queued === true && result.session) {
-      this.session = result.session;
+    const update = prepareTravelV2InterStationHelpQueueRunnerUpdate(
+      this.session ?? {},
+      this.uiState.travelV2InterStationHelpSelectedIdentity ?? {},
+      { canQueue: true }
+    );
+    this.uiState.travelV2InterStationHelpQueueResult = update.status;
+    if (update.shouldAdoptSession === true) {
+      this.session = update.nextSession;
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       this.uiState.travelV2InterStationHelpSelectedIdentity = null;
       this.statusMessage = "Inter-Station Help queued locally; no world data was persisted.";
       globalThis.ui?.notifications?.info?.(this.statusMessage);
       return this.render(true);
     }
-    this.statusMessage = result.duplicate === true ? "Inter-Station Help is already queued." : (this.uiState.travelV2InterStationHelpQueueResult.blockedReasons[0] ?? "Inter-Station Help queueing was blocked.");
+    this.statusMessage = update.status?.message ?? "Inter-Station Help queueing was blocked.";
     globalThis.ui?.notifications?.warn?.(this.statusMessage);
     return this.render(true);
   }
