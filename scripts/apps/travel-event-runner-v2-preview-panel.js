@@ -736,6 +736,7 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const blockedText = blockedReasons[0] ?? "";
   const proposedShellOrder = rows.map((row) => row.stationKey).reverse();
   const orderDecision = normalizeRoundActionOrderDecision(state?.orderDecision);
+  const canPersistCommittedOrder = orderDecision.hasCommittedOrder === true && (options.isGM === true || options.user?.isGM === true);
   const reorderRequest = (options.isGM === true || options.user?.isGM === true)
     ? normalizeRoundActionOrderReorderRequest(state?.reorderRequest)
     : { requested: false, ready: false, blocked: true, status: "not-requested", feedbackText: "No GM reorder review requested.", hasFeedback: false, showComparison: false, currentRows: [], proposedRows: [], hasComparisonRows: false, blockedReasons: [], blockedReason: "", mutationNote: "Review-only reorder candidate. No order is persisted or applied.", reviewOnly: true };
@@ -772,7 +773,7 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     reorderRequest,
     commitResult: normalizeRoundActionOrderCommitResult(options.commitResult, rows, options),
     persistResult: normalizeRoundActionOrderPersistResult(options.persistResult, rows, options),
-    canPersistCommittedOrder: options.hasCommittedOrder === true && (options.isGM === true || options.user?.isGM === true),
+    canPersistCommittedOrder,
     readOnly: true
   };
 }
@@ -1015,9 +1016,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     ...stationBenefitUseReviewState,
     rows: stationBenefitQueueRows ?? stationBenefitUseReviewState?.rows ?? []
   }, { isGM: appState.isGM === true });
-  const currentOrderState = isPlainObject(runnerSession?.travelV2RoundActionOrder?.rounds) ? (runnerSession.travelV2RoundActionOrder.rounds[String(runnerSession.currentRoundIndex ?? 0)] ?? runnerSession.travelV2RoundActionOrder.rounds[runnerSession.currentRoundIndex ?? 0] ?? null) : null;
-  const hasCommittedOrder = isPlainObject(currentOrderState) && (Array.isArray(currentOrderState.order) || Array.isArray(currentOrderState.stationOrder));
-  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult, persistResult: appState.travelV2RoundActionOrderPersistResult, hasCommittedOrder });
+  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult, persistResult: appState.travelV2RoundActionOrderPersistResult });
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,

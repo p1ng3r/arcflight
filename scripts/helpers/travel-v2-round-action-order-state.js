@@ -29,7 +29,6 @@ const ORDER_DECISION_COPY = Object.freeze({
 const ORDER_SOURCE_LABELS = Object.freeze({
   committed: "Committed by GM",
   authoredProposal: "Authored Proposal",
-  gmReviewProposal: "GM Review Proposal",
   fallback: "Fallback Display Order",
   none: "No Order Selected"
 });
@@ -195,12 +194,6 @@ export function determineRoundActionOrderDecision({ session = {}, round = {}, ro
   const authoredValidation = normalizeTravelV2ProposedRoundActionOrder(authoredOrder, activeStations);
   if (authoredValidation.valid) {
     return { orderDecision: buildOrderDecision("proposed", "authoredProposal"), currentOrder: authoredValidation.proposedStationKeys };
-  }
-
-  const reviewOrder = reorderRequest?.ready === true ? reorderRequest?.proposedStationKeys : [];
-  const reviewValidation = normalizeTravelV2ProposedRoundActionOrder(reviewOrder, activeStations);
-  if (reviewValidation.valid) {
-    return { orderDecision: buildOrderDecision("proposed", "gmReviewProposal"), currentOrder: normalizeStationOrder([], activeStations) };
   }
 
   const fallbackSource = Array.isArray(options.order) || Array.isArray(options.stationOrder) ? (options.order ?? options.stationOrder) : [];

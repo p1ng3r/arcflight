@@ -6,6 +6,7 @@ import { persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary } from "
 
 const ORDER = ["navigator", "engineer", "watchmaster"];
 const REORDERED = ["engineer", "navigator", "watchmaster"];
+const AUTHORED = ["watchmaster", "navigator", "engineer"];
 const json = (value) => JSON.stringify(value);
 
 function fixture(overrides = {}) {
@@ -21,12 +22,30 @@ function fixture(overrides = {}) {
   };
 }
 
+function withoutAuthoredProposal(overrides = {}) {
+  return fixture({
+    event: { key: "event-status", name: "Event Status", rounds: [{ roundNumber: 1, activeStations: ORDER, stationPrompts: { navigator: { stationName: "Navigator" }, engineer: { stationName: "Engineer" }, watchmaster: { stationName: "Watchmaster" } } }] },
+    ...overrides
+  });
+}
+
+function withAuthoredOrder(order = AUTHORED, overrides = {}) {
+  return fixture({
+    event: { key: "event-status", name: "Event Status", rounds: [{ roundNumber: 1, activeStations: ORDER, stationPrompts: { navigator: { stationName: "Navigator" }, engineer: { stationName: "Engineer" }, watchmaster: { stationName: "Watchmaster" } }, stationActionOrder: order }] },
+    ...overrides
+  });
+}
+
 function libraryWith(session) {
   return { version: 1, sessions: { [session.key]: { key: session.key, name: session.name, eventKey: session.event.key, eventName: session.event.name, status: session.status, currentRoundIndex: session.currentRoundIndex, session } } };
 }
 
 function decision(session, options = {}) {
   return prepareTravelV2RoundActionOrderState(session, options).orderDecision;
+}
+
+function display(session, options = {}) {
+  return prepareTravelEventRunnerV2PreviewPanelState({ session, isGM: options.isGM === true, user: options.user ?? { isGM: options.isGM === true } }).roundActionOrderDisplay;
 }
 
 function assertNoForbidden(value) {
@@ -39,7 +58,10 @@ function assertNoForbidden(value) {
 export default async function runTravelV2RoundActionOrderStatusGuidanceSmokeChecks() {
   const checked = [];
 
-  const proposed = prepareTravelV2RoundActionOrderState(fixture());
+  const proposedInput = fixture();
+  const proposedBefore = json(proposedInput);
+  const proposed = prepareTravelV2RoundActionOrderState(proposedInput);
+  assert.equal(json(proposedInput), proposedBefore, "proposed fixture input is not mutated");
   assert.equal(proposed.orderDecision.statusKey, "proposed");
   assert.equal(proposed.orderDecision.statusLabel, "Proposed Order");
   assert.equal(proposed.orderDecision.hasCommittedOrder, false);
@@ -60,7 +82,7 @@ export default async function runTravelV2RoundActionOrderStatusGuidanceSmokeChec
   assert.deepEqual(committed.orderedStationKeys, REORDERED);
   checked.push("committed order status uses current-round committed sequence");
 
-  const noProposal = fixture({ event: { key: "event-status", name: "Event Status", rounds: [{ roundNumber: 1, activeStations: ORDER, stationPrompts: { navigator: { stationName: "Navigator" }, engineer: { stationName: "Engineer" }, watchmaster: { stationName: "Watchmaster" } } }] } });
+  const noProposal = withoutAuthoredProposal();
   const needs = prepareTravelV2RoundActionOrderState(noProposal);
   assert.equal(needs.orderDecision.statusKey, "needsDecision");
   assert.equal(needs.orderDecision.statusLabel, "Needs Decision");
@@ -73,19 +95,58 @@ export default async function runTravelV2RoundActionOrderStatusGuidanceSmokeChec
 
   for (const badOrder of [["navigator", "navigator", "engineer"], ["navigator", "engineer"], ["navigator", "engineer", "pilot"]]) {
     const malformed = fixture({ travelV2RoundActionOrder: { rounds: { 0: { order: badOrder } } } });
+    const malformedBefore = json(malformed);
     assert.notEqual(decision(malformed).statusLabel, "Committed Order");
+    assert.equal(json(malformed), malformedBefore, "malformed committed fixture input is not mutated");
+    const malformedDisplay = display(malformed, { isGM: true });
+    assert.equal(malformedDisplay.orderDecision.hasCommittedOrder, false);
+    assert.equal(malformedDisplay.canPersistCommittedOrder, false);
   }
-  checked.push("malformed committed records are not committed status");
+  checked.push("malformed committed records are not committed status and cannot enable persistence");
 
   const otherRound = fixture({ travelV2RoundActionOrder: { rounds: { 1: { order: REORDERED } } } });
   assert.notEqual(decision(otherRound).statusLabel, "Committed Order");
   checked.push("committed records are isolated by current round");
 
   const review = prepareTravelV2RoundActionOrderState(noProposal, { user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, proposedOrder: REORDERED });
+  assert.equal(review.reorderRequest.requested, true);
   assert.equal(review.reorderRequest.ready, true);
-  assert.equal(review.orderDecision.statusKey, "proposed");
+  assert.equal(review.orderDecision.statusKey, "needsDecision");
+  assert.equal(review.orderDecision.statusLabel, "Needs Decision");
+  assert.equal(review.orderDecision.hasCommittedOrder, false);
+  assert.equal(review.orderDecision.hasProposedOrder, false);
+  assert.equal(review.orderDecision.needsDecision, true);
+  assert.equal(review.orderDecision.showCaptainGuidance, true);
+  assert.deepEqual(review.reorderRequest.proposedStationKeys, REORDERED);
   assert.notDeepEqual(review.orderedStationKeys, review.reorderRequest.proposedStationKeys);
-  checked.push("GM reorder review stays review-only until commit");
+  checked.push("GM reorder candidate remains review-only and does not become canonical until commit");
+
+  const validCommittedDisplay = display(commitResult.session, { isGM: true, user: { isGM: true } });
+  assert.equal(validCommittedDisplay.orderDecision.hasCommittedOrder, true);
+  assert.equal(validCommittedDisplay.canPersistCommittedOrder, true);
+  const nonGmCommittedDisplay = display(commitResult.session, { isGM: false, user: { isGM: false } });
+  assert.equal(nonGmCommittedDisplay.orderDecision.hasCommittedOrder, true);
+  assert.equal(nonGmCommittedDisplay.canPersistCommittedOrder, false);
+  checked.push("persistence readiness uses canonical committed status and GM capability");
+
+  const authoredPlusReview = prepareTravelV2RoundActionOrderState(withAuthoredOrder(AUTHORED), { user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, proposedOrder: REORDERED });
+  assert.equal(authoredPlusReview.orderDecision.statusKey, "proposed");
+  assert.equal(authoredPlusReview.orderDecision.orderSourceKey, "authoredProposal");
+  assert.deepEqual(authoredPlusReview.orderedStationKeys, AUTHORED);
+  assert.deepEqual(authoredPlusReview.reorderRequest.proposedStationKeys, REORDERED);
+  checked.push("authored proposal remains canonical when a different GM review candidate exists");
+
+  const needsReview = prepareTravelV2RoundActionOrderState(noProposal, { user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, proposedOrder: REORDERED });
+  assert.equal(needsReview.orderDecision.statusKey, "needsDecision");
+  const needsCommitResult = commitTravelV2RoundActionOrderToSession(noProposal, needsReview.reorderRequest.proposedStationKeys, { user: { isGM: true, id: "gm-1", name: "GM" }, commitRequested: true, timestamp: "2026-07-15T00:02:00.000Z" });
+  const needsCommittedState = prepareTravelV2RoundActionOrderState(needsCommitResult.session);
+  const needsCommittedDisplay = display(needsCommitResult.session, { isGM: true, user: { isGM: true } });
+  assert.equal(needsCommittedState.orderDecision.statusKey, "committed");
+  assert.equal(needsCommittedState.orderDecision.statusLabel, "Committed Order");
+  assert.deepEqual(needsCommittedState.orderedStationKeys, REORDERED);
+  assert.equal(needsCommittedState.orderDecision.showCaptainGuidance, false);
+  assert.equal(needsCommittedDisplay.canPersistCommittedOrder, true);
+  checked.push("needs-decision review candidate becomes canonical only after GM commit");
 
   assert.equal(proposed.orderDecision.statusLabel, "Proposed Order");
   assert.equal(committed.orderDecision.statusLabel, "Committed Order");
@@ -97,20 +158,20 @@ export default async function runTravelV2RoundActionOrderStatusGuidanceSmokeChec
   assert.deepEqual(reloaded.orderedStationKeys, REORDERED);
   checked.push("saved-session reload preserves committed order status");
 
-  const playerPreview = prepareTravelEventRunnerV2PreviewPanelState({ session: fixture(), isGM: false, user: { isGM: false } }).roundActionOrderDisplay;
+  const playerPreview = display(fixture(), { isGM: false, user: { isGM: false } });
   assert.equal(playerPreview.orderDecision.statusLabel, "Proposed Order");
   assert.match(playerPreview.orderDecision.captainGuidanceText, /Captain makes the final call/);
   assertNoForbidden(playerPreview);
   checked.push("non-GM preview keeps status and guidance while redacting GM review internals");
 
   const template = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
-  for (const text of ["Proposed Order", "Committed Order", "Needs Decision", "Current Station Sequence", "The crew should agree on station order before Round 1 begins.", "If the crew cannot agree, the Captain makes the final call."]) assert.match(template, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(template, /showCaptainGuidance/);
-  checked.push("template renders status labels, current sequence heading, and conditional guidance");
+  for (const text of ["roundActionOrderDisplay.orderDecision.statusLabel", "roundActionOrderDisplay.orderDecision.guidanceText", "roundActionOrderDisplay.orderDecision.captainGuidanceText", "roundActionOrderDisplay.orderDecision.showCaptainGuidance", "roundActionOrderDisplay.reorderRequest.ready", "Current Station Sequence", "Ready to Commit", "Reorder Review Candidate"]) assert.match(template, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  checked.push("template binds dynamic decision fields and visible review headings without copy-only comments");
 
-  const before = json(fixture());
-  const sideEffectState = prepareTravelV2RoundActionOrderState(fixture());
-  assert.equal(before, json(fixture()));
+  const input = fixture();
+  const before = json(input);
+  const sideEffectState = prepareTravelV2RoundActionOrderState(input);
+  assert.equal(json(input), before, "state preparation does not mutate the actual input session");
   for (const forbidden of ["ChatMessage", "JournalEntry", "socket", ".update(", "Roll(", "currentRoundIndex: 1"]) assert.equal(json(sideEffectState).includes(forbidden), false);
   checked.push("state preparation remains immutable and presentation-only");
 
