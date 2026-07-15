@@ -20,6 +20,19 @@ const ORDER_PHASES = Object.freeze({
   OUTCOME_PRESSURE: "outcomePressure"
 });
 
+const CAPTAIN_ORDER_GUIDANCE_TEXT = "The crew should agree on station order before Round 1 begins. If the crew cannot agree, the Captain makes the final call.";
+const ORDER_DECISION_COPY = Object.freeze({
+  committed: { statusLabel: "Committed Order", statusTone: "safe", guidanceText: "The station order is committed for this round.", currentOrderLabel: "Committed Station Sequence" },
+  proposed: { statusLabel: "Proposed Order", statusTone: "warning", guidanceText: "This order is proposed and remains changeable until the GM commits it.", currentOrderLabel: "Proposed Station Sequence" },
+  needsDecision: { statusLabel: "Needs Decision", statusTone: "danger", guidanceText: "The crew has not agreed on a station order yet.", currentOrderLabel: "Current Station Sequence" }
+});
+const ORDER_SOURCE_LABELS = Object.freeze({
+  committed: "Committed by GM",
+  authoredProposal: "Authored Proposal",
+  fallback: "Fallback Display Order",
+  none: "No Order Selected"
+});
+
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -131,6 +144,60 @@ function explicitOrderSource(session = {}, round = {}, roundResult = {}, options
   if (Array.isArray(roundResult.stationActionOrder) || Array.isArray(roundResult.actionOrder) || Array.isArray(roundResult.stationOrder)) return roundResult.stationActionOrder ?? roundResult.actionOrder ?? roundResult.stationOrder;
   if (Array.isArray(round.stationActionOrder) || Array.isArray(round.actionOrder) || Array.isArray(round.stationOrder)) return round.stationActionOrder ?? round.actionOrder ?? round.stationOrder;
   return [];
+}
+
+function explicitAuthoredOrderSource(round = {}, roundResult = {}, options = {}) {
+  round = isPlainObject(round) ? round : {};
+  roundResult = isPlainObject(roundResult) ? roundResult : {};
+  if (Array.isArray(options.order) || Array.isArray(options.stationOrder)) return options.order ?? options.stationOrder;
+  if (Array.isArray(roundResult.stationActionOrder) || Array.isArray(roundResult.actionOrder) || Array.isArray(roundResult.stationOrder)) return roundResult.stationActionOrder ?? roundResult.actionOrder ?? roundResult.stationOrder;
+  if (Array.isArray(round.stationActionOrder) || Array.isArray(round.actionOrder) || Array.isArray(round.stationOrder)) return round.stationActionOrder ?? round.actionOrder ?? round.stationOrder;
+  return [];
+}
+
+function committedOrderRecordForRound(session = {}, roundIndex = -1) {
+  if (!Number.isInteger(roundIndex) || roundIndex < 0) return null;
+  const state = isPlainObject(session.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : {};
+  const rounds = isPlainObject(state.rounds) ? state.rounds : {};
+  const record = rounds[String(roundIndex)] ?? rounds[roundIndex] ?? null;
+  return isPlainObject(record) ? record : null;
+}
+
+function buildOrderDecision(statusKey, orderSourceKey) {
+  const copy = ORDER_DECISION_COPY[statusKey] ?? ORDER_DECISION_COPY.needsDecision;
+  return deepFreeze({
+    statusKey,
+    statusLabel: copy.statusLabel,
+    statusTone: copy.statusTone,
+    orderSourceKey,
+    orderSourceLabel: ORDER_SOURCE_LABELS[orderSourceKey] ?? ORDER_SOURCE_LABELS.none,
+    hasCommittedOrder: statusKey === "committed",
+    hasProposedOrder: statusKey === "proposed",
+    needsDecision: statusKey === "needsDecision",
+    currentOrderLabel: copy.currentOrderLabel,
+    guidanceText: copy.guidanceText,
+    captainGuidanceText: CAPTAIN_ORDER_GUIDANCE_TEXT,
+    showCaptainGuidance: statusKey !== "committed",
+    playerSafe: true,
+    readOnly: true
+  });
+}
+
+export function determineRoundActionOrderDecision({ session = {}, round = {}, roundResult = {}, roundIndex = -1, activeStations = [], reorderRequest = null, options = {} } = {}) {
+  const committedRecord = committedOrderRecordForRound(session, roundIndex);
+  const committedValidation = normalizeTravelV2ProposedRoundActionOrder(committedRecord ? sourceOrderFrom(committedRecord) : [], activeStations);
+  if (committedRecord && committedValidation.valid) {
+    return { orderDecision: buildOrderDecision("committed", "committed"), currentOrder: committedValidation.proposedStationKeys };
+  }
+
+  const authoredOrder = explicitAuthoredOrderSource(round, roundResult, options);
+  const authoredValidation = normalizeTravelV2ProposedRoundActionOrder(authoredOrder, activeStations);
+  if (authoredValidation.valid) {
+    return { orderDecision: buildOrderDecision("proposed", "authoredProposal"), currentOrder: authoredValidation.proposedStationKeys };
+  }
+
+  const fallbackSource = Array.isArray(options.order) || Array.isArray(options.stationOrder) ? (options.order ?? options.stationOrder) : [];
+  return { orderDecision: buildOrderDecision("needsDecision", activeStations.length > 0 ? "fallback" : "none"), currentOrder: normalizeStationOrder(fallbackSource, activeStations) };
 }
 
 function stationLabel(round = {}, stationKey = "") {
@@ -289,10 +356,13 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
   const hasCurrentRound = Boolean(round);
   const roundResult = hasCurrentRound && Array.isArray(session.roundResults) && isPlainObject(session.roundResults[roundIndex]) ? session.roundResults[roundIndex] : {};
   const activeStations = hasCurrentRound ? activeStationKeys(round, roundResult) : [];
-  const orderedStationKeys = hasCurrentRound ? normalizeStationOrder(explicitOrderSource(session, round, roundResult, options), activeStations) : [];
   const phase = normalizeTravelRoundSegmentKey(options.roundPhase ?? session?.roundPhase ?? session?.currentRoundPhase);
   const roundResolutionRecord = hasCurrentRound ? findRoundResolutionRecord(session, round, roundIndex, roundNumber) : null;
   const roundCompleted = Boolean(roundResolutionRecord);
+
+  const preliminaryReorderRequest = prepareReorderRequestState({ sessionState: { blockedReasons: [] }, currentRows: [], currentOrder: normalizeStationOrder([], activeStations), activeStations, options });
+  const { orderDecision, currentOrder } = determineRoundActionOrderDecision({ session, round, roundResult, roundIndex, activeStations, reorderRequest: preliminaryReorderRequest, options });
+  const orderedStationKeys = hasCurrentRound ? currentOrder : [];
 
   const rows = orderedStationKeys.map((stationKey, orderIndex) => {
     const action = isPlainObject(roundResult.stationActions?.[stationKey]) ? roundResult.stationActions[stationKey] : {};
@@ -346,6 +416,15 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
     blocked,
     ready: !blocked && rowsWithCurrent.length > 0,
     blockedReasons,
+    orderDecision,
+    orderStatusKey: orderDecision.statusKey,
+    orderStatusLabel: orderDecision.statusLabel,
+    orderStatusTone: orderDecision.statusTone,
+    hasCommittedOrder: orderDecision.hasCommittedOrder,
+    hasProposedOrder: orderDecision.hasProposedOrder,
+    needsOrderDecision: orderDecision.needsDecision,
+    captainGuidanceText: orderDecision.captainGuidanceText,
+    showCaptainGuidance: orderDecision.showCaptainGuidance,
     activeStations,
     orderedStationKeys,
     rows: rowsWithCurrent,

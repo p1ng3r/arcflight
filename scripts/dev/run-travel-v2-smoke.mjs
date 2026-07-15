@@ -2,6 +2,7 @@ import runTravelV2StateSmokeChecks from "../helpers/travel-v2-state.smoke.js";
 import runTravelV2PressureEngineSmokeChecks from "../helpers/travel-v2-pressure-engine.smoke.js";
 import runTravelV2RoundPressureAdapterSmokeChecks from "../helpers/travel-v2-round-pressure-adapter.smoke.js";
 import runTravelV2RoundActionOrderStateSmokeChecks from "../helpers/travel-v2-round-action-order-state.smoke.js";
+import runTravelV2RoundActionOrderStatusGuidanceSmokeChecks from "../helpers/travel-v2-round-action-order-status-guidance.smoke.js";
 import runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks from "../helpers/travel-v2-round-action-order-persistence-bridge.smoke.js";
 import runTravelV2RoundActionOrderLibraryStatusSmokeChecks from "../helpers/travel-v2-round-action-order-library-status.smoke.js";
 import runTravelV2RunnerBridgeSmokeChecks from "../helpers/travel-v2-runner-bridge.smoke.js";
@@ -114,6 +115,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 pressure engine", runTravelV2PressureEngineSmokeChecks],
   ["Travel v2 round pressure adapter", runTravelV2RoundPressureAdapterSmokeChecks],
   ["Travel v2 round action order state", runTravelV2RoundActionOrderStateSmokeChecks],
+  ["Travel v2 round action order status guidance", runTravelV2RoundActionOrderStatusGuidanceSmokeChecks],
   ["Travel v2 round action order persistence bridge", runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks],
   ["Travel v2 round action order library status", runTravelV2RoundActionOrderLibraryStatusSmokeChecks],
   ["Travel v2 runner bridge", runTravelV2RunnerBridgeSmokeChecks],
