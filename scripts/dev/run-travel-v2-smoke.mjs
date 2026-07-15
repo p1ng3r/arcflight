@@ -42,6 +42,8 @@ import runTravelV2InterStationHelpActionsSmokeChecks from "../helpers/travel-v2-
 import runTravelV2InterStationHelpPendingRecordsSmokeChecks from "../helpers/travel-v2-inter-station-help-pending-records.smoke.js";
 import runTravelV2InterStationHelpPendingQueueSmokeChecks from "../helpers/travel-v2-inter-station-help-pending-queue.smoke.js";
 import runTravelV2InterStationHelpApplicationSmokeChecks from "../helpers/travel-v2-inter-station-help-application.smoke.js";
+import runTravelV2InterStationHelpSourceIdentitySmokeChecks from "../helpers/travel-v2-inter-station-help-source-identity.smoke.js";
+import runTravelV2InterStationHelpExpirationSmokeChecks from "../helpers/travel-v2-inter-station-help-expiration.smoke.js";
 import runTravelV2FocusRiskSuppressionSmokeChecks from "../helpers/travel-v2-focus-risk-suppression.smoke.js";
 import runTravelV2RiskBidsSmokeChecks from "../helpers/travel-v2-risk-bids.smoke.js";
 import runTravelV2RiskBidResultSmokeChecks from "../helpers/travel-v2-risk-bid-results.smoke.js";
@@ -152,6 +154,8 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 inter-station help pending records", runTravelV2InterStationHelpPendingRecordsSmokeChecks],
   ["Travel v2 inter-station help pending queue", runTravelV2InterStationHelpPendingQueueSmokeChecks],
   ["Travel v2 inter-station help application", runTravelV2InterStationHelpApplicationSmokeChecks],
+  ["Travel v2 inter-station help source identity", runTravelV2InterStationHelpSourceIdentitySmokeChecks],
+  ["Travel v2 inter-station help expiration", runTravelV2InterStationHelpExpirationSmokeChecks],
   ["Travel v2 focus risk suppression", runTravelV2FocusRiskSuppressionSmokeChecks],
   ["Travel v2 risk bid alpha closeout", runTravelV2RiskBidsSmokeChecks],
   ["Travel v2 risk bid result model", runTravelV2RiskBidResultSmokeChecks],

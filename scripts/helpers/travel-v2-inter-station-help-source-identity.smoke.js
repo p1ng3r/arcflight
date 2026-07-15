@@ -115,3 +115,13 @@ assert.equal(strengthened.record.effectSource, "criticalSuccess");
 assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(strengthened.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 4);
 
 console.log("travel-v2-inter-station-help-source-identity smoke passed (5 groups)");
+
+export default async function runTravelV2InterStationHelpSourceIdentitySmokeChecks() {
+  return { checked: [
+    "critical base fallback source identity remains validated",
+    "unsupported critical metadata keeps base mechanics",
+    "equal magnitude critical metadata keeps base mechanics",
+    "lower magnitude critical metadata keeps base mechanics",
+    "valid replaceMagnitude source identity strengthens mechanics"
+  ] };
+}
