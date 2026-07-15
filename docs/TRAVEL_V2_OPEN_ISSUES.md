@@ -154,6 +154,14 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Do not rebuild:** State, commit, persistence bridge, library status, startup hardening, and session-switch isolation are already covered.
 
+**Status guidance slice note:** This PR adds a player-safe Round Action Order decision projection that clearly labels Proposed Order, Committed Order, and Needs Decision states, displays Captain final-say guidance before commitment, and keeps a clear GM Ready to Commit message for valid review candidates. It does not add drag-and-drop yet, does not add an unlock/recommit flow yet, and does not rebuild state preparation, commit, persistence, startup, session-switch, or library foundations.
+
+**Remaining polish after this slice:**
+
+- Drag/reorder interaction where practical.
+- GM unlock/recommit flow.
+- Final Foundry table UX verification.
+
 ### TV2-004 — Risk Bids / Difficulty Bids
 
 **Status:** complete for alpha runtime on `feature/tv2-004-risk-bids`

@@ -694,6 +694,31 @@ function normalizeRoundActionOrderReorderRequest(request = null) {
   };
 }
 
+function normalizeRoundActionOrderDecision(decision = null) {
+  const statusKey = ["committed", "proposed", "needsDecision"].includes(decision?.statusKey) ? decision.statusKey : "needsDecision";
+  const fallback = {
+    committed: { label: "Committed Order", tone: "safe", text: "The station order is committed for this round.", source: "Committed by GM", current: "Committed Station Sequence" },
+    proposed: { label: "Proposed Order", tone: "warning", text: "This order is proposed and remains changeable until the GM commits it.", source: "Authored Proposal", current: "Proposed Station Sequence" },
+    needsDecision: { label: "Needs Decision", tone: "danger", text: "The crew has not agreed on a station order yet.", source: "No Order Selected", current: "Current Station Sequence" }
+  }[statusKey];
+  return {
+    statusKey,
+    statusLabel: decision?.statusLabel || fallback.label,
+    statusTone: decision?.statusTone || fallback.tone,
+    orderSourceKey: decision?.orderSourceKey || "none",
+    orderSourceLabel: decision?.orderSourceLabel || fallback.source,
+    hasCommittedOrder: statusKey === "committed",
+    hasProposedOrder: statusKey === "proposed",
+    needsDecision: statusKey === "needsDecision",
+    currentOrderLabel: decision?.currentOrderLabel || fallback.current,
+    guidanceText: decision?.guidanceText || fallback.text,
+    captainGuidanceText: decision?.captainGuidanceText || "The crew should agree on station order before Round 1 begins. If the crew cannot agree, the Captain makes the final call.",
+    showCaptainGuidance: decision?.showCaptainGuidance === true,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
 function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const rows = Array.isArray(state?.rows) ? state.rows.map((row) => ({
     stationKey: row?.stationKey ?? "",
@@ -710,6 +735,10 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const blockedReasons = Array.isArray(state?.blockedReasons) ? state.blockedReasons : [];
   const blockedText = blockedReasons[0] ?? "";
   const proposedShellOrder = rows.map((row) => row.stationKey).reverse();
+  const orderDecision = normalizeRoundActionOrderDecision(state?.orderDecision);
+  const reorderRequest = (options.isGM === true || options.user?.isGM === true)
+    ? normalizeRoundActionOrderReorderRequest(state?.reorderRequest)
+    : { requested: false, ready: false, blocked: true, status: "not-requested", feedbackText: "No GM reorder review requested.", hasFeedback: false, showComparison: false, currentRows: [], proposedRows: [], hasComparisonRows: false, blockedReasons: [], blockedReason: "", mutationNote: "Review-only reorder candidate. No order is persisted or applied.", reviewOnly: true };
   return {
     available: rows.length > 0,
     title: "Round Action Order",
@@ -719,6 +748,15 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     roundIndex: Number.isInteger(Number(state?.roundIndex)) ? Number(state.roundIndex) : -1,
     roundNumber: state?.roundNumber ?? null,
     phase: state?.phase ?? "roundReveal",
+    orderDecision,
+    orderStatusKey: orderDecision.statusKey,
+    orderStatusLabel: orderDecision.statusLabel,
+    orderStatusTone: orderDecision.statusTone,
+    hasCommittedOrder: orderDecision.hasCommittedOrder,
+    hasProposedOrder: orderDecision.hasProposedOrder,
+    needsOrderDecision: orderDecision.needsDecision,
+    captainGuidanceText: orderDecision.captainGuidanceText,
+    showCaptainGuidance: orderDecision.showCaptainGuidance,
     rows,
     hasRows: rows.length > 0,
     rowCount: rows.length,
@@ -731,7 +769,7 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     proposedShellOrder,
     proposedShellOrderCsv: proposedShellOrder.join(","),
     footerText: state?.footerText || (rows.length > 0 ? "Round action order is display-only." : "No round action-order rows are available."),
-    reorderRequest: normalizeRoundActionOrderReorderRequest(state?.reorderRequest),
+    reorderRequest,
     commitResult: normalizeRoundActionOrderCommitResult(options.commitResult, rows, options),
     persistResult: normalizeRoundActionOrderPersistResult(options.persistResult, rows, options),
     canPersistCommittedOrder: options.hasCommittedOrder === true && (options.isGM === true || options.user?.isGM === true),

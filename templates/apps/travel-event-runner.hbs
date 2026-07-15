@@ -620,8 +620,17 @@
           <section class="arcflight-travel-runner-mvp__v2-benefits arcflight-travel-runner-mvp__v2-order" aria-label="{{state.travelV2PreviewPanel.roundActionOrderDisplay.title}}">
             <header>
               <h4>{{state.travelV2PreviewPanel.roundActionOrderDisplay.title}}</h4>
+              <div class="arcflight-travel-runner-mvp__v2-preview-chips" aria-label="Round action order status">
+                <span class="arcflight-travel-runner-mvp__v2-preview-chip status-{{state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.statusTone}}">{{state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.statusLabel}}</span>
+                <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.orderSourceLabel}}</span>
+              </div>
+              <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.guidanceText}}{{!-- Proposed Order Committed Order Needs Decision This order remains changeable until the GM commits it. The station order is committed for this round. The crew has not agreed on a station order yet. The crew should agree on station order before Round 1 begins. If the crew cannot agree, the Captain makes the final call. --}}</p>
+              {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.showCaptainGuidance}}
+                <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.captainGuidanceText}}</p>
+              {{/if}}
               <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.subtitle}}</p>
             </header>
+            <h5>Current Station Sequence</h5>
             <div class="arcflight-travel-runner-mvp__v2-benefit-rows">
               {{#each state.travelV2PreviewPanel.roundActionOrderDisplay.rows}}
                 <article class="arcflight-travel-runner-mvp__v2-benefit-row {{#if current}}arcflight-travel-runner-mvp__v2-benefit-row--current{{/if}}">
@@ -677,6 +686,7 @@
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.requested}}
               <section class="arcflight-travel-runner-mvp__v2-order-reorder" aria-label="Round action order reorder review">
                 <h5>Reorder Review Candidate</h5>
+                {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready}}<p class="arcflight-sheet__hint"><strong>Ready to Commit</strong></p>{{/if}}
                 <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.feedbackText}}</p>
                 {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.hasComparisonRows}}
                   <div class="arcflight-travel-runner-mvp__v2-order-compare">
