@@ -22,6 +22,7 @@ function strictIntegerOrNull(value) {
   return Number.isInteger(number) ? number : null;
 }
 function uniqueStrings(values = []) { return Array.from(new Set(values.map(text).filter(Boolean))); }
+function stablePart(value) { const raw = value === null || value === undefined ? "" : String(value).trim(); return raw.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "none"; }
 function isGmLike(userLike) { return userLike?.isGM === true || userLike?.isGm === true || userLike === true; }
 function userFrom(input = {}, options = {}) { return options.user ?? input.user ?? (options.isGM === true || input.isGM === true ? { isGM: true } : null); }
 function stripForbiddenFields(value) {
@@ -84,15 +85,19 @@ function safeRecordProjection(record = {}) {
 }
 function useBlockedResult(session, queueKey, reasons, record = null) {
   const blockedReasons = uniqueStrings(reasons);
-  return cloneData(stripForbiddenFields({
-    ok: false, used: false, consumed: false, duplicate: blockedReasons.includes("pending-station-benefit-already-used") || blockedReasons.includes("pending-station-benefit-already-consumed"), shouldAdoptSession: false, nextSession: cloneData(session), record: record ? safeRecordProjection(record) : null,
-    status: { ok: false, used: false, consumed: false, status: "blocked", queueKey: queueKey || null, message: blockedReasons[0] || "Inter-Station Help use was blocked.", blockedReasons }
-  }));
+  const status = stripForbiddenFields({ ok: false, used: false, consumed: false, status: "blocked", queueKey: queueKey || null, message: blockedReasons[0] || "Inter-Station Help use was blocked.", blockedReasons });
+  return {
+    ok: false,
+    used: false,
+    consumed: false,
+    duplicate: blockedReasons.includes("pending-station-benefit-already-used") || blockedReasons.includes("pending-station-benefit-already-consumed"),
+    shouldAdoptSession: false,
+    nextSession: cloneData(session),
+    record: record ? safeRecordProjection(record) : null,
+    status: cloneData(status)
+  };
 }
 function canonicalQueueRecords(session = {}) { return Array.isArray(session?.travelV2PendingStationBenefits) ? session.travelV2PendingStationBenefits : []; }
-function isInterStationHelpRecord(record = {}) {
-  return text(record.pendingHelpKey).startsWith("inter-station-help:") || text(record.dedupeKey).startsWith("inter-station-help:") || text(record.kind) === "interStationHelp" || text(record.benefitKind) === "stationOrderOpening";
-}
 function stationResultFor(session = {}, roundIndex, stationKey = "") { return session?.roundResults?.[roundIndex]?.stationResults?.[stationKey]; }
 function validatePendingStationBenefitUse(session = {}, selection = {}, options = {}) {
   const queueKey = text(selection.queueKey ?? selection.selectedQueueKey);
@@ -103,40 +108,60 @@ function validatePendingStationBenefitUse(session = {}, selection = {}, options 
   const matches = queueKey ? records.map((record, index) => ({ record, index })).filter(({ record }) => text(record?.queueKey) === queueKey) : [];
   if (queueKey && matches.length === 0) reasons.push("unknown-queue-key");
   if (matches.length > 1) reasons.push("duplicate-queue-key");
-  const match = matches[0] ?? null;
+  const match = matches.length === 1 ? matches[0] : null;
   const record = match?.record ?? null;
-  if (record) {
-    if (!isInterStationHelpRecord(record)) reasons.push("not-inter-station-help-record");
-    const status = text(record.status) || "pending";
-    if (status === "used") reasons.push("pending-station-benefit-already-used");
-    else if (status === "consumed" || record.consumed === true) reasons.push("pending-station-benefit-already-consumed");
-    else if (["dismissed", "expired", "blocked"].includes(status)) reasons.push(`pending-station-benefit-${status}`);
-    else if (status !== "pending") reasons.push("pending-station-benefit-not-pending");
-    const roundIndex = strictIntegerOrNull(record.roundIndex);
-    const currentRoundIndex = strictIntegerOrNull(session.currentRoundIndex);
-    if (roundIndex === null) reasons.push("missing-or-malformed-round");
-    if (currentRoundIndex === null) reasons.push("missing-current-round");
-    if (roundIndex !== null && currentRoundIndex !== null && roundIndex !== currentRoundIndex) reasons.push("stale-round");
-    const prepared = prepareTravelV2InterStationHelpActions(session, { ...options, roundIndex: roundIndex ?? currentRoundIndex });
-    const order = Array.isArray(prepared.stationOrder) ? prepared.stationOrder : [];
-    const active = new Set(order);
-    if (prepared.stationOrderLocked !== true) reasons.push("station-order-not-locked");
-    const sourceStationKey = text(record.sourceStationKey ?? record.sourceStation);
-    const targetStationKey = text(record.targetStationKey ?? record.targetStation);
-    if (!sourceStationKey) reasons.push("missing-source-station");
-    if (!targetStationKey) reasons.push("missing-target-station");
-    if (sourceStationKey && targetStationKey && sourceStationKey === targetStationKey) reasons.push("target-station-self");
-    if (sourceStationKey && !active.has(sourceStationKey)) reasons.push("source-station-inactive");
-    if (targetStationKey && !active.has(targetStationKey)) reasons.push("target-station-inactive");
-    const sourceIndex = order.indexOf(sourceStationKey);
-    const targetIndex = order.indexOf(targetStationKey);
-    if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex >= targetIndex) reasons.push("source-not-before-target");
-    const targetResult = stationResultFor(session, roundIndex, targetStationKey);
-    if (RESOLVED_TARGET_RESULTS.has(text(targetResult))) reasons.push("target-station-already-resolved");
-    const sourceResult = stationResultFor(session, roundIndex, sourceStationKey);
-    if (!SUCCESS_SOURCE_RESULTS.has(text(sourceResult))) reasons.push("source-result-not-successful");
-  }
-  return { ok: reasons.length === 0, queueKey, reasons: uniqueStrings(reasons), record, index: match?.index ?? -1 };
+  if (!record) return { ok: reasons.length === 0, queueKey, reasons: uniqueStrings(reasons), record: null, index: -1, matchedAction: null };
+
+  const status = text(record.status) || "pending";
+  if (status === "used") reasons.push("pending-station-benefit-already-used");
+  else if (status === "consumed" || record.consumed === true) reasons.push("pending-station-benefit-already-consumed");
+  else if (["dismissed", "expired", "blocked"].includes(status)) reasons.push(`pending-station-benefit-${status}`);
+  else if (status !== "pending") reasons.push("pending-station-benefit-not-pending");
+
+  const currentRoundIndex = strictIntegerOrNull(session.currentRoundIndex);
+  const roundIndex = strictIntegerOrNull(record.roundIndex);
+  if (currentRoundIndex === null) reasons.push("missing-current-round");
+  if (roundIndex === null) reasons.push("missing-or-malformed-round");
+  if (currentRoundIndex !== null && roundIndex !== null && currentRoundIndex !== roundIndex) reasons.push("stale-round");
+
+  const actionId = text(record.actionId ?? record.authoredActionId);
+  const authoredActionId = text(record.authoredActionId ?? record.actionId);
+  const sourceStationKey = text(record.sourceStationKey ?? record.sourceStation);
+  const targetStationKey = text(record.targetStationKey ?? record.targetStation);
+  if (!actionId) reasons.push("missing-inter-station-help-action-id");
+  if (actionId && authoredActionId && actionId !== authoredActionId) reasons.push("inter-station-help-action-id-mismatch");
+  if (!sourceStationKey) reasons.push("missing-source-station");
+  if (!targetStationKey) reasons.push("missing-target-station");
+  if (sourceStationKey && targetStationKey && sourceStationKey === targetStationKey) reasons.push("target-station-self");
+
+  const expectedPendingHelpKey = currentRoundIndex !== null && actionId && sourceStationKey && targetStationKey
+    ? ["inter-station-help", currentRoundIndex, actionId, sourceStationKey, targetStationKey].map(stablePart).join(":")
+    : "";
+  const pendingHelpKey = text(record.pendingHelpKey);
+  const dedupeKey = text(record.dedupeKey);
+  if (!pendingHelpKey) reasons.push("missing-inter-station-help-pending-key");
+  else if (expectedPendingHelpKey && pendingHelpKey !== expectedPendingHelpKey) reasons.push("inter-station-help-pending-key-mismatch");
+  if (!dedupeKey) reasons.push("missing-inter-station-help-dedupe-key");
+  else if (expectedPendingHelpKey && dedupeKey !== expectedPendingHelpKey) reasons.push("inter-station-help-dedupe-key-mismatch");
+
+  const prepared = currentRoundIndex === null ? null : prepareTravelV2InterStationHelpActions(session, { ...options, roundIndex: currentRoundIndex, includeUnavailable: true });
+  const order = Array.isArray(prepared?.stationOrder) ? prepared.stationOrder : [];
+  const active = new Set(order);
+  if (prepared && prepared.stationOrderLocked !== true) reasons.push("station-order-not-locked");
+  const matchedAction = prepared?.helpActions?.find((action) => text(action.actionId) === actionId && text(action.sourceStationKey) === sourceStationKey && text(action.targetStationKey) === targetStationKey && strictIntegerOrNull(action.roundIndex) === currentRoundIndex) ?? null;
+  if (!matchedAction) reasons.push("inter-station-help-action-not-authored-for-current-round");
+  else if (matchedAction.available !== true || matchedAction.targetLaterInOrder !== true) reasons.push("target-station-not-later-in-order");
+
+  if (sourceStationKey && !active.has(sourceStationKey)) reasons.push("source-station-inactive");
+  if (targetStationKey && !active.has(targetStationKey)) reasons.push("target-station-inactive");
+  const sourceIndex = order.indexOf(sourceStationKey);
+  const targetIndex = order.indexOf(targetStationKey);
+  if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex >= targetIndex) reasons.push("source-not-before-target");
+  const targetResult = stationResultFor(session, roundIndex, targetStationKey);
+  if (RESOLVED_TARGET_RESULTS.has(text(targetResult))) reasons.push("target-station-already-resolved");
+  const sourceResult = stationResultFor(session, roundIndex, sourceStationKey);
+  if (!SUCCESS_SOURCE_RESULTS.has(text(sourceResult))) reasons.push("source-result-not-successful");
+  return { ok: reasons.length === 0, queueKey, reasons: uniqueStrings(reasons), record, index: match?.index ?? -1, matchedAction };
 }
 
 export function prepareTravelV2StationBenefitUseRunnerUpdate(session = {}, selection = {}, options = {}) {
@@ -151,7 +176,8 @@ export function prepareTravelV2StationBenefitUseRunnerUpdate(session = {}, selec
   Object.assign(record, { status: "used", used: true, consumed: true, applied: false, reviewOnly: false, usedAt: timestamp, consumedAt: timestamp, resolutionNote: "Inter-Station Help was explicitly used for its target station." });
   nextSession.updatedAt = timestamp;
   nextSession.summary = null;
-  return cloneData(stripForbiddenFields({ ok: true, used: true, consumed: true, duplicate: false, shouldAdoptSession: true, nextSession, record: safeRecordProjection(record), status: { ok: true, used: true, consumed: true, status: "used", queueKey: validation.queueKey, message: "Inter-Station Help marked used in the local runner session.", blockedReasons: [] } }));
+  const status = stripForbiddenFields({ ok: true, used: true, consumed: true, status: "used", queueKey: validation.queueKey, message: "Inter-Station Help marked used in the local runner session.", blockedReasons: [] });
+  return { ok: true, used: true, consumed: true, duplicate: false, shouldAdoptSession: true, nextSession, record: safeRecordProjection(record), status: cloneData(status) };
 }
 
 
@@ -178,7 +204,7 @@ export function prepareTravelV2StationBenefitUseReviewPlayerState(input = {}, op
     else if (row.playerVisible === false || row.hidden === true) selectedCandidate = blockedCandidate("Selected pending station benefit is hidden.", normalized.selectedQueueKey);
     else if (BLOCKED_STATUSES.has(row.status)) selectedCandidate = blockedCandidate(`Selected pending station benefit is ${row.status}.`, normalized.selectedQueueKey);
     else if (row.status !== "pending") selectedCandidate = blockedCandidate("Selected station benefit is not pending.", normalized.selectedQueueKey);
-    else selectedCandidate = readyCandidate(row, validatePendingStationBenefitUse(input.session ?? input, { queueKey: row.queueKey }, options));
+    else selectedCandidate = readyCandidate(row, null);
   }
   return cloneData(stripForbiddenFields({ stationBenefitUseReviewVersion: TRAVEL_V2_STATION_BENEFIT_USE_REVIEW_VERSION, status: rows.length > 0 ? "ready" : "empty", rows, items: rows, selectedQueueKey: normalized.selectedQueueKey, selectedCandidate, ...inertFlags() }));
 }
@@ -189,7 +215,9 @@ export function prepareTravelV2StationBenefitUseReviewGmState(input = {}, option
   if (!canIncludeGmReview(user, input, options) || !useReviewRequested(input, options)) return playerState;
   const normalized = normalizeTravelV2StationBenefitUseReviewInput(input, { ...options, user, includeGmReview: true });
   const selectedGmRow = normalized.selectedQueueKey ? normalized.rows.find((row) => row.queueKey === normalized.selectedQueueKey) ?? null : null;
-  return cloneData({ ...playerState, gmReview: { reviewRequested: true, selectedQueueKey: normalized.selectedQueueKey, selectedRow: cloneData(selectedGmRow), note: "GM review-only selection. Use Help requires a separate explicit GM action and applies no numerical modifier." } });
+  const validation = selectedGmRow ? validatePendingStationBenefitUse(input.session ?? input, { queueKey: selectedGmRow.queueKey }, options) : null;
+  const selectedCandidate = selectedGmRow ? readyCandidate(selectedGmRow, validation) : playerState.selectedCandidate;
+  return cloneData({ ...playerState, selectedCandidate, canUse: selectedCandidate.canUse === true, useAvailable: selectedCandidate.useAvailable === true, gmReview: { reviewRequested: true, selectedQueueKey: normalized.selectedQueueKey, selectedRow: cloneData(selectedGmRow), validation: validation ? { ok: validation.ok, blockedReasons: validation.reasons } : null, note: "GM review-only selection. Use Help requires a separate explicit GM action and applies no numerical modifier." } });
 }
 
 export function applyTravelV2StationBenefitUseReviewToRenderState(renderState = {}, input = {}, options = {}) {
@@ -198,7 +226,7 @@ export function applyTravelV2StationBenefitUseReviewToRenderState(renderState = 
   const reviewInput = { ...base, ...input, pendingStationBenefits: input.pendingStationBenefits ?? base.pendingStationBenefits, travelV2PendingStationBenefits: input.travelV2PendingStationBenefits ?? base.travelV2PendingStationBenefits, travelV2PendingStationBenefitQueue: input.travelV2PendingStationBenefitQueue ?? base.travelV2PendingStationBenefitQueue, session: input.session ?? base.session, stations: input.stations ?? base.stations ?? [] };
   const playerState = prepareTravelV2StationBenefitUseReviewPlayerState(reviewInput, { ...options, user, includeGmReview: false });
   if (!isGmLike(user)) {
-    const { travelV2StationBenefitUseReview, ...safeBase } = base;
+    const { travelV2StationBenefitUseReview, travelV2StationBenefitUseResult, ...safeBase } = base;
     return cloneData(stripForbiddenFields({ ...safeBase, travelV2StationBenefitUseReviewPlayerState: playerState }));
   }
   const next = { ...base, travelV2StationBenefitUseReviewPlayerState: playerState };

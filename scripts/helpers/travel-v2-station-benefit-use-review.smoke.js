@@ -12,12 +12,13 @@ function helpSession(overrides = {}) {
     key: "session-1",
     currentRoundIndex: 0,
     pressure: 2,
-    event: { rounds: [{ roundNumber: 1, activeStations: ["helm", "engineer"], stationPrompts: { helm: { stationName: "Helm" }, engineer: { stationName: "Engineer" } } }] },
+    event: { rounds: [{ roundNumber: 1, activeStations: ["helm", "engineer"], stationPrompts: { helm: { stationName: "Helm", interStationHelp: [{ actionId: "boost", title: "Boost Engineer", publicText: "Helm opens a line.", targetStationKey: "engineer" }] }, engineer: { stationName: "Engineer" } } }] },
     roundResults: [{ stationResults: { helm: "success" }, stationActions: { helm: { type: "eventApproach", skill: "piloting", dc: 18 }, engineer: { type: "eventApproach", skill: "crafting", dc: 20 } } }],
     travelV2RoundActionOrder: { rounds: { 0: { locked: true, order: ["helm", "engineer"] } } },
     travelV2SupportRecords: { records: [] },
+    customIntegrity: { before: { hull: 4 }, after: { hull: 3 }, gmText: "Existing unrelated runner data", gmSummary: "Existing GM summary", targetActorId: "Actor.unrelated", targetActorUuid: "Actor.uuid", applyPayload: { unrelated: true }, queueInternals: { preserve: true }, nested: { gmSummary: "Must remain in private session" } },
     travelV2PendingStationBenefits: [
-      { queueKey: "help-1", pendingHelpKey: "inter-station-help:0:boost:helm:engineer", dedupeKey: "inter-station-help:0:boost:helm:engineer", title: "Boost Engineer", publicText: "Helm opens a line.", sourceStationKey: "helm", sourceStationName: "Helm", targetStationKey: "engineer", targetStationName: "Engineer", roundIndex: 0, roundNumber: 1, resultBand: "success", benefitKind: "stationOrderOpening", magnitude: 2, status: "pending", applied: false, consumed: false, criticalSuccess: false },
+      { queueKey: "help-1", pendingHelpKey: "inter-station-help:0:boost:helm:engineer", dedupeKey: "inter-station-help:0:boost:helm:engineer", actionId: "boost", authoredActionId: "boost", title: "Boost Engineer", publicText: "Helm opens a line.", sourceStationKey: "helm", sourceStationName: "Helm", targetStationKey: "engineer", targetStationName: "Engineer", roundIndex: 0, roundNumber: 1, resultBand: "success", benefitKind: "stationOrderOpening", magnitude: 2, status: "pending", applied: false, consumed: false, criticalSuccess: false, criticalSuccessMetadata: { key: "inert" }, tags: ["help"] },
       { queueKey: "other-1", title: "Other", sourceStationKey: "helm", targetStationKey: "engineer", roundIndex: 0, status: "pending", applied: false }
     ],
     ...overrides
@@ -100,9 +101,13 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
   assert.equal(json(renderState), before);
   assert.equal(applied.travelV2StationBenefitUseReviewPlayerState.selectedCandidate.status, "ready");
   assert.equal(applied.travelV2StationBenefitUseReview.gmReview.selectedQueueKey, "benefit-1");
-  const playerApplied = applyTravelV2StationBenefitUseReviewToRenderState({ travelV2StationBenefitUseReview: { gmReview: true }, ...fixture() }, { selectedQueueKey: "benefit-1" }, { user: { isGM: false } });
+  const playerApplied = applyTravelV2StationBenefitUseReviewToRenderState({ travelV2StationBenefitUseReview: { gmReview: true }, travelV2StationBenefitUseResult: { canUse: true, useAvailable: true }, ...fixture() }, { selectedQueueKey: "benefit-1" }, { user: { isGM: false } });
   assert.equal(playerApplied.travelV2StationBenefitUseReview, undefined);
   assertPlayerSafe(playerApplied);
+  const nonGmSerialized = json(playerApplied);
+  assert.equal(nonGmSerialized.includes('"canUse":true'), false);
+  assert.equal(nonGmSerialized.includes('"useAvailable":true'), false);
+  assert.equal(nonGmSerialized.includes("travelV2StationBenefitUseResult"), false);
   checked.push("render-state integration preserves clone safety and hides GM state from players");
 
 
@@ -110,7 +115,11 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
   const canonicalBefore = json(canonicalSession);
   const reviewReady = prepareTravelV2StationBenefitUseReviewPlayerState({ session: canonicalSession }, { selectedQueueKey: "help-1", travelV2StationBenefitUseReviewRequested: true });
   assert.equal(reviewReady.selectedCandidate.ready, true);
-  assert.equal(reviewReady.selectedCandidate.useAvailable, true);
+  assert.equal(reviewReady.selectedCandidate.useAvailable, false);
+  assert.equal(reviewReady.selectedCandidate.candidate.useAvailable, false);
+  const gmReviewReady = prepareTravelV2StationBenefitUseReviewGmState({ session: canonicalSession }, { user: { isGM: true }, includeGmReview: true, selectedQueueKey: "help-1", travelV2StationBenefitUseReviewRequested: true });
+  assert.equal(gmReviewReady.selectedCandidate.ready, true);
+  assert.equal(gmReviewReady.selectedCandidate.useAvailable, true);
   const noIntent = prepareTravelV2StationBenefitUseRunnerUpdate(canonicalSession, { queueKey: "help-1" }, { canUse: true });
   assert.equal(noIntent.shouldAdoptSession, false);
   assert.match(noIntent.status.blockedReasons.join(" "), /explicit-use-request-required/);
@@ -129,6 +138,15 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
   assert.equal(usedRecord.applied, false);
   assert.equal(usedRecord.queueKey, "help-1");
   assert.equal(usedRecord.dedupeKey, "inter-station-help:0:boost:helm:engineer");
+  assert.equal(usedRecord.actionId, "boost");
+  assert.equal(usedRecord.authoredActionId, "boost");
+  assert.equal(usedRecord.sourceStationKey, "helm");
+  assert.equal(usedRecord.targetStationKey, "engineer");
+  assert.equal(usedRecord.roundIndex, 0);
+  assert.equal(usedRecord.resultBand, "success");
+  assert.deepEqual(usedRecord.criticalSuccessMetadata, canonicalSession.travelV2PendingStationBenefits[0].criticalSuccessMetadata);
+  assert.deepEqual(usedRecord.tags, ["help"]);
+  assert.equal(usedRecord.publicText, "Helm opens a line.");
   assert.deepEqual(used.nextSession.travelV2PendingStationBenefits[1], canonicalSession.travelV2PendingStationBenefits[1]);
   assert.equal(used.nextSession.roundResults[0].stationResults.engineer, undefined);
   assert.equal(used.nextSession.roundResults[0].stationActions.engineer.skill, "crafting");
@@ -142,7 +160,50 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
   const duplicate = prepareTravelV2StationBenefitUseRunnerUpdate(used.nextSession, { queueKey: "help-1" }, { canUse: true, useRequested: true });
   assert.equal(duplicate.shouldAdoptSession, false);
   assert.equal(json(duplicate.nextSession), json(used.nextSession));
+  assert.deepEqual(duplicate.nextSession.customIntegrity, used.nextSession.customIntegrity);
   checked.push("explicit GM Inter-Station Help use consumes only the selected raw queue record without mechanical application and blocks duplicate use");
+
+  const assertBlockedUse = (label, inputSession, queueKey = "help-1") => {
+    const beforeBlocked = json(inputSession);
+    const result = prepareTravelV2StationBenefitUseRunnerUpdate(inputSession, { queueKey }, { canUse: true, useRequested: true });
+    assert.equal(result.shouldAdoptSession, false, label);
+    assert.equal(json(result.nextSession), beforeBlocked, label);
+    assert.equal(json(inputSession), beforeBlocked, label);
+    assert.deepEqual(result.nextSession.customIntegrity, inputSession.customIntegrity, label);
+    return result;
+  };
+
+  for (const [label, mutateRecord, mutateSession] of [
+    ["missing-action-id", (record) => { delete record.actionId; delete record.authoredActionId; }],
+    ["wrong-action-id", (record) => { record.actionId = "wrong"; record.authoredActionId = "wrong"; record.pendingHelpKey = "inter-station-help:0:wrong:helm:engineer"; record.dedupeKey = "inter-station-help:0:wrong:helm:engineer"; }],
+    ["wrong-authored-action-id", (record) => { record.authoredActionId = "wrong"; }],
+    ["missing-pending-help-key", (record) => { delete record.pendingHelpKey; }],
+    ["wrong-pending-help-key", (record) => { record.pendingHelpKey = "inter-station-help:0:wrong:helm:engineer"; }],
+    ["wrong-dedupe-key", (record) => { record.dedupeKey = "inter-station-help:0:wrong:helm:engineer"; }],
+    ["source-mismatch", (record) => { record.sourceStationKey = "engineer"; record.pendingHelpKey = "inter-station-help:0:boost:engineer:engineer"; record.dedupeKey = "inter-station-help:0:boost:engineer:engineer"; }],
+    ["target-mismatch", (record) => { record.targetStationKey = "helm"; record.pendingHelpKey = "inter-station-help:0:boost:helm:helm"; record.dedupeKey = "inter-station-help:0:boost:helm:helm"; }],
+    ["round-mismatch", (record) => { record.roundIndex = 1; record.pendingHelpKey = "inter-station-help:1:boost:helm:engineer"; record.dedupeKey = "inter-station-help:1:boost:helm:engineer"; }],
+    ["fabricated-prefixed", (record) => { record.actionId = "fake"; record.authoredActionId = "fake"; record.pendingHelpKey = "inter-station-help:0:fake:helm:engineer"; record.dedupeKey = "inter-station-help:0:fake:helm:engineer"; }],
+    ["no-authored-definition", null, (session) => { session.event.rounds[0].stationPrompts.helm.interStationHelp = []; }],
+    ["broad-station-order-opening", (record) => { delete record.pendingHelpKey; delete record.dedupeKey; delete record.actionId; delete record.authoredActionId; record.benefitKind = "stationOrderOpening"; }]
+  ]) {
+    const mutated = helpSession();
+    if (mutateRecord) mutateRecord(mutated.travelV2PendingStationBenefits[0]);
+    if (mutateSession) mutateSession(mutated);
+    assertBlockedUse(label, mutated);
+  }
+  checked.push("canonical authored-action, pending-key, dedupe-key, and broad/fabricated identity mismatches block without adoption");
+
+  for (const targetResult of ["success", "failure", "criticalSuccess", "criticalFailure", "skipped"]) {
+    assertBlockedUse(`target-${targetResult}`, helpSession({ roundResults: [{ stationResults: { helm: "success", engineer: targetResult }, stationActions: helpSession().roundResults[0].stationActions }] }));
+  }
+  for (const sourceResult of [null, "failure", "criticalFailure", "skipped"]) {
+    assertBlockedUse(`source-${sourceResult}`, helpSession({ roundResults: [{ stationResults: sourceResult === null ? {} : { helm: sourceResult }, stationActions: helpSession().roundResults[0].stationActions }] }));
+  }
+  assertBlockedUse("source-inactive", helpSession({ event: { rounds: [{ ...helpSession().event.rounds[0], activeStations: ["engineer"] }] } }));
+  assertBlockedUse("target-inactive", helpSession({ event: { rounds: [{ ...helpSession().event.rounds[0], activeStations: ["helm"] }] } }));
+  assertBlockedUse("duplicate-queue-key", helpSession({ travelV2PendingStationBenefits: [helpSession().travelV2PendingStationBenefits[0], { ...helpSession().travelV2PendingStationBenefits[0] }] }));
+  checked.push("target/source outcomes, active station, and duplicate queue-key blockers preserve complete sessions");
 
   for (const [label, mutated] of [
     ["stale-round", helpSession({ currentRoundIndex: 1 })],
@@ -159,9 +220,12 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
     ["blocked", helpSession({ travelV2PendingStationBenefits: [{ ...helpSession().travelV2PendingStationBenefits[0], status: "blocked" }] })]
   ]) {
     const key = label === "missing-key" ? "" : (label === "unknown-key" ? "missing" : "help-1");
+    const beforeMutated = json(mutated);
     const result = prepareTravelV2StationBenefitUseRunnerUpdate(mutated, { queueKey: key }, { canUse: true, useRequested: true });
     assert.equal(result.shouldAdoptSession, false, label);
-    assert.equal(json(result.nextSession), json(mutated), label);
+    assert.equal(json(result.nextSession), beforeMutated, label);
+    assert.equal(json(mutated), beforeMutated, label);
+    assert.deepEqual(result.nextSession.customIntegrity, mutated.customIntegrity, label);
   }
   checked.push("stale, malformed, resolved, ordering, status, missing, and unknown queue states block without adoption");
 
