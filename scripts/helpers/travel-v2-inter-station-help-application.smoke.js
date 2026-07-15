@@ -10,7 +10,7 @@ import { applyTravelV2InterStationHelpApplicationToSession, prepareTravelV2Inter
 const snap = (v) => JSON.stringify(v);
 function fixture({ magnitude = 2, action = null, baseDC = 20, engineerCard = {}, currentRoundIndex = 0, hasMagnitude = true } = {}) {
   const benefit = hasMagnitude ? { kind: "dcReduction", magnitude, expires: "afterUse" } : { kind: "dcReduction", expires: "afterUse" };
-  const helpAction = action ?? { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", publicText: "The Navigator creates a stable approach for Engineering.", benefit, criticalSuccessMetadata: { benefitKind: "dcReduction", magnitude: 99 } };
+  const helpAction = action ?? { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", publicText: "The Navigator creates a stable approach for Engineering.", benefit, criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: 4, publicText: "Critical success creates a perfectly stable approach.", secret: "scrubbed" } };
   return {
     status: "active",
     currentRoundIndex,
@@ -21,9 +21,10 @@ function fixture({ magnitude = 2, action = null, baseDC = 20, engineerCard = {},
   };
 }
 function withEngineerHazard(session, modifier = 2) { return { ...session, travelV2Hazards: { records: [{ id: "hazard-engine-feed", name: "Engine Feed Shear", status: "active", revealed: true, effects: [{ type: "dcModifier", stationKey: "engineer", modifier, label: "Feed Shear" }] }] } }; }
-function usedSession(options = {}) { const session = fixture(options); const action = prepareTravelV2InterStationHelpActions(session, { includeUnavailable: true }).helpActions.find((row) => row.actionId === "open-engine-feed"); const pending = prepareTravelV2InterStationHelpPendingRecord(session, action, { result: "success", roundIndex: 0, sourceStationKey: "navigator", targetStationKey: "engineer", actionId: "open-engine-feed" }).record; return { ...session, travelV2PendingStationBenefits: [{ ...pending, queueKey: pending.pendingHelpKey, status: "used", used: true, consumed: true, applied: false }] }; }
+function usedSession(options = {}) { const session = fixture(options); const result = options.result ?? "success"; session.roundResults[0].stationResults.navigator = result; const action = prepareTravelV2InterStationHelpActions(session, { includeUnavailable: true }).helpActions.find((row) => row.actionId === "open-engine-feed"); const pending = prepareTravelV2InterStationHelpPendingRecord(session, action, { result, roundIndex: 0, sourceStationKey: "navigator", targetStationKey: "engineer", actionId: "open-engine-feed", criticalSuccessMetadata: { magnitude: 400 } }).record; return { ...session, travelV2PendingStationBenefits: [{ ...pending, queueKey: pending.pendingHelpKey, status: "used", used: true, consumed: true, applied: false }] }; }
 function applyValid(session = usedSession()) { return applyTravelV2InterStationHelpApplicationToSession(session, { queueKey: session.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true, now: "2026-07-15T00:00:00.000Z" }).nextSession; }
 function assertNoAdjustment(session, label, stationKey = "engineer") { const adjustment = prepareTravelV2InterStationHelpCheckAdjustment(session, { roundIndex: 0, stationKey }); assert.equal(adjustment.dcReduction, 0, label); assert.equal(adjustment.hasAdjustment, false, label); }
+function assertGenericAppliedHistory(session, queueKey, label) { const row = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((entry) => entry.queueKey === queueKey); assert.ok(row, label); assert.equal(row.appliedMagnitude, null, label); assert.equal(row.appliedBaseMagnitude, null, label); assert.equal(row.appliedCriticalMagnitude, null, label); assert.equal(row.appliedStrengthened, false, label); assert.equal(row.legacyApplication, false, label); assert.equal(row.applicationStatusLabel, "Effect applied", label); }
 
 export default async function runTravelV2InterStationHelpApplicationSmokeChecks() {
   const checked = [];
@@ -31,8 +32,17 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(actions.helpActions[0].benefitKind, "dcReduction");
   assert.equal(actions.helpActions[0].magnitude, 2);
   assert.equal(actions.helpActions[0].expires, "afterUse");
-  assert.equal(actions.helpActions[0].criticalSuccessMetadata.magnitude, 99);
-  checked.push("authored dcReduction metadata normalizes while critical metadata remains separate");
+  assert.equal(actions.helpActions[0].criticalSuccessMetadata.strengthening, "replaceMagnitude");
+  assert.equal(actions.helpActions[0].criticalSuccessMetadata.magnitude, 4);
+  assert.equal(Object.hasOwn(actions.helpActions[0].criticalSuccessMetadata, "secret"), false);
+  checked.push("authored dcReduction and valid critical replaceMagnitude metadata normalize while forbidden nested metadata is scrubbed");
+
+  for (const criticalMagnitude of [null, undefined, "", " ", 0, -1, 1.5, "1.5", "-2", NaN, Infinity, {}, [], [4], ["4"]]) {
+    const prepared = prepareTravelV2InterStationHelpActions(fixture({ action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: criticalMagnitude } } }));
+    assert.equal(Object.hasOwn(prepared.helpActions[0].criticalSuccessMetadata ?? {}, "magnitude"), false, `malformed critical magnitude ${String(criticalMagnitude)} must not normalize`);
+  }
+  assert.equal(prepareTravelV2InterStationHelpActions(fixture({ action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: "4" } } })).helpActions[0].criticalSuccessMetadata.magnitude, 4);
+  checked.push("strict critical magnitude parsing rejects malformed values and accepts positive integer strings");
 
   for (const magnitude of [null, undefined, "", " ", 0, -1, 1.5, "1.5", "-2", NaN, Infinity, {}, [], [2], ["2"]]) {
     const prepared = prepareTravelV2InterStationHelpActions(fixture({ magnitude, hasMagnitude: magnitude !== undefined }));
@@ -64,8 +74,44 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   const review = prepareTravelV2InterStationHelpApplicationReview(session, { queueKey }, { canApply: true });
   assert.equal(review.ok, true); assert.equal(review.dcReduction, 2); assert.equal(review.fallbackBaseDc, 21); assert.equal(review.fallbackEffectiveDc, 19); assert.equal(review.applyAvailable, true);
   const applied = applyTravelV2InterStationHelpApplicationToSession(session, { queueKey }, { canApply: true, applyRequested: true, now: "2026-07-15T00:00:00.000Z" });
-  assert.equal(applied.ok, true); assert.equal(applied.shouldAdoptSession, true); assert.equal(snap(session), before); assert.notEqual(applied.nextSession, session); assert.equal(applied.nextSession.travelV2InterStationHelpApplications.records.length, 1); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].applied, true); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].status, "used"); assert.equal(applied.nextSession.roundResults[0].stationResults.engineer, null); assert.equal(applied.nextSession.event.baseDC, 20);
+  assert.equal(applied.ok, true); assert.equal(applied.record.version, 2); assert.equal(applied.shouldAdoptSession, true); assert.equal(snap(session), before); assert.notEqual(applied.nextSession, session); assert.equal(applied.nextSession.travelV2InterStationHelpApplications.records.length, 1); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].applied, true); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].status, "used"); assert.equal(applied.nextSession.roundResults[0].stationResults.engineer, null); assert.equal(applied.nextSession.event.baseDC, 20);
   checked.push("successful application creates one session-local application record without rolling or rewriting base DC");
+
+
+
+  const requiredV2Fields = ["baseMagnitude", "magnitude", "effectiveMagnitude", "strengthened", "strengtheningMode", "effectSource", "criticalSuccess"];
+  for (const field of requiredV2Fields) {
+    const incomplete = JSON.parse(snap(applied.nextSession));
+    delete incomplete.travelV2InterStationHelpApplications.records[0][field];
+    assertNoAdjustment(incomplete, `missing-v2-${field}`);
+    assertGenericAppliedHistory(incomplete, queueKey, `missing-v2-${field}`);
+  }
+  for (const [label, mutate] of Object.entries({ v2UndefinedMode: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = undefined; }, v2BlankMode: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = ""; }, v2NumericCriticalSuccess: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = 0; }, v2NumericStrengthened: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = 0; }, v2BlankEffectSource: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = ""; }, v2MagnitudeMismatch: (s) => { s.travelV2InterStationHelpApplications.records[0].magnitude = 3; }, v2NormalCriticalInjected: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalMagnitude = 4; } })) {
+    const malformed = JSON.parse(snap(applied.nextSession));
+    mutate(malformed);
+    assertNoAdjustment(malformed, label);
+    assertGenericAppliedHistory(malformed, queueKey, label);
+  }
+  checked.push("incomplete or malformed normal version 2 application records contribute zero and display generic history");
+
+  const legacySession = JSON.parse(snap(applied.nextSession));
+  const legacyRaw = legacySession.travelV2PendingStationBenefits[0];
+  const legacyApplication = { version: 1, applicationKey: legacyRaw.applicationKey, queueKey: legacyRaw.queueKey, pendingHelpKey: legacyRaw.pendingHelpKey, actionId: legacyRaw.actionId, roundIndex: legacyRaw.roundIndex, roundNumber: legacyRaw.roundNumber, sourceStationKey: legacyRaw.sourceStationKey, sourceStationName: legacyRaw.sourceStationName, targetStationKey: legacyRaw.targetStationKey, targetStationName: legacyRaw.targetStationName, benefitKind: "dcReduction", magnitude: 2, status: "applied", applied: true, appliedAt: "2026-07-15T00:00:00.000Z", playerSafe: true };
+  legacySession.travelV2InterStationHelpApplications = { version: 1, records: [legacyApplication] };
+  const legacyAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(legacySession, { roundIndex: 0, stationKey: "engineer" });
+  assert.equal(legacyAdjustment.dcReduction, 2); assert.equal(legacyAdjustment.hasAdjustment, true); assert.equal(legacyAdjustment.applications[0].legacyApplication, true); assert.equal(legacyAdjustment.applications[0].strengthened, false);
+  const legacyGmRow = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: legacySession, user: { isGM: true } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === legacyRaw.queueKey);
+  assert.ok(legacyGmRow); assert.equal(legacyGmRow.appliedMagnitude, 2); assert.equal(legacyGmRow.appliedBaseMagnitude, 2); assert.equal(legacyGmRow.appliedCriticalMagnitude, null); assert.equal(legacyGmRow.appliedStrengthened, false); assert.equal(legacyGmRow.legacyApplication, true); assert.equal(legacyGmRow.applicationStatusLabel, "Effect applied: DC −2");
+  const legacyPlayerRow = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: legacySession, user: { isGM: false } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === legacyRaw.queueKey);
+  assert.ok(legacyPlayerRow); assert.equal(legacyPlayerRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(legacyPlayerRow.canReviewEffect, false); assert.equal(legacyPlayerRow.applyAvailable, false);
+  const legacyBaseMismatch = JSON.parse(snap(legacySession));
+  legacyBaseMismatch.event.rounds[0].stationCards[0].interStationHelp[0].benefit.magnitude = 3;
+  assertNoAdjustment(legacyBaseMismatch, "legacy-authored-base-mismatch");
+  const legacyFailure = JSON.parse(snap(legacySession));
+  legacyFailure.roundResults[0].stationResults.navigator = "failure";
+  assertNoAdjustment(legacyFailure, "legacy-unsuccessful-source");
+  for (const [label, mutate] of Object.entries({ legacyBaseField: (s) => { s.travelV2InterStationHelpApplications.records[0].baseMagnitude = 2; }, legacyEffectiveField: (s) => { s.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 2; }, legacyStrengthenedField: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = false; }, legacyEffectSourceField: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = "base"; }, legacyCriticalSuccessField: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = false; }, incompleteV2: (s) => { s.travelV2InterStationHelpApplications.records[0].version = 2; }, unknownVersion: (s) => { s.travelV2InterStationHelpApplications.records[0].version = 3; } })) { const tamperedLegacy = JSON.parse(snap(legacySession)); mutate(tamperedLegacy); assertNoAdjustment(tamperedLegacy, label); }
+  checked.push("exact Slice 06 legacy application records remain base-only while hybrid or unknown versions contribute zero");
 
   const duplicate = applyTravelV2InterStationHelpApplicationToSession(applied.nextSession, { queueKey }, { canApply: true, applyRequested: true });
   assert.equal(duplicate.ok, false); assert.equal(duplicate.shouldAdoptSession, false); assert.equal(snap(duplicate.nextSession), snap(applied.nextSession));
@@ -108,12 +154,12 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(unappliedRow.status, "used"); assert.equal(unappliedRow.used, true); assert.equal(unappliedRow.consumed, true); assert.equal(unappliedRow.applied, false); assert.equal(unappliedRow.applicationStatusLabel, null); assert.equal(unappliedRow.canReviewEffect, true); assert.equal(unappliedRow.applyAvailable, true);
   const gmQueue = prepareTravelV2PendingStationBenefitGmState({ session: applied.nextSession }, { user: { isGM: true }, includeGmReview: true });
   const gmRow = gmQueue.rows.find((row) => row.queueKey === queueKey);
-  assert.equal(gmRow.status, "used"); assert.equal(gmRow.used, true); assert.equal(gmRow.consumed, true); assert.equal(gmRow.applied, true); assert.equal(gmRow.applicationStatusLabel, "Effect applied"); assert.equal(gmRow.canReviewEffect, false); assert.equal(gmRow.applyAvailable, false);
+  assert.equal(gmRow.status, "used"); assert.equal(gmRow.used, true); assert.equal(gmRow.consumed, true); assert.equal(gmRow.applied, true); assert.equal(gmRow.magnitude, 2); assert.equal(gmRow.appliedMagnitude, 2); assert.equal(gmRow.appliedStrengthened, false); assert.equal(gmRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(gmRow.canReviewEffect, false); assert.equal(gmRow.applyAvailable, false);
   const playerQueue = prepareTravelV2PendingStationBenefitPlayerState({ session: applied.nextSession }, { user: { isGM: false } });
   const playerRow = playerQueue.rows.find((row) => row.queueKey === queueKey);
-  assert.equal(playerRow.status, "used"); assert.equal(playerRow.used, true); assert.equal(playerRow.consumed, true); assert.equal(playerRow.applied, true); assert.equal(playerRow.applicationStatusLabel, "Effect applied"); assert.equal(playerRow.canReviewEffect, false); assert.equal(playerRow.applyAvailable, false);
+  assert.equal(playerRow.status, "used"); assert.equal(playerRow.used, true); assert.equal(playerRow.consumed, true); assert.equal(playerRow.applied, true); assert.equal(playerRow.appliedMagnitude, 2); assert.equal(playerRow.appliedStrengthened, false); assert.equal(playerRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(playerRow.canReviewEffect, false); assert.equal(playerRow.applyAvailable, false);
   const templateSource = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
-  assert.equal(templateSource.includes("applicationStatusLabel"), true);
+  assert.equal(templateSource.includes("applicationStatusLabel"), true); assert.equal(templateSource.includes("travelV2InterStationHelpApplicationReview.ok"), true); assert.equal(templateSource.includes("Critical-success strengthening will be evaluated during the separate Help Effect review."), true); assert.equal(templateSource.includes("Critical-success metadata remains review-only and inert."), false);
   const gmUnappliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } });
   const gmUnappliedRows = gmUnappliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows;
   const gmUnappliedRow = gmUnappliedRows.find((row) => row.queueKey === queueKey);
@@ -122,17 +168,81 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(gmUnappliedRow.status, "used"); assert.equal(gmUnappliedRow.used, true); assert.equal(gmUnappliedRow.consumed, true); assert.equal(gmUnappliedRow.applied, false); assert.equal(gmUnappliedRow.applicationStatusLabel, ""); assert.equal(gmUnappliedRow.canReviewEffect, true); assert.equal(gmUnappliedRow.applyAvailable, true); assert.equal(gmUnappliedRow.requestAvailabilityLabel, "Effect review available");
   const gmAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: true } });
   const gmAppliedRow = gmAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === queueKey);
-  assert.ok(gmAppliedRow); assert.equal(gmAppliedRow.status, "used"); assert.equal(gmAppliedRow.used, true); assert.equal(gmAppliedRow.consumed, true); assert.equal(gmAppliedRow.applied, true); assert.equal(gmAppliedRow.applicationStatusLabel, "Effect applied"); assert.equal(gmAppliedRow.canReviewEffect, false); assert.equal(gmAppliedRow.applyAvailable, false); assert.equal(gmAppliedRow.requestAvailabilityLabel, "Effect applied");
+  assert.ok(gmAppliedRow); assert.equal(gmAppliedRow.status, "used"); assert.equal(gmAppliedRow.used, true); assert.equal(gmAppliedRow.consumed, true); assert.equal(gmAppliedRow.applied, true); assert.equal(gmAppliedRow.magnitude, 2); assert.equal(gmAppliedRow.appliedMagnitude, 2); assert.equal(gmAppliedRow.appliedStrengthened, false); assert.equal(gmAppliedRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(gmAppliedRow.canReviewEffect, false); assert.equal(gmAppliedRow.applyAvailable, false); assert.equal(gmAppliedRow.requestAvailabilityLabel, "Effect applied: DC −2");
   const playerAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: false } });
   const playerAppliedRow = playerAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === queueKey);
-  assert.ok(playerAppliedRow); assert.equal(playerAppliedRow.status, "used"); assert.equal(playerAppliedRow.used, true); assert.equal(playerAppliedRow.consumed, true); assert.equal(playerAppliedRow.applied, true); assert.equal(playerAppliedRow.applicationStatusLabel, "Effect applied"); assert.equal(playerAppliedRow.canReviewEffect, false); assert.equal(playerAppliedRow.applyAvailable, false);
+  assert.ok(playerAppliedRow); assert.equal(playerAppliedRow.status, "used"); assert.equal(playerAppliedRow.used, true); assert.equal(playerAppliedRow.consumed, true); assert.equal(playerAppliedRow.applied, true); assert.equal(playerAppliedRow.appliedMagnitude, 2); assert.equal(playerAppliedRow.appliedStrengthened, false); assert.equal(playerAppliedRow.applicationStatusLabel, "Effect applied: DC −2"); assert.equal(playerAppliedRow.canReviewEffect, false); assert.equal(playerAppliedRow.applyAvailable, false);
   const playerRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: false }, uiState: { travelV2InterStationHelpApplicationReviewRequested: true, travelV2InterStationHelpApplicationSelectedQueueKey: queueKey, travelV2InterStationHelpApplicationResult: { message: "secret" } } });
   const serializedPlayer = JSON.stringify(playerRender);
-  assert.equal(serializedPlayer.includes('"canReviewEffect":true'), false); assert.equal(serializedPlayer.includes('"applyAvailable":true'), false); assert.equal(serializedPlayer.includes('"applicationStatusLabel":"Effect applied"'), true); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationReview"), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationResult"), false);
+  assert.equal(serializedPlayer.includes('"canReviewEffect":true'), false); assert.equal(serializedPlayer.includes('"applyAvailable":true'), false); assert.equal(serializedPlayer.includes('"applicationStatusLabel":"Effect applied: DC −2"'), true); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationReview"), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationResult"), false);
   checked.push("queue and preview-panel render states show accurate lifecycle while non-GM state exposes no application capability");
 
-  const critical = usedSession(); critical.roundResults[0].stationResults.navigator = "criticalSuccess"; const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey }, { canApply: true, applyRequested: true }); assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2); assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
-  checked.push("critical success applies only the normal base reduction");
+  const critical = usedSession({ result: "criticalSuccess" });
+  const criticalQueueKey = critical.travelV2PendingStationBenefits[0].queueKey;
+  assert.equal(critical.travelV2PendingStationBenefits[0].criticalSuccess, true);
+  assert.equal(critical.travelV2PendingStationBenefits[0].criticalSuccessMetadata.magnitude, 4);
+  const criticalReview = prepareTravelV2InterStationHelpApplicationReview(critical, { queueKey: criticalQueueKey }, { canApply: true });
+  assert.equal(criticalReview.ok, true); assert.equal(criticalReview.baseMagnitude, 2); assert.equal(criticalReview.criticalMagnitude, 4); assert.equal(criticalReview.effectiveMagnitude, 4); assert.equal(criticalReview.magnitude, 4); assert.equal(criticalReview.dcReduction, 4); assert.equal(criticalReview.strengthened, true); assert.equal(criticalReview.effectSource, "criticalSuccess"); assert.equal(criticalReview.criticalSuccessNote.includes("from DC −2 to DC −4"), true);
+  const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey: criticalQueueKey }, { canApply: true, applyRequested: true });
+  assert.equal(crit.ok, true); assert.equal(crit.record.version, 2); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records.length, 1);
+  assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].baseMagnitude, 2); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].criticalMagnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].effectiveMagnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].magnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].strengthened, true); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].strengtheningMode, "replaceMagnitude"); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].effectSource, "criticalSuccess");
+  assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 4);
+  assert.equal(prepareTravelSceneOverlayState(crit.nextSession).stations.find((station) => station.stationKey === "engineer").effectiveDc, 18);
+  assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
+
+
+
+  for (const field of [...requiredV2Fields, "criticalMagnitude"]) {
+    const incompleteCritical = JSON.parse(snap(crit.nextSession));
+    delete incompleteCritical.travelV2InterStationHelpApplications.records[0][field];
+    assertNoAdjustment(incompleteCritical, `missing-critical-v2-${field}`);
+    assertGenericAppliedHistory(incompleteCritical, criticalQueueKey, `missing-critical-v2-${field}`);
+  }
+  for (const [label, mutate] of Object.entries({ criticalMagnitudeMismatch: (s) => { s.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 5; }, criticalModeNull: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = null; }, criticalEffectBase: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = "base"; }, criticalSuccessFalse: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = false; }, criticalStrengthenedFalse: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = false; } })) {
+    const malformedCritical = JSON.parse(snap(crit.nextSession));
+    mutate(malformedCritical);
+    assertNoAdjustment(malformedCritical, label);
+    assertGenericAppliedHistory(malformedCritical, criticalQueueKey, label);
+  }
+
+  const criticalLegacySession = JSON.parse(snap(crit.nextSession));
+  const criticalLegacyRaw = criticalLegacySession.travelV2PendingStationBenefits[0];
+  criticalLegacySession.travelV2InterStationHelpApplications = { version: 1, records: [{ version: 1, applicationKey: criticalLegacyRaw.applicationKey, queueKey: criticalLegacyRaw.queueKey, pendingHelpKey: criticalLegacyRaw.pendingHelpKey, actionId: criticalLegacyRaw.actionId, roundIndex: criticalLegacyRaw.roundIndex, roundNumber: criticalLegacyRaw.roundNumber, sourceStationKey: criticalLegacyRaw.sourceStationKey, sourceStationName: criticalLegacyRaw.sourceStationName, targetStationKey: criticalLegacyRaw.targetStationKey, targetStationName: criticalLegacyRaw.targetStationName, benefitKind: "dcReduction", magnitude: 2, status: "applied", applied: true, appliedAt: "2026-07-15T00:00:00.000Z", playerSafe: true }] };
+  const criticalLegacyAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(criticalLegacySession, { roundIndex: 0, stationKey: "engineer" });
+  assert.equal(criticalLegacyAdjustment.dcReduction, 2); assert.equal(criticalLegacyAdjustment.applications[0].legacyApplication, true); assert.equal(criticalLegacyAdjustment.applications[0].strengthened, false);
+
+  const criticalGmAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: crit.nextSession, user: { isGM: true } });
+  const criticalGmAppliedRow = criticalGmAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === criticalQueueKey);
+  assert.ok(criticalGmAppliedRow); assert.equal(criticalGmAppliedRow.magnitude, 2); assert.equal(criticalGmAppliedRow.applied, true); assert.equal(criticalGmAppliedRow.appliedMagnitude, 4); assert.equal(criticalGmAppliedRow.appliedBaseMagnitude, 2); assert.equal(criticalGmAppliedRow.appliedCriticalMagnitude, 4); assert.equal(criticalGmAppliedRow.appliedStrengthened, true); assert.equal(criticalGmAppliedRow.applicationStatusLabel, "Effect applied: DC −4");
+  const criticalPlayerAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: crit.nextSession, user: { isGM: false } });
+  const criticalPlayerAppliedRow = criticalPlayerAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === criticalQueueKey);
+  assert.ok(criticalPlayerAppliedRow); assert.equal(criticalPlayerAppliedRow.appliedMagnitude, 4); assert.equal(criticalPlayerAppliedRow.appliedStrengthened, true); assert.equal(criticalPlayerAppliedRow.applicationStatusLabel, "Effect applied: DC −4"); assert.equal(criticalPlayerAppliedRow.canReviewEffect, false); assert.equal(criticalPlayerAppliedRow.applyAvailable, false);
+  const malformedHistory = JSON.parse(snap(crit.nextSession));
+  malformedHistory.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 99;
+  const malformedHistoryRow = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: malformedHistory, user: { isGM: true } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === criticalQueueKey);
+  assert.ok(malformedHistoryRow); assert.equal(malformedHistoryRow.applicationStatusLabel, "Effect applied"); assert.equal(malformedHistoryRow.appliedMagnitude, null);
+  for (const [label, mutate] of Object.entries({ appMagnitude: (s) => { s.travelV2InterStationHelpApplications.records[0].magnitude = 6; }, appEffective: (s) => { s.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 6; }, appBase: (s) => { s.travelV2InterStationHelpApplications.records[0].baseMagnitude = 3; }, appCritical: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalMagnitude = 5; }, appStrengthened: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = false; }, appMode: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = "automaticSuccess"; }, appEffectSource: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = "base"; }, appCriticalFlag: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = false; }, correctedSource: (s) => { s.roundResults[0].stationResults.navigator = "success"; }, rawCriticalMagnitude: (s) => { s.travelV2PendingStationBenefits[0].criticalSuccessMetadata.magnitude = 5; }, rawCriticalMode: (s) => { s.travelV2PendingStationBenefits[0].criticalSuccessMetadata.strengthening = "automaticSuccess"; }, rawCriticalKind: (s) => { s.travelV2PendingStationBenefits[0].criticalSuccessMetadata.benefitKind = "automaticSuccess"; }, rawCriticalMissing: (s) => { delete s.travelV2PendingStationBenefits[0].criticalSuccessMetadata; } })) { const tampered = JSON.parse(snap(crit.nextSession)); mutate(tampered); assertNoAdjustment(tampered, label); }
+
+  for (const mutate of [
+    (s) => { s.travelV2PendingStationBenefits[0].resultBand = "success"; s.travelV2PendingStationBenefits[0].criticalSuccess = false; s.roundResults[0].stationResults.navigator = "criticalSuccess"; },
+    (s) => { s.travelV2PendingStationBenefits[0].resultBand = "criticalSuccess"; s.travelV2PendingStationBenefits[0].criticalSuccess = true; s.roundResults[0].stationResults.navigator = "success"; },
+    (s) => { s.travelV2PendingStationBenefits[0].resultBand = "criticalSuccess"; s.travelV2PendingStationBenefits[0].criticalSuccess = false; s.roundResults[0].stationResults.navigator = "criticalSuccess"; },
+    (s) => { s.travelV2PendingStationBenefits[0].resultBand = "success"; s.travelV2PendingStationBenefits[0].criticalSuccess = true; s.roundResults[0].stationResults.navigator = "success"; }
+  ]) {
+    const staleSession = JSON.parse(snap(critical));
+    mutate(staleSession);
+    const staleReview = prepareTravelV2InterStationHelpApplicationReview(staleSession, { queueKey: criticalQueueKey }, { canApply: true });
+    assert.equal(staleReview.ok, false); assert.equal(staleReview.canApply, false); assert.equal(staleReview.applyAvailable, false); assert.equal(staleReview.baseMagnitude, null); assert.equal(staleReview.criticalMagnitude, null); assert.equal(staleReview.effectiveMagnitude, null); assert.equal(staleReview.magnitude, null); assert.equal(staleReview.dcReduction, 0); assert.equal(staleReview.fallbackEffectiveDc, null); assert.equal(staleReview.fallbackDcPreview, false); assert.equal(staleReview.helpSummary, ""); assert.equal(staleReview.criticalSuccessNote, "");
+    assert.equal(staleReview.blockedReasons.includes("inter-station-help-source-result-mismatch") || staleReview.blockedReasons.includes("inter-station-help-critical-success-flag-mismatch"), true);
+  }
+  const unsupported = usedSession({ result: "criticalSuccess", action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, criticalSuccessMetadata: { strengthening: "automaticSuccess", benefitKind: "automaticSuccess", magnitude: 4 } } });
+  const unsupportedReview = prepareTravelV2InterStationHelpApplicationReview(unsupported, { queueKey: unsupported.travelV2PendingStationBenefits[0].queueKey }, { canApply: true });
+  assert.equal(unsupportedReview.ok, true); assert.equal(unsupportedReview.effectiveMagnitude, 2); assert.equal(unsupportedReview.strengthened, false); assert.equal(unsupportedReview.criticalSuccessNote.includes("normal DC −2"), true);
+  const unsupportedApplied = applyTravelV2InterStationHelpApplicationToSession(unsupported, { queueKey: unsupported.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true });
+  assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(unsupportedApplied.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2);
+  for (const cm of [undefined, 2, 1]) { const s = usedSession({ result: "criticalSuccess", action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, ...(cm === undefined ? {} : { criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: cm } }) } }); const r = applyTravelV2InterStationHelpApplicationToSession(s, { queueKey: s.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true }); assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(r.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2); }
+  const normal = usedSession(); assert.equal(Object.hasOwn(normal.travelV2PendingStationBenefits[0], "criticalSuccessMetadata"), false);
+  checked.push("critical success replaceMagnitude uses final stronger dcReduction while unsupported stale or tampered metadata falls back or contributes zero");
 
   console.log(`travel-v2-inter-station-help-application smoke passed (${checked.length} groups)`);
   return { checked };

@@ -28,6 +28,15 @@ function humanizeIdentifier(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function positiveIntegerOrNull(value) {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (normalized === "" || !/^\d+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function normalizeOutcomeTone(row = {}) {
   const outcomeKey = String(row.outcomeKey ?? "");
   if (outcomeKey === "criticalSuccess" || outcomeKey === "success") return "safe";
@@ -612,7 +621,12 @@ function normalizeStationBenefitDisplay(state = null, options = {}) {
     const applied = row?.applied === true;
     const canReviewEffect = isGM && row?.canReviewEffect === true;
     const applyAvailable = isGM && row?.applyAvailable === true;
-    const applicationStatusLabel = applied && typeof row?.applicationStatusLabel === "string" ? row.applicationStatusLabel.trim() : "";
+    const appliedMagnitude = positiveIntegerOrNull(row?.appliedMagnitude);
+    const appliedBaseMagnitude = positiveIntegerOrNull(row?.appliedBaseMagnitude);
+    const appliedCriticalMagnitude = positiveIntegerOrNull(row?.appliedCriticalMagnitude);
+    const appliedStrengthened = row?.appliedStrengthened === true;
+    const legacyApplication = row?.legacyApplication === true;
+    const applicationStatusLabel = typeof row?.applicationStatusLabel === "string" ? row.applicationStatusLabel.trim() : "";
     const disabledReason = typeof row?.disabledReason === "string" && row.disabledReason.trim()
       ? row.disabledReason.trim()
       : (useAvailable || canReviewEffect ? "" : (status === "pending" ? "Use requests are not available in this display-only pass." : `Pending station benefit is ${status}.`));
@@ -627,12 +641,18 @@ function normalizeStationBenefitDisplay(state = null, options = {}) {
       used,
       consumed,
       applied,
+      magnitude: positiveIntegerOrNull(row?.magnitude),
+      appliedMagnitude,
+      appliedBaseMagnitude,
+      appliedCriticalMagnitude,
+      appliedStrengthened,
+      legacyApplication,
       applicationStatusLabel,
       canReview,
       useAvailable,
       canReviewEffect,
       applyAvailable,
-      requestAvailabilityLabel: applied ? "Effect applied" : (canReviewEffect ? "Effect review available" : (useAvailable ? "Request available" : (canReview ? "Review only" : "Not ready"))),
+      requestAvailabilityLabel: applied ? (applicationStatusLabel || "Effect applied") : (canReviewEffect ? "Effect review available" : (useAvailable ? "Request available" : (canReview ? "Review only" : "Not ready"))),
       disabledReason,
       reviewOnly: row?.reviewOnly !== false
     };
