@@ -10,7 +10,7 @@ import { applyTravelV2InterStationHelpApplicationToSession, prepareTravelV2Inter
 const snap = (v) => JSON.stringify(v);
 function fixture({ magnitude = 2, action = null, baseDC = 20, engineerCard = {}, currentRoundIndex = 0, hasMagnitude = true } = {}) {
   const benefit = hasMagnitude ? { kind: "dcReduction", magnitude, expires: "afterUse" } : { kind: "dcReduction", expires: "afterUse" };
-  const helpAction = action ?? { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", publicText: "The Navigator creates a stable approach for Engineering.", benefit, criticalSuccessMetadata: { benefitKind: "dcReduction", magnitude: 99 } };
+  const helpAction = action ?? { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", publicText: "The Navigator creates a stable approach for Engineering.", benefit, criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: 4, publicText: "Critical success creates a perfectly stable approach.", secret: "scrubbed" } };
   return {
     status: "active",
     currentRoundIndex,
@@ -21,7 +21,7 @@ function fixture({ magnitude = 2, action = null, baseDC = 20, engineerCard = {},
   };
 }
 function withEngineerHazard(session, modifier = 2) { return { ...session, travelV2Hazards: { records: [{ id: "hazard-engine-feed", name: "Engine Feed Shear", status: "active", revealed: true, effects: [{ type: "dcModifier", stationKey: "engineer", modifier, label: "Feed Shear" }] }] } }; }
-function usedSession(options = {}) { const session = fixture(options); const action = prepareTravelV2InterStationHelpActions(session, { includeUnavailable: true }).helpActions.find((row) => row.actionId === "open-engine-feed"); const pending = prepareTravelV2InterStationHelpPendingRecord(session, action, { result: "success", roundIndex: 0, sourceStationKey: "navigator", targetStationKey: "engineer", actionId: "open-engine-feed" }).record; return { ...session, travelV2PendingStationBenefits: [{ ...pending, queueKey: pending.pendingHelpKey, status: "used", used: true, consumed: true, applied: false }] }; }
+function usedSession(options = {}) { const session = fixture(options); const result = options.result ?? "success"; session.roundResults[0].stationResults.navigator = result; const action = prepareTravelV2InterStationHelpActions(session, { includeUnavailable: true }).helpActions.find((row) => row.actionId === "open-engine-feed"); const pending = prepareTravelV2InterStationHelpPendingRecord(session, action, { result, roundIndex: 0, sourceStationKey: "navigator", targetStationKey: "engineer", actionId: "open-engine-feed", criticalSuccessMetadata: { magnitude: 400 } }).record; return { ...session, travelV2PendingStationBenefits: [{ ...pending, queueKey: pending.pendingHelpKey, status: "used", used: true, consumed: true, applied: false }] }; }
 function applyValid(session = usedSession()) { return applyTravelV2InterStationHelpApplicationToSession(session, { queueKey: session.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true, now: "2026-07-15T00:00:00.000Z" }).nextSession; }
 function assertNoAdjustment(session, label, stationKey = "engineer") { const adjustment = prepareTravelV2InterStationHelpCheckAdjustment(session, { roundIndex: 0, stationKey }); assert.equal(adjustment.dcReduction, 0, label); assert.equal(adjustment.hasAdjustment, false, label); }
 
@@ -31,8 +31,17 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(actions.helpActions[0].benefitKind, "dcReduction");
   assert.equal(actions.helpActions[0].magnitude, 2);
   assert.equal(actions.helpActions[0].expires, "afterUse");
-  assert.equal(actions.helpActions[0].criticalSuccessMetadata.magnitude, 99);
-  checked.push("authored dcReduction metadata normalizes while critical metadata remains separate");
+  assert.equal(actions.helpActions[0].criticalSuccessMetadata.strengthening, "replaceMagnitude");
+  assert.equal(actions.helpActions[0].criticalSuccessMetadata.magnitude, 4);
+  assert.equal(Object.hasOwn(actions.helpActions[0].criticalSuccessMetadata, "secret"), false);
+  checked.push("authored dcReduction and valid critical replaceMagnitude metadata normalize while forbidden nested metadata is scrubbed");
+
+  for (const criticalMagnitude of [null, undefined, "", " ", 0, -1, 1.5, "1.5", "-2", NaN, Infinity, {}, [], [4], ["4"]]) {
+    const prepared = prepareTravelV2InterStationHelpActions(fixture({ action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: criticalMagnitude } } }));
+    assert.equal(Object.hasOwn(prepared.helpActions[0].criticalSuccessMetadata ?? {}, "magnitude"), false, `malformed critical magnitude ${String(criticalMagnitude)} must not normalize`);
+  }
+  assert.equal(prepareTravelV2InterStationHelpActions(fixture({ action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: "4" } } })).helpActions[0].criticalSuccessMetadata.magnitude, 4);
+  checked.push("strict critical magnitude parsing rejects malformed values and accepts positive integer strings");
 
   for (const magnitude of [null, undefined, "", " ", 0, -1, 1.5, "1.5", "-2", NaN, Infinity, {}, [], [2], ["2"]]) {
     const prepared = prepareTravelV2InterStationHelpActions(fixture({ magnitude, hasMagnitude: magnitude !== undefined }));
@@ -131,8 +140,27 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(serializedPlayer.includes('"canReviewEffect":true'), false); assert.equal(serializedPlayer.includes('"applyAvailable":true'), false); assert.equal(serializedPlayer.includes('"applicationStatusLabel":"Effect applied"'), true); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationReview"), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationResult"), false);
   checked.push("queue and preview-panel render states show accurate lifecycle while non-GM state exposes no application capability");
 
-  const critical = usedSession(); critical.roundResults[0].stationResults.navigator = "criticalSuccess"; const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey }, { canApply: true, applyRequested: true }); assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2); assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
-  checked.push("critical success applies only the normal base reduction");
+  const critical = usedSession({ result: "criticalSuccess" });
+  const criticalQueueKey = critical.travelV2PendingStationBenefits[0].queueKey;
+  assert.equal(critical.travelV2PendingStationBenefits[0].criticalSuccess, true);
+  assert.equal(critical.travelV2PendingStationBenefits[0].criticalSuccessMetadata.magnitude, 4);
+  const criticalReview = prepareTravelV2InterStationHelpApplicationReview(critical, { queueKey: criticalQueueKey }, { canApply: true });
+  assert.equal(criticalReview.ok, true); assert.equal(criticalReview.baseMagnitude, 2); assert.equal(criticalReview.criticalMagnitude, 4); assert.equal(criticalReview.effectiveMagnitude, 4); assert.equal(criticalReview.magnitude, 4); assert.equal(criticalReview.dcReduction, 4); assert.equal(criticalReview.strengthened, true); assert.equal(criticalReview.effectSource, "criticalSuccess"); assert.equal(criticalReview.criticalSuccessNote.includes("from DC −2 to DC −4"), true);
+  const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey: criticalQueueKey }, { canApply: true, applyRequested: true });
+  assert.equal(crit.ok, true); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records.length, 1);
+  assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].baseMagnitude, 2); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].criticalMagnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].effectiveMagnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].magnitude, 4); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].strengthened, true); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].strengtheningMode, "replaceMagnitude"); assert.equal(crit.nextSession.travelV2InterStationHelpApplications.records[0].effectSource, "criticalSuccess");
+  assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 4);
+  assert.equal(prepareTravelSceneOverlayState(crit.nextSession).stations.find((station) => station.stationKey === "engineer").effectiveDc, 18);
+  assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
+  for (const [label, mutate] of Object.entries({ appMagnitude: (s) => { s.travelV2InterStationHelpApplications.records[0].magnitude = 6; }, appEffective: (s) => { s.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 6; }, appBase: (s) => { s.travelV2InterStationHelpApplications.records[0].baseMagnitude = 3; }, appCritical: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalMagnitude = 5; }, appStrengthened: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = false; }, appMode: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = "automaticSuccess"; }, appEffectSource: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = "base"; }, appCriticalFlag: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = false; }, correctedSource: (s) => { s.roundResults[0].stationResults.navigator = "success"; }, rawCriticalMagnitude: (s) => { s.travelV2PendingStationBenefits[0].criticalSuccessMetadata.magnitude = 5; }, rawCriticalMode: (s) => { s.travelV2PendingStationBenefits[0].criticalSuccessMetadata.strengthening = "automaticSuccess"; }, rawCriticalKind: (s) => { s.travelV2PendingStationBenefits[0].criticalSuccessMetadata.benefitKind = "automaticSuccess"; }, rawCriticalMissing: (s) => { delete s.travelV2PendingStationBenefits[0].criticalSuccessMetadata; } })) { const tampered = JSON.parse(snap(crit.nextSession)); mutate(tampered); assertNoAdjustment(tampered, label); }
+  const unsupported = usedSession({ result: "criticalSuccess", action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, criticalSuccessMetadata: { strengthening: "automaticSuccess", benefitKind: "automaticSuccess", magnitude: 4 } } });
+  const unsupportedReview = prepareTravelV2InterStationHelpApplicationReview(unsupported, { queueKey: unsupported.travelV2PendingStationBenefits[0].queueKey }, { canApply: true });
+  assert.equal(unsupportedReview.ok, true); assert.equal(unsupportedReview.effectiveMagnitude, 2); assert.equal(unsupportedReview.strengthened, false); assert.equal(unsupportedReview.criticalSuccessNote.includes("normal DC −2"), true);
+  const unsupportedApplied = applyTravelV2InterStationHelpApplicationToSession(unsupported, { queueKey: unsupported.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true });
+  assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(unsupportedApplied.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2);
+  for (const cm of [undefined, 2, 1]) { const s = usedSession({ result: "criticalSuccess", action: { id: "open-engine-feed", targetStationKey: "engineer", title: "Open the Engine Feed", benefit: { kind: "dcReduction", magnitude: 2, expires: "afterUse" }, ...(cm === undefined ? {} : { criticalSuccessMetadata: { strengthening: "replaceMagnitude", benefitKind: "dcReduction", magnitude: cm } }) } }); const r = applyTravelV2InterStationHelpApplicationToSession(s, { queueKey: s.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true }); assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(r.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2); }
+  const normal = usedSession(); assert.equal(Object.hasOwn(normal.travelV2PendingStationBenefits[0], "criticalSuccessMetadata"), false);
+  checked.push("critical success replaceMagnitude uses final stronger dcReduction while unsupported stale or tampered metadata falls back or contributes zero");
 
   console.log(`travel-v2-inter-station-help-application smoke passed (${checked.length} groups)`);
   return { checked };

@@ -122,9 +122,11 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Slice 06 note:** Authored `dcReduction` Help metadata now survives action preparation and queueing with strict magnitude validation, and a GM can explicitly apply an already-used Help record through a separate Help-effect review. Application creates session-local Inter-Station Help application state, marks only the selected used Help row as applied, and reduces the existing canonical station DC; selected approach, station, event, and hazard DC calculation remains authoritative. Stale or tampered applied records are ignored during effective-DC calculation. Applying the Help effect does not roll the check, record a result, advance the station, persist the runner session, or mutate Foundry actor/item/world data. Critical-success strengthening metadata remains inert, and non-GM users remain read-only with no application capability.
 
+**Slice 07 note:** Authored critical-success `replaceMagnitude` strengthening is now supported only for `dcReduction` Inter-Station Help. The critical magnitude is the final total reduction rather than an additive bonus, normal success continues to use the base magnitude, and unsupported or malformed optional critical metadata falls back to the base Help effect. Stale or tampered critical metadata and application records do not affect DC, the target check remains explicit and is not automatically rolled or resolved, automatic benefits remain deferred, and non-GM users remain read-only.
+
 **Remaining work:**
 
-- Support critical-success automatic or stronger benefits where authored.
+- Support authored automatic critical-success benefits.
 - Integrate critical-failure backlash.
 - Add expiration and round-end cleanup.
 - Support unsupported/custom benefit kinds.

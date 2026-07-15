@@ -108,7 +108,7 @@ function sanitizeCriticalSuccessMetadata(value) {
     publicText: text(value.publicText ?? value.playerText ?? value.description ?? value.summary),
     strengthening: text(value.strengthening ?? value.mode ?? value.kind),
     benefitKind: text(value.benefitKind ?? value.benefitType),
-    magnitude: Number.isFinite(Number(value.magnitude ?? value.value ?? value.amount)) ? Number(value.magnitude ?? value.value ?? value.amount) : undefined,
+    magnitude: positiveIntegerOrNull(value.magnitude ?? value.value ?? value.amount),
     tags: sanitizeTags(value.tags ?? value.tag)
   });
   for (const key of Object.keys(metadata)) {
