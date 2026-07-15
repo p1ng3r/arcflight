@@ -100,6 +100,24 @@ function isLegacySlice06Application(record = {}) {
     && !Object.hasOwn(record, "criticalSuccess");
 }
 
+
+function isCompleteSlice07Application(record = {}) {
+  if (!isPlainObject(record)) return false;
+  return strictIntegerOrNull(record.version) === 2
+    && record.applied === true
+    && text(record.status) === "applied"
+    && text(record.benefitKind) === "dcReduction"
+    && Object.hasOwn(record, "baseMagnitude")
+    && Object.hasOwn(record, "magnitude")
+    && Object.hasOwn(record, "effectiveMagnitude")
+    && Object.hasOwn(record, "strengthened")
+    && Object.hasOwn(record, "strengtheningMode")
+    && Object.hasOwn(record, "effectSource")
+    && Object.hasOwn(record, "criticalSuccess")
+    && typeof record.strengthened === "boolean"
+    && typeof record.criticalSuccess === "boolean";
+}
+
 function countsFor(rows = []) {
   return { pendingCount: rows.filter((row) => row.status === "pending").length, usedCount: rows.filter((row) => row.status === "used").length, dismissedCount: rows.filter((row) => row.status === "dismissed").length, expiredCount: rows.filter((row) => row.status === "expired").length, blockedCount: rows.filter((row) => row.status === "blocked").length, totalCount: rows.length };
 }
@@ -127,17 +145,18 @@ function appliedHelpRecordFor(row = {}, applicationRecords = [], queueKey = "") 
     if (!isLegacySlice06Application(record) || legacyMagnitude !== positiveIntegerOrNull(row.magnitude)) return null;
     return record;
   }
-  if (applicationVersion !== 2) return null;
+  if (applicationVersion !== 2 || !isCompleteSlice07Application(record)) return null;
   const baseMagnitude = positiveIntegerOrNull(record.baseMagnitude);
-  const effectiveMagnitude = positiveIntegerOrNull(record.effectiveMagnitude ?? record.magnitude);
+  const magnitude = positiveIntegerOrNull(record.magnitude);
+  const effectiveMagnitude = positiveIntegerOrNull(record.effectiveMagnitude);
   const criticalMagnitude = positiveIntegerOrNull(record.criticalMagnitude);
-  if (baseMagnitude === null || effectiveMagnitude === null) return null;
+  if (baseMagnitude === null || magnitude === null || effectiveMagnitude === null || magnitude !== effectiveMagnitude) return null;
   if (record.strengthened === true) {
-    if (text(record.strengtheningMode) !== "replaceMagnitude" || text(record.effectSource) !== "criticalSuccess" || record.criticalSuccess !== true) return null;
-    if (criticalMagnitude === null || criticalMagnitude <= baseMagnitude || effectiveMagnitude !== criticalMagnitude) return null;
+    if (record.strengtheningMode !== "replaceMagnitude" || record.effectSource !== "criticalSuccess" || record.criticalSuccess !== true) return null;
+    if (!Object.hasOwn(record, "criticalMagnitude") || criticalMagnitude === null || criticalMagnitude <= baseMagnitude || effectiveMagnitude !== criticalMagnitude) return null;
   } else {
-    if (text(record.strengtheningMode) !== "" || text(record.effectSource) !== "base" || record.criticalSuccess !== false) return null;
-    if (effectiveMagnitude !== baseMagnitude || criticalMagnitude !== null) return null;
+    if (record.strengthened !== false || record.strengtheningMode !== null || record.effectSource !== "base" || record.criticalSuccess !== false) return null;
+    if (Object.hasOwn(record, "criticalMagnitude") || effectiveMagnitude !== baseMagnitude) return null;
   }
   return record;
 }

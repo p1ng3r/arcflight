@@ -24,6 +24,7 @@ function withEngineerHazard(session, modifier = 2) { return { ...session, travel
 function usedSession(options = {}) { const session = fixture(options); const result = options.result ?? "success"; session.roundResults[0].stationResults.navigator = result; const action = prepareTravelV2InterStationHelpActions(session, { includeUnavailable: true }).helpActions.find((row) => row.actionId === "open-engine-feed"); const pending = prepareTravelV2InterStationHelpPendingRecord(session, action, { result, roundIndex: 0, sourceStationKey: "navigator", targetStationKey: "engineer", actionId: "open-engine-feed", criticalSuccessMetadata: { magnitude: 400 } }).record; return { ...session, travelV2PendingStationBenefits: [{ ...pending, queueKey: pending.pendingHelpKey, status: "used", used: true, consumed: true, applied: false }] }; }
 function applyValid(session = usedSession()) { return applyTravelV2InterStationHelpApplicationToSession(session, { queueKey: session.travelV2PendingStationBenefits[0].queueKey }, { canApply: true, applyRequested: true, now: "2026-07-15T00:00:00.000Z" }).nextSession; }
 function assertNoAdjustment(session, label, stationKey = "engineer") { const adjustment = prepareTravelV2InterStationHelpCheckAdjustment(session, { roundIndex: 0, stationKey }); assert.equal(adjustment.dcReduction, 0, label); assert.equal(adjustment.hasAdjustment, false, label); }
+function assertGenericAppliedHistory(session, queueKey, label) { const row = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } }).travelV2PreviewPanel.stationBenefitDisplay.rows.find((entry) => entry.queueKey === queueKey); assert.ok(row, label); assert.equal(row.appliedMagnitude, null, label); assert.equal(row.appliedBaseMagnitude, null, label); assert.equal(row.appliedCriticalMagnitude, null, label); assert.equal(row.appliedStrengthened, false, label); assert.equal(row.legacyApplication, false, label); assert.equal(row.applicationStatusLabel, "Effect applied", label); }
 
 export default async function runTravelV2InterStationHelpApplicationSmokeChecks() {
   const checked = [];
@@ -76,6 +77,22 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(applied.ok, true); assert.equal(applied.record.version, 2); assert.equal(applied.shouldAdoptSession, true); assert.equal(snap(session), before); assert.notEqual(applied.nextSession, session); assert.equal(applied.nextSession.travelV2InterStationHelpApplications.records.length, 1); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].applied, true); assert.equal(applied.nextSession.travelV2PendingStationBenefits[0].status, "used"); assert.equal(applied.nextSession.roundResults[0].stationResults.engineer, null); assert.equal(applied.nextSession.event.baseDC, 20);
   checked.push("successful application creates one session-local application record without rolling or rewriting base DC");
 
+
+
+  const requiredV2Fields = ["baseMagnitude", "magnitude", "effectiveMagnitude", "strengthened", "strengtheningMode", "effectSource", "criticalSuccess"];
+  for (const field of requiredV2Fields) {
+    const incomplete = JSON.parse(snap(applied.nextSession));
+    delete incomplete.travelV2InterStationHelpApplications.records[0][field];
+    assertNoAdjustment(incomplete, `missing-v2-${field}`);
+    assertGenericAppliedHistory(incomplete, queueKey, `missing-v2-${field}`);
+  }
+  for (const [label, mutate] of Object.entries({ v2UndefinedMode: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = undefined; }, v2BlankMode: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = ""; }, v2NumericCriticalSuccess: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = 0; }, v2NumericStrengthened: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = 0; }, v2BlankEffectSource: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = ""; }, v2MagnitudeMismatch: (s) => { s.travelV2InterStationHelpApplications.records[0].magnitude = 3; }, v2NormalCriticalInjected: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalMagnitude = 4; } })) {
+    const malformed = JSON.parse(snap(applied.nextSession));
+    mutate(malformed);
+    assertNoAdjustment(malformed, label);
+    assertGenericAppliedHistory(malformed, queueKey, label);
+  }
+  checked.push("incomplete or malformed normal version 2 application records contribute zero and display generic history");
 
   const legacySession = JSON.parse(snap(applied.nextSession));
   const legacyRaw = legacySession.travelV2PendingStationBenefits[0];
@@ -173,6 +190,20 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(prepareTravelSceneOverlayState(crit.nextSession).stations.find((station) => station.stationKey === "engineer").effectiveDc, 18);
   assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
 
+
+
+  for (const field of [...requiredV2Fields, "criticalMagnitude"]) {
+    const incompleteCritical = JSON.parse(snap(crit.nextSession));
+    delete incompleteCritical.travelV2InterStationHelpApplications.records[0][field];
+    assertNoAdjustment(incompleteCritical, `missing-critical-v2-${field}`);
+    assertGenericAppliedHistory(incompleteCritical, criticalQueueKey, `missing-critical-v2-${field}`);
+  }
+  for (const [label, mutate] of Object.entries({ criticalMagnitudeMismatch: (s) => { s.travelV2InterStationHelpApplications.records[0].effectiveMagnitude = 5; }, criticalModeNull: (s) => { s.travelV2InterStationHelpApplications.records[0].strengtheningMode = null; }, criticalEffectBase: (s) => { s.travelV2InterStationHelpApplications.records[0].effectSource = "base"; }, criticalSuccessFalse: (s) => { s.travelV2InterStationHelpApplications.records[0].criticalSuccess = false; }, criticalStrengthenedFalse: (s) => { s.travelV2InterStationHelpApplications.records[0].strengthened = false; } })) {
+    const malformedCritical = JSON.parse(snap(crit.nextSession));
+    mutate(malformedCritical);
+    assertNoAdjustment(malformedCritical, label);
+    assertGenericAppliedHistory(malformedCritical, criticalQueueKey, label);
+  }
 
   const criticalLegacySession = JSON.parse(snap(crit.nextSession));
   const criticalLegacyRaw = criticalLegacySession.travelV2PendingStationBenefits[0];
