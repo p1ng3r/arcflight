@@ -33,7 +33,6 @@ function isLegacySlice06Application(app = {}) {
     && !Object.hasOwn(app, "criticalSuccess");
 }
 
-
 function isCompleteSlice07Application(app = {}) {
   if (!isPlainObject(app)) return false;
   return strictIntegerOrNull(app.version) === 2
@@ -187,7 +186,7 @@ export function applyTravelV2InterStationHelpApplicationToSession(session = {}, 
   const record = nextSession.travelV2PendingStationBenefits[validation.index];
   const resolved = resolveTravelV2InterStationHelpBenefit({ matchedAction: validation.matchedAction, record: validation.record, sourceResult: stationResult(session, strictIntegerOrNull(validation.record.roundIndex), text(validation.record.sourceStationKey)) });
   if (resolved.ok !== true) return blocked(session, validation.queueKey, resolved.blockedReasons, validation.record);
-  const appRecord = { version: 2, applicationKey: validation.applicationKey, queueKey: validation.queueKey, pendingHelpKey: text(record.pendingHelpKey), actionId: text(record.actionId), roundIndex: strictIntegerOrNull(record.roundIndex), roundNumber: strictIntegerOrNull(record.roundNumber), sourceStationKey: text(record.sourceStationKey), sourceStationName: text(record.sourceStationName), targetStationKey: text(record.targetStationKey), targetStationName: text(record.targetStationName), benefitKind: "dcReduction", baseMagnitude: resolved.baseMagnitude, ...(resolved.criticalMagnitude !== null ? { criticalMagnitude: resolved.criticalMagnitude } : {}), magnitude: resolved.effectiveMagnitude, effectiveMagnitude: resolved.effectiveMagnitude, strengthened: resolved.strengthened, strengtheningMode: resolved.strengtheningMode, effectSource: resolved.effectSource, criticalSuccess: resolved.strengthened, status: "applied", applied: true, appliedAt: timestamp, playerSafe: true };
+  const appRecord = { version: 2, applicationKey: validation.applicationKey, queueKey: validation.queueKey, pendingHelpKey: text(record.pendingHelpKey), actionId: text(record.actionId), roundIndex: strictIntegerOrNull(record.roundIndex), roundNumber: strictIntegerOrNull(record.roundNumber), sourceStationKey: text(record.sourceStationKey), sourceStationName: text(record.sourceStationName), targetStationKey: text(record.targetStationKey), targetStationName: text(record.targetStationName), benefitKind: "dcReduction", baseMagnitude: resolved.baseMagnitude, ...(resolved.criticalMagnitude !== null ? { criticalMagnitude: resolved.criticalMagnitude } : {}), magnitude: resolved.effectiveMagnitude, effectiveMagnitude: resolved.effectiveMagnitude, strengthened: resolved.strengthened, strengtheningMode: resolved.strengtheningMode, effectSource: resolved.effectSource, criticalSuccess: resolved.criticalSuccess, status: "applied", applied: true, appliedAt: timestamp, playerSafe: true };
   nextSession.travelV2InterStationHelpApplications = { version: 2, records: [...applicationRecords(nextSession), appRecord] };
   Object.assign(record, { applied: true, appliedAt: timestamp, applicationKey: validation.applicationKey });
   nextSession.updatedAt = timestamp; nextSession.summary = null;
@@ -231,11 +230,11 @@ export function prepareTravelV2InterStationHelpCheckAdjustment(session = {}, opt
     if (storedBaseMagnitude !== resolved.baseMagnitude) continue;
     if (storedEffectiveMagnitude !== resolved.effectiveMagnitude) continue;
     if (storedMagnitude !== storedEffectiveMagnitude) continue;
+    if (app.criticalSuccess !== resolved.criticalSuccess) continue;
     if (resolved.strengthened === true) {
       if (app.strengthened !== true) continue;
       if (app.strengtheningMode !== "replaceMagnitude") continue;
       if (app.effectSource !== "criticalSuccess") continue;
-      if (app.criticalSuccess !== true) continue;
       if (!Object.hasOwn(app, "criticalMagnitude")) continue;
       if (positiveIntegerOrNull(app.criticalMagnitude) !== resolved.criticalMagnitude) continue;
       if (storedEffectiveMagnitude !== resolved.criticalMagnitude) continue;
@@ -243,7 +242,6 @@ export function prepareTravelV2InterStationHelpCheckAdjustment(session = {}, opt
       if (app.strengthened !== false) continue;
       if (app.strengtheningMode !== null) continue;
       if (app.effectSource !== "base") continue;
-      if (app.criticalSuccess !== false) continue;
       if (Object.hasOwn(app, "criticalMagnitude")) continue;
     }
     applications.push({ applicationKey: expectedApplicationKey, queueKey: validation.queueKey, title: text(validation.record.title), sourceStationKey: text(validation.record.sourceStationKey), sourceStationName: text(validation.record.sourceStationName), magnitude: resolved.effectiveMagnitude, baseMagnitude: resolved.baseMagnitude, criticalMagnitude: resolved.criticalMagnitude, strengthened: resolved.strengthened, strengtheningMode: resolved.strengtheningMode, effectSource: resolved.effectSource, criticalSuccess: resolved.criticalSuccess, legacyApplication: false });
