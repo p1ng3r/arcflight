@@ -732,6 +732,21 @@
             {{/if}}
             {{#if state.travelV2InterStationHelpQueueResult.message}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2InterStationHelpQueueResult.message}}</p>{{/if}}
             {{#if state.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.feedbackText}}</p>{{/if}}
+            {{#if state.travelV2StationBenefitUseReview.selectedCandidate.selectedQueueKey}}
+              <article class="arcflight-travel-card arcflight-gm-only" data-arcflight-travel-v2-station-benefit-use-review>
+                <h5>Use Help Review: {{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.title}}</h5>
+                <p>{{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.publicText}}</p>
+                <p class="arcflight-sheet__hint">{{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.sourceStationLabel}} → {{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.targetStationLabel}} · Status: {{state.travelV2StationBenefitUseReview.selectedCandidate.candidate.status}}</p>
+                {{#if state.travelV2StationBenefitUseReview.selectedCandidate.candidate.criticalSuccess}}<p class="arcflight-sheet__hint">Critical-success metadata remains review-only and inert.</p>{{/if}}
+                <p class="arcflight-sheet__hint">Marks this Help used in the local session. No roll or DC modifier is applied by this slice.</p>
+                {{#if state.travelV2StationBenefitUseReview.selectedCandidate.useAvailable}}
+                  <button type="button" data-arcflight-travel-v2-station-benefit-use title="Marks this Help used in the local session. No roll or DC modifier is applied by this slice.">Use Help</button>
+                {{else}}
+                  <p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2StationBenefitUseReview.selectedCandidate.reason}}</p>
+                {{/if}}
+              </article>
+            {{/if}}
+            {{#if state.travelV2StationBenefitUseResult.message}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2StationBenefitUseResult.message}}</p>{{/if}}
           </section>
         {{/if}}
         {{#if state.travelV2PreviewPanel.pressureApplication.alreadyApplied}}
