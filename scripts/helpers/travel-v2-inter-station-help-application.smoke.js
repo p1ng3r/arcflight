@@ -114,10 +114,22 @@ export default async function runTravelV2InterStationHelpApplicationSmokeChecks(
   assert.equal(playerRow.status, "used"); assert.equal(playerRow.used, true); assert.equal(playerRow.consumed, true); assert.equal(playerRow.applied, true); assert.equal(playerRow.applicationStatusLabel, "Effect applied"); assert.equal(playerRow.canReviewEffect, false); assert.equal(playerRow.applyAvailable, false);
   const templateSource = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
   assert.equal(templateSource.includes("applicationStatusLabel"), true);
+  const gmUnappliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: { isGM: true } });
+  const gmUnappliedRows = gmUnappliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows;
+  const gmUnappliedRow = gmUnappliedRows.find((row) => row.queueKey === queueKey);
+  const authoredOptionRow = gmUnappliedRows.find((row) => row.helpOptionOnly === true);
+  assert.ok(authoredOptionRow); assert.ok(gmUnappliedRow);
+  assert.equal(gmUnappliedRow.status, "used"); assert.equal(gmUnappliedRow.used, true); assert.equal(gmUnappliedRow.consumed, true); assert.equal(gmUnappliedRow.applied, false); assert.equal(gmUnappliedRow.applicationStatusLabel, ""); assert.equal(gmUnappliedRow.canReviewEffect, true); assert.equal(gmUnappliedRow.applyAvailable, true); assert.equal(gmUnappliedRow.requestAvailabilityLabel, "Effect review available");
+  const gmAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: true } });
+  const gmAppliedRow = gmAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === queueKey);
+  assert.ok(gmAppliedRow); assert.equal(gmAppliedRow.status, "used"); assert.equal(gmAppliedRow.used, true); assert.equal(gmAppliedRow.consumed, true); assert.equal(gmAppliedRow.applied, true); assert.equal(gmAppliedRow.applicationStatusLabel, "Effect applied"); assert.equal(gmAppliedRow.canReviewEffect, false); assert.equal(gmAppliedRow.applyAvailable, false); assert.equal(gmAppliedRow.requestAvailabilityLabel, "Effect applied");
+  const playerAppliedRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: false } });
+  const playerAppliedRow = playerAppliedRender.travelV2PreviewPanel.stationBenefitDisplay.rows.find((row) => row.queueKey === queueKey);
+  assert.ok(playerAppliedRow); assert.equal(playerAppliedRow.status, "used"); assert.equal(playerAppliedRow.used, true); assert.equal(playerAppliedRow.consumed, true); assert.equal(playerAppliedRow.applied, true); assert.equal(playerAppliedRow.applicationStatusLabel, "Effect applied"); assert.equal(playerAppliedRow.canReviewEffect, false); assert.equal(playerAppliedRow.applyAvailable, false);
   const playerRender = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: applied.nextSession, user: { isGM: false }, uiState: { travelV2InterStationHelpApplicationReviewRequested: true, travelV2InterStationHelpApplicationSelectedQueueKey: queueKey, travelV2InterStationHelpApplicationResult: { message: "secret" } } });
   const serializedPlayer = JSON.stringify(playerRender);
-  assert.equal(serializedPlayer.includes('"canReviewEffect":true'), false); assert.equal(serializedPlayer.includes('"applyAvailable":true'), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationReview"), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationResult"), false);
-  checked.push("queue projections show accurate applied lifecycle while non-GM state exposes no application capability");
+  assert.equal(serializedPlayer.includes('"canReviewEffect":true'), false); assert.equal(serializedPlayer.includes('"applyAvailable":true'), false); assert.equal(serializedPlayer.includes('"applicationStatusLabel":"Effect applied"'), true); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationReview"), false); assert.equal(serializedPlayer.includes("travelV2InterStationHelpApplicationResult"), false);
+  checked.push("queue and preview-panel render states show accurate lifecycle while non-GM state exposes no application capability");
 
   const critical = usedSession(); critical.roundResults[0].stationResults.navigator = "criticalSuccess"; const crit = applyTravelV2InterStationHelpApplicationToSession(critical, { queueKey }, { canApply: true, applyRequested: true }); assert.equal(prepareTravelV2InterStationHelpCheckAdjustment(crit.nextSession, { roundIndex: 0, stationKey: "engineer" }).dcReduction, 2); assert.equal(crit.nextSession.roundResults[0].stationResults.engineer, null);
   checked.push("critical success applies only the normal base reduction");
