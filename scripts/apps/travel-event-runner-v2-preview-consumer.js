@@ -414,18 +414,107 @@ function sanitizeNonGmAppStateValue(value) {
   return next;
 }
 
-function interStationHelpDisplayRow(action = {}) {
+function text(value) { return typeof value === "string" ? value.trim() : ""; }
+function integerOrNull(value) { const number = Number(value); return Number.isInteger(number) ? number : null; }
+function cloneData(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
+function canonicalResultBandFromSession(session = {}, action = {}) {
+  const roundIndex = integerOrNull(action.roundIndex);
+  const sourceStationKey = text(action.sourceStationKey);
+  if (roundIndex === null || !sourceStationKey) return "";
+  const raw = session?.roundResults?.[roundIndex]?.stationResults?.[sourceStationKey];
+  if (typeof raw === "string") return text(raw);
+  if (raw && typeof raw === "object") return text(raw.resultBand ?? raw.result ?? raw.outcome ?? raw.degreeOfSuccess);
+  return "";
+}
+function selectedHelpIdentityFrom(value = {}) {
+  return {
+    actionId: text(value.actionId),
+    sourceStationKey: text(value.sourceStationKey),
+    targetStationKey: text(value.targetStationKey),
+    roundIndex: integerOrNull(value.roundIndex)
+  };
+}
+function helpActionMatchesIdentity(action = {}, identity = {}) {
+  return text(action.actionId) === text(identity.actionId)
+    && text(action.sourceStationKey) === text(identity.sourceStationKey)
+    && text(action.targetStationKey) === text(identity.targetStationKey)
+    && integerOrNull(action.roundIndex) === integerOrNull(identity.roundIndex);
+}
+function safeHelpQueueStatus(value = null) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    ok: value.ok === true,
+    queued: value.queued === true,
+    duplicate: value.duplicate === true,
+    status: text(value.status) || (value.queued === true ? "queued" : (value.duplicate === true ? "duplicate" : "blocked")),
+    message: text(value.message),
+    blockedReasons: Array.isArray(value.blockedReasons) ? value.blockedReasons.map(text).filter(Boolean) : []
+  };
+}
+export function prepareTravelV2InterStationHelpCreateReviewState(session = {}, helpState = {}, selectedIdentity = {}, options = {}) {
+  if (options.canReview !== true) return null;
+  const identity = selectedHelpIdentityFrom(selectedIdentity);
+  const actions = Array.isArray(helpState.helpActions) ? helpState.helpActions : [];
+  const action = actions.find((row) => helpActionMatchesIdentity(row, identity));
+  const queueStatus = safeHelpQueueStatus(options.queueResult ?? null);
+  if (!action) {
+    if (!identity.actionId && !identity.sourceStationKey && !identity.targetStationKey && identity.roundIndex === null) return queueStatus ? { hasSelection: false, reviewable: false, queueable: false, blocked: queueStatus.status === "blocked", queued: queueStatus.queued, duplicate: queueStatus.duplicate, message: queueStatus.message, blockedReasons: queueStatus.blockedReasons, playerSafe: true } : null;
+    return { hasSelection: false, reviewable: false, queueable: false, blocked: true, blockedReasons: ["selected-inter-station-help-action-not-found"], message: "Selected help is no longer available for review.", playerSafe: true };
+  }
+  const resultBand = canonicalResultBandFromSession(session, action);
+  const resultSuccessful = resultBand === "success" || resultBand === "criticalSuccess";
+  const blockedReasons = [];
+  if (action.available !== true) blockedReasons.push(action.unavailableReason || "inter-station-help-action-unavailable");
+  if (!resultSuccessful) blockedReasons.push(resultBand ? "inter-station-help-result-not-successful" : "inter-station-help-source-result-unresolved");
+  if (action.stationOrderLocked !== true) blockedReasons.push("station-order-not-locked");
+  return {
+    hasSelection: true,
+    actionId: action.actionId,
+    authoredActionId: action.authoredActionId || action.actionId,
+    title: action.title,
+    publicText: action.publicText,
+    sourceStationKey: action.sourceStationKey,
+    sourceStationName: action.sourceStationName,
+    targetStationKey: action.targetStationKey,
+    targetStationName: action.targetStationName,
+    roundIndex: action.roundIndex,
+    roundNumber: action.roundNumber,
+    resultBand,
+    tags: Array.isArray(action.tags) ? [...action.tags] : [],
+    criticalSuccess: resultBand === "criticalSuccess",
+    criticalSuccessMetadata: resultBand === "criticalSuccess" && action.criticalSuccessMetadata ? cloneData(action.criticalSuccessMetadata) : null,
+    stableHelpIdentity: `inter-station-help:${action.roundIndex}:${action.actionId}:${action.sourceStationKey}:${action.targetStationKey}`,
+    reviewable: true,
+    queueable: blockedReasons.length === 0,
+    blocked: blockedReasons.length > 0,
+    blockedReasons,
+    message: queueStatus?.message || (blockedReasons.length > 0 ? "Help cannot be queued from the current canonical source result." : "Review ready. Queue Help will add this to the pending station benefit queue."),
+    queued: queueStatus?.queued === true,
+    duplicate: queueStatus?.duplicate === true,
+    playerSafe: true,
+    reviewOnly: true,
+    applied: false,
+    consumed: false
+  };
+}
+
+function interStationHelpDisplayRow(action = {}, options = {}) {
   return {
     queueKey: `inter-station-help-option:${action.actionId || "unknown"}:${action.sourceStationKey || "unknown"}:${action.targetStationKey || "unknown"}`,
     title: action.title || "Inter-Station Help",
     displaySummary: action.publicText || "An earlier station can prepare help for this later station.",
     sourceStationLabel: action.sourceStationName || action.sourceStationKey || "Source station",
     targetStationLabel: action.targetStationName || action.targetStationKey || "Target station",
+    sourceStationKey: action.sourceStationKey || "",
+    targetStationKey: action.targetStationKey || "",
+    roundIndex: action.roundIndex,
+    roundNumber: action.roundNumber,
     statusLabel: action.available === true ? "Help option available" : "Help option unavailable",
     requestAvailabilityLabel: "Options only",
     useAvailable: action.available === true,
-    canReview: false,
-    disabledReason: action.available === true ? "Help options only — no assist has been created yet." : (action.unavailableReason || "Help option unavailable."),
+    canReview: options.canReview === true && action.available === true,
+    selected: options.selectedIdentity ? helpActionMatchesIdentity(action, options.selectedIdentity) : false,
+    disabledReason: action.available === true ? "Review an available help option, then explicitly queue it for a later station." : (action.unavailableReason || "Help option unavailable."),
     helpOptionOnly: true,
     actionId: action.actionId || "",
     tags: Array.isArray(action.tags) ? [...action.tags] : [],
@@ -435,21 +524,22 @@ function interStationHelpDisplayRow(action = {}) {
   };
 }
 
-export function mergeTravelV2InterStationHelpIntoPreviewPanel(previewPanel = {}, helpState = {}) {
-  const helpRows = Array.isArray(helpState.helpActions) ? helpState.helpActions.map(interStationHelpDisplayRow) : [];
+export function mergeTravelV2InterStationHelpIntoPreviewPanel(previewPanel = {}, helpState = {}, options = {}) {
+  const selectedIdentity = options.selectedIdentity ? selectedHelpIdentityFrom(options.selectedIdentity) : null;
+  const helpRows = Array.isArray(helpState.helpActions) ? helpState.helpActions.map((action) => interStationHelpDisplayRow(action, { canReview: options.canReview === true, selectedIdentity })) : [];
   if (helpRows.length === 0) return previewPanel;
   const existingDisplay = previewPanel.stationBenefitDisplay && typeof previewPanel.stationBenefitDisplay === "object" ? previewPanel.stationBenefitDisplay : {};
   const existingRows = Array.isArray(existingDisplay.rows) ? existingDisplay.rows : [];
   const stationBenefitDisplay = {
     ...existingDisplay,
     title: "Inter-Station Help",
-    subtitle: "Help options only — no assist has been created yet.",
+    subtitle: options.canReview === true ? "Review an available help option, then explicitly queue it for a later station." : "Help options only — no assist has been created yet.",
     rows: [...helpRows, ...existingRows],
     hasRows: helpRows.length + existingRows.length > 0,
     helpOptionCount: helpRows.length,
     pendingBenefitCount: existingRows.length,
     playerSafe: true,
-    readOnly: true
+    readOnly: options.canReview !== true
   };
   return {
     ...previewPanel,
@@ -558,7 +648,8 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2StationBenefitUseReviewRequested: uiState.travelV2StationBenefitUseReviewRequested === true
   }, { user, includeGmReview: canManageTravelV2Consequences });
   const interStationHelpActions = prepareTravelV2InterStationHelpActions(session ?? {});
-  const previewPanel = mergeTravelV2InterStationHelpIntoPreviewPanel(prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview), interStationHelpActions);
+  const travelV2InterStationHelpCreateReview = prepareTravelV2InterStationHelpCreateReviewState(session ?? {}, interStationHelpActions, uiState.travelV2InterStationHelpSelectedIdentity ?? {}, { canReview: canManageTravelV2Consequences, queueResult: uiState.travelV2InterStationHelpQueueResult ?? null });
+  const previewPanel = mergeTravelV2InterStationHelpIntoPreviewPanel(prepareTravelEventRunnerV2PreviewPanelState(appStateWithStationBenefitUseReview), interStationHelpActions, { canReview: canManageTravelV2Consequences, selectedIdentity: uiState.travelV2InterStationHelpSelectedIdentity ?? null });
   const riskBidResultPreview = prepareTravelV2RiskBidResultRunnerPreview(appStateWithStationBenefitUseReview, uiState);
   const riskBidPendingReview = prepareTravelV2RiskBidPendingReviewProjection(riskBidResultPreview, { canReview: canManageTravelV2Consequences });
   const preparedRiskBidReviewQueue = prepareTravelV2RiskBidReviewQueueState(session);
@@ -574,7 +665,7 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
   const riskBidScarApply = prepareTravelV2RiskBidScarApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
   const riskBidFinalApply = prepareTravelV2RiskBidFinalApply(session, { canReview: canManageTravelV2Consequences, applyMode: "preview" });
   const riskBidResultPipelineCloseout = prepareTravelV2RiskBidResultPipelineCloseout(session, { canReview: canManageTravelV2Consequences });
-  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2InterStationHelpActions: interStationHelpActions, interStationHelpActions, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewApplyIntent: riskBidReviewApplyIntent, riskBidReviewApplyIntent, travelV2RiskBidReviewApplyGate: riskBidReviewApplyGate, riskBidReviewApplyGate, travelV2RiskBidPressureApply: riskBidPressureApply, riskBidPressureApply, travelV2RiskBidHazardApply: riskBidHazardApply, riskBidHazardApply, travelV2RiskBidConsequenceApply: riskBidConsequenceApply, riskBidConsequenceApply, travelV2RiskBidBenefitRewardApply: riskBidBenefitRewardApply, riskBidBenefitRewardApply, travelV2RiskBidScarApply: riskBidScarApply, riskBidScarApply, travelV2RiskBidFinalApply: riskBidFinalApply, riskBidFinalApply, travelV2RiskBidResultPipelineCloseout: riskBidResultPipelineCloseout, riskBidResultPipelineCloseout, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
+  const appStateWithPreview = { ...appStateWithStationBenefitUseReview, travelV2InterStationHelpActions: interStationHelpActions, interStationHelpActions, travelV2InterStationHelpCreateReview: canManageTravelV2Consequences ? travelV2InterStationHelpCreateReview : null, interStationHelpCreateReview: canManageTravelV2Consequences ? travelV2InterStationHelpCreateReview : null, travelV2InterStationHelpQueueResult: canManageTravelV2Consequences ? safeHelpQueueStatus(uiState.travelV2InterStationHelpQueueResult ?? null) : null, interStationHelpQueueResult: canManageTravelV2Consequences ? safeHelpQueueStatus(uiState.travelV2InterStationHelpQueueResult ?? null) : null, travelV2RiskBidResultPreview: riskBidResultPreview, riskBidResultPreview, travelV2RiskBidPendingReview: riskBidPendingReview, riskBidPendingReview, travelV2RiskBidReviewQueue: riskBidReviewQueue, riskBidReviewQueue, travelV2RiskBidReviewQueueDecisionState: riskBidReviewQueueDecisionState, riskBidReviewQueueDecisionState, travelV2RiskBidSelectedReviewPreview: riskBidSelectedReviewPreview, riskBidSelectedReviewPreview, travelV2RiskBidReviewPreview: riskBidSelectedReviewPreview, riskBidReviewPreview: riskBidSelectedReviewPreview, travelV2RiskBidReviewApplyIntent: riskBidReviewApplyIntent, riskBidReviewApplyIntent, travelV2RiskBidReviewApplyGate: riskBidReviewApplyGate, riskBidReviewApplyGate, travelV2RiskBidPressureApply: riskBidPressureApply, riskBidPressureApply, travelV2RiskBidHazardApply: riskBidHazardApply, riskBidHazardApply, travelV2RiskBidConsequenceApply: riskBidConsequenceApply, riskBidConsequenceApply, travelV2RiskBidBenefitRewardApply: riskBidBenefitRewardApply, riskBidBenefitRewardApply, travelV2RiskBidScarApply: riskBidScarApply, riskBidScarApply, travelV2RiskBidFinalApply: riskBidFinalApply, riskBidFinalApply, travelV2RiskBidResultPipelineCloseout: riskBidResultPipelineCloseout, riskBidResultPipelineCloseout, travelV2RiskBidReviewQueueDecisionResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueueDecisionResult ?? null) : null, travelV2RiskBidReviewQueuePersistResult: canManageTravelV2Consequences ? (uiState.travelV2RiskBidReviewQueuePersistResult ?? null) : null, travelV2PreviewPanel: previewPanel };
   const travelV2GmFlowStatus = canManageTravelV2Consequences ? buildTravelV2GmFlowStatus(appStateWithPreview) : null;
   const appStateWithGmFlowStatus = { ...appStateWithPreview, ...(canManageTravelV2Consequences ? { travelV2GmFlowStatus } : {}) };
   const result = {

@@ -116,15 +116,16 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Slice 03 note:** Explicitly requested successful canonical Inter-Station Help pending records can now be inserted once into the existing session-local `session.travelV2PendingStationBenefits` pending station benefit queue with stable queue identity and raw-state dedupe. Slice 03 preserves unrelated queue rows and remains helper-only; it does not consume the benefit, apply a modifier, activate critical-success strengthening, expire records, perform round-end cleanup, add runner interaction, persist Foundry/world data, roll dice, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
 
+**Slice 04 note:** Available authored Inter-Station Help options now expose a GM-only Review Help flow. The GM can explicitly Queue Help for canonically successful source-station results through the Slice 03 queue helper, after which the runner adopts the returned session locally and rerenders the existing pending station benefit queue. Non-GM users remain read-only. Slice 04 does not consume help, apply modifiers, alter rolls/DCs, activate critical-success strengthening, handle critical-failure backlash, expire records, perform round-end cleanup, or automatically persist the runner session or world data.
+
 **Remaining work:**
 
-- Wire explicit runner/GM interaction for creating pending benefits from authored Inter-Station Help actions.
 - Let later stations consume queued benefits through the existing station benefit/support path.
 - Support critical-success automatic or stronger benefits where authored.
 - Integrate critical-failure backlash.
 - Add expiration and round-end cleanup.
 - Finish player-safe state and table UX polish.
-- Expand smoke coverage for creation, queueing, use, expiration, backlash, and the completed player-safe lifecycle.
+- Expand smoke coverage for use, expiration, backlash, and the completed player-safe lifecycle.
 
 ### TV2-003 — Player-Chosen Round Action Order UX Polish
 
