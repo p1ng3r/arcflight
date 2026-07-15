@@ -2329,9 +2329,11 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     travelV2ActiveCardApplicationPreviews: isPlainObject(session.travelV2ActiveCardApplicationPreviews) || Array.isArray(session.travelV2ActiveCardApplicationPreviews) ? cloneData(session.travelV2ActiveCardApplicationPreviews) : undefined,
     activeCardApplicationPreviews: isPlainObject(session.activeCardApplicationPreviews) || Array.isArray(session.activeCardApplicationPreviews) ? cloneData(session.activeCardApplicationPreviews) : undefined,
     travelV2PendingStationActionBonuses: isPlainObject(session.travelV2PendingStationActionBonuses) || Array.isArray(session.travelV2PendingStationActionBonuses) ? cloneData(session.travelV2PendingStationActionBonuses) : undefined,
-    travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined
+    travelV2PendingStationResultFloors: isPlainObject(session.travelV2PendingStationResultFloors) || Array.isArray(session.travelV2PendingStationResultFloors) ? cloneData(session.travelV2PendingStationResultFloors) : undefined,
+    travelV2PendingStationBenefits: Array.isArray(session.travelV2PendingStationBenefits) ? cloneData(session.travelV2PendingStationBenefits) : undefined,
+    travelV2InterStationHelpApplications: isPlainObject(session.travelV2InterStationHelpApplications) ? cloneData(session.travelV2InterStationHelpApplications) : undefined
   };
-  for (const key of ["finalOutcome", "travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors"]) {
+  for (const key of ["finalOutcome", "travelV2PressureApplications", "travelV2PressureCorrections", "travelV2RoundActionOrder", "travelV2RoundResolutions", "travelV2EventCompletion", "travelV2EventOutcomeApplication", "travelV2ActorApplication", "travelV2ActiveCards", "travelV2AppliedActiveCards", "travelV2ActiveCardApplicationPreviews", "activeCardApplicationPreviews", "travelV2PendingStationActionBonuses", "travelV2PendingStationResultFloors", "travelV2PendingStationBenefits", "travelV2InterStationHelpApplications"]) {
     if (normalized[key] === undefined) delete normalized[key];
   }
   return { ok: errors.length === 0, errors, warnings: [], session: normalized };
@@ -2438,7 +2440,7 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       const baseDc = Number.isFinite(Number(option.dc)) ? Number(option.dc) : null;
       return {
       ...option,
-      dc: baseDc == null ? baseDc : baseDc + hazardDc,
+      dc: baseDc,
       hazardDcModifier: hazardDc,
       suppressedByHazard,
       disabled: suppressedByHazard,
@@ -2456,9 +2458,9 @@ function prepareStationRows(session, round, roundResult, options = {}) {
       skill: selectedStationOption?.skill || eventApproachSelection.skill,
       label: selectedStationOption?.label || eventApproachSelection.label,
       helpText: selectedStationOption?.helpText || eventApproachSelection.helpText,
-      selected: selectedStationOption?.actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE
-        ? cloneData(selectedStationOption)
-        : eventApproachSelection.selected,
+      dc: selectedStationOption?.dc ?? eventApproachSelection.dc,
+      hazardDcModifier: selectedStationOption?.hazardDcModifier ?? eventApproachSelection.hazardDcModifier ?? 0,
+      selected: selectedStationOption ? cloneData(selectedStationOption) : eventApproachSelection.selected,
       isSelected: Boolean(storedSkill),
       options: eventApproachSelection.options
     };
@@ -3709,7 +3711,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
     const baseResolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
     const helpAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(runnerState.session ?? {}, { roundIndex: runnerState.currentRoundIndex, stationKey: row.stationKey });
-    const resolvedDc = helpAdjustment.ok && helpAdjustment.hasAdjustment && Number.isFinite(helpAdjustment.effectiveDc) ? { ...baseResolvedDc, baseDc: baseResolvedDc.dc, dc: helpAdjustment.effectiveDc, source: "interStationHelp", helpAdjustment } : { ...baseResolvedDc, baseDc: baseResolvedDc.dc, helpAdjustment };
+    const helpDcReduction = helpAdjustment.ok === true && helpAdjustment.hasAdjustment === true ? helpAdjustment.dcReduction : 0;
+    const effectiveDc = Number.isFinite(baseResolvedDc.dc) ? Math.max(0, baseResolvedDc.dc - helpDcReduction) : null;
+    const resolvedDc = { ...baseResolvedDc, baseDc: baseResolvedDc.dc, dc: effectiveDc, effectiveDc, helpDcReduction, hasInterStationHelp: helpDcReduction > 0, source: helpDcReduction > 0 ? "interStationHelp" : baseResolvedDc.source, helpAdjustment };
     const assignedActor = row.assignment?.actorId || row.assignment?.actorUuid ? getActorByAssignment(row.assignment, options) : null;
     const selectedStatistic = resolveActorStatisticDetails(assignedActor, row.selectedApproach?.skill);
     const selectedApproachModifier = selectedStatistic.modifier;
@@ -3739,9 +3743,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasDc: Number.isFinite(resolvedDc.dc),
       baseDc: resolvedDc.baseDc,
       effectiveDc: resolvedDc.dc,
-      helpDcReduction: resolvedDc.helpAdjustment?.dcReduction ?? 0,
-      hasInterStationHelp: resolvedDc.helpAdjustment?.hasAdjustment === true,
-      helpSummary: resolvedDc.helpAdjustment?.hasAdjustment === true ? `${resolvedDc.helpAdjustment.applications.map((app) => app.sourceStationName || app.sourceStationKey).filter(Boolean).join(", ") || "Help"} reduces this check's DC by ${resolvedDc.helpAdjustment.dcReduction}.` : "",
+      helpDcReduction,
+      hasInterStationHelp: helpDcReduction > 0,
+      helpSummary: helpDcReduction > 0 ? `${resolvedDc.helpAdjustment.applications.map((app) => app.sourceStationName || app.sourceStationKey).filter(Boolean).join(", ") || "Help"} reduces this check's DC by ${helpDcReduction}.` : "",
       dcLabel: Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable",
       dcSource: resolvedDc.source,
       selectedApproachModifier,
@@ -3777,8 +3781,8 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       npcControllerOptions: assignmentRow?.npcControllerOptions ?? [],
       approachOptions: (row.stationOptions ?? []).map((approach) => {
         const baseOptionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
-        const optionHelpAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(runnerState.session ?? {}, { roundIndex: runnerState.currentRoundIndex, stationKey: row.stationKey });
-        const optionDc = optionHelpAdjustment.ok && optionHelpAdjustment.hasAdjustment && Number.isFinite(optionHelpAdjustment.effectiveDc) ? { ...baseOptionDc, dc: optionHelpAdjustment.effectiveDc } : baseOptionDc;
+        const optionEffectiveDc = Number.isFinite(baseOptionDc.dc) ? Math.max(0, baseOptionDc.dc - helpDcReduction) : null;
+        const optionDc = { ...baseOptionDc, baseDc: baseOptionDc.dc, dc: optionEffectiveDc, effectiveDc: optionEffectiveDc, helpDcReduction, hasInterStationHelp: helpDcReduction > 0 };
         const statistic = resolveActorStatisticDetails(assignedActor, approach.skill);
         const modifier = statistic.modifier;
         const skillLabel = approach.skill ? humanizeIdentifier(approach.skill) : "No statistic";

@@ -28,7 +28,7 @@ function userSnapshot(userLike) { return { isGM: isGmLike(userLike) }; }
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function nullableText(value) { const next = text(value); return next || null; }
 function persistentMutation() { return { available: false, reason: PERSISTENCE_REASON }; }
-function inertFlags() { return { reviewOnly: true, applyAvailable: false, useAvailable: false, applyAvailable: false, canReviewEffect: false, applied: false, used: false, dismissed: false, stationCheckMutated: false, rollMutated: false, checkPreviewMutated: false, persistentMutation: persistentMutation() }; }
+function inertFlags() { return { reviewOnly: true, useAvailable: false, applyAvailable: false, canReviewEffect: false, applied: false, used: false, dismissed: false, stationCheckMutated: false, rollMutated: false, checkPreviewMutated: false, persistentMutation: persistentMutation() }; }
 function stripForbiddenFields(value) {
   if (Array.isArray(value)) return value.map(stripForbiddenFields);
   if (!value || typeof value !== "object") return value;
@@ -109,12 +109,11 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
     playerVisible: true,
     gmOnly: false,
     ...inertFlags(),
-    canReviewEffect: status === "used" && benefitKind === "dcReduction" && row.applied !== true,
-    applyAvailable: status === "used" && benefitKind === "dcReduction" && row.applied !== true,
     ...(status === "blocked" ? { blockedReason: "Pending station benefit record is missing safe display data.", disabledReason: "Pending station benefit is review-only and cannot be used in this PR." } : {})
   });
+  const gmCanReviewEffect = options.includeGmReview === true && isGmLike(options.user) && status === "used" && row.used === true && row.consumed === true && row.applied !== true && benefitKind === "dcReduction";
   if (!(options.includeGmReview === true && isGmLike(options.user))) return cloneData(base);
-  return cloneData({ ...base, gmReview: { gmText: nullableText(row.gmText), gmSummary: nullableText(row.gmSummary), gmMechanicalNotes: cloneData(row.gmMechanicalNotes ?? null), sourceRecord: cloneData(row) } });
+  return cloneData({ ...base, canReviewEffect: gmCanReviewEffect, applyAvailable: gmCanReviewEffect, gmReview: { gmText: nullableText(row.gmText), gmSummary: nullableText(row.gmSummary), gmMechanicalNotes: cloneData(row.gmMechanicalNotes ?? null), sourceRecord: cloneData(row) } });
 }
 
 export function normalizeTravelV2PendingStationBenefitQueueInput(input = {}, options = {}) {

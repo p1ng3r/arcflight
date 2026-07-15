@@ -46,8 +46,12 @@ function integerOrNull(value) {
 }
 
 function positiveIntegerOrNull(value) {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? number : null;
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (normalized === "" || !/^\d+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function humanizeIdentifier(value) {

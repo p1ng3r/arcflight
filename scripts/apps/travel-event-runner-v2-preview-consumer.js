@@ -411,7 +411,7 @@ function sanitizeNonGmAppStateValue(value) {
   if (!value || typeof value !== "object") return value;
   const next = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (key === "canManageTravelV2Consequences" || key.startsWith("consequenceFlow")) continue;
+    if (key === "canManageTravelV2Consequences" || key.startsWith("consequenceFlow") || key === "travelV2InterStationHelpApplicationReview" || key === "travelV2InterStationHelpApplicationResult") continue;
     next[key] = sanitizeNonGmAppStateValue(entry);
   }
   return next;
