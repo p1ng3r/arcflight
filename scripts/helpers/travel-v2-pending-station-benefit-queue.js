@@ -66,8 +66,10 @@ function normalizeBenefitKind(value) { const next = text(value) || "unknown"; re
 function normalizeExpires(value) { const next = text(value) || "unknown"; return EXPIRES_VALUES.has(next) ? next : "unknown"; }
 function normalizeStatus(row = {}, blocked = false) {
   if (blocked) return "blocked";
-  if (row.used === true) return "used";
+  if (row.expired === true || text(row.status) === "expired") return "expired";
   if (row.dismissed === true) return "dismissed";
+  if (row.blocked === true || text(row.status) === "blocked") return "blocked";
+  if (row.used === true) return "used";
   const next = text(row.status) || "pending";
   return STATUS_VALUES.has(next) ? next : "pending";
 }
@@ -183,6 +185,8 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
   const appliedCriticalMagnitude = legacyApplication ? null : (appliedRecord ? positiveIntegerOrNull(appliedRecord.criticalMagnitude) : null);
   const appliedStrengthened = legacyApplication ? false : appliedRecord?.strengthened === true;
   const applicationStatusLabel = applied && appliedMagnitude !== null ? `Effect applied: DC −${appliedMagnitude}` : (applied ? "Effect applied" : null);
+  const expirationTrigger = nullableText(row.expirationTrigger);
+  const expirationStatusLabel = status === "expired" ? (expirationTrigger === "roundFinalized" ? "Expired at round end" : (expirationTrigger === "targetResolved" ? "Expired after target resolution" : "Expired")) : null;
   const base = stripForbiddenFields({
     pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
     queueKey,
@@ -207,6 +211,11 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
     consumed,
     applied,
     dismissed,
+    expired: row.expired === true || status === "expired",
+    expiredAt: nullableText(row.expiredAt),
+    expirationTrigger,
+    expirationReason: nullableText(row.expirationReason),
+    expirationStatusLabel,
     appliedMagnitude,
     appliedBaseMagnitude,
     appliedCriticalMagnitude,

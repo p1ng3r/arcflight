@@ -124,11 +124,12 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Slice 07 note:** Authored critical-success `replaceMagnitude` strengthening is now supported only for `dcReduction` Inter-Station Help. The critical magnitude is the final total reduction rather than an additive bonus, normal success continues to use the base magnitude, and unsupported or malformed optional critical metadata falls back to the base Help effect. Stale or tampered critical metadata and application records do not affect DC, the target check remains explicit and is not automatically rolled or resolved, automatic benefits remain deferred, and non-GM users remain read-only.
 
+**Slice 08 note:** Inter-Station Help now has deterministic session-local expiration and round-end cleanup. `afterUse` Help remains mechanically active through the target station check and expires only after the target result is recorded; successful round finalization expires remaining `afterUse` and `endOfRound` Help from that round. Expired records remain visible as lifecycle history, matching applications contribute zero, cleanup is immutable and idempotent, and no rolls, result changes, automatic persistence, or Foundry document mutations are introduced.
+
 **Remaining work:**
 
 - Support authored automatic critical-success benefits.
 - Integrate critical-failure backlash.
-- Add expiration and round-end cleanup.
 - Support unsupported/custom benefit kinds.
 - Finish final player/table UX polish.
 - Expand smoke coverage for expiration, backlash, custom benefits, and the completed player-safe lifecycle.

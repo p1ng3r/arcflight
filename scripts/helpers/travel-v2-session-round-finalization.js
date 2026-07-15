@@ -1,5 +1,6 @@
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { TRAVEL_V2_ALPHA_CORE_STATION_KEYS, checkTravelV2StationActionLockInReady } from "./travel-v2-station-action-lock-in.js";
+import { applyTravelV2InterStationHelpExpirationToSession } from "./travel-v2-inter-station-help-expiration.js";
 
 export const TRAVEL_V2_SESSION_ROUND_FINALIZATION_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_RESOLUTION_SUMMARY_VERSION = 1;
@@ -926,7 +927,8 @@ function writeTravelV2StationRollResolutionToSession(session = {}, stationKey = 
   }
   roundResults[arrayIndex] = roundResult;
   nextSession.roundResults = roundResults;
-  return nextSession;
+  const cleanup = applyTravelV2InterStationHelpExpirationToSession(nextSession, { trigger: "targetResolved", roundIndex: index, roundNumber: roundResult.roundNumber, targetStationKey: key, now: resolution.createdAt ?? resolution.resolvedAt ?? resolution.timestamp });
+  return cleanup.ok === true && cleanup.shouldAdoptSession === true ? cleanup.session : nextSession;
 }
 
 export function resolveTravelV2StationRollWithPendingEffects(session = {}, stationKey = "", rollData = {}, options = {}) {
@@ -968,6 +970,7 @@ export function resolveTravelV2StationRollWithPendingEffects(session = {}, stati
     rawOutcomeKey,
     outcomeKey: effectiveOutcomeKey,
     effectiveOutcomeKey,
+    resolvedAt: timestampFromOptions(options),
     stationRollBonusState: cloneData(stationRollBonusState),
     consumedStationRollBonuses: cloneData(consumedStationRollBonuses),
     resultFloorState: cloneData(floorState),
@@ -1985,7 +1988,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
   const pendingStationActionBonuses = prepareTravelV2PendingStationActionBonusesFromSupportEffects(stationActionSupportEffects);
   const travelV2ActiveCards = prepareTravelV2DifficultyBidCardRecordsFromStationActionSummary(stationActionSummary);
   const roundResolutionRecord = createRoundResolutionRecord({ ...finalizationStateBefore, stationActionSummary, stationActionSupportEffects, stationActionEventApproachEffects, stationActionEventApproachContributions, stationActionEventApproachContributionTally, stationActionEventApproachTallyStatus, pendingStationActionBonuses, travelV2ActiveCards }, options);
-  const finalizedSession = appendTravelV2ActiveCardRecordsToSession(appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses), travelV2ActiveCards);
+  const finalizedSessionBeforeHelpExpiration = appendTravelV2ActiveCardRecordsToSession(appendPendingStationActionBonuses(appendRoundResolutionRecord(clonedSession, roundResolutionRecord), pendingStationActionBonuses), travelV2ActiveCards);
+  const interStationHelpExpiration = applyTravelV2InterStationHelpExpirationToSession(finalizedSessionBeforeHelpExpiration, { trigger: "roundFinalized", roundIndex: finalizationStateBefore.roundIndex, roundNumber: finalizationStateBefore.roundNumber, now: timestampFromOptions(options) });
+  const finalizedSession = interStationHelpExpiration.ok === true && interStationHelpExpiration.shouldAdoptSession === true ? interStationHelpExpiration.session : finalizedSessionBeforeHelpExpiration;
   const mergedTravelV2ActiveCards = normalizeTravelV2ActiveCardRecords(finalizedSession.travelV2ActiveCards);
   const travelV2ActiveCardPreviewState = prepareTravelV2ActiveCardsPreviewState(mergedTravelV2ActiveCards, finalizedSession);
   const travelV2ActiveCardApplicationPreviews = prepareTravelV2ActiveCardApplicationPreviewState(travelV2ActiveCardPreviewState, finalizedSession);
@@ -2019,6 +2024,9 @@ export function finalizeTravelV2RoundOnRunnerSession(session, options = {}) {
     travelV2PendingStationActionBonuses: cloneData(pendingStationActionBonuses),
     travelV2ActiveCards: cloneData(mergedTravelV2ActiveCards),
     travelV2ActiveCardApplicationPreviews: cloneData(travelV2ActiveCardApplicationPreviews),
+    interStationHelpExpiration: cloneData(interStationHelpExpiration),
+    expiredInterStationHelpCount: interStationHelpExpiration.expiredCount,
+    expiredInterStationHelpQueueKeys: cloneData(interStationHelpExpiration.expiredQueueKeys),
     activeCardApplicationPreviews: cloneData(travelV2ActiveCardApplicationPreviews),
     activeCardRecords: cloneData(mergedTravelV2ActiveCards.records),
     createdTravelV2ActiveCards: cloneData(travelV2ActiveCards),
