@@ -1,6 +1,7 @@
 export const TRAVEL_V2_INTER_STATION_HELP_EXPIRATION_VERSION = 1;
 
 const TERMINAL_STATUSES = new Set(["expired", "dismissed", "blocked"]);
+const TERMINAL_STATION_RESULTS = new Set(["criticalSuccess", "success", "failure", "criticalFailure", "skipped"]);
 const TARGET_RESOLVED_MODES = new Set(["afterUse"]);
 const ROUND_FINALIZED_MODES = new Set(["afterUse", "endOfRound"]);
 
@@ -12,6 +13,24 @@ function nowIso(options = {}) { if (typeof options.now === "string" && options.n
 function queueRecords(session = {}) { return Array.isArray(session?.travelV2PendingStationBenefits) ? session.travelV2PendingStationBenefits : []; }
 function queueKeyFor(record = {}, index = 0) { return text(record.queueKey) || text(record.id) || text(record.benefitId) || `inter-station-help:unknown:${index}`; }
 function uniqueStrings(values = []) { return Array.from(new Set(values.map(text).filter(Boolean))); }
+
+function stationResult(session = {}, roundIndex = null, stationKey = "") { return text(session?.roundResults?.[roundIndex]?.stationResults?.[stationKey]); }
+
+function isInterStationHelpRecord(record = {}) {
+  if (!isPlainObject(record)) return false;
+  const pendingHelpKey = text(record.pendingHelpKey);
+  const dedupeKey = text(record.dedupeKey);
+  const actionId = text(record.actionId);
+  const authoredActionId = text(record.authoredActionId);
+  const sourceStationKey = text(record.sourceStationKey);
+  const targetStationKey = text(record.targetStationKey);
+  return pendingHelpKey.startsWith("inter-station-help:")
+    && dedupeKey === pendingHelpKey
+    && actionId !== ""
+    && authoredActionId === actionId
+    && sourceStationKey !== ""
+    && targetStationKey !== "";
+}
 
 function blocked(session, options, reasons) {
   return {
@@ -42,11 +61,13 @@ function validate(session = {}, options = {}) {
   if (roundIndex === null) reasons.push("missing-round-index");
   const targetStationKey = text(options.targetStationKey);
   if (trigger === "targetResolved" && !targetStationKey) reasons.push("missing-target-station-key");
-  return { ok: reasons.length === 0, trigger, roundIndex, roundNumber: strictIntegerOrNull(options.roundNumber) ?? (roundIndex === null ? null : roundIndex + 1), targetStationKey, reasons };
+  const targetResult = roundIndex === null || !targetStationKey ? "" : stationResult(session, roundIndex, targetStationKey);
+  if (trigger === "targetResolved" && targetStationKey && roundIndex !== null && !TERMINAL_STATION_RESULTS.has(targetResult)) reasons.push("target-result-not-resolved");
+  return { ok: reasons.length === 0, trigger, roundIndex, roundNumber: strictIntegerOrNull(options.roundNumber) ?? (roundIndex === null ? null : roundIndex + 1), targetStationKey, targetResult, reasons };
 }
 
 function shouldExpire(record = {}, normalized = {}) {
-  if (!isPlainObject(record)) return false;
+  if (!isInterStationHelpRecord(record)) return false;
   const status = text(record.status);
   if (TERMINAL_STATUSES.has(status) || record.expired === true || record.dismissed === true || record.blocked === true) return false;
   if (strictIntegerOrNull(record.roundIndex) !== normalized.roundIndex) return false;

@@ -26,6 +26,7 @@ import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, se
 import { prepareTravelV2NarrationHookState, prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
 import { prepareTravelV2RoundFinalizationState } from "./travel-v2-round-finalization-state.js";
 import { inspectTravelV2StationActionLockInFinalizationGuard, resolveTravelV2StationRollWithPendingEffects } from "./travel-v2-session-round-finalization.js";
+import { applyTravelV2InterStationHelpExpirationToSession } from "./travel-v2-inter-station-help-expiration.js";
 import { lockTravelV2StationAction, prepareGmTravelV2StationActionLockState, preparePlayerSafeTravelV2StationActionLockState, unlockTravelV2StationAction } from "./travel-v2-station-action-lock-in.js";
 import { prepareTravelV2PendingConsequenceQueue } from "./travel-v2-pending-consequence-queue.js";
 import { prepareTravelV2FinalOutcomePackageReviewState, prepareTravelV2FinalOutcomeApplyState } from "./travel-v2-event-outcome-package.js";
@@ -4367,6 +4368,14 @@ export function setTravelEventRunnerStationResult(session, roundIndex, stationKe
     if (isPlainObject(resolvedRound.stationResults)) nextSession.roundResults[index].stationResults = { ...(isPlainObject(nextSession.roundResults[index].stationResults) ? nextSession.roundResults[index].stationResults : {}), ...cloneData(resolvedRound.stationResults) };
     if (isPlainObject(resolvedRound.stationCheckAppliedBonuses)) nextSession.roundResults[index].stationCheckAppliedBonuses = cloneData(resolvedRound.stationCheckAppliedBonuses);
   }
+  const helpExpiration = applyTravelV2InterStationHelpExpirationToSession(nextSession, {
+    trigger: "targetResolved",
+    roundIndex: index,
+    roundNumber: nextSession.roundResults?.[index]?.roundNumber ?? index + 1,
+    targetStationKey: stationKey,
+    now: nowIso(options)
+  });
+  if (helpExpiration.ok === true && helpExpiration.shouldAdoptSession === true) nextSession = cloneData(helpExpiration.session);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
