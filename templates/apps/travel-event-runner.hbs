@@ -714,12 +714,23 @@
                   <div class="arcflight-travel-runner-mvp__v2-benefit-meta">
                     <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{statusLabel}}</span>
                     <span class="arcflight-travel-runner-mvp__v2-preview-chip">{{requestAvailabilityLabel}}</span>
-                    {{#if canReview}}<button type="button" data-arcflight-travel-v2-station-benefit-review-request data-queue-key="{{queueKey}}" title="Request GM/table review only. Does not use or apply this benefit.">Request Review</button>{{/if}}
+                    {{#if helpOptionOnly}}{{#if canReview}}<button type="button" data-arcflight-travel-v2-inter-station-help-review data-action-id="{{actionId}}" data-source-station-key="{{sourceStationKey}}" data-target-station-key="{{targetStationKey}}" data-round-index="{{roundIndex}}" title="Review this authored help option only. Does not queue or apply help.">Review Help</button>{{/if}}{{else}}{{#if canReview}}<button type="button" data-arcflight-travel-v2-station-benefit-review-request data-queue-key="{{queueKey}}" title="Request GM/table review only. Does not use or apply this benefit.">Request Review</button>{{/if}}{{/if}}
                     {{#if disabledReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{disabledReason}}</p>{{/if}}
                   </div>
                 </article>
               {{/each}}
             </div>
+            {{#if state.travelV2InterStationHelpCreateReview.hasSelection}}
+              <article class="arcflight-travel-card arcflight-gm-only" data-arcflight-travel-v2-inter-station-help-create-review>
+                <h5>Review Help: {{state.travelV2InterStationHelpCreateReview.title}}</h5>
+                <p>{{state.travelV2InterStationHelpCreateReview.publicText}}</p>
+                <p class="arcflight-sheet__hint">{{state.travelV2InterStationHelpCreateReview.sourceStationName}} → {{state.travelV2InterStationHelpCreateReview.targetStationName}} · Round {{state.travelV2InterStationHelpCreateReview.roundNumber}} · Result: {{state.travelV2InterStationHelpCreateReview.resultBand}}</p>
+                {{#if state.travelV2InterStationHelpCreateReview.criticalSuccess}}<p class="arcflight-sheet__hint">Critical success strengthening metadata is preserved for later review only; it is not applied here.</p>{{/if}}
+                {{#if state.travelV2InterStationHelpCreateReview.blocked}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2InterStationHelpCreateReview.message}}</p>{{/if}}
+                {{#if state.travelV2InterStationHelpCreateReview.queueable}}<button type="button" data-arcflight-travel-v2-inter-station-help-queue title="Queue this help in the session-local pending station benefit queue. Does not persist world data or apply the benefit.">Queue Help</button>{{/if}}
+              </article>
+            {{/if}}
+            {{#if state.travelV2InterStationHelpQueueResult.message}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2InterStationHelpQueueResult.message}}</p>{{/if}}
             {{#if state.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.hasFeedback}}<p class="arcflight-travel-runner-mvp__v2-preview-feedback">{{state.travelV2PreviewPanel.stationBenefitDisplay.reviewRequest.feedbackText}}</p>{{/if}}
           </section>
         {{/if}}

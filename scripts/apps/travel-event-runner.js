@@ -2,6 +2,7 @@ import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-ev
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
+import { integerOrNull, prepareTravelV2InterStationHelpQueueRunnerUpdate } from "../helpers/travel-v2-inter-station-help-create-review.js";
 import { applyTravelV2PressureToRunnerSession } from "../helpers/travel-v2-session-pressure-application.js";
 import { correctTravelV2PressureApplicationOnRunnerSession } from "../helpers/travel-v2-pressure-correction.js";
 import { finalizeTravelV2RoundOnRunnerSession } from "../helpers/travel-v2-session-round-finalization.js";
@@ -140,6 +141,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-dev-copy-debug]",
   "[data-arcflight-travel-v2-round-review]",
   "[data-arcflight-travel-v2-station-benefit-review-request]",
+  "[data-arcflight-travel-v2-inter-station-help-review]",
+  "[data-arcflight-travel-v2-inter-station-help-queue]",
   "[data-arcflight-travel-v2-order-reorder-request]",
   "[data-arcflight-travel-v2-order-commit-request]",
   "[data-arcflight-travel-v2-order-persist-request]",
@@ -509,6 +512,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2StationActionLockResult: null,
       travelV2StationActionLockPersistResult: null,
       travelV2RiskBidReviewQueuePersistResult: null,
+      travelV2InterStationHelpSelectedIdentity: null,
+      travelV2InterStationHelpQueueResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
       travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
     };
@@ -989,6 +994,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-dev-copy-debug")) return this.#copyTravelV2DebugReport();
     if (target.hasAttribute("data-arcflight-travel-v2-round-review")) return this.#showTravelV2RoundResolutionDialog({ finalize: false });
     if (target.hasAttribute("data-arcflight-travel-v2-station-benefit-review-request")) return this.#requestTravelV2StationBenefitReview(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-review")) return this.#reviewTravelV2InterStationHelp(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-queue")) return this.#queueTravelV2InterStationHelp();
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-order-persist-request")) return this.persistCommittedTravelV2RoundActionOrder();
@@ -1029,6 +1036,46 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
   }
 
 
+
+
+  #interStationHelpIdentityFromTarget(target = {}) {
+    const dataset = target?.dataset ?? {};
+    return {
+      actionId: typeof dataset.actionId === "string" ? dataset.actionId : "",
+      sourceStationKey: typeof dataset.sourceStationKey === "string" ? dataset.sourceStationKey : "",
+      targetStationKey: typeof dataset.targetStationKey === "string" ? dataset.targetStationKey : "",
+      roundIndex: integerOrNull(dataset.roundIndex)
+    };
+  }
+
+  #reviewTravelV2InterStationHelp(target) {
+    if (globalThis.game?.user?.isGM !== true) return this.render(true);
+    this.uiState.travelV2InterStationHelpSelectedIdentity = this.#interStationHelpIdentityFromTarget(target);
+    this.uiState.travelV2InterStationHelpQueueResult = { ok: true, queued: false, duplicate: false, status: "review-ready", message: "Review ready. Queue Help remains a separate explicit GM action.", blockedReasons: [] };
+    this.statusMessage = "Inter-Station Help review selected. No help has been queued.";
+    return this.render(true);
+  }
+
+  #queueTravelV2InterStationHelp() {
+    if (globalThis.game?.user?.isGM !== true) return this.render(true);
+    const update = prepareTravelV2InterStationHelpQueueRunnerUpdate(
+      this.session ?? {},
+      this.uiState.travelV2InterStationHelpSelectedIdentity ?? {},
+      { canQueue: true }
+    );
+    this.uiState.travelV2InterStationHelpQueueResult = update.status;
+    if (update.shouldAdoptSession === true) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2InterStationHelpSelectedIdentity = null;
+      this.statusMessage = "Inter-Station Help queued locally; no world data was persisted.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = update.status?.message ?? "Inter-Station Help queueing was blocked.";
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return this.render(true);
+  }
 
   #getCurrentRiskBidState() {
     return prepareTravelEventRunnerAppStateWithTravelV2Preview({
