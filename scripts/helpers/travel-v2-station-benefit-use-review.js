@@ -113,9 +113,16 @@ function validatePendingStationBenefitUse(session = {}, selection = {}, options 
   if (!record) return { ok: reasons.length === 0, queueKey, reasons: uniqueStrings(reasons), record: null, index: -1, matchedAction: null };
 
   const status = text(record.status) || "pending";
-  if (status === "used") reasons.push("pending-station-benefit-already-used");
-  else if (status === "consumed" || record.consumed === true) reasons.push("pending-station-benefit-already-consumed");
-  else if (["dismissed", "expired", "blocked"].includes(status)) reasons.push(`pending-station-benefit-${status}`);
+  const alreadyUsed = status === "used" || record.used === true;
+  const alreadyConsumed = status === "consumed" || record.consumed === true;
+  const alreadyDismissed = status === "dismissed" || record.dismissed === true;
+  const alreadyExpired = status === "expired" || record.expired === true;
+  const alreadyBlocked = status === "blocked" || record.blocked === true;
+  if (alreadyUsed) reasons.push("pending-station-benefit-already-used");
+  else if (alreadyConsumed) reasons.push("pending-station-benefit-already-consumed");
+  else if (alreadyDismissed) reasons.push("pending-station-benefit-dismissed");
+  else if (alreadyExpired) reasons.push("pending-station-benefit-expired");
+  else if (alreadyBlocked) reasons.push("pending-station-benefit-blocked");
   else if (status !== "pending") reasons.push("pending-station-benefit-not-pending");
 
   const currentRoundIndex = strictIntegerOrNull(session.currentRoundIndex);

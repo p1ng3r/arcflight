@@ -173,6 +173,43 @@ export default async function runTravelV2StationBenefitUseReviewSmokeChecks() {
     return result;
   };
 
+  for (const [label, flagPatch, expectedReason, expectedDuplicate] of [
+    ["raw-used-flag", { status: "pending", used: true, consumed: false }, "pending-station-benefit-already-used", true],
+    ["raw-consumed-flag", { status: "pending", consumed: true }, "pending-station-benefit-already-consumed", true],
+    ["raw-dismissed-flag", { status: "pending", dismissed: true }, "pending-station-benefit-dismissed", false],
+    ["raw-expired-flag", { status: "pending", expired: true }, "pending-station-benefit-expired", false],
+    ["raw-blocked-flag", { status: "pending", blocked: true }, "pending-station-benefit-blocked", false]
+  ]) {
+    const flaggedSession = helpSession({ travelV2PendingStationBenefits: [{ ...helpSession().travelV2PendingStationBenefits[0], ...flagPatch }] });
+    const flaggedResult = assertBlockedUse(label, flaggedSession);
+    assert.equal(flaggedResult.ok, false, label);
+    assert.equal(flaggedResult.used, false, label);
+    assert.equal(flaggedResult.consumed, false, label);
+    assert.equal(flaggedResult.duplicate, expectedDuplicate, label);
+    assert.ok(flaggedResult.status.blockedReasons.includes(expectedReason), label);
+    const returnedRecord = flaggedResult.nextSession.travelV2PendingStationBenefits[0];
+    assert.equal(returnedRecord.usedAt, flaggedSession.travelV2PendingStationBenefits[0].usedAt, label);
+    assert.equal(returnedRecord.consumedAt, flaggedSession.travelV2PendingStationBenefits[0].consumedAt, label);
+    assert.deepEqual(flaggedResult.nextSession.travelV2SupportRecords, flaggedSession.travelV2SupportRecords, label);
+    assert.deepEqual(flaggedResult.nextSession.roundResults, flaggedSession.roundResults, label);
+    assert.equal(flaggedResult.nextSession.pressure, flaggedSession.pressure, label);
+  }
+
+  for (const [label, flagPatch, expectedReason] of [
+    ["gm-raw-used-flag", { status: "pending", used: true }, "pending-station-benefit-already-used"],
+    ["gm-raw-consumed-flag", { status: "pending", consumed: true }, "pending-station-benefit-already-consumed"],
+    ["gm-raw-dismissed-flag", { status: "pending", dismissed: true }, "pending-station-benefit-dismissed"]
+  ]) {
+    const inconsistentSession = helpSession({ travelV2PendingStationBenefits: [{ ...helpSession().travelV2PendingStationBenefits[0], ...flagPatch }] });
+    const gmState = prepareTravelV2StationBenefitUseReviewGmState({ session: inconsistentSession }, { user: { isGM: true }, includeGmReview: true, selectedQueueKey: "help-1", travelV2StationBenefitUseReviewRequested: true });
+    assert.equal(gmState.selectedCandidate.canUse, false, label);
+    assert.equal(gmState.selectedCandidate.useAvailable, false, label);
+    assert.equal(gmState.selectedCandidate.candidate.canUse, false, label);
+    assert.equal(gmState.selectedCandidate.candidate.useAvailable, false, label);
+    assert.ok(gmState.gmReview.validation.blockedReasons.includes(expectedReason), label);
+  }
+  checked.push("raw lifecycle flags override pending status, classify duplicates only for used/consumed, and disable GM use review");
+
   for (const [label, mutateRecord, mutateSession] of [
     ["missing-action-id", (record) => { delete record.actionId; delete record.authoredActionId; }],
     ["wrong-action-id", (record) => { record.actionId = "wrong"; record.authoredActionId = "wrong"; record.pendingHelpKey = "inter-station-help:0:wrong:helm:engineer"; record.dedupeKey = "inter-station-help:0:wrong:helm:engineer"; }],
