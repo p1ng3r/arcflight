@@ -5,7 +5,7 @@ export const TRAVEL_V2_INTER_STATION_HELP_PENDING_RECORDS_VERSION = 1;
 const SUCCESS_RESULTS = new Set(["success", "criticalSuccess"]);
 const CRITICAL_SUCCESS_RESULTS = new Set(["criticalSuccess"]);
 const FORBIDDEN_KEYS = new Set(["auditRecord", "commitRecords", "userId", "userName", "gmText", "gmSummary", "gmMechanicalNotes", "applyPayload", "targetActorUuid", "targetActorId", "mutationScope", "internalMutation", "secret", "pendingConsequenceQueue", "gmOnly", "unrevealedHazard", "catalogSuggestions", "hiddenData", "socketPayload"]);
-const DUPLICATE_SUMMARY_KEYS = Object.freeze(["pendingHelpKey", "dedupeKey", "actionId", "authoredActionId", "title", "publicText", "sourceStationKey", "sourceStationName", "targetStationKey", "targetStationName", "roundIndex", "roundNumber", "resultBand", "tags", "status", "applied", "consumed", "criticalSuccess"]);
+const DUPLICATE_SUMMARY_KEYS = Object.freeze(["pendingHelpKey", "dedupeKey", "actionId", "authoredActionId", "title", "publicText", "sourceStationKey", "sourceStationName", "targetStationKey", "targetStationName", "roundIndex", "roundNumber", "resultBand", "benefitKind", "magnitude", "expires", "tags", "status", "applied", "consumed", "criticalSuccess"]);
 const CRITICAL_METADATA_KEYS = Object.freeze(["id", "key", "title", "publicText", "strengthening", "benefitKind", "magnitude", "tags"]);
 
 function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -136,6 +136,9 @@ export function prepareTravelV2InterStationHelpPendingRecord(session = {}, actio
     roundIndex: matched.roundIndex,
     roundNumber: matched.roundNumber,
     resultBand,
+    ...(Object.hasOwn(matched, "benefitKind") ? { benefitKind: matched.benefitKind } : {}),
+    ...(Object.hasOwn(matched, "magnitude") ? { magnitude: matched.magnitude } : {}),
+    ...(Object.hasOwn(matched, "expires") ? { expires: matched.expires } : {}),
     tags: uniqueStrings(Array.isArray(matched.tags) ? matched.tags : []),
     authoredActionId: matched.actionId,
     status: "pending",

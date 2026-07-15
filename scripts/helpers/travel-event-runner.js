@@ -34,6 +34,7 @@ import { prepareTravelV2FinalOutcomePreservationPlan } from "./travel-v2-final-o
 import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-final-outcome-preservation-apply-plan.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
+import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -2031,7 +2032,7 @@ function resolveActorStatisticModifier(actor, skill) {
   return resolveActorStatisticDetails(actor, skill).modifier;
 }
 
-function resolveStationDc(row, baseDC) {
+export function resolveStationDc(row, baseDC) {
   const approachDc = Number(row?.selectedApproach?.dc);
   const hazardDcModifier = Number(row?.selectedApproach?.hazardDcModifier ?? row?.hazardDcModifier ?? 0) || 0;
   if (Number.isFinite(approachDc) && approachDc > 0) return { dc: approachDc + hazardDcModifier, source: hazardDcModifier ? "hazard" : "approach" };
@@ -3706,7 +3707,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
     const hasSelectedApproach = row.selectedApproach?.isSelected === true;
     const hasResult = Boolean(row.result);
     const assignmentRow = assignmentRowsByStation.get(row.stationKey) ?? null;
-    const resolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
+    const baseResolvedDc = resolveStationDc(row, runnerState.event?.baseDC);
+    const helpAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(runnerState.session ?? {}, { roundIndex: runnerState.currentRoundIndex, stationKey: row.stationKey });
+    const resolvedDc = helpAdjustment.ok && helpAdjustment.hasAdjustment && Number.isFinite(helpAdjustment.effectiveDc) ? { ...baseResolvedDc, baseDc: baseResolvedDc.dc, dc: helpAdjustment.effectiveDc, source: "interStationHelp", helpAdjustment } : { ...baseResolvedDc, baseDc: baseResolvedDc.dc, helpAdjustment };
     const assignedActor = row.assignment?.actorId || row.assignment?.actorUuid ? getActorByAssignment(row.assignment, options) : null;
     const selectedStatistic = resolveActorStatisticDetails(assignedActor, row.selectedApproach?.skill);
     const selectedApproachModifier = selectedStatistic.modifier;
@@ -3734,6 +3737,11 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       hasResultFeedback: Boolean(row.resultFeedback),
       dc: resolvedDc.dc,
       hasDc: Number.isFinite(resolvedDc.dc),
+      baseDc: resolvedDc.baseDc,
+      effectiveDc: resolvedDc.dc,
+      helpDcReduction: resolvedDc.helpAdjustment?.dcReduction ?? 0,
+      hasInterStationHelp: resolvedDc.helpAdjustment?.hasAdjustment === true,
+      helpSummary: resolvedDc.helpAdjustment?.hasAdjustment === true ? `${resolvedDc.helpAdjustment.applications.map((app) => app.sourceStationName || app.sourceStationKey).filter(Boolean).join(", ") || "Help"} reduces this check's DC by ${resolvedDc.helpAdjustment.dcReduction}.` : "",
       dcLabel: Number.isFinite(resolvedDc.dc) ? `DC ${resolvedDc.dc}` : "DC unavailable",
       dcSource: resolvedDc.source,
       selectedApproachModifier,
@@ -3768,7 +3776,9 @@ export function prepareTravelSceneOverlayState(session = null, options = {}) {
       npcControllerName: assignmentRow?.npcControllerName || "Unassigned",
       npcControllerOptions: assignmentRow?.npcControllerOptions ?? [],
       approachOptions: (row.stationOptions ?? []).map((approach) => {
-        const optionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
+        const baseOptionDc = resolveStationDc({ ...row, selectedApproach: approach }, runnerState.event?.baseDC);
+        const optionHelpAdjustment = prepareTravelV2InterStationHelpCheckAdjustment(runnerState.session ?? {}, { roundIndex: runnerState.currentRoundIndex, stationKey: row.stationKey });
+        const optionDc = optionHelpAdjustment.ok && optionHelpAdjustment.hasAdjustment && Number.isFinite(optionHelpAdjustment.effectiveDc) ? { ...baseOptionDc, dc: optionHelpAdjustment.effectiveDc } : baseOptionDc;
         const statistic = resolveActorStatisticDetails(assignedActor, approach.skill);
         const modifier = statistic.modifier;
         const skillLabel = approach.skill ? humanizeIdentifier(approach.skill) : "No statistic";

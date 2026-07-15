@@ -120,14 +120,16 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Slice 05 note:** Pending Inter-Station Help can now be explicitly marked used through the GM station-benefit review flow. The runner re-reads the raw `session.travelV2PendingStationBenefits` record by queue key, validates current round, unresolved target, successful source result, and locked source-before-target order, then adopts the returned cloned session locally. Used records remain visible through the existing queue projection, repeated use is blocked without adoption, and non-GM users remain read-only. Slice 05 does not apply a roll modifier, alter a DC, activate critical-success strengthening, create backlash, expire records, perform round-end cleanup, automatically persist the runner session, or mutate actor/item/world data.
 
+**Slice 06 note:** Authored `dcReduction` Help metadata now survives action preparation and queueing, and a GM can explicitly apply an already-used Help record through a separate Help-effect review. Application creates session-local Inter-Station Help application state, marks only the selected used Help row as applied, and lets the target station's effective DC use the authored reduction while leaving the authored base DC unchanged. Applying the Help effect does not roll the check, record a result, advance the station, persist the runner session, or mutate Foundry actor/item/world data. Critical-success strengthening metadata remains inert, and non-GM users remain read-only with no application controls.
+
 **Remaining work:**
 
-- Apply the actual mechanical benefit where authored and explicitly confirmed.
 - Support critical-success automatic or stronger benefits where authored.
 - Integrate critical-failure backlash.
 - Add expiration and round-end cleanup.
+- Support unsupported/custom benefit kinds.
 - Finish final player/table UX polish.
-- Expand smoke coverage for mechanical use, expiration, backlash, and the completed player-safe lifecycle.
+- Expand smoke coverage for expiration, backlash, custom benefits, and the completed player-safe lifecycle.
 
 ### TV2-003 — Player-Chosen Round Action Order UX Polish
 
