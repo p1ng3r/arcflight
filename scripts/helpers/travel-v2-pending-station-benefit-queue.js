@@ -184,9 +184,12 @@ function rowFromRecord(record, index, stationsByKey, options = {}) {
   const appliedBaseMagnitude = legacyApplication ? appliedMagnitude : (appliedRecord ? positiveIntegerOrNull(appliedRecord.baseMagnitude) : null);
   const appliedCriticalMagnitude = legacyApplication ? null : (appliedRecord ? positiveIntegerOrNull(appliedRecord.criticalMagnitude) : null);
   const appliedStrengthened = legacyApplication ? false : appliedRecord?.strengthened === true;
-  const applicationStatusLabel = applied && appliedMagnitude !== null ? `Effect applied: DC −${appliedMagnitude}` : (applied ? "Effect applied" : null);
   const expirationTrigger = nullableText(row.expirationTrigger);
   const expirationStatusLabel = status === "expired" ? (expirationTrigger === "roundFinalized" ? "Expired at round end" : (expirationTrigger === "targetResolved" ? "Expired after target resolution" : "Expired")) : null;
+  const appliedStatusLabel = applied && appliedMagnitude !== null ? `Effect applied: DC −${appliedMagnitude}` : (applied ? "Effect applied" : null);
+  const applicationStatusLabel = appliedStatusLabel && expirationStatusLabel
+    ? `${appliedStatusLabel} · ${expirationStatusLabel}`
+    : (appliedStatusLabel ?? expirationStatusLabel);
   const base = stripForbiddenFields({
     pendingStationBenefitQueueVersion: TRAVEL_V2_PENDING_STATION_BENEFIT_QUEUE_VERSION,
     queueKey,
