@@ -1,0 +1,68 @@
+name: Apply committed-order replacement guard
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add lifecycle guard and focused coverage
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const helperPath = "scripts/helpers/travel-v2-round-action-order-state.js";
+          let helper = fs.readFileSync(helperPath, "utf8");
+          const functionStart = helper.indexOf("export function commitTravelV2RoundActionOrderToSession");
+          const functionEnd = helper.indexOf("\nexport function unlockTravelV2RoundActionOrderInSession", functionStart);
+          if (functionStart < 0 || functionEnd < 0) throw new Error("Commit helper boundaries were not found.");
+          let commitFunction = helper.slice(functionStart, functionEnd);
+          const marker = '\n  const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();';
+          if ((commitFunction.split(marker).length - 1) !== 1) throw new Error("Commit timestamp insertion marker was not found exactly once.");
+          const guard = `
+  const existingValidation = normalizeTravelV2ProposedRoundActionOrder(existingOrder, activeStations);
+  if (existingRecord && existingValidation.valid) {
+    const reason = "Committed round action order must be unlocked before it can be replaced.";
+    return deepFreeze({ ok: false, committed: false, duplicate: false, blocked: true, playerSafe: !isGm, blockedReasons: [reason], reason, roundIndex, roundNumber, previousOrder, committedOrder, session: isGm ? cloneData(session) : null });
+  }
+`;
+          commitFunction = commitFunction.replace(marker, `${guard}${marker}`);
+          helper = helper.slice(0, functionStart) + commitFunction + helper.slice(functionEnd);
+          fs.writeFileSync(helperPath, helper);
+
+          const smokePath = "scripts/helpers/travel-v2-round-action-order-state.smoke.js";
+          let smoke = fs.readFileSync(smokePath, "utf8");
+          const insertionMarker = '  checked.push("duplicate commit is non-destructive and does not append audit records");\n';
+          if ((smoke.split(insertionMarker).length - 1) !== 1) throw new Error("Helper smoke insertion marker was not found exactly once.");
+          const coverage = `
+  const replacementWithoutUnlock = commitTravelV2RoundActionOrderToSession(committed.session, ["navigator", "engineer", "watchmaster"], { user: { isGM: true }, commitRequested: true, timestamp: "2026-07-03T00:02:00.000Z" });
+  assert.equal(replacementWithoutUnlock.ok, false);
+  assert.equal(replacementWithoutUnlock.blocked, true);
+  assert.equal(replacementWithoutUnlock.committed, false);
+  assert.match(replacementWithoutUnlock.reason, /must be unlocked/);
+  assert.deepEqual(replacementWithoutUnlock.session.travelV2RoundActionOrder.rounds["0"].order, ["engineer", "navigator", "watchmaster"]);
+  assert.equal(replacementWithoutUnlock.session.travelV2RoundActionOrder.commitRecords.length, 1);
+  checked.push("committed order replacement requires explicit unlock");
+`;
+          smoke = smoke.replace(insertionMarker, `${insertionMarker}${coverage}`);
+          fs.writeFileSync(smokePath, smoke);
+          NODE
+          rm .github/workflows/apply-committed-order-replacement-guard.yml
+      - name: Commit lifecycle guard
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/helpers/travel-v2-round-action-order-state.js scripts/helpers/travel-v2-round-action-order-state.smoke.js .github/workflows/apply-committed-order-replacement-guard.yml
+          git commit -m "fix: require unlock before replacing committed order"
+          git push
