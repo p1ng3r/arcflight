@@ -145,22 +145,19 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Remaining work:**
 
-- Player-facing polish for selecting/reviewing station order before Round 1.
-- GM drag/reorder support where available.
-- GM lock/unlock support.
-- Captain final-say guidance text when players cannot agree.
-- Clear GM/player labels for committed vs proposed order.
-- Final UX check for startup, saved-session loading, switching, library row status, and persistence.
+- Slice 03 — Drag/Reorder Interaction.
+- Final Foundry table UX verification and TV2-003 closeout.
 
 **Do not rebuild:** State, commit, persistence bridge, library status, startup hardening, and session-switch isolation are already covered.
 
 **Status guidance slice note:** This PR adds a player-safe Round Action Order decision projection that clearly labels Proposed Order, Committed Order, and Needs Decision states, displays Captain final-say guidance before commitment, and keeps a clear GM Ready to Commit message for valid review candidates. It does not add drag-and-drop yet, does not add an unlock/recommit flow yet, and does not rebuild state preparation, commit, persistence, startup, session-switch, or library foundations.
 
-**Remaining polish after this slice:**
+**Slice 02 — GM Unlock and Recommit Flow:** Explicit GM-only current-round unlock now reopens a valid committed order before any station result is recorded. The slice preserves commit history, appends unlock audits, restores Proposed Order or Needs Decision canonical state, restores Captain guidance while open, uses the existing commit helper for recommit, supports explicit save/reload behavior for the unlocked lifecycle, and still adds no drag-and-drop yet.
 
-- Drag/reorder interaction where practical.
-- GM unlock/recommit flow.
-- Final Foundry table UX verification.
+**Remaining polish after Slice 02:**
+
+- Slice 03 — Drag/Reorder Interaction.
+- Final Foundry table UX verification and TV2-003 closeout.
 
 ### TV2-004 — Risk Bids / Difficulty Bids
 

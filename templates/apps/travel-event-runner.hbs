@@ -628,6 +628,12 @@
               {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.showCaptainGuidance}}
                 <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.orderDecision.captainGuidanceText}}</p>
               {{/if}}
+              {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.unlockStatus.openForReconsideration}}
+                <section class="arcflight-travel-runner-mvp__v2-order-unlock-status" aria-label="{{state.travelV2PreviewPanel.roundActionOrderDisplay.unlockStatus.statusLabel}}">
+                  <h5><span class="arcflight-sr-only">Order Open for Reconsideration</span>{{state.travelV2PreviewPanel.roundActionOrderDisplay.unlockStatus.statusLabel}}</h5>
+                  <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.unlockStatus.guidanceText}}</p>
+                </section>
+              {{/if}}
               <p class="arcflight-sheet__hint">{{state.travelV2PreviewPanel.roundActionOrderDisplay.subtitle}}</p>
             </header>
             <h5>Current Station Sequence</h5>
@@ -652,9 +658,20 @@
                 <button type="button" data-arcflight-travel-v2-order-reorder-request data-proposed-order="{{state.travelV2PreviewPanel.roundActionOrderDisplay.proposedShellOrderCsv}}" title="Requests a GM-only review of a proposed station order in local render state only. Does not apply, save, persist, or advance the round.">Request Reorder Review</button>
               </div>
             {{/if}}
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.unlockControl.visibleForGM}}
+              <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                <button type="button" data-arcflight-travel-v2-order-unlock-request {{#unless state.travelV2PreviewPanel.roundActionOrderDisplay.unlockControl.canUnlock}}disabled{{/unless}} title="GM-only: unlocks the committed station order locally after confirmation without changing station actions, rolls, results, pressure, or persistence.">Unlock Order</button>
+              </div>
+              {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.unlockControl.blockedReason}}<p class="arcflight-sheet__hint arcflight-travel-runner-mvp__v2-preview-blocked">{{state.travelV2PreviewPanel.roundActionOrderDisplay.unlockControl.blockedReason}}</p>{{/if}}
+            {{/if}}
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.canPersistCommittedOrder}}
               <div class="arcflight-travel-runner-mvp__v2-preview-actions">
                 <button type="button" data-arcflight-travel-v2-order-persist-request title="GM-only: persists the already committed local round action order through the existing saved runner session path. Does not commit, reorder, advance, roll, apply stations, or finalize anything.">Persist Committed Order</button>
+              </div>
+            {{/if}}
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.canPersistUnlockedOrderState}}
+              <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                <button type="button" data-arcflight-travel-v2-order-unlock-persist-request title="GM-only: saves the unlocked order state through the existing saved runner session path. Does not commit, reorder, advance, roll, or apply station results.">Save Unlocked Order State</button>
               </div>
             {{/if}}
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.persistResult.available}}

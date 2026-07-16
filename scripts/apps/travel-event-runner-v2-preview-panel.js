@@ -719,6 +719,33 @@ function normalizeRoundActionOrderDecision(decision = null) {
   };
 }
 
+function normalizeRoundActionOrderUnlockStatus(status = null) {
+  return {
+    openForReconsideration: status?.openForReconsideration === true,
+    wasPreviouslyCommitted: status?.wasPreviouslyCommitted === true,
+    statusKey: status?.statusKey || (status?.openForReconsideration === true ? "openForReconsideration" : "notOpen"),
+    statusLabel: status?.statusLabel || (status?.openForReconsideration === true ? "Order Open for Reconsideration" : "Order Not Open for Reconsideration"),
+    guidanceText: status?.guidanceText || "",
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function normalizeRoundActionOrderUnlockControl(control = null, options = {}) {
+  const isGm = options.isGM === true || options.user?.isGM === true;
+  if (!isGm || !isPlainObject(control)) return null;
+  return {
+    visibleForGM: control.visibleForGM === true,
+    canUnlock: control.canUnlock === true,
+    disabled: control.disabled !== false,
+    buttonLabel: control.buttonLabel || "Unlock Order",
+    blockedReason: control.blockedReason || "",
+    requiresConfirmation: control.requiresConfirmation !== false,
+    playerSafe: false,
+    readOnly: true
+  };
+}
+
 function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const rows = Array.isArray(state?.rows) ? state.rows.map((row) => ({
     stationKey: row?.stationKey ?? "",
@@ -736,7 +763,10 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const blockedText = blockedReasons[0] ?? "";
   const proposedShellOrder = rows.map((row) => row.stationKey).reverse();
   const orderDecision = normalizeRoundActionOrderDecision(state?.orderDecision);
-  const canPersistCommittedOrder = orderDecision.hasCommittedOrder === true && (options.isGM === true || options.user?.isGM === true);
+  const unlockStatus = normalizeRoundActionOrderUnlockStatus(state?.unlockStatus);
+  const unlockControl = normalizeRoundActionOrderUnlockControl(state?.unlockControl, options);
+  const canPersistCommittedOrder = orderDecision.hasCommittedOrder === true && unlockStatus.openForReconsideration !== true && (options.isGM === true || options.user?.isGM === true);
+  const canPersistUnlockedOrderState = unlockStatus.openForReconsideration === true && (options.isGM === true || options.user?.isGM === true);
   const reorderRequest = (options.isGM === true || options.user?.isGM === true)
     ? normalizeRoundActionOrderReorderRequest(state?.reorderRequest)
     : { requested: false, ready: false, blocked: true, status: "not-requested", feedbackText: "No GM reorder review requested.", hasFeedback: false, showComparison: false, currentRows: [], proposedRows: [], hasComparisonRows: false, blockedReasons: [], blockedReason: "", mutationNote: "Review-only reorder candidate. No order is persisted or applied.", reviewOnly: true };
@@ -756,6 +786,11 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     hasCommittedOrder: orderDecision.hasCommittedOrder,
     hasProposedOrder: orderDecision.hasProposedOrder,
     needsOrderDecision: orderDecision.needsDecision,
+    unlockStatus,
+    unlockControl,
+    orderOpenForReconsideration: unlockStatus.openForReconsideration,
+    roundActionOrderUnlockStatusLabel: unlockStatus.statusLabel,
+    roundActionOrderUnlockGuidanceText: unlockStatus.guidanceText,
     captainGuidanceText: orderDecision.captainGuidanceText,
     showCaptainGuidance: orderDecision.showCaptainGuidance,
     rows,
@@ -773,6 +808,8 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     reorderRequest,
     commitResult: normalizeRoundActionOrderCommitResult(options.commitResult, rows, options),
     persistResult: normalizeRoundActionOrderPersistResult(options.persistResult, rows, options),
+    canPersistUnlockedOrderState,
+    unlockPersistResult: normalizeRoundActionOrderPersistResult(options.unlockPersistResult, rows, options),
     canPersistCommittedOrder,
     readOnly: true
   };
@@ -1016,7 +1053,7 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     ...stationBenefitUseReviewState,
     rows: stationBenefitQueueRows ?? stationBenefitUseReviewState?.rows ?? []
   }, { isGM: appState.isGM === true });
-  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult, persistResult: appState.travelV2RoundActionOrderPersistResult });
+  const roundActionOrderDisplay = normalizeRoundActionOrderDisplay(isPlainObject(runnerSession) ? prepareTravelV2RoundActionOrderState(runnerSession, { user: appState.user, isGM: appState.isGM === true, travelV2RoundActionOrderReorderRequested: appState.travelV2RoundActionOrderReorderRequested === true, proposedOrder: appState.travelV2ProposedRoundActionOrder }) : null, { user: appState.user, isGM: appState.isGM === true, commitResult: appState.travelV2RoundActionOrderCommitResult, persistResult: appState.travelV2RoundActionOrderPersistResult, unlockPersistResult: appState.travelV2RoundActionOrderUnlockPersistResult });
   return {
     version: TRAVEL_EVENT_RUNNER_V2_PREVIEW_PANEL_VERSION,
     available,

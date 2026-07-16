@@ -49,7 +49,7 @@ function fixture(overrides = {}) {
 
 export default async function runTravelV2RoundActionOrderStateSmokeChecks() {
   const checked = [];
-  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, 3);
+  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION, 4);
   assert.equal(typeof normalizeTravelV2ProposedRoundActionOrder, "function");
   assert.equal(typeof prepareTravelV2RoundActionOrderState, "function");
   assert.equal(typeof commitTravelV2RoundActionOrderToSession, "function");
