@@ -1,0 +1,54 @@
+name: Fix keyboard smoke return contract
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Correct blocked-render assertions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "scripts/apps/travel-event-runner-v2-round-action-order-keyboard-reorder.smoke.js";
+          let source = fs.readFileSync(path, "utf8");
+          const replacements = [
+            [
+              '    assert.equal(committedBlocked.shouldUpdateSession, false, "committed order cannot be replaced without unlock");',
+              '    assert.notEqual(committedBlocked?.shouldUpdateSession, true, "committed order cannot be replaced without unlock");'
+            ],
+            [
+              '    assert.equal(staleRoundCommit.shouldUpdateSession, false, "explicit commit after stale-round cleanup is blocked");',
+              '    assert.notEqual(staleRoundCommit?.shouldUpdateSession, true, "explicit commit after stale-round cleanup is blocked");'
+            ],
+            [
+              '    assert.equal(staleSessionCommit.shouldUpdateSession, false, "session-switched stale candidate cannot commit");',
+              '    assert.notEqual(staleSessionCommit?.shouldUpdateSession, true, "session-switched stale candidate cannot commit");'
+            ]
+          ];
+          for (const [before, after] of replacements) {
+            const matches = source.split(before).length - 1;
+            if (matches !== 1) throw new Error(`Expected exactly one assertion match, found ${matches}: ${before}`);
+            source = source.replace(before, after);
+          }
+          fs.writeFileSync(path, source);
+          NODE
+          rm .github/workflows/fix-keyboard-smoke-return-contract.yml
+      - name: Commit smoke contract correction
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/apps/travel-event-runner-v2-round-action-order-keyboard-reorder.smoke.js .github/workflows/fix-keyboard-smoke-return-contract.yml
+          git commit -m "test: align keyboard smoke with app render return"
+          git push
