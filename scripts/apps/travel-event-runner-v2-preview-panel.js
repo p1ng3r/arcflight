@@ -40,11 +40,41 @@ function closeRoundActionOrderReconsideration(display = null) {
   };
 }
 
+function gateRoundActionOrderReorder(display = null) {
+  if (!display) return display;
+  const interaction = display.reorderInteraction;
+  const canReorder = interaction?.canReorder === true && interaction?.keyboardEnabled === true;
+  const request = display.reorderRequest;
+  if (!request?.requested) return { ...display, canRequestReorderReview: canReorder };
+
+  const ready = canReorder && request.ready === true;
+  if (ready) return { ...display, canRequestReorderReview: true, reorderRequest: { ...request, ready: true, blocked: false, status: "ready" } };
+
+  const blockedReason = interaction?.blockedReason
+    || request.blockedReason
+    || request.blockedReasons?.[0]
+    || "Round action-order reordering is unavailable in the current runner state.";
+  return {
+    ...display,
+    canRequestReorderReview: false,
+    reorderRequest: {
+      ...request,
+      ready: false,
+      blocked: true,
+      status: "blocked",
+      feedbackText: blockedReason,
+      blockedReason,
+      blockedReasons: Array.from(new Set([blockedReason, ...(Array.isArray(request.blockedReasons) ? request.blockedReasons : [])]))
+    }
+  };
+}
+
 export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
   const panel = prepareBaseTravelEventRunnerV2PreviewPanelState(appState);
+  const closedDisplay = closeRoundActionOrderReconsideration(panel?.roundActionOrderDisplay);
   return {
     ...panel,
-    roundActionOrderDisplay: closeRoundActionOrderReconsideration(panel?.roundActionOrderDisplay)
+    roundActionOrderDisplay: gateRoundActionOrderReorder(closedDisplay)
   };
 }
 

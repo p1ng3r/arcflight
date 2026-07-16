@@ -12,7 +12,8 @@
     "styles/arcflight.css"
   ],
   "esmodules": [
-    "scripts/arcflight.js"
+    "scripts/arcflight.js",
+    "scripts/apps/travel-event-runner-candidate-guard.js"
   ],
   "languages": [
     {

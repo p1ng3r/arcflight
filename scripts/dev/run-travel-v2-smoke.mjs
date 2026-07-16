@@ -6,6 +6,7 @@ import runTravelV2RoundActionOrderUnlockRecommitSmokeChecks from "../helpers/tra
 import runTravelV2RoundActionOrderStatusGuidanceSmokeChecks from "../helpers/travel-v2-round-action-order-status-guidance.smoke.js";
 import runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks from "../helpers/travel-v2-round-action-order-persistence-bridge.smoke.js";
 import runTravelV2RoundActionOrderLibraryStatusSmokeChecks from "../helpers/travel-v2-round-action-order-library-status.smoke.js";
+import runTravelV2RoundActionOrderReorderCandidateSmokeChecks from "../helpers/travel-v2-round-action-order-reorder-candidate.smoke.js";
 import runTravelV2RunnerBridgeSmokeChecks from "../helpers/travel-v2-runner-bridge.smoke.js";
 import runTravelV2PreviewStateSmokeChecks from "../helpers/travel-v2-preview-state.smoke.js";
 import runTravelV2PressureApplicationStateSmokeChecks from "../helpers/travel-v2-pressure-application-state.smoke.js";
@@ -75,6 +76,7 @@ import runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks from "../
 import runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-persistence.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-closeout.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-startup.smoke.js";
+import runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-keyboard-reorder.smoke.js";
 import runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks from "../apps/travel-event-runner-v2-session-switch-order-state.smoke.js";
 import runTravelEventRunnerV2SessionSwitchContextIsolationSmokeChecks from "../apps/travel-event-runner-v2-session-switch-context-isolation.smoke.js";
 import runTravelEventRunnerV2LibraryOrderStatusCloseoutSmokeChecks from "../apps/travel-event-runner-v2-library-order-status-closeout.smoke.js";
@@ -121,6 +123,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 round action order status guidance", runTravelV2RoundActionOrderStatusGuidanceSmokeChecks],
   ["Travel v2 round action order persistence bridge", runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks],
   ["Travel v2 round action order library status", runTravelV2RoundActionOrderLibraryStatusSmokeChecks],
+  ["Travel v2 round action order reorder candidate", runTravelV2RoundActionOrderReorderCandidateSmokeChecks],
   ["Travel v2 runner bridge", runTravelV2RunnerBridgeSmokeChecks],
   ["Travel v2 preview state", runTravelV2PreviewStateSmokeChecks],
   ["Travel v2 pressure application state", runTravelV2PressureApplicationStateSmokeChecks],
@@ -190,6 +193,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 round action order persistence", runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks],
   ["Travel event runner v2 round action order closeout", runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks],
   ["Travel event runner v2 round action order startup hardening", runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks],
+  ["Travel event runner v2 round action order keyboard reorder", runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks],
   ["Travel event runner v2 session switch order state isolation", runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks],
   ["Travel event runner v2 session switch context isolation", runTravelEventRunnerV2SessionSwitchContextIsolationSmokeChecks],
   ["Travel event runner v2 library order status closeout", runTravelEventRunnerV2LibraryOrderStatusCloseoutSmokeChecks],

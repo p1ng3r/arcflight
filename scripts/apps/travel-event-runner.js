@@ -18,7 +18,7 @@ import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js"
 import { selectTravelV2RiskBidForRunnerSession, clearTravelV2RiskBidSelectionForRunnerSession } from "../helpers/travel-v2-risk-bids.js";
 import { prepareTravelV2RiskBidQueueInsertionIntent } from "../helpers/travel-v2-risk-bid-queue-insertion-intent.js";
 import { clearAllTravelV2RiskBidReviewQueueRecordSelections, clearTravelV2RiskBidReviewQueueRecordSelection, insertTravelV2RiskBidReviewQueueRecords, selectTravelV2RiskBidReviewQueueRecord, updateTravelV2RiskBidReviewQueueRecordStatus } from "../helpers/travel-v2-risk-bid-review-queue.js";
-import { commitTravelV2RoundActionOrderToSession, unlockTravelV2RoundActionOrderInSession } from "../helpers/travel-v2-round-action-order-state.js";
+import { commitTravelV2RoundActionOrderToSession, moveTravelV2RoundActionOrderCandidate, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2RoundActionOrderState, unlockTravelV2RoundActionOrderInSession } from "../helpers/travel-v2-round-action-order-state.js";
 import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
@@ -150,6 +150,8 @@ const RUNNER_CLICK_SELECTOR = [
   "[data-arcflight-travel-v2-inter-station-help-review]",
   "[data-arcflight-travel-v2-inter-station-help-queue]",
   "[data-arcflight-travel-v2-order-reorder-request]",
+  "[data-arcflight-travel-v2-order-move]",
+  "[data-arcflight-travel-v2-order-reset-candidate]",
   "[data-arcflight-travel-v2-order-commit-request]",
   "[data-arcflight-travel-v2-order-persist-request]",
   "[data-arcflight-travel-v2-station-action-lock]",
@@ -541,7 +543,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2InterStationHelpSelectedIdentity: null,
       travelV2InterStationHelpQueueResult: null,
       travelV2RoundActionOrderReorderRequested: options.travelV2RoundActionOrderReorderRequested === true,
-      travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : []
+      travelV2ProposedRoundActionOrder: Array.isArray(options.travelV2ProposedRoundActionOrder) ? options.travelV2ProposedRoundActionOrder : [],
+      travelV2RoundActionOrderCandidateContext: null
     };
   }
 
@@ -682,6 +685,54 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     setTimeout(() => this.#showTravelV2RoundResolutionDialog({ finalize: false }), 0);
   }
 
+
+  #roundActionOrderCandidateContext() {
+    return { sessionKey: this.session?.key ?? this.selectedSessionKey ?? "", roundIndex: Number.isInteger(Number(this.session?.currentRoundIndex)) ? Number(this.session.currentRoundIndex) : 0 };
+  }
+
+  #clearTravelV2RoundActionOrderCandidate() {
+    this.uiState.travelV2RoundActionOrderReorderRequested = false;
+    this.uiState.travelV2ProposedRoundActionOrder = [];
+    this.uiState.travelV2RoundActionOrderCandidateContext = null;
+  }
+
+  moveTravelV2RoundActionOrderCandidate(stationKey, direction, options = {}) {
+    const state = prepareTravelV2RoundActionOrderState(this.session, { user: options.user ?? globalThis.game?.user, isGM: options.isGM ?? globalThis.game?.user?.isGM === true, proposedOrder: this.uiState.travelV2ProposedRoundActionOrder, travelV2RoundActionOrderReorderRequested: this.uiState.travelV2RoundActionOrderReorderRequested === true });
+    const interaction = state.reorderInteraction;
+    if (interaction?.canReorder !== true || interaction.keyboardEnabled !== true) {
+      this.statusMessage = interaction?.blockedReason || "Round action order keyboard reorder is unavailable.";
+      globalThis.ui?.notifications?.warn?.(this.statusMessage);
+      return { ok: false, blocked: true, reason: this.statusMessage };
+    }
+    const context = this.#roundActionOrderCandidateContext();
+    const priorContext = this.uiState.travelV2RoundActionOrderCandidateContext;
+    const sameContext = priorContext?.sessionKey === context.sessionKey && priorContext?.roundIndex === context.roundIndex;
+    const candidateValidation = sameContext ? normalizeTravelV2ProposedRoundActionOrder(this.uiState.travelV2ProposedRoundActionOrder, state.activeStations) : { valid: false };
+    const sourceOrder = candidateValidation.valid ? this.uiState.travelV2ProposedRoundActionOrder : state.orderedStationKeys;
+    const result = moveTravelV2RoundActionOrderCandidate(sourceOrder, { stationKey, direction, activeStations: state.activeStations });
+    if (result.ok !== true) {
+      this.statusMessage = result.reason || "Round action order candidate movement was blocked.";
+      globalThis.ui?.notifications?.warn?.(this.statusMessage);
+      return result;
+    }
+    if (JSON.stringify(result.proposedOrder) === JSON.stringify(state.orderedStationKeys)) this.#clearTravelV2RoundActionOrderCandidate();
+    else {
+      this.uiState.travelV2RoundActionOrderReorderRequested = true;
+      this.uiState.travelV2ProposedRoundActionOrder = [...result.proposedOrder];
+      this.uiState.travelV2RoundActionOrderCandidateContext = context;
+    }
+    this.statusMessage = "Round action-order candidate updated locally. Review and explicitly commit to apply.";
+    this.render(true);
+    return result;
+  }
+
+  resetTravelV2RoundActionOrderCandidate(options = {}) {
+    this.#clearTravelV2RoundActionOrderCandidate();
+    this.statusMessage = "Round action-order candidate reset. Canonical order is unchanged.";
+    this.render(options.force !== false);
+    return { ok: true, reset: true };
+  }
+
   #requestTravelV2RoundActionOrderReorder(target) {
     const proposed = typeof target?.dataset?.proposedOrder === "string" ? target.dataset.proposedOrder.split(",").map((key) => key.trim()).filter(Boolean) : [];
     this.uiState.travelV2RoundActionOrderReorderRequested = true;
@@ -706,6 +757,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       this.uiState.travelV2RoundActionOrderReorderRequested = false;
       this.uiState.travelV2ProposedRoundActionOrder = [];
+    this.uiState.travelV2RoundActionOrderCandidateContext = null;
+      this.uiState.travelV2RoundActionOrderCandidateContext = null;
       this.statusMessage = `Round action order committed for Round ${update.result.roundNumber ?? Number(update.result.roundIndex ?? 0) + 1}; local runner session state was replaced only.`;
       globalThis.ui?.notifications?.info?.(this.statusMessage);
       return this.render(true);
@@ -738,6 +791,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
       this.uiState.travelV2RoundActionOrderReorderRequested = false;
       this.uiState.travelV2ProposedRoundActionOrder = [];
+    this.uiState.travelV2RoundActionOrderCandidateContext = null;
+      this.uiState.travelV2RoundActionOrderCandidateContext = null;
       this.statusMessage = `Round action order unlocked for Round ${update.result.roundNumber ?? Number(update.result.roundIndex ?? 0) + 1}; local runner session state was replaced only.`;
       globalThis.ui?.notifications?.info?.(this.statusMessage);
       return this.render(true);
@@ -1123,6 +1178,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-review")) return this.#reviewTravelV2InterStationHelp(target);
     if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-queue")) return this.#queueTravelV2InterStationHelp();
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
+    if (target.hasAttribute("data-arcflight-travel-v2-order-move")) return this.moveTravelV2RoundActionOrderCandidate(target.dataset.stationKey, target.dataset.direction);
+    if (target.hasAttribute("data-arcflight-travel-v2-order-reset-candidate")) return this.resetTravelV2RoundActionOrderCandidate();
     if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-order-unlock-request")) return this.unlockTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-order-unlock-persist-request")) return this.persistUnlockedTravelV2RoundActionOrder();
@@ -2845,6 +2902,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.uiState.travelV2StationActionLockResult = null;
     this.uiState.travelV2RoundActionOrderReorderRequested = false;
     this.uiState.travelV2ProposedRoundActionOrder = [];
+    this.uiState.travelV2RoundActionOrderCandidateContext = null;
   }
 
   #getSessionKeyFromTarget(target) {
