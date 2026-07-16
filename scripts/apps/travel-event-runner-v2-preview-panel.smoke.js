@@ -8,16 +8,11 @@ import { prepareTravelEventRunnerV2PreviewPanelState } from "./travel-event-runn
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BASE_SMOKE_PATH = path.join(__dirname, "travel-event-runner-v2-preview-panel-base.smoke.js");
-const STALE_ACTION_LABEL_ASSERTION = 'assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Event Approach", "round action order display should expose selected action label fallback");';
+
+const STALE_ACTION_LABEL_ASSERTION_PATTERN = /assertEqual\(panel\.roundActionOrderDisplay\.rows\[0\]\.selectedActionLabel,\s*"Event Approach",\s*"round action order display should expose selected action label fallback"\);/;
 const CURRENT_ACTION_LABEL_ASSERTION = 'assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Station Order", "round action order display should expose selected action label fallback");';
-const STALE_FINALIZED_EVENT_APPROACH_FIXTURE = `  const finalizedEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState({
-    ...appState,
-    session: {
-      ...appState.session,
-      currentRoundIndex: 0,
-      travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 2, contributionCount: 2, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM hidden", applyPayload: { secret: true } } }] }
-    }
-  });`;
+
+const STALE_FINALIZED_EVENT_APPROACH_FIXTURE_PATTERN = /  const finalizedEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState\(\{\r?\n[\s\S]*?\r?\n  \}\);(?=\r?\n  assertEqual\(finalizedEventApproachPanel\.eventApproachTallyApplicationPreview\.status)/;
 const CURRENT_FINALIZED_EVENT_APPROACH_FIXTURE = `  const finalizedEventApproachSession = {
     ...appState.session,
     currentRoundIndex: 0,
@@ -29,14 +24,8 @@ const CURRENT_FINALIZED_EVENT_APPROACH_FIXTURE = `  const finalizedEventApproach
       user: globalThis.game?.user
     })
   );`;
-const STALE_ADVANCED_EVENT_APPROACH_FIXTURE = `  const advancedRoundEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState({
-    ...appState,
-    session: {
-      ...appState.session,
-      currentRoundIndex: 1,
-      travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1, lifecycleState: "finalized", eventApproachContributionTally: { totalContributionValue: 4, contributionCount: 3, hasContributions: true, roundIndex: 0, roundNumber: 1, gmText: "GM previous round", applyPayload: { secret: true } } }] }
-    }
-  });`;
+
+const STALE_ADVANCED_EVENT_APPROACH_FIXTURE_PATTERN = /  const advancedRoundEventApproachPanel = prepareTravelEventRunnerV2PreviewPanelState\(\{\r?\n[\s\S]*?\r?\n  \}\);(?=\r?\n  assertEqual\(advancedRoundEventApproachPanel\.eventApproachTallyApplicationPreview\.status)/;
 const CURRENT_ADVANCED_EVENT_APPROACH_FIXTURE = `  const advancedRoundEventApproachSession = {
     ...appState.session,
     currentRoundIndex: 1,
@@ -56,18 +45,19 @@ function absoluteImportSource(source) {
   });
 }
 
-async function loadCorrectedBaseSmoke() {
-  const source = fs.readFileSync(BASE_SMOKE_PATH, "utf8");
-  assert.equal(source.includes(STALE_ACTION_LABEL_ASSERTION), true, "preserved base smoke should contain the known stale action-label assertion");
-  assert.equal(source.includes(STALE_FINALIZED_EVENT_APPROACH_FIXTURE), true, "preserved base smoke should contain the known stale finalized Event Approach fixture");
-  assert.equal(source.includes(STALE_ADVANCED_EVENT_APPROACH_FIXTURE), true, "preserved base smoke should contain the known stale advanced-round Event Approach fixture");
+function replaceRequired(source, pattern, replacement, label) {
+  assert.match(source, pattern, `preserved base smoke should contain the known stale ${label}`);
+  const corrected = source.replace(pattern, replacement);
+  assert.notEqual(corrected, source, `stale ${label} should be replaced`);
+  return corrected;
+}
 
-  const correctedSource = absoluteImportSource(
-    source
-      .replace(STALE_ACTION_LABEL_ASSERTION, CURRENT_ACTION_LABEL_ASSERTION)
-      .replace(STALE_FINALIZED_EVENT_APPROACH_FIXTURE, CURRENT_FINALIZED_EVENT_APPROACH_FIXTURE)
-      .replace(STALE_ADVANCED_EVENT_APPROACH_FIXTURE, CURRENT_ADVANCED_EVENT_APPROACH_FIXTURE)
-  ).replace(
+async function loadCorrectedBaseSmoke() {
+  let correctedSource = fs.readFileSync(BASE_SMOKE_PATH, "utf8");
+  correctedSource = replaceRequired(correctedSource, STALE_ACTION_LABEL_ASSERTION_PATTERN, CURRENT_ACTION_LABEL_ASSERTION, "action-label assertion");
+  correctedSource = replaceRequired(correctedSource, STALE_FINALIZED_EVENT_APPROACH_FIXTURE_PATTERN, CURRENT_FINALIZED_EVENT_APPROACH_FIXTURE, "finalized Event Approach fixture");
+  correctedSource = replaceRequired(correctedSource, STALE_ADVANCED_EVENT_APPROACH_FIXTURE_PATTERN, CURRENT_ADVANCED_EVENT_APPROACH_FIXTURE, "advanced-round Event Approach fixture");
+  correctedSource = absoluteImportSource(correctedSource).replace(
     'const __filename = fileURLToPath(import.meta.url);',
     `const __filename = ${JSON.stringify(BASE_SMOKE_PATH)};`
   );
