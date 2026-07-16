@@ -1,0 +1,39 @@
+name: Fix keyboard smoke module isolation
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cache-bust runner import
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "scripts/apps/travel-event-runner-v2-round-action-order-keyboard-reorder.smoke.js";
+          const before = '    const module = await import("./travel-event-runner.js");';
+          const after = '    const module = await import(`./travel-event-runner.js?keyboardReorderSmoke=${Date.now()}`);';
+          const source = fs.readFileSync(path, "utf8");
+          const matches = source.split(before).length - 1;
+          if (matches !== 1) throw new Error(`Expected exactly one uncached runner import, found ${matches}.`);
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+          rm .github/workflows/fix-keyboard-smoke-module-isolation.yml
+      - name: Commit smoke isolation correction
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/apps/travel-event-runner-v2-round-action-order-keyboard-reorder.smoke.js .github/workflows/fix-keyboard-smoke-module-isolation.yml
+          git commit -m "test: isolate keyboard reorder runner import"
+          git push
