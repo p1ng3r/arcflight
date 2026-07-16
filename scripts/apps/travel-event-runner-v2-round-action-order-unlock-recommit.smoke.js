@@ -9,6 +9,7 @@ const snapshot = (value) => JSON.stringify(value);
 const GM = { isGM: true, id: "gm-1", name: "GM" };
 const PLAYER = { isGM: false, id: "p1", name: "Player" };
 const ORDER = ["engineer", "navigator", "watchmaster"];
+const RECONSIDERATION_CLOSED_TEXT = "Station resolution has begun, so the round action order can no longer be changed.";
 
 function sessionFixture(overrides = {}) { return { key: "runner-unlock", name: "Runner Unlock", status: "active", currentRoundIndex: 0, roundPhase: "stationOrders", event: { key: "event-unlock", name: "Unlock Event", category: "travel", rounds: [{ roundNumber: 1, title: "Unlock", activeStations: ["navigator", "engineer", "watchmaster"], stationPrompts: { navigator: { stationName: "Navigator" }, engineer: { stationName: "Engineer" }, watchmaster: { stationName: "Watchmaster" } }, stationActionOrder: ["navigator", "engineer", "watchmaster"] }] }, roundResults: [{ roundIndex: 0, stationResults: { navigator: null, engineer: null, watchmaster: null }, stationActions: { navigator: { type: "eventApproach" }, engineer: { type: "support" }, watchmaster: { type: "eventApproach" } }, stationOrderCommitments: { navigator: { committed: true }, engineer: { committed: true }, watchmaster: { committed: true } } }], travelV2RoundActionOrder: { version: 3, rounds: { "0": { roundIndex: 0, roundNumber: 1, order: ORDER, stationOrder: ORDER, committedAt: "2026-07-04T00:00:00.000Z", auditRecord: { id: "commit-1", timestamp: "2026-07-04T00:00:00.000Z" } } }, commitRecords: [{ id: "commit-1", type: "roundActionOrderCommit", roundIndex: 0, roundNumber: 1, timestamp: "2026-07-04T00:00:00.000Z", committedOrder: ORDER }] }, ...overrides }; }
 async function importRunnerModule() { const previousFoundry = globalThis.foundry; let renderCalls = 0; globalThis.foundry = { applications: { api: { ApplicationV2: class { async _prepareContext() { return {}; } render() { renderCalls += 1; return { rendered: true, renderCalls }; } _onRender() {} }, HandlebarsApplicationMixin: (Base) => Base } } }; try { return { module: await import(`./travel-event-runner.js?roundActionOrderUnlockSmoke=${Date.now()}`), getRenderCalls: () => renderCalls }; } finally { if (previousFoundry === undefined) delete globalThis.foundry; else globalThis.foundry = previousFoundry; } }
@@ -88,10 +89,23 @@ export async function runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeC
 
     const stalePreview = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: staleApp.session, user: GM, isGM: true, uiState: staleApp.uiState }).travelV2PreviewPanel.roundActionOrderDisplay;
     assertEqual(stalePreview.unlockStatus.openForReconsideration, false, "preview closes open-for-reconsideration after result");
+    assertEqual(stalePreview.orderDecision.statusLabel, "Order Reconsideration Closed", "closed preview replaces contradictory proposed status label");
+    assertEqual(stalePreview.orderDecision.guidanceText, RECONSIDERATION_CLOSED_TEXT, "closed preview replaces changeable guidance");
+    assertEqual(stalePreview.orderDecision.showCaptainGuidance, false, "closed preview suppresses Captain guidance in canonical decision");
+    assertEqual(stalePreview.showCaptainGuidance, false, "closed preview suppresses top-level Captain guidance");
+    assertEqual(stalePreview.canRequestReorderReview, false, "closed preview disables reorder review request");
+    assertEqual(stalePreview.reorderRequest.ready, false, "closed preview clears ready-to-commit state");
+    assertEqual(stalePreview.reorderRequest.blocked, true, "closed preview blocks reorder review");
+    assertEqual(stalePreview.reorderRequest.blockedReason, RECONSIDERATION_CLOSED_TEXT, "closed preview explains why reorder review is blocked");
+    assertSmoke(!stalePreview.orderDecision.guidanceText.includes("remains changeable"), "closed preview exposes no contradictory changeable copy");
     assertEqual(stalePreview.canPersistUnlockedOrderState, false, "preview disables unlocked persistence after result");
     assertEqual(stalePreview.canPersistCommittedOrder, false, "preview keeps committed persistence disabled without canonical committed order");
     const stalePlayerPreview = prepareTravelEventRunnerV2PreviewPanelState({ session: staleApp.session, user: PLAYER, isGM: false }).roundActionOrderDisplay;
-    assertEqual(stalePlayerPreview.unlockStatus.statusLabel, "Order Reconsideration Closed", "player preview may show closed reconsideration status");
+    assertEqual(stalePlayerPreview.unlockStatus.statusLabel, "Order Reconsideration Closed", "player preview exposes closed reconsideration status");
+    assertEqual(stalePlayerPreview.orderDecision.statusLabel, "Order Reconsideration Closed", "player preview receives non-contradictory closed order status");
+    assertEqual(stalePlayerPreview.orderDecision.guidanceText, RECONSIDERATION_CLOSED_TEXT, "player preview receives closed guidance");
+    assertEqual(stalePlayerPreview.showCaptainGuidance, false, "player preview suppresses Captain guidance after results");
+    assertEqual(stalePlayerPreview.canRequestReorderReview, false, "player preview exposes no reorder availability");
     assertPlayerSafe(stalePlayerPreview);
 
     const blockedLibrary = libraryWith(session);
@@ -127,10 +141,9 @@ export async function runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeC
       assertEqual(snapshot(libraryWithOther.sessions[otherSession.key]), snapshot(JSON.parse(beforeLibrary).sessions[otherSession.key]), `${label} direct bridge leaves other entry unchanged`);
     }
 
-
     const template = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
     for (const text of ["roundActionOrderDisplay.unlockStatus.openForReconsideration", "roundActionOrderDisplay.unlockStatus.statusLabel", "roundActionOrderDisplay.unlockStatus.guidanceText", "roundActionOrderDisplay.unlockControl.canUnlock", "roundActionOrderDisplay.unlockControl.blockedReason", "Unlock Order", "Order Open for Reconsideration"]) assertSmoke(template.includes(text), `template references ${text}`);
-    checked.push("runner unlock, preview safety, recommit, persistence/reload, and template bindings");
+    checked.push("runner unlock, preview safety, recommit, persistence/reload, closed presentation, and template bindings");
   } finally {
     if (previousGame === undefined) delete globalThis.game; else globalThis.game = previousGame;
     if (previousUi === undefined) delete globalThis.ui; else globalThis.ui = previousUi;
