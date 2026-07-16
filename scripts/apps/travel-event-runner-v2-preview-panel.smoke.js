@@ -12,6 +12,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PANEL_PATH = path.join(__dirname, "travel-event-runner-v2-preview-panel.js");
+const GM_USER = Object.freeze({ isGM: true, id: "gm", name: "GM" });
+const PLAYER_USER = Object.freeze({ isGM: false, id: "player", name: "Player" });
 
 function assertSmoke(condition, message) {
   if (!condition) throw new Error(`Travel v2 GM preview panel smoke check failed: ${message}`);
@@ -45,6 +47,27 @@ function createRunnerEventFixture() {
       }
     ]
   };
+}
+
+function preparePanelFromSession({
+  session,
+  user = GM_USER,
+  actor = null,
+  uiState = {},
+  panelOverrides = {}
+} = {}) {
+  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({
+    session,
+    user,
+    actor,
+    uiState
+  });
+  const safePanelOverrides = { ...panelOverrides };
+  delete safePanelOverrides.session;
+  return prepareTravelEventRunnerV2PreviewPanelState({
+    ...appState,
+    ...safePanelOverrides
+  });
 }
 
 export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
@@ -317,7 +340,6 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(liveCompletedPanel.travelV2FollowUps.hasRecords, "live completed panel should expose staged follow-up cards");
   assertSmoke(liveCompletedPanel.travelV2FollowUps.records.some((record) => record.title === "Lantern Rescued Cleanly"), "live completed panel should stage summary final outcome text as a follow-up card");
   assertSmoke(liveCompletedPanel.travelV2FollowUps.records.every((record) => record.actionsDisabled), "live completed staged follow-up cards should disable actions until saved");
-
 
   const supportSourceSession = {
     ...appState.session,
