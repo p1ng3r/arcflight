@@ -746,6 +746,29 @@ function normalizeRoundActionOrderUnlockControl(control = null, options = {}) {
   };
 }
 
+
+function normalizeRoundActionOrderReorderInteraction(interaction = null, options = {}) {
+  const isGm = options.isGM === true || options.user?.isGM === true;
+  if (!isGm || !isPlainObject(interaction)) return null;
+  return {
+    visibleForGM: interaction.visibleForGM === true,
+    canReorder: interaction.canReorder === true,
+    disabled: interaction.disabled === true,
+    keyboardEnabled: interaction.keyboardEnabled === true,
+    blockedReason: interaction.blockedReason || "",
+    blockedReasons: Array.isArray(interaction.blockedReasons) ? interaction.blockedReasons : [],
+    currentOrder: Array.isArray(interaction.currentOrder) ? interaction.currentOrder : [],
+    candidateOrder: Array.isArray(interaction.candidateOrder) ? interaction.candidateOrder : [],
+    candidateChanged: interaction.candidateChanged === true,
+    rows: Array.isArray(interaction.rows) ? interaction.rows.map((row) => ({
+      stationKey: row?.stationKey ?? "", stationName: row?.stationName || "Station", orderIndex: Number(row?.orderIndex) || 0, orderNumber: Number(row?.orderNumber) || 1, orderLabel: row?.orderLabel || `#${Number(row?.orderNumber) || 1}`, canMoveUp: row?.canMoveUp === true, canMoveDown: row?.canMoveDown === true, moveUpLabel: row?.moveUpLabel || `Move ${row?.stationName || "station"} up`, moveDownLabel: row?.moveDownLabel || `Move ${row?.stationName || "station"} down`
+    })) : [],
+    canResetCandidate: interaction.canResetCandidate === true,
+    playerSafe: false,
+    readOnly: true
+  };
+}
+
 function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const rows = Array.isArray(state?.rows) ? state.rows.map((row) => ({
     stationKey: row?.stationKey ?? "",
@@ -767,9 +790,11 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
   const unlockControl = normalizeRoundActionOrderUnlockControl(state?.unlockControl, options);
   const canPersistCommittedOrder = orderDecision.hasCommittedOrder === true && unlockStatus.openForReconsideration !== true && (options.isGM === true || options.user?.isGM === true);
   const canPersistUnlockedOrderState = unlockStatus.openForReconsideration === true && (options.isGM === true || options.user?.isGM === true);
-  const reorderRequest = (options.isGM === true || options.user?.isGM === true)
+  const isGm = options.isGM === true || options.user?.isGM === true;
+  const reorderRequest = isGm
     ? normalizeRoundActionOrderReorderRequest(state?.reorderRequest)
     : { requested: false, ready: false, blocked: true, status: "not-requested", feedbackText: "No GM reorder review requested.", hasFeedback: false, showComparison: false, currentRows: [], proposedRows: [], hasComparisonRows: false, blockedReasons: [], blockedReason: "", mutationNote: "Review-only reorder candidate. No order is persisted or applied.", reviewOnly: true };
+  const reorderInteraction = normalizeRoundActionOrderReorderInteraction(state?.reorderInteraction, options);
   return {
     available: rows.length > 0,
     title: "Round Action Order",
@@ -801,10 +826,11 @@ function normalizeRoundActionOrderDisplay(state = null, options = {}) {
     blockedReasons,
     blockedText,
     hasBlockedText: Boolean(blockedText),
-    canRequestReorderReview: rows.length > 1,
+    canRequestReorderReview: rows.length > 1 && state?.reorderInteraction?.keyboardEnabled !== false,
     proposedShellOrder,
     proposedShellOrderCsv: proposedShellOrder.join(","),
     footerText: state?.footerText || (rows.length > 0 ? "Round action order is display-only." : "No round action-order rows are available."),
+    reorderInteraction,
     reorderRequest,
     commitResult: normalizeRoundActionOrderCommitResult(options.commitResult, rows, options),
     persistResult: normalizeRoundActionOrderPersistResult(options.persistResult, rows, options),

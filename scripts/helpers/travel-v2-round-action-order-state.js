@@ -127,6 +127,27 @@ export function normalizeTravelV2ProposedRoundActionOrder(sourceOrder = [], fall
   return deepFreeze({ valid, ready: valid, proposedStationKeys: proposed, activeStationKeys: active, missingKeys, unknownKeys: Array.from(new Set(unknownKeys)), duplicateKeys: Array.from(new Set(duplicateKeys)), blockedReasons });
 }
 
+
+export function moveTravelV2RoundActionOrderCandidate(sourceOrder = [], options = {}) {
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  const direction = typeof options.direction === "string" ? options.direction.trim() : "";
+  const activeStations = Array.isArray(options.activeStations) ? options.activeStations : [];
+  const validation = normalizeTravelV2ProposedRoundActionOrder(sourceOrder, activeStations);
+  const previousOrder = [...validation.proposedStationKeys];
+  const blockedReasons = [...validation.blockedReasons];
+  if (!stationKey) blockedReasons.push("A station key is required.");
+  if (stationKey && !validation.activeStationKeys.includes(stationKey)) blockedReasons.push(`Unknown station key cannot be reordered: ${stationKey}.`);
+  if (!["up", "down"].includes(direction)) blockedReasons.push(`Unsupported reorder direction: ${direction || "none"}.`);
+  const previousIndex = previousOrder.indexOf(stationKey);
+  const targetIndex = direction === "up" ? previousIndex - 1 : direction === "down" ? previousIndex + 1 : -1;
+  if (blockedReasons.length === 0 && direction === "up" && previousIndex === 0) blockedReasons.push("The first station cannot move up.");
+  if (blockedReasons.length === 0 && direction === "down" && previousIndex === previousOrder.length - 1) blockedReasons.push("The final station cannot move down.");
+  if (blockedReasons.length > 0) return deepFreeze({ ok: false, moved: false, duplicate: false, blocked: true, reason: blockedReasons[0], blockedReasons, stationKey, direction, previousIndex, targetIndex, previousOrder, proposedOrder: [...previousOrder] });
+  const proposedOrder = [...previousOrder];
+  [proposedOrder[previousIndex], proposedOrder[targetIndex]] = [proposedOrder[targetIndex], proposedOrder[previousIndex]];
+  return deepFreeze({ ok: true, moved: true, duplicate: false, blocked: false, reason: "Round action-order candidate moved.", blockedReasons: [], stationKey, direction, previousIndex, targetIndex, previousOrder, proposedOrder });
+}
+
 function normalizeStationOrder(sourceOrder = [], fallbackStations = []) {
   const fallback = activeStationKeys({ activeStations: fallbackStations }, {});
   const ordered = sourceOrderFrom(sourceOrder)
@@ -267,6 +288,8 @@ function prepareReorderRequestState({ sessionState, currentRows, currentOrder, a
     const row = rowByKey.get(stationKey) ?? {};
     return { stationKey, stationName: row.stationName || stationLabel({}, stationKey), orderNumber: index + 1, orderLabel: `#${index + 1}`, selectedActionLabel: row.selectedActionLabel || "Station order", statusLabel: row.statusLabel || "Needs Order", resultLabel: row.resultLabel || "Unresolved" };
   };
+  const unchanged = validation.valid === true && arraysEqual(validation.proposedStationKeys, currentOrder);
+  if (unchanged) blockedReasons.push("The proposed order matches the current order.");
   const ready = blockedReasons.length === 0 && validation.ready === true;
   return deepFreeze({ requested: true, ready, blocked: !ready, playerSafe: false, status: ready ? "ready" : "blocked", feedbackText: ready ? "Reorder candidate is ready for GM review only. It has not been applied, saved, or persisted." : (blockedReasons[0] ?? "Reorder candidate is blocked."), currentStationKeys: currentOrder, proposedStationKeys: validation.proposedStationKeys, currentRows: currentOrder.map(rowFor), proposedRows: validation.proposedStationKeys.map(rowFor), blockedReasons, missingKeys: validation.missingKeys, unknownKeys: validation.unknownKeys, duplicateKeys: validation.duplicateKeys, reviewOnly: true, mutationNote: "Review-only reorder candidate. No session write, persistence, round advancement, station result change, roll, DC, socket, actor, item, chat, or journal mutation is performed." });
 }
@@ -556,7 +579,26 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
   const pointer = currentPointerFor(rows, phase, blocked);
   const rowsWithCurrent = rows.map((row) => ({ ...row, current: row.stationKey === pointer.currentStationKey }));
 
-  const reorderRequest = prepareReorderRequestState({ sessionState: { blockedReasons }, currentRows: rowsWithCurrent, currentOrder: orderedStationKeys, activeStations, options });
+  const reorderRequestBlockedReasons = [...blockedReasons];
+  if (hasRecordedStationResult(roundResult)) reorderRequestBlockedReasons.push("Order Reconsideration Closed: station resolution has begun.");
+  const reorderRequest = prepareReorderRequestState({ sessionState: { blockedReasons: reorderRequestBlockedReasons }, currentRows: rowsWithCurrent, currentOrder: orderedStationKeys, activeStations, options });
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const hasValidCommittedOrder = orderDecision.hasCommittedOrder === true;
+  const canReorderReasons = [];
+  if (!isGm) canReorderReasons.push("Only the GM can reorder round action order.");
+  canReorderReasons.push(...blockedReasons);
+  if (hasRecordedStationResult(roundResult)) canReorderReasons.push("Order Reconsideration Closed: station resolution has begun.");
+  if (hasValidCommittedOrder) canReorderReasons.push("Committed orders must be unlocked before keyboard reordering.");
+  const canReorder = isGm && canReorderReasons.length === 0 && rowsWithCurrent.length > 1;
+  const candidateValidation = normalizeTravelV2ProposedRoundActionOrder(options.proposedOrder ?? options.travelV2ProposedRoundActionOrder ?? [], activeStations);
+  const candidateOrder = candidateValidation.valid ? candidateValidation.proposedStationKeys : orderedStationKeys;
+  const candidateChanged = !arraysEqual(candidateOrder, orderedStationKeys);
+  const reorderInteraction = isGm ? deepFreeze({
+    visibleForGM: true, canReorder, disabled: !canReorder, keyboardEnabled: canReorder, blockedReason: canReorderReasons[0] ?? "", blockedReasons: canReorderReasons,
+    currentOrder: [...orderedStationKeys], candidateOrder: [...candidateOrder], candidateChanged,
+    rows: candidateOrder.map((stationKey, orderIndex) => ({ stationKey, stationName: stationLabel(round, stationKey), orderIndex, orderNumber: orderIndex + 1, orderLabel: `#${orderIndex + 1}`, canMoveUp: canReorder && orderIndex > 0, canMoveDown: canReorder && orderIndex < candidateOrder.length - 1, moveUpLabel: `Move ${stationLabel(round, stationKey)} up`, moveDownLabel: `Move ${stationLabel(round, stationKey)} down` })),
+    canResetCandidate: canReorder && candidateChanged, playerSafe: false, readOnly: true
+  }) : null;
 
   return deepFreeze({
     version: TRAVEL_V2_ROUND_ACTION_ORDER_STATE_VERSION,
@@ -601,6 +643,7 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
     footerText: footerTextFor(blockedReasons, rowsWithCurrent, pointer),
     stateOnly: true,
     reorderRequest,
+    reorderInteraction,
     mutationNote: "Round action order state is read-only. It does not commit order, advance rounds, roll checks, change DCs, or persist session data."
   });
 }

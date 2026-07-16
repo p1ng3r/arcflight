@@ -844,3 +844,13 @@ node scripts/dev/run-foundry-check-runner-smoke.mjs
 ```
 
 Add `node --check` and focused smoke commands for any touched files.
+
+### TV2-003 Slice 03A — Keyboard Reorder Candidate
+
+Status remains **foundation-complete / polish remaining**.
+
+Slice 03A adds the GM-only keyboard reorder candidate path: Move Up and Move Down controls, pure candidate movement, local review-only candidates, candidate reset, unchanged-candidate suppression, existing explicit commit and unlock integration, player redaction, post-result blocking, and session/round isolation. It does not add pointer drag-and-drop or mark TV2-003 complete.
+
+Remaining work:
+- Slice 03B — Pointer Drag Reorder
+- Final Foundry table UX verification and TV2-003 closeout

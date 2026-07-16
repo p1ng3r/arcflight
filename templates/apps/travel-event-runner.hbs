@@ -653,10 +653,28 @@
                 </article>
               {{/each}}
             </div>
-            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.canRequestReorderReview}}
-              <div class="arcflight-travel-runner-mvp__v2-preview-actions">
-                <button type="button" data-arcflight-travel-v2-order-reorder-request data-proposed-order="{{state.travelV2PreviewPanel.roundActionOrderDisplay.proposedShellOrderCsv}}" title="Requests a GM-only review of a proposed station order in local render state only. Does not apply, save, persist, or advance the round.">Request Reorder Review</button>
-              </div>
+            {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.canReorder}}
+              {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.keyboardEnabled}}
+                <section class="arcflight-travel-runner-mvp__v2-order-keyboard" aria-label="GM keyboard round action order controls">
+                  <h5>Keyboard Reorder Candidate</h5>
+                  <div class="arcflight-travel-runner-mvp__v2-benefit-rows">
+                    {{#each state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.rows}}
+                      <article class="arcflight-travel-runner-mvp__v2-benefit-row">
+                        <div><strong>{{orderLabel}} · {{stationName}}</strong></div>
+                        <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                          <button type="button" data-arcflight-travel-v2-order-move data-station-key="{{stationKey}}" data-direction="up" aria-label="{{moveUpLabel}}" {{#unless canMoveUp}}disabled{{/unless}}>Move Up</button>
+                          <button type="button" data-arcflight-travel-v2-order-move data-station-key="{{stationKey}}" data-direction="down" aria-label="{{moveDownLabel}}" {{#unless canMoveDown}}disabled{{/unless}}>Move Down</button>
+                        </div>
+                      </article>
+                    {{/each}}
+                  </div>
+                  {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.canResetCandidate}}
+                    <div class="arcflight-travel-runner-mvp__v2-preview-actions">
+                      <button type="button" data-arcflight-travel-v2-order-reset-candidate>Reset Proposed Order</button>
+                    </div>
+                  {{/if}}
+                </section>
+              {{/if}}
             {{/if}}
             {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.unlockControl.visibleForGM}}
               <div class="arcflight-travel-runner-mvp__v2-preview-actions">
