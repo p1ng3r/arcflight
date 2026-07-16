@@ -59,7 +59,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(!emptyPanel.available, "empty panel should be unavailable");
   assertEqual(emptyPanel.rows.length, 0, "empty panel should have no rows");
 
-  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() }, user: { isGM: true, id: "gm", name: "GM" } });
+  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() } });
   const panel = prepareTravelEventRunnerV2PreviewPanelState(appState);
   assertSmoke(panel.available, "panel should be available for active preview state");
   assertEqual(panel.roundNumber, 1, "panel should carry round number");
@@ -82,12 +82,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(panel.roundActionOrderDisplay.hasRows, "panel should expose round action order display rows");
   assertEqual(panel.roundActionOrderDisplay.rows[0].stationName, "Navigator", "round action order display should expose station name");
   assertEqual(panel.roundActionOrderDisplay.rows[0].orderNumber, 1, "round action order display should expose order number");
-  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Station Order", "unselected station action should use the Station Order fallback");
+  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Event Approach", "round action order display should expose selected action label fallback");
   assertEqual(panel.roundActionOrderDisplay.rows[0].statusLabel, "Needs Order", "round action order display should expose status label");
   assertSmoke(panel.roundActionOrderDisplay.rows[0].current, "first uncommitted order row should be marked current");
   assertSmoke(panel.roundActionOrderDisplay.footerText.includes("has not committed"), "round action order display should expose footer text");
   assertSmoke(!panel.roundActionOrderDisplay.reorderRequest.requested, "panel should not show reorder comparison without explicit request");
-  assertSmoke(panel.roundActionOrderDisplay.canRequestReorderReview, "panel should expose an explicit reorder review request shell for multi-station rounds");
+  const gmPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, user: { isGM: true, id: "gm", name: "GM" }, isGM: true });
+  assertSmoke(gmPanel.roundActionOrderDisplay.canRequestReorderReview, "GM panel should expose an explicit reorder review request shell for multi-station rounds");
 
   const reorderPanel = prepareTravelEventRunnerV2PreviewPanelState({ session: appState.session, user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] });
   assertSmoke(reorderPanel.roundActionOrderDisplay.reorderRequest.ready, "explicit GM reorder request should prepare a ready review-only candidate");
