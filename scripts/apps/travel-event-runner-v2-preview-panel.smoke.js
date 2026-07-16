@@ -332,7 +332,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     key: "live-completed",
     status: "completed",
     completedAt: "2026-06-21T00:00:00.000Z",
-    event: { key: "lantern-in-the-static", name: "The Lantern in the Static", rounds: [{ roundNumber: 1 }] },
+    event: { key: "lantern-in-the-static", name: "The Lantern in the Static", rounds: [{ roundNumber: 1, activeStations: ["navigator"], stationPrompts: { navigator: { stationKey: "navigator", stationName: "Navigator" } } }] },
     summary: {
       suggestedFinalOutcome: "criticalSuccess",
       suggestedFinalOutcomeLabel: "Lantern Rescued Cleanly",
@@ -493,8 +493,27 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     assertSmoke(!eventApproachPanelJson.includes(forbidden), `Event Approach preview state should not include forbidden player-safe term ${forbidden}`);
   }
 
-  const activeCardsSession = {
+  const activeCardBaseSession = {
     ...appState.session,
+    event: {
+      ...appState.session.event,
+      rounds: [{
+        ...appState.session.event.rounds[0],
+        activeStations: ["captain", "navigator", "engineer", "veilwarden", "watchmaster"],
+        stationPrompts: {
+          ...appState.session.event.rounds[0].stationPrompts,
+          captain: { stationKey: "captain", stationName: "Captain" },
+          navigator: { stationKey: "navigator", stationName: "Navigator" },
+          engineer: { stationKey: "engineer", stationName: "Engineer" },
+          veilwarden: { stationKey: "veilwarden", stationName: "Veilwarden" },
+          watchmaster: { stationKey: "watchmaster", stationName: "Watchmaster" }
+        }
+      }]
+    }
+  };
+
+  const activeCardsSession = {
+    ...activeCardBaseSession,
     roundResults: [{
       stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
       stationResults: {}
@@ -537,7 +556,12 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(activeCard.previewRoundIndex === 0 && activeCard.previewRoundNumber === 1, "active card preview should expose the play/preview round separately from created round");
   assertSmoke(Array.isArray(activeCard.availableTargetStations) && activeCard.availableTargetStations.some((option) => option.stationKey === "engineer"), "active card preview should expose safe target station options");
   assertSmoke(activeCardsPanel.travelV2ActiveCardApplicationPreviews.hasRecords, "panel should expose active card application previews at top level");
-  assertSmoke(activeCardsPanel.activeCardApplicationPreviews === activeCardsPanel.travelV2ActiveCardApplicationPreviews, "panel should expose active card application preview alias");
+  assertSmoke(activeCardsPanel.activeCardApplicationPreviews?.hasRecords, "panel should expose active card application preview alias");
+  assertEqual(
+    JSON.stringify(activeCardsPanel.activeCardApplicationPreviews),
+    JSON.stringify(activeCardsPanel.travelV2ActiveCardApplicationPreviews),
+    "active card application preview alias should preserve equivalent player-safe data"
+  );
   const activeCardApplicationPreview = activeCardsPanel.travelV2ActiveCardApplicationPreviews.records[0];
   assertSmoke(activeCardApplicationPreview.applicationType === "resultFloorPreview" && activeCardApplicationPreview.resultFloor === "success", "panel should expose legendary result floor application preview");
   assertSmoke(activeCardApplicationPreview.requiresGMConfirmation === true && activeCardApplicationPreview.canApplyPreview === true, "panel application preview should require GM confirmation and be apply-ready");
@@ -554,7 +578,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   ];
   for (const [rewardKey, cardLabel, controlLabel, applicationType] of cardFixtures) {
     const gmCardSession = {
-      ...appState.session,
+      ...activeCardBaseSession,
       roundResults: [{
         stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } },
         stationResults: rewardKey === "heroicEvent" ? { navigator: "failure" } : {}
@@ -571,7 +595,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   }
 
   const consumedSession = {
-    ...appState.session,
+    ...activeCardBaseSession,
     travelV2ActiveCards: { records: [{ cardId: "consumed-minor", cardKey: "minorOpening", rewardKey: "minorOpening", cardLabel: "Minor Opening", status: "consumed", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true }
   };
   const consumedPanel = preparePanelFromSession({ session: consumedSession, user: GM_USER });
@@ -579,13 +603,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(consumedControl.enabledForGM === false && consumedControl.blockedReason.includes("consumed"), "consumed card preview control should be disabled with blocked reason");
 
   const minorApplySession = {
-    ...appState.session,
+    ...activeCardBaseSession,
     roundResults: [{ stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } }, stationResults: {} }],
     travelV2ActiveCards: { records: [{ cardId: "apply-minor", id: "apply-minor", cardKey: "minorOpening", rewardKey: "minorOpening", cardLabel: "Minor Opening", status: "pending", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true }
   };
   const minorPanel = preparePanelFromSession({ session: minorApplySession, user: GM_USER });
   const minorPreviewId = minorPanel.travelV2ActiveCardApplicationPreviews.records[0].previewId;
-  const minorApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: GM_USER, session: minorApplySession }, minorPreviewId, { isGM: true, now: "2026-07-07T00:00:00.000Z" });
+  const minorApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: GM_USER, session: minorApplySession, travelV2PressureRunnerSession: minorApplySession }, minorPreviewId, { isGM: true, now: "2026-07-07T00:00:00.000Z" });
   assertSmoke(minorApplyResult.applied === true, "GM panel apply handler should apply an apply-ready Minor preview");
   assertSmoke(minorApplyResult.session !== minorApplySession, "GM panel apply handler should return cloned updated session");
   assertEqual(minorApplySession.travelV2ActiveCards.records[0].status, "pending", "GM panel apply handler should not mutate source session");
@@ -599,13 +623,13 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     ["legendaryEvent", "Legendary Event", { resultFloor: "success" }]
   ]) {
     const applySession = {
-      ...appState.session,
+      ...activeCardBaseSession,
       roundResults: [{ stationOrderCommitments: { captain: { committed: true }, navigator: { committed: true }, engineer: { committed: true }, veilwarden: { committed: true }, watchmaster: { committed: true } }, stationResults: rewardKey === "heroicEvent" ? { navigator: "failure" } : {} }],
       travelV2ActiveCards: { records: [{ cardId: `apply-${rewardKey}`, id: `apply-${rewardKey}`, cardKey: rewardKey, rewardKey, cardLabel, status: "pending", targetStationKey: "navigator", targetStationLabel: "Navigator", playerSafe: true, readOnly: true }], playerSafe: true, readOnly: true }
     };
     const applyPanel = preparePanelFromSession({ session: applySession, user: GM_USER });
     const applyPreviewId = applyPanel.travelV2ActiveCardApplicationPreviews.records[0].previewId;
-    const applyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: GM_USER, session: applySession }, applyPreviewId, { isGM: true, now: "2026-07-07T00:00:01.000Z" });
+    const applyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: GM_USER, session: applySession, travelV2PressureRunnerSession: applySession }, applyPreviewId, { isGM: true, now: "2026-07-07T00:00:01.000Z" });
     assertSmoke(applyResult.applied === true, `${rewardKey} should apply through the GM panel handler`);
     assertEqual(applyResult.session.travelV2ActiveCards.records[0].status, "consumed", `${rewardKey} should consume its source card`);
     if (expected.bonusValue) assertEqual(applyResult.session.travelV2PendingStationActionBonuses.records[0].bonusValue, expected.bonusValue, `${rewardKey} should create expected pending circumstance bonus`);
@@ -613,9 +637,9 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
     if (expected.resultFloor) assertEqual(applyResult.session.travelV2PendingStationResultFloors.records[0].resultFloor, expected.resultFloor, `${rewardKey} should create expected pending result floor`);
   }
 
-  const invalidApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: GM_USER, session: minorApplySession }, "missing-preview", { isGM: true });
+  const invalidApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: true, user: GM_USER, session: minorApplySession, travelV2PressureRunnerSession: minorApplySession }, "missing-preview", { isGM: true });
   assertSmoke(invalidApplyResult.blocked === true && invalidApplyResult.applied === false, "invalid preview id should block safely");
-  const nonGmApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: false, user: PLAYER_USER, session: minorApplySession }, minorPreviewId, { isGM: false });
+  const nonGmApplyResult = applyTravelV2ActiveCardPreviewFromPanelState({ ...appState, isGM: false, user: PLAYER_USER, session: minorApplySession, travelV2PressureRunnerSession: minorApplySession }, minorPreviewId, { isGM: false });
   assertSmoke(nonGmApplyResult.blocked === true && nonGmApplyResult.blockedReason.includes("GM"), "non-GM apply attempt should block safely");
 
   const activeCardsPanelJson = JSON.stringify(activeCardsPanel.travelV2ActiveCards);
