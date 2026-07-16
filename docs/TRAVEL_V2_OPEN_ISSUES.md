@@ -851,6 +851,14 @@ Status remains **foundation-complete / polish remaining**.
 
 Slice 03A adds the GM-only keyboard reorder candidate path: Move Up and Move Down controls, pure candidate movement, local review-only candidates, candidate reset, unchanged-candidate suppression, existing explicit commit and unlock integration, player redaction, post-result blocking, and session/round isolation. It does not add pointer drag-and-drop or mark TV2-003 complete.
 
+### TV2-003 Slice 03B1 — Target-Index Candidate Movement
+
+Status remains **foundation-complete / polish remaining**.
+
+Slice 03B1 adds only pure final-index movement in the round-action-order candidate helper, using remove-and-insert semantics rather than source/target swapping. It also adds movement-mode validation, successful no-op handling when the station is already at the requested target index, and focused immutability plus exact active-station permutation smoke coverage. This slice does not add browser drag-and-drop or mark TV2-003 complete.
+
 Remaining work:
-- Slice 03B — Pointer Drag Reorder
+- Slice 03B2 — Drop-Target Math and Drag Readiness
+- Slice 03B3 — Drag Runtime Engine
+- Slice 03B4 — Drag UI Integration
 - Final Foundry table UX verification and TV2-003 closeout

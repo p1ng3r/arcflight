@@ -131,20 +131,34 @@ export function normalizeTravelV2ProposedRoundActionOrder(sourceOrder = [], fall
 export function moveTravelV2RoundActionOrderCandidate(sourceOrder = [], options = {}) {
   const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
   const direction = typeof options.direction === "string" ? options.direction.trim() : "";
+  const hasDirection = Object.prototype.hasOwnProperty.call(options, "direction");
+  const hasTargetIndex = Object.prototype.hasOwnProperty.call(options, "targetIndex");
   const activeStations = Array.isArray(options.activeStations) ? options.activeStations : [];
   const validation = normalizeTravelV2ProposedRoundActionOrder(sourceOrder, activeStations);
   const previousOrder = [...validation.proposedStationKeys];
   const blockedReasons = [...validation.blockedReasons];
   if (!stationKey) blockedReasons.push("A station key is required.");
   if (stationKey && !validation.activeStationKeys.includes(stationKey)) blockedReasons.push(`Unknown station key cannot be reordered: ${stationKey}.`);
-  if (!["up", "down"].includes(direction)) blockedReasons.push(`Unsupported reorder direction: ${direction || "none"}.`);
+  if (hasDirection === hasTargetIndex) blockedReasons.push("Exactly one reorder movement mode is required.");
+  if (hasDirection && !["up", "down"].includes(direction)) blockedReasons.push(`Unsupported reorder direction: ${direction || "none"}.`);
   const previousIndex = previousOrder.indexOf(stationKey);
-  const targetIndex = direction === "up" ? previousIndex - 1 : direction === "down" ? previousIndex + 1 : -1;
+  const targetIndex = hasTargetIndex ? options.targetIndex : direction === "up" ? previousIndex - 1 : direction === "down" ? previousIndex + 1 : -1;
+  if (hasTargetIndex && (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > previousOrder.length - 1)) {
+    blockedReasons.push(`Unsupported reorder target index: ${String(targetIndex)}.`);
+  }
   if (blockedReasons.length === 0 && direction === "up" && previousIndex === 0) blockedReasons.push("The first station cannot move up.");
   if (blockedReasons.length === 0 && direction === "down" && previousIndex === previousOrder.length - 1) blockedReasons.push("The final station cannot move down.");
   if (blockedReasons.length > 0) return deepFreeze({ ok: false, moved: false, duplicate: false, blocked: true, reason: blockedReasons[0], blockedReasons, stationKey, direction, previousIndex, targetIndex, previousOrder, proposedOrder: [...previousOrder] });
   const proposedOrder = [...previousOrder];
-  [proposedOrder[previousIndex], proposedOrder[targetIndex]] = [proposedOrder[targetIndex], proposedOrder[previousIndex]];
+  if (hasTargetIndex && previousIndex === targetIndex) {
+    return deepFreeze({ ok: true, moved: false, duplicate: true, blocked: false, reason: "Round action-order candidate already matches target index.", blockedReasons: [], stationKey, direction, previousIndex, targetIndex, previousOrder, proposedOrder });
+  }
+  if (hasTargetIndex) {
+    const [station] = proposedOrder.splice(previousIndex, 1);
+    proposedOrder.splice(targetIndex, 0, station);
+  } else {
+    [proposedOrder[previousIndex], proposedOrder[targetIndex]] = [proposedOrder[targetIndex], proposedOrder[previousIndex]];
+  }
   return deepFreeze({ ok: true, moved: true, duplicate: false, blocked: false, reason: "Round action-order candidate moved.", blockedReasons: [], stationKey, direction, previousIndex, targetIndex, previousOrder, proposedOrder });
 }
 
