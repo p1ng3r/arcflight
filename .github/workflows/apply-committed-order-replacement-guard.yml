@@ -15,36 +15,36 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Add lifecycle guard and focused coverage
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require("node:fs");
+          python - <<'PY'
+          from pathlib import Path
 
-          const helperPath = "scripts/helpers/travel-v2-round-action-order-state.js";
-          let helper = fs.readFileSync(helperPath, "utf8");
-          const functionStart = helper.indexOf("export function commitTravelV2RoundActionOrderToSession");
-          const functionEnd = helper.indexOf("\nexport function unlockTravelV2RoundActionOrderInSession", functionStart);
-          if (functionStart < 0 || functionEnd < 0) throw new Error("Commit helper boundaries were not found.");
-          let commitFunction = helper.slice(functionStart, functionEnd);
-          const marker = '\n  const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();';
-          if ((commitFunction.split(marker).length - 1) !== 1) throw new Error("Commit timestamp insertion marker was not found exactly once.");
-          const guard = `
+          helper_path = Path("scripts/helpers/travel-v2-round-action-order-state.js")
+          helper = helper_path.read_text(encoding="utf-8")
+          function_start = helper.index("export function commitTravelV2RoundActionOrderToSession")
+          function_end = helper.index("\nexport function unlockTravelV2RoundActionOrderInSession", function_start)
+          commit_function = helper[function_start:function_end]
+          marker = '\n  const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();'
+          assert commit_function.count(marker) == 1
+          guard = '''
   const existingValidation = normalizeTravelV2ProposedRoundActionOrder(existingOrder, activeStations);
   if (existingRecord && existingValidation.valid) {
     const reason = "Committed round action order must be unlocked before it can be replaced.";
     return deepFreeze({ ok: false, committed: false, duplicate: false, blocked: true, playerSafe: !isGm, blockedReasons: [reason], reason, roundIndex, roundNumber, previousOrder, committedOrder, session: isGm ? cloneData(session) : null });
   }
-`;
-          commitFunction = commitFunction.replace(marker, `${guard}${marker}`);
-          helper = helper.slice(0, functionStart) + commitFunction + helper.slice(functionEnd);
-          fs.writeFileSync(helperPath, helper);
+'''
+          commit_function = commit_function.replace(marker, guard + marker)
+          helper = helper[:function_start] + commit_function + helper[function_end:]
+          helper_path.write_text(helper, encoding="utf-8")
 
-          const smokePath = "scripts/helpers/travel-v2-round-action-order-state.smoke.js";
-          let smoke = fs.readFileSync(smokePath, "utf8");
-          const insertionMarker = '  checked.push("duplicate commit is non-destructive and does not append audit records");\n';
-          if ((smoke.split(insertionMarker).length - 1) !== 1) throw new Error("Helper smoke insertion marker was not found exactly once.");
-          const coverage = `
+          smoke_path = Path("scripts/helpers/travel-v2-round-action-order-state.smoke.js")
+          smoke = smoke_path.read_text(encoding="utf-8")
+          insertion_marker = '  checked.push("duplicate commit is non-destructive and does not append audit records");\n'
+          assert smoke.count(insertion_marker) == 1
+          coverage = '''
   const replacementWithoutUnlock = commitTravelV2RoundActionOrderToSession(committed.session, ["navigator", "engineer", "watchmaster"], { user: { isGM: true }, commitRequested: true, timestamp: "2026-07-03T00:02:00.000Z" });
   assert.equal(replacementWithoutUnlock.ok, false);
   assert.equal(replacementWithoutUnlock.blocked, true);
@@ -53,11 +53,12 @@ jobs:
   assert.deepEqual(replacementWithoutUnlock.session.travelV2RoundActionOrder.rounds["0"].order, ["engineer", "navigator", "watchmaster"]);
   assert.equal(replacementWithoutUnlock.session.travelV2RoundActionOrder.commitRecords.length, 1);
   checked.push("committed order replacement requires explicit unlock");
-`;
-          smoke = smoke.replace(insertionMarker, `${insertionMarker}${coverage}`);
-          fs.writeFileSync(smokePath, smoke);
-          NODE
+'''
+          smoke = smoke.replace(insertion_marker, insertion_marker + coverage)
+          smoke_path.write_text(smoke, encoding="utf-8")
+          PY
           rm .github/workflows/apply-committed-order-replacement-guard.yml
+
       - name: Commit lifecycle guard
         shell: bash
         run: |
