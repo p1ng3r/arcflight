@@ -1,0 +1,66 @@
+name: Validate preview-panel GM fixture fix
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+  statuses: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run baseline validation
+        id: validate
+        shell: bash
+        run: |
+          set +e
+          node scripts/dev/run-travel-v2-smoke.mjs
+          travel_status=$?
+          node scripts/dev/run-foundry-check-runner-smoke.mjs
+          foundry_status=$?
+          git diff --check
+          diff_status=$?
+          status=$((travel_status || foundry_status || diff_status))
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish validation status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VALIDATION_STATUS: ${{ steps.validate.outputs.status }}
+        shell: bash
+        run: |
+          if [ "$VALIDATION_STATUS" = "0" ]; then
+            state=success
+            description="Travel v2, Foundry runner, and diff checks passed"
+          else
+            state=failure
+            description="One or more baseline validation checks failed"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$state" \
+            -f context="baseline-travel-v2-validation" \
+            -f description="$description"
+
+      - name: Remove temporary validation workflow
+        shell: bash
+        run: |
+          rm .github/workflows/validate-preview-panel-gm-fixture-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/validate-preview-panel-gm-fixture-fix.yml
+          git commit -m "chore: remove temporary validation workflow"
+          git push
+
+      - name: Fail workflow when validation failed
+        if: steps.validate.outputs.status != '0'
+        run: exit 1
