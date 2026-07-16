@@ -152,7 +152,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Status guidance slice note:** This PR adds a player-safe Round Action Order decision projection that clearly labels Proposed Order, Committed Order, and Needs Decision states, displays Captain final-say guidance before commitment, and keeps a clear GM Ready to Commit message for valid review candidates. It does not add drag-and-drop yet, does not add an unlock/recommit flow yet, and does not rebuild state preparation, commit, persistence, startup, session-switch, or library foundations.
 
-**Slice 02 — GM Unlock and Recommit Flow:** Explicit GM-only current-round unlock now reopens a valid committed order before any station result is recorded. The slice preserves commit history, appends unlock audits, restores Proposed Order or Needs Decision canonical state, restores Captain guidance while open, uses the existing commit helper for recommit, supports explicit save/reload behavior for the unlocked lifecycle, and still adds no drag-and-drop yet.
+**Slice 02 — GM Unlock and Recommit Flow:** Explicit GM-only current-round unlock now reopens a valid committed order before any station result is recorded. The slice preserves commit history, appends unlock audits, restores Proposed Order or Needs Decision canonical state, restores Captain guidance while open, uses the existing commit helper for recommit, supports explicit save/reload behavior for a genuinely open unlocked lifecycle, now closes reconsideration once station resolution begins, blocks recommit after station results, blocks stale unlocked-state persistence after results, and still adds no drag-and-drop yet.
 
 **Remaining polish after Slice 02:**
 

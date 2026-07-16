@@ -36,6 +36,7 @@ import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-fi
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
 import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
+import { prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -2897,11 +2898,8 @@ export async function persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibr
   if (!persistRequested) blockedReasons.push("Explicit round action-order unlock persist request is required.");
   if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
   const state = isPlainObject(session?.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : null;
-  const roundIndex = Number.isInteger(Number(session?.currentRoundIndex)) ? Number(session.currentRoundIndex) : -1;
-  const rounds = isPlainObject(state?.rounds) ? state.rounds : {};
-  const hasCommitted = isPlainObject(rounds[String(roundIndex)]) || isPlainObject(rounds[roundIndex]);
-  const hasUnlock = Array.isArray(state?.unlockRecords) && state.unlockRecords.some((record) => Number(record?.roundIndex) === roundIndex);
-  if (isPlainObject(session) && (!state || hasCommitted || !hasUnlock)) blockedReasons.push("Travel v2 runner session has no unlocked round action order state to persist.");
+  const unlockLifecycle = isPlainObject(session) ? prepareTravelV2RoundActionOrderUnlockLifecycleState(session, options) : null;
+  if (isPlainObject(session) && (!state || unlockLifecycle?.openForReconsideration !== true)) blockedReasons.push("Unlocked round action order state is no longer open for reconsideration and cannot be persisted.");
   if (blockedReasons.length > 0) return orderPersistenceResult(false, { blockedReasons, persistedRecord: null, session: isGm && isPlainObject(session) ? cloneData(session) : null, summaryText: blockedReasons[0] ?? "Unlocked round action order persistence was blocked." });
 
   const library = getTravelEventRunnerSessionLibrary(options);

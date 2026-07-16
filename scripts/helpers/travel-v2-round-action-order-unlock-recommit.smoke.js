@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { commitTravelV2RoundActionOrderToSession, prepareTravelV2RoundActionOrderState, unlockTravelV2RoundActionOrderInSession } from "./travel-v2-round-action-order-state.js";
+import { commitTravelV2RoundActionOrderToSession, prepareTravelV2RoundActionOrderState, prepareTravelV2RoundActionOrderUnlockLifecycleState, unlockTravelV2RoundActionOrderInSession } from "./travel-v2-round-action-order-state.js";
 
 const GM = { isGM: true, id: "gm-1", name: "GM" };
 const ORDER = ["engineer", "navigator", "watchmaster"];
@@ -78,6 +78,49 @@ export async function runTravelV2RoundActionOrderUnlockRecommitSmokeChecks() {
   const after = prepareTravelV2RoundActionOrderState(recommit.session, { user: GM, isGM: true });
   assert.equal(after.orderDecision.statusLabel, "Committed Order"); assert.equal(after.orderDecision.showCaptainGuidance, false); assert.equal(after.unlockStatus.openForReconsideration, false); assert.deepEqual(after.orderedStationKeys, ["watchmaster", "navigator", "engineer"]);
   checked.push("existing commit helper recommits after unlock");
+
+  for (const value of ["criticalFailure", "failure", "success", "criticalSuccess", "skipped"]) {
+    const s = fixture({ travelV2RoundActionOrder: undefined });
+    s.roundResults[0].stationResults.navigator = value;
+    const beforeCommit = json(s);
+    const blockedCommit = commitTravelV2RoundActionOrderToSession(s, ORDER, { user: GM, commitRequested: true });
+    assert.equal(blockedCommit.ok, false); assert.equal(blockedCommit.committed, false); assert.equal(blockedCommit.blocked, true); assert.match(blockedCommit.reason, /station results/);
+    assert.equal(json(s), beforeCommit);
+  }
+  checked.push("commit helper blocks every supported station result without mutating input");
+
+  const unlockedWithResult = JSON.parse(JSON.stringify(result.session));
+  unlockedWithResult.roundResults[0].stationResults.navigator = "success";
+  const unlockedWithResultBefore = json(unlockedWithResult);
+  const blockedRecommit = commitTravelV2RoundActionOrderToSession(unlockedWithResult, ["watchmaster", "navigator", "engineer"], { user: GM, commitRequested: true, timestamp: "2026-07-04T00:04:00.000Z" });
+  assert.equal(blockedRecommit.ok, false); assert.equal(blockedRecommit.committed, false); assert.equal(blockedRecommit.blocked, true); assert.match(blockedRecommit.reason, /station results/);
+  assert.equal(json(unlockedWithResult), unlockedWithResultBefore);
+  assert.equal(unlockedWithResult.travelV2RoundActionOrder.commitRecords.length, 1);
+  assert.equal(unlockedWithResult.travelV2RoundActionOrder.unlockRecords.length, 1);
+  assert.equal(unlockedWithResult.travelV2RoundActionOrder.rounds["0"], undefined);
+  assert.equal(unlockedWithResult.roundResults[0].stationResults.navigator, "success");
+  const closedState = prepareTravelV2RoundActionOrderState(unlockedWithResult, { user: GM, isGM: true });
+  assert.equal(closedState.unlockStatus.openForReconsideration, false);
+  assert.equal(closedState.orderOpenForReconsideration, false);
+  assert.equal(closedState.unlockStatus.statusKey, "closedByStationResults");
+  assert.equal(closedState.unlockStatus.statusLabel, "Order Reconsideration Closed");
+  assert.equal(closedState.hasCommittedOrder, false);
+  checked.push("commit-unlock-result-recommit is blocked and closes reconsideration lifecycle");
+
+  const fabricated = fixture({ travelV2RoundActionOrder: { version: 4, rounds: {}, commitRecords: [], unlockRecords: [{ id: "fake-unlock", type: "roundActionOrderUnlock", roundIndex: 0, roundNumber: 1, previousOrder: ORDER, timestamp: "2026-07-04T00:01:00.000Z" }] } });
+  const fabricatedState = prepareTravelV2RoundActionOrderState(fabricated, { user: GM, isGM: true });
+  assert.equal(fabricatedState.unlockStatus.openForReconsideration, false);
+  assert.equal(prepareTravelV2RoundActionOrderUnlockLifecycleState(fabricated).openForReconsideration, false);
+  const fabricatedUnlock = unlockTravelV2RoundActionOrderInSession(fabricated, { user: GM, unlockRequested: true });
+  assert.equal(fabricatedUnlock.ok, false); assert.equal(fabricatedUnlock.duplicate, false); assert.equal(fabricatedUnlock.blocked, true);
+  checked.push("fabricated unlock-only history is not open and cannot duplicate-unlock");
+
+  const secondUnlock = unlockTravelV2RoundActionOrderInSession(recommit.session, { user: GM, unlockRequested: true, timestamp: "2026-07-04T00:05:00.000Z" });
+  assert.equal(secondUnlock.ok, true); assert.equal(secondUnlock.unlocked, true);
+  assert.equal(secondUnlock.session.travelV2RoundActionOrder.unlockRecords.length, 2);
+  assert.equal(prepareTravelV2RoundActionOrderState(secondUnlock.session, { user: GM, isGM: true }).unlockStatus.openForReconsideration, true);
+  checked.push("superseded unlock is closed by recommit and later committed lifecycle can unlock again");
+
 
   return { checked };
 }

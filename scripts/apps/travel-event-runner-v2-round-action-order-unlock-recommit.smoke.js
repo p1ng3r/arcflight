@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
-import { loadTravelEventRunnerSessionFromLibrary } from "../helpers/travel-event-runner.js";
+import { prepareTravelEventRunnerV2PreviewPanelState } from "./travel-event-runner-v2-preview-panel.js";
+import { loadTravelEventRunnerSessionFromLibrary, persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary } from "../helpers/travel-event-runner.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel event runner v2 round action order unlock/recommit smoke check failed: ${message}`); }
 function assertEqual(actual, expected, message) { if (actual !== expected) throw new Error(`Travel event runner v2 round action order unlock/recommit smoke check failed: ${message}. Expected ${expected}, got ${actual}.`); }
@@ -43,10 +44,10 @@ export async function runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeC
     assertEqual(app.uiState.travelV2ProposedRoundActionOrder.length, 0, "unlock clears stale proposed reorder UI state");
     assertSmoke(info > 0 && warn === 0, "successful unlock notifies without warnings");
 
-    const playerState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: app.session, user: PLAYER, isGM: false });
-    assertEqual(playerState.travelV2PreviewPanel.roundActionOrderDisplay.unlockStatus.statusLabel, "Order Open for Reconsideration", "player preview shows open status");
-    assertEqual(playerState.travelV2PreviewPanel.roundActionOrderDisplay.unlockControl, null, "player preview redacts unlock controls");
-    assertPlayerSafe(playerState.travelV2PreviewPanel.roundActionOrderDisplay);
+    const playerState = prepareTravelEventRunnerV2PreviewPanelState({ session: app.session, user: PLAYER, isGM: false });
+    assertEqual(playerState.roundActionOrderDisplay.unlockStatus.statusLabel, "Order Open for Reconsideration", "player preview shows open status");
+    assertEqual(playerState.roundActionOrderDisplay.unlockControl, null, "player preview redacts unlock controls");
+    assertPlayerSafe(playerState.roundActionOrderDisplay);
 
     app.uiState.travelV2RoundActionOrderReorderRequested = true;
     app.uiState.travelV2ProposedRoundActionOrder = ["watchmaster", "navigator", "engineer"];
@@ -70,6 +71,62 @@ export async function runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeC
     await app.persistCommittedTravelV2RoundActionOrder({ user: GM, isGM: true, dryRun: true, library: persistedUnlock.library, now: "2026-07-04T00:06:00.000Z" });
     const persistedCommit = app.uiState.travelV2RoundActionOrderPersistResult;
     assertSmoke(persistedCommit.persisted, "explicit persistence after recommit preserves committed order");
+
+    const staleApp = new ArcflightTravelEventRunner({ session });
+    await staleApp.unlockTravelV2RoundActionOrder({ user: GM, isGM: true, confirmed: true, timestamp: "2026-07-04T00:07:00.000Z" });
+    staleApp.session = JSON.parse(JSON.stringify(staleApp.session));
+    staleApp.session.roundResults[0].stationResults.navigator = "success";
+    const staleBeforeCommit = snapshot(staleApp.session);
+    staleApp.uiState.travelV2RoundActionOrderReorderRequested = true;
+    staleApp.uiState.travelV2ProposedRoundActionOrder = ["watchmaster", "navigator", "engineer"];
+    const blockedRendered = await staleApp.commitTravelV2RoundActionOrder({ user: GM, isGM: true, timestamp: "2026-07-04T00:08:00.000Z" });
+    assertSmoke(!blockedRendered.shouldUpdateSession, "recommit after station result is blocked through runner helper");
+    assertEqual(snapshot(staleApp.session), staleBeforeCommit, "blocked recommit does not replace or mutate local session");
+    assertEqual(staleApp.session.travelV2RoundActionOrder.commitRecords.length, 1, "blocked recommit appends no commit record");
+    assertEqual(staleApp.session.roundResults[0].stationResults.navigator, "success", "blocked recommit preserves station result");
+    assertSmoke(staleApp.uiState.travelV2RoundActionOrderCommitResult.blocked, "blocked recommit stores warning feedback");
+
+    const stalePreview = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: staleApp.session, user: GM, isGM: true, uiState: staleApp.uiState }).travelV2PreviewPanel.roundActionOrderDisplay;
+    assertEqual(stalePreview.unlockStatus.openForReconsideration, false, "preview closes open-for-reconsideration after result");
+    assertEqual(stalePreview.canPersistUnlockedOrderState, false, "preview disables unlocked persistence after result");
+    assertEqual(stalePreview.canPersistCommittedOrder, false, "preview keeps committed persistence disabled without canonical committed order");
+    const stalePlayerPreview = prepareTravelEventRunnerV2PreviewPanelState({ session: staleApp.session, user: PLAYER, isGM: false }).roundActionOrderDisplay;
+    assertEqual(stalePlayerPreview.unlockStatus.statusLabel, "Order Reconsideration Closed", "player preview may show closed reconsideration status");
+    assertPlayerSafe(stalePlayerPreview);
+
+    const blockedLibrary = libraryWith(session);
+    const blockedLocalBefore = snapshot(staleApp.session);
+    await staleApp.persistUnlockedTravelV2RoundActionOrder({ user: GM, isGM: true, dryRun: true, library: blockedLibrary, now: "2026-07-04T00:09:00.000Z" });
+    const blockedPersist = staleApp.uiState.travelV2RoundActionOrderUnlockPersistResult;
+    assertEqual(blockedPersist.ok, false, "stale unlocked persistence blocks through app");
+    assertEqual(blockedPersist.persisted, false, "stale unlocked persistence does not persist");
+    assertEqual(blockedPersist.blocked, true, "stale unlocked persistence reports blocked");
+    assertEqual(snapshot(blockedPersist.library ?? blockedLibrary), snapshot(blockedLibrary), "blocked persistence leaves saved library unchanged");
+    assertEqual(Object.keys((blockedPersist.library ?? blockedLibrary).sessions).length, 1, "blocked persistence creates no library entries");
+    assertEqual(snapshot(staleApp.session), blockedLocalBefore, "blocked persistence leaves local session unchanged");
+
+    const openDirect = await persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary(unlockedApp.session, { user: GM, isGM: true, persistRequested: true, dryRun: true, library: libraryWith(session), now: "2026-07-04T00:10:00.000Z" });
+    assertSmoke(openDirect.persisted || openDirect.duplicate, "direct bridge accepts valid open lifecycle");
+    const directDuplicate = await persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary(unlockedApp.session, { user: GM, isGM: true, persistRequested: true, dryRun: true, library: openDirect.library, now: "2026-07-04T00:11:00.000Z" });
+    assertSmoke(directDuplicate.duplicate, "direct bridge duplicate open persistence is idempotent");
+    const otherSession = { ...sessionFixture({ key: "other-runner", name: "Other Runner" }) };
+    const libraryWithOther = { version: 1, sessions: { [session.key]: { key: session.key, name: session.name, session }, [otherSession.key]: { key: otherSession.key, name: otherSession.name, session: otherSession } }, order: [session.key, otherSession.key] };
+    const blockedCases = [
+      ["station-result", (() => { const s = JSON.parse(JSON.stringify(unlockedApp.session)); s.roundResults[0].stationResults.navigator = "success"; return s; })()],
+      ["finalized", { ...unlockedApp.session, travelV2RoundResolutions: { records: [{ roundIndex: 0, roundNumber: 1 }] } }],
+      ["completed", { ...unlockedApp.session, status: "completed", completedAt: "2026-07-04T00:12:00.000Z" }],
+      ["fabricated", sessionFixture({ travelV2RoundActionOrder: { version: 4, rounds: {}, commitRecords: [], unlockRecords: [{ id: "fake-unlock", type: "roundActionOrderUnlock", roundIndex: 0, roundNumber: 1, previousOrder: ORDER, timestamp: "2026-07-04T00:01:00.000Z" }] } })],
+      ["later-recommit", app.session]
+    ];
+    for (const [label, blockedSession] of blockedCases) {
+      const beforeLibrary = snapshot(libraryWithOther);
+      const blocked = await persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary(blockedSession, { user: GM, isGM: true, persistRequested: true, dryRun: true, library: libraryWithOther, now: `2026-07-04T00:13:00.000Z` });
+      assertEqual(blocked.ok, false, `${label} direct bridge blocks`);
+      assertEqual(blocked.persisted, false, `${label} direct bridge does not persist`);
+      assertEqual(snapshot(blocked.library ?? libraryWithOther), beforeLibrary, `${label} direct bridge preserves all library entries`);
+      assertEqual(snapshot(libraryWithOther.sessions[otherSession.key]), snapshot(JSON.parse(beforeLibrary).sessions[otherSession.key]), `${label} direct bridge leaves other entry unchanged`);
+    }
+
 
     const template = readFileSync(new URL("../../templates/apps/travel-event-runner.hbs", import.meta.url), "utf8");
     for (const text of ["roundActionOrderDisplay.unlockStatus.openForReconsideration", "roundActionOrderDisplay.unlockStatus.statusLabel", "roundActionOrderDisplay.unlockStatus.guidanceText", "roundActionOrderDisplay.unlockControl.canUnlock", "roundActionOrderDisplay.unlockControl.blockedReason", "Unlock Order", "Order Open for Reconsideration"]) assertSmoke(template.includes(text), `template references ${text}`);
