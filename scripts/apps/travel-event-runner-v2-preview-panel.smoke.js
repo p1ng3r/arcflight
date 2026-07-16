@@ -82,7 +82,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(panel.roundActionOrderDisplay.hasRows, "panel should expose round action order display rows");
   assertEqual(panel.roundActionOrderDisplay.rows[0].stationName, "Navigator", "round action order display should expose station name");
   assertEqual(panel.roundActionOrderDisplay.rows[0].orderNumber, 1, "round action order display should expose order number");
-  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Event Approach", "round action order display should expose selected action label fallback");
+  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Station Order", "unselected station action should use the Station Order fallback");
   assertEqual(panel.roundActionOrderDisplay.rows[0].statusLabel, "Needs Order", "round action order display should expose status label");
   assertSmoke(panel.roundActionOrderDisplay.rows[0].current, "first uncommitted order row should be marked current");
   assertSmoke(panel.roundActionOrderDisplay.footerText.includes("has not committed"), "round action order display should expose footer text");
