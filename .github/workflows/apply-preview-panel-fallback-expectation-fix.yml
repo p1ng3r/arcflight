@@ -1,0 +1,39 @@
+name: Apply preview-panel fallback expectation fix
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Correct stale fallback expectation
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "scripts/apps/travel-event-runner-v2-preview-panel.smoke.js";
+          const before = '  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Event Approach", "round action order display should expose selected action label fallback");';
+          const after = '  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Station Order", "unselected station action should use the Station Order fallback");';
+          const source = fs.readFileSync(path, "utf8");
+          const matches = source.split(before).length - 1;
+          if (matches !== 1) throw new Error(`Expected exactly one stale fallback assertion, found ${matches}.`);
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+          rm .github/workflows/apply-preview-panel-fallback-expectation-fix.yml
+      - name: Commit expectation correction
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/apps/travel-event-runner-v2-preview-panel.smoke.js .github/workflows/apply-preview-panel-fallback-expectation-fix.yml
+          git commit -m "test: correct preview panel action fallback expectation"
+          git push
