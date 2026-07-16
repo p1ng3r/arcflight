@@ -1,0 +1,82 @@
+Travel v2 aggregate diagnostic
+============================
+- unlocked-station-action-lock-in-blocked
+- invalid-station-key-lock-in-blocked
+- player-safe-lock-in-block-redacted
+- ready-locked-finalization-records-station-action-summary
+- summary-includes-travel-five
+- support-target-safe-summary
+- support-effect-result-and-record
+- support-pending-bonus-result-record-session
+- event-approach-contribution-result-record
+- event-approach-contribution-tally-result-record
+- event-approach-contribution-outcome-values
+- event-approach-contribution-player-safe-redacted
+- support-effect-render-state
+- support-pending-bonus-render-state
+- invalid-support-target-safe-warning
+- support-effect-player-safe-redacted
+- station-action-summary-player-safe-redacted
+- successful-finalization-replaces-session
+- duplicate-finalization-non-destructive
+- completed-session-blocked
+- corrected-outcome-finalizes
+- single-resolution-record-appended
+- input-session-not-mutated
+- no-chat-socket-actor-item-side-effects
+- render-state-does-not-finalize
+- visible-template-controls
+- visible-template-event-approach-contributions
+- visible-template-event-approach-contribution-tally
+- aggregate-smoke-includes-suite
+- app-internal-action-wiring
+
+Travel event runner v2 round action order commit smoke checks passed.
+Checked 10 groups:
+- runner-helper-exported
+- successful-gm-commit-replaces-local-session
+- duplicate-non-destructive
+- invalid-proposed-order-blocks
+- non-gm-blocked-redacted
+- completed-session-and-round-blocked
+- no-side-effects
+- source-scan-hard-limits
+- explicit-template-commit-path
+- aggregate-smoke-includes-suite
+
+Travel event runner v2 round action order unlock recommit smoke checks passed.
+Checked 1 groups:
+- runner unlock, preview safety, recommit, persistence/reload, closed presentation, and template bindings
+
+Travel event runner v2 round action order persistence smoke checks passed.
+Checked 9 groups:
+- successful-gm-persistence
+- duplicate-non-destructive
+- missing-committed-blocks
+- non-gm-redacted
+- direct-missing-request-blocks
+- no-commit-helper
+- single-template-action
+- no-round-or-station-side-effects
+- no-roll-check-dc-or-mutation-side-effects
+
+Travel event runner v2 round action order closeout smoke checks passed.
+Checked 8 groups:
+- compute/display current order
+- request GM reorder review
+- commit reviewed order locally and display result
+- persist committed order through existing bridge without mutating local session
+- duplicate/no-op commit and persist paths do not duplicate records
+- reload/load saved session and display persisted committed order
+- non-GM display remains player-safe/redacted
+- aggregate Travel v2 smoke includes closeout suite and lifecycle has no side effects
+
+Travel event runner v2 round action order startup hardening smoke checks passed.
+Checked 5 groups:
+- saved session loads through existing library/session loader with committed order intact
+- startup render prep and preview display persisted committed order without session mutation
+- restored app startup context does not propose, commit, persist, or mutate
+- non-GM startup display is player-safe and redacts GM-only audit metadata
+- aggregate Travel v2 smoke includes startup hardening suite
+
+(intermediate value).render is not a function
