@@ -1,0 +1,29 @@
+name: Capture next Travel v2 failure
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Save exact failure tail
+        shell: bash
+        run: |
+          set +e
+          node scripts/dev/run-travel-v2-smoke.mjs > /tmp/travel.log 2>&1
+          tail -n 50 /tmp/travel.log > docs/TRAVEL_V2_NEXT_FAILURE.txt
+          rm .github/workflows/capture-next-travel-v2-failure.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/TRAVEL_V2_NEXT_FAILURE.txt .github/workflows/capture-next-travel-v2-failure.yml
+          git commit -m "chore: capture next Travel v2 failure"
+          git push
