@@ -1,7 +1,6 @@
 import { prepareTravelEventRunnerV2PreviewPanelState as prepareBaseTravelEventRunnerV2PreviewPanelState } from "./travel-event-runner-v2-preview-panel-base.js";
 
 export * from "./travel-event-runner-v2-preview-panel-base.js";
-export { default } from "./travel-event-runner-v2-preview-panel-base.js";
 
 const RECONSIDERATION_CLOSED_TEXT = "Station resolution has begun, so the round action order can no longer be changed.";
 
@@ -48,3 +47,5 @@ export function prepareTravelEventRunnerV2PreviewPanelState(appState = {}) {
     roundActionOrderDisplay: closeRoundActionOrderReconsideration(panel?.roundActionOrderDisplay)
   };
 }
+
+export default prepareTravelEventRunnerV2PreviewPanelState;
