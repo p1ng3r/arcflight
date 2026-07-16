@@ -63,7 +63,7 @@ async function importRunnerModules() {
   };
   try {
     const guard = await import(`./travel-event-runner-candidate-guard.js?keyboardReorderSmoke=${Date.now()}`);
-    const module = await import("./travel-event-runner.js");
+    const module = await import(`./travel-event-runner.js?keyboardReorderSmoke=${Date.now()}`);
     const preview = await import("./travel-event-runner-v2-preview-consumer.js");
     return { module, guard, preview, renders: () => renders };
   } finally {
