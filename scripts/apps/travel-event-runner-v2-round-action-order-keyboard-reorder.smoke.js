@@ -119,6 +119,185 @@ export async function runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmoke
     assert.equal(app.uiState.travelV2RoundActionOrderReorderRequested, false, "returning to canonical clears request flag");
     state = prepareTravelV2RoundActionOrderState(app.session, { user: GM, isGM: true, travelV2RoundActionOrderReorderRequested: true, proposedOrder: [...ORDER] });
     assert.equal(state.reorderRequest.ready, false, "unchanged candidate is not ready");
+    const targetIndexApp = new ArcflightTravelEventRunner({
+      session: sessionFixture("target-index")
+    });
+
+    const targetIndexBefore = snapshot(targetIndexApp.session);
+
+    const moveToEnd =
+      targetIndexApp.moveTravelV2RoundActionOrderCandidate(
+        "navigator",
+        { targetIndex: 2 }
+      );
+
+    assert.equal(
+      moveToEnd.ok,
+      true,
+      "runner target-index move succeeds"
+    );
+
+    assert.equal(
+      moveToEnd.moved,
+      true,
+      "runner target-index move reports movement"
+    );
+
+    assert.deepEqual(
+      targetIndexApp.uiState.travelV2ProposedRoundActionOrder,
+      ["engineer", "watchmaster", "navigator"],
+      "runner target-index move updates only the local candidate"
+    );
+
+    assert.equal(
+      targetIndexApp.uiState.travelV2RoundActionOrderReorderRequested,
+      true,
+      "runner target-index move requests reorder review"
+    );
+
+    assert.deepEqual(
+      targetIndexApp.uiState.travelV2RoundActionOrderCandidateContext,
+      {
+        sessionKey: "target-index",
+        roundIndex: 0
+      },
+      "runner target-index move records candidate context"
+    );
+
+    assert.equal(
+      snapshot(targetIndexApp.session),
+      targetIndexBefore,
+      "runner target-index move does not mutate the session"
+    );
+
+    const sameTarget =
+      targetIndexApp.moveTravelV2RoundActionOrderCandidate(
+        "navigator",
+        { targetIndex: 2 }
+      );
+
+    assert.equal(
+      sameTarget.ok,
+      true,
+      "runner same target index succeeds"
+    );
+
+    assert.equal(
+      sameTarget.moved,
+      false,
+      "runner same target index is a no-op"
+    );
+
+    assert.deepEqual(
+      targetIndexApp.uiState.travelV2ProposedRoundActionOrder,
+      ["engineer", "watchmaster", "navigator"],
+      "runner same-index no-op preserves the current candidate"
+    );
+
+    assert.equal(
+      snapshot(targetIndexApp.session),
+      targetIndexBefore,
+      "runner same-index no-op does not mutate the session"
+    );
+
+    const returnToCanonical =
+      targetIndexApp.moveTravelV2RoundActionOrderCandidate(
+        "navigator",
+        { targetIndex: 0 }
+      );
+
+    assert.equal(
+      returnToCanonical.ok,
+      true,
+      "runner target-index move back to canonical succeeds"
+    );
+
+    assert.equal(
+      targetIndexApp.uiState.travelV2RoundActionOrderReorderRequested,
+      false,
+      "returning to canonical order clears reorder review"
+    );
+
+    assert.deepEqual(
+      targetIndexApp.uiState.travelV2ProposedRoundActionOrder,
+      [],
+      "returning to canonical order clears the local candidate"
+    );
+
+    assert.equal(
+      targetIndexApp.uiState.travelV2RoundActionOrderCandidateContext,
+      null,
+      "returning to canonical order clears candidate context"
+    );
+
+    assert.equal(
+      snapshot(targetIndexApp.session),
+      targetIndexBefore,
+      "target-index candidate chain never mutates the session"
+    );
+
+    const invalidTargetApp = new ArcflightTravelEventRunner({
+      session: sessionFixture("invalid-target-index")
+    });
+
+    const invalidTargetBefore = snapshot(invalidTargetApp.session);
+
+    const ambiguousTarget =
+      invalidTargetApp.moveTravelV2RoundActionOrderCandidate(
+        "engineer",
+        {
+          direction: "up",
+          targetIndex: 0
+        }
+      );
+
+    assert.equal(
+      ambiguousTarget.blocked,
+      true,
+      "runner forwards ambiguous movement for helper rejection"
+    );
+
+    const fractionalTarget =
+      invalidTargetApp.moveTravelV2RoundActionOrderCandidate(
+        "engineer",
+        { targetIndex: 1.5 }
+      );
+
+    assert.equal(
+      fractionalTarget.blocked,
+      true,
+      "runner blocks fractional target index"
+    );
+
+    const missingMovement =
+      invalidTargetApp.moveTravelV2RoundActionOrderCandidate(
+        "engineer",
+        {}
+      );
+
+    assert.equal(
+      missingMovement.blocked,
+      true,
+      "runner blocks movement without direction or target index"
+    );
+
+    assert.equal(
+      invalidTargetApp.uiState.travelV2RoundActionOrderReorderRequested,
+      false,
+      "blocked target-index requests create no reorder review"
+    );
+
+    assert.deepEqual(
+      invalidTargetApp.uiState.travelV2ProposedRoundActionOrder,
+      [],
+      "blocked target-index requests create no candidate"
+    );
+
+    assert.equal(
+      snapshot(invalidTargetApp.session),
+      invalidTargetBefore,
+      "blocked target-index requests do not mutate the session"
+    );
 
     app.moveTravelV2RoundActionOrderCandidate("engineer", "down");
     app.resetTravelV2RoundActionOrderCandidate();
@@ -211,7 +390,26 @@ export async function runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmoke
     if (previousRoll === undefined) delete globalThis.Roll; else globalThis.Roll = previousRoll;
   }
 
-  return { ok: true, checked: ["gm-candidate", "edge-state", "reset", "explicit-commit", "committed-order-gate", "unlock-recommit", "results-block", "player-redaction", "round-isolation", "session-isolation", "no-side-effects", "template-bindings"] };
+    return {
+    ok: true,
+    checked: [
+      "gm-candidate",
+      "target-index-adapter",
+      "target-index-candidate-chain",
+      "target-index-validation",
+      "edge-state",
+      "reset",
+      "explicit-commit",
+      "committed-order-gate",
+      "unlock-recommit",
+      "results-block",
+      "player-redaction",
+      "round-isolation",
+      "session-isolation",
+      "no-side-effects",
+      "template-bindings"
+    ]
+  };
 }
 
 export default runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks;

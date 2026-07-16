@@ -696,32 +696,120 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.uiState.travelV2RoundActionOrderCandidateContext = null;
   }
 
-  moveTravelV2RoundActionOrderCandidate(stationKey, direction, options = {}) {
-    const state = prepareTravelV2RoundActionOrderState(this.session, { user: options.user ?? globalThis.game?.user, isGM: options.isGM ?? globalThis.game?.user?.isGM === true, proposedOrder: this.uiState.travelV2ProposedRoundActionOrder, travelV2RoundActionOrderReorderRequested: this.uiState.travelV2RoundActionOrderReorderRequested === true });
+   moveTravelV2RoundActionOrderCandidate(
+    stationKey,
+    directionOrOptions = {},
+    options = {}
+  ) {
+    const movementOptions = (
+      directionOrOptions
+      && typeof directionOrOptions === "object"
+    )
+      ? { ...options, ...directionOrOptions }
+      : { ...options, direction: directionOrOptions };
+
+    const state = prepareTravelV2RoundActionOrderState(this.session, {
+      user: movementOptions.user ?? globalThis.game?.user,
+      isGM: movementOptions.isGM ?? globalThis.game?.user?.isGM === true,
+      proposedOrder: this.uiState.travelV2ProposedRoundActionOrder,
+      travelV2RoundActionOrderReorderRequested:
+        this.uiState.travelV2RoundActionOrderReorderRequested === true
+    });
+
     const interaction = state.reorderInteraction;
-    if (interaction?.canReorder !== true || interaction.keyboardEnabled !== true) {
-      this.statusMessage = interaction?.blockedReason || "Round action order keyboard reorder is unavailable.";
+
+    if (
+      interaction?.canReorder !== true
+      || interaction.keyboardEnabled !== true
+    ) {
+      this.statusMessage = (
+        interaction?.blockedReason
+        || "Round action order candidate reorder is unavailable."
+      );
+
       globalThis.ui?.notifications?.warn?.(this.statusMessage);
-      return { ok: false, blocked: true, reason: this.statusMessage };
+
+      return {
+        ok: false,
+        blocked: true,
+        reason: this.statusMessage
+      };
     }
+
     const context = this.#roundActionOrderCandidateContext();
-    const priorContext = this.uiState.travelV2RoundActionOrderCandidateContext;
-    const sameContext = priorContext?.sessionKey === context.sessionKey && priorContext?.roundIndex === context.roundIndex;
-    const candidateValidation = sameContext ? normalizeTravelV2ProposedRoundActionOrder(this.uiState.travelV2ProposedRoundActionOrder, state.activeStations) : { valid: false };
-    const sourceOrder = candidateValidation.valid ? this.uiState.travelV2ProposedRoundActionOrder : state.orderedStationKeys;
-    const result = moveTravelV2RoundActionOrderCandidate(sourceOrder, { stationKey, direction, activeStations: state.activeStations });
+    const priorContext =
+      this.uiState.travelV2RoundActionOrderCandidateContext;
+
+    const sameContext = (
+      priorContext?.sessionKey === context.sessionKey
+      && priorContext?.roundIndex === context.roundIndex
+    );
+
+    const candidateValidation = sameContext
+      ? normalizeTravelV2ProposedRoundActionOrder(
+          this.uiState.travelV2ProposedRoundActionOrder,
+          state.activeStations
+        )
+      : { valid: false };
+
+    const sourceOrder = candidateValidation.valid
+      ? this.uiState.travelV2ProposedRoundActionOrder
+      : state.orderedStationKeys;
+
+    const movementRequest = {
+      stationKey,
+      activeStations: state.activeStations
+    };
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        movementOptions,
+        "direction"
+      )
+    ) {
+      movementRequest.direction = movementOptions.direction;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        movementOptions,
+        "targetIndex"
+      )
+    ) {
+      movementRequest.targetIndex = movementOptions.targetIndex;
+    }
+
+    const result = moveTravelV2RoundActionOrderCandidate(
+      sourceOrder,
+      movementRequest
+    );
+
     if (result.ok !== true) {
-      this.statusMessage = result.reason || "Round action order candidate movement was blocked.";
+      this.statusMessage = (
+        result.reason
+        || "Round action order candidate movement was blocked."
+      );
+
       globalThis.ui?.notifications?.warn?.(this.statusMessage);
       return result;
     }
-    if (JSON.stringify(result.proposedOrder) === JSON.stringify(state.orderedStationKeys)) this.#clearTravelV2RoundActionOrderCandidate();
-    else {
+
+    if (
+      JSON.stringify(result.proposedOrder)
+      === JSON.stringify(state.orderedStationKeys)
+    ) {
+      this.#clearTravelV2RoundActionOrderCandidate();
+    } else {
       this.uiState.travelV2RoundActionOrderReorderRequested = true;
-      this.uiState.travelV2ProposedRoundActionOrder = [...result.proposedOrder];
+      this.uiState.travelV2ProposedRoundActionOrder = [
+        ...result.proposedOrder
+      ];
       this.uiState.travelV2RoundActionOrderCandidateContext = context;
     }
-    this.statusMessage = "Round action-order candidate updated locally. Review and explicitly commit to apply.";
+
+    this.statusMessage =
+      "Round action-order candidate updated locally. Review and explicitly commit to apply.";
+
     this.render(true);
     return result;
   }
