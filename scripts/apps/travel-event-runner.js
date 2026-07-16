@@ -18,7 +18,7 @@ import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js"
 import { selectTravelV2RiskBidForRunnerSession, clearTravelV2RiskBidSelectionForRunnerSession } from "../helpers/travel-v2-risk-bids.js";
 import { prepareTravelV2RiskBidQueueInsertionIntent } from "../helpers/travel-v2-risk-bid-queue-insertion-intent.js";
 import { clearAllTravelV2RiskBidReviewQueueRecordSelections, clearTravelV2RiskBidReviewQueueRecordSelection, insertTravelV2RiskBidReviewQueueRecords, selectTravelV2RiskBidReviewQueueRecord, updateTravelV2RiskBidReviewQueueRecordStatus } from "../helpers/travel-v2-risk-bid-review-queue.js";
-import { commitTravelV2RoundActionOrderToSession } from "../helpers/travel-v2-round-action-order-state.js";
+import { commitTravelV2RoundActionOrderToSession, unlockTravelV2RoundActionOrderInSession } from "../helpers/travel-v2-round-action-order-state.js";
 import { applyAllExecutableTravelV2SelectedConsequencesToSession, applyTravelV2SelectedConsequenceToSession, clearAllTravelV2PendingConsequenceSelections, clearTravelV2PendingConsequenceSelection, selectAllSingleSuggestionTravelV2PendingConsequences, selectTravelV2PendingConsequenceCatalogCard, updateTravelV2ConsequenceFollowupStatus, updateTravelV2PendingConsequenceQueueItem } from "../helpers/travel-v2-pending-consequence-queue.js";
 import { applyTravelV2ShipScarToActor, repairTravelV2ShipScarOnActor } from "../helpers/travel-v2-ship-scars.js";
 import { forceTravelV2Outcome, forceTravelV2EarlyEndRound, forceTravelV2CurrentRoundResults, createLanternTravelV2SampleSession, copyTravelV2DebugReport, isTravelV2DevToolsEnabled, prepareTravelV2EndOfEventResolutionDialogState, prepareTravelV2RoundResolutionDialogState, deleteTravelV2CompletedSessionFromLibrary } from "../helpers/travel-v2-dev-tools.js";
@@ -53,6 +53,7 @@ import {
   retreatTravelEventRunnerRound,
   saveTravelEventRunnerSessionToLibrary,
   persistCommittedTravelV2RoundActionOrderToRunnerSessionLibrary,
+  persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary,
   persistTravelV2StationActionLockInToRunnerSessionLibrary,
   setTravelEventRunnerRoundPhase,
   setTravelEventRunnerStationResult,
@@ -451,6 +452,21 @@ export function prepareTravelV2RoundActionOrderCommitRunnerUpdate(currentSession
 }
 
 
+export function prepareTravelV2RoundActionOrderUnlockRunnerUpdate(currentSession, options = {}) {
+  const result = unlockTravelV2RoundActionOrderInSession(currentSession, {
+    ...options,
+    unlockRequested: options.unlockRequested === true || options.travelV2RoundActionOrderUnlockRequested === true,
+    travelV2RoundActionOrderUnlockRequested: options.travelV2RoundActionOrderUnlockRequested === true || options.unlockRequested === true
+  });
+  const shouldUpdateSession = result?.ok === true && result?.unlocked === true && result.session !== undefined;
+  return {
+    result,
+    nextSession: shouldUpdateSession ? result.session : currentSession,
+    shouldUpdateSession,
+    shouldRerender: shouldUpdateSession
+  };
+}
+
 function prepareTravelV2RiskBidSelectionFromState(riskBids = {}, tier = null) {
   return {
     roundIndex: Number.isInteger(riskBids?.roundIndex) ? riskBids.roundIndex : riskBids?.selectedRecord?.roundIndex ?? null,
@@ -517,6 +533,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       travelV2AutoSaveResult: null,
       travelV2RoundActionOrderCommitResult: null,
       travelV2RoundActionOrderPersistResult: null,
+      travelV2RoundActionOrderUnlockResult: null,
+      travelV2RoundActionOrderUnlockPersistResult: null,
       travelV2StationActionLockResult: null,
       travelV2StationActionLockPersistResult: null,
       travelV2RiskBidReviewQueuePersistResult: null,
@@ -697,6 +715,38 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     return update;
   }
 
+  async unlockTravelV2RoundActionOrder(options = {}) {
+    const confirmed = options.confirmed === true || await this.#confirmRunnerDialog({
+      title: "Unlock Round Action Order",
+      content: "<p>Unlock the committed station order for this round?</p><p>This reopens the order for reconsideration but does not change station actions, rolls, or results.</p>",
+      yesLabel: "Unlock Order",
+      unavailableMessage: "Unlock requires Foundry DialogV2; this environment cannot show the confirmation dialog."
+    });
+    if (!confirmed) {
+      this.statusMessage = "Round action order unlock cancelled.";
+      return this.render(true);
+    }
+    const update = prepareTravelV2RoundActionOrderUnlockRunnerUpdate(this.session, {
+      ...options,
+      user: options.user ?? globalThis.game?.user,
+      isGM: options.isGM ?? globalThis.game?.user?.isGM === true,
+      unlockRequested: true
+    });
+    this.uiState.travelV2RoundActionOrderUnlockResult = update.result;
+    if (update.shouldUpdateSession) {
+      this.session = update.nextSession;
+      this.selectedSessionKey = this.session?.key ?? this.selectedSessionKey;
+      this.uiState.travelV2RoundActionOrderReorderRequested = false;
+      this.uiState.travelV2ProposedRoundActionOrder = [];
+      this.statusMessage = `Round action order unlocked for Round ${update.result.roundNumber ?? Number(update.result.roundIndex ?? 0) + 1}; local runner session state was replaced only.`;
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = update.result?.reason ?? update.result?.blockedReasons?.[0] ?? (update.result?.duplicate ? "Round action order is already unlocked." : "Round action order unlock was blocked.");
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return update;
+  }
+
   async lockTravelV2StationAction(targetOrOptions = {}) {
     const dataset = targetOrOptions?.dataset ?? {};
     const stationKey = typeof targetOrOptions.stationKey === "string" ? targetOrOptions.stationKey : (dataset.stationKey ?? "");
@@ -855,6 +905,24 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       return this.render(true);
     }
     this.statusMessage = result.summaryText || result.blockedReasons?.[0] || "Station action lock persistence was blocked.";
+    globalThis.ui?.notifications?.warn?.(this.statusMessage);
+    return result;
+  }
+
+  async persistUnlockedTravelV2RoundActionOrder(options = {}) {
+    const result = await persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary(this.session, {
+      ...options,
+      user: options.user ?? globalThis.game?.user,
+      isGM: options.isGM ?? globalThis.game?.user?.isGM === true,
+      persistRequested: true
+    });
+    this.uiState.travelV2RoundActionOrderUnlockPersistResult = result;
+    if (result.ok === true && result.persisted === true) {
+      this.statusMessage = result.summaryText || "Unlocked round action order state persisted to the saved runner session.";
+      globalThis.ui?.notifications?.info?.(this.statusMessage);
+      return this.render(true);
+    }
+    this.statusMessage = result.summaryText || result.blockedReasons?.[0] || (result.duplicate ? "Unlocked round action order state was already persisted; no local session changes were made." : "Unlocked round action order persistence was blocked.");
     globalThis.ui?.notifications?.warn?.(this.statusMessage);
     return result;
   }
@@ -1056,6 +1124,8 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     if (target.hasAttribute("data-arcflight-travel-v2-inter-station-help-queue")) return this.#queueTravelV2InterStationHelp();
     if (target.hasAttribute("data-arcflight-travel-v2-order-reorder-request")) return this.#requestTravelV2RoundActionOrderReorder(target);
     if (target.hasAttribute("data-arcflight-travel-v2-order-commit-request")) return this.commitTravelV2RoundActionOrder();
+    if (target.hasAttribute("data-arcflight-travel-v2-order-unlock-request")) return this.unlockTravelV2RoundActionOrder();
+    if (target.hasAttribute("data-arcflight-travel-v2-order-unlock-persist-request")) return this.persistUnlockedTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-order-persist-request")) return this.persistCommittedTravelV2RoundActionOrder();
     if (target.hasAttribute("data-arcflight-travel-v2-station-action-lock")) return this.lockTravelV2StationAction(target);
     if (target.hasAttribute("data-arcflight-travel-v2-station-action-unlock")) return this.unlockTravelV2StationAction(target);

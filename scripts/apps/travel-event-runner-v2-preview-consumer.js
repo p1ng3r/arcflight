@@ -530,6 +530,8 @@ export function prepareTravelEventRunnerAppStateWithTravelV2Preview({ session = 
     travelV2DevToolResult: uiState.travelV2DevToolResult ?? null,
     travelV2RoundActionOrderCommitResult: uiState.travelV2RoundActionOrderCommitResult ?? null,
     travelV2RoundActionOrderPersistResult: uiState.travelV2RoundActionOrderPersistResult ?? null,
+    travelV2RoundActionOrderUnlockResult: uiState.travelV2RoundActionOrderUnlockResult ?? null,
+    travelV2RoundActionOrderUnlockPersistResult: uiState.travelV2RoundActionOrderUnlockPersistResult ?? null,
     travelV2StationActionLockResult: uiState.travelV2StationActionLockResult ?? null,
     travelV2StationActionLockPersistResult: uiState.travelV2StationActionLockPersistResult ?? null,
     travelV2RoundActionOrderReorderRequested: uiState.travelV2RoundActionOrderReorderRequested === true,

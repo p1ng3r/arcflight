@@ -2,6 +2,7 @@ import runTravelV2StateSmokeChecks from "../helpers/travel-v2-state.smoke.js";
 import runTravelV2PressureEngineSmokeChecks from "../helpers/travel-v2-pressure-engine.smoke.js";
 import runTravelV2RoundPressureAdapterSmokeChecks from "../helpers/travel-v2-round-pressure-adapter.smoke.js";
 import runTravelV2RoundActionOrderStateSmokeChecks from "../helpers/travel-v2-round-action-order-state.smoke.js";
+import runTravelV2RoundActionOrderUnlockRecommitSmokeChecks from "../helpers/travel-v2-round-action-order-unlock-recommit.smoke.js";
 import runTravelV2RoundActionOrderStatusGuidanceSmokeChecks from "../helpers/travel-v2-round-action-order-status-guidance.smoke.js";
 import runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks from "../helpers/travel-v2-round-action-order-persistence-bridge.smoke.js";
 import runTravelV2RoundActionOrderLibraryStatusSmokeChecks from "../helpers/travel-v2-round-action-order-library-status.smoke.js";
@@ -70,6 +71,7 @@ import runTravelEventRunnerV2PressureApplicationSmokeChecks from "../apps/travel
 import runTravelEventRunnerV2PressureCorrectionSmokeChecks from "../apps/travel-event-runner-v2-pressure-correction.smoke.js";
 import runTravelEventRunnerV2RoundFinalizationSmokeChecks from "../apps/travel-event-runner-v2-round-finalization.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-commit.smoke.js";
+import runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-unlock-recommit.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-persistence.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-closeout.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-startup.smoke.js";
@@ -115,6 +117,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 pressure engine", runTravelV2PressureEngineSmokeChecks],
   ["Travel v2 round pressure adapter", runTravelV2RoundPressureAdapterSmokeChecks],
   ["Travel v2 round action order state", runTravelV2RoundActionOrderStateSmokeChecks],
+  ["Travel v2 round action order unlock recommit", runTravelV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel v2 round action order status guidance", runTravelV2RoundActionOrderStatusGuidanceSmokeChecks],
   ["Travel v2 round action order persistence bridge", runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks],
   ["Travel v2 round action order library status", runTravelV2RoundActionOrderLibraryStatusSmokeChecks],
@@ -183,6 +186,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 pressure correction", runTravelEventRunnerV2PressureCorrectionSmokeChecks],
   ["Travel event runner v2 round finalization", runTravelEventRunnerV2RoundFinalizationSmokeChecks],
   ["Travel event runner v2 round action order commit", runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks],
+  ["Travel event runner v2 round action order unlock recommit", runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel event runner v2 round action order persistence", runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks],
   ["Travel event runner v2 round action order closeout", runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks],
   ["Travel event runner v2 round action order startup hardening", runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks],

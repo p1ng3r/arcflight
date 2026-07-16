@@ -36,6 +36,7 @@ import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-fi
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
 import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
+import { prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -2887,6 +2888,32 @@ export async function persistCommittedTravelV2RoundActionOrderToRunnerSessionLib
   const saved = await saveTravelEventRunnerSessionToLibrary(savedSession, { ...options, key: key || savedSession.key, overwrite: true });
   if (!saved.ok) return orderPersistenceResult(false, { blockedReasons: saved.errors?.length ? saved.errors : ["Existing Travel Event Runner session save path blocked persistence."], warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry ?? null, session: isGm ? saved.session ?? cloneData(savedSession) : null });
   return orderPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, persistedRecord: cloneData(committed.record) });
+}
+
+export async function persistUnlockedTravelV2RoundActionOrderToRunnerSessionLibrary(session, options = {}) {
+  const isGm = options.user?.isGM === true || options.isGM === true;
+  const persistRequested = options.persistRequested === true || options.travelV2RoundActionOrderUnlockPersistRequested === true;
+  const blockedReasons = [];
+  if (!isGm) blockedReasons.push("Only the GM can persist unlocked round action order state.");
+  if (!persistRequested) blockedReasons.push("Explicit round action-order unlock persist request is required.");
+  if (!isPlainObject(session)) blockedReasons.push("Travel v2 runner session is required.");
+  const state = isPlainObject(session?.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : null;
+  const unlockLifecycle = isPlainObject(session) ? prepareTravelV2RoundActionOrderUnlockLifecycleState(session, options) : null;
+  if (isPlainObject(session) && (!state || unlockLifecycle?.openForReconsideration !== true)) blockedReasons.push("Unlocked round action order state is no longer open for reconsideration and cannot be persisted.");
+  if (blockedReasons.length > 0) return orderPersistenceResult(false, { blockedReasons, persistedRecord: null, session: isGm && isPlainObject(session) ? cloneData(session) : null, summaryText: blockedReasons[0] ?? "Unlocked round action order persistence was blocked." });
+
+  const library = getTravelEventRunnerSessionLibrary(options);
+  const key = typeof options.key === "string" && options.key.length > 0 ? options.key : (typeof session.key === "string" ? session.key : "");
+  const existingEntry = findRunnerSessionLibraryEntry(library, key);
+  const savedSession = isPlainObject(existingEntry?.session) ? cloneData(existingEntry.session) : cloneData(session);
+  const priorState = isPlainObject(savedSession.travelV2RoundActionOrder) ? savedSession.travelV2RoundActionOrder : null;
+  if (JSON.stringify(priorState) === JSON.stringify(state)) {
+    return orderPersistenceResult(true, { persisted: false, duplicate: true, library: cloneData(library), entry: existingEntry ? cloneData(existingEntry) : null, session: cloneData(savedSession), persistedRecord: null, summaryText: "Unlocked round action order state was already persisted; no saved session data changed." });
+  }
+  savedSession.travelV2RoundActionOrder = cloneData(state);
+  const saved = await saveTravelEventRunnerSessionToLibrary(savedSession, { ...options, key: key || savedSession.key, overwrite: true });
+  if (!saved.ok) return orderPersistenceResult(false, { blockedReasons: saved.errors?.length ? saved.errors : ["Existing Travel Event Runner session save path blocked unlocked-state persistence."], warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry ?? null, session: isGm ? saved.session ?? cloneData(savedSession) : null });
+  return orderPersistenceResult(true, { persisted: true, duplicate: false, warnings: saved.warnings ?? [], library: saved.library, entry: saved.entry, session: saved.session, persistedRecord: null, summaryText: "Unlocked round action order state was persisted to the saved runner session." });
 }
 
 function stationActionLockPersistenceResult(ok, data = {}) {
