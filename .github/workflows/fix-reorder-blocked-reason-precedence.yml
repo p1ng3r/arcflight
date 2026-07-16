@@ -1,0 +1,45 @@
+name: Fix reorder blocked-reason precedence
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prefer prepared request explanation
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "scripts/apps/travel-event-runner-v2-preview-panel.js";
+          const before = `  const blockedReason = interaction?.blockedReason
+    || request.blockedReason
+    || request.blockedReasons?.[0]
+    || "Round action-order reordering is unavailable in the current runner state.";`;
+          const after = `  const blockedReason = request.blockedReason
+    || request.blockedReasons?.[0]
+    || interaction?.blockedReason
+    || "Round action-order reordering is unavailable in the current runner state.";`;
+          const source = fs.readFileSync(path, "utf8");
+          const matches = source.split(before).length - 1;
+          if (matches !== 1) throw new Error(`Expected exactly one blocked-reason precedence block, found ${matches}.`);
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+          rm .github/workflows/fix-reorder-blocked-reason-precedence.yml
+      - name: Commit focused wrapper correction
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/apps/travel-event-runner-v2-preview-panel.js .github/workflows/fix-reorder-blocked-reason-precedence.yml
+          git commit -m "fix: preserve canonical reorder blocked explanation"
+          git push
