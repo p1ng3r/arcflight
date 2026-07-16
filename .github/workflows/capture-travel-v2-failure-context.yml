@@ -1,0 +1,33 @@
+name: Capture Travel v2 failure context
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Capture aggregate tail
+        shell: bash
+        run: |
+          set +e
+          node scripts/dev/run-travel-v2-smoke.mjs > /tmp/travel.log 2>&1
+          {
+            echo "Travel v2 aggregate diagnostic"
+            echo "============================"
+            tail -n 80 /tmp/travel.log
+          } > docs/TRAVEL_V2_VALIDATION_DIAGNOSTIC.txt
+          rm .github/workflows/capture-travel-v2-failure-context.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/TRAVEL_V2_VALIDATION_DIAGNOSTIC.txt .github/workflows/capture-travel-v2-failure-context.yml
+          git commit -m "chore: capture Travel v2 validation diagnostic"
+          git push
