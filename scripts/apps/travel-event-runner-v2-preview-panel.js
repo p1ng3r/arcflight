@@ -50,9 +50,9 @@ function gateRoundActionOrderReorder(display = null) {
   const ready = canReorder && request.ready === true;
   if (ready) return { ...display, canRequestReorderReview: true, reorderRequest: { ...request, ready: true, blocked: false, status: "ready" } };
 
-  const blockedReason = interaction?.blockedReason
-    || request.blockedReason
+  const blockedReason = request.blockedReason
     || request.blockedReasons?.[0]
+    || interaction?.blockedReason
     || "Round action-order reordering is unavailable in the current runner state.";
   return {
     ...display,

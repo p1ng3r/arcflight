@@ -87,7 +87,8 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(panel.roundActionOrderDisplay.rows[0].current, "first uncommitted order row should be marked current");
   assertSmoke(panel.roundActionOrderDisplay.footerText.includes("has not committed"), "round action order display should expose footer text");
   assertSmoke(!panel.roundActionOrderDisplay.reorderRequest.requested, "panel should not show reorder comparison without explicit request");
-  assertSmoke(panel.roundActionOrderDisplay.canRequestReorderReview, "panel should expose an explicit reorder review request shell for multi-station rounds");
+  const gmPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, user: { isGM: true, id: "gm", name: "GM" }, isGM: true });
+  assertSmoke(gmPanel.roundActionOrderDisplay.canRequestReorderReview, "GM panel should expose an explicit reorder review request shell for multi-station rounds");
 
   const reorderPanel = prepareTravelEventRunnerV2PreviewPanelState({ session: appState.session, user: { isGM: true }, isGM: true, travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["engineer", "navigator"] });
   assertSmoke(reorderPanel.roundActionOrderDisplay.reorderRequest.ready, "explicit GM reorder request should prepare a ready review-only candidate");
