@@ -1,0 +1,56 @@
+name: Validate repaired Travel v2 baseline
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+  statuses: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run checks and publish statuses
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          node scripts/dev/run-travel-v2-smoke.mjs > /tmp/travel.log 2>&1
+          travel_status=$?
+          if [ "$travel_status" = "0" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=success -f context="travel-v2-smoke"
+          else
+            line=$(tail -n 1 /tmp/travel.log)
+            clean=$(printf '%s' "$line" | tr -cd '[:alnum:] _.,:-')
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=failure -f context="travel-v2-smoke"
+            for index in 1 2 3 4; do
+              start=$(( (index - 1) * 65 + 1 ))
+              chunk=$(printf '%s' "$clean" | cut -c${start}-$((start + 64)))
+              [ -n "$chunk" ] || chunk="end"
+              gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state=failure -f context="travel-error-$index/$chunk"
+            done
+          fi
+
+          node scripts/dev/run-foundry-check-runner-smoke.mjs > /tmp/foundry.log 2>&1
+          foundry_status=$?
+          if [ "$foundry_status" = "0" ]; then foundry_state=success; else foundry_state=failure; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$foundry_state" -f context="foundry-check-runner-smoke"
+
+          git diff --check > /tmp/diff.log 2>&1
+          diff_status=$?
+          if [ "$diff_status" = "0" ]; then diff_state=success; else diff_state=failure; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$diff_state" -f context="git-diff-check"
+
+          rm .github/workflows/validate-repaired-travel-v2-baseline.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/validate-repaired-travel-v2-baseline.yml
+          git commit -m "chore: remove temporary repaired-baseline validation workflow"
+          git push
