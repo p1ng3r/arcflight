@@ -1,0 +1,54 @@
+name: Narrow preview-panel GM fixture fix
+
+on:
+  push:
+    branches:
+      - fix/travel-v2-preview-panel-gm-fixture
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scope GM context to reorder assertion
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "scripts/apps/travel-event-runner-v2-preview-panel.smoke.js";
+          let source = fs.readFileSync(path, "utf8");
+          const replacements = [
+            [
+              '  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() }, user: { isGM: true, id: "gm", name: "GM" } });',
+              '  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() } });'
+            ],
+            [
+              '  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Station Order", "unselected station action should use the Station Order fallback");',
+              '  assertEqual(panel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Event Approach", "round action order display should expose selected action label fallback");'
+            ],
+            [
+              '  assertSmoke(panel.roundActionOrderDisplay.canRequestReorderReview, "panel should expose an explicit reorder review request shell for multi-station rounds");',
+              '  const gmPanel = prepareTravelEventRunnerV2PreviewPanelState({ ...appState, user: { isGM: true, id: "gm", name: "GM" }, isGM: true });\n  assertSmoke(gmPanel.roundActionOrderDisplay.canRequestReorderReview, "GM panel should expose an explicit reorder review request shell for multi-station rounds");'
+            ]
+          ];
+          for (const [before, after] of replacements) {
+            const matches = source.split(before).length - 1;
+            if (matches !== 1) throw new Error(`Expected exactly one match, found ${matches}: ${before}`);
+            source = source.replace(before, after);
+          }
+          fs.writeFileSync(path, source);
+          NODE
+          rm .github/workflows/narrow-preview-panel-gm-fixture-fix.yml
+      - name: Commit narrowly scoped fixture fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/apps/travel-event-runner-v2-preview-panel.smoke.js .github/workflows/narrow-preview-panel-gm-fixture-fix.yml
+          git commit -m "test: scope GM context to reorder readiness fixture"
+          git push
