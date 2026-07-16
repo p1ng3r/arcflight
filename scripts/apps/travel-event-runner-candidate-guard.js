@@ -78,8 +78,8 @@ function blockedCommitUpdate(app, reason, options = {}) {
   };
 }
 
-export function installTravelV2RoundActionOrderCandidateGuard() {
-  const prototype = ArcflightTravelEventRunner?.prototype;
+export function installTravelV2RoundActionOrderCandidateGuard(RunnerClass = ArcflightTravelEventRunner) {
+  const prototype = RunnerClass?.prototype;
   if (!prototype || prototype[PATCH_MARKER] === true) return false;
 
   const prepareContext = prototype._prepareContext;
