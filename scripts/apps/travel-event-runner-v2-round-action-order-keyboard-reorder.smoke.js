@@ -62,8 +62,9 @@ async function importRunnerModules() {
     }
   };
   try {
-    const guard = await import(`./travel-event-runner-candidate-guard.js?keyboardReorderSmoke=${Date.now()}`);
     const module = await import(`./travel-event-runner.js?keyboardReorderSmoke=${Date.now()}`);
+    const guard = await import(`./travel-event-runner-candidate-guard.js?keyboardReorderSmoke=${Date.now()}`);
+    guard.installTravelV2RoundActionOrderCandidateGuard(module.ArcflightTravelEventRunner);
     const preview = await import("./travel-event-runner-v2-preview-consumer.js");
     return { module, guard, preview, renders: () => renders };
   } finally {
@@ -138,7 +139,7 @@ export async function runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmoke
     app.uiState.travelV2RoundActionOrderCandidateContext = { sessionKey: app.session.key, roundIndex: 0 };
     const committedBefore = snapshot(app.session);
     const committedBlocked = await app.commitTravelV2RoundActionOrder({ user: GM, isGM: true, timestamp: "2026-07-16T00:00:30.000Z" });
-    assert.notEqual(committedBlocked?.shouldUpdateSession, true, "committed order cannot be replaced without unlock");
+    assert.equal(committedBlocked.shouldUpdateSession, false, "committed order cannot be replaced without unlock");
     assert.equal(snapshot(app.session), committedBefore, "blocked committed-order replacement leaves session unchanged");
     assert.equal(app.session.travelV2RoundActionOrder.commitRecords.length, 1, "blocked replacement appends no audit record");
 
@@ -175,7 +176,7 @@ export async function runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmoke
     assert.equal(staleRoundPreview.travelV2PreviewPanel.roundActionOrderDisplay.reorderRequest.ready, false, "Round 2 render has no stale Ready to Commit state");
     const staleRoundBeforeCommit = snapshot(staleRoundApp.session);
     const staleRoundCommit = await staleRoundApp.commitTravelV2RoundActionOrder({ user: GM, isGM: true, timestamp: "2026-07-16T00:03:00.000Z" });
-    assert.notEqual(staleRoundCommit?.shouldUpdateSession, true, "explicit commit after stale-round cleanup is blocked");
+    assert.equal(staleRoundCommit.shouldUpdateSession, false, "explicit commit after stale-round cleanup is blocked");
     assert.equal(snapshot(staleRoundApp.session), staleRoundBeforeCommit, "stale-round commit leaves current round session unchanged");
     assert.equal(staleRoundApp.session.travelV2RoundActionOrder?.rounds?.["1"], undefined, "stale round candidate creates no Round 2 commit record");
 
@@ -189,7 +190,7 @@ export async function runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmoke
     assert.deepEqual(staleSessionApp.uiState.travelV2ProposedRoundActionOrder, [], "session switch clears stale candidate");
     const staleSessionBeforeCommit = snapshot(staleSessionApp.session);
     const staleSessionCommit = await staleSessionApp.commitTravelV2RoundActionOrder({ user: GM, isGM: true, timestamp: "2026-07-16T00:04:00.000Z" });
-    assert.notEqual(staleSessionCommit?.shouldUpdateSession, true, "session-switched stale candidate cannot commit");
+    assert.equal(staleSessionCommit.shouldUpdateSession, false, "session-switched stale candidate cannot commit");
     assert.equal(snapshot(staleSessionApp.session), staleSessionBeforeCommit, "session-switched commit leaves new session unchanged");
 
     const appA = new ArcflightTravelEventRunner({ session: sessionFixture("a") });
