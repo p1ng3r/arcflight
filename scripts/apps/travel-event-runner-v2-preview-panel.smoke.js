@@ -67,24 +67,12 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
       user: { isGM: false, id: "player", name: "Player" }
     });
     const playerPanel = prepareTravelEventRunnerV2PreviewPanelState(playerAppState);
-    assert.equal(
-      playerPanel.roundActionOrderDisplay.canRequestReorderReview,
-      false,
-      "player panel should not expose GM reorder review readiness"
-    );
+    assert.equal(playerPanel.roundActionOrderDisplay.canRequestReorderReview, false, "player panel should not expose GM reorder review readiness");
 
     const gmAppState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session, user: gmUser });
     const gmPanel = prepareTravelEventRunnerV2PreviewPanelState(gmAppState);
-    assert.equal(
-      gmPanel.roundActionOrderDisplay.rows[0].selectedActionLabel,
-      "Station Order",
-      "unselected station action should use the Station Order fallback"
-    );
-    assert.equal(
-      gmPanel.roundActionOrderDisplay.canRequestReorderReview,
-      true,
-      "GM panel should expose reorder review readiness"
-    );
+    assert.equal(gmPanel.roundActionOrderDisplay.rows[0].selectedActionLabel, "Station Order", "unselected station action should use the Station Order fallback");
+    assert.equal(gmPanel.roundActionOrderDisplay.canRequestReorderReview, true, "GM panel should expose reorder review readiness");
 
     return {
       ok: true,
