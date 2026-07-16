@@ -59,7 +59,7 @@ export function runTravelEventRunnerV2PreviewPanelSmokeChecks() {
   assertSmoke(!emptyPanel.available, "empty panel should be unavailable");
   assertEqual(emptyPanel.rows.length, 0, "empty panel should have no rows");
 
-  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() } });
+  const appState = prepareTravelEventRunnerAppStateWithTravelV2Preview({ session: { event: createRunnerEventFixture() }, user: { isGM: true, id: "gm", name: "GM" } });
   const panel = prepareTravelEventRunnerV2PreviewPanelState(appState);
   assertSmoke(panel.available, "panel should be available for active preview state");
   assertEqual(panel.roundNumber, 1, "panel should carry round number");
