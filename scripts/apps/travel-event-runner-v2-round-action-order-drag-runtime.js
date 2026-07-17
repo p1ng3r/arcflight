@@ -103,11 +103,27 @@ function contextMatches(payload, app) {
 
 function readDropPayload(event, activePayload) {
   const dataTransfer = event?.dataTransfer;
+  let mayUseActiveFallback = false;
   if (typeof dataTransfer?.getData === "function") {
-    const parsed = parsePayload(dataTransfer.getData(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME));
-    if (parsed.ok === true) return parsed;
+    let rawPayload = "";
+    try {
+      rawPayload = dataTransfer.getData(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME);
+    } catch (_error) {
+      return blocked("Round action-order drag payload could not be read.");
+    }
+    if (typeof rawPayload !== "string") {
+      return blocked("Round action-order drag payload is malformed.");
+    }
+    if (rawPayload !== "") {
+      return parsePayload(rawPayload);
+    }
+    mayUseActiveFallback = true;
+  } else {
+    mayUseActiveFallback = true;
   }
-  if (validPayload(activePayload)) return { ok: true, blocked: false, payload: payloadClone(activePayload) };
+  if (mayUseActiveFallback) {
+    if (validPayload(activePayload)) return { ok: true, blocked: false, payload: payloadClone(activePayload) };
+  }
   return blocked("A valid internal round action-order drag payload is required.");
 }
 
@@ -163,7 +179,11 @@ export function createTravelV2RoundActionOrderDragRuntime(app = null) {
       sessionKey: context.sessionKey,
       roundIndex: context.roundIndex
     };
-    event.dataTransfer.setData(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME, JSON.stringify(payload));
+    try {
+      event.dataTransfer.setData(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME, JSON.stringify(payload));
+    } catch (_error) {
+      return blocked("Round action-order drag payload could not be written.", { started: false });
+    }
     try { event.dataTransfer.effectAllowed = "move"; } catch (_error) { /* no-op */ }
     activePayload = payloadClone(payload);
     return { ok: true, started: true, blocked: false, payload: payloadClone(payload) };
@@ -186,13 +206,22 @@ export function createTravelV2RoundActionOrderDragRuntime(app = null) {
     const root = rootFor(app, event);
     if (!contains(root, list)) return blocked("Round action-order drop is outside the runner list.");
     const payloadResult = readDropPayload(event, activePayload);
-    if (payloadResult.ok !== true) return payloadResult;
+    if (payloadResult.ok !== true) {
+      clear();
+      return payloadResult;
+    }
     const payload = payloadResult.payload;
-    if (!contextMatches(payload, app)) return blocked("Round action-order drag payload is stale.");
+    if (!contextMatches(payload, app)) {
+      clear();
+      return blocked("Round action-order drag payload is stale.");
+    }
 
     const state = prepareState(app);
     const interaction = state.reorderInteraction;
-    if (interaction?.dragEnabled !== true || interaction?.dropTargetEnabled !== true) return blocked(interaction?.blockedReason || "Round action-order drop is unavailable.");
+    if (interaction?.dragEnabled !== true || interaction?.dropTargetEnabled !== true) {
+      clear();
+      return blocked(interaction?.blockedReason || "Round action-order drop is unavailable.");
+    }
 
     event?.preventDefault?.();
     const resolved = resolveTravelV2RoundActionOrderDropTarget(interaction.candidateOrder, {
@@ -212,8 +241,8 @@ export function createTravelV2RoundActionOrderDragRuntime(app = null) {
       return { ...resolved, ok: true, blocked: false, dropped: true, moved: false };
     }
     if (resolved?.wouldMove === true) {
-      const movement = app?.moveTravelV2RoundActionOrderCandidate?.(payload.stationKey, { targetIndex: resolved.targetIndex });
       clear();
+      const movement = app?.moveTravelV2RoundActionOrderCandidate?.(payload.stationKey, { targetIndex: resolved.targetIndex });
       return { ...resolved, dropped: true, movement };
     }
     clear();

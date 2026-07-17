@@ -70,8 +70,32 @@ async function importRuntime() {
 }
 
 async function importRunner() {
-  globalThis.foundry = { applications: { api: { ApplicationV2: class { render() { return {}; } async _prepareContext() { return {}; } _onRender() {} }, HandlebarsApplicationMixin: (Base) => Base } } };
-  return import(`./travel-event-runner.js?dragRuntimeSmoke=${Date.now()}`);
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.foundry = {
+    applications: {
+      api: {
+        ApplicationV2: class {
+          render() { return {}; }
+          async _prepareContext() { return {}; }
+          _onRender() {}
+        },
+        HandlebarsApplicationMixin: (Base) => Base
+      }
+    }
+  };
+
+  try {
+    return await import(
+      `./travel-event-runner.js?dragRuntimeSmoke=${Date.now()}`
+    );
+  } finally {
+    if (previousFoundry === undefined) {
+      delete globalThis.foundry;
+    } else {
+      globalThis.foundry = previousFoundry;
+    }
+  }
 }
 
 function appFixture(session = sessionFixture()) {
@@ -86,6 +110,17 @@ function appFixture(session = sessionFixture()) {
 }
 
 function snapshot(value) { return JSON.stringify(value); }
+
+function payloadJson(overrides = {}) {
+  return JSON.stringify({
+    version: 1,
+    type: "travel-v2-round-action-order",
+    stationKey: "navigator",
+    sessionKey: "drag-session",
+    roundIndex: 0,
+    ...overrides
+  });
+}
 
 export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChecks() {
   const checked = [];
@@ -106,6 +141,7 @@ export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChec
   const oldChat = globalThis.ChatMessage;
   const oldJournal = globalThis.JournalEntry;
   const oldRoll = globalThis.Roll;
+  const oldFoundry = globalThis.foundry;
   let sideEffects = 0;
   globalThis.ui = { notifications: { warn: () => {}, info: () => {} } };
   globalThis.Actor = function Actor() { sideEffects += 1; };
@@ -145,6 +181,7 @@ export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChec
     assert.equal(drop.wouldMove, true);
     assert.equal(app.moves.length, 1);
     assert.deepEqual(app.moves[0], { stationKey: "engineer", options: { targetIndex: 2 } });
+    assert.equal(runtime.inspect().active, false);
     checked.push("valid downward drop resolves targetIndex and calls movement once");
 
     app.uiState.travelV2ProposedRoundActionOrder = ["navigator", "watchmaster", "engineer"];
@@ -167,45 +204,114 @@ export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChec
     const same = runtime.onDrop(eventFor(rows[1], root, transferSame, 15));
     assert.equal(same.sameIndex, true);
     assert.equal(app.moves.length, 0);
+    assert.equal(runtime.inspect().active, false);
     checked.push("same-index drop is successful no-op");
 
     assert.equal(runtime.onDragStart(eventFor(rows[1], root, { setData: null })).blocked, true);
+    const throwingSetDataRuntime = createTravelV2RoundActionOrderDragRuntime(appFixture());
+    const throwingSetData = throwingSetDataRuntime.onDragStart(eventFor(rows[1], root, { setData() { throw new Error("setData failed"); } }));
+    assert.equal(throwingSetData.blocked, true);
+    assert.equal(throwingSetData.started, false);
+    assert.equal(throwingSetDataRuntime.inspect().active, false);
     assert.equal(runtime.onDragStart(eventFor(null, root, dataTransfer())).blocked, true);
     const noStation = node({ parent: rows[0].parent });
     assert.equal(runtime.onDragStart(eventFor(noStation, root, dataTransfer())).blocked, true);
-    checked.push("missing row/list/stationKey and malformed dataTransfer blocked safely");
+    checked.push("missing row/list/stationKey and malformed or throwing dataTransfer blocked safely");
 
     globalThis.game = { user: PLAYER };
     assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDragStart(eventFor(rows[1], root, dataTransfer())).blocked, true);
     globalThis.game = { user: GM };
-    for (const session of [sessionFixture({ status: "completed" }), sessionFixture({ currentRoundIndex: 0, roundResults: [{ roundIndex: 0, stationResults: { navigator: "success", engineer: null, watchmaster: null }, stationActions: {} }] }), sessionFixture({ event: { rounds: [{ activeStations: ["navigator"], stationActionOrder: ["navigator"] }] } })]) {
+    const committedRoundResult = {
+      roundIndex: 0,
+      stationResults: { navigator: null, engineer: null, watchmaster: null },
+      stationActions: {},
+      stationOrderCommitments: Object.fromEntries(ORDER.map((stationKey) => [stationKey, { committed: true }]))
+    };
+    for (const session of [
+      sessionFixture({ status: "completed" }),
+      sessionFixture({ currentRoundIndex: 0, roundResults: [{ roundIndex: 0, stationResults: { navigator: "success", engineer: null, watchmaster: null }, stationActions: {} }] }),
+      sessionFixture({ event: { rounds: [{ activeStations: ["navigator"], stationActionOrder: ["navigator"] }] } }),
+      sessionFixture({ roundResults: [committedRoundResult], travelV2RoundActionOrder: { rounds: { 0: { order: [...ORDER] } } } }),
+      sessionFixture({ travelV2RoundResolutions: [{ roundIndex: 0, roundNumber: 1 }] })
+    ]) {
       assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture(session)).onDragStart(eventFor(rows[0], root, dataTransfer())).blocked, true);
     }
-    checked.push("non-GM and unavailable dragstart states blocked");
+    checked.push("non-GM and completed/result/committed/resolved/single-row dragstart states blocked");
 
     const unrelated = eventFor(rows[0], root, dataTransfer(), 0);
     assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDragOver(unrelated).blocked, true);
     assert.equal(unrelated.prevented(), 0);
     checked.push("unrelated dragover does not call preventDefault");
 
+    const fallbackDom = dom();
+    const fallbackRoot = fallbackDom.root;
+    const fallbackRows = fallbackDom.rows;
+
+    const throwingGetDataApp = appFixture();
+    const throwingGetDataRuntime = createTravelV2RoundActionOrderDragRuntime(throwingGetDataApp);
+    assert.equal(throwingGetDataRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+    assert.equal(throwingGetDataRuntime.onDrop(eventFor(fallbackRows[0], fallbackRoot, { getData() { throw new Error("getData failed"); } }, 0)).blocked, true);
+    assert.equal(throwingGetDataRuntime.inspect().active, false);
+    assert.equal(throwingGetDataApp.moves.length, 0);
+
+    const emptyGetDataApp = appFixture();
+    const emptyGetDataRuntime = createTravelV2RoundActionOrderDragRuntime(emptyGetDataApp);
+    assert.equal(emptyGetDataRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+    assert.equal(emptyGetDataRuntime.onDrop(eventFor(fallbackRows[2], fallbackRoot, { getData() { return ""; } }, 25)).wouldMove, true);
+    assert.equal(emptyGetDataRuntime.inspect().active, false);
+    assert.deepEqual(emptyGetDataApp.moves, [{ stationKey: "navigator", options: { targetIndex: 2 } }]);
+
+    const unavailableGetDataApp = appFixture();
+    const unavailableGetDataRuntime = createTravelV2RoundActionOrderDragRuntime(unavailableGetDataApp);
+    assert.equal(unavailableGetDataRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+    assert.equal(unavailableGetDataRuntime.onDrop(eventFor(fallbackRows[2], fallbackRoot, {}, 25)).wouldMove, true);
+    assert.equal(unavailableGetDataRuntime.inspect().active, false);
+    assert.deepEqual(unavailableGetDataApp.moves, [{ stationKey: "navigator", options: { targetIndex: 2 } }]);
+    checked.push("getData throws blocks while empty or unavailable getData may use active payload");
+
+    const malformedApp = appFixture();
+    const malformedRuntime = createTravelV2RoundActionOrderDragRuntime(malformedApp);
+    assert.equal(malformedRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
     const malformedTransfer = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: "{" });
-    assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDrop(eventFor(rows[0], root, malformedTransfer, 0)).blocked, true);
-    const wrongTransfer = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: JSON.stringify({ version: 2, type: "bad", stationKey: "navigator", sessionKey: "drag-session", roundIndex: 0 }) });
-    assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDrop(eventFor(rows[0], root, wrongTransfer, 0)).blocked, true);
-    checked.push("malformed and wrong payloads blocked");
+    assert.equal(malformedRuntime.onDrop(eventFor(fallbackRows[0], fallbackRoot, malformedTransfer, 0)).blocked, true);
+    assert.equal(malformedRuntime.inspect().active, false);
+    assert.equal(malformedApp.moves.length, 0);
+
+    const wrongPayloadApp = appFixture();
+    const wrongPayloadRuntime = createTravelV2RoundActionOrderDragRuntime(wrongPayloadApp);
+    assert.equal(wrongPayloadRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+    const wrongTransfer = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: payloadJson({ version: 2, type: "bad" }) });
+    assert.equal(wrongPayloadRuntime.onDrop(eventFor(fallbackRows[0], fallbackRoot, wrongTransfer, 0)).blocked, true);
+    assert.equal(wrongPayloadRuntime.inspect().active, false);
+    assert.equal(wrongPayloadApp.moves.length, 0);
+    checked.push("malformed and wrong nonempty payloads block without active fallback or movement");
 
     for (const stale of [{ sessionKey: "old", roundIndex: 0 }, { sessionKey: "drag-session", roundIndex: 9 }]) {
-      const staleTransfer = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: JSON.stringify({ version: 1, type: "travel-v2-round-action-order", stationKey: "navigator", ...stale }) });
-      assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDrop(eventFor(rows[0], root, staleTransfer, 0)).blocked, true);
+      const staleRuntime = createTravelV2RoundActionOrderDragRuntime(appFixture());
+      assert.equal(staleRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+      const staleTransfer = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: payloadJson(stale) });
+      assert.equal(staleRuntime.onDrop(eventFor(fallbackRows[0], fallbackRoot, staleTransfer, 0)).blocked, true);
+      assert.equal(staleRuntime.inspect().active, false);
     }
-    checked.push("stale session and round payloads blocked");
+    checked.push("stale session and round payloads blocked and clear active state");
 
-    const badPointer = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: JSON.stringify({ version: 1, type: "travel-v2-round-action-order", stationKey: "navigator", sessionKey: "drag-session", roundIndex: 0 }) });
-    assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDrop(eventFor(rows[0], root, badPointer, Number.NaN)).blocked, true);
+    const disabledApp = appFixture();
+    const disabledRuntime = createTravelV2RoundActionOrderDragRuntime(disabledApp);
+    assert.equal(disabledRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+    disabledApp.session.status = "completed";
+    assert.equal(disabledRuntime.onDrop(eventFor(fallbackRows[0], fallbackRoot, { getData() { return ""; } }, 0)).blocked, true);
+    assert.equal(disabledRuntime.inspect().active, false);
+
+    const badPointerRuntime = createTravelV2RoundActionOrderDragRuntime(appFixture());
+    assert.equal(badPointerRuntime.onDragStart(eventFor(fallbackRows[0], fallbackRoot, dataTransfer())).ok, true);
+    assert.equal(badPointerRuntime.onDrop(eventFor(fallbackRows[0], fallbackRoot, dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: payloadJson() }), Number.NaN)).blocked, true);
+    assert.equal(badPointerRuntime.inspect().active, false);
     const badDom = dom([[0, 10], [10, 10], [20, 30]]);
-    const badGeom = dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: JSON.stringify({ version: 1, type: "travel-v2-round-action-order", stationKey: "navigator", sessionKey: "drag-session", roundIndex: 0 }) });
-    assert.equal(createTravelV2RoundActionOrderDragRuntime(appFixture()).onDrop(eventFor(badDom.rows[0], badDom.root, badGeom, 5)).blocked, true);
-    checked.push("invalid pointer and row geometry blocked through resolver");
+    const badGeomRuntime = createTravelV2RoundActionOrderDragRuntime(appFixture());
+    assert.equal(badGeomRuntime.onDragStart(eventFor(badDom.rows[0], badDom.root, dataTransfer())).ok, true);
+    assert.equal(badGeomRuntime.onDrop(eventFor(badDom.rows[0], badDom.root, dataTransfer({ [TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_MIME]: payloadJson() }), 5)).blocked, true);
+    assert.equal(badGeomRuntime.inspect().active, false);
+    checked.push("disabled, invalid pointer, and row geometry drops clear through blocked paths");
 
     const endRuntime = createTravelV2RoundActionOrderDragRuntime(app);
     const endTransfer = dataTransfer();
@@ -217,7 +323,9 @@ export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChec
     assert.throws(() => { snap.active = true; }, TypeError);
     checked.push("dragend clears transient state and inspect has no mutable alias");
 
+    const foundryBeforeRunnerImport = globalThis.foundry;
     const runnerModule = await importRunner();
+    assert.equal(globalThis.foundry, foundryBeforeRunnerImport);
     const runner = new runnerModule.ArcflightTravelEventRunner({ session: sessionFixture() });
     const rootElement = node({ isList: true });
     runner.element = rootElement;
@@ -226,7 +334,7 @@ export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChec
     for (const type of ["dragstart", "dragover", "drop", "dragend"]) assert.equal(rootElement.listeners[type].size, 1, `${type} bound once`);
     runner.moveTravelV2RoundActionOrderCandidate("engineer", "up");
     assert.deepEqual(runner.uiState.travelV2ProposedRoundActionOrder, ["engineer", "navigator", "watchmaster"]);
-    checked.push("runner binds drag listeners once and keyboard behavior remains intact");
+    checked.push("runner import restores foundry and binds drag listeners once while keyboard behavior remains intact");
 
     assert.equal(snapshot(app.session), beforeSession);
     assert.equal(sideEffects, 0);
@@ -250,6 +358,7 @@ export async function runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChec
     if (oldChat === undefined) delete globalThis.ChatMessage; else globalThis.ChatMessage = oldChat;
     if (oldJournal === undefined) delete globalThis.JournalEntry; else globalThis.JournalEntry = oldJournal;
     if (oldRoll === undefined) delete globalThis.Roll; else globalThis.Roll = oldRoll;
+    if (oldFoundry === undefined) delete globalThis.foundry; else globalThis.foundry = oldFoundry;
   }
   return { ok: true, checked };
 }
