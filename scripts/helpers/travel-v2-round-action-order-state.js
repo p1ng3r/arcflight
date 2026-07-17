@@ -145,6 +145,8 @@ function blockedDropTargetResult({ stationKey = "", sourceIndex = -1, pointerY =
 }
 
 export function resolveTravelV2RoundActionOrderDropTarget(sourceOrder = [], options = {}) {
+  options = isPlainObject(options) ? options : {};
+
   const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
   const pointerY = options.pointerY;
   const rowBounds = Array.isArray(options.rowBounds) ? options.rowBounds : null;

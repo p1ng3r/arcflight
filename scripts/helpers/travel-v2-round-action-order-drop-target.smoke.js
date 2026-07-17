@@ -64,6 +64,17 @@ export async function runTravelV2RoundActionOrderDropTargetSmokeChecks() {
   assertBlocked({ rowBounds: [ROW_BOUNDS[0], { stationKey: "engineer", top: 50, bottom: 50 }, ROW_BOUNDS[2], ROW_BOUNDS[3]] }, "invalid-height row bounds are blocked");
   assertBlocked({ stationKey: "" }, "missing station key is blocked");
   assertBlocked({ stationKey: "pilot" }, "unknown station key is blocked");
+  for (const [malformedOptions, label] of [[null, "null"], ["bad options", "string"], [[], "array"]]) {
+    assert.doesNotThrow(
+      () => resolveTravelV2RoundActionOrderDropTarget(ORDER, malformedOptions),
+      `${label} options do not throw`
+    );
+    assert.equal(
+      resolveTravelV2RoundActionOrderDropTarget(ORDER, malformedOptions).blocked,
+      true,
+      `${label} options return a blocked result`
+    );
+  }
   assert.equal(resolveTravelV2RoundActionOrderDropTarget(["navigator", "engineer", "engineer"], { activeStations, rowBounds: ROW_BOUNDS, stationKey: "engineer", pointerY: 0 }).blocked, true, "duplicate source order is blocked");
   assert.equal(resolveTravelV2RoundActionOrderDropTarget(["navigator", "engineer"], { activeStations, rowBounds: ROW_BOUNDS, stationKey: "engineer", pointerY: 0 }).blocked, true, "incomplete source order is blocked");
 
@@ -115,6 +126,7 @@ export async function runTravelV2RoundActionOrderDropTargetSmokeChecks() {
       "pointer-validation",
       "row-bound-validation",
       "source-and-station-validation",
+      "malformed-options-validation",
       "immutability-and-aliasing",
       "deep-freeze-results",
       "gm-drag-readiness-enabled",
