@@ -1,17 +1,18 @@
 # Travel v2 Open Issues
 
-Status: implementation tracker.
+Status: implementation tracker with shared-round-planning correction active.
 
-This document is the repo-local implementation tracker for Travel v2. It is not the top-level Arcflight roadmap and it is not the Travel Alpha gameplay goal.
+This document is the repo-local implementation tracker for Travel v2. It is not the top-level Arcflight roadmap and it is not the complete Travel Alpha gameplay specification.
 
-Use the current docs in this order:
+Use the current documents in this order:
 
-1. `docs/ARCFLIGHT_ALPHA_PILLAR_ROADMAP.md` — top-level sequencing: Travel Alpha, then Combat Alpha, then Upgrade / Progression Alpha, then Beta.
-2. `docs/TRAVEL_V2_ALPHA_GOAL.md` — current Travel Alpha source of truth.
-3. This file — numbered implementation tracker for Travel v2 work items.
-4. GitHub Issues — live ticket discussion and PR-sized work tracking.
+1. `docs/ARCFLIGHT_ALPHA_PILLAR_ROADMAP.md` — top-level sequencing and pillar priority.
+2. `docs/TRAVEL_V2_SHARED_ROUND_PLANNING_AND_RISK_BIDS.md` — canonical rules for Crew Planning, round-specific station order, authored Risk Bids, reward targeting, and stable reorder behavior.
+3. `docs/TRAVEL_V2_ALPHA_GOAL.md` — complete Travel Alpha gameplay goal.
+4. This file — numbered implementation tracker for Travel v2 work items.
+5. GitHub Issues — live ticket discussion and PR-sized work tracking.
 
-When this tracker conflicts with `TRAVEL_V2_ALPHA_GOAL.md`, treat the alpha goal document as authoritative unless a later docs PR intentionally changes the goal.
+When this tracker conflicts with either canonical Travel Alpha document, use the more specific canonical document unless a later documentation PR intentionally changes the design.
 
 ## Scope labels
 
@@ -22,68 +23,103 @@ Each numbered item may use one of these scope labels:
 - **Post-alpha:** important Travel v2 work that should not block the two-event alpha loop.
 - **Foundation / historical:** existing foundation, closeout notes, or work that should not be rebuilt unless a focused smoke test exposes a bug.
 
+Status language may include:
+
+- `missing`
+- `partial`
+- `foundation-complete`
+- `design correction required`
+- `closeout-needed`
+- `complete`
+
+A foundation may remain useful even when the player-facing workflow built on top of it requires correction.
+
 ## Current status
 
-Travel v2 has substantial foundation coverage already. The aggregate smoke runner currently covers core Travel v2 state, pressure, round pressure, round action order, persistence bridges, library order status, runner preview, pressure application/correction, round finalization, event completion, completed-summary export, outcome packages, actor application bridge, follow-ups, hazards, ship scars, narration, stabilize/repair, momentum, Focus and Support records, runner UI consumers, saved-session startup/session-switch hardening, sample events, dev tools foundation, card schema/import compatibility, consequence catalog, hazard deck selection, hazard review paths, response action wiring, station impact behavior, station impact modifier review, pending station benefit queue, and station benefit use review.
+Travel v2 has substantial foundation coverage already. The aggregate smoke runner covers core Travel v2 state, pressure, round pressure, legacy round-action-order state, persistence bridges, library order status, runner preview, pressure application and correction, round finalization, event completion, completed-summary export, outcome packages, actor application bridge, follow-ups, hazards, ship scars, narration, stabilize and repair, Momentum, Focus and support records, runner UI consumers, saved-session startup and session-switch hardening, sample events, dev tools foundation, card schema and import compatibility, consequence catalog, hazard deck selection, hazard review paths, response-action wiring, station-impact behavior, station-impact modifier review, the pending station-benefit queue, and station-benefit use review.
 
-Do not rebuild those foundations unless a new smoke test exposes a narrow bug.
+Those foundations should be reused where they fit the corrected design.
+
+They do not make the old player workflow acceptable. Manual Foundry testing established that the legacy station-order UI is GM-centered, buried in Advanced Runner Details, selected for the event rather than freshly for each round, and rebuilt through a full runner render after each movement. TV2-003 therefore remains the highest-priority Travel Alpha gameplay blocker.
 
 ## Gameplay ownership principle
 
-Travel v2 should keep the GM present as voyage director, not replace the GM with an automated board game.
+Travel v2 should keep the GM present as voyage director without replacing player decisions with an automated board game.
 
 - The GM builds the voyage premise, major story turns, and authored events.
-- The GM may choose specific events to trigger at specific route beats.
+- The GM may choose specific events at specific route beats.
 - The GM may also use random or weighted event picks when improvisation is desired.
 - A single voyage can contain multiple Travel v2 events.
-- Player choices on the ship should drive station actions, risk bids, Focus, Momentum spends, inter-station help, hazard responses, consequences, and final outcomes.
-- The system should make player-driven ship actions mechanically meaningful while leaving pacing, story emphasis, and event curation in the GM's hands.
+- Every round begins with shared player-facing Crew Planning.
+- Players review every active station's player-safe actions and authored Risk Bids.
+- Players collaboratively choose the current round's station order.
+- The Captain has final say when the crew cannot agree.
+- The GM retains override and unlock controls for table management.
+- Player choices drive station actions, Risk Bids, Focus, Momentum spends, hazard responses, consequences, and final outcomes.
+- Helping another station is one possible authored Risk Bid reward, not a separate universal action menu.
+- The system should make player-driven ship actions mechanically meaningful while leaving pacing, story emphasis, hidden information, and event curation in the GM's hands.
 
 ## Numbering rules
 
 - Use `TV2-###` numbers for this document.
 - Use GitHub Issues for live tickets and discussion.
 - Use PR numbers only for implementation history.
-- A system can be `missing`, `partial`, `foundation-complete`, or `closeout-needed`.
 - Prefer small smoke-first PRs.
-- Every runtime feature needs a focused smoke and aggregate Travel v2 smoke wiring.
+- Every runtime feature needs focused smoke coverage and aggregate Travel v2 smoke wiring.
 - Alpha work should map back to `docs/TRAVEL_V2_ALPHA_GOAL.md`.
+- Shared Crew Planning, round order, and Risk Bid behavior should map back to `docs/TRAVEL_V2_SHARED_ROUND_PLANNING_AND_RISK_BIDS.md`.
+- Do not mark an item complete merely because an obsolete workflow passes its old tests.
 
 ## Alpha blocker summary
 
-These are the implementation areas that most directly define or block the locked Travel Alpha goal; some are complete and kept here for closeout visibility:
+These implementation areas most directly define or block the locked Travel Alpha goal; some contain reusable foundations but still need corrective integration:
 
-- TV2-002 — Inter-Station Help.
-- TV2-003 — Player-Chosen Round Action Order UX polish.
-- TV2-004 — Risk Bids / Difficulty Bids.
+- TV2-003 — Shared Crew Planning and Round-Specific Station Order.
+- TV2-010 — Station Action Card Runtime.
+- TV2-012 — Authored Risk Bid Card Runtime.
+- TV2-004 — Fixed Risk Bid Tiers and Selection.
+- TV2-011 — Station Benefit Card Runtime.
+- TV2-002 — Authored Risk Bid Benefits and Cross-Station Support.
 - TV2-005 — Risk Bid Result Pipeline.
+- TV2-021 — Shared Player Planning and Station HUD.
+- TV2-029 — Player Decision Prompt Flow.
 - TV2-006 — Momentum Spend Catalog.
 - TV2-007 — Hazard Mechanical Completion.
 - TV2-008 — Consequence Queue Expansion.
 - TV2-009 — Explicit GM Persistent Apply Foundation.
-- TV2-010 — Station Action Card Runtime.
-- TV2-011 — Station Benefit Card Runtime.
-- TV2-012 — Risk Bid Card Runtime.
-- TV2-016 — Gold-Standard Encounter Sample, now expanded to two alpha events by `TRAVEL_V2_ALPHA_GOAL.md`.
+- TV2-016 — Two Gold-Standard Alpha Events.
 - TV2-018 — Visible Stakes Runtime.
 - TV2-019 — Narration Hook Assembly.
 - TV2-020 — Final Outcome and Aftermath Expansion.
-- TV2-021 — Player HUD Polish.
 - TV2-022 — GM Pending Decisions UI.
-- TV2-023 — End-to-End Table Test Scenario.
+- TV2-023 — End-to-End Multiplayer Table Test Scenario.
 - TV2-024 — Safety / Leak / Mutation Audit.
 - TV2-026 — Core Gameplay Loop Closeout.
-- TV2-028 — Crew / Station Assignment and Role Ownership.
-- TV2-029 — Player Decision Prompt Flow.
+- TV2-028 — Crew / Station Assignment and Captain Role Ownership.
 - TV2-032 — Reward / Discovery / Clue Runtime.
 
 Post-alpha items should not delay the two-event alpha loop unless a specific alpha dependency is identified.
+
+## Immediate corrective priority
+
+Implement and verify the corrected gameplay path in this order:
+
+1. Replace legacy event-wide order assumptions with a current-round `crewPlanning` phase.
+2. Present every active station and every current player-safe station action to all connected players.
+3. Present each action's authored `+2 DC`, `+5 DC`, and `+8 DC` Risk Bids before order selection.
+4. Synchronize proposed order changes across GM and player clients.
+5. Add Captain confirmation and GM override or unlock.
+6. Block action and Risk Bid lock-in until order confirmation.
+7. Integrate authored reward targets, timing, duration, expiration, bonus cards, hazards, backlash, and consequence protection.
+8. Replace whole-runner reorder renders with targeted planning-panel updates that preserve open state, scroll, and focus.
+9. Replace obsolete smokes and the old Foundry checklist with corrected multiplayer coverage.
+10. Run complete GM-plus-player Foundry acceptance before closing TV2-003.
 
 ## Open numbered issues
 
 ### TV2-001 — Phase 8D Dev Tools and Resolution Dialogs
 
-**Status:** foundation-complete / closeout-needed  
+**Status:** foundation-complete / closeout-needed
 **Scope:** Alpha support
 
 **Goal:** Complete the GM-facing development and resolution workflow.
@@ -101,80 +137,164 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Safety:** No actor, item, effect, journal, chat, socket, or world mutation without explicit GM confirmation.
 
-### TV2-002 — Station Combo / Inter-Station Help
+### TV2-002 — Authored Risk Bid Benefits and Cross-Station Support
 
-**Status:** partial  
+**Status:** foundation-complete in part / design correction required
 **Scope:** Alpha blocker
 
-**Goal:** Let stations create benefits for other stations and make station order matter beyond narration.
+**Goal:** Reuse the existing pending-station-benefit machinery for authored Risk Bid rewards that may affect the acting station, another station, a later station, a future round, the crew, the ship, a hazard, backlash, a consequence, or an event reward.
 
-**Alpha alignment:** Inter-Station Help must be visible as its own gameplay system. Under the hood it may reuse the pending station benefit queue, but the player-facing flow should read as help created by earlier stations and consumed by later stations.
+**Corrected Alpha alignment:**
 
-**Slice 01 note:** Event-authored Inter-Station Help action options are now prepared from supported event, round, station-card, and station-prompt definitions; filtered against active stations and station order; exposed through player-safe runner aliases; and surfaced as option-only Inter-Station Help presentation. No assist is created, consumed, rolled, persisted, or applied by this slice.
+- Helping another station is one possible authored Risk Bid reward.
+- Inter-Station Help is not a separate universal player action category.
+- Some Risk Bids affect only the acting station.
+- Some affect the next station or another chosen later station.
+- Some affect a future round.
+- Some create player-facing bonus cards.
+- Some suppress hazards, weaken backlash, or prevent or downgrade consequences.
+- Order-dependent benefits must clearly describe their valid target and timing during Crew Planning.
 
-**Slice 02 note:** Successful explicitly selected authored Inter-Station Help options can now be converted by a pure helper into deterministic, player-safe pending help records with stable dedupe keys, round/order validation, duplicate/block reasons, and inert critical-success strengthening metadata. This slice does not insert records into a queue, consume benefits, roll dice, persist sessions, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
+**Reusable historical foundation:**
 
-**Slice 03 note:** Explicitly requested successful canonical Inter-Station Help pending records can now be inserted once into the existing session-local `session.travelV2PendingStationBenefits` pending station benefit queue with stable queue identity and raw-state dedupe. Slice 03 preserves unrelated queue rows and remains helper-only; it does not consume the benefit, apply a modifier, activate critical-success strengthening, expire records, perform round-end cleanup, add runner interaction, persist Foundry/world data, roll dice, or mutate actor, item, effect, journal, chat, socket, scene, token, compendium, or world data.
+The existing TV2-002 slices provide useful deterministic records, queue insertion, review, use, `dcReduction`, critical-success magnitude replacement, expiration, and round-end cleanup. Preserve and generalize that machinery where it fits the corrected authored-reward model.
 
-**Slice 04 note:** Available authored Inter-Station Help options now expose a GM-only Review Help flow. The GM can explicitly Queue Help for canonically successful source-station results through the Slice 03 queue helper, after which the runner adopts the returned session locally and rerenders the existing pending station benefit queue. Non-GM users remain read-only. Slice 04 does not consume help, apply modifiers, alter rolls/DCs, activate critical-success strengthening, handle critical-failure backlash, expire records, perform round-end cleanup, or automatically persist the runner session or world data.
+**Historical Slice 01 note:** Event-authored Inter-Station Help action options are prepared from supported event, round, station-card, and station-prompt definitions; filtered against active stations and station order; exposed through player-safe runner aliases; and surfaced as option-only presentation. No assist is created, consumed, rolled, persisted, or applied by this slice.
 
-**Slice 05 note:** Pending Inter-Station Help can now be explicitly marked used through the GM station-benefit review flow. The runner re-reads the raw `session.travelV2PendingStationBenefits` record by queue key, validates current round, unresolved target, successful source result, and locked source-before-target order, then adopts the returned cloned session locally. Used records remain visible through the existing queue projection, repeated use is blocked without adoption, and non-GM users remain read-only. Slice 05 does not apply a roll modifier, alter a DC, activate critical-success strengthening, create backlash, expire records, perform round-end cleanup, automatically persist the runner session, or mutate actor/item/world data.
+**Historical Slice 02 note:** Successful explicitly selected options can be converted by a pure helper into deterministic, player-safe pending benefit records with stable dedupe keys, round/order validation, duplicate/block reasons, and inert critical-success strengthening metadata.
 
-**Slice 06 note:** Authored `dcReduction` Help metadata now survives action preparation and queueing with strict magnitude validation, and a GM can explicitly apply an already-used Help record through a separate Help-effect review. Application creates session-local Inter-Station Help application state, marks only the selected used Help row as applied, and reduces the existing canonical station DC; selected approach, station, event, and hazard DC calculation remains authoritative. Stale or tampered applied records are ignored during effective-DC calculation. Applying the Help effect does not roll the check, record a result, advance the station, persist the runner session, or mutate Foundry actor/item/world data. Critical-success strengthening metadata remains inert, and non-GM users remain read-only with no application capability.
+**Historical Slice 03 note:** Explicitly requested successful canonical pending records can be inserted once into `session.travelV2PendingStationBenefits` with stable queue identity and raw-state dedupe while preserving unrelated queue rows.
 
-**Slice 07 note:** Authored critical-success `replaceMagnitude` strengthening is now supported only for `dcReduction` Inter-Station Help. The critical magnitude is the final total reduction rather than an additive bonus, normal success continues to use the base magnitude, and unsupported or malformed optional critical metadata falls back to the base Help effect. Stale or tampered critical metadata and application records do not affect DC, the target check remains explicit and is not automatically rolled or resolved, automatic benefits remain deferred, and non-GM users remain read-only.
+**Historical Slice 04 note:** Available options expose a GM-only review flow that can queue canonically successful source-station results through the existing helper. This is reusable review infrastructure, not the intended ordinary player-facing planning workflow.
 
-**Slice 08 note:** Inter-Station Help now has deterministic session-local expiration and round-end cleanup. `afterUse` Help remains mechanically active through the target station check and expires only after the target result is recorded; successful round finalization expires remaining `afterUse` and `endOfRound` Help from that round. Expired records remain visible as lifecycle history, matching applications contribute zero, cleanup is immutable and idempotent, and no rolls, result changes, automatic persistence, or Foundry document mutations are introduced.
+**Historical Slice 05 note:** Pending benefits can be explicitly marked used after validation of round, target, source result, and order.
 
-**Remaining work:**
+**Historical Slice 06 note:** Authored `dcReduction` metadata survives action preparation and queueing with strict magnitude validation, and a GM can explicitly apply an already-used record through a separate effect review.
 
-- Support authored automatic critical-success benefits.
-- Integrate critical-failure backlash.
-- Support unsupported/custom benefit kinds.
-- Finish final player/table UX polish.
-- Expand smoke coverage for expiration, backlash, custom benefits, and the completed player-safe lifecycle.
+**Historical Slice 07 note:** Authored critical-success `replaceMagnitude` strengthening is supported for `dcReduction` benefits.
 
-### TV2-003 — Player-Chosen Round Action Order UX Polish
+**Historical Slice 08 note:** Pending benefits have deterministic session-local expiration and round-end cleanup. Expired records remain visible as lifecycle history, matching applications contribute zero, and cleanup is immutable and idempotent.
 
-**Status:** code-complete / Foundry table verification pending
+**Remaining corrective work:**
+
+- Generalize benefit records beyond the old Help label.
+- Support target types for self, self-next-roll, self-next-round, next station, chosen later station, chosen station, specific station, crew, ship, hazard, backlash, consequence, and reward.
+- Support authored roll bonuses such as `+2`, `+3`, and `+5`.
+- Support `2d20` and keep the highest.
+- Support future DC reduction.
+- Support one-degree failure improvement.
+- Support player-facing bonus cards with timing, duration, expiration, optional use, consumption, and transfer rules.
+- Support consequence prevention and downgrade.
+- Support hazard and backlash suppression.
+- Integrate authored critical-failure danger.
+- Keep GM review for persistent changes without making the GM the ordinary owner of player benefits.
+- Expand smoke coverage for every supported target, timing, expiration, invalid target, dedupe, no duplicate use, redaction, and no silent mutation.
+
+### TV2-003 — Shared Crew Planning and Round-Specific Station Order
+
+**Status:** design correction required / highest-priority Travel Alpha blocker
 **Scope:** Alpha blocker
 
-**Goal:** Make the already-smoke-covered round action order path table-ready.
+**Goal:** Make the beginning of every round a synchronized player-facing Crew Planning phase where all players review every active station action and its authored Risk Bids before choosing the current round's station order.
 
-**Alpha alignment:** Station order is chosen before Round 1, remains fixed for the event unless the GM unlocks it, and determines which stations can help later stations.
+**Corrected Alpha alignment:**
 
-**Remaining work:**
+- Every round begins with Crew Planning.
+- Every connected player sees every active station.
+- Every player sees every current player-safe station action.
+- Every action displays its authored `+2 DC`, `+5 DC`, and `+8 DC` Risk Bids.
+- Each Risk Bid displays its player-safe reward, target, timing, and danger.
+- Players arrange the current round's order together.
+- The Captain has final say when the crew cannot agree.
+- The Captain confirms the order.
+- The GM retains override and unlock controls.
+- Station actions and Risk Bids cannot lock or resolve until the order is confirmed.
+- The committed order applies only to the current round.
+- The next round opens a fresh Crew Planning phase.
+- The previous order may be a starting suggestion but must not remain automatically committed.
 
-- Run the manual Foundry verification checklist in `docs/TRAVEL_V2_TV2_003_FOUNDRY_VERIFICATION.md`.
-- Fix or separately track any discovered blockers.
-- Update TV2-003 to complete after a recorded passing table verification.
+**Discovered blocker:**
 
-**Do not rebuild:** State, commit, persistence bridge, library status, startup hardening, and session-switch isolation are already covered.
+The current implementation is based on the obsolete workflow. It is primarily GM-controlled, buried in Advanced Runner Details, built around an event-wide order, and performs a full Travel Event Runner render after candidate movement. Manual Foundry testing showed that moving one station collapses the details panel and returns the user to the top. That is not acceptable table UX.
 
-**Completion summary:** TV2-003 production code now includes player-safe status guidance for Needs Decision, Proposed Order, and Committed Order states; explicit GM unlock/recommit; keyboard candidate movement; target-index movement; midpoint drop-target geometry; drag runtime; drag UI; handle-only hardening; explicit commit, persistence, and reload handling; player-safe redaction; and the automated table-acceptance harness. Manual Foundry v14 browser/table verification remains pending and must be recorded before this tracker item is marked complete.
+**Reusable foundation:**
 
-### TV2-004 — Risk Bids / Difficulty Bids
+Preserve and adapt the existing deterministic candidate movement, target-index movement, midpoint drop geometry, drag runtime, drag handles, commit records, persistence bridge, reload handling, session-switch isolation, and redaction where they remain useful.
 
-**Status:** complete for alpha runtime on `feature/tv2-004-risk-bids`
+Existing automated acceptance proves the legacy contract only. It must not be used to close the corrected TV2-003.
+
+**Required implementation:**
+
+1. Add a current-round `crewPlanning` phase.
+2. Add round-specific proposed and committed order state.
+3. Preserve completed-round order as history.
+4. Expose all active stations and current player-safe actions to every connected player.
+5. Expose all three authored Risk Bid tiers before order selection.
+6. Add synchronized multiplayer proposed-order updates.
+7. Add deterministic conflict, stale-message, and unauthorized-message handling.
+8. Add Captain confirmation.
+9. Add GM override and unlock.
+10. Block action and Risk Bid lock-in until confirmation.
+11. Replace full-runner movement renders with targeted planning-panel updates.
+12. Preserve open-panel state, scroll position, and keyboard focus.
+13. Replace the obsolete Foundry checklist with corrected multiplayer verification.
+
+**Completion gate:**
+
+TV2-003 is complete only after:
+
+- focused corrected-design smokes pass;
+- aggregate Travel v2 smoke passes;
+- GM-plus-player synchronization tests pass;
+- the replacement Foundry checklist passes;
+- exact Foundry, PF2e, browser, operating system, module, and commit details are recorded;
+- no player-facing hidden information leak is observed;
+- no unintended actor, item, effect, journal, chat, socket, scene, token, compendium, or world mutation is observed.
+
+**Canonical references:**
+
+- `docs/TRAVEL_V2_SHARED_ROUND_PLANNING_AND_RISK_BIDS.md`
+- `docs/TRAVEL_V2_TV2_003_FOUNDRY_VERIFICATION.md`
+
+### TV2-004 — Authored Fixed-Tier Risk Bids and Selection
+
+**Status:** fixed-tier foundation-complete / corrective integration required
 **Scope:** Alpha blocker
 
-**Goal:** Add authored fixed-DC risk bids declared before a station roll.
+**Goal:** Provide deterministic authored Risk Bid choices at `+2 DC`, `+5 DC`, and `+8 DC` for every station action.
 
-**Alpha alignment:** Risk bid values are locked as `+2`, `+5`, and `+8`. Risk bids cost nothing up front; the cost is increased danger.
+**Corrected Alpha alignment:**
 
-**Closeout note:** TV2-004 now covers fixed `+2`/`+5`/`+8` tiers, safe option preparation, runner state exposure, current round/station/action selection projection, UI select/clear controls, and session-local storage only. It does not add roll/result resolution, actor/world mutation, or GM-only/player leak fields.
+- Every station action has all three authored tiers.
+- Every tier has its own player-safe reward, target, timing, and danger.
+- The tiers are visible to every player during Crew Planning before order selection.
+- A station selects and locks one tier only after the current round's order is confirmed.
+- The higher DC is the bid's immediate cost.
+- The selected tier's authored danger is staged on failure or critical failure.
+- Freeform arbitrary bid values remain prohibited.
 
-**Completed for alpha runtime:**
+**Completed foundation:**
 
-- Deterministic risk bid data model with fixed bid tiers `+2`, `+5`, and `+8`.
-- Safe authored option preparation that drops invalid tiers, dedupes duplicate tiers, and preserves station-flavored player-safe labels/text.
-- Runner state exposure through `state.travelV2RiskBids` and `state.riskBids`.
-- Current round/station/action selection projection for the runner UI.
-- UI select/clear controls for valid authored bids.
-- Session-local storage only for selected bids.
-- Smoke coverage that rejects freeform arbitrary bid values and guards against GM-only/player leak fields.
+- Deterministic fixed tiers `+2`, `+5`, and `+8`.
+- Safe option preparation that rejects invalid tiers and deduplicates duplicates.
+- Runner-state exposure through `state.travelV2RiskBids` and `state.riskBids`.
+- Current round, station, and action selection projection.
+- Session-local selection storage.
+- UI select and clear controls for valid authored bids.
+- Smoke coverage rejecting freeform values and GM-only/player leak fields.
 
-**Safety:** Risk bids do not mutate actors or world data. TV2-004 stops at session-local selection and player-safe state projection. Risk bid outcome resolution remains TV2-005.
+**Remaining corrective work:**
+
+- Require every authored station action to define all three tiers.
+- Include player-safe reward, target, timing, duration, expiration, and danger metadata.
+- Present all tiers in shared Crew Planning.
+- Block selection before current-round order confirmation.
+- Lock the selected tier with the station action.
+- Integrate authored benefits with TV2-002 and TV2-011.
+- Integrate authored danger with TV2-005, TV2-007, TV2-008, and TV2-009.
+- Smoke full per-action tier coverage, planning visibility, lock gating, invalid metadata rejection, redaction, and reload.
+
+**Safety:** Risk Bid selection remains session-local until a reviewed apply path is used. No actor or world mutation occurs from selecting a tier.
 
 ### TV2-005 — Risk Bid Result Pipeline
 
@@ -182,6 +302,8 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 **Scope:** Alpha blocker
 
 **Goal:** Resolve risk bid outcomes into reviewed Travel v2 effects.
+
+**Corrective integration note:** The existing reviewed-result pipeline is reusable foundation. It must accept the corrected authored reward targets, timing, bonus-card effects, hazard or backlash protection, consequence protection, and per-tier failure dangers without exposing hidden GM state or silently applying persistent changes.
 
 **Remaining work:**
 
@@ -205,7 +327,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-006 — Momentum Spend Catalog
 
-**Status:** partial  
+**Status:** partial
 **Scope:** Alpha blocker
 
 **Goal:** Turn Momentum from a tracked resource into a meaningful player/GM decision system.
@@ -230,7 +352,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-007 — Hazard Mechanical Completion
 
-**Status:** partial  
+**Status:** partial
 **Scope:** Alpha blocker
 
 **Goal:** Make hazards change gameplay, not just display as pressure or flavor.
@@ -258,7 +380,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-008 — Consequence Queue Expansion
 
-**Status:** partial  
+**Status:** partial
 **Scope:** Alpha blocker
 
 **Goal:** Unify how consequences enter review from multiple Travel v2 systems.
@@ -269,13 +391,13 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Feed consequence candidates from unresolved hazards.
 - Feed consequence candidates from pressure overflow or severe pressure events.
 - Feed consequence candidates from Focus backlash.
-- Feed consequence candidates from inter-station help backlash.
+- Feed consequence candidates from authored Risk Bid benefit backlash or failure danger.
 - Feed consequence candidates from final outcome packages.
 - Smoke queueing, dedupe, player-safe preview, GM approve/dismiss/defer, and persistence boundaries.
 
 ### TV2-009 — Explicit GM Persistent Apply Foundation
 
-**Status:** partial  
+**Status:** partial
 **Scope:** Alpha blocker
 
 **Goal:** Create a strict, reusable framework for all persistent Travel v2 mutations.
@@ -295,57 +417,105 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-010 — Station Action Card Runtime
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha blocker
 
-**Goal:** Consume authored station action cards during Travel v2 runtime.
+**Goal:** Consume authored station action cards during Travel v2 runtime and expose them to all players during Crew Planning.
 
-**Alpha alignment:** Players discuss station actions openly, then lock their actions before station-by-station resolution. A locked action cannot be changed because another station rolled well or badly.
+**Corrected Alpha alignment:**
+
+- Every active station has current-round authored actions.
+- Every connected player sees every player-safe current action before order selection.
+- Each action includes its base check and DC source, player-safe success purpose, Focus availability, and authored `+2 DC`, `+5 DC`, and `+8 DC` Risk Bids.
+- Players choose station order after reviewing those actions and bids.
+- Action and Risk Bid selection remain blocked until the current-round order is confirmed.
+- A locked action cannot change merely because an earlier station rolled well or badly.
 
 **Remaining work:**
 
-- Load station action card definitions from encounter/content data.
-- Present available station actions by station and round context.
-- Attach rolls, DCs, risk bids, Focus availability, success bands, benefit hooks, and consequence hooks.
-- Add action lock-in state.
-- Add action-specific vignette text on player station cards.
-- Smoke schema compatibility, invalid-card rejection, lock-in behavior, and player-safe projections.
+- Load station-action definitions from encounter or content data.
+- Present all current actions by station and round context in shared Crew Planning.
+- Attach rolls, DCs, all three Risk Bid tiers, Focus availability, success bands, reward hooks, danger hooks, hazard interactions, and action-specific vignette text.
+- Add action lock-in state gated by order confirmation.
+- Add explicit GM unlock for table correction.
+- Preserve player-safe projections and redact hidden outcomes.
+- Smoke schema compatibility, missing-tier rejection, invalid-card rejection, shared planning presentation, lock gating, reload, and redaction.
 
-### TV2-011 — Station Benefit Card Runtime
+### TV2-011 — Station Benefit and Bonus Card Runtime
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha blocker
 
-**Goal:** Make authored station benefit cards flow through the existing pending-benefit queue and review/use path.
+**Goal:** Make authored Risk Bid benefits flow through player-facing bonus cards and the reusable pending-benefit queue.
+
+**Corrected Alpha alignment:**
+
+Benefits may target:
+
+- the acting station now;
+- the acting station's next roll;
+- the acting station next round;
+- the next station in order;
+- another chosen later station;
+- another chosen station;
+- a specific station;
+- the crew or ship;
+- a hazard or backlash response;
+- a consequence response;
+- an event reward, clue, discovery, salvage, or route advantage.
 
 **Remaining work:**
 
-- Consume benefit card definitions.
-- Create pending benefits from station action outcomes.
-- Let later stations review/use benefits.
-- Support critical success stronger/automatic benefit rules.
-- Expire or carry benefits based on card rules.
-- Smoke lifecycle and no duplicated use.
+- Consume benefit-card definitions.
+- Create pending benefits from successful authored Risk Bids and other approved station outcomes.
+- Display player-facing cards to valid recipients.
+- Support target validation based on the committed round order.
+- Support roll bonuses, fortune, future DC reduction, degree-of-success protection, consequence protection, hazard protection, and reward benefits.
+- Support critical-success strengthening when authored.
+- Support optional use, required use, consumption, transfer, duration, expiration, carry-forward, and next-round activation.
+- Keep persistent mutations behind explicit GM review.
+- Smoke lifecycle, invalid targets, order dependencies, expiration, reload, redaction, and no duplicated use.
 
-### TV2-012 — Risk Bid Card Runtime
+### TV2-012 — Authored Risk Bid Card Runtime
 
-**Status:** missing  
+**Status:** missing / corrective expansion required
 **Scope:** Alpha blocker
 
-**Goal:** Make authored risk bid cards available to station action runtime.
+**Goal:** Make complete authored Risk Bid definitions available to station-action runtime and shared Crew Planning.
+
+**Required card data:**
+
+- fixed tier: `+2`, `+5`, or `+8`;
+- player-safe label and description;
+- reward kind;
+- reward target type;
+- valid targets;
+- activation timing;
+- duration;
+- expiration;
+- optional or automatic use;
+- consumed or persistent behavior;
+- transfer rules where allowed;
+- player-safe danger;
+- failure result;
+- critical-failure result;
+- hidden GM-only payload kept outside player-safe state.
 
 **Remaining work:**
 
-- Define/import risk bid card schema.
-- Support fixed bid tiers `+2`, `+5`, and `+8`.
-- Attach allowed bids to station actions or encounter context.
+- Define and validate the expanded Risk Bid card schema.
+- Require all three tiers on every station action.
+- Attach authored bids directly to actions.
+- Present all tiers during Crew Planning.
 - Enforce fixed DC increases.
-- Add station-flavored labels and text.
-- Resolve bid outcomes through TV2-005.
+- Resolve rewards through TV2-002, TV2-005, and TV2-011.
+- Resolve danger through TV2-005, TV2-007, TV2-008, and TV2-009.
+- Reject malformed targets, timing, duration, danger, and hidden-field leakage.
+- Smoke import, export, runtime preparation, player-safe projection, lock-in, resolution, reload, and no silent mutation.
 
 ### TV2-013 — Encounter Template Preview and Runtime
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha support
 
 **Goal:** Support complete authored Travel v2 encounter templates from content packs.
@@ -362,7 +532,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-014 — ChatGPT Content Builder Export Contract
 
-**Status:** partial  
+**Status:** partial
 **Scope:** Post-alpha unless needed by alpha event authoring
 
 **Goal:** Establish a reliable two-GPT authoring flow.
@@ -376,7 +546,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-015 — Content Pack Validator and Safe Import/Export
 
-**Status:** partial  
+**Status:** partial
 **Scope:** Alpha support / post-alpha expansion
 
 **Goal:** Make Travel v2 content packs safe to author, validate, import, export, and select at runtime.
@@ -392,7 +562,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-016 — Gold-Standard Encounter Sample
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Alpha blocker
 
 **Goal:** Create complete Travel v2 encounters that prove the whole system works as intended.
@@ -405,7 +575,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Station actions.
 - Risk bids.
 - Focus.
-- Station benefits / Inter-Station Help.
+- Authored Risk Bid benefits, including self-targeted and cross-station rewards.
 - Hazards.
 - Consequences.
 - Momentum.
@@ -415,7 +585,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-017 — Expanded Content Packs
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Post-alpha
 
 **Goal:** Build enough authored cards and encounters to make Travel v2 feel rich at the table.
@@ -481,19 +651,19 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-021 — Player HUD Polish
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha blocker
 
 **Goal:** Make the player-facing Travel v2 UI clear, safe, and table-ready.
 
-**Alpha alignment:** Players see their station, current action choices, action-specific vignette, allowed risk bid options, help options, Focus availability, roll button, allowed Momentum options, shared Momentum, and immediate round context.
+**Corrected Alpha alignment:** During Crew Planning, every player sees all active stations, every current player-safe station action, every action's authored `+2 DC`, `+5 DC`, and `+8 DC` Risk Bids, player-safe reward and danger text, the synchronized proposed order, known hazards, shared Momentum, and earned player-facing bonus cards. After order confirmation, each station sees its action, selected bid, Focus availability, valid benefits, roll controls, and immediate round context.
 
 **Remaining work:**
 
 - Player-safe HUD state.
 - Current station/action context.
 - Action-specific vignette.
-- Help/benefit availability.
+- Authored self-benefit, cross-station benefit, and bonus-card availability.
 - Risk bid selection state.
 - Focus availability and spent state.
 - Momentum visibility.
@@ -502,7 +672,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-022 — GM Pending Decisions UI
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha blocker
 
 **Goal:** Give the GM one unified queue for unresolved Travel v2 decisions.
@@ -514,14 +684,14 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Pending hazards.
 - Pending Momentum spend reviews where required.
 - Pending Focus backlash.
-- Pending help backlash.
+- Pending authored Risk Bid benefit backlash or failure danger.
 - Pending outcome package changes.
 - Approve/dismiss/defer/use controls.
 - Player-safe boundaries.
 
 ### TV2-023 — End-to-End Table Test Scenario
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Alpha blocker
 
 **Goal:** Create a full scripted scenario for manual Foundry testing.
@@ -533,13 +703,13 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Sample crew/stations.
 - Two alpha events.
 - Expected round-by-round decisions.
-- Expected risk bid, Focus, Momentum, help, and hazard interactions.
+- Expected Crew Planning, round-order, authored Risk Bid, Focus, Momentum, benefit-card, and hazard interactions.
 - Expected final outcome.
 - Smoke/manual acceptance checklist.
 
 ### TV2-024 — Safety / Leak / Mutation Audit
 
-**Status:** closeout-needed  
+**Status:** closeout-needed
 **Scope:** Alpha blocker
 
 **Goal:** Audit Travel v2 before any beta-style release for player-safe output and mutation boundaries.
@@ -555,7 +725,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-025 — Beta Readiness Pass
 
-**Status:** final  
+**Status:** final
 **Scope:** Post-alpha
 
 **Goal:** Prepare Travel v2 for a beta-style release.
@@ -573,7 +743,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-026 — Core Gameplay Loop Closeout
 
-**Status:** closeout-needed  
+**Status:** closeout-needed
 **Scope:** Alpha blocker
 
 **Goal:** Prove Travel v2 feels like a complete gameplay loop instead of a set of disconnected helpers.
@@ -581,10 +751,10 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 **Must prove two complete alpha events include:**
 
 - Visible stakes.
-- Player-owned station order.
+- Shared player-owned station order chosen separately for every round.
 - Station action choices.
 - Action lock-in.
-- Inter-station help.
+- Authored Risk Bid benefits, including self, future, cross-station, hazard, and consequence targets.
 - Risk bids.
 - Focus.
 - Momentum spend.
@@ -598,7 +768,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-027 — Voyage Route / Event Chain Frame
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Post-alpha
 
 **Goal:** Add the voyage layer above individual Travel v2 events.
@@ -613,45 +783,57 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - Carry route consequences, advantages, hazards, clues, and detours between events.
 - Smoke event-to-event handoff and no accidental persistence without GM confirmation.
 
-### TV2-028 — Crew / Station Assignment and Role Ownership
+### TV2-028 — Crew / Station Assignment and Captain Role Ownership
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha blocker
 
-**Goal:** Make it clear who owns each station at the table.
+**Goal:** Make station ownership clear while preserving shared Crew Planning and the Captain's final-confirmation role.
 
 **Remaining work:**
 
-- Assign player/actor/NPC crew to Navigator, Engineer, Veilwarden, Watchmaster, Captain, and any future stations.
-- Handle missing stations safely.
-- Handle duplicate or substitute stations safely.
-- Show who is up next.
+- Assign a player, actor, or NPC crew member to Navigator, Engineer or Arkengineer, Veilwarden, Watchmaster, Captain, and future stations.
+- Show assignments to all players during Crew Planning.
+- Allow every player to review every current station action and Risk Bid regardless of assignment.
+- Use assignment to control station action lock-in and resolution where appropriate.
+- Identify the Captain for final order confirmation when reliable assignment data exists.
+- Preserve table-guidance fallback when no automated Captain assignment exists.
+- Handle missing, duplicate, substitute, and NPC stations safely.
+- Show the current and upcoming station during resolution.
 - Preserve player-safe output.
-- Smoke assignment, reassignment, missing station fallback, and saved-session reload.
+- Smoke assignment, reassignment, Captain confirmation, fallback behavior, missing stations, duplicates, reload, and redaction.
 
 ### TV2-029 — Player Decision Prompt Flow
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Alpha blocker
 
-**Goal:** Guide players through station decisions instead of making the GM manually ask every question.
+**Goal:** Guide players through the corrected round workflow instead of making the GM manually ask every question.
 
 **Prompt chain:**
 
-- Choose station action.
-- Lock station action.
-- Choose optional risk bid if the action allows it.
-- Choose whether to spend Focus if the action allows it.
-- Choose whether to use queued help if available.
-- Choose Momentum spend if allowed.
-- Roll/resolve.
-- Choose response action if a hazard triggers.
+1. Enter shared Crew Planning.
+2. Review all active stations.
+3. Review all current player-safe station actions.
+4. Review every action's authored `+2 DC`, `+5 DC`, and `+8 DC` Risk Bids.
+5. Discuss action combinations, rewards, dangers, and station order.
+6. Arrange the synchronized proposed order.
+7. Captain confirms the order; GM may override or unlock.
+8. Each station chooses an action.
+9. Each station chooses and locks one authored Risk Bid.
+10. Choose whether to spend Focus when the action allows it.
+11. Choose any valid earned bonus card or benefit.
+12. Choose a Momentum spend when allowed.
+13. Roll and resolve in committed order.
+14. Choose a response action when a hazard triggers.
+15. Enter Round Resolution.
+16. Begin the next round with a fresh Crew Planning phase.
 
-**Safety:** Player prompts create session-local requests until the GM confirms reviewed effects.
+**Safety:** Player prompts create session-local requests until the appropriate reviewed apply path is used. Hidden hazards, unrevealed backlash, GM consequence queues, internal scoring, future triggers, secret branches, GM notes, and debug state remain redacted.
 
 ### TV2-030 — Between-Round / Between-Event Recovery
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Post-alpha unless an alpha event explicitly uses it
 
 **Goal:** Define what recovery and maintenance look like during a voyage.
@@ -666,7 +848,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-031 — Failure / Retreat / Abort Flow
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha support / post-alpha expansion
 
 **Goal:** Make bad outcomes playable instead of letting the event simply stop.
@@ -684,7 +866,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-032 — Reward / Discovery / Clue Runtime
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha blocker
 
 **Goal:** Give players positive mechanical and story reasons to engage with Travel v2.
@@ -704,7 +886,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-033 — Travel Event Selection / Trigger Runtime
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Post-alpha
 
 **Goal:** Support both GM-authored event triggers and random/weighted event selection.
@@ -722,7 +904,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-034 — GM Voyage Director Tools
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Post-alpha
 
 **Goal:** Keep the GM present as storyteller and pacing director while the players drive ship actions.
@@ -739,7 +921,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-035 — GM Override / Edit Tools
 
-**Status:** missing / partial  
+**Status:** missing / partial
 **Scope:** Alpha support / post-alpha expansion
 
 **Goal:** Give the GM safe live-table correction tools that are distinct from dev/test tools.
@@ -757,7 +939,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-036 — Tutorial / Table Onboarding
 
-**Status:** missing  
+**Status:** missing
 **Scope:** Post-alpha
 
 **Goal:** Make Travel v2 usable without the GM explaining every button and term live.
@@ -767,7 +949,8 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 - GM quickstart.
 - Player quickstart.
 - Station role summary.
-- Risk bid explanation.
+- Shared Crew Planning and round-order explanation.
+- Risk Bid tier, reward, target, timing, and danger explanation.
 - Focus explanation.
 - Momentum explanation.
 - Hazard explanation.
@@ -777,11 +960,12 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ## Completed / foundation-complete systems
 
-These systems should generally be treated as existing foundations rather than rebuilt:
+These systems should generally be treated as existing foundations rather than rebuilt. Their presence does not prove the corrected player-facing workflow is complete:
 
 - Core Travel v2 state.
 - Pressure engine and round pressure adapter.
-- Round action order state, commit, persistence, library status, startup, and session-switch hardening.
+- Legacy round-action-order state, commit, persistence, library status, startup, and session-switch hardening.
+- Candidate movement, target-index movement, drop-target geometry, and drag foundations.
 - Runner bridge and preview state.
 - Pressure application and pressure correction.
 - Round finalization.
@@ -793,25 +977,38 @@ These systems should generally be treated as existing foundations rather than re
 - Hazards foundation.
 - Ship scars.
 - Narration foundation.
-- Stabilize/repair.
+- Stabilize and repair.
 - Momentum foundation.
 - Focus backlash records.
-- Support action targeting, assist records, support backlash, and Focus risk suppression.
-- Runner preview consumer/panel.
-- Saved-session library/order status closeout.
-- Saved-session context/session-switch isolation.
+- Support targeting, assist records, support backlash, and Focus risk-suppression foundations that may be generalized for authored Risk Bid benefits.
+- Pending station-benefit queue and benefit-use review.
+- Runner preview consumer and panel.
+- Saved-session library and order-status closeout.
+- Saved-session context and session-switch isolation.
 - Travel v2 sample event.
-- Travel v2 dev tools foundation.
-- Round resolution readiness.
-- Completion checklist.
-- Builder/importer compatibility.
-- Card schema and card schema import adapter.
+- Travel v2 dev-tools foundation.
+- Round-resolution readiness.
+- Completion checklist foundation.
+- Builder and importer compatibility.
+- Card schema and card-schema import adapter.
 - Consequence catalog.
-- Built-in hazard deck registry, picker UI, and runtime selection.
-- Hazard draw review, active hazard handoff review, hazard candidate controls, active hazard lifecycle display.
-- Response action wiring.
-- Station impact behavior and station impact modifier review.
-- Pending station benefit queue and station benefit use review.
+- Built-in hazard-deck registry, picker UI, and runtime selection.
+- Hazard draw review, active-hazard handoff review, hazard candidate controls, and active-hazard lifecycle display.
+- Response-action wiring.
+- Station-impact behavior and station-impact modifier review.
+
+The following are explicitly not complete merely because legacy foundations exist:
+
+- shared Crew Planning at the beginning of every round;
+- player-safe presentation of all current station actions;
+- presentation of all three authored Risk Bid tiers per action;
+- synchronized multiplayer proposed-order changes;
+- Captain confirmation;
+- round-specific committed order;
+- action and Risk Bid lock gating;
+- complete authored reward targeting and timing;
+- targeted reorder-panel rendering;
+- corrected multiplayer Foundry acceptance.
 
 ## Safety rules
 
@@ -839,12 +1036,20 @@ node scripts/dev/run-foundry-check-runner-smoke.mjs
 
 Add `node --check` and focused smoke commands for any touched files.
 
-### TV2-003 Slice 03A — Keyboard Reorder Candidate
+## Historical TV2-003 implementation note
 
-Status remains **foundation-complete / polish remaining**.
+The legacy TV2-003 slices added useful foundations, including keyboard candidate movement, Move Up and Move Down controls, pointer dragging, target-index movement, drop-target geometry, explicit commit and unlock integration, persistence and reload support, player redaction, post-result blocking, and session or round isolation.
 
-Slice 03A adds the GM-only keyboard reorder candidate path: Move Up and Move Down controls, pure candidate movement, local review-only candidates, candidate reset, unchanged-candidate suppression, existing explicit commit and unlock integration, player redaction, post-result blocking, and session/round isolation. It does not add pointer drag-and-drop or mark TV2-003 complete.
+Those slices were built for the obsolete GM-centered, event-wide order workflow. They are historical implementation foundations, not proof that corrected TV2-003 is complete.
 
-Remaining work:
-- Slice 03B — Pointer Drag Reorder
-- Final Foundry table UX verification and TV2-003 closeout
+The corrected closeout requires:
+
+- shared player-facing Crew Planning every round;
+- all player-safe station actions and authored Risk Bids visible before order selection;
+- synchronized multiplayer ordering;
+- Captain confirmation;
+- GM override and unlock;
+- round-specific commitment;
+- action and Risk Bid lock gating;
+- targeted panel updates without full runner rerender;
+- the replacement multiplayer Foundry verification checklist.
