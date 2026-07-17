@@ -1494,16 +1494,8 @@
     transform 120ms ease;
 }
 
-.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"] {
-  cursor: grab;
-}
-
-.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:active {
-  cursor: grabbing;
-}
-
-.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:hover,
-.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:focus-within {
+.arcflight-travel-runner-mvp__v2-order-drag-row:hover,
+.arcflight-travel-runner-mvp__v2-order-drag-row:focus-within {
   border-left-color: #5f9b6e;
   background: rgba(255, 255, 255, 0.42);
   box-shadow: 0 0 0 1px rgba(71, 122, 85, 0.18);
@@ -1511,13 +1503,28 @@
 }
 
 .arcflight-travel-runner-mvp__v2-order-drag-handle {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-right: 0.35rem;
+  padding: 0.05rem 0.18rem;
+  border-radius: 3px;
   color: rgba(42, 61, 46, 0.72);
   font-weight: 700;
   letter-spacing: -0.18em;
-  pointer-events: none;
   user-select: none;
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-handle[draggable="true"] {
+  cursor: grab;
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-handle[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-handle[draggable="true"]:hover {
+  background: rgba(71, 122, 85, 0.12);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1525,8 +1532,8 @@
     transition: none;
   }
 
-  .arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:hover,
-  .arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:focus-within {
+  .arcflight-travel-runner-mvp__v2-order-drag-row:hover,
+  .arcflight-travel-runner-mvp__v2-order-drag-row:focus-within {
     transform: none;
   }
 }

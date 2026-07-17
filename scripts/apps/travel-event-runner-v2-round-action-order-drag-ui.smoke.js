@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_LIST_SELECTOR,
-  TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR
+  TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR,
+  TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_HANDLE_SELECTOR
 } from "./travel-event-runner-v2-round-action-order-drag-runtime.js";
 import { prepareTravelV2RoundActionOrderState } from "../helpers/travel-v2-round-action-order-state.js";
 
@@ -44,6 +45,7 @@ export async function runTravelEventRunnerV2RoundActionOrderDragUiSmokeChecks() 
   const checked = [];
   assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_LIST_SELECTOR, "[data-arcflight-travel-v2-order-drag-list]");
   assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR, "[data-arcflight-travel-v2-order-drag-row]");
+  assert.equal(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_HANDLE_SELECTOR, "[data-arcflight-travel-v2-order-drag-handle]");
   checked.push("runtime selector exports are available");
 
   const gmReady = prepareTravelV2RoundActionOrderState(session(), { user: GM }).reorderInteraction;
@@ -80,6 +82,7 @@ export async function runTravelEventRunnerV2RoundActionOrderDragUiSmokeChecks() 
   const aggregate = fs.readFileSync(new URL("../dev/run-travel-v2-smoke.mjs", import.meta.url), "utf8");
   const listAttribute = attributeName(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_LIST_SELECTOR);
   const rowAttribute = attributeName(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR);
+  const handleAttribute = attributeName(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_HANDLE_SELECTOR);
   const currentSection = sectionBetween(template, "<h5>Current Station Sequence</h5>", "Keyboard Reorder Candidate");
   const reorderSection = sectionBetween(template, "Keyboard Reorder Candidate", "data-arcflight-travel-v2-order-reset-candidate");
 
@@ -90,15 +93,16 @@ export async function runTravelEventRunnerV2RoundActionOrderDragUiSmokeChecks() 
   checked.push("template binds the runtime drag-row selector in reorderInteraction rows");
   assert.match(reorderSection, /data-station-key="\{\{stationKey\}\}"/);
   checked.push("template binds data-station-key to stationKey");
-  assert.match(reorderSection, /draggable="\{\{draggable\}\}"/);
-  checked.push("template binds draggable to the existing draggable field");
-  assert.match(reorderSection, /title="\{\{dragLabel\}\}"/);
-  assert.match(reorderSection, /aria-label="\{\{dragLabel\}\}"/);
-  checked.push("template binds title and aria-label to dragLabel");
+  const articleOpen = reorderSection.match(/<article[^>]+>/)?.[0] ?? "";
+  assert.equal(articleOpen.includes('draggable="{{draggable}}"'), false);
+  assert.match(reorderSection, new RegExp(handleAttribute));
+  assert.match(reorderSection, /arcflight-travel-runner-mvp__v2-order-drag-handle[^>]*draggable="\{\{draggable\}\}"/);
+  assert.match(reorderSection, /arcflight-travel-runner-mvp__v2-order-drag-handle[^>]*title="\{\{dragLabel\}\}"/);
   assert.match(reorderSection, /arcflight-travel-runner-mvp__v2-order-drag-handle[^>]*aria-hidden="true"[^>]*>⋮⋮<\/span>/);
-  checked.push("template includes the drag handle");
-  assert.match(reorderSection, /Drag a station row to a new position, or use Move Up and Move Down\./);
-  checked.push("template includes visible drag-or-keyboard instructions");
+  assert.match(reorderSection, /aria-label="\{\{dragLabel\}\}"/);
+  checked.push("template keeps rows non-draggable and binds draggable title aria-hidden on the handle");
+  assert.match(reorderSection, /Drag by the ⋮⋮ handle to move a station, or use Move Up and Move Down\./);
+  checked.push("template includes visible handle drag-or-keyboard instructions");
   assert.equal(currentSection.includes(listAttribute), false);
   assert.equal(currentSection.includes(rowAttribute), false);
   checked.push("canonical Current Station Sequence rows do not receive drag selectors");
@@ -113,9 +117,11 @@ export async function runTravelEventRunnerV2RoundActionOrderDragUiSmokeChecks() 
   assert.match(css, /\.arcflight-travel-runner-mvp__v2-order-drag-row/);
   assert.match(css, /\.arcflight-travel-runner-mvp__v2-order-drag-handle/);
   checked.push("CSS includes drag-list, drag-row, and drag-handle selectors");
-  assert.match(css, /cursor:\s*grab;/);
-  assert.match(css, /cursor:\s*grabbing;/);
-  checked.push("CSS includes grab and grabbing cursors");
+  assert.match(css, /arcflight-travel-runner-mvp__v2-order-drag-handle\[draggable="true"\][\s\S]*cursor:\s*grab;/);
+  assert.match(css, /arcflight-travel-runner-mvp__v2-order-drag-handle\[draggable="true"\]:active[\s\S]*cursor:\s*grabbing;/);
+  assert.equal(/arcflight-travel-runner-mvp__v2-order-drag-row[^{}]*\{[^}]*cursor:\s*grab/.test(css), false);
+  assert.equal(/arcflight-travel-runner-mvp__v2-order-drag-handle[^{}]*\{[^}]*pointer-events:\s*none/.test(css), false);
+  checked.push("CSS gives grab cursors only to draggable handles and keeps pointer input enabled");
   assert.match(css, /:(hover|focus-within)/);
   checked.push("CSS includes hover or focus-within affordance");
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
