@@ -14,6 +14,12 @@ export const TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_LIST_SELECTOR =
 export const TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR =
   "[data-arcflight-travel-v2-order-drag-row]";
 
+export const TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_HANDLE_SELECTOR =
+  "[data-arcflight-travel-v2-order-drag-handle]";
+
+const INTERACTIVE_CONTROL_SELECTOR =
+  "button, input, select, textarea, a, [contenteditable=\"true\"]";
+
 const PAYLOAD_TYPE = "travel-v2-round-action-order";
 
 function blocked(reason, extra = {}) {
@@ -78,10 +84,6 @@ function contains(root, node) {
   return root.contains?.(node) === true;
 }
 
-function findRow(event) {
-  return event?.target?.closest?.(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR) ?? null;
-}
-
 function findListFromTarget(event) {
   return event?.target?.closest?.(TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_LIST_SELECTOR) ?? null;
 }
@@ -99,6 +101,25 @@ function findInteractionRow(interaction, stationKey) {
 function contextMatches(payload, app) {
   const context = contextFor(app);
   return payload?.sessionKey === context.sessionKey && payload?.roundIndex === context.roundIndex;
+}
+
+function payloadIdentityMatches(left, right) {
+  return validPayload(left)
+    && validPayload(right)
+    && left.version === right.version
+    && left.type === right.type
+    && left.stationKey === right.stationKey
+    && left.sessionKey === right.sessionKey
+    && left.roundIndex === right.roundIndex;
+}
+
+function isNativeDraggable(node) {
+  if (node?.draggable === true) return true;
+  try {
+    return node?.getAttribute?.("draggable") === "true";
+  } catch (_error) {
+    return false;
+  }
 }
 
 function readDropPayload(event, activePayload) {
@@ -155,12 +176,25 @@ export function createTravelV2RoundActionOrderDragRuntime(app = null) {
   }
 
   function onDragStart(event) {
-    const row = findRow(event);
+    clear();
+    const handle = event?.target?.closest?.(
+      TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_HANDLE_SELECTOR
+    ) ?? null;
+    const row = handle?.closest?.(
+      TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_ROW_SELECTOR
+    ) ?? null;
+    const list = row?.closest?.(
+      TRAVEL_V2_ROUND_ACTION_ORDER_DRAG_LIST_SELECTOR
+    ) ?? null;
+    if (!handle) return blocked("Round action-order drag handle was not found.", { started: false });
     if (!row) return blocked("Round action-order drag row was not found.", { started: false });
-    const list = findListForRow(row);
     if (!list) return blocked("Round action-order drag list was not found.", { started: false });
     const root = rootFor(app, event);
-    if (!contains(root, row) || !contains(root, list)) return blocked("Round action-order drag is outside the runner.", { started: false });
+    if (!contains(root, handle) || !contains(root, row) || !contains(root, list)) return blocked("Round action-order drag is outside the runner.", { started: false });
+    if (!contains(row, handle) || !contains(list, row)) return blocked("Round action-order drag structure is invalid.", { started: false });
+    const interactiveControl = event?.target?.closest?.(INTERACTIVE_CONTROL_SELECTOR) ?? null;
+    if (interactiveControl && contains(interactiveControl, handle)) return blocked("Round action-order drag handle is inside an interactive control.", { started: false });
+    if (!isNativeDraggable(handle)) return blocked("Round action-order drag handle is not draggable.", { started: false });
     const stationKey = typeof row?.dataset?.stationKey === "string" ? row.dataset.stationKey.trim() : "";
     if (!stationKey) return blocked("Round action-order drag station key is missing.", { started: false });
 
@@ -190,7 +224,11 @@ export function createTravelV2RoundActionOrderDragRuntime(app = null) {
   }
 
   function onDragOver(event) {
-    if (!validPayload(activePayload) || !contextMatches(activePayload, app)) return blocked("No valid internal round action-order drag is active.");
+    if (!validPayload(activePayload)) return blocked("No valid internal round action-order drag is active.");
+    if (!contextMatches(activePayload, app)) {
+      clear();
+      return blocked("No current internal round action-order drag is active.");
+    }
     const list = findListFromTarget(event);
     const root = rootFor(app, event);
     if (!contains(root, list)) return blocked("Round action-order dragover is outside the runner list.");
@@ -211,6 +249,14 @@ export function createTravelV2RoundActionOrderDragRuntime(app = null) {
       return payloadResult;
     }
     const payload = payloadResult.payload;
+    if (!validPayload(activePayload) || !contextMatches(activePayload, app)) {
+      clear();
+      return blocked("A current internal round action-order drag is required.");
+    }
+    if (!payloadIdentityMatches(payload, activePayload)) {
+      clear();
+      return blocked("Round action-order drag payload does not match the active drag.");
+    }
     if (!contextMatches(payload, app)) {
       clear();
       return blocked("Round action-order drag payload is stale.");

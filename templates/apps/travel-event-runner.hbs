@@ -657,12 +657,12 @@
               {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.keyboardEnabled}}
                 <section class="arcflight-travel-runner-mvp__v2-order-keyboard" aria-label="GM keyboard round action order controls">
                   <h5>Keyboard Reorder Candidate</h5>
-                  <p class="arcflight-sheet__hint">Drag a station row to a new position, or use Move Up and Move Down.</p>
+                  <p class="arcflight-sheet__hint">Drag by the ⋮⋮ handle to move a station, or use Move Up and Move Down.</p>
                   <div class="arcflight-travel-runner-mvp__v2-benefit-rows arcflight-travel-runner-mvp__v2-order-drag-list" data-arcflight-travel-v2-order-drag-list aria-label="Drag or keyboard reorder candidate station sequence">
                     {{#each state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.rows}}
-                      <article class="arcflight-travel-runner-mvp__v2-benefit-row arcflight-travel-runner-mvp__v2-order-drag-row" data-arcflight-travel-v2-order-drag-row data-station-key="{{stationKey}}" draggable="{{draggable}}" title="{{dragLabel}}" aria-label="{{dragLabel}}">
+                      <article class="arcflight-travel-runner-mvp__v2-benefit-row arcflight-travel-runner-mvp__v2-order-drag-row" data-arcflight-travel-v2-order-drag-row data-station-key="{{stationKey}}" title="{{dragLabel}}" aria-label="{{dragLabel}}">
                         <div>
-                          <span class="arcflight-travel-runner-mvp__v2-order-drag-handle" aria-hidden="true">⋮⋮</span>
+                          <span class="arcflight-travel-runner-mvp__v2-order-drag-handle" data-arcflight-travel-v2-order-drag-handle draggable="{{draggable}}" title="{{dragLabel}}" aria-hidden="true">⋮⋮</span>
                           <strong>{{orderLabel}} · {{stationName}}</strong>
                         </div>
                         <div class="arcflight-travel-runner-mvp__v2-preview-actions">
