@@ -1478,6 +1478,59 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+.arcflight-travel-runner-mvp__v2-order-drag-list {
+  padding: 0.35rem;
+  border: 1px dashed rgba(71, 122, 85, 0.42);
+  border-radius: 6px;
+  background: rgba(71, 122, 85, 0.05);
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-row {
+  align-items: center;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"] {
+  cursor: grab;
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:hover,
+.arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:focus-within {
+  border-left-color: #5f9b6e;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: 0 0 0 1px rgba(71, 122, 85, 0.18);
+  transform: translateY(-1px);
+}
+
+.arcflight-travel-runner-mvp__v2-order-drag-handle {
+  display: inline-block;
+  margin-right: 0.35rem;
+  color: rgba(42, 61, 46, 0.72);
+  font-weight: 700;
+  letter-spacing: -0.18em;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcflight-travel-runner-mvp__v2-order-drag-row {
+    transition: none;
+  }
+
+  .arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:hover,
+  .arcflight-travel-runner-mvp__v2-order-drag-row[draggable="true"]:focus-within {
+    transform: none;
+  }
+}
+
 .arcflight-travel-runner-mvp__v2-benefit-row--disabled {
   border-left-color: rgba(120, 104, 80, 0.55);
   opacity: 0.82;

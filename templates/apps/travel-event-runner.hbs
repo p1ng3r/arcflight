@@ -657,10 +657,14 @@
               {{#if state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.keyboardEnabled}}
                 <section class="arcflight-travel-runner-mvp__v2-order-keyboard" aria-label="GM keyboard round action order controls">
                   <h5>Keyboard Reorder Candidate</h5>
-                  <div class="arcflight-travel-runner-mvp__v2-benefit-rows">
+                  <p class="arcflight-sheet__hint">Drag a station row to a new position, or use Move Up and Move Down.</p>
+                  <div class="arcflight-travel-runner-mvp__v2-benefit-rows arcflight-travel-runner-mvp__v2-order-drag-list" data-arcflight-travel-v2-order-drag-list aria-label="Drag or keyboard reorder candidate station sequence">
                     {{#each state.travelV2PreviewPanel.roundActionOrderDisplay.reorderInteraction.rows}}
-                      <article class="arcflight-travel-runner-mvp__v2-benefit-row">
-                        <div><strong>{{orderLabel}} · {{stationName}}</strong></div>
+                      <article class="arcflight-travel-runner-mvp__v2-benefit-row arcflight-travel-runner-mvp__v2-order-drag-row" data-arcflight-travel-v2-order-drag-row data-station-key="{{stationKey}}" draggable="{{draggable}}" title="{{dragLabel}}" aria-label="{{dragLabel}}">
+                        <div>
+                          <span class="arcflight-travel-runner-mvp__v2-order-drag-handle" aria-hidden="true">⋮⋮</span>
+                          <strong>{{orderLabel}} · {{stationName}}</strong>
+                        </div>
                         <div class="arcflight-travel-runner-mvp__v2-preview-actions">
                           <button type="button" data-arcflight-travel-v2-order-move data-station-key="{{stationKey}}" data-direction="up" aria-label="{{moveUpLabel}}" {{#unless canMoveUp}}disabled{{/unless}}>Move Up</button>
                           <button type="button" data-arcflight-travel-v2-order-move data-station-key="{{stationKey}}" data-direction="down" aria-label="{{moveDownLabel}}" {{#unless canMoveDown}}disabled{{/unless}}>Move Down</button>

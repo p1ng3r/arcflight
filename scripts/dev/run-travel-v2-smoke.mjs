@@ -9,6 +9,7 @@ import runTravelV2RoundActionOrderLibraryStatusSmokeChecks from "../helpers/trav
 import runTravelV2RoundActionOrderReorderCandidateSmokeChecks from "../helpers/travel-v2-round-action-order-reorder-candidate.smoke.js";
 import runTravelV2RoundActionOrderDropTargetSmokeChecks from "../helpers/travel-v2-round-action-order-drop-target.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-drag-runtime.smoke.js";
+import runTravelEventRunnerV2RoundActionOrderDragUiSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-drag-ui.smoke.js";
 import runTravelV2RunnerBridgeSmokeChecks from "../helpers/travel-v2-runner-bridge.smoke.js";
 import runTravelV2PreviewStateSmokeChecks from "../helpers/travel-v2-preview-state.smoke.js";
 import runTravelV2PressureApplicationStateSmokeChecks from "../helpers/travel-v2-pressure-application-state.smoke.js";
@@ -128,6 +129,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 round action order reorder candidate", runTravelV2RoundActionOrderReorderCandidateSmokeChecks],
   ["Travel v2 round action order drop target", runTravelV2RoundActionOrderDropTargetSmokeChecks],
   ["Travel event runner v2 round action order drag runtime", runTravelEventRunnerV2RoundActionOrderDragRuntimeSmokeChecks],
+  ["Travel event runner v2 round action order drag UI", runTravelEventRunnerV2RoundActionOrderDragUiSmokeChecks],
   ["Travel v2 runner bridge", runTravelV2RunnerBridgeSmokeChecks],
   ["Travel v2 preview state", runTravelV2PreviewStateSmokeChecks],
   ["Travel v2 pressure application state", runTravelV2PressureApplicationStateSmokeChecks],
