@@ -36,7 +36,7 @@ import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-fi
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
 import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
-import { prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
+import { initializeTravelV2RoundActionOrderForRound, prepareTravelV2NextRoundActionOrder, prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -2281,13 +2281,18 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
       stationOrderCommitments: normalizeStationOrderCommitments(source, event.rounds[index]),
       stationCheckAppliedBonuses: isPlainObject(source?.stationCheckAppliedBonuses) ? cloneData(source.stationCheckAppliedBonuses) : undefined,
       stationSummary: isPlainObject(source?.stationSummary) ? cloneData(source.stationSummary) : undefined,
-      stationRollResolutions: isPlainObject(source?.stationRollResolutions) ? cloneData(source.stationRollResolutions) : undefined
+      stationRollResolutions: isPlainObject(source?.stationRollResolutions) ? cloneData(source.stationRollResolutions) : undefined,
+      actionOrder: isPlainObject(source?.actionOrder) ? cloneData(source.actionOrder) : undefined
     };
-    for (const optionalRoundResultKey of ["stationCheckAppliedBonuses", "stationSummary", "stationRollResolutions"]) {
+    for (const optionalRoundResultKey of ["stationCheckAppliedBonuses", "stationSummary", "stationRollResolutions", "actionOrder"]) {
       if (normalizedRoundResult[optionalRoundResultKey] === undefined) delete normalizedRoundResult[optionalRoundResultKey];
     }
     return normalizedRoundResult;
   });
+  let roundResultsWithActionOrder = roundResults;
+  for (let index = 0; index < roundResultsWithActionOrder.length; index += 1) {
+    roundResultsWithActionOrder = initializeTravelV2RoundActionOrderForRound({ ...session, event, roundResults: roundResultsWithActionOrder }, index, {}).roundResults;
+  }
   const normalized = {
     key: resolveTravelEventRunnerSessionKey({ ...session, event, startedAt: typeof session.startedAt === "string" ? session.startedAt : "" }, options),
     name: typeof session.name === "string" ? session.name : "",
@@ -2297,7 +2302,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
     currentRoundIndex,
     pressure: normalizeTravelPressureState(session.pressure ?? session.travelPressure),
     roundPhase: normalizeTravelRunnerRoundPhase(session.roundPhase ?? session.currentRoundPhase),
-    roundResults,
+    roundResults: roundResultsWithActionOrder,
     startedAt: typeof session.startedAt === "string" ? session.startedAt : nowIso(options),
     updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowIso(options),
     completedAt: typeof session.completedAt === "string" ? session.completedAt : "",
@@ -3261,7 +3266,9 @@ function sanitizePlayerSafeRunnerStateValue(value) {
     return value
       .replaceAll("GM-only", "restricted")
       .replaceAll("GM only", "restricted")
-      .replaceAll("Apply Outcome Package", "Review Outcome");
+      .replaceAll("Apply Outcome Package", "Review Outcome")
+      .replaceAll("Secret", "Restricted")
+      .replaceAll("secret", "restricted");
   }
   if (Array.isArray(value)) return value.map((entry) => sanitizePlayerSafeRunnerStateValue(entry));
   if (!value || typeof value !== "object") return value;
@@ -3288,7 +3295,7 @@ function preparePlayerSafeRunnerSession(session = null, options = {}) {
   delete safe.travelV2ActorApplication;
   delete safe.travelV2PressureApplications;
   delete safe.travelV2RoundResolutions;
-  return safe;
+  return sanitizePlayerSafeRunnerStateValue(safe);
 }
 
 
@@ -4755,7 +4762,10 @@ export function advanceTravelEventRunnerRound(session, options = {}) {
     if (advanceErrors.length > 0) return { ok: false, errors: advanceErrors, warnings: readiness.warnings, session: normalized.session, readiness: readiness.report };
   }
   const nextSession = cloneData(normalized.session);
+  const previousRoundIndex = nextSession.currentRoundIndex;
   nextSession.currentRoundIndex = Math.min(nextSession.currentRoundIndex + 1, nextSession.event.rounds.length - 1);
+  const preparedSession = prepareTravelV2NextRoundActionOrder(nextSession, previousRoundIndex, nextSession.currentRoundIndex, options);
+  nextSession.roundResults = preparedSession.roundResults;
   nextSession.roundPhase = normalizeTravelRunnerRoundPhase();
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;

@@ -639,6 +639,172 @@ function prepareRoundActionOrderUnlockControl({ session = {}, round = null, roun
   });
 }
 
+
+
+const ROUND_ACTION_ORDER_STATUSES = Object.freeze(["selecting", "committed", "unlocked"]);
+const ROUND_ACTION_ORDER_SOURCES = Object.freeze(["authored", "priorRoundSuggestion", "manual", "legacyCommitted", "none"]);
+
+function defaultRoundActionOrderRoundState(roundIndex = 0, roundNumber = null) {
+  const index = Math.max(0, Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0);
+  return {
+    version: 1,
+    roundIndex: index,
+    roundNumber: positiveIntegerOrNull(roundNumber) ?? index + 1,
+    status: "selecting",
+    proposedStationKeys: [],
+    committedStationKeys: [],
+    orderSource: "none",
+    suggestionSource: null,
+    committedAt: null,
+    committedByUserId: null,
+    committedByUserName: null,
+    committedByIsGM: false,
+    unlockedAt: null,
+    unlockedByUserId: null,
+    unlockedByUserName: null,
+    unlockedByIsGM: false,
+    historicalCommittedStationKeys: []
+  };
+}
+
+function validOrderOrEmpty(order = [], activeStations = []) {
+  const validation = normalizeTravelV2ProposedRoundActionOrder(order, activeStations);
+  return validation.valid ? validation.proposedStationKeys : [];
+}
+
+function legacyCommittedRoundState(legacyRecord, activeStations = [], roundIndex = 0, roundNumber = null) {
+  if (!isPlainObject(legacyRecord)) return null;
+  const committed = validOrderOrEmpty(sourceOrderFrom(legacyRecord), activeStations);
+  if (committed.length === 0) return null;
+  const audit = isPlainObject(legacyRecord.auditRecord) ? legacyRecord.auditRecord : {};
+  return {
+    ...defaultRoundActionOrderRoundState(roundIndex, roundNumber),
+    status: "committed",
+    proposedStationKeys: cloneData(committed),
+    committedStationKeys: cloneData(committed),
+    orderSource: "legacyCommitted",
+    committedAt: typeof legacyRecord.committedAt === "string" ? legacyRecord.committedAt : (typeof audit.timestamp === "string" ? audit.timestamp : null),
+    committedByUserId: typeof legacyRecord.userId === "string" ? legacyRecord.userId : (typeof audit.userId === "string" ? audit.userId : null),
+    committedByUserName: typeof legacyRecord.userName === "string" ? legacyRecord.userName : (typeof audit.userName === "string" ? audit.userName : null),
+    committedByIsGM: legacyRecord.isGM === true || audit.isGM === true
+  };
+}
+
+export function normalizeTravelV2RoundActionOrderRoundState(input = null, activeStations = [], options = {}) {
+  const roundIndex = Math.max(0, Number.isInteger(Number(options.roundIndex ?? input?.roundIndex)) ? Number(options.roundIndex ?? input?.roundIndex) : 0);
+  const roundNumber = positiveIntegerOrNull(options.roundNumber ?? input?.roundNumber) ?? roundIndex + 1;
+  const active = activeStationKeys({ activeStations }, {});
+  const legacyState = legacyCommittedRoundState(options.legacyRecord, active, roundIndex, roundNumber);
+  const source = isPlainObject(input) ? input : (legacyState ?? {});
+  const base = defaultRoundActionOrderRoundState(roundIndex, roundNumber);
+  const proposed = validOrderOrEmpty(source.proposedStationKeys, active);
+  const committed = validOrderOrEmpty(source.committedStationKeys, active);
+  const status = ROUND_ACTION_ORDER_STATUSES.includes(source.status) ? source.status : (committed.length > 0 ? "committed" : "selecting");
+  const authored = validOrderOrEmpty(options.authoredOrder ?? [], active);
+  const fallbackProposed = proposed.length > 0 ? proposed : (committed.length > 0 ? committed : authored.length > 0 ? authored : active);
+  return deepFreeze({
+    ...base,
+    version: 1,
+    roundIndex,
+    roundNumber,
+    status: status === "committed" && committed.length === 0 ? "selecting" : status,
+    proposedStationKeys: cloneData(fallbackProposed),
+    committedStationKeys: status === "committed" ? cloneData(committed) : cloneData(committed),
+    orderSource: ROUND_ACTION_ORDER_SOURCES.includes(source.orderSource) ? source.orderSource : (legacyState ? "legacyCommitted" : (authored.length > 0 ? "authored" : "none")),
+    suggestionSource: isPlainObject(source.suggestionSource) ? cloneData(source.suggestionSource) : null,
+    committedAt: typeof source.committedAt === "string" ? source.committedAt : null,
+    committedByUserId: typeof source.committedByUserId === "string" ? source.committedByUserId : null,
+    committedByUserName: typeof source.committedByUserName === "string" ? source.committedByUserName : null,
+    committedByIsGM: source.committedByIsGM === true,
+    unlockedAt: typeof source.unlockedAt === "string" ? source.unlockedAt : null,
+    unlockedByUserId: typeof source.unlockedByUserId === "string" ? source.unlockedByUserId : null,
+    unlockedByUserName: typeof source.unlockedByUserName === "string" ? source.unlockedByUserName : null,
+    unlockedByIsGM: source.unlockedByIsGM === true,
+    historicalCommittedStationKeys: Array.from(new Set((Array.isArray(source.historicalCommittedStationKeys) ? source.historicalCommittedStationKeys : []).filter((key) => active.includes(key))))
+  });
+}
+
+export function repairTravelV2RoundActionOrderSuggestion(priorCommittedStationKeys = [], destinationActiveStationKeys = [], options = {}) {
+  const active = activeStationKeys({ activeStations: destinationActiveStationKeys }, {});
+  const authored = activeStationKeys({ activeStations: Array.isArray(options.destinationAuthoredStationKeys) ? options.destinationAuthoredStationKeys : active }, {}).filter((key) => active.includes(key));
+  const retained = Array.from(new Set(sourceOrderFrom(priorCommittedStationKeys).filter((key) => active.includes(key))));
+  const proposed = [...retained, ...authored.filter((key) => !retained.includes(key)), ...active.filter((key) => !retained.includes(key) && !authored.includes(key))];
+  return deepFreeze({
+    ...defaultRoundActionOrderRoundState(options.roundIndex ?? 0, options.roundNumber ?? null),
+    status: "selecting",
+    proposedStationKeys: proposed,
+    committedStationKeys: [],
+    orderSource: proposed.length > 0 && retained.length > 0 ? "priorRoundSuggestion" : (proposed.length > 0 ? "authored" : "none"),
+    suggestionSource: Number.isInteger(Number(options.sourceRoundIndex)) ? { type: "priorRoundCommittedOrder", sourceRoundIndex: Number(options.sourceRoundIndex), sourceRoundNumber: positiveIntegerOrNull(options.sourceRoundNumber) ?? Number(options.sourceRoundIndex) + 1 } : null
+  });
+}
+
+function roundContextFromSession(session = {}, roundIndex = 0) {
+  const round = session?.event?.rounds?.[roundIndex] ?? {};
+  const result = session?.roundResults?.[roundIndex] ?? {};
+  const roundNumber = positiveIntegerOrNull(round.roundNumber ?? round.number ?? round.round ?? result.roundNumber) ?? roundIndex + 1;
+  return { round, result, roundNumber, activeStations: activeStationKeys(round, result), authoredOrder: explicitAuthoredOrderSource(round, result, {}) };
+}
+
+export function initializeTravelV2RoundActionOrderForRound(session = null, roundIndex = 0, options = {}) {
+  const nextSession = cloneData(session ?? {});
+  if (!Array.isArray(nextSession.roundResults)) nextSession.roundResults = [];
+  const index = Math.max(0, Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0);
+  const { roundNumber, activeStations, authoredOrder } = roundContextFromSession(nextSession, index);
+  const legacyRecord = committedOrderRecordForRound(nextSession, index);
+  const existing = nextSession.roundResults[index]?.actionOrder;
+  let actionOrder = normalizeTravelV2RoundActionOrderRoundState(existing, activeStations, { roundIndex: index, roundNumber, authoredOrder, legacyRecord });
+  if (!legacyRecord && index > 0 && Array.isArray(options.priorCommittedStationKeys) && options.priorCommittedStationKeys.length > 0 && (!existing || (actionOrder.status === "selecting" && actionOrder.committedStationKeys.length === 0))) {
+    actionOrder = repairTravelV2RoundActionOrderSuggestion(options.priorCommittedStationKeys, activeStations, { roundIndex: index, roundNumber, destinationAuthoredStationKeys: authoredOrder.length > 0 ? authoredOrder : activeStations, sourceRoundIndex: options.sourceRoundIndex ?? index - 1, sourceRoundNumber: options.sourceRoundNumber ?? index });
+  }
+  nextSession.roundResults[index] = { ...(isPlainObject(nextSession.roundResults[index]) ? nextSession.roundResults[index] : {}), actionOrder: cloneData(actionOrder) };
+  return deepFreeze(nextSession);
+}
+
+export function replaceTravelV2RoundActionOrderProposal(session = null, roundIndex = 0, proposedOrder = [], options = {}) {
+  const nextSession = initializeTravelV2RoundActionOrderForRound(session, roundIndex, options);
+  const index = Math.max(0, Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0);
+  const { activeStations } = roundContextFromSession(nextSession, index);
+  const validation = normalizeTravelV2ProposedRoundActionOrder(proposedOrder, activeStations);
+  if (!validation.valid) return deepFreeze({ ok: false, blocked: true, blockedReasons: validation.blockedReasons, reason: validation.blockedReasons[0] ?? "Proposal blocked.", session: nextSession });
+  const editable = cloneData(nextSession);
+  editable.roundResults[index].actionOrder = { ...editable.roundResults[index].actionOrder, status: editable.roundResults[index].actionOrder.status === "committed" ? "unlocked" : editable.roundResults[index].actionOrder.status, proposedStationKeys: validation.proposedStationKeys, orderSource: "manual" };
+  return deepFreeze({ ok: true, blocked: false, blockedReasons: [], session: editable, proposedStationKeys: validation.proposedStationKeys });
+}
+
+export function commitTravelV2RoundActionOrderRoundState(session = null, roundIndex = 0, options = {}) {
+  const nextSession = initializeTravelV2RoundActionOrderForRound(session, roundIndex, options);
+  const index = Math.max(0, Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0);
+  const { activeStations } = roundContextFromSession(nextSession, index);
+  const current = nextSession.roundResults[index].actionOrder;
+  const validation = normalizeTravelV2ProposedRoundActionOrder(options.proposedOrder ?? current.proposedStationKeys, activeStations);
+  if (!validation.valid) return deepFreeze({ ok: false, committed: false, blocked: true, blockedReasons: validation.blockedReasons, reason: validation.blockedReasons[0] ?? "Commit blocked.", session: nextSession });
+  const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();
+  const metadata = safeUserMetadata(options);
+  const editable = cloneData(nextSession);
+  editable.roundResults[index].actionOrder = { ...current, status: "committed", proposedStationKeys: validation.proposedStationKeys, committedStationKeys: validation.proposedStationKeys, orderSource: current.orderSource === "priorRoundSuggestion" ? "priorRoundSuggestion" : "manual", committedAt: timestamp, committedByUserId: metadata.userId, committedByUserName: metadata.userName, committedByIsGM: metadata.isGM };
+  return deepFreeze({ ok: true, committed: true, blocked: false, blockedReasons: [], session: editable, committedStationKeys: validation.proposedStationKeys });
+}
+
+export function unlockTravelV2RoundActionOrderRoundState(session = null, roundIndex = 0, options = {}) {
+  const nextSession = initializeTravelV2RoundActionOrderForRound(session, roundIndex, options);
+  const index = Math.max(0, Number.isInteger(Number(roundIndex)) ? Number(roundIndex) : 0);
+  const current = nextSession.roundResults[index].actionOrder;
+  if (current.status !== "committed" || current.committedStationKeys.length === 0) return deepFreeze({ ok: false, unlocked: false, blocked: true, blockedReasons: ["Current round has no committed action order to unlock."], reason: "Current round has no committed action order to unlock.", session: nextSession });
+  const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();
+  const metadata = safeUserMetadata({ ...options, source: options.source ?? "gm-order-unlock" });
+  const editable = cloneData(nextSession);
+  const history = Array.from(new Set([...(current.historicalCommittedStationKeys ?? []), ...current.committedStationKeys]));
+  editable.roundResults[index].actionOrder = { ...current, status: "unlocked", proposedStationKeys: current.proposedStationKeys.length > 0 ? current.proposedStationKeys : current.committedStationKeys, historicalCommittedStationKeys: history, unlockedAt: timestamp, unlockedByUserId: metadata.userId, unlockedByUserName: metadata.userName, unlockedByIsGM: metadata.isGM };
+  return deepFreeze({ ok: true, unlocked: true, blocked: false, blockedReasons: [], session: editable, historicalCommittedStationKeys: history });
+}
+
+export function prepareTravelV2NextRoundActionOrder(session = null, sourceRoundIndex = 0, destinationRoundIndex = sourceRoundIndex + 1, options = {}) {
+  const sourceSession = initializeTravelV2RoundActionOrderForRound(session, sourceRoundIndex, options);
+  const prior = sourceSession.roundResults?.[sourceRoundIndex]?.actionOrder?.committedStationKeys ?? [];
+  return initializeTravelV2RoundActionOrderForRound(sourceSession, destinationRoundIndex, { ...options, priorCommittedStationKeys: prior, sourceRoundIndex, sourceRoundNumber: sourceRoundIndex + 1 });
+}
+
 function existingRoundOrderRecord(session = {}, roundIndex = -1) {
   const state = isPlainObject(session.travelV2RoundActionOrder) ? session.travelV2RoundActionOrder : {};
   const rounds = isPlainObject(state.rounds) ? state.rounds : {};
@@ -701,7 +867,9 @@ export function commitTravelV2RoundActionOrderToSession(session = null, proposed
   nextState.rounds = nextRounds;
   nextState.commitRecords = [...cloneData(priorRecords), cloneData(auditRecord)];
   nextSession.travelV2RoundActionOrder = nextState;
-  return deepFreeze({ ok: true, committed: true, duplicate: false, blocked: false, blockedReasons: [], reason: "Round action order committed to this runner session.", roundIndex, roundNumber, previousOrder, committedOrder, auditRecord, session: nextSession });
+  const canonicalCommit = commitTravelV2RoundActionOrderRoundState(nextSession, roundIndex, { ...options, proposedOrder: committedOrder, timestamp });
+  const sessionWithCanonicalOrder = canonicalCommit.ok ? canonicalCommit.session : nextSession;
+  return deepFreeze({ ok: true, committed: true, duplicate: false, blocked: false, blockedReasons: [], reason: "Round action order committed to this runner session.", roundIndex, roundNumber, previousOrder, committedOrder, auditRecord, session: sessionWithCanonicalOrder });
 }
 
 export function unlockTravelV2RoundActionOrderInSession(session = null, options = {}) {
@@ -750,7 +918,9 @@ export function unlockTravelV2RoundActionOrderInSession(session = null, options 
   nextState.commitRecords = cloneData(recordsFromContainer(nextState.commitRecords ?? nextState.commits ?? nextState.auditRecords));
   nextState.unlockRecords = [...cloneData(recordsFromContainer(state.unlockRecords)), cloneData(unlockRecord)];
   nextSession.travelV2RoundActionOrder = nextState;
-  return deepFreeze({ ok: true, unlocked: true, duplicate: false, blocked: false, reason: "Round action order unlocked for reconsideration.", blockedReasons: [], roundIndex, roundNumber, previousOrder, unlockRecord, session: nextSession });
+  const canonicalUnlock = unlockTravelV2RoundActionOrderRoundState(nextSession, roundIndex, { ...options, timestamp });
+  const sessionWithCanonicalOrder = canonicalUnlock.ok ? canonicalUnlock.session : nextSession;
+  return deepFreeze({ ok: true, unlocked: true, duplicate: false, blocked: false, reason: "Round action order unlocked for reconsideration.", blockedReasons: [], roundIndex, roundNumber, previousOrder, unlockRecord, session: sessionWithCanonicalOrder });
 }
 
 export function prepareTravelV2RoundActionOrderState(session = null, options = {}) {

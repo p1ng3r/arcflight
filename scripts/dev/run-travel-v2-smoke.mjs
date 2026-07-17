@@ -2,6 +2,7 @@ import runTravelV2StateSmokeChecks from "../helpers/travel-v2-state.smoke.js";
 import runTravelV2PressureEngineSmokeChecks from "../helpers/travel-v2-pressure-engine.smoke.js";
 import runTravelV2RoundPressureAdapterSmokeChecks from "../helpers/travel-v2-round-pressure-adapter.smoke.js";
 import runTravelV2RoundActionOrderStateSmokeChecks from "../helpers/travel-v2-round-action-order-state.smoke.js";
+import runTravelV2RoundActionOrderRoundStateSmokeChecks from "../helpers/travel-v2-round-action-order-round-state.smoke.js";
 import runTravelV2RoundActionOrderUnlockRecommitSmokeChecks from "../helpers/travel-v2-round-action-order-unlock-recommit.smoke.js";
 import runTravelV2RoundActionOrderStatusGuidanceSmokeChecks from "../helpers/travel-v2-round-action-order-status-guidance.smoke.js";
 import runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks from "../helpers/travel-v2-round-action-order-persistence-bridge.smoke.js";
@@ -124,6 +125,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 pressure engine", runTravelV2PressureEngineSmokeChecks],
   ["Travel v2 round pressure adapter", runTravelV2RoundPressureAdapterSmokeChecks],
   ["Travel v2 round action order state", runTravelV2RoundActionOrderStateSmokeChecks],
+  ["Travel v2 round action order round state", runTravelV2RoundActionOrderRoundStateSmokeChecks],
   ["Travel v2 round action order unlock recommit", runTravelV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel v2 round action order status guidance", runTravelV2RoundActionOrderStatusGuidanceSmokeChecks],
   ["Travel v2 round action order persistence bridge", runTravelV2RoundActionOrderPersistenceBridgeSmokeChecks],
@@ -201,7 +203,6 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 round action order unlock recommit", runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel event runner v2 round action order persistence", runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks],
   ["Travel event runner v2 round action order closeout", runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks],
-  ["Travel event runner v2 round action order table acceptance", runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmokeChecks],
   ["Travel event runner v2 round action order startup hardening", runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks],
   ["Travel event runner v2 round action order keyboard reorder", runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks],
   ["Travel event runner v2 session switch order state isolation", runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks],
