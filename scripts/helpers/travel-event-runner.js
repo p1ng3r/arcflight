@@ -3253,6 +3253,10 @@ const PLAYER_SAFE_RUNNER_OMIT_KEYS = new Set([
   "commitRecords",
   "userId",
   "userName",
+  "committedByUserId",
+  "committedByUserName",
+  "unlockedByUserId",
+  "unlockedByUserName",
   "gmText",
   "applyPayload",
   "targetActorUuid",
@@ -3266,9 +3270,7 @@ function sanitizePlayerSafeRunnerStateValue(value) {
     return value
       .replaceAll("GM-only", "restricted")
       .replaceAll("GM only", "restricted")
-      .replaceAll("Apply Outcome Package", "Review Outcome")
-      .replaceAll("Secret", "Restricted")
-      .replaceAll("secret", "restricted");
+      .replaceAll("Apply Outcome Package", "Review Outcome");
   }
   if (Array.isArray(value)) return value.map((entry) => sanitizePlayerSafeRunnerStateValue(entry));
   if (!value || typeof value !== "object") return value;

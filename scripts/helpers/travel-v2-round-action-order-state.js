@@ -767,8 +767,13 @@ export function replaceTravelV2RoundActionOrderProposal(session = null, roundInd
   const { activeStations } = roundContextFromSession(nextSession, index);
   const validation = normalizeTravelV2ProposedRoundActionOrder(proposedOrder, activeStations);
   if (!validation.valid) return deepFreeze({ ok: false, blocked: true, blockedReasons: validation.blockedReasons, reason: validation.blockedReasons[0] ?? "Proposal blocked.", session: nextSession });
+  const current = nextSession.roundResults[index].actionOrder;
+  if (!["selecting", "unlocked"].includes(current.status)) {
+    const reason = "Committed round action order must be explicitly unlocked before replacing the proposal.";
+    return deepFreeze({ ok: false, blocked: true, blockedReasons: [reason], reason, session: nextSession });
+  }
   const editable = cloneData(nextSession);
-  editable.roundResults[index].actionOrder = { ...editable.roundResults[index].actionOrder, status: editable.roundResults[index].actionOrder.status === "committed" ? "unlocked" : editable.roundResults[index].actionOrder.status, proposedStationKeys: validation.proposedStationKeys, orderSource: "manual" };
+  editable.roundResults[index].actionOrder = { ...current, proposedStationKeys: validation.proposedStationKeys, orderSource: "manual" };
   return deepFreeze({ ok: true, blocked: false, blockedReasons: [], session: editable, proposedStationKeys: validation.proposedStationKeys });
 }
 
@@ -794,7 +799,7 @@ export function unlockTravelV2RoundActionOrderRoundState(session = null, roundIn
   const timestamp = typeof options.timestamp === "string" && options.timestamp.trim() ? options.timestamp.trim() : new Date().toISOString();
   const metadata = safeUserMetadata({ ...options, source: options.source ?? "gm-order-unlock" });
   const editable = cloneData(nextSession);
-  const history = Array.from(new Set([...(current.historicalCommittedStationKeys ?? []), ...current.committedStationKeys]));
+  const history = cloneData(current.committedStationKeys);
   editable.roundResults[index].actionOrder = { ...current, status: "unlocked", proposedStationKeys: current.proposedStationKeys.length > 0 ? current.proposedStationKeys : current.committedStationKeys, historicalCommittedStationKeys: history, unlockedAt: timestamp, unlockedByUserId: metadata.userId, unlockedByUserName: metadata.userName, unlockedByIsGM: metadata.isGM };
   return deepFreeze({ ok: true, unlocked: true, blocked: false, blockedReasons: [], session: editable, historicalCommittedStationKeys: history });
 }

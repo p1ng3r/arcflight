@@ -203,6 +203,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 round action order unlock recommit", runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel event runner v2 round action order persistence", runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks],
   ["Travel event runner v2 round action order closeout", runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks],
+  ["Travel event runner v2 round action order table acceptance", runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmokeChecks],
   ["Travel event runner v2 round action order startup hardening", runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks],
   ["Travel event runner v2 round action order keyboard reorder", runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks],
   ["Travel event runner v2 session switch order state isolation", runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks],

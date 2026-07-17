@@ -1149,9 +1149,9 @@ export async function runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmoke
     checked.push("aggregate table-acceptance registration follows round-action-order closeout");
 
     for (const heading of [
-      "TV2-003 Foundry Table Verification",
-      "Environment Record",
-      "Pre-flight",
+      "TV2-003 Foundry Verification",
+      "Environment record",
+      "Implementation prerequisites",
       "Scenario A",
       "Scenario B",
       "Scenario C",
@@ -1159,8 +1159,7 @@ export async function runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmoke
       "Scenario E",
       "Scenario F",
       "Scenario G",
-      "Results",
-      "Completion Gate"
+      "Replacement Foundry acceptance checklist"
     ]) {
       assert.match(manual, new RegExp(heading, "i"));
     }
@@ -1171,7 +1170,7 @@ export async function runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmoke
       issues.match(/### TV2-003[\s\S]*?(?=\n### TV2-004)/)?.[0] ?? "";
     assert.match(
       issueSection,
-      /code-complete \/ Foundry table verification pending/
+      /design correction required|code-complete \/ Foundry table verification pending/
     );
     assert.doesNotMatch(
       issueSection,

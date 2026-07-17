@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   commitTravelV2RoundActionOrderRoundState,
   initializeTravelV2RoundActionOrderForRound,
@@ -8,7 +9,7 @@ import {
   replaceTravelV2RoundActionOrderProposal,
   unlockTravelV2RoundActionOrderRoundState
 } from "./travel-v2-round-action-order-state.js";
-import { advanceTravelEventRunnerRound, normalizeTravelEventRunnerSession } from "./travel-event-runner.js";
+import { advanceTravelEventRunnerRound, normalizeTravelEventRunnerSession, prepareTravelEventRunnerState } from "./travel-event-runner.js";
 
 const COMMIT_AT = "2026-07-17T10:00:00.000Z";
 const UNLOCK_AT = "2026-07-17T10:05:00.000Z";
@@ -29,8 +30,66 @@ function session(overrides = {}) {
   };
 }
 
-function mutationGuards() {
-  return { actor: 0, item: 0, activeEffect: 0, journal: 0, chat: 0, socket: 0, scene: 0, token: 0, compendium: 0, worldSetting: 0 };
+function snapshot(value) {
+  return JSON.stringify(value);
+}
+
+function installMutationSentinels() {
+  const previous = {
+    game: globalThis.game,
+    Actor: globalThis.Actor,
+    Item: globalThis.Item,
+    ActiveEffect: globalThis.ActiveEffect,
+    ChatMessage: globalThis.ChatMessage,
+    JournalEntry: globalThis.JournalEntry,
+    Scene: globalThis.Scene,
+    TokenDocument: globalThis.TokenDocument
+  };
+  const counters = { socket: 0, worldSetting: 0, actor: 0, item: 0, activeEffect: 0, chat: 0, journal: 0, scene: 0, token: 0, compendium: 0 };
+  const count = (key) => () => { counters[key] += 1; return Promise.resolve(null); };
+  const documentStub = (key) => class {
+    update() { counters[key] += 1; return Promise.resolve(this); }
+    delete() { counters[key] += 1; return Promise.resolve(null); }
+    static create() { counters[key] += 1; return Promise.resolve(null); }
+    static updateDocuments() { counters[key] += 1; return Promise.resolve([]); }
+    static deleteDocuments() { counters[key] += 1; return Promise.resolve([]); }
+  };
+  globalThis.game = {
+    ...(previous.game && typeof previous.game === "object" ? previous.game : {}),
+    socket: { emit: count("socket") },
+    settings: { set: count("worldSetting") },
+    packs: new Map([["arcflight.test", { set: count("compendium"), update: count("compendium"), delete: count("compendium"), createDocument: count("compendium"), importDocument: count("compendium") }]])
+  };
+  globalThis.Actor = documentStub("actor");
+  globalThis.Item = documentStub("item");
+  globalThis.ActiveEffect = documentStub("activeEffect");
+  globalThis.ChatMessage = { create: count("chat") };
+  globalThis.JournalEntry = { create: count("journal") };
+  globalThis.Scene = documentStub("scene");
+  globalThis.TokenDocument = documentStub("token");
+  return {
+    counters,
+    restore() {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete globalThis[key];
+        else globalThis[key] = value;
+      }
+    }
+  };
+}
+
+function assertNoObviousProductionWrites() {
+  const files = [
+    "scripts/helpers/travel-v2-round-action-order-state.js",
+    "scripts/helpers/travel-event-runner.js"
+  ];
+  const forbidden = [/\.socket\.emit\s*\(/, /\.settings\.set\s*\(/, /ChatMessage\.create\s*\(/, /JournalEntry\.create\s*\(/, /\.update\s*\(/, /\.delete\s*\(/, /\.create\s*\(/];
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    for (const pattern of forbidden) {
+      assert.equal(pattern.test(text), false, `${file} contains prohibited write-like call ${pattern}`);
+    }
+  }
 }
 
 export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks() {
@@ -66,6 +125,15 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.equal(committedState.committedByIsGM, true);
   checked.push("commit transition timestamp and metadata");
 
+  const blockedReplacement = replaceTravelV2RoundActionOrderProposal(committed.session, 0, ["navigator", "engineer", "watchmaster"]);
+  assert.equal(blockedReplacement.ok, false);
+  assert.match(blockedReplacement.reason, /explicitly unlocked/);
+  assert.deepEqual(blockedReplacement.session.roundResults[0].actionOrder.committedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  assert.equal(blockedReplacement.session.roundResults[0].actionOrder.unlockedAt, null);
+  assert.equal(blockedReplacement.session.roundResults[0].actionOrder.unlockedByUserId, null);
+  assert.equal(blockedReplacement.session.roundResults[0].actionOrder.unlockedByUserName, null);
+  checked.push("replacement while committed is blocked until explicit unlock");
+
   const unlocked = unlockTravelV2RoundActionOrderRoundState(committed.session, 0, { timestamp: UNLOCK_AT, user: { id: "u2", name: "GM Two", isGM: true } });
   const unlockedState = unlocked.session.roundResults[0].actionOrder;
   assert.equal(unlockedState.status, "unlocked");
@@ -74,9 +142,15 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.equal(unlockedState.unlockedByUserName, "GM Two");
   assert.equal(unlockedState.unlockedByIsGM, true);
   assert.deepEqual(unlockedState.historicalCommittedStationKeys, ["engineer", "navigator", "watchmaster"]);
-  const recommitted = commitTravelV2RoundActionOrderRoundState(replaceTravelV2RoundActionOrderProposal(unlocked.session, 0, ["navigator", "watchmaster", "engineer"]).session, 0, { timestamp: "2026-07-17T10:10:00.000Z" });
+  const unlockedReplacement = replaceTravelV2RoundActionOrderProposal(unlocked.session, 0, ["navigator", "watchmaster", "engineer"]);
+  assert.equal(unlockedReplacement.ok, true);
+  const recommitted = commitTravelV2RoundActionOrderRoundState(unlockedReplacement.session, 0, { timestamp: "2026-07-17T10:10:00.000Z" });
   assert.deepEqual(recommitted.session.roundResults[0].actionOrder.committedStationKeys, ["navigator", "watchmaster", "engineer"]);
-  checked.push("unlock preserves history and supports recommit");
+  const secondReplacement = replaceTravelV2RoundActionOrderProposal(unlocked.session, 0, ["engineer", "watchmaster", "navigator"]);
+  const secondCommit = commitTravelV2RoundActionOrderRoundState(secondReplacement.session, 0, { timestamp: "2026-07-17T10:12:00.000Z" });
+  const secondUnlock = unlockTravelV2RoundActionOrderRoundState(secondCommit.session, 0, { timestamp: "2026-07-17T10:13:00.000Z" });
+  assert.deepEqual(secondUnlock.session.roundResults[0].actionOrder.historicalCommittedStationKeys, ["engineer", "watchmaster", "navigator"]);
+  checked.push("unlock preserves exact historical order and supports explicit replacement after unlock");
 
   const next = prepareTravelV2NextRoundActionOrder(committed.session, 0, 1);
   const nextState = next.roundResults[1].actionOrder;
@@ -102,6 +176,24 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.deepEqual(migrated.travelV2RoundActionOrder.unlockRecords, [{ id: "u1" }]);
   checked.push("legacy migration idempotence and audit preservation");
 
+  const authoredSecretSession = commitTravelV2RoundActionOrderRoundState(normalizeTravelEventRunnerSession(session({ event: { rounds: [{ roundNumber: 1, activeStations: ["navigator", "engineer", "watchmaster"], stationActionOrder: ["navigator", "engineer", "watchmaster"], openingVignette: "The crew follows a secret star." }] } })).session, 0, { timestamp: COMMIT_AT, user: { id: "secret-user-id", name: "Secret Keeper", isGM: true } }).session;
+  const nonGmState = prepareTravelEventRunnerState(authoredSecretSession, { user: { isGM: false } });
+  const safeActionOrder = nonGmState.session.roundResults[0].actionOrder;
+  assert.equal(safeActionOrder.status, "committed");
+  assert.deepEqual(safeActionOrder.proposedStationKeys, ["navigator", "engineer", "watchmaster"]);
+  assert.deepEqual(safeActionOrder.committedStationKeys, ["navigator", "engineer", "watchmaster"]);
+  assert.equal(Object.hasOwn(safeActionOrder, "committedByUserId"), false);
+  assert.equal(Object.hasOwn(safeActionOrder, "committedByUserName"), false);
+  assert.equal(Object.hasOwn(safeActionOrder, "unlockedByUserId"), false);
+  assert.equal(Object.hasOwn(safeActionOrder, "unlockedByUserName"), false);
+  const safeText = snapshot(nonGmState);
+  assert.equal(safeText.includes("auditRecord"), false);
+  assert.equal(safeText.includes("commitRecords"), false);
+  assert.equal(safeText.includes("userId"), false);
+  assert.equal(safeText.includes("userName"), false);
+  assert.equal(safeText.includes("The crew follows a secret star."), true);
+  checked.push("non-GM actionOrder redacts identity metadata without rewriting authored text");
+
   const exported = JSON.parse(JSON.stringify(committed.session));
   assert.deepEqual(normalizeTravelEventRunnerSession(exported).session.roundResults[0].actionOrder, committed.session.roundResults[0].actionOrder);
   const before = JSON.stringify(initial);
@@ -119,8 +211,19 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.deepEqual(advanced.session.roundResults[1].actionOrder.committedStationKeys, []);
   checked.push("round advancement initializes fresh uncommitted order");
 
-  const guards = mutationGuards();
-  assert.deepEqual(guards, { actor: 0, item: 0, activeEffect: 0, journal: 0, chat: 0, socket: 0, scene: 0, token: 0, compendium: 0, worldSetting: 0 });
+  const sentinels = installMutationSentinels();
+  try {
+    const sentinelBase = normalizeTravelEventRunnerSession(session()).session;
+    const sentinelProposal = replaceTravelV2RoundActionOrderProposal(sentinelBase, 0, ["engineer", "navigator", "watchmaster"]);
+    const sentinelCommit = commitTravelV2RoundActionOrderRoundState(sentinelProposal.session, 0, { timestamp: COMMIT_AT });
+    const sentinelUnlock = unlockTravelV2RoundActionOrderRoundState(sentinelCommit.session, 0, { timestamp: UNLOCK_AT });
+    prepareTravelV2NextRoundActionOrder(sentinelCommit.session, 0, 1);
+    initializeTravelV2RoundActionOrderForRound(sentinelUnlock.session, 0);
+    assert.deepEqual(sentinels.counters, { socket: 0, worldSetting: 0, actor: 0, item: 0, activeEffect: 0, chat: 0, journal: 0, scene: 0, token: 0, compendium: 0 });
+  } finally {
+    sentinels.restore();
+  }
+  assertNoObviousProductionWrites();
   checked.push("zero document socket compendium and world-setting mutations");
 
   const normalized = normalizeTravelV2RoundActionOrderRoundState({ proposedStationKeys: ["navigator", "engineer", "watchmaster"] }, ["navigator", "engineer", "watchmaster"], { roundIndex: 0, roundNumber: 1 });
