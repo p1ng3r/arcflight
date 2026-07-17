@@ -127,6 +127,92 @@ export function normalizeTravelV2ProposedRoundActionOrder(sourceOrder = [], fall
   return deepFreeze({ valid, ready: valid, proposedStationKeys: proposed, activeStationKeys: active, missingKeys, unknownKeys: Array.from(new Set(unknownKeys)), duplicateKeys: Array.from(new Set(duplicateKeys)), blockedReasons });
 }
 
+function blockedDropTargetResult({ stationKey = "", sourceIndex = -1, pointerY = null, previousOrder = [], blockedReasons = [] } = {}) {
+  return deepFreeze({
+    ok: false,
+    blocked: true,
+    wouldMove: false,
+    sameIndex: false,
+    stationKey,
+    sourceIndex,
+    insertionSlot: -1,
+    targetIndex: -1,
+    pointerY,
+    previousOrder: [...previousOrder],
+    blockedReasons: [...blockedReasons],
+    reason: blockedReasons[0] ?? "Round action-order drop target is blocked."
+  });
+}
+
+export function resolveTravelV2RoundActionOrderDropTarget(sourceOrder = [], options = {}) {
+  const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
+  const pointerY = options.pointerY;
+  const rowBounds = Array.isArray(options.rowBounds) ? options.rowBounds : null;
+  const activeStations = Array.isArray(options.activeStations) ? options.activeStations : [];
+  const validation = normalizeTravelV2ProposedRoundActionOrder(sourceOrder, activeStations);
+  const previousOrder = [...validation.proposedStationKeys];
+  const blockedReasons = [...validation.blockedReasons];
+
+  if (!stationKey) blockedReasons.push("A station key is required.");
+  if (stationKey && !validation.activeStationKeys.includes(stationKey)) blockedReasons.push(`Unknown station key cannot be reordered: ${stationKey}.`);
+  if (stationKey && validation.valid && !previousOrder.includes(stationKey)) blockedReasons.push(`Station key is not present in the source order: ${stationKey}.`);
+  if (!Number.isFinite(pointerY)) blockedReasons.push("Pointer Y coordinate must be a finite number.");
+  if (!Array.isArray(options.rowBounds)) blockedReasons.push("Row bounds must be an array.");
+  if (rowBounds && rowBounds.length !== previousOrder.length) blockedReasons.push(`Row bounds length must equal source order length (${previousOrder.length}).`);
+
+  const seen = new Set();
+  if (rowBounds) {
+    let previousBottom = null;
+    rowBounds.forEach((row, index) => {
+      if (!isPlainObject(row)) {
+        blockedReasons.push(`Row bounds entry ${index + 1} must be an object.`);
+        return;
+      }
+      const rowStationKey = typeof row.stationKey === "string" ? row.stationKey.trim() : "";
+      if (!rowStationKey) blockedReasons.push(`Row bounds entry ${index + 1} requires a station key.`);
+      if (rowStationKey && seen.has(rowStationKey)) blockedReasons.push(`Row bounds repeat station key: ${rowStationKey}.`);
+      if (rowStationKey) seen.add(rowStationKey);
+      if (rowStationKey && validation.activeStationKeys.length > 0 && !validation.activeStationKeys.includes(rowStationKey)) blockedReasons.push(`Row bounds include inactive station key: ${rowStationKey}.`);
+      if (rowStationKey && previousOrder[index] !== rowStationKey) blockedReasons.push(`Row bounds station key at index ${index} must be ${previousOrder[index] ?? "none"}.`);
+      if (!Number.isFinite(row.top) || !Number.isFinite(row.bottom)) blockedReasons.push(`Row bounds for ${rowStationKey || `entry ${index + 1}`} must have finite top and bottom values.`);
+      if (Number.isFinite(row.top) && Number.isFinite(row.bottom) && row.bottom <= row.top) blockedReasons.push(`Row bounds for ${rowStationKey || `entry ${index + 1}`} must have bottom greater than top.`);
+      if (previousBottom !== null && Number.isFinite(row.top) && row.top < previousBottom) blockedReasons.push(`Row bounds for ${rowStationKey || `entry ${index + 1}`} overlap or are out of vertical order.`);
+      if (Number.isFinite(row.bottom)) previousBottom = row.bottom;
+    });
+    for (const expected of previousOrder) {
+      if (!seen.has(expected)) blockedReasons.push(`Row bounds are missing station key: ${expected}.`);
+    }
+  }
+
+  const sourceIndex = previousOrder.indexOf(stationKey);
+  if (blockedReasons.length > 0) {
+    return blockedDropTargetResult({ stationKey, sourceIndex, pointerY: Number.isFinite(pointerY) ? pointerY : null, previousOrder, blockedReasons });
+  }
+
+  const insertionSlot = rowBounds.reduce((count, row) => {
+    const midpoint = row.top + ((row.bottom - row.top) / 2);
+    return pointerY >= midpoint ? count + 1 : count;
+  }, 0);
+  let targetIndex = insertionSlot;
+  if (insertionSlot > sourceIndex) targetIndex -= 1;
+  targetIndex = Math.min(Math.max(targetIndex, 0), previousOrder.length - 1);
+  const sameIndex = sourceIndex === targetIndex;
+  return deepFreeze({
+    ok: true,
+    blocked: false,
+    wouldMove: !sameIndex,
+    sameIndex,
+    stationKey,
+    sourceIndex,
+    insertionSlot,
+    targetIndex,
+    pointerY,
+    previousOrder,
+    blockedReasons: [],
+    reason: sameIndex ? "Round action-order drop target is the current position." : "Round action-order drop target resolved."
+  });
+}
+
 
 export function moveTravelV2RoundActionOrderCandidate(sourceOrder = [], options = {}) {
   const stationKey = typeof options.stationKey === "string"
@@ -736,9 +822,9 @@ export function prepareTravelV2RoundActionOrderState(session = null, options = {
   const candidateOrder = candidateValidation.valid ? candidateValidation.proposedStationKeys : orderedStationKeys;
   const candidateChanged = !arraysEqual(candidateOrder, orderedStationKeys);
   const reorderInteraction = isGm ? deepFreeze({
-    visibleForGM: true, canReorder, disabled: !canReorder, keyboardEnabled: canReorder, blockedReason: canReorderReasons[0] ?? "", blockedReasons: canReorderReasons,
+    visibleForGM: true, canReorder, disabled: !canReorder, keyboardEnabled: canReorder, dragEnabled: canReorder, dropTargetEnabled: canReorder, blockedReason: canReorderReasons[0] ?? "", blockedReasons: canReorderReasons,
     currentOrder: [...orderedStationKeys], candidateOrder: [...candidateOrder], candidateChanged,
-    rows: candidateOrder.map((stationKey, orderIndex) => ({ stationKey, stationName: stationLabel(round, stationKey), orderIndex, orderNumber: orderIndex + 1, orderLabel: `#${orderIndex + 1}`, canMoveUp: canReorder && orderIndex > 0, canMoveDown: canReorder && orderIndex < candidateOrder.length - 1, moveUpLabel: `Move ${stationLabel(round, stationKey)} up`, moveDownLabel: `Move ${stationLabel(round, stationKey)} down` })),
+    rows: candidateOrder.map((stationKey, orderIndex) => ({ stationKey, stationName: stationLabel(round, stationKey), orderIndex, orderNumber: orderIndex + 1, orderLabel: `#${orderIndex + 1}`, canMoveUp: canReorder && orderIndex > 0, canMoveDown: canReorder && orderIndex < candidateOrder.length - 1, moveUpLabel: `Move ${stationLabel(round, stationKey)} up`, moveDownLabel: `Move ${stationLabel(round, stationKey)} down`, draggable: canReorder, dropTargetEnabled: canReorder, dragLabel: `Drag ${stationLabel(round, stationKey)} to reorder` })),
     canResetCandidate: canReorder && candidateChanged, playerSafe: false, readOnly: true
   }) : null;
 
