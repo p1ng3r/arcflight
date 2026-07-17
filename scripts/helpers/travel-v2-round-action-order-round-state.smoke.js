@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   commitTravelV2RoundActionOrderRoundState,
+  commitTravelV2RoundActionOrderToSession,
   initializeTravelV2RoundActionOrderForRound,
   normalizeTravelV2RoundActionOrderRoundState,
   prepareTravelV2NextRoundActionOrder,
@@ -125,6 +126,19 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.equal(committedState.committedByIsGM, true);
   checked.push("commit transition timestamp and metadata");
 
+  const duplicateCommit = commitTravelV2RoundActionOrderRoundState(committed.session, 0, { proposedOrder: ["engineer", "navigator", "watchmaster"], timestamp: "2026-07-17T10:02:00.000Z" });
+  assert.equal(duplicateCommit.ok, true);
+  assert.equal(duplicateCommit.duplicate, true);
+  assert.equal(duplicateCommit.session.roundResults[0].actionOrder.committedAt, COMMIT_AT);
+  assert.deepEqual(duplicateCommit.session.roundResults[0].actionOrder.committedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  const blockedDifferentCommit = commitTravelV2RoundActionOrderRoundState(committed.session, 0, { proposedOrder: ["navigator", "engineer", "watchmaster"], timestamp: "2026-07-17T10:03:00.000Z" });
+  assert.equal(blockedDifferentCommit.ok, false);
+  assert.match(blockedDifferentCommit.reason, /explicitly unlocked/);
+  assert.deepEqual(blockedDifferentCommit.session.roundResults[0].actionOrder.committedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  assert.equal(blockedDifferentCommit.session.roundResults[0].actionOrder.committedAt, COMMIT_AT);
+  assert.equal(blockedDifferentCommit.session.roundResults[0].actionOrder.unlockedAt, null);
+  assert.equal(blockedDifferentCommit.session.roundResults[0].actionOrder.unlockedByUserId, null);
+  assert.equal(blockedDifferentCommit.session.roundResults[0].actionOrder.unlockedByUserName, null);
   const blockedReplacement = replaceTravelV2RoundActionOrderProposal(committed.session, 0, ["navigator", "engineer", "watchmaster"]);
   assert.equal(blockedReplacement.ok, false);
   assert.match(blockedReplacement.reason, /explicitly unlocked/);
@@ -132,7 +146,7 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.equal(blockedReplacement.session.roundResults[0].actionOrder.unlockedAt, null);
   assert.equal(blockedReplacement.session.roundResults[0].actionOrder.unlockedByUserId, null);
   assert.equal(blockedReplacement.session.roundResults[0].actionOrder.unlockedByUserName, null);
-  checked.push("replacement while committed is blocked until explicit unlock");
+  checked.push("commit and replacement while committed require explicit unlock unless duplicate");
 
   const unlocked = unlockTravelV2RoundActionOrderRoundState(committed.session, 0, { timestamp: UNLOCK_AT, user: { id: "u2", name: "GM Two", isGM: true } });
   const unlockedState = unlocked.session.roundResults[0].actionOrder;
@@ -165,16 +179,49 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.deepEqual(repaired.committedStationKeys, []);
   checked.push("next-round suggestion repair preserves relative order and appends new stations");
 
-  const legacy = session({ travelV2RoundActionOrder: { rounds: { "0": { order: ["navigator", "engineer", "watchmaster"], committedAt: COMMIT_AT, userId: "legacy-u", userName: "Legacy GM", isGM: true } }, commitRecords: [{ id: "c1" }], unlockRecords: [{ id: "u1" }] } });
+  const legacyCommitRecord = { id: "c1", type: "roundActionOrderCommit", roundIndex: 0, roundNumber: 1, committedOrder: ["navigator", "engineer", "watchmaster"], timestamp: COMMIT_AT, userId: "legacy-u", userName: "Legacy GM", isGM: true };
+  const legacy = session({ travelV2RoundActionOrder: { rounds: { "0": { order: ["navigator", "engineer", "watchmaster"], committedAt: COMMIT_AT, userId: "legacy-u", userName: "Legacy GM", isGM: true } }, commitRecords: [legacyCommitRecord], unlockRecords: [{ id: "u1" }] } });
   const migrated = normalizeTravelEventRunnerSession(legacy).session;
   const migratedAgain = normalizeTravelEventRunnerSession(migrated).session;
   assert.equal(migrated.roundResults[0].actionOrder.status, "committed");
   assert.deepEqual(migrated.roundResults[0].actionOrder.committedStationKeys, ["navigator", "engineer", "watchmaster"]);
   assert.equal(migrated.roundResults[0].actionOrder.orderSource, "legacyCommitted");
   assert.deepEqual(migrated.roundResults[0].actionOrder, migratedAgain.roundResults[0].actionOrder);
-  assert.deepEqual(migrated.travelV2RoundActionOrder.commitRecords, [{ id: "c1" }]);
+  assert.deepEqual(migrated.travelV2RoundActionOrder.commitRecords, [legacyCommitRecord]);
   assert.deepEqual(migrated.travelV2RoundActionOrder.unlockRecords, [{ id: "u1" }]);
-  checked.push("legacy migration idempotence and audit preservation");
+
+  const legacyUnlockRecord = { id: "u2", type: "roundActionOrderUnlock", roundIndex: 0, roundNumber: 1, previousOrder: ["navigator", "engineer", "watchmaster"], timestamp: UNLOCK_AT, userId: "unlock-u", userName: "Unlock GM", isGM: true };
+  const rawLegacyUnlocked = session({ travelV2RoundActionOrder: { rounds: {}, commitRecords: [legacyCommitRecord], unlockRecords: [legacyUnlockRecord] } });
+  const migratedUnlocked = normalizeTravelEventRunnerSession(rawLegacyUnlocked).session;
+  const migratedUnlockedState = migratedUnlocked.roundResults[0].actionOrder;
+  assert.equal(migratedUnlockedState.status, "unlocked");
+  assert.deepEqual(migratedUnlockedState.proposedStationKeys, ["navigator", "engineer", "watchmaster"]);
+  assert.deepEqual(migratedUnlockedState.committedStationKeys, ["navigator", "engineer", "watchmaster"]);
+  assert.deepEqual(migratedUnlockedState.historicalCommittedStationKeys, ["navigator", "engineer", "watchmaster"]);
+  assert.equal(migratedUnlockedState.committedAt, COMMIT_AT);
+  assert.equal(migratedUnlockedState.committedByUserId, "legacy-u");
+  assert.equal(migratedUnlockedState.committedByUserName, "Legacy GM");
+  assert.equal(migratedUnlockedState.unlockedAt, UNLOCK_AT);
+  assert.equal(migratedUnlockedState.unlockedByUserId, "unlock-u");
+  assert.equal(migratedUnlockedState.unlockedByUserName, "Unlock GM");
+  assert.equal(migratedUnlockedState.unlockedByIsGM, true);
+  assert.equal(migratedUnlockedState.orderSource, "legacyCommitted");
+
+  const fabricatedUnlockOnly = normalizeTravelEventRunnerSession(session({ travelV2RoundActionOrder: { rounds: {}, commitRecords: [], unlockRecords: [legacyUnlockRecord] } })).session;
+  assert.notEqual(fabricatedUnlockOnly.roundResults[0].actionOrder.status, "unlocked");
+  assert.deepEqual(fabricatedUnlockOnly.roundResults[0].actionOrder.committedStationKeys, []);
+
+  const laterCommit = { ...legacyCommitRecord, id: "c2", committedOrder: ["engineer", "watchmaster", "navigator"], timestamp: "2026-07-17T10:06:00.000Z", userId: "recommit-u", userName: "Recommit GM" };
+  const migratedRecommitted = normalizeTravelEventRunnerSession(session({ travelV2RoundActionOrder: { rounds: {}, commitRecords: [legacyCommitRecord, laterCommit], unlockRecords: [legacyUnlockRecord] } })).session;
+  assert.equal(migratedRecommitted.roundResults[0].actionOrder.status, "committed");
+  assert.deepEqual(migratedRecommitted.roundResults[0].actionOrder.committedStationKeys, ["engineer", "watchmaster", "navigator"]);
+  assert.equal(migratedRecommitted.roundResults[0].actionOrder.committedByUserId, "recommit-u");
+
+  const duplicateLegacyCommit = commitTravelV2RoundActionOrderToSession(legacy, ["navigator", "engineer", "watchmaster"], { commitRequested: true, user: { isGM: true } });
+  assert.equal(duplicateLegacyCommit.duplicate, true);
+  assert.equal(duplicateLegacyCommit.session.roundResults[0].actionOrder.status, "committed");
+  assert.deepEqual(duplicateLegacyCommit.session.travelV2RoundActionOrder.commitRecords, [legacyCommitRecord]);
+  checked.push("legacy committed unlocked fabricated and recommitted migration is deterministic and idempotent");
 
   const authoredSecretSession = commitTravelV2RoundActionOrderRoundState(normalizeTravelEventRunnerSession(session({ event: { rounds: [{ roundNumber: 1, activeStations: ["navigator", "engineer", "watchmaster"], stationActionOrder: ["navigator", "engineer", "watchmaster"], openingVignette: "The crew follows a secret star." }] } })).session, 0, { timestamp: COMMIT_AT, user: { id: "secret-user-id", name: "Secret Keeper", isGM: true } }).session;
   const nonGmState = prepareTravelEventRunnerState(authoredSecretSession, { user: { isGM: false } });
