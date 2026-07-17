@@ -136,7 +136,7 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 ### TV2-003 — Player-Chosen Round Action Order UX Polish
 
-**Status:** foundation-complete / polish remaining  
+**Status:** code-complete / Foundry table verification pending
 **Scope:** Alpha blocker
 
 **Goal:** Make the already-smoke-covered round action order path table-ready.
@@ -145,19 +145,13 @@ Post-alpha items should not delay the two-event alpha loop unless a specific alp
 
 **Remaining work:**
 
-- Slice 03 — Drag/Reorder Interaction.
-- Final Foundry table UX verification and TV2-003 closeout.
+- Run the manual Foundry verification checklist in `docs/TRAVEL_V2_TV2_003_FOUNDRY_VERIFICATION.md`.
+- Fix or separately track any discovered blockers.
+- Update TV2-003 to complete after a recorded passing table verification.
 
 **Do not rebuild:** State, commit, persistence bridge, library status, startup hardening, and session-switch isolation are already covered.
 
-**Status guidance slice note:** This PR adds a player-safe Round Action Order decision projection that clearly labels Proposed Order, Committed Order, and Needs Decision states, displays Captain final-say guidance before commitment, and keeps a clear GM Ready to Commit message for valid review candidates. It does not add drag-and-drop yet, does not add an unlock/recommit flow yet, and does not rebuild state preparation, commit, persistence, startup, session-switch, or library foundations.
-
-**Slice 02 — GM Unlock and Recommit Flow:** Explicit GM-only current-round unlock now reopens a valid committed order before any station result is recorded. The slice preserves commit history, appends unlock audits, restores Proposed Order or Needs Decision canonical state, restores Captain guidance while open, uses the existing commit helper for recommit, supports explicit save/reload behavior for a genuinely open unlocked lifecycle, now closes reconsideration once station resolution begins, blocks recommit after station results, blocks stale unlocked-state persistence after results, and still adds no drag-and-drop yet.
-
-**Remaining polish after Slice 02:**
-
-- Slice 03 — Drag/Reorder Interaction.
-- Final Foundry table UX verification and TV2-003 closeout.
+**Completion summary:** TV2-003 production code now includes player-safe status guidance for Needs Decision, Proposed Order, and Committed Order states; explicit GM unlock/recommit; keyboard candidate movement; target-index movement; midpoint drop-target geometry; drag runtime; drag UI; handle-only hardening; explicit commit, persistence, and reload handling; player-safe redaction; and the automated table-acceptance harness. Manual Foundry v14 browser/table verification remains pending and must be recorded before this tracker item is marked complete.
 
 ### TV2-004 — Risk Bids / Difficulty Bids
 

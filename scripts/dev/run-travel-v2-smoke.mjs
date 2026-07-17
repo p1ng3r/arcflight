@@ -79,6 +79,7 @@ import runTravelEventRunnerV2RoundActionOrderCommitSmokeChecks from "../apps/tra
 import runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-unlock-recommit.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-persistence.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-closeout.smoke.js";
+import runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-table-acceptance.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-startup.smoke.js";
 import runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks from "../apps/travel-event-runner-v2-round-action-order-keyboard-reorder.smoke.js";
 import runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks from "../apps/travel-event-runner-v2-session-switch-order-state.smoke.js";
@@ -200,6 +201,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel event runner v2 round action order unlock recommit", runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel event runner v2 round action order persistence", runTravelEventRunnerV2RoundActionOrderPersistenceSmokeChecks],
   ["Travel event runner v2 round action order closeout", runTravelEventRunnerV2RoundActionOrderCloseoutSmokeChecks],
+  ["Travel event runner v2 round action order table acceptance", runTravelEventRunnerV2RoundActionOrderTableAcceptanceSmokeChecks],
   ["Travel event runner v2 round action order startup hardening", runTravelEventRunnerV2RoundActionOrderStartupSmokeChecks],
   ["Travel event runner v2 round action order keyboard reorder", runTravelEventRunnerV2RoundActionOrderKeyboardReorderSmokeChecks],
   ["Travel event runner v2 session switch order state isolation", runTravelEventRunnerV2SessionSwitchOrderStateSmokeChecks],
