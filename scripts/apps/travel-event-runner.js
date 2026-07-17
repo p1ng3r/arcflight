@@ -2,6 +2,7 @@ import { getCoreTravelEvent, getCoreTravelEventKeys } from "../../data/travel-ev
 import { arcflightTemplatePath } from "../sheets/sheet-helpers.js";
 import { openTravelSceneOverlay, updateActiveTravelSceneOverlayContext } from "./travel-scene-overlay.js";
 import { prepareTravelEventRunnerAppStateWithTravelV2Preview } from "./travel-event-runner-v2-preview-consumer.js";
+import { createTravelV2RoundActionOrderDragRuntime } from "./travel-event-runner-v2-round-action-order-drag-runtime.js";
 import { integerOrNull, prepareTravelV2InterStationHelpQueueRunnerUpdate } from "../helpers/travel-v2-inter-station-help-create-review.js";
 import { prepareTravelV2StationBenefitUseRunnerUpdate } from "../helpers/travel-v2-station-benefit-use-review.js";
 import { applyTravelV2InterStationHelpApplicationToSession } from "../helpers/travel-v2-inter-station-help-application.js";
@@ -494,6 +495,7 @@ export function prepareTravelV2RiskBidClearRunnerUpdate(currentSession, riskBids
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
   #boundRunnerChange = this.#onRunnerChange.bind(this);
+  #roundActionOrderDragRuntime = createTravelV2RoundActionOrderDragRuntime(this);
   #pendingScrollState = null;
 
   constructor(options = {}) {
@@ -668,6 +670,14 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
     this.element?.addEventListener("click", this.#boundRunnerClick);
     this.element?.removeEventListener("change", this.#boundRunnerChange);
     this.element?.addEventListener("change", this.#boundRunnerChange);
+    this.element?.removeEventListener("dragstart", this.#roundActionOrderDragRuntime.onDragStart);
+    this.element?.addEventListener("dragstart", this.#roundActionOrderDragRuntime.onDragStart);
+    this.element?.removeEventListener("dragover", this.#roundActionOrderDragRuntime.onDragOver);
+    this.element?.addEventListener("dragover", this.#roundActionOrderDragRuntime.onDragOver);
+    this.element?.removeEventListener("drop", this.#roundActionOrderDragRuntime.onDrop);
+    this.element?.addEventListener("drop", this.#roundActionOrderDragRuntime.onDrop);
+    this.element?.removeEventListener("dragend", this.#roundActionOrderDragRuntime.onDragEnd);
+    this.element?.addEventListener("dragend", this.#roundActionOrderDragRuntime.onDragEnd);
     // Keep any open overlay in sync after the runner has rendered, avoiding render side effects during _prepareContext.
     updateActiveTravelSceneOverlayContext({ session: this.session, actor: this.#getSelectedShipActor() }, { render: true });
     this.#applyCompactPosition();
