@@ -2,6 +2,7 @@ import runTravelV2StateSmokeChecks from "../helpers/travel-v2-state.smoke.js";
 import runTravelV2PressureEngineSmokeChecks from "../helpers/travel-v2-pressure-engine.smoke.js";
 import runTravelV2RoundPressureAdapterSmokeChecks from "../helpers/travel-v2-round-pressure-adapter.smoke.js";
 import runTravelV2RoundActionOrderStateSmokeChecks from "../helpers/travel-v2-round-action-order-state.smoke.js";
+import runTravelV2CrewPlanningPhaseSmokeChecks from "../helpers/travel-v2-crew-planning-phase.smoke.js";
 import runTravelV2RoundActionOrderRoundStateSmokeChecks from "../helpers/travel-v2-round-action-order-round-state.smoke.js";
 import runTravelV2RoundActionOrderUnlockRecommitSmokeChecks from "../helpers/travel-v2-round-action-order-unlock-recommit.smoke.js";
 import runTravelV2RoundActionOrderStatusGuidanceSmokeChecks from "../helpers/travel-v2-round-action-order-status-guidance.smoke.js";
@@ -125,6 +126,7 @@ const SMOKE_SUITES = Object.freeze([
   ["Travel v2 pressure engine", runTravelV2PressureEngineSmokeChecks],
   ["Travel v2 round pressure adapter", runTravelV2RoundPressureAdapterSmokeChecks],
   ["Travel v2 round action order state", runTravelV2RoundActionOrderStateSmokeChecks],
+  ["Travel v2 crew planning phase", runTravelV2CrewPlanningPhaseSmokeChecks],
   ["Travel v2 round action order round state", runTravelV2RoundActionOrderRoundStateSmokeChecks],
   ["Travel v2 round action order unlock recommit", runTravelV2RoundActionOrderUnlockRecommitSmokeChecks],
   ["Travel v2 round action order status guidance", runTravelV2RoundActionOrderStatusGuidanceSmokeChecks],
