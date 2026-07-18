@@ -6,6 +6,7 @@ import { loadTravelEventRunnerSessionFromLibrary, persistUnlockedTravelV2RoundAc
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel event runner v2 round action order unlock/recommit smoke check failed: ${message}`); }
 function assertEqual(actual, expected, message) { if (actual !== expected) throw new Error(`Travel event runner v2 round action order unlock/recommit smoke check failed: ${message}. Expected ${expected}, got ${actual}.`); }
 const snapshot = (value) => JSON.stringify(value);
+const snapshotRoundResultsWithoutActionOrder = (roundResults = []) => snapshot(roundResults.map(({ actionOrder, ...roundResult }) => roundResult));
 const GM = { isGM: true, id: "gm-1", name: "GM" };
 const PLAYER = { isGM: false, id: "p1", name: "Player" };
 const ORDER = ["engineer", "navigator", "watchmaster"];
@@ -35,12 +36,12 @@ export async function runTravelEventRunnerV2RoundActionOrderUnlockRecommitSmokeC
     assertSmoke(gmState.travelV2PreviewPanel.roundActionOrderDisplay.canPersistCommittedOrder, "committed persistence is ready before unlock");
 
     const app = new ArcflightTravelEventRunner({ session, travelV2RoundActionOrderReorderRequested: true, travelV2ProposedRoundActionOrder: ["navigator", "engineer", "watchmaster"] });
-    const beforeRoundResults = snapshot(app.session.roundResults);
+    const beforeRoundResults = snapshotRoundResultsWithoutActionOrder(app.session.roundResults);
     const rendered = await app.unlockTravelV2RoundActionOrder({ user: GM, isGM: true, timestamp: "2026-07-04T00:01:00.000Z" });
     assertSmoke(rendered.rendered, "successful unlock rerenders");
     assertSmoke(getRenderCalls() > 0, "app render was called");
     assertEqual(app.session.travelV2RoundActionOrder.rounds["0"], undefined, "successful app unlock removes only local canonical current-round record");
-    assertEqual(snapshot(app.session.roundResults), beforeRoundResults, "unlock leaves station results unchanged");
+    assertEqual(snapshotRoundResultsWithoutActionOrder(app.session.roundResults), beforeRoundResults, "unlock leaves station results unchanged");
     assertEqual(app.uiState.travelV2RoundActionOrderReorderRequested, false, "unlock clears stale reorder request");
     assertEqual(app.uiState.travelV2ProposedRoundActionOrder.length, 0, "unlock clears stale proposed reorder UI state");
     assertSmoke(info > 0 && warn === 0, "successful unlock notifies without warnings");

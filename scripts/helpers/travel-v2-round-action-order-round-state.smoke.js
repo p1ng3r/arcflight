@@ -8,7 +8,8 @@ import {
   prepareTravelV2NextRoundActionOrder,
   repairTravelV2RoundActionOrderSuggestion,
   replaceTravelV2RoundActionOrderProposal,
-  unlockTravelV2RoundActionOrderRoundState
+  unlockTravelV2RoundActionOrderRoundState,
+  unlockTravelV2RoundActionOrderInSession
 } from "./travel-v2-round-action-order-state.js";
 import { advanceTravelEventRunnerRound, normalizeTravelEventRunnerSession, prepareTravelEventRunnerState } from "./travel-event-runner.js";
 
@@ -223,6 +224,53 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
   assert.deepEqual(duplicateLegacyCommit.session.travelV2RoundActionOrder.commitRecords, [legacyCommitRecord]);
   checked.push("legacy committed unlocked fabricated and recommitted migration is deterministic and idempotent");
 
+  const canonicalOnlyCommitted = commitTravelV2RoundActionOrderRoundState(replaced.session, 0, { timestamp: "2026-07-17T11:00:00.000Z", user: { id: "canonical-u", name: "Canonical GM", isGM: true } }).session;
+  assert.equal(canonicalOnlyCommitted.travelV2RoundActionOrder, undefined);
+  const canonicalOnlyBefore = JSON.stringify(canonicalOnlyCommitted);
+  const blockedWrapperCommit = commitTravelV2RoundActionOrderToSession(canonicalOnlyCommitted, ["navigator", "engineer", "watchmaster"], { commitRequested: true, timestamp: "2026-07-17T11:01:00.000Z", user: { isGM: true } });
+  assert.equal(blockedWrapperCommit.ok, false);
+  assert.equal(blockedWrapperCommit.committed, false);
+  assert.equal(blockedWrapperCommit.blocked, true);
+  assert.equal(blockedWrapperCommit.session.travelV2RoundActionOrder, undefined);
+  assert.deepEqual(blockedWrapperCommit.session.roundResults[0].actionOrder.committedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  assert.equal(blockedWrapperCommit.session.roundResults[0].actionOrder.committedAt, "2026-07-17T11:00:00.000Z");
+  assert.equal(JSON.stringify(canonicalOnlyCommitted), canonicalOnlyBefore);
+
+  const duplicateWrapperCommit = commitTravelV2RoundActionOrderToSession(canonicalOnlyCommitted, ["engineer", "navigator", "watchmaster"], { commitRequested: true, timestamp: "2026-07-17T11:02:00.000Z", user: { isGM: true } });
+  assert.equal(duplicateWrapperCommit.ok, true);
+  assert.equal(duplicateWrapperCommit.duplicate, true);
+  assert.equal(duplicateWrapperCommit.committed, false);
+  assert.equal(duplicateWrapperCommit.session.travelV2RoundActionOrder, undefined);
+  assert.equal(duplicateWrapperCommit.session.roundResults[0].actionOrder.committedAt, "2026-07-17T11:00:00.000Z");
+
+  const canonicalOnlyUnlock = unlockTravelV2RoundActionOrderInSession(canonicalOnlyCommitted, { unlockRequested: true, timestamp: "2026-07-17T11:03:00.000Z", user: { id: "unlock-wrapper-u", name: "Unlock Wrapper GM", isGM: true } });
+  assert.equal(canonicalOnlyUnlock.ok, true);
+  assert.equal(canonicalOnlyUnlock.unlocked, true);
+  assert.equal(canonicalOnlyUnlock.session.travelV2RoundActionOrder.unlockRecords.length, 1);
+  assert.equal(canonicalOnlyUnlock.session.roundResults[0].actionOrder.status, "unlocked");
+  assert.deepEqual(canonicalOnlyUnlock.session.roundResults[0].actionOrder.historicalCommittedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  assert.deepEqual(canonicalOnlyUnlock.session.roundResults[0].actionOrder.proposedStationKeys, ["engineer", "navigator", "watchmaster"]);
+  assert.deepEqual(canonicalOnlyUnlock.session.roundResults[0].actionOrder.committedStationKeys, ["engineer", "navigator", "watchmaster"]);
+
+  const duplicateWrapperUnlock = unlockTravelV2RoundActionOrderInSession(canonicalOnlyUnlock.session, { unlockRequested: true, timestamp: "2026-07-17T11:04:00.000Z", user: { id: "second-unlock-u", name: "Second Unlock GM", isGM: true } });
+  assert.equal(duplicateWrapperUnlock.ok, true);
+  assert.equal(duplicateWrapperUnlock.duplicate, true);
+  assert.equal(duplicateWrapperUnlock.session.travelV2RoundActionOrder.unlockRecords.length, 1);
+  assert.equal(duplicateWrapperUnlock.session.roundResults[0].actionOrder.unlockedAt, "2026-07-17T11:03:00.000Z");
+  assert.equal(duplicateWrapperUnlock.session.roundResults[0].actionOrder.unlockedByUserId, "unlock-wrapper-u");
+
+  const rawLegacyUnlockDuplicate = unlockTravelV2RoundActionOrderInSession(rawLegacyUnlocked, { unlockRequested: true, timestamp: "2026-07-17T11:05:00.000Z", user: { isGM: true } });
+  assert.equal(rawLegacyUnlockDuplicate.ok, true);
+  assert.equal(rawLegacyUnlockDuplicate.duplicate, true);
+  assert.equal(rawLegacyUnlockDuplicate.session.roundResults[0].actionOrder.status, "unlocked");
+  assert.equal(rawLegacyUnlockDuplicate.session.travelV2RoundActionOrder.unlockRecords.length, 1);
+
+  const selectingUnlockBlocked = unlockTravelV2RoundActionOrderInSession(initial, { unlockRequested: true, timestamp: "2026-07-17T11:06:00.000Z", user: { isGM: true } });
+  assert.equal(selectingUnlockBlocked.ok, false);
+  assert.equal(selectingUnlockBlocked.unlocked, false);
+  assert.equal(selectingUnlockBlocked.session.travelV2RoundActionOrder, undefined);
+  checked.push("legacy wrappers honor canonical-only commit unlock duplicate and blocked states");
+
   const authoredSecretSession = commitTravelV2RoundActionOrderRoundState(normalizeTravelEventRunnerSession(session({ event: { rounds: [{ roundNumber: 1, activeStations: ["navigator", "engineer", "watchmaster"], stationActionOrder: ["navigator", "engineer", "watchmaster"], openingVignette: "The crew follows a secret star." }] } })).session, 0, { timestamp: COMMIT_AT, user: { id: "secret-user-id", name: "Secret Keeper", isGM: true } }).session;
   const nonGmState = prepareTravelEventRunnerState(authoredSecretSession, { user: { isGM: false } });
   const safeActionOrder = nonGmState.session.roundResults[0].actionOrder;
@@ -266,6 +314,8 @@ export default async function runTravelV2RoundActionOrderRoundStateSmokeChecks()
     const sentinelUnlock = unlockTravelV2RoundActionOrderRoundState(sentinelCommit.session, 0, { timestamp: UNLOCK_AT });
     prepareTravelV2NextRoundActionOrder(sentinelCommit.session, 0, 1);
     initializeTravelV2RoundActionOrderForRound(sentinelUnlock.session, 0);
+    commitTravelV2RoundActionOrderToSession(sentinelCommit.session, ["engineer", "navigator", "watchmaster"], { commitRequested: true, user: { isGM: true }, timestamp: COMMIT_AT });
+    unlockTravelV2RoundActionOrderInSession(sentinelCommit.session, { unlockRequested: true, user: { isGM: true }, timestamp: UNLOCK_AT });
     assert.deepEqual(sentinels.counters, { socket: 0, worldSetting: 0, actor: 0, item: 0, activeEffect: 0, chat: 0, journal: 0, scene: 0, token: 0, compendium: 0 });
   } finally {
     sentinels.restore();
