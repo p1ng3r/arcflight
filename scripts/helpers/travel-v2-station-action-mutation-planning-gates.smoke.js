@@ -33,16 +33,16 @@ function session() {
       key: "station-action-mutation-gates-event",
       name: "Station Action Mutation Gates",
       baseDC: 20,
-      rounds: [{
-        roundNumber: 1,
-        title: "Round 1",
+      rounds: [1, 2].map((roundNumber) => ({
+        roundNumber,
+        title: `Round ${roundNumber}`,
         activeStations: [...STATIONS],
         stationPrompts: Object.fromEntries(STATIONS.map((stationKey) => [stationKey, { stationName: stationKey }])),
         stationCards: STATIONS.map((stationKey) => ({ stationKey, skillApproaches: [{ skill: "perception", label: "Read the Line", helpText: "Observe." }] })),
         stationActionOrder: [...STATIONS]
-      }]
+      }))
     },
-    roundResults: [{ roundIndex: 0, roundNumber: 1, stationResults: Object.fromEntries(STATIONS.map((key) => [key, null])), stationActions: {}, stationOrderCommitments: {} }],
+    roundResults: [1, 2].map((roundNumber, roundIndex) => ({ roundIndex, roundNumber, stationResults: Object.fromEntries(STATIONS.map((key) => [key, null])), stationActions: {}, stationOrderCommitments: {} })),
     updatedAt: NOW,
     startedAt: NOW,
     completedAt: "",
@@ -112,6 +112,58 @@ export default function runTravelV2StationActionMutationPlanningGatesSmokeChecks
   const action = setTravelEventRunnerStationAction(valid, 0, "captain", ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, { now: NOW }); assert.equal(action.ok, true); assert.equal(action.session.roundResults[0].stationActions.captain.type, ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH);
   const skill = setTravelEventRunnerStationSkillApproach(valid, 0, "captain", "perception", { now: NOW }); assert.equal(skill.ok, true); assert.equal(skill.session.roundResults[0].selectedStationSkills.captain, "perception");
   checked.push("valid committed planning permits existing Station Action mutations");
+
+  const wrongRoundOperations = Object.freeze({
+    action: (s, roundIndex) => setTravelEventRunnerStationAction(s, roundIndex, "captain", ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, { now: NOW }),
+    skill: (s, roundIndex) => setTravelEventRunnerStationSkillApproach(s, roundIndex, "captain", "perception", { now: NOW }),
+    commit: (s, roundIndex) => commitTravelEventRunnerStationOrder(s, roundIndex, "captain", "eventApproach:perception", { now: NOW, user: GM }),
+    submission: (s, roundIndex) => prepareTravelV2StationActionSubmissionRunnerUpdate(s, { stationKey: "captain", optionKey: "eventApproach:perception", roundIndex, user: GM, now: NOW })
+  });
+  for (const [name, operation] of Object.entries(wrongRoundOperations)) {
+    const source = committed();
+    delete source.roundResults[1].stationActions;
+    delete source.roundResults[1].stationOrderCommitments;
+    delete source.roundResults[1].selectedStationSkills;
+    delete source.roundResults[1].selectedStationOptionLabels;
+    const before = snap(source);
+    const result = operation(source, 1);
+    assert.equal(blocked(result), true, `${name} must block Round 1`);
+    assert.equal(reason(result), "wrong-station-action-round", name);
+    assert.equal(snap(source), before, `${name} mutated a round`);
+    if (name === "submission") {
+      assert.equal(result.nextSession, source, name);
+      assert.equal(result.shouldUpdateSession, false, name);
+      assert.equal(result.shouldRerender, false, name);
+    } else {
+      assert.equal(resultSession(result), null, name);
+    }
+    assert.equal(Object.hasOwn(source.roundResults[1], "stationActions"), false, name);
+    assert.equal(Object.hasOwn(source.roundResults[1], "stationOrderCommitments"), false, name);
+    assert.equal(Object.hasOwn(source.roundResults[1], "selectedStationSkills"), false, name);
+    assert.equal(Object.hasOwn(source.roundResults[1], "selectedStationOptionLabels"), false, name);
+    assert.equal(Object.isFrozen(result?.planningGate ?? result?.result?.planningGate), true, name);
+    assertSafe(result?.result ?? result);
+  }
+  checked.push("committed Round 0 cannot authorize action, skill, commit, or submission mutations for Round 1");
+
+  for (const roundIndex of ["0", "1", 0.5, -1, 99, undefined]) {
+    const source = committed();
+    const before = snap(source);
+    const result = wrongRoundOperations.action(source, roundIndex);
+    assert.equal(blocked(result), true, String(roundIndex));
+    assert.equal(reason(result), "wrong-station-action-round", String(roundIndex));
+    assert.equal(resultSession(result), null, String(roundIndex));
+    assert.equal(snap(source), before, String(roundIndex));
+    assert.equal(Object.isFrozen(result.planningGate), true, String(roundIndex));
+    assertSafe(result);
+  }
+  checked.push("numeric-string, fractional, negative, out-of-range, and missing direct round indexes block without mutation");
+
+  const wrapperSource = committed();
+  const wrapperResult = prepareTravelV2StationActionSubmissionRunnerUpdate(wrapperSource, { stationKey: "captain", optionKey: "eventApproach:perception", user: GM, now: NOW });
+  assert.equal(wrapperResult.result.ok, true);
+  assert.equal(wrapperResult.nextSession.roundResults[0].stationActions.captain.type, ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH);
+  checked.push("submission wrapper uses the canonical current round when roundIndex is omitted");
 
   assertSafe(operations.actionSelection(session())?.result ?? operations.actionSelection(session()));
   checked.push("blocked results remain player-safe");

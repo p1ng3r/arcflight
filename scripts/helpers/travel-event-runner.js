@@ -3530,15 +3530,16 @@ export function prepareTravelV2StationActionSubmissionRunnerUpdate(currentSessio
   const optionKey = typeof options.optionKey === "string" ? options.optionKey.trim() : "";
   if (!stationKey) return stationActionSubmissionBlocked("Station action submission requires a station key.", currentSession, options);
   if (!optionKey) return stationActionSubmissionBlocked("Station action submission requires an action option.", currentSession, options);
-  const planningGate = checkStationActionPlanningGateForMutation(currentSession, stationKey);
+  const requestedRoundIndex = Object.hasOwn(options, "roundIndex") ? options.roundIndex : currentSession?.currentRoundIndex;
+  const planningGate = checkStationActionPlanningGateForMutation(currentSession, stationKey, { requestedRoundIndex });
   if (planningGate.blocked) {
-    return { result: stationActionPlanningGateBlockedResult(planningGate).ok === false ? stationActionPlanningGateBlockedResult(planningGate) : null, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+    return { result: stationActionPlanningGateBlockedResult(planningGate), nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   }
   const normalized = normalizeTravelEventRunnerSession(currentSession, options);
   if (!normalized.ok || !normalized.session) return stationActionSubmissionBlocked(normalized.errors?.[0] ?? "Travel Event Runner session is invalid.", currentSession, options);
   if (normalized.session.status === "completed") return stationActionSubmissionBlocked("Completed Travel Event Runner sessions cannot change station actions.", currentSession, options);
 
-  const roundIndex = Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : normalized.session.currentRoundIndex;
+  const roundIndex = planningGate.roundIndex;
   const round = normalized.session.event?.rounds?.[roundIndex] ?? null;
   const roundResult = normalized.session.roundResults?.[roundIndex] ?? null;
   if (!round || !roundResult) return stationActionSubmissionBlocked(`Travel runner round ${roundIndex} does not exist.`, currentSession, options);
@@ -4646,17 +4647,16 @@ function stationActionPlanningGateBlockedResult(gate, message = "Station action 
   };
 }
 
-function checkStationActionPlanningGateForMutation(session, stationKey) {
-  return prepareTravelV2StationActionPlanningGate(session, stationKey);
+function checkStationActionPlanningGateForMutation(session, stationKey, options = {}) {
+  return prepareTravelV2StationActionPlanningGate(session, stationKey, options);
 }
 
 export function setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill, options = {}) {
-  const gate = checkStationActionPlanningGateForMutation(session, stationKey);
+  const gate = checkStationActionPlanningGateForMutation(session, stationKey, { requestedRoundIndex: roundIndex });
   if (gate.blocked) return stationActionPlanningGateBlockedResult(gate);
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
-  const index = Number(roundIndex);
-  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const index = gate.roundIndex;
   const round = normalized.session.event.rounds[index];
   if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   const prompt = round.stationPrompts[stationKey] ?? { stationKey };
@@ -4676,12 +4676,11 @@ export function setTravelEventRunnerStationSkillApproach(session, roundIndex, st
 }
 
 export function setTravelEventRunnerStationAction(session, roundIndex, stationKey, actionType, options = {}) {
-  const gate = checkStationActionPlanningGateForMutation(session, stationKey);
+  const gate = checkStationActionPlanningGateForMutation(session, stationKey, { requestedRoundIndex: roundIndex });
   if (gate.blocked) return stationActionPlanningGateBlockedResult(gate);
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
-  const index = Number(roundIndex);
-  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const index = gate.roundIndex;
   const round = normalized.session.event.rounds[index];
   if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   if (![ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT].includes(actionType)) {
@@ -4749,11 +4748,11 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
 }
 
 export function commitTravelEventRunnerStationOrder(session, roundIndex, stationKey, optionKey, options = {}) {
-  const gate = checkStationActionPlanningGateForMutation(session, stationKey);
+  const gate = checkStationActionPlanningGateForMutation(session, stationKey, { requestedRoundIndex: roundIndex });
   if (gate.blocked) return stationActionPlanningGateBlockedResult(gate);
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
-  const index = Number(roundIndex);
+  const index = gate.roundIndex;
   const round = normalized.session.event.rounds[index];
   const roundResult = normalized.session.roundResults[index];
   if (!round || !roundResult) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };

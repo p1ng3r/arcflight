@@ -6,6 +6,7 @@ const REASON_CODES = Object.freeze({
   MISSING_ROUND: "missing-round",
   MISSING_PLANNING_STATE: "missing-planning-state",
   STALE_PLANNING_ROUND: "stale-planning-round",
+  WRONG_STATION_ACTION_ROUND: "wrong-station-action-round",
   INVALID_STATION_ACTION_PHASE: "invalid-station-action-phase",
   PLANNING_NOT_COMMITTED: "planning-not-committed",
   INVALID_ACTIVE_STATIONS: "invalid-active-stations",
@@ -49,6 +50,18 @@ function currentRoundContext(session = {}) {
   return { roundIndex: round && roundNumber !== null ? roundIndex : -1, round: roundNumber !== null ? round : null, roundNumber, roundResult: roundNumber !== null ? roundResult : null, activeStationKeys: roundNumber !== null ? activeStationKeys : [] };
 }
 
+function requestedRoundIsAuthorized(session = {}, context = {}, options = {}) {
+  if (!isPlainObject(options) || !Object.hasOwn(options, "requestedRoundIndex")) return true;
+  const requestedRoundIndex = options.requestedRoundIndex;
+  const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
+  const roundResults = Array.isArray(session?.roundResults) ? session.roundResults : [];
+  return Number.isInteger(requestedRoundIndex)
+    && requestedRoundIndex >= 0
+    && requestedRoundIndex < rounds.length
+    && requestedRoundIndex < roundResults.length
+    && requestedRoundIndex === context.roundIndex;
+}
+
 function blockedResult(reasonCode, context = {}) {
   return deepFreeze({
     allowed: false,
@@ -82,12 +95,15 @@ function playerSafeCommittedStationKeys(committedStationKeys = [], activeStation
  * session.roundResults[roundIndex].actionOrder. It never initializes, normalizes,
  * repairs, migrates, or writes planning state.
  */
-export function prepareTravelV2StationActionPlanningGate(session = null, stationKey = "") {
+export function prepareTravelV2StationActionPlanningGate(session = null, stationKey = "", options = {}) {
   const requestedStationKey = typeof stationKey === "string" ? stationKey.trim() : "";
   if (!isPlainObject(session)) return blockedResult(REASON_CODES.MISSING_SESSION, { stationKey: requestedStationKey });
 
   const context = currentRoundContext(session);
   if (!context.round) return blockedResult(REASON_CODES.MISSING_ROUND, { ...context, stationKey: requestedStationKey });
+  if (!requestedRoundIsAuthorized(session, context, options)) {
+    return blockedResult(REASON_CODES.WRONG_STATION_ACTION_ROUND, { ...context, stationKey: requestedStationKey });
+  }
 
   const phaseContext = currentPhaseContext(session);
   if (phaseContext.phase !== ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS) {
