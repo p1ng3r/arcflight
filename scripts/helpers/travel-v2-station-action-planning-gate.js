@@ -1,3 +1,4 @@
+import { ARCFLIGHT_TRAVEL_ROUND_SEGMENTS, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 import { normalizeTravelV2ProposedRoundActionOrder } from "./travel-v2-round-action-order-state.js";
 
 const REASON_CODES = Object.freeze({
@@ -5,6 +6,7 @@ const REASON_CODES = Object.freeze({
   MISSING_ROUND: "missing-round",
   MISSING_PLANNING_STATE: "missing-planning-state",
   STALE_PLANNING_ROUND: "stale-planning-round",
+  INVALID_STATION_ACTION_PHASE: "invalid-station-action-phase",
   PLANNING_NOT_COMMITTED: "planning-not-committed",
   INVALID_ACTIVE_STATIONS: "invalid-active-stations",
   INVALID_COMMITTED_ORDER: "invalid-committed-order",
@@ -26,6 +28,10 @@ function deepFreeze(value) {
 
 function positiveIntegerValueOrNull(value) {
   return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function currentPhaseContext(session = {}) {
+  return { phase: prepareTravelRoundSegmentState(session).phase };
 }
 
 function currentRoundContext(session = {}) {
@@ -82,6 +88,11 @@ export function prepareTravelV2StationActionPlanningGate(session = null, station
 
   const context = currentRoundContext(session);
   if (!context.round) return blockedResult(REASON_CODES.MISSING_ROUND, { ...context, stationKey: requestedStationKey });
+
+  const phaseContext = currentPhaseContext(session);
+  if (phaseContext.phase !== ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS) {
+    return blockedResult(REASON_CODES.INVALID_STATION_ACTION_PHASE, { ...context, stationKey: requestedStationKey });
+  }
 
   const uniqueActive = Array.from(new Set(context.activeStationKeys));
   const activeValidation = normalizeTravelV2ProposedRoundActionOrder(uniqueActive, uniqueActive);

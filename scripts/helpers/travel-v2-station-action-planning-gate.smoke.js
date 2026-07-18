@@ -5,7 +5,7 @@ import { prepareTravelV2StationActionPlanningGate, TRAVEL_V2_STATION_ACTION_PLAN
 
 const NOW = "2026-07-18T00:00:00.000Z";
 const STATIONS = Object.freeze(["captain", "navigator", "engineer"]);
-const EXPECTED_CHECKED_COUNT = 13;
+const EXPECTED_CHECKED_COUNT = 14;
 const FORBIDDEN_KEYS = Object.freeze([
   "auditRecord",
   "commitRecords",
@@ -126,6 +126,28 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
     assert.equal(gate.allowed, false);
     assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.PLANNING_NOT_COMMITTED);
   });
+  group("station action planning requires the stationOrders phase", () => {
+    for (const phase of ["crewPlanning", "stationRolls", "reactionWindow", "outcomePressure", null, { malformed: true }, "unknownPhase"]) {
+      const source = committedSession();
+      source.roundPhase = phase;
+      const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+      assert.equal(gate.allowed, false, String(phase));
+      assert.equal(gate.blocked, true, String(phase));
+      assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.INVALID_STATION_ACTION_PHASE, String(phase));
+      assert.equal(gate.playerSafe, true);
+      assert.equal(gate.readOnly, true);
+      assert(Object.isFrozen(gate));
+      assertPlayerSafe(gate);
+    }
+
+    const missingPhase = committedSession();
+    delete missingPhase.roundPhase;
+    const missingGate = assertUnchanged(missingPhase, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(missingGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.INVALID_STATION_ACTION_PHASE);
+    assert(Object.isFrozen(missingGate));
+    assertPlayerSafe(missingGate);
+  });
+
 
   group("stale-round planning is rejected", () => {
     const source = withCurrentActionOrderPatch(committedSession(), { roundIndex: 1, roundNumber: 2 });
