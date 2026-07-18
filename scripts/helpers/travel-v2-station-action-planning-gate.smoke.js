@@ -185,6 +185,51 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
     assertPlayerSafe(blocked);
   });
 
+
+  group("invalid currentRoundIndex cases block without falling back and preserve inputs", () => {
+    const fallbackWouldAllow = clone(committedSession());
+    fallbackWouldAllow.roundResults[1].actionOrder = {
+      ...clone(fallbackWouldAllow.roundResults[0].actionOrder),
+      roundIndex: 1,
+      roundNumber: 2
+    };
+    for (const currentRoundIndex of [-1, 999, null, 0.5, "0"]) {
+      const source = clone(fallbackWouldAllow);
+      if (currentRoundIndex === undefined) delete source.currentRoundIndex;
+      else source.currentRoundIndex = currentRoundIndex;
+      const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+      assert.equal(gate.allowed, false, `blocked ${String(currentRoundIndex)}`);
+      assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.MISSING_ROUND);
+      assert.equal(gate.roundIndex, -1);
+      assert.deepEqual(gate.activeStationKeys, []);
+      assert.deepEqual(gate.committedStationKeys, []);
+    }
+
+    const missingSource = clone(fallbackWouldAllow);
+    delete missingSource.currentRoundIndex;
+    const missingGate = assertUnchanged(missingSource, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(missingGate.allowed, false);
+    assert.equal(missingGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.MISSING_ROUND);
+    assert.equal(missingGate.roundIndex, -1);
+
+    const nonObjectRoundSource = clone(fallbackWouldAllow);
+    nonObjectRoundSource.event.rounds[0] = null;
+    const nonObjectRoundGate = assertUnchanged(nonObjectRoundSource, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(nonObjectRoundGate.allowed, false);
+    assert.equal(nonObjectRoundGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.MISSING_ROUND);
+    assert.equal(nonObjectRoundGate.roundIndex, -1);
+  });
+
+  group("invalid committed order redacts unknown station identifiers", () => {
+    const source = withCurrentActionOrderPatch(committedSession(), { committedStationKeys: ["captain", "PRIVATE-HIDDEN-STATION", "engineer"] });
+    const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "captain"));
+    assert.equal(gate.allowed, false);
+    assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.INVALID_COMMITTED_ORDER);
+    assert(!JSON.stringify(gate).includes("PRIVATE-HIDDEN-STATION"));
+    assert.deepEqual(gate.committedStationKeys, ["captain", "engineer"]);
+    assertPlayerSafe(gate);
+  });
+
   group("rejection results contain no hidden or GM-only fields", () => {
     const source = withCurrentActionOrderPatch(committedSession(), {
       status: "unlocked",
