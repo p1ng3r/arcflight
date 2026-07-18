@@ -159,10 +159,10 @@ export default function runTravelV2StationActionMutationPlanningGatesSmokeChecks
   }
   checked.push("numeric-string, fractional, negative, out-of-range, and missing direct round indexes block without mutation");
 
-  const wrapperSource = committed();
-  const wrapperResult = prepareTravelV2StationActionSubmissionRunnerUpdate(wrapperSource, { stationKey: "captain", optionKey: "eventApproach:perception", user: GM, now: NOW });
-  assert.equal(wrapperResult.result.ok, true);
-  assert.equal(wrapperResult.nextSession.roundResults[0].stationActions.captain.type, ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH);
+  const omittedRoundWrapperSource = committed();
+  const omittedRoundWrapperResult = prepareTravelV2StationActionSubmissionRunnerUpdate(omittedRoundWrapperSource, { stationKey: "captain", optionKey: "eventApproach:perception", user: GM, now: NOW });
+  assert.equal(omittedRoundWrapperResult.result.ok, true);
+  assert.equal(omittedRoundWrapperResult.nextSession.roundResults[0].stationActions.captain.type, ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH);
   checked.push("submission wrapper uses the canonical current round when roundIndex is omitted");
 
   assertSafe(operations.actionSelection(session())?.result ?? operations.actionSelection(session()));
