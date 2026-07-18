@@ -123,9 +123,11 @@ function sanitizeRiskBidSelectionRecord(record) {
   };
 }
 
-function currentStationActionId(session, roundIndex, stationKey) {
-  const action = session?.roundResults?.[roundIndex]?.stationActions?.[stationKey];
-  return safeString(action?.actionId ?? action?.actionKey ?? action?.key ?? action?.type ?? action?.action);
+function canonicalRiskBidAction(session, roundIndex, stationKey) {
+  const source = session?.roundResults?.[roundIndex]?.travelV2RiskBidActions?.[stationKey];
+  const actionId = safeString(source?.actionId);
+  const riskBids = Array.isArray(source?.riskBids) ? source.riskBids : [];
+  return { actionId, tiers: new Set(riskBids.map((bid) => normalizeTravelV2RiskBidTier(bid?.tier)).filter(Boolean)) };
 }
 
 function stationActionIsLocked(session, roundIndex, stationKey) {
@@ -153,8 +155,10 @@ function validateRiskBidMutation(session, selection, requireTier) {
   if (validation.blockedReasons.length > 0) return { validation, blocked: blockedRiskBidResult(null, validation.blockedReasons[0]) };
   const gate = prepareTravelV2StationActionPlanningGate(session, validation.stationKey, { requestedRoundIndex: validation.round.roundIndex });
   if (gate.blocked) return { validation, blocked: blockedRiskBidResult(gate) };
-  const actionId = currentStationActionId(session, gate.roundIndex, validation.stationKey);
-  if (!actionId || actionId !== validation.actionId) return { validation, gate, blocked: blockedRiskBidResult(gate, "incompatible-station-action") };
+  if ((validation.round.roundIndex !== null && validation.round.roundIndex !== gate.roundIndex) || (validation.round.roundNumber !== null && validation.round.roundNumber !== gate.roundNumber)) return { validation, gate, blocked: blockedRiskBidResult(gate, "wrong-station-action-round") };
+  const action = canonicalRiskBidAction(session, gate.roundIndex, validation.stationKey);
+  if (!action.actionId || action.actionId !== validation.actionId) return { validation, gate, blocked: blockedRiskBidResult(gate, "incompatible-station-action") };
+  if (requireTier && !action.tiers.has(validation.tier)) return { validation, gate, blocked: blockedRiskBidResult(gate, "risk-bid-tier-not-authored") };
   if (stationActionIsLocked(session, gate.roundIndex, validation.stationKey)) return { validation, gate, blocked: blockedRiskBidResult(gate, "station-action-locked") };
   return { validation, gate, blocked: null };
 }
@@ -184,7 +188,7 @@ export function selectTravelV2RiskBidForRunnerSession(session, selection = {}, o
   const selectedAt = safeString(options?.selectedAt) || (typeof options?.now === "function" ? safeString(options.now()) : safeString(options?.now)) || new Date().toISOString();
   const selectionRecord = {
     version: TRAVEL_V2_RISK_BID_MODEL_VERSION, selected: true,
-    roundIndex: validation.round.roundIndex, roundNumber: validation.round.roundNumber,
+    roundIndex: checked.gate.roundIndex, roundNumber: checked.gate.roundNumber,
     stationKey: validation.stationKey, actionId: validation.actionId, tier: validation.tier,
     dcModifier: validation.tier, selectedAt
   };

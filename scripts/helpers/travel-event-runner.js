@@ -2298,12 +2298,13 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
       stationSummary: isPlainObject(source?.stationSummary) ? cloneData(source.stationSummary) : undefined,
       stationRollResolutions: isPlainObject(source?.stationRollResolutions) ? cloneData(source.stationRollResolutions) : undefined,
       actionOrder: isPlainObject(source?.actionOrder) ? cloneData(source.actionOrder) : undefined,
+      travelV2RiskBidActions: isPlainObject(source?.travelV2RiskBidActions) ? cloneData(source.travelV2RiskBidActions) : undefined,
       travelV2RoundResolution: isPlainObject(source?.travelV2RoundResolution) ? cloneData(source.travelV2RoundResolution) : undefined,
       travelV2RoundResolutionRecord: isPlainObject(source?.travelV2RoundResolutionRecord) ? cloneData(source.travelV2RoundResolutionRecord) : undefined,
       roundResolution: isPlainObject(source?.roundResolution) ? cloneData(source.roundResolution) : undefined,
       roundResolutionRecord: isPlainObject(source?.roundResolutionRecord) ? cloneData(source.roundResolutionRecord) : undefined
     };
-    for (const optionalRoundResultKey of ["stationCheckAppliedBonuses", "stationSummary", "stationRollResolutions", "actionOrder", "travelV2RoundResolution", "travelV2RoundResolutionRecord", "roundResolution", "roundResolutionRecord"]) {
+    for (const optionalRoundResultKey of ["stationCheckAppliedBonuses", "stationSummary", "stationRollResolutions", "actionOrder", "travelV2RiskBidActions", "travelV2RoundResolution", "travelV2RoundResolutionRecord", "roundResolution", "roundResolutionRecord"]) {
       if (normalizedRoundResult[optionalRoundResultKey] === undefined) delete normalizedRoundResult[optionalRoundResultKey];
     }
     return normalizedRoundResult;
@@ -3589,8 +3590,11 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
   const lockedState = lockTravelV2StationAction(source, stationKey, { session: normalized.session });
   if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
-  const selectedRiskBid = nextSession.travelV2RiskBidSelections?.records?.find((record) => record?.stationKey === stationKey && (record?.roundIndex === roundIndex || record?.roundNumber === roundIndex + 1) && record?.actionId === (action.actionId ?? action.actionKey ?? action.key ?? action.type ?? action.action));
-  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true, riskBidLocked: Boolean(selectedRiskBid) };
+  const canonicalRiskBidAction = nextSession.roundResults[roundIndex].travelV2RiskBidActions?.[stationKey];
+  const canonicalActionId = typeof canonicalRiskBidAction?.actionId === "string" ? canonicalRiskBidAction.actionId.trim() : "";
+  const authoredTiers = new Set((Array.isArray(canonicalRiskBidAction?.riskBids) ? canonicalRiskBidAction.riskBids : []).map((bid) => Number(bid?.tier)).filter((tier) => [2, 5, 8].includes(tier)));
+  const selectedRiskBid = nextSession.travelV2RiskBidSelections?.records?.find((record) => record?.selected !== false && record?.stationKey === stationKey && record?.roundIndex === roundIndex && record?.roundNumber === roundIndex + 1 && record?.actionId === canonicalActionId && authoredTiers.has(Number(record?.tier)));
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true, riskBidLocked: Boolean(selectedRiskBid), riskBidActionId: selectedRiskBid ? canonicalActionId : "", riskBidTier: selectedRiskBid ? Number(selectedRiskBid.tier) : null };
   nextSession.updatedAt = nowIso(options);
   return { result: { ok: true, errors: [], warnings: [], stationKey, locked: true, message: `${formatTravelEventRunnerStationName(stationKey)} station action locked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
 }
@@ -3618,7 +3622,7 @@ export function prepareTravelV2StationActionUnlockRunnerUpdate(currentSession, o
   const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true, session: normalized.session });
   if (unlockedState.stations?.[stationKey]?.locked === true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be unlocked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
-  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false, riskBidLocked: false };
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false, riskBidLocked: false, riskBidActionId: "", riskBidTier: null };
   nextSession.updatedAt = nowIso(options);
   return { result: { ok: true, errors: [], warnings: [], stationKey, locked: false, message: `${formatTravelEventRunnerStationName(stationKey)} station action unlocked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
 }
@@ -4633,6 +4637,14 @@ export function applyTravelV2PendingSupportBonusToStationCheck(session, roundInd
   return { ok: true, errors: [], warnings: [], session: nextSession, appliedBonus, appliedBonuses: [appliedBonus] };
 }
 
+function persistTravelV2RiskBidActionIdentity(session, roundIndex, stationKey, context = {}) {
+  const source = context?.travelV2RiskBidContext;
+  if (!isPlainObject(source) || source.stationKey !== stationKey || typeof source.actionId !== "string" || !source.actionId.trim()) return;
+  const riskBids = Array.isArray(source.riskBids) ? source.riskBids.map((bid) => ({ tier: bid?.tier, label: typeof bid?.label === "string" ? bid.label : "", text: typeof bid?.text === "string" ? bid.text : "" })) : [];
+  session.roundResults[roundIndex].travelV2RiskBidActions = isPlainObject(session.roundResults[roundIndex].travelV2RiskBidActions) ? session.roundResults[roundIndex].travelV2RiskBidActions : {};
+  session.roundResults[roundIndex].travelV2RiskBidActions[stationKey] = { actionId: source.actionId.trim(), riskBids };
+}
+
 function clearTravelV2RiskBidSelectionsForStationAction(session, roundIndex, stationKey) {
   const records = session?.travelV2RiskBidSelections?.records;
   if (!Array.isArray(records)) return;
@@ -4719,6 +4731,7 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
   // A bid belongs to the selected action; never carry it into a replacement action.
+  persistTravelV2RiskBidActionIdentity(nextSession, index, stationKey, options);
   clearTravelV2RiskBidSelectionsForStationAction(nextSession, index, stationKey);
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;

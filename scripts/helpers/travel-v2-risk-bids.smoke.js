@@ -97,7 +97,8 @@ export function runTravelV2RiskBidsSmokeChecks() {
       event: { rounds: [{ roundNumber: 1, activeStations: ["navigator"], stationPrompts: {} }] },
       roundResults: [{
         actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] },
-        stationActions: { navigator: { actionKey: "plot-course" } },
+        stationActions: { navigator: { type: "eventApproach" } },
+        travelV2RiskBidActions: { navigator: { actionId: "plot-course", riskBids: [{ tier: 2 }, { tier: 5 }, { tier: 8 }] } },
         stationOrderCommitments: { navigator: { committed: false } }
       }],
       travelV2RiskBidSelections: {
@@ -179,11 +180,13 @@ export function runTravelV2RiskBidsSmokeChecks() {
     const canonical = {
       currentRoundIndex: 0, roundPhase: "stationOrders",
       event: { rounds: [{ roundNumber: 1, activeStations: ["navigator"] }] },
-      roundResults: [{ actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] }, stationActions: { navigator: { actionKey: "plot-course" } }, stationOrderCommitments: { navigator: { committed: false } } }]
+      roundResults: [{ actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] }, stationActions: { navigator: { type: "eventApproach" } }, travelV2RiskBidActions: { navigator: { actionId: "plot-course", riskBids: [{ tier: 5 }] } }, stationOrderCommitments: { navigator: { committed: false } } }]
     };
     const canonicalBefore = snap(canonical);
     const validCoupledSelection = selectTravelV2RiskBidForRunnerSession(canonical, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 5 }, { selectedAt: "fixed" });
     assertSmoke(validCoupledSelection.ok && validCoupledSelection.session !== canonical, "canonical pre-lock selection succeeds");
+    const unauthoredTier = selectTravelV2RiskBidForRunnerSession(canonical, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 8 });
+    assertSmoke(unauthoredTier.blocked && unauthoredTier.reasonCode === "risk-bid-tier-not-authored", "globally valid but unauthored tier is blocked");
     const lockedSession = JSON.parse(snap(validCoupledSelection.session));
     lockedSession.roundResults[0].stationOrderCommitments.navigator.committed = true;
     const lockedBefore = snap(lockedSession);
