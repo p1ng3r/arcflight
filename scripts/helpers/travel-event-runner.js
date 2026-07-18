@@ -1582,7 +1582,7 @@ function normalizeRoundDefinition(round, index) {
     ? round.activeStations.map(normalizeStationKey).filter((stationKey) => TRAVEL_FIVE_STATION_KEYS.includes(stationKey))
     : [];
   const pressureProfile = normalizeTravelRoundPressureProfile(round);
-  return {
+  const normalizedRound = {
     round: Number.isInteger(Number(round?.round)) ? Number(round.round) : index + 1,
     title: typeof round?.title === "string" ? round.title : `Round ${index + 1}`,
     openingVignette: typeof round?.openingVignette === "string" ? round.openingVignette : "",
@@ -1597,8 +1597,16 @@ function normalizeRoundDefinition(round, index) {
       return normalizeStationCardForRunner(stationKey, card, prompt);
     }),
     outcomeBranches: isPlainObject(round?.outcomeBranches) ? cloneData(round.outcomeBranches) : {},
-    roundEndNarration: normalizeRoundEndNarration(round?.roundEndNarration ?? round?.gmRoundEndNarration)
+    roundEndNarration: normalizeRoundEndNarration(round?.roundEndNarration ?? round?.gmRoundEndNarration),
+    travelV2RoundResolution: isPlainObject(round?.travelV2RoundResolution) ? cloneData(round.travelV2RoundResolution) : undefined,
+    travelV2RoundResolutionRecord: isPlainObject(round?.travelV2RoundResolutionRecord) ? cloneData(round.travelV2RoundResolutionRecord) : undefined,
+    roundResolution: isPlainObject(round?.roundResolution) ? cloneData(round.roundResolution) : undefined,
+    roundResolutionRecord: isPlainObject(round?.roundResolutionRecord) ? cloneData(round.roundResolutionRecord) : undefined
   };
+  for (const optionalRoundKey of ["travelV2RoundResolution", "travelV2RoundResolutionRecord", "roundResolution", "roundResolutionRecord"]) {
+    if (normalizedRound[optionalRoundKey] === undefined) delete normalizedRound[optionalRoundKey];
+  }
+  return normalizedRound;
 }
 
 function normalizeFinalOutcomes(finalOutcomes = {}) {
@@ -4792,8 +4800,12 @@ function travelV2RoundCompletionRecordMatches(record = null, roundIndex = -1, ro
   return roundNumber !== null && Number.isInteger(recordRoundNumber) && recordRoundNumber === roundNumber;
 }
 
-function travelV2RoundHasCompletionRecord(session = {}, roundIndex = -1, roundNumber = null, roundResult = null) {
+function travelV2RoundHasCompletionRecord(session = {}, roundIndex = -1, roundNumber = null, round = null, roundResult = null) {
   const roundLocalRecords = [
+    round?.travelV2RoundResolution,
+    round?.travelV2RoundResolutionRecord,
+    round?.roundResolution,
+    round?.roundResolutionRecord,
     roundResult?.travelV2RoundResolution,
     roundResult?.travelV2RoundResolutionRecord,
     roundResult?.roundResolution,
@@ -4841,7 +4853,7 @@ export function prepareTravelV2CrewPlanningPhaseGate(session = null, options = {
   const validation = normalizeTravelV2ProposedRoundActionOrder(committedStationKeys, activeStationKeys);
   if (hasCurrentRound && actionOrderStatus === "committed" && !validation.valid) blockedReasons.push("invalid committed order");
   if (hasCurrentRound && travelV2RoundHasRecordedStationResult(roundResult ?? {})) blockedReasons.push("station results already recorded");
-  if (hasCurrentRound && (sourceSession.status === "completed" || sourceSession.completed === true || travelV2RoundHasCompletionRecord(sourceSession, roundIndex, roundNumber, roundResult))) blockedReasons.push("round already completed");
+  if (hasCurrentRound && (sourceSession.status === "completed" || sourceSession.completed === true || travelV2RoundHasCompletionRecord(sourceSession, roundIndex, roundNumber, round, roundResult))) blockedReasons.push("round already completed");
   const uniqueReasons = Array.from(new Set(blockedReasons));
   const ready = uniqueReasons.length === 0;
   return deepFreeze({

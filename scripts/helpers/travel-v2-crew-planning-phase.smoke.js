@@ -17,6 +17,12 @@ function withRoundResultPatch(s, patch) {
   next.roundResults[next.currentRoundIndex ?? 0] = { ...next.roundResults[next.currentRoundIndex ?? 0], ...patch };
   return next;
 }
+function withEventRoundPatch(s, patch, offset = 0) {
+  const next = clone(s);
+  const index = (next.currentRoundIndex ?? 0) + offset;
+  next.event.rounds[index] = { ...next.event.rounds[index], ...patch };
+  return next;
+}
 function installMutationSentinels() {
   const previous = { game: globalThis.game, Actor: globalThis.Actor, Item: globalThis.Item, ActiveEffect: globalThis.ActiveEffect, ChatMessage: globalThis.ChatMessage, JournalEntry: globalThis.JournalEntry, Scene: globalThis.Scene, TokenDocument: globalThis.TokenDocument, CompendiumCollection: globalThis.CompendiumCollection };
   const counters = { socket: 0, worldSetting: 0, actor: 0, item: 0, activeEffect: 0, chat: 0, journal: 0, scene: 0, token: 0, compendium: 0 };
@@ -89,6 +95,20 @@ group("direct set phase gate", () => {
 });
 
 group("completed round representations", () => {
+  const eventRoundReps = [
+    (s) => withEventRoundPatch(s, { travelV2RoundResolution: { roundIndex: 0 } }),
+    (s) => withEventRoundPatch(s, { travelV2RoundResolutionRecord: { roundNumber: 1 } }),
+    (s) => withEventRoundPatch(s, { roundResolution: {} }),
+    (s) => withEventRoundPatch(s, { roundResolutionRecord: { round: 1 } })
+  ];
+  for (const apply of eventRoundReps) {
+    const gate = prepareTravelV2CrewPlanningPhaseGate(apply(committed()));
+    assert(gate.blockedReasons.includes("round already completed"));
+    assert.equal(setTravelEventRunnerRoundPhase(apply(committed()), "stationOrders", { now: NOW }).ok, false);
+  }
+  const differentRound = withEventRoundPatch(committed(), { travelV2RoundResolution: { roundIndex: 1, roundNumber: 2 } }, 1);
+  assert.equal(prepareTravelV2CrewPlanningPhaseGate(differentRound).ready, true);
+
   const reps = [
     (s) => withRoundResultPatch(s, { travelV2RoundResolution: { roundIndex: 0 } }),
     (s) => withRoundResultPatch(s, { travelV2RoundResolutionRecord: { roundNumber: 1 } }),
