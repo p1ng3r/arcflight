@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { ARCFLIGHT_TRAVEL_ROUND_SEGMENT_ORDER, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS, normalizeTravelRoundSegmentKey } from "./travel-round-segments.js";
-import { normalizeTravelEventRunnerSession, advanceTravelEventRunnerRoundPhase, retreatTravelEventRunnerRoundPhase, advanceTravelEventRunnerRound, prepareTravelEventRunnerState, prepareTravelV2CrewPlanningPhaseGate } from "./travel-event-runner.js";
+import { normalizeTravelEventRunnerSession, advanceTravelEventRunnerRoundPhase, retreatTravelEventRunnerRoundPhase, advanceTravelEventRunnerRound, prepareTravelEventRunnerState, prepareTravelV2CrewPlanningPhaseGate, setTravelEventRunnerRoundPhase } from "./travel-event-runner.js";
 import { commitTravelV2RoundActionOrderRoundState, unlockTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 
 const NOW = "2026-07-18T00:00:00.000Z";
@@ -11,6 +12,24 @@ function session(overrides = {}) { const normalized = normalizeTravelEventRunner
 function committed(s = session(), order = stations) { const result = commitTravelV2RoundActionOrderRoundState(s, s.currentRoundIndex ?? 0, { proposedOrder: order, timestamp: NOW }); assert.equal(result.ok, true); return result.session; }
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
 function assertFrozenClone(result) { assert.throws(() => { result.proposedStationKeys.push("x"); }, TypeError); }
+function withRoundResultPatch(s, patch) {
+  const next = clone(s);
+  next.roundResults[next.currentRoundIndex ?? 0] = { ...next.roundResults[next.currentRoundIndex ?? 0], ...patch };
+  return next;
+}
+function installMutationSentinels() {
+  const previous = { game: globalThis.game, Actor: globalThis.Actor, Item: globalThis.Item, ActiveEffect: globalThis.ActiveEffect, ChatMessage: globalThis.ChatMessage, JournalEntry: globalThis.JournalEntry, Scene: globalThis.Scene, TokenDocument: globalThis.TokenDocument, CompendiumCollection: globalThis.CompendiumCollection };
+  const counters = { socket: 0, worldSetting: 0, actor: 0, item: 0, activeEffect: 0, chat: 0, journal: 0, scene: 0, token: 0, compendium: 0 };
+  const count = (key) => () => { counters[key] += 1; return Promise.resolve(null); };
+  const documentStub = (key) => class { update() { counters[key] += 1; return Promise.resolve(this); } delete() { counters[key] += 1; return Promise.resolve(null); } static create() { counters[key] += 1; return Promise.resolve(null); } static updateDocuments() { counters[key] += 1; return Promise.resolve([]); } static deleteDocuments() { counters[key] += 1; return Promise.resolve([]); } };
+  globalThis.game = { ...(previous.game && typeof previous.game === "object" ? previous.game : {}), socket: { emit: count("socket") }, settings: { set: count("worldSetting") }, packs: new Map([["arcflight.test", { set: count("compendium"), update: count("compendium"), delete: count("compendium"), createDocument: count("compendium"), importDocument: count("compendium") }]]) };
+  globalThis.Actor = documentStub("actor"); globalThis.Item = documentStub("item"); globalThis.ActiveEffect = documentStub("activeEffect"); globalThis.Scene = documentStub("scene"); globalThis.TokenDocument = documentStub("token");
+  globalThis.ChatMessage = { create: count("chat") }; globalThis.JournalEntry = { create: count("journal") };
+  globalThis.CompendiumCollection = class { set() { counters.compendium += 1; } delete() { counters.compendium += 1; } };
+  return { counters, restore() { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } } };
+}
+function assertZeroCounters(counters) { for (const [key, value] of Object.entries(counters)) assert.equal(value, 0, `${key} mutation counter`); }
+
 
 export default function runTravelV2CrewPlanningPhaseSmokeChecks() {
 let groups = 0;
@@ -51,6 +70,42 @@ group("gate blocked cases", () => {
   assert(prepareTravelV2CrewPlanningPhaseGate({ ...committed(), roundPhase: "stationOrders" }).blockedReasons.includes("current phase is not crewPlanning"));
 });
 
+group("direct set phase gate", () => {
+  const selecting = session({ updatedAt: "2026-07-18T01:00:00.000Z", summary: { keep: true } });
+  const selectingBlocked = setTravelEventRunnerRoundPhase(selecting, "stationOrders", { now: "2026-07-18T02:00:00.000Z" });
+  assert.equal(selectingBlocked.ok, false); assert(selectingBlocked.errors.includes("order still selecting")); assert.equal(selectingBlocked.session.roundPhase, "crewPlanning"); assert.equal(selectingBlocked.session.updatedAt, selecting.updatedAt); assert.deepEqual(selectingBlocked.session.summary, selecting.summary);
+  const unlocked = unlockTravelV2RoundActionOrderRoundState(committed(), 0, { timestamp: NOW }).session;
+  const unlockedBlocked = setTravelEventRunnerRoundPhase(unlocked, "stationOrders", { now: NOW });
+  assert.equal(unlockedBlocked.ok, false); assert(unlockedBlocked.errors.includes("order unlocked")); assert.equal(unlockedBlocked.session.roundResults[0].actionOrder.status, "unlocked");
+  const ready = committed();
+  const orders = setTravelEventRunnerRoundPhase(ready, "stationOrders", { now: NOW });
+  assert.equal(orders.ok, true); assert.equal(orders.session.roundPhase, "stationOrders"); assert.equal(orders.session.roundResults[0].actionOrder.status, "committed");
+  for (const later of ["stationRolls", "reactionWindow", "outcomePressure"]) {
+    const jump = setTravelEventRunnerRoundPhase(ready, later, { now: NOW });
+    assert.equal(jump.ok, false); assert(jump.errors.includes("crewPlanning may only advance to stationOrders")); assert.equal(jump.session.roundPhase, "crewPlanning");
+  }
+  const runnerControl = setTravelEventRunnerRoundPhase(selecting, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, { now: "2026-07-18T03:00:00.000Z" });
+  assert.equal(runnerControl.ok, false); assert.equal(runnerControl.session.updatedAt, selecting.updatedAt); assert.deepEqual(runnerControl.session.summary, selecting.summary);
+});
+
+group("completed round representations", () => {
+  const reps = [
+    (s) => withRoundResultPatch(s, { travelV2RoundResolution: { roundIndex: 0 } }),
+    (s) => withRoundResultPatch(s, { travelV2RoundResolutionRecord: { roundNumber: 1 } }),
+    (s) => withRoundResultPatch(s, { roundResolution: {} }),
+    (s) => withRoundResultPatch(s, { roundResolutionRecord: { round: 1 } }),
+    (s) => ({ ...s, travelV2RoundResolutions: { records: [{ roundIndex: 0 }] } }),
+    (s) => ({ ...s, travelV2RoundResolutionRecords: [{ roundNumber: 1 }] }),
+    (s) => ({ ...s, roundResolutionRecords: { records: [{ round: 1 }] } }),
+    (s) => ({ ...s, roundResolutions: [{ roundIndex: 0 }] })
+  ];
+  for (const apply of reps) {
+    const gate = prepareTravelV2CrewPlanningPhaseGate(apply(committed()));
+    assert(gate.blockedReasons.includes("round already completed"));
+    assert.equal(setTravelEventRunnerRoundPhase(apply(committed()), "stationOrders", { now: NOW }).ok, false);
+  }
+});
+
 group("phase advancement", () => {
   const base = committed();
   const before = clone(base);
@@ -77,6 +132,24 @@ group("round/session isolation and immutability", () => {
   const source = session(); const sourceClone = clone(source); const gate = prepareTravelV2CrewPlanningPhaseGate(source); assert.deepEqual(source, sourceClone); assertFrozenClone(gate);
 });
 
+group("mutation sentinels and source scan", () => {
+  const sentinels = installMutationSentinels();
+  try {
+    const ready = committed();
+    prepareTravelV2CrewPlanningPhaseGate(ready);
+    advanceTravelEventRunnerRoundPhase(ready, { now: NOW });
+    setTravelEventRunnerRoundPhase(ready, "stationOrders", { now: NOW });
+    retreatTravelEventRunnerRoundPhase({ ...ready, roundPhase: "stationOrders" }, { now: NOW });
+    advanceTravelEventRunnerRound(ready, { force: true, now: NOW });
+    assertZeroCounters(sentinels.counters);
+  } finally { sentinels.restore(); }
+  const helperSource = readFileSync(new URL("./travel-event-runner.js", import.meta.url), "utf8");
+  const segmentSource = readFileSync(new URL("./travel-round-segments.js", import.meta.url), "utf8");
+  for (const forbidden of ["game.socket.emit", "game.settings.set", "Actor.create", "Item.create", "ActiveEffect.create", "ChatMessage.create", "JournalEntry.create", "Scene.create", "TokenDocument.create"]) {
+    assert(!helperSource.includes(forbidden), forbidden); assert(!segmentSource.includes(forbidden), forbidden);
+  }
+});
+
 group("player-safe state and zero mutation surface", () => {
   const unsafe = clone(committed());
   unsafe.roundResults[0].actionOrder.committedByUserId = "u1"; unsafe.roundResults[0].actionOrder.committedByUserName = "GM"; unsafe.travelV2RoundActionOrder = { auditRecord: { userId: "u1" }, commitRecords: [{ userName: "GM" }], unlockRecords: [{ userId: "u2" }] };
@@ -84,9 +157,6 @@ group("player-safe state and zero mutation surface", () => {
   assert.equal(state.roundSegmentState.phase, "crewPlanning"); assert.equal(state.roundSegmentState.phaseLabel, "Crew Planning"); assert.match(state.roundSegmentState.phaseGuidance, /Risk Bids/);
   assert.equal(state.crewPlanningPhaseGate.ready, true); assert.equal(state.crewPlanningPhaseGate.actionOrderStatus, "committed"); assert.deepEqual(state.crewPlanningPhaseGate.proposedStationKeys, stations); assert.deepEqual(state.crewPlanningPhaseGate.committedStationKeys, stations);
   const text = JSON.stringify(state); for (const forbidden of ["committedByUserId", "committedByUserName", "unlockedByUserId", "unlockedByUserName", "auditRecord", "commitRecords", "unlockRecords", "userId", "userName"]) assert(!text.includes(forbidden), forbidden);
-  const beforeGlobals = { actors: globalThis.Actor, items: globalThis.Item, effects: globalThis.ActiveEffect, journals: globalThis.JournalEntry, chat: globalThis.ChatMessage, sockets: globalThis.game?.socket, scenes: globalThis.Scene, tokens: globalThis.TokenDocument, compendia: globalThis.CompendiumCollection, settings: globalThis.game?.settings };
-  prepareTravelV2CrewPlanningPhaseGate(unsafe); prepareTravelEventRunnerState(unsafe, { isGM: false });
-  assert.deepEqual({ actors: globalThis.Actor, items: globalThis.Item, effects: globalThis.ActiveEffect, journals: globalThis.JournalEntry, chat: globalThis.ChatMessage, sockets: globalThis.game?.socket, scenes: globalThis.Scene, tokens: globalThis.TokenDocument, compendia: globalThis.CompendiumCollection, settings: globalThis.game?.settings }, beforeGlobals);
 });
 
 return { checked };

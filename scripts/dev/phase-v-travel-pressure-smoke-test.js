@@ -351,7 +351,7 @@ const advancedPhase = advanceTravelEventRunnerRoundPhase(phaseCommit.session, { 
 assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS, "advance phase moves crewPlanning to stationOrders");
 const retreatedPhase = retreatTravelEventRunnerRoundPhase(advancedPhase.session, { now: "2026-06-17T00:02:00.000Z" });
 assert(retreatedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING, "retreat phase moves stationOrders to crewPlanning");
-const setPhase = setTravelEventRunnerRoundPhase(retreatedPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, { now: "2026-06-17T00:03:00.000Z" });
+const setPhase = setTravelEventRunnerRoundPhase(advancedPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, { now: "2026-06-17T00:03:00.000Z" });
 assert(setPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "set phase can set outcomePressure");
 const legacyPhase = setTravelEventRunnerRoundPhase(setPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, { now: "2026-06-17T00:03:30.000Z" });
 assert(legacyPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "legacy pressureApplication normalizes to outcomePressure");
