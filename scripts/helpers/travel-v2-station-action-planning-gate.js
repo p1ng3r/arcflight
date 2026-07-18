@@ -24,14 +24,8 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
-function integerOrNull(value) {
-  const number = Number(value);
-  return Number.isInteger(number) ? number : null;
-}
-
-function positiveIntegerOrNull(value) {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? number : null;
+function positiveIntegerValueOrNull(value) {
+  return Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function currentRoundContext(session = {}) {
@@ -43,10 +37,10 @@ function currentRoundContext(session = {}) {
   const roundIndex = session.currentRoundIndex;
   const round = isPlainObject(rounds[roundIndex]) ? rounds[roundIndex] : null;
   const roundResult = Array.isArray(session.roundResults) && isPlainObject(session.roundResults[roundIndex]) ? session.roundResults[roundIndex] : null;
-  const roundNumber = positiveIntegerOrNull(round?.roundNumber ?? round?.number ?? round?.round) ?? (round ? roundIndex + 1 : null);
+  const roundNumber = positiveIntegerValueOrNull(round?.roundNumber ?? round?.number ?? round?.round);
   const rawStations = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
   const activeStationKeys = rawStations.map((entry) => typeof entry === "string" ? entry : entry?.stationKey).filter(Boolean);
-  return { roundIndex: round ? roundIndex : -1, round, roundNumber, roundResult, activeStationKeys };
+  return { roundIndex: round && roundNumber !== null ? roundIndex : -1, round: roundNumber !== null ? round : null, roundNumber, roundResult: roundNumber !== null ? roundResult : null, activeStationKeys: roundNumber !== null ? activeStationKeys : [] };
 }
 
 function blockedResult(reasonCode, context = {}) {
@@ -102,8 +96,8 @@ export function prepareTravelV2StationActionPlanningGate(session = null, station
   const planningStatus = typeof actionOrder.status === "string" ? actionOrder.status : "";
   const safeCommittedStationKeys = playerSafeCommittedStationKeys(committedStationKeys, uniqueActive);
   const resultContext = { ...context, activeStationKeys: uniqueActive, committedStationKeys: safeCommittedStationKeys, planningStatus, stationKey: requestedStationKey };
-  const stateRoundIndex = integerOrNull(actionOrder.roundIndex);
-  const stateRoundNumber = positiveIntegerOrNull(actionOrder.roundNumber);
+  const stateRoundIndex = Number.isInteger(actionOrder.roundIndex) ? actionOrder.roundIndex : null;
+  const stateRoundNumber = positiveIntegerValueOrNull(actionOrder.roundNumber);
   if (stateRoundIndex !== context.roundIndex || stateRoundNumber !== context.roundNumber) return blockedResult(REASON_CODES.STALE_PLANNING_ROUND, resultContext);
   if (planningStatus !== "committed") return blockedResult(REASON_CODES.PLANNING_NOT_COMMITTED, resultContext);
 

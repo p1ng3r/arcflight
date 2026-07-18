@@ -5,6 +5,7 @@ import { prepareTravelV2StationActionPlanningGate, TRAVEL_V2_STATION_ACTION_PLAN
 
 const NOW = "2026-07-18T00:00:00.000Z";
 const STATIONS = Object.freeze(["captain", "navigator", "engineer"]);
+const EXPECTED_CHECKED_COUNT = 13;
 const FORBIDDEN_KEYS = Object.freeze([
   "auditRecord",
   "commitRecords",
@@ -107,8 +108,8 @@ function assertPlayerSafe(result) {
 }
 
 export default function runTravelV2StationActionPlanningGateSmokeChecks() {
-  let groups = 0;
-  function group(name, fn) { fn(); groups += 1; }
+  const checked = [];
+  function group(name, fn) { fn(); checked.push(name); }
 
   group("valid committed planning permits an active committed station", () => {
     const source = committedSession();
@@ -220,6 +221,28 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
     assert.equal(nonObjectRoundGate.roundIndex, -1);
   });
 
+
+  group("round identity strings and missing event round number are rejected without mutation", () => {
+    const stringRoundIndex = withCurrentActionOrderPatch(committedSession(), { roundIndex: "0" });
+    const stringRoundIndexGate = assertUnchanged(stringRoundIndex, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(stringRoundIndexGate.allowed, false);
+    assert.equal(stringRoundIndexGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.STALE_PLANNING_ROUND);
+
+    const stringRoundNumber = withCurrentActionOrderPatch(committedSession(), { roundNumber: "1" });
+    const stringRoundNumberGate = assertUnchanged(stringRoundNumber, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(stringRoundNumberGate.allowed, false);
+    assert.equal(stringRoundNumberGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.STALE_PLANNING_ROUND);
+
+    const missingRoundNumber = clone(committedSession());
+    delete missingRoundNumber.event.rounds[0].roundNumber;
+    delete missingRoundNumber.event.rounds[0].number;
+    delete missingRoundNumber.event.rounds[0].round;
+    const missingRoundNumberGate = assertUnchanged(missingRoundNumber, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(missingRoundNumberGate.allowed, false);
+    assert.equal(missingRoundNumberGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.MISSING_ROUND);
+    assert.equal(missingRoundNumberGate.roundIndex, -1);
+  });
+
   group("invalid committed order redacts unknown station identifiers", () => {
     const source = withCurrentActionOrderPatch(committedSession(), { committedStationKeys: ["captain", "PRIVATE-HIDDEN-STATION", "engineer"] });
     const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "captain"));
@@ -244,5 +267,7 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
     assertPlayerSafe(gate);
   });
 
-  return { groups };
+  assert(Array.isArray(checked));
+  assert.equal(checked.length, EXPECTED_CHECKED_COUNT);
+  return { checked };
 }
