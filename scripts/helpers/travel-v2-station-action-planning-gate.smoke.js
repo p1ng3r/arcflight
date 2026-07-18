@@ -128,7 +128,7 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
   });
   group("station action planning requires the stationOrders phase", () => {
     for (const phase of ["crewPlanning", "stationRolls", "reactionWindow", "outcomePressure", null, { malformed: true }, "unknownPhase"]) {
-      const source = committedSession();
+      const source = clone(committedSession());
       source.roundPhase = phase;
       const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
       assert.equal(gate.allowed, false, String(phase));
@@ -140,7 +140,7 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
       assertPlayerSafe(gate);
     }
 
-    const missingPhase = committedSession();
+    const missingPhase = clone(committedSession());
     delete missingPhase.roundPhase;
     const missingGate = assertUnchanged(missingPhase, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
     assert.equal(missingGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.INVALID_STATION_ACTION_PHASE);
