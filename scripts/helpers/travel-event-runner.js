@@ -35,6 +35,7 @@ import { prepareTravelV2FinalOutcomePreservationPlan } from "./travel-v2-final-o
 import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-final-outcome-preservation-apply-plan.js";
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
+import { prepareTravelV2StationActionPlanningGate } from "./travel-v2-station-action-planning-gate.js";
 import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
 import { initializeTravelV2RoundActionOrderForRound, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2NextRoundActionOrder, prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
 
@@ -3529,11 +3530,16 @@ export function prepareTravelV2StationActionSubmissionRunnerUpdate(currentSessio
   const optionKey = typeof options.optionKey === "string" ? options.optionKey.trim() : "";
   if (!stationKey) return stationActionSubmissionBlocked("Station action submission requires a station key.", currentSession, options);
   if (!optionKey) return stationActionSubmissionBlocked("Station action submission requires an action option.", currentSession, options);
+  const requestedRoundIndex = Object.hasOwn(options, "roundIndex") ? options.roundIndex : currentSession?.currentRoundIndex;
+  const planningGate = checkStationActionPlanningGateForMutation(currentSession, stationKey, { requestedRoundIndex });
+  if (planningGate.blocked) {
+    return { result: stationActionPlanningGateBlockedResult(planningGate), nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  }
   const normalized = normalizeTravelEventRunnerSession(currentSession, options);
   if (!normalized.ok || !normalized.session) return stationActionSubmissionBlocked(normalized.errors?.[0] ?? "Travel Event Runner session is invalid.", currentSession, options);
   if (normalized.session.status === "completed") return stationActionSubmissionBlocked("Completed Travel Event Runner sessions cannot change station actions.", currentSession, options);
 
-  const roundIndex = Number.isInteger(Number(options.roundIndex)) ? Number(options.roundIndex) : normalized.session.currentRoundIndex;
+  const roundIndex = planningGate.roundIndex;
   const round = normalized.session.event?.rounds?.[roundIndex] ?? null;
   const roundResult = normalized.session.roundResults?.[roundIndex] ?? null;
   if (!round || !roundResult) return stationActionSubmissionBlocked(`Travel runner round ${roundIndex} does not exist.`, currentSession, options);
@@ -3564,6 +3570,8 @@ export function prepareTravelV2StationActionSubmissionRunnerUpdate(currentSessio
 export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, options = {}) {
   const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
   if (!stationKey) return { result: { ok: false, errors: ["Station action lock requires a station key."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const planningGate = checkStationActionPlanningGateForMutation(currentSession, stationKey);
+  if (planningGate.blocked) return { result: stationActionPlanningGateBlockedResult(planningGate), nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const normalized = normalizeTravelEventRunnerSession(currentSession, options);
   if (!normalized.ok || !normalized.session) return { result: { ok: false, errors: normalized.errors?.length ? normalized.errors : ["Travel Event Runner session is invalid."], warnings: normalized.warnings ?? [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   if (normalized.session.status === "completed") return { result: { ok: false, errors: ["Completed Travel Event Runner sessions cannot lock station actions."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
@@ -3578,7 +3586,7 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
   if (!action) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} has no selected action to lock.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
 
   const source = { stationOrder, activeStations: stationOrder, stations: Object.fromEntries(stationOrder.map((key) => [key, { ...(currentRoundResult.stationActions?.[key] ?? {}), locked: currentRoundResult.stationOrderCommitments?.[key]?.committed === true }])) };
-  const lockedState = lockTravelV2StationAction(source, stationKey);
+  const lockedState = lockTravelV2StationAction(source, stationKey, { session: normalized.session });
   if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true };
@@ -3589,6 +3597,8 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
 export function prepareTravelV2StationActionUnlockRunnerUpdate(currentSession, options = {}) {
   const stationKey = typeof options.stationKey === "string" ? options.stationKey.trim() : "";
   if (!stationKey) return { result: { ok: false, errors: ["Station action unlock requires a station key."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
+  const planningGate = checkStationActionPlanningGateForMutation(currentSession, stationKey);
+  if (planningGate.blocked) return { result: stationActionPlanningGateBlockedResult(planningGate), nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const normalized = normalizeTravelEventRunnerSession(currentSession, options);
   if (!normalized.ok || !normalized.session) return { result: { ok: false, errors: normalized.errors?.length ? normalized.errors : ["Travel Event Runner session is invalid."], warnings: normalized.warnings ?? [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   if (normalized.session.status === "completed") return { result: { ok: false, errors: ["Completed Travel Event Runner sessions cannot unlock station actions."], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
@@ -3604,7 +3614,7 @@ export function prepareTravelV2StationActionUnlockRunnerUpdate(currentSession, o
   if (!action) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} has no selected action to unlock.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
 
   const source = { stationOrder, activeStations: stationOrder, stations: Object.fromEntries(stationOrder.map((key) => [key, { ...(currentRoundResult.stationActions?.[key] ?? {}), locked: currentRoundResult.stationOrderCommitments?.[key]?.committed === true }])) };
-  const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true });
+  const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true, session: normalized.session });
   if (unlockedState.stations?.[stationKey]?.locked === true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be unlocked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false };
@@ -4622,11 +4632,31 @@ export function applyTravelV2PendingSupportBonusToStationCheck(session, roundInd
   return { ok: true, errors: [], warnings: [], session: nextSession, appliedBonus, appliedBonuses: [appliedBonus] };
 }
 
+function stationActionPlanningGateBlockedResult(gate, message = "Station action is blocked until Crew Planning is committed for this round.") {
+  return {
+    ok: false,
+    blocked: true,
+    blockedByPlanningGate: true,
+    reasonCode: gate?.reasonCode ?? "",
+    planningGate: gate ?? null,
+    errors: [message],
+    warnings: [],
+    session: null,
+    playerSafe: true,
+    readOnly: true
+  };
+}
+
+function checkStationActionPlanningGateForMutation(session, stationKey, options = {}) {
+  return prepareTravelV2StationActionPlanningGate(session, stationKey, options);
+}
+
 export function setTravelEventRunnerStationSkillApproach(session, roundIndex, stationKey, skill, options = {}) {
+  const gate = checkStationActionPlanningGateForMutation(session, stationKey, { requestedRoundIndex: roundIndex });
+  if (gate.blocked) return stationActionPlanningGateBlockedResult(gate);
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
-  const index = Number(roundIndex);
-  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const index = gate.roundIndex;
   const round = normalized.session.event.rounds[index];
   if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   const prompt = round.stationPrompts[stationKey] ?? { stationKey };
@@ -4646,10 +4676,11 @@ export function setTravelEventRunnerStationSkillApproach(session, roundIndex, st
 }
 
 export function setTravelEventRunnerStationAction(session, roundIndex, stationKey, actionType, options = {}) {
+  const gate = checkStationActionPlanningGateForMutation(session, stationKey, { requestedRoundIndex: roundIndex });
+  if (gate.blocked) return stationActionPlanningGateBlockedResult(gate);
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
-  const index = Number(roundIndex);
-  if (!Number.isInteger(index) || !normalized.session.roundResults[index]) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };
+  const index = gate.roundIndex;
   const round = normalized.session.event.rounds[index];
   if (!round?.activeStations?.includes(stationKey)) return { ok: false, errors: [`Station "${stationKey}" is not active in round ${index + 1}.`], warnings: [], session: normalized.session };
   if (![ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE, ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT].includes(actionType)) {
@@ -4717,9 +4748,11 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
 }
 
 export function commitTravelEventRunnerStationOrder(session, roundIndex, stationKey, optionKey, options = {}) {
+  const gate = checkStationActionPlanningGateForMutation(session, stationKey, { requestedRoundIndex: roundIndex });
+  if (gate.blocked) return stationActionPlanningGateBlockedResult(gate);
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
-  const index = Number(roundIndex);
+  const index = gate.roundIndex;
   const round = normalized.session.event.rounds[index];
   const roundResult = normalized.session.roundResults[index];
   if (!round || !roundResult) return { ok: false, errors: [`Travel runner round ${roundIndex} does not exist.`], warnings: [], session: normalized.session };

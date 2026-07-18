@@ -9,6 +9,7 @@ import {
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
 import { resolveTravelStabilizePressureDelta } from "./travel-pressure.js";
+import { commitTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 import { prepareTravelV2RoundNarration, sanitizeTravelV2PublicNarration } from "./travel-v2-narration.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 stabilize repair smoke check failed: ${message}`); }
@@ -59,6 +60,7 @@ function fixtureEvent() {
   };
 }
 function okSession(result) { assertSmoke(result.ok, result.errors?.join("; ") || "session update failed"); return result.session; }
+function commitPlanning(source) { const result = commitTravelV2RoundActionOrderRoundState(source, 0, { proposedOrder: ["navigator", "engineer", "watchmaster", "captain", "veilwarden"], timestamp: "2026-06-23T00:00:00.000Z" }); assertSmoke(result.ok, "fixture Crew Planning commits"); return result.session; }
 
 export async function runTravelV2StabilizeRepairSmokeChecks() {
   const sideEffects = [];
@@ -75,6 +77,7 @@ export async function runTravelV2StabilizeRepairSmokeChecks() {
     assertSmoke(resolveTravelStabilizePressureDelta("criticalFailure", "strain").pressureDelta === 1, "critical failure delta is +1");
 
     let session = okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-23T00:00:00.000Z" }));
+    session = JSON.parse(JSON.stringify(commitPlanning(session)));
     session.pressure.strain = 3;
     session = okSession(setTravelEventRunnerStationAction(session, 0, "engineer", "stabilize"));
     session = okSession(setTravelEventRunnerStationAction(session, 0, "watchmaster", "hazardResponse"));

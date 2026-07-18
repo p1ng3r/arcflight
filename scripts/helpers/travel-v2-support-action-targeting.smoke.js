@@ -5,9 +5,11 @@ import {
   setTravelEventRunnerStationAction,
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
+import { commitTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 import { ARCFLIGHT_TRAVEL_STATION_ACTIONS, normalizeTravelStationAction, support } from "./travel-pressure.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 support action targeting smoke check failed: ${message}`); }
+function commitPlanning(source) { const order = source.event.rounds[source.currentRoundIndex ?? 0].activeStations; const result = commitTravelV2RoundActionOrderRoundState(source, source.currentRoundIndex ?? 0, { proposedOrder: order, timestamp: "2026-07-18T00:00:00.000Z" }); if (!result.ok) throw new Error(result.errors?.join("; ") || "fixture Crew Planning commit failed"); return JSON.parse(JSON.stringify(result.session)); }
 function okSession(result) { assertSmoke(result.ok, result.errors?.join("; ") || "session update failed"); return result.session; }
 function snap(value) { return JSON.stringify(value); }
 
@@ -32,7 +34,7 @@ export async function runTravelV2SupportActionTargetingSmokeChecks() {
   try {
     assertSmoke(ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT === "support", "Support is a valid station action constant");
     assertSmoke(normalizeTravelStationAction(support("navigator")).type === "support", "support action normalizes as support");
-    let session = okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-26T00:00:00.000Z" }));
+    let session = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-26T00:00:00.000Z" })));
     const before = snap(session);
 
     const missing = setTravelEventRunnerStationAction(session, 0, "engineer", "support");

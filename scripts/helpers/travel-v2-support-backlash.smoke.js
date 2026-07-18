@@ -7,10 +7,12 @@ import {
   setTravelEventRunnerStationAction,
   setTravelEventRunnerStationResult
 } from "./travel-event-runner.js";
+import { commitTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 import { prepareTravelV2RoundNarration, sanitizeTravelV2PublicNarration } from "./travel-v2-narration.js";
 import { ARCFLIGHT_TRAVEL_STATION_ACTIONS } from "./travel-pressure.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 support backlash smoke check failed: ${message}`); }
+function commitPlanning(source) { const order = source.event.rounds[source.currentRoundIndex ?? 0].activeStations; const result = commitTravelV2RoundActionOrderRoundState(source, source.currentRoundIndex ?? 0, { proposedOrder: order, timestamp: "2026-07-18T00:00:00.000Z" }); if (!result.ok) throw new Error(result.errors?.join("; ") || "fixture Crew Planning commit failed"); return JSON.parse(JSON.stringify(result.session)); }
 function okSession(result) { assertSmoke(result.ok, result.errors?.join("; ") || "session update failed"); return result.session; }
 function snap(value) { return JSON.stringify(value); }
 function fixtureEvent() {
@@ -31,19 +33,19 @@ export async function runTravelV2SupportBacklashSmokeChecks() {
   globalThis.socket = { emit: () => sideEffects.push("socket") };
   globalThis.canvas = { scene: { update: () => sideEffects.push("scene") }, tokens: { updateAll: () => sideEffects.push("tokens") } };
   try {
-    let success = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let success = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     success = setSupport(success);
     success = okSession(setTravelEventRunnerStationResult(success, 0, "engineer", "success"));
     assertSmoke(success.travelV2SupportRecords.records[0]?.assistValue === 1, "Support success still creates +1 assist");
     assertSmoke(success.travelV2SupportBacklashRecords.records.length === 0, "Support success creates no backlash");
 
-    let criticalSuccess = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let criticalSuccess = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     criticalSuccess = setSupport(criticalSuccess);
     criticalSuccess = okSession(setTravelEventRunnerStationResult(criticalSuccess, 0, "engineer", "criticalSuccess"));
     assertSmoke(criticalSuccess.travelV2SupportRecords.records[0]?.assistValue === 2, "Support critical success still creates +2 assist");
     assertSmoke(criticalSuccess.travelV2SupportBacklashRecords.records.length === 0, "Support critical success creates no backlash");
 
-    let failure = okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-25T00:00:00.000Z" }));
+    let failure = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-25T00:00:00.000Z" })));
     failure = setSupport(failure);
     failure = okSession(setTravelEventRunnerStationResult(failure, 0, "engineer", "failure", { now: "2026-06-25T00:01:00.000Z" }));
     const minor = failure.travelV2SupportBacklashRecords.records[0];
@@ -53,17 +55,17 @@ export async function runTravelV2SupportBacklashSmokeChecks() {
     const duplicate = createTravelV2SupportBacklashRecord(failure, 0, "engineer");
     assertSmoke(duplicate.duplicate === true && duplicate.session.travelV2SupportBacklashRecords.records.length === 1, "duplicate pending Support backlash records are prevented");
 
-    let criticalFailure = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let criticalFailure = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     criticalFailure = setSupport(criticalFailure);
     criticalFailure = okSession(setTravelEventRunnerStationResult(criticalFailure, 0, "engineer", "criticalFailure"));
     const major = criticalFailure.travelV2SupportBacklashRecords.records[0];
     assertSmoke(major?.status === "pending" && major.severity === "major" && major.sourceResult === "criticalFailure", "Support critical failure creates one pending major backlash candidate");
     assertSmoke(major.publicRiskText === "Engineer’s Support for Navigator backfires, creating a major backlash candidate.", "major public text is table-ready");
 
-    let nonSupport = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let nonSupport = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     nonSupport = okSession(setTravelEventRunnerStationResult(nonSupport, 0, "engineer", "failure"));
     assertSmoke(nonSupport.travelV2SupportBacklashRecords.records.length === 0, "non-Support failure does not create Support backlash");
-    const invalidTarget = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    const invalidTarget = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     const rejectedInvalidTarget = setTravelEventRunnerStationAction(invalidTarget, 0, "engineer", ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, { targetStationKey: "engineer" });
     assertSmoke(rejectedInvalidTarget.ok === false, "invalid Support target selection is rejected");
     const invalidAfterResult = okSession(setTravelEventRunnerStationResult(invalidTarget, 0, "engineer", "failure"));
@@ -81,13 +83,13 @@ export async function runTravelV2SupportBacklashSmokeChecks() {
     dismissed = okSession(setTravelEventRunnerStationResult(dismissed, 0, "engineer", "success", { now: "2026-06-25T00:05:00.000Z" }));
     assertSmoke(dismissed.travelV2SupportBacklashRecords.records[0].status === "dismissed" && dismissed.travelV2SupportBacklashRecords.records[0].resolvedAt === dismissedResolvedAt, "dismissed records are not rewritten by later result changes");
 
-    let actionChange = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let actionChange = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     actionChange = setSupport(actionChange);
     actionChange = okSession(setTravelEventRunnerStationResult(actionChange, 0, "engineer", "failure"));
     actionChange = okSession(setTravelEventRunnerStationAction(actionChange, 0, "engineer", ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH));
     assertSmoke(actionChange.travelV2SupportBacklashRecords.records.length === 0, "pending stale records are cleaned up if action changes away from Support");
 
-    let targetChange = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let targetChange = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     targetChange = setSupport(targetChange, "navigator");
     targetChange = okSession(setTravelEventRunnerStationResult(targetChange, 0, "engineer", "failure"));
     const oldId = targetChange.travelV2SupportBacklashRecords.records[0].id;

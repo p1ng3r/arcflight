@@ -5,7 +5,7 @@ import { prepareTravelV2StationActionPlanningGate, TRAVEL_V2_STATION_ACTION_PLAN
 
 const NOW = "2026-07-18T00:00:00.000Z";
 const STATIONS = Object.freeze(["captain", "navigator", "engineer"]);
-const EXPECTED_CHECKED_COUNT = 13;
+const EXPECTED_CHECKED_COUNT = 15;
 const FORBIDDEN_KEYS = Object.freeze([
   "auditRecord",
   "commitRecords",
@@ -126,6 +126,47 @@ export default function runTravelV2StationActionPlanningGateSmokeChecks() {
     assert.equal(gate.allowed, false);
     assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.PLANNING_NOT_COMMITTED);
   });
+  group("station action planning requires the stationOrders phase", () => {
+    for (const phase of ["crewPlanning", "stationRolls", "reactionWindow", "outcomePressure", null, { malformed: true }, "unknownPhase"]) {
+      const source = clone(committedSession());
+      source.roundPhase = phase;
+      const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+      assert.equal(gate.allowed, false, String(phase));
+      assert.equal(gate.blocked, true, String(phase));
+      assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.INVALID_STATION_ACTION_PHASE, String(phase));
+      assert.equal(gate.playerSafe, true);
+      assert.equal(gate.readOnly, true);
+      assert(Object.isFrozen(gate));
+      assertPlayerSafe(gate);
+    }
+
+    const missingPhase = clone(committedSession());
+    delete missingPhase.roundPhase;
+    const missingGate = assertUnchanged(missingPhase, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator"));
+    assert.equal(missingGate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.INVALID_STATION_ACTION_PHASE);
+    assert(Object.isFrozen(missingGate));
+    assertPlayerSafe(missingGate);
+  });
+
+  group("requested Station Action round must be the canonical current round", () => {
+    for (const requestedRoundIndex of [1, "0", "1", 0.5, -1, 99, undefined]) {
+      const source = committedSession();
+      const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator", { requestedRoundIndex }));
+      assert.equal(gate.allowed, false, String(requestedRoundIndex));
+      assert.equal(gate.blocked, true, String(requestedRoundIndex));
+      assert.equal(gate.reasonCode, TRAVEL_V2_STATION_ACTION_PLANNING_GATE_REASONS.WRONG_STATION_ACTION_ROUND, String(requestedRoundIndex));
+      assert.equal(gate.playerSafe, true);
+      assert.equal(gate.readOnly, true);
+      assert(Object.isFrozen(gate));
+      assertPlayerSafe(gate);
+    }
+
+    const source = committedSession();
+    const gate = assertUnchanged(source, (session) => prepareTravelV2StationActionPlanningGate(session, "navigator", { requestedRoundIndex: 0 }));
+    assert.equal(gate.allowed, true);
+    assert.equal(gate.roundIndex, 0);
+  });
+
 
   group("stale-round planning is rejected", () => {
     const source = withCurrentActionOrderPatch(committedSession(), { roundIndex: 1, roundNumber: 2 });
