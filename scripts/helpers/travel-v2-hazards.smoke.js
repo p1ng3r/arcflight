@@ -1,4 +1,5 @@
 import { normalizeTravelEventRunnerSession, prepareTravelPlayerMissionBoardState, activateTravelV2RunnerHazard, clearTravelV2RunnerHazard, commitTravelEventRunnerStationOrder, drawTravelV2RunnerHazard, holdTravelV2RunnerHazard, revealTravelV2RunnerHazard, setTravelEventRunnerStationResult } from "./travel-event-runner.js";
+import { commitTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 import { drawTravelV2HazardsForPressureResult, prepareTravelV2HazardPanelState, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 hazards smoke check failed: ${message}`); }
@@ -6,6 +7,7 @@ function assertEqual(actual, expected, message) { if (actual !== expected) throw
 function snap(value) { return JSON.stringify(value); }
 
 function hazardDraw(threshold) { return { pressureType: "strain", threshold, count: 1, reason: "threshold-crossing", roundNumber: 1 }; }
+function withCommittedPlanning(source) { const result = commitTravelV2RoundActionOrderRoundState(source, 0, { proposedOrder: ["navigator", "engineer", "captain", "watchmaster", "veilwarden"], timestamp: "2026-06-22T00:00:00.000Z" }); assertSmoke(result.ok, "fixture Crew Planning commits"); return result.session; }
 function session() { return { status: "active", currentRoundIndex: 0, event: { baseDC: 15, rounds: [{ round: 1, title: "Hazards", activeStations: ["navigator", "engineer", "captain", "watchmaster", "veilwarden"], stationPrompts: {}, stationCards: [{ stationKey: "engineer", skillApproaches: [{ skill: "crafting", label: "Hard Burn", helpText: "Push the engine hard." }] }] }] } }; }
 
 export async function runTravelV2HazardsSmokeChecks() {
@@ -86,7 +88,7 @@ export async function runTravelV2HazardsSmokeChecks() {
     const integratedBoard = prepareTravelPlayerMissionBoardState(appliedVoid.session);
     const navigatorOption = integratedBoard.stations.find((station) => station.stationKey === "navigator")?.approachOptions.find((option) => option.actionType === "hazardResponse" && option.hazardRecordId === firstId);
     assertSmoke(navigatorOption, "integrated flow exposes hazard response station option");
-    const committedResponse = commitTravelEventRunnerStationOrder(appliedVoid.session, 0, "navigator", navigatorOption.optionKey, { source: "player" });
+    const committedResponse = commitTravelEventRunnerStationOrder(withCommittedPlanning(appliedVoid.session), 0, "navigator", navigatorOption.optionKey, { source: "player" });
     assertSmoke(committedResponse.ok, "integrated flow commits hazard response action");
     assertEqual(committedResponse.session.roundResults[0].stationActions.navigator.type, "hazardResponse", "committed station action remains hazardResponse");
     const resolvedResponse = setTravelEventRunnerStationResult(committedResponse.session, 0, "navigator", "success");

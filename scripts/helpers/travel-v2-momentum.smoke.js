@@ -9,9 +9,11 @@ import {
   spendTravelV2Momentum,
   spendTravelV2MomentumToDowngradeStationFailure
 } from "./travel-event-runner.js";
+import { commitTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 import { prepareTravelV2RoundNarration, sanitizeTravelV2PublicNarration } from "./travel-v2-narration.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 momentum smoke check failed: ${message}`); }
+function commitPlanning(source) { const order = source.event.rounds[source.currentRoundIndex ?? 0].activeStations; const result = commitTravelV2RoundActionOrderRoundState(source, source.currentRoundIndex ?? 0, { proposedOrder: order, timestamp: "2026-07-18T00:00:00.000Z" }); if (!result.ok) throw new Error(result.errors?.join("; ") || "fixture Crew Planning commit failed"); return JSON.parse(JSON.stringify(result.session)); }
 function okSession(result) { assertSmoke(result.ok, result.errors?.join("; ") || "session update failed"); return result.session; }
 function snap(value) { return JSON.stringify(value); }
 
@@ -35,7 +37,7 @@ export async function runTravelV2MomentumSmokeChecks() {
   globalThis.socket = { emit: () => sideEffects.push("socket") };
   try {
     assertSmoke(normalizeTravelV2MomentumState().value === 0, "default momentum value is 0");
-    let session = okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-23T00:00:00.000Z" }));
+    let session = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-23T00:00:00.000Z" })));
     assertSmoke(session.travelV2Momentum.value === 0, "created session includes normalized momentum");
 
     session = okSession(setTravelEventRunnerStationResult(session, 0, "navigator", "criticalSuccess", { now: "2026-06-23T00:01:00.000Z" }));

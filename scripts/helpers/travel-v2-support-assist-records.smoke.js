@@ -8,10 +8,12 @@ import {
   setTravelEventRunnerStationResult,
   useTravelV2SupportRecord
 } from "./travel-event-runner.js";
+import { commitTravelV2RoundActionOrderRoundState } from "./travel-v2-round-action-order-state.js";
 import { prepareTravelV2RoundNarration, sanitizeTravelV2PublicNarration } from "./travel-v2-narration.js";
 import { ARCFLIGHT_TRAVEL_STATION_ACTIONS } from "./travel-pressure.js";
 
 function assertSmoke(condition, message) { if (!condition) throw new Error(`Travel v2 support assist records smoke check failed: ${message}`); }
+function commitPlanning(source) { const order = source.event.rounds[source.currentRoundIndex ?? 0].activeStations; const result = commitTravelV2RoundActionOrderRoundState(source, source.currentRoundIndex ?? 0, { proposedOrder: order, timestamp: "2026-07-18T00:00:00.000Z" }); if (!result.ok) throw new Error(result.errors?.join("; ") || "fixture Crew Planning commit failed"); return JSON.parse(JSON.stringify(result.session)); }
 function okSession(result) { assertSmoke(result.ok, result.errors?.join("; ") || "session update failed"); return result.session; }
 function snap(value) { return JSON.stringify(value); }
 function fixtureEvent() {
@@ -38,7 +40,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
   globalThis.Item = { updateDocuments: () => sideEffects.push("items") };
   globalThis.socket = { emit: () => sideEffects.push("socket") };
   try {
-    let session = okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-25T00:00:00.000Z" }));
+    let session = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent(), { now: "2026-06-25T00:00:00.000Z" })));
     session = setSupport(session);
     session = okSession(setTravelEventRunnerStationResult(session, 0, "engineer", "success", { now: "2026-06-25T00:01:00.000Z" }));
     assertSmoke(session.travelV2SupportRecords.records.length === 1 && session.travelV2SupportRecords.records[0].status === "pending", "Support + success creates one pending assist");
@@ -51,14 +53,14 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     const duplicate = createTravelV2SupportRecord(session, 0, "engineer");
     assertSmoke(duplicate.duplicate === true && duplicate.session.travelV2SupportRecords.records.length === 1, "duplicate pending Support assist records are prevented");
 
-    let criticalSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let criticalSession = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     criticalSession = setSupport(criticalSession);
     criticalSession = okSession(setTravelEventRunnerStationResult(criticalSession, 0, "engineer", "criticalSuccess"));
     assertSmoke(criticalSession.travelV2SupportRecords.records.length === 1 && criticalSession.travelV2SupportRecords.records[0].assistValue === 2, "Support + critical success creates one stronger pending assist");
     assertSmoke(sanitizeTravelV2SupportForPlayers(criticalSession.travelV2SupportRecords).records[0].publicAssistText === "Engineer gives Navigator a strong opening. Pending assist: +2.", "critical Support player text shows stronger assist value");
 
     for (const result of ["failure", "criticalFailure"]) {
-      let failedSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
+      let failedSession = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
       failedSession = setSupport(failedSession);
       failedSession = okSession(setTravelEventRunnerStationResult(failedSession, 0, "engineer", result));
       assertSmoke(failedSession.travelV2SupportRecords.records.length === 0, `Support + ${result} creates no assist`);
@@ -66,11 +68,11 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
       assertSmoke(failedSession.travelV2SupportBacklashRecords.records.length === 1, `Support + ${result} creates separate failed-Support consequence/backlash record`);
     }
 
-    let nonSupport = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let nonSupport = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     nonSupport = okSession(setTravelEventRunnerStationResult(nonSupport, 0, "engineer", "success"));
     assertSmoke(nonSupport.travelV2SupportRecords.records.length === 0, "non-Support success creates no assist");
 
-    const invalidTarget = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    const invalidTarget = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     const rejectedInvalidTarget = setTravelEventRunnerStationAction(invalidTarget, 0, "engineer", ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT, { targetStationKey: "engineer" });
     assertSmoke(rejectedInvalidTarget.ok === false, "invalid Support target selection is rejected");
     const invalidTargetAfterResult = okSession(setTravelEventRunnerStationResult(invalidTarget, 0, "engineer", "success"));
@@ -83,7 +85,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     session = okSession(setTravelEventRunnerStationResult(session, 0, "engineer", "success", { now: "2026-06-25T00:03:00.000Z" }));
     assertSmoke(session.travelV2SupportRecords.records.filter((record) => record.status === "pending").length === 1 && session.travelV2SupportRecords.records.some((record) => record.id !== originalId && record.status === "pending"), "later success after dismissed stale record creates fresh pending assist");
 
-    let clearSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let clearSession = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     clearSession = setSupport(clearSession);
     clearSession = okSession(setTravelEventRunnerStationResult(clearSession, 0, "engineer", "success", { now: "2026-06-25T01:00:00.000Z" }));
     const clearId = clearSession.travelV2SupportRecords.records[0].id;
@@ -91,7 +93,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     const cleared = clearSession.travelV2SupportRecords.records.find((record) => record.id === clearId);
     assertSmoke(cleared?.status === "dismissed" && cleared?.resolutionNote === "Station result was cleared before the Support assist was used.", "clearing a result dismisses pending assist");
 
-    let actionChangeSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let actionChangeSession = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     actionChangeSession = setSupport(actionChangeSession);
     actionChangeSession = okSession(setTravelEventRunnerStationResult(actionChangeSession, 0, "engineer", "success", { now: "2026-06-25T01:30:00.000Z" }));
     const actionChangeId = actionChangeSession.travelV2SupportRecords.records[0].id;
@@ -99,7 +101,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     const actionChanged = actionChangeSession.travelV2SupportRecords.records.find((record) => record.id === actionChangeId);
     assertSmoke(actionChanged?.status === "dismissed" && actionChanged?.resolutionNote === "Support station action changed before the assist was used.", "changing Support action away dismisses pending assist");
 
-    let usedSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let usedSession = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     usedSession = setSupport(usedSession);
     usedSession = okSession(setTravelEventRunnerStationResult(usedSession, 0, "engineer", "success", { now: "2026-06-25T02:00:00.000Z" }));
     const usedId = usedSession.travelV2SupportRecords.records[0].id;
@@ -110,7 +112,7 @@ export async function runTravelV2SupportAssistRecordsSmokeChecks() {
     usedSession = okSession(setTravelEventRunnerStationResult(usedSession, 0, "engineer", "failure", { now: "2026-06-25T02:02:00.000Z" }));
     assertSmoke(usedSession.travelV2SupportRecords.records.find((record) => record.id === usedId)?.status === "used" && usedSession.travelV2SupportRecords.records.find((record) => record.id === usedId)?.resolvedAt === usedResolvedAt, "used records are not rewritten when result later changes");
 
-    let dismissedSession = okSession(createTravelEventRunnerSession(fixtureEvent()));
+    let dismissedSession = commitPlanning(okSession(createTravelEventRunnerSession(fixtureEvent())));
     dismissedSession = setSupport(dismissedSession);
     dismissedSession = okSession(setTravelEventRunnerStationResult(dismissedSession, 0, "engineer", "success"));
     const dismissedId = dismissedSession.travelV2SupportRecords.records[0].id;

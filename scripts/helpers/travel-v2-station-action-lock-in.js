@@ -1,5 +1,6 @@
 import { getStation } from "../../data/stations/core-stations.js";
 import { getCoreStationAction } from "../../data/station-actions/core-station-actions.js";
+import { prepareTravelV2StationActionPlanningGate } from "./travel-v2-station-action-planning-gate.js";
 
 export const TRAVEL_V2_STATION_ACTION_LOCK_IN_STATE_VERSION = 1;
 export const TRAVEL_V2_STATION_ACTION_LOCK_IN_STATE_KEY = "travelV2StationActionLockIn";
@@ -93,6 +94,23 @@ function validateState(state, requiredStationKeys = TRAVEL_V2_ALPHA_CORE_STATION
   return errors;
 }
 
+function blockedPlanningGateState(gate) {
+  return deepFreeze({
+    ok: false,
+    blocked: true,
+    blockedByPlanningGate: true,
+    reasonCode: gate?.reasonCode ?? "",
+    planningGate: gate ?? null,
+    playerSafe: true,
+    readOnly: true
+  });
+}
+
+function planningGateForOptions(options = {}, stationKey = "") {
+  if (!isPlainObject(options) || !isPlainObject(options.session)) return null;
+  return prepareTravelV2StationActionPlanningGate(options.session, stationKey);
+}
+
 export function normalizeTravelV2StationActionChoices(source = {}, options = {}) {
   const requiredStationKeys = requiredStationKeysFrom(options);
   const choices = sourceChoices(source);
@@ -127,7 +145,9 @@ export function normalizeTravelV2StationActionChoices(source = {}, options = {})
   return deepFreeze(state);
 }
 
-export function selectTravelV2StationAction(state, stationKey, actionChoice) {
+export function selectTravelV2StationAction(state, stationKey, actionChoice, options = {}) {
+  const gate = planningGateForOptions(options, stationKey);
+  if (gate?.blocked) return blockedPlanningGateState(gate);
   const normalized = normalizeTravelV2StationActionChoices(state);
   const key = normalizeStationKey(stationKey);
   if (!getStation(key)) return { ...normalized, validationErrors: [...normalized.validationErrors, error("invalidStationKey", key, `Station key is not valid for Travel v2: ${key}.`)] };
@@ -138,7 +158,9 @@ export function selectTravelV2StationAction(state, stationKey, actionChoice) {
   return normalizeTravelV2StationActionChoices(next, { requiredStationKeys: next.requiredStationKeys, stationOrder: next.stationOrder });
 }
 
-export function lockTravelV2StationAction(state, stationKey) {
+export function lockTravelV2StationAction(state, stationKey, options = {}) {
+  const gate = planningGateForOptions(options, stationKey);
+  if (gate?.blocked) return blockedPlanningGateState(gate);
   const normalized = normalizeTravelV2StationActionChoices(state);
   const key = normalizeStationKey(stationKey);
   const next = cloneData(normalized);
@@ -146,7 +168,9 @@ export function lockTravelV2StationAction(state, stationKey) {
   return normalizeTravelV2StationActionChoices(next, { requiredStationKeys: next.requiredStationKeys, stationOrder: next.stationOrder });
 }
 
-export function unlockTravelV2StationAction(state, stationKey, { allowUnlock = false } = {}) {
+export function unlockTravelV2StationAction(state, stationKey, { allowUnlock = false, session = null } = {}) {
+  const gate = planningGateForOptions({ session }, stationKey);
+  if (gate?.blocked) return blockedPlanningGateState(gate);
   const normalized = normalizeTravelV2StationActionChoices(state);
   if (!allowUnlock) return normalized;
   const key = normalizeStationKey(stationKey);
