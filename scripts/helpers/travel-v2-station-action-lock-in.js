@@ -101,13 +101,26 @@ function blockedPlanningGateState(gate) {
     blockedByPlanningGate: true,
     reasonCode: gate?.reasonCode ?? "",
     planningGate: gate ?? null,
+    session: null,
     playerSafe: true,
     readOnly: true
   });
 }
 
+function missingSessionPlanningGate(stationKey = "") {
+  return { reasonCode: "missing-session", stationKey, playerSafe: true, readOnly: true };
+}
+
+function hasCanonicalTravelV2StationActionSessionShape(session = null) {
+  if (!isPlainObject(session) || !Number.isInteger(session.currentRoundIndex) || !Array.isArray(session.event?.rounds) || !Array.isArray(session.roundResults)) return false;
+  const round = session.event.rounds[session.currentRoundIndex];
+  const roundResult = session.roundResults[session.currentRoundIndex];
+  const roundNumber = round?.roundNumber ?? round?.number ?? round?.round;
+  return isPlainObject(round) && isPlainObject(roundResult) && Number.isInteger(roundNumber) && roundNumber > 0;
+}
+
 function planningGateForOptions(options = {}, stationKey = "") {
-  if (!isPlainObject(options) || !isPlainObject(options.session)) return null;
+  if (!isPlainObject(options) || !hasCanonicalTravelV2StationActionSessionShape(options.session)) return missingSessionPlanningGate(stationKey);
   return prepareTravelV2StationActionPlanningGate(options.session, stationKey);
 }
 

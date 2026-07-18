@@ -3585,7 +3585,7 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
   if (!action) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} has no selected action to lock.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
 
   const source = { stationOrder, activeStations: stationOrder, stations: Object.fromEntries(stationOrder.map((key) => [key, { ...(currentRoundResult.stationActions?.[key] ?? {}), locked: currentRoundResult.stationOrderCommitments?.[key]?.committed === true }])) };
-  const lockedState = lockTravelV2StationAction(source, stationKey);
+  const lockedState = lockTravelV2StationAction(source, stationKey, { session: normalized.session });
   if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true };
@@ -3613,7 +3613,7 @@ export function prepareTravelV2StationActionUnlockRunnerUpdate(currentSession, o
   if (!action) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} has no selected action to unlock.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
 
   const source = { stationOrder, activeStations: stationOrder, stations: Object.fromEntries(stationOrder.map((key) => [key, { ...(currentRoundResult.stationActions?.[key] ?? {}), locked: currentRoundResult.stationOrderCommitments?.[key]?.committed === true }])) };
-  const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true });
+  const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true, session: normalized.session });
   if (unlockedState.stations?.[stationKey]?.locked === true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be unlocked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
   nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false };
