@@ -37,6 +37,35 @@ function installMutationSentinels() {
 function assertZeroCounters(counters) { for (const [key, value] of Object.entries(counters)) assert.equal(value, 0, `${key} mutation counter`); }
 
 
+function collectKeys(value, keys = []) {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectKeys(entry, keys);
+  } else if (value && typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) { keys.push(key); collectKeys(entry, keys); }
+  }
+  return keys;
+}
+
+function sessionWithPrivateResolutionRecords() {
+  const privateRecord = { roundIndex: 0, roundNumber: 1, gmNote: "PRIVATE-ROUND-RESOLUTION-MARKER", userId: "private-user", internalScore: 999, auditPayload: { secretValue: true } };
+  const next = clone(committed());
+  next.event.rounds[0].travelV2RoundResolution = clone(privateRecord);
+  next.event.rounds[0].travelV2RoundResolutionRecord = clone(privateRecord);
+  next.event.rounds[0].roundResolution = clone(privateRecord);
+  next.event.rounds[0].roundResolutionRecord = clone(privateRecord);
+  next.roundResults[0].travelV2RoundResolution = clone(privateRecord);
+  next.roundResults[0].travelV2RoundResolutionRecord = clone(privateRecord);
+  next.roundResults[0].roundResolution = clone(privateRecord);
+  next.roundResults[0].roundResolutionRecord = clone(privateRecord);
+  next.travelV2RoundResolutions = { records: [clone(privateRecord)] };
+  next.travelV2RoundResolutionRecords = [clone(privateRecord)];
+  next.roundResolutionRecords = { records: [clone(privateRecord)] };
+  next.roundResolutions = [clone(privateRecord)];
+  return next;
+}
+
+
+
 export default function runTravelV2CrewPlanningPhaseSmokeChecks() {
 let groups = 0;
 const checked = [];
@@ -168,6 +197,26 @@ group("mutation sentinels and source scan", () => {
   for (const forbidden of ["game.socket.emit", "game.settings.set", "Actor.create", "Item.create", "ActiveEffect.create", "ChatMessage.create", "JournalEntry.create", "Scene.create", "TokenDocument.create"]) {
     assert(!helperSource.includes(forbidden), forbidden); assert(!segmentSource.includes(forbidden), forbidden);
   }
+});
+
+group("player-safe resolution record redaction", () => {
+  const source = sessionWithPrivateResolutionRecords();
+  const snapshot = clone(source);
+  const gate = prepareTravelV2CrewPlanningPhaseGate(source);
+  assert.equal(gate.blocked, true); assert(gate.blockedReasons.includes("round already completed"));
+  const playerState = prepareTravelEventRunnerState(source, { user: { isGM: false }, isGM: false });
+  assert(playerState.crewPlanningPhaseGate);
+  const gateKeys = Object.keys(playerState.crewPlanningPhaseGate).sort();
+  assert.deepEqual(gateKeys, ["actionOrderStatus", "activeStationKeys", "blocked", "blockedReasons", "committedStationKeys", "nextPhase", "phase", "playerSafe", "proposedStationKeys", "readOnly", "ready", "roundIndex", "roundNumber"].sort());
+  const playerKeys = collectKeys(playerState);
+  for (const forbiddenKey of ["travelV2RoundResolution", "travelV2RoundResolutionRecord", "roundResolution", "roundResolutionRecord", "travelV2RoundResolutions", "travelV2RoundResolutionRecords", "roundResolutionRecords", "roundResolutions"]) assert(!playerKeys.includes(forbiddenKey), forbiddenKey);
+  const playerText = JSON.stringify(playerState);
+  for (const forbidden of ["PRIVATE-ROUND-RESOLUTION-MARKER", "private-user", "internalScore", "auditPayload", "secretValue"]) assert(!playerText.includes(forbidden), forbidden);
+  assert(playerState.crewPlanningPhaseGate.blockedReasons.includes("round already completed"));
+  assert.deepEqual(source, snapshot);
+  const gmState = prepareTravelEventRunnerState(source, { user: { isGM: true }, isGM: true });
+  const gmText = JSON.stringify(gmState);
+  assert(gmText.includes("PRIVATE-ROUND-RESOLUTION-MARKER")); assert(gmText.includes("travelV2RoundResolution"));
 });
 
 group("player-safe state and zero mutation surface", () => {
