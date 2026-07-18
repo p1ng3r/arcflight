@@ -92,6 +92,14 @@ export function runTravelV2RiskBidsSmokeChecks() {
     const recordKeys = ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"];
     const original = {
       id: "session-1",
+      currentRoundIndex: 0,
+      roundPhase: "stationOrders",
+      event: { rounds: [{ roundNumber: 1, activeStations: ["navigator"], stationPrompts: {} }] },
+      roundResults: [{
+        actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] },
+        stationActions: { navigator: { actionKey: "plot-course" } },
+        stationOrderCommitments: { navigator: { committed: false } }
+      }],
       travelV2RiskBidSelections: {
         version: 99,
         gmOnly: true,
@@ -168,6 +176,30 @@ export function runTravelV2RiskBidsSmokeChecks() {
       assertSmoke(!blocked.ok && blocked.blockedReasons.length > 0, "missing station/action/round/tier blocks safely");
       assertNoForbiddenOutput(blocked, "blocked selection result");
     }
+    const canonical = {
+      currentRoundIndex: 0, roundPhase: "stationOrders",
+      event: { rounds: [{ roundNumber: 1, activeStations: ["navigator"] }] },
+      roundResults: [{ actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] }, stationActions: { navigator: { actionKey: "plot-course" } }, stationOrderCommitments: { navigator: { committed: false } } }]
+    };
+    const canonicalBefore = snap(canonical);
+    const validCoupledSelection = selectTravelV2RiskBidForRunnerSession(canonical, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 5 }, { selectedAt: "fixed" });
+    assertSmoke(validCoupledSelection.ok && validCoupledSelection.session !== canonical, "canonical pre-lock selection succeeds");
+    const lockedSession = JSON.parse(snap(validCoupledSelection.session));
+    lockedSession.roundResults[0].stationOrderCommitments.navigator.committed = true;
+    const lockedBefore = snap(lockedSession);
+    for (const operation of [
+      () => selectTravelV2RiskBidForRunnerSession(lockedSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 8 }),
+      () => clearTravelV2RiskBidSelectionForRunnerSession(lockedSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course" })
+    ]) {
+      const blocked = operation();
+      assertSmoke(blocked.blocked && blocked.reasonCode === "station-action-locked" && blocked.session === undefined && Object.isFrozen(blocked) && Object.isFrozen(blocked.planningGate), "locked risk-bid mutation is player-safe, frozen, and has no replacement session");
+      assertEqual(snap(lockedSession), lockedBefore, "blocked lock mutation preserves session");
+    }
+    for (const badSession of [null, { ...canonical, roundPhase: "crewPlanning" }, { ...canonical, currentRoundIndex: 1 }, { ...canonical, roundResults: [{ ...canonical.roundResults[0], actionOrder: { ...canonical.roundResults[0].actionOrder, committedStationKeys: ["captain"] } }] }]) {
+      const blocked = selectTravelV2RiskBidForRunnerSession(badSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 2 });
+      assertSmoke(blocked.blocked && blocked.session === undefined, "authoritative planning gate blocks direct helper bypasses");
+    }
+    assertEqual(snap(canonical), canonicalBefore, "risk-bid gate failures do not mutate or create containers");
     assertEqual(sideEffects.length, 0, "risk bid helpers do not call actor, item, chat, journal, socket, or world mutation APIs");
   } finally {
     globalThis.Actor = prior.Actor;

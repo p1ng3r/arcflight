@@ -3589,7 +3589,8 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
   const lockedState = lockTravelV2StationAction(source, stationKey, { session: normalized.session });
   if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
-  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true };
+  const selectedRiskBid = nextSession.travelV2RiskBidSelections?.records?.find((record) => record?.stationKey === stationKey && (record?.roundIndex === roundIndex || record?.roundNumber === roundIndex + 1) && record?.actionId === (action.actionId ?? action.actionKey ?? action.key ?? action.type ?? action.action));
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true, riskBidLocked: Boolean(selectedRiskBid) };
   nextSession.updatedAt = nowIso(options);
   return { result: { ok: true, errors: [], warnings: [], stationKey, locked: true, message: `${formatTravelEventRunnerStationName(stationKey)} station action locked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
 }
@@ -3617,7 +3618,7 @@ export function prepareTravelV2StationActionUnlockRunnerUpdate(currentSession, o
   const unlockedState = unlockTravelV2StationAction(source, stationKey, { allowUnlock: true, session: normalized.session });
   if (unlockedState.stations?.[stationKey]?.locked === true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be unlocked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
-  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false };
+  nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: false, riskBidLocked: false };
   nextSession.updatedAt = nowIso(options);
   return { result: { ok: true, errors: [], warnings: [], stationKey, locked: false, message: `${formatTravelEventRunnerStationName(stationKey)} station action unlocked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
 }
@@ -4632,6 +4633,15 @@ export function applyTravelV2PendingSupportBonusToStationCheck(session, roundInd
   return { ok: true, errors: [], warnings: [], session: nextSession, appliedBonus, appliedBonuses: [appliedBonus] };
 }
 
+function clearTravelV2RiskBidSelectionsForStationAction(session, roundIndex, stationKey) {
+  const records = session?.travelV2RiskBidSelections?.records;
+  if (!Array.isArray(records)) return;
+  const roundNumber = roundIndex + 1;
+  const retained = records.filter((record) => record?.stationKey !== stationKey || (record?.roundIndex !== roundIndex && record?.roundNumber !== roundNumber));
+  if (retained.length === records.length) return;
+  session.travelV2RiskBidSelections = { version: 1, records: retained };
+}
+
 function stationActionPlanningGateBlockedResult(gate, message = "Station action is blocked until Crew Planning is committed for this round.") {
   return {
     ok: false,
@@ -4708,6 +4718,8 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
     : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE ? hazardResponse() : (actionType === ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT ? support(options.targetStationKey ?? "", options) : eventApproach()));
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
+  // A bid belongs to the selected action; never carry it into a replacement action.
+  clearTravelV2RiskBidSelectionsForStationAction(nextSession, index, stationKey);
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);

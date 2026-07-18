@@ -482,14 +482,14 @@ function prepareTravelV2RiskBidSelectionFromState(riskBids = {}, tier = null) {
 
 export function prepareTravelV2RiskBidSelectRunnerUpdate(currentSession, riskBids = {}, tier, options = {}) {
   const result = selectTravelV2RiskBidForRunnerSession(currentSession, prepareTravelV2RiskBidSelectionFromState(riskBids, tier), options);
-  const shouldUpdateSession = result?.session !== undefined && (result.ok === true || result.ok === false);
-  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: true };
+  const shouldUpdateSession = result?.ok === true && result?.session !== undefined;
+  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: shouldUpdateSession };
 }
 
 export function prepareTravelV2RiskBidClearRunnerUpdate(currentSession, riskBids = {}, options = {}) {
   const result = clearTravelV2RiskBidSelectionForRunnerSession(currentSession, prepareTravelV2RiskBidSelectionFromState(riskBids), options);
-  const shouldUpdateSession = result?.session !== undefined && (result.ok === true || result.ok === false);
-  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: true };
+  const shouldUpdateSession = result?.ok === true && result?.session !== undefined;
+  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: shouldUpdateSession };
 }
 
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -1385,7 +1385,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ? `Risk bid +${update.result.selectionRecord?.tier ?? tier} selected for ${riskBids.stationName || riskBids.stationKey || "the current station"} / ${riskBids.actionName || riskBids.actionId || "action"} in session-local state only.`
       : `Risk bid selection blocked: ${update.result?.error ?? "invalid risk bid selection"}.`;
     globalThis.ui?.notifications?.[update.result?.ok ? "info" : "warn"]?.(this.statusMessage);
-    return this.render(true);
+    return update.shouldRerender ? this.render(true) : update;
   }
 
   async #clearTravelV2RiskBid() {
@@ -1399,7 +1399,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ? (update.result.cleared ? "Risk bid selection cleared for the current station/action in session-local state only." : "No risk bid selection was set for the current station/action.")
       : `Risk bid clear blocked: ${update.result?.error ?? "invalid risk bid context"}.`;
     globalThis.ui?.notifications?.[update.result?.ok ? "info" : "warn"]?.(this.statusMessage);
-    return this.render(true);
+    return update.shouldRerender ? this.render(true) : update;
   }
 
   async #refreshTravelV2Narration() {
