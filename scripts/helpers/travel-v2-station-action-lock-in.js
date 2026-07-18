@@ -108,7 +108,14 @@ function blockedPlanningGateState(gate) {
 }
 
 function missingSessionPlanningGate(stationKey = "") {
-  return { reasonCode: "missing-session", stationKey, playerSafe: true, readOnly: true };
+  return deepFreeze({
+    allowed: false,
+    blocked: true,
+    reasonCode: "missing-session",
+    stationKey,
+    playerSafe: true,
+    readOnly: true
+  });
 }
 
 function hasCanonicalTravelV2StationActionSessionShape(session = null) {
