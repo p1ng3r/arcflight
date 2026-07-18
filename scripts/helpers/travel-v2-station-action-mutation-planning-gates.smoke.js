@@ -120,7 +120,7 @@ export default function runTravelV2StationActionMutationPlanningGatesSmokeChecks
     submission: (s, roundIndex) => prepareTravelV2StationActionSubmissionRunnerUpdate(s, { stationKey: "captain", optionKey: "eventApproach:perception", roundIndex, user: GM, now: NOW })
   });
   for (const [name, operation] of Object.entries(wrongRoundOperations)) {
-    const source = committed();
+    const source = clone(committed());
     delete source.roundResults[1].stationActions;
     delete source.roundResults[1].stationOrderCommitments;
     delete source.roundResults[1].selectedStationSkills;
