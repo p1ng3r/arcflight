@@ -47,6 +47,7 @@ import {
   summarizeTravelEventRunnerSession
 } from "../helpers/travel-event-runner.js";
 import { ARCFLIGHT_TRAVEL_ROUND_SEGMENTS } from "../helpers/travel-round-segments.js";
+import { commitTravelV2RoundActionOrderRoundState } from "../helpers/travel-v2-round-action-order-state.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -210,7 +211,7 @@ const runner = createTravelEventRunnerSession(runnerEvent, {
 });
 assert(runner.ok, `runner session starts from pressure smoke event: ${(runner.errors ?? []).join(", ")}`);
 assert(runner.session.pressure.strain === 0 && runner.session.pressure.lifeveil === 0 && runner.session.pressure.morale === 0, "new runner sessions start with pressure 0/0/0");
-assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "new runner sessions start at roundReveal");
+assert(runner.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING, "new runner sessions start at crewPlanning");
 
 const initialPlayerBoard = prepareTravelPlayerMissionBoardState(runner.session);
 const initialPlayerStation = initialPlayerBoard.stations[0];
@@ -345,29 +346,30 @@ const focusedImport = importTravelEventRunnerSessionFromJson(focusedExport.json)
 assert(focusedImport.session.stationFocus.navigator.focusRemaining === 0 && focusedImport.session.stationFocus.navigator.usedAbilityKeys.includes("hard-correction"), "Focus data survives session export/import");
 assert(focusedImport.session.focusEffectRecords.records.length === 1 && focusedImport.session.focusEffectRecords.records[0].abilityKey === "hard-correction", "Focus effect records survive session export/import");
 
-const advancedPhase = advanceTravelEventRunnerRoundPhase(runner.session, { now: "2026-06-17T00:01:00.000Z" });
-assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_STRATEGY, "advance phase moves roundReveal to crewStrategy");
+const phaseCommit = commitTravelV2RoundActionOrderRoundState(runner.session, 0, { proposedOrder: runner.session.event.rounds[0].activeStations, timestamp: "2026-06-17T00:00:30.000Z" });
+const advancedPhase = advanceTravelEventRunnerRoundPhase(phaseCommit.session, { now: "2026-06-17T00:01:00.000Z" });
+assert(advancedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS, "advance phase moves crewPlanning to stationOrders");
 const retreatedPhase = retreatTravelEventRunnerRoundPhase(advancedPhase.session, { now: "2026-06-17T00:02:00.000Z" });
-assert(retreatedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "retreat phase moves crewStrategy to roundReveal");
+assert(retreatedPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING, "retreat phase moves stationOrders to crewPlanning");
 const setPhase = setTravelEventRunnerRoundPhase(retreatedPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, { now: "2026-06-17T00:03:00.000Z" });
 assert(setPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "set phase can set outcomePressure");
 const legacyPhase = setTravelEventRunnerRoundPhase(setPhase.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.PRESSURE_APPLICATION, { now: "2026-06-17T00:03:30.000Z" });
 assert(legacyPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.OUTCOME_PRESSURE, "legacy pressureApplication normalizes to outcomePressure");
 const invalidPhase = setTravelEventRunnerRoundPhase(setPhase.session, "not-a-round-phase", { now: "2026-06-17T00:04:00.000Z" });
-assert(invalidPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "invalid set phase falls back to roundReveal");
+assert(invalidPhase.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING, "invalid set phase falls back to crewPlanning");
 
 const roundChangeSource = {
   ...setPhase.session,
   pressure: { strain: 4, lifeveil: 2, morale: 1 }
 };
-const advancedRound = advanceTravelEventRunnerRound(roundChangeSource, { now: "2026-06-17T00:05:00.000Z" });
+const advancedRound = advanceTravelEventRunnerRound(roundChangeSource, { force: true, now: "2026-06-17T00:05:00.000Z" });
 assert(advancedRound.session.currentRoundIndex === 1, "advance round moves to the next round");
-assert(advancedRound.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "advancing a travel round resets phase to roundReveal");
+assert(advancedRound.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING, "advancing a travel round resets phase to crewPlanning");
 assert(advancedRound.session.pressure.strain === 4 && advancedRound.session.pressure.lifeveil === 2 && advancedRound.session.pressure.morale === 1, "pressure survives advancing a travel round");
 const retreatSource = setTravelEventRunnerRoundPhase(advancedRound.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CRISIS_TRANSITION).session;
 const retreatedRound = retreatTravelEventRunnerRound(retreatSource, { now: "2026-06-17T00:06:00.000Z" });
 assert(retreatedRound.session.currentRoundIndex === 0, "retreat round moves to the previous round");
-assert(retreatedRound.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.ROUND_REVEAL, "retreating a travel round resets phase to roundReveal");
+assert(retreatedRound.session.roundPhase === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING, "retreating a travel round resets phase to crewPlanning");
 assert(retreatedRound.session.pressure.strain === 4 && retreatedRound.session.pressure.lifeveil === 2 && retreatedRound.session.pressure.morale === 1, "pressure survives retreating a travel round");
 
 const normalizedRunner = normalizeTravelEventRunnerSession({

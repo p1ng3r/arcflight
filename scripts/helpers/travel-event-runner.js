@@ -20,7 +20,7 @@ import {
   stabilize,
   support
 } from "./travel-pressure.js";
-import { getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
+import { ARCFLIGHT_TRAVEL_ROUND_SEGMENTS, getNextTravelRoundSegment, getPreviousTravelRoundSegment, normalizeTravelRunnerRoundPhase, prepareTravelRoundSegmentState } from "./travel-round-segments.js";
 import { normalizeTravelV2HazardDeckState, prepareTravelV2HazardPanelState, setTravelV2HazardStatus, drawTravelV2ManualHazard, revealTravelV2Hazard, prepareTravelV2ActiveHazardModifiers, applyTravelV2HazardToRound, resolveTravelV2HazardResponse, resolveTravelV2UnresolvedHazardsForRound, sanitizeTravelV2PublicHazard } from "./travel-v2-hazards.js";
 import { normalizeTravelV2ShipScarsState, prepareTravelV2ShipScarsPanelState, setTravelV2ShipScarSessionStatus } from "./travel-v2-ship-scars.js";
 import { prepareTravelV2NarrationHookState, prepareTravelV2RoundNarration } from "./travel-v2-narration.js";
@@ -36,7 +36,7 @@ import { prepareTravelV2FinalOutcomePreservationApplyPlan } from "./travel-v2-fi
 import { buildTravelV2CompletedSummaryMarkdown, buildTravelV2CompletedSummaryHtml, buildTravelV2CompletedSummaryExportState, postTravelV2CompletedSummaryToChat, createTravelV2CompletedSummaryJournalEntry } from "./travel-v2-completed-summary-export.js";
 import { prepareTravelV2RiskBidRunnerState } from "./travel-v2-risk-bids.js";
 import { prepareTravelV2InterStationHelpCheckAdjustment } from "./travel-v2-inter-station-help-application.js";
-import { initializeTravelV2RoundActionOrderForRound, prepareTravelV2NextRoundActionOrder, prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
+import { initializeTravelV2RoundActionOrderForRound, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2NextRoundActionOrder, prepareTravelV2RoundActionOrderUnlockLifecycleState } from "./travel-v2-round-action-order-state.js";
 
 export const TRAVEL_EVENT_RUNNER_SESSION_VERSION = 1;
 export const TRAVEL_EVENT_RUNNER_SESSION_EXPORT_VERSION = 1;
@@ -1375,6 +1375,12 @@ function cloneData(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function deepFreeze(value) {
+  if (!isPlainObject(value) && !Array.isArray(value)) return value;
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
 }
 
 function nowIso(options = {}) {
@@ -3141,6 +3147,7 @@ const VISIBLE_STAKES_OMIT_KEYS = new Set([
   "mutationRecords",
   "auditRecord",
   "commitRecords",
+  "unlockRecords",
   "userId",
   "userName",
   "secret",
@@ -3251,6 +3258,7 @@ const PLAYER_SAFE_RUNNER_OMIT_KEYS = new Set([
   "debugReport",
   "auditRecord",
   "commitRecords",
+  "unlockRecords",
   "userId",
   "userName",
   "committedByUserId",
@@ -3594,6 +3602,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
   const stations = activeSession && currentRound ? prepareStationRows(activeSession, currentRound, currentRoundResult, options) : [];
   const roundSummaryCard = activeSession && currentRound ? prepareTravelEventRunnerRoundSummaryCard(activeSession, currentRound, currentRoundResult, options) : prepareTravelEventRunnerRoundSummaryCard(null, null, null, options);
   const roundResolutionReadiness = activeSession ? inspectTravelV2RoundResolutionReadiness(activeSession, options) : null;
+  const crewPlanningPhaseGate = activeSession ? prepareTravelV2CrewPlanningPhaseGate(activeSession, options) : prepareTravelV2CrewPlanningPhaseGate(null, options);
   const stationActionLockIn = prepareTravelEventRunnerStationActionLockInState(activeSession, currentRound, currentRoundResult, options);
   const travelV2RiskBids = prepareTravelV2RiskBidRunnerState(session ?? activeSession, { ...options, currentRound, currentRoundResult });
   const travelV2VisibleStakes = prepareTravelV2VisibleStakesState(activeSession, options);
@@ -3650,6 +3659,7 @@ export function prepareTravelEventRunnerState(session = null, options = {}) {
     currentRoundTitle: currentRound?.title ?? "",
     currentRoundOpeningVignette: currentRound?.openingVignette ?? "",
     roundSegmentState: activeSession ? prepareTravelRoundSegmentState(activeSession, { reactionPromptReview, stabilizeResolutionReview, focusEffectReview }) : prepareTravelRoundSegmentState(null),
+    crewPlanningPhaseGate,
     stationAssignments: activeSession ? prepareTravelEventRunnerStationAssignmentState(activeSession, options) : { rows: [], actorOptions: [] },
     stations,
     reactionPromptReview,
@@ -4750,6 +4760,79 @@ export function commitTravelEventRunnerStationOrder(session, roundIndex, station
   return { ok: true, errors: [], warnings: [], session: nextSession };
 }
 
+
+function travelV2CurrentRoundContext(session = {}) {
+  const rounds = Array.isArray(session?.event?.rounds) ? session.event.rounds : [];
+  if (rounds.length === 0) return { roundIndex: -1, round: null, roundNumber: null, roundResult: null, activeStationKeys: [] };
+  const roundIndex = Math.min(Math.max(Number.isInteger(Number(session.currentRoundIndex)) ? Number(session.currentRoundIndex) : 0, 0), rounds.length - 1);
+  const round = rounds[roundIndex] ?? null;
+  const roundResult = Array.isArray(session.roundResults) ? session.roundResults[roundIndex] : null;
+  const roundNumber = Number.isInteger(Number(round?.roundNumber ?? round?.number ?? round?.round)) ? Number(round?.roundNumber ?? round?.number ?? round?.round) : roundIndex + 1;
+  const rawStations = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
+  const activeStationKeys = Array.from(new Set(rawStations.map((entry) => typeof entry === "string" ? entry : entry?.stationKey).filter(Boolean)));
+  return { roundIndex, round, roundNumber, roundResult, activeStationKeys };
+}
+
+function travelV2RoundHasRecordedStationResult(roundResult = {}) {
+  return Object.values(roundResult?.stationResults ?? {}).some((result) => TRAVEL_EVENT_RUNNER_RESULT_VALUES.includes(result));
+}
+
+function travelV2RoundHasCompletionRecord(session = {}, roundIndex = -1, roundNumber = null) {
+  const containers = [session?.travelV2RoundResolutions, session?.roundResolutions, session?.travelV2RoundFinalizations];
+  return containers.some((container) => {
+    const records = Array.isArray(container) ? container : (Array.isArray(container?.records) ? container.records : []);
+    return records.some((record) => record && (Number(record.roundIndex) === roundIndex || (roundNumber !== null && Number(record.roundNumber ?? record.round) === roundNumber)));
+  });
+}
+
+export function prepareTravelV2CrewPlanningPhaseGate(session = null, options = {}) {
+  const blockedReasons = [];
+  const hasSession = isPlainObject(session);
+  if (!hasSession) blockedReasons.push("no session");
+  const sourceSession = hasSession ? session : {};
+  const phase = normalizeTravelRunnerRoundPhase(options.roundPhase ?? sourceSession.roundPhase ?? sourceSession.currentRoundPhase);
+  const { roundIndex, round, roundNumber, roundResult, activeStationKeys } = travelV2CurrentRoundContext(sourceSession);
+  const hasCurrentRound = Boolean(round);
+  if (!hasCurrentRound) blockedReasons.push("no current round");
+  if (hasCurrentRound && activeStationKeys.length === 0) blockedReasons.push("no active stations");
+  if (hasCurrentRound && phase !== ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING) blockedReasons.push("current phase is not crewPlanning");
+  const directActionOrder = hasSession && hasCurrentRound ? sourceSession.roundResults?.[roundIndex]?.actionOrder : null;
+  const canonicalSession = hasSession && hasCurrentRound ? initializeTravelV2RoundActionOrderForRound(sourceSession, roundIndex, options) : null;
+  const actionOrder = canonicalSession?.roundResults?.[roundIndex]?.actionOrder ?? null;
+  const proposedStationKeys = Array.isArray(actionOrder?.proposedStationKeys) ? [...actionOrder.proposedStationKeys] : [];
+  const committedStationKeys = Array.isArray(actionOrder?.committedStationKeys) ? [...actionOrder.committedStationKeys] : [];
+  const actionOrderStatus = typeof actionOrder?.status === "string" ? actionOrder.status : "";
+  if (hasCurrentRound && !actionOrder) blockedReasons.push("invalid committed order");
+  if (directActionOrder?.status === "committed") {
+    const directCommittedKeys = Array.isArray(directActionOrder.committedStationKeys) ? directActionOrder.committedStationKeys : [];
+    if (!normalizeTravelV2ProposedRoundActionOrder(directCommittedKeys, activeStationKeys).valid) blockedReasons.push("invalid committed order");
+  }
+  if (actionOrderStatus === "selecting") blockedReasons.push("order still selecting");
+  else if (actionOrderStatus === "unlocked") blockedReasons.push("order unlocked");
+  else if (hasCurrentRound && actionOrderStatus !== "committed") blockedReasons.push("invalid committed order");
+  const validation = normalizeTravelV2ProposedRoundActionOrder(committedStationKeys, activeStationKeys);
+  if (hasCurrentRound && actionOrderStatus === "committed" && !validation.valid) blockedReasons.push("invalid committed order");
+  if (hasCurrentRound && travelV2RoundHasRecordedStationResult(roundResult ?? {})) blockedReasons.push("station results already recorded");
+  if (hasCurrentRound && (sourceSession.status === "completed" || sourceSession.completed === true || travelV2RoundHasCompletionRecord(sourceSession, roundIndex, roundNumber))) blockedReasons.push("round already completed");
+  const uniqueReasons = Array.from(new Set(blockedReasons));
+  const ready = uniqueReasons.length === 0;
+  return deepFreeze({
+    roundIndex,
+    roundNumber,
+    phase,
+    actionOrderStatus,
+    proposedStationKeys,
+    committedStationKeys,
+    activeStationKeys,
+    ready,
+    blocked: !ready,
+    blockedReasons: uniqueReasons,
+    nextPhase: ready ? ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS : phase,
+    playerSafe: true,
+    readOnly: true
+  });
+}
+
 export function advanceTravelEventRunnerRound(session, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
@@ -4798,6 +4881,11 @@ export function setTravelEventRunnerRoundPhase(session, roundPhase, options = {}
 export function advanceTravelEventRunnerRoundPhase(session, options = {}) {
   const normalized = normalizeTravelEventRunnerSession(session, options);
   if (!normalized.ok) return normalized;
+  if (normalizeTravelRunnerRoundPhase(normalized.session.roundPhase) === ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.CREW_PLANNING) {
+    const gate = prepareTravelV2CrewPlanningPhaseGate(normalized.session, options);
+    if (gate.blocked) return { ok: false, errors: gate.blockedReasons, warnings: [], session: normalized.session, gate };
+    return setTravelEventRunnerRoundPhase(normalized.session, ARCFLIGHT_TRAVEL_ROUND_SEGMENTS.STATION_ORDERS, options);
+  }
   return setTravelEventRunnerRoundPhase(normalized.session, getNextTravelRoundSegment(normalized.session.roundPhase), options);
 }
 
