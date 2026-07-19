@@ -4,8 +4,8 @@
   "description": "A Foundry VTT module scaffold for PF2E-compatible fantasy voidfaring campaigns.",
   "version": "0.0.0",
   "compatibility": {
-    "minimum": "13",
-    "verified": "13"
+    "minimum": "14",
+    "verified": "14"
   },
   "styles": [
     "styles/arcflight.css"

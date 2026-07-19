@@ -17,9 +17,9 @@ async function loadArcflightShipSheetClass() {
   return ShipSheetClass;
 }
 
-function getSheetRegistry(collectionName) {
-  const collection = foundry?.documents?.collections?.[collectionName];
-  return typeof collection?.registerSheet === "function" ? collection : null;
+function getDocumentSheetConfig() {
+  const documentSheetConfig = foundry?.applications?.apps?.DocumentSheetConfig;
+  return typeof documentSheetConfig?.registerSheet === "function" ? documentSheetConfig : null;
 }
 
 function pf2eVehicleActorsAvailable() {
@@ -33,11 +33,12 @@ function pf2eVehicleActorsAvailable() {
 export async function registerArcflightSheets() {
   const registered = {};
 
-  const actors = getSheetRegistry("Actors");
-  if (actors && pf2eVehicleActorsAvailable()) {
+  const documentSheetConfig = getDocumentSheetConfig();
+  const ActorDocument = foundry?.documents?.Actor;
+  if (documentSheetConfig && ActorDocument && pf2eVehicleActorsAvailable()) {
     try {
       const ShipSheetClass = await loadArcflightShipSheetClass();
-      actors.registerSheet(ARCFLIGHT_MODULE_ID, ShipSheetClass, {
+      documentSheetConfig.registerSheet(ActorDocument, ARCFLIGHT_MODULE_ID, ShipSheetClass, {
         types: [PF2E_VEHICLE_ACTOR_TYPE],
         makeDefault: false,
         label: "Arcflight Ship Sheet"
@@ -47,14 +48,14 @@ export async function registerArcflightSheets() {
       console.warn("Arcflight | Could not register the optional PF2E vehicle sheet; continuing startup.", error);
     }
   } else {
-    console.debug("Arcflight | PF2E vehicle actor sheet registry not available; skipping Arcflight ship sheet registration.");
+    console.debug("Arcflight | Foundry v14 document sheet registration API or PF2E vehicle support not available; skipping Arcflight ship sheet registration.");
   }
 
-  const items = getSheetRegistry("Items");
-  if (items) {
+  const ItemDocument = foundry?.documents?.Item;
+  if (documentSheetConfig && ItemDocument) {
     try {
       const ItemSheetClass = await loadArcflightItemSheetClass();
-      items.registerSheet(ARCFLIGHT_MODULE_ID, ItemSheetClass, {
+      documentSheetConfig.registerSheet(ItemDocument, ARCFLIGHT_MODULE_ID, ItemSheetClass, {
         types: ["equipment"],
         makeDefault: false,
         label: "Arcflight Component Sheet"
@@ -63,6 +64,8 @@ export async function registerArcflightSheets() {
     } catch (error) {
       console.warn("Arcflight | Could not register Arcflight item sheets; continuing startup.", error);
     }
+  } else {
+    console.debug("Arcflight | Foundry v14 item document sheet registration API not available; skipping Arcflight item sheet registration.");
   }
 
   return registered;

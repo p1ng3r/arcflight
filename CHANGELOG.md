@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-001 - Foundry v14 Foundation Compatibility
+
+- Updated Arcflight sheet registration to Foundry v14's `foundry.applications.apps.DocumentSheetConfig.registerSheet` API and declared Foundry v14 as the manifest minimum and verified compatibility.
+- Kept this compatibility-only: no gameplay, schemas, station actions, templates, or CSS changed.
+
 ### Station Action Data Foundation
 
 - Added a data-only core station action registry for Captain, Pilot / Helm, Engineer, Gunnery, Veilwarden, Watchmaster, and Quartermaster starter actions.
