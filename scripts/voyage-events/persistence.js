@@ -30,15 +30,32 @@ function isJsonCompatibleData(value, seen = new Set()) {
   if (typeof value !== "object" || !value || (!Array.isArray(value) && !isPlainObject(value))) return false;
   if (seen.has(value)) return false;
   seen.add(value);
-  const valid = Object.values(value).every((entry) => isJsonCompatibleData(entry, seen));
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const valid = Reflect.ownKeys(descriptors).every((key) => {
+    if (typeof key === "symbol") return false;
+    if (Array.isArray(value) && key === "length") return true;
+    const descriptor = descriptors[key];
+    if (descriptor.get || descriptor.set || !descriptor.enumerable) return false;
+    return isJsonCompatibleData(descriptor.value, seen);
+  });
   seen.delete(value);
   return valid;
 }
 
 function cloneJsonCompatibleData(value) {
   if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(cloneJsonCompatibleData);
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneJsonCompatibleData(entry)]));
+  if (Array.isArray(value)) {
+    const clone = [];
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (key !== "length" && descriptor.enumerable) clone[key] = cloneJsonCompatibleData(descriptor.value);
+    }
+    return clone;
+  }
+  const clone = {};
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (descriptor.enumerable) clone[key] = cloneJsonCompatibleData(descriptor.value);
+  }
+  return clone;
 }
 
 /** A stable error contract whose details are always independent JSON-compatible plain data. */
@@ -128,6 +145,15 @@ function assertSafeData(value) {
   }
 }
 
+function assertExplicitWriteOptions(options) {
+  if (Object.hasOwn(options, "timestamp") && (!Number.isFinite(options.timestamp) || options.timestamp < 0)) {
+    throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_OPTIONS, "Voyage Event persistence timestamp must be a non-negative finite number.");
+  }
+  if (Object.hasOwn(options, "userId") && (typeof options.userId !== "string" || options.userId.trim() === "")) {
+    throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_OPTIONS, "Voyage Event persistence userId must be a non-empty string.");
+  }
+}
+
 function stampOptions(options, user) {
   const timestamp = options.timestamp ?? Date.now();
   const userIdSource = Object.hasOwn(options, "userId") ? options.userId : user?.id;
@@ -143,6 +169,7 @@ function createPersistedActive(nextRuntime, currentActive, revision, metadata) {
   if (runtime.runtimeId === "") {
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.RUNTIME_ID_REQUIRED, "Voyage Event active runtimes require a non-empty runtimeId.");
   }
+  // The future state manager, not persistence, decides whether runtime IDs or phases may legally change.
   const sameRuntime = currentActive !== null && runtime.runtimeId === currentActive.runtimeId;
   return normalizeActiveRuntime({
     ...runtime, revision,
@@ -156,6 +183,7 @@ async function writeContainer(shipActor, container) {
   if (typeof shipActor?.update !== "function") {
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.UPDATE_UNAVAILABLE, "Voyage Event persistence requires an Actor update method.");
   }
+  // Updating only this dotted flag path preserves every sibling in flags.arcflight.system.
   await shipActor.update({ [ARCFLIGHT_VOYAGE_EVENT_FLAG_PATH]: container });
 }
 
@@ -182,10 +210,8 @@ export const getVoyageEventRevision = getActiveVoyageEventRevision;
 export async function persistVoyageEventsContainer(shipActor, nextContainer, options = {}) {
   assertEligibleShip(shipActor);
   assertExpectedRevision(options);
+  assertExplicitWriteOptions(options);
   const user = resolveAuthorizedUser(options);
-  const current = getVoyageEventsContainer(shipActor);
-  const actualRevision = current.active?.revision ?? null;
-  assertRevisionMatches(options.expectedRevision, actualRevision);
 
   if (!isPlainObject(nextContainer)) {
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_CONTAINER, "Voyage Event container must be a plain object.");
@@ -194,7 +220,12 @@ export async function persistVoyageEventsContainer(shipActor, nextContainer, opt
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_RUNTIME, "Voyage Event active runtime must be a plain object or null.");
   }
   assertSafeData(nextContainer);
-  const normalized = normalizeVoyageEventsContainer(nextContainer);
+  const normalized = normalizeVoyageEventsContainer(cloneJsonCompatibleData(nextContainer));
+
+  const current = getVoyageEventsContainer(shipActor);
+  const actualRevision = current.active?.revision ?? null;
+  // This exact optimistic comparison is at the authoritative write boundary before Actor.update.
+  assertRevisionMatches(options.expectedRevision, actualRevision);
   let persisted = normalized;
   if (normalized.active !== null) {
     const metadata = stampOptions(options, user);
@@ -212,8 +243,11 @@ export async function persistActiveVoyageEvent(shipActor, nextRuntime, options =
   if (nextRuntime !== null && !isPlainObject(nextRuntime)) {
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_RUNTIME, "Voyage Event runtime must be a plain object or null.");
   }
-  if (nextRuntime !== null) assertSafeData(nextRuntime);
+  const runtime = nextRuntime === null ? null : (() => {
+    assertSafeData(nextRuntime);
+    return cloneJsonCompatibleData(nextRuntime);
+  })();
   const current = getVoyageEventsContainer(shipActor);
-  const container = await persistVoyageEventsContainer(shipActor, { ...current, active: nextRuntime }, options);
+  const container = await persistVoyageEventsContainer(shipActor, { ...current, active: runtime }, options);
   return container.active;
 }
