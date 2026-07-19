@@ -1,7 +1,8 @@
 import { VOYAGE_EVENT_BID_BANDS, VOYAGE_EVENT_HAZARD_SEVERITIES, VOYAGE_EVENT_STATION_KEYS } from "./constants.js";
 import { createVoyageEventBid, createVoyageEventPackage, createVoyageEventsContainer } from "./defaults.js";
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+  && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 const nonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 
 /**
@@ -61,6 +62,7 @@ const nonEmptyString = (value) => typeof value === "string" && value.trim().leng
  * @property {string} hiddenGmSummary
  * @property {object} artworkRoles
  * @property {VoyageEventRoundDefinition[]} rounds
+ * @property {VoyageEventNarrativeComponent[]} narrativeComponents Canonical package-local narrative component collection.
  * @property {object} finalOutcomeNarrative
  * @property {object[]} aftermathPackages
  * @property {string[]} validShipScarCategories
@@ -73,16 +75,16 @@ const nonEmptyString = (value) => typeof value === "string" && value.trim().leng
  * @property {number} roundNumber
  * @property {string} title
  * @property {string} immediateGoal
- * @property {VoyageEventNarrativeComponent[]} openingNarrativeVariants
+ * @property {string[]} openingNarrativeVariants Package-local narrative component IDs.
  * @property {string[]} visibleDangerIds
  * @property {string[]} hiddenDangerIds
- * @property {Object<string, VoyageEventStationActionDefinition>} stationActions
- * @property {object} shipResultConclusions Keys are stable round-result IDs.
+ * @property {{captain: VoyageEventStationActionDefinition[], engineer: VoyageEventStationActionDefinition[], navigator: VoyageEventStationActionDefinition[], watchmaster: VoyageEventStationActionDefinition[], veilwarden: VoyageEventStationActionDefinition[]}} stationActions Exactly one or two actions for every active station; no additional station buckets.
+ * @property {{criticalFailure: string, failure: string, successAtCost: string, success: string, criticalSuccess: string}} shipResultConclusions Package-local narrative component IDs keyed by ship result.
  * @property {string} preparedCriticalSuccessAdvantageId
  * @property {string[]} failureConsequenceIds
  * @property {string[]} criticalFailureConsequenceIds
  * @property {object} narrativeFlagChanges
- * @property {object[]} nextRoundTransitions
+ * @property {string[]} nextRoundTransitions Package-local narrative component IDs.
  *
  * @typedef {object} VoyageEventStationActionDefinition
  * @property {string} actionId
@@ -94,7 +96,7 @@ const nonEmptyString = (value) => typeof value === "string" && value.trim().leng
  * @property {Object<string, VoyageEventBidDefinition>} bids Includes none, plus2, plus5, plus8.
  * @property {string[]} matchingTags
  * @property {object} targetRestrictions
- * @property {string[]} narrativeComponentIds
+ * @property {string[]} narrativeComponentIds Package-local narrative component IDs.
  *
  * @typedef {object} VoyageEventBidDefinition
  * @property {string} band
@@ -163,7 +165,9 @@ export function isVoyageEventCatalogEntry(value) {
   return isObject(value) && nonEmptyString(value.id) && nonEmptyString(value.type) && nonEmptyString(value.timing)
     && isObject(value.targets) && nonEmptyString(value.duration) && isObject(value.expiration)
     && nonEmptyString(value.stackingGroup) && nonEmptyString(value.stackingRule) && isObject(value.parameters)
-    && Array.isArray(value.narrativeTags) && Array.isArray(value.invalidConditions);
+    && Array.isArray(value.narrativeTags) && value.narrativeTags.every(nonEmptyString)
+    && Array.isArray(value.invalidConditions) && value.invalidConditions.every(isObject)
+    && (value.criticalSuccessEnhancement === undefined || isObject(value.criticalSuccessEnhancement));
 }
 
 /** Verifies the declared Hazard severity is one of the two alpha severities. */
