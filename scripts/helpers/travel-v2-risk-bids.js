@@ -123,6 +123,11 @@ function sanitizeRiskBidSelectionRecord(record) {
   };
 }
 
+export function normalizeTravelV2RiskBidSelectionContainer(source = {}) {
+  const records = Array.isArray(source?.records) ? source.records.map((record) => sanitizeRiskBidSelectionRecord(record)).filter(Boolean) : [];
+  return { version: TRAVEL_V2_RISK_BID_MODEL_VERSION, records };
+}
+
 function canonicalRiskBidAction(session, roundIndex, stationKey) {
   const source = session?.roundResults?.[roundIndex]?.travelV2RiskBidActions?.[stationKey];
   const actionId = safeString(source?.actionId);
@@ -165,17 +170,7 @@ function validateRiskBidMutation(session, selection, requireTier) {
 
 function ensureSelectionContainer(session) {
   const cloned = clonePlain(session);
-  const existing = cloned.travelV2RiskBidSelections && typeof cloned.travelV2RiskBidSelections === "object"
-    ? cloned.travelV2RiskBidSelections
-    : {};
-  const rawRecords = Array.isArray(existing.records) ? existing.records : [];
-  const sanitizedRecords = rawRecords
-    .map((record) => sanitizeRiskBidSelectionRecord(record))
-    .filter(Boolean);
-  cloned.travelV2RiskBidSelections = {
-    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
-    records: sanitizedRecords
-  };
+  cloned.travelV2RiskBidSelections = normalizeTravelV2RiskBidSelectionContainer(cloned.travelV2RiskBidSelections);
   return cloned;
 }
 
