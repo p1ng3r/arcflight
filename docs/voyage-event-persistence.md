@@ -21,11 +21,11 @@ This preserves sibling `flags.arcflight.system` data, including install state, r
 - `persistVoyageEventsContainer(shipActor, nextContainer, options)` writes a full normalized container.
 - `persistActiveVoyageEvent(shipActor, nextRuntime, options)` writes an active runtime and returns it.
 
-Both write APIs require `{ expectedRevision }`. `expectedRevision` must be `null` or a non-negative integer; decimal, negative, and other invalid values reject with `voyage.persistence.options.invalid` before conflict comparison. They use `options.user` (or `game.user`) and require `isGM === true`; `options.timestamp` and `options.userId` allow deterministic manual/internal callers. A supplied `userId`, or the authorized user's fallback ID, must normalize to a non-empty trimmed string. Supplying `userId` never bypasses the GM check. No socket forwarding is provided.
+Both write APIs require `{ expectedRevision }`. `expectedRevision` may be `null`, representing the caller's belief that no active event exists, or a non-negative integer. Decimal, negative, and other invalid non-null values reject with `voyage.persistence.options.invalid` before conflict comparison. Any valid nonmatching value—including `null` against an existing active revision—rejects with `voyage.persistence.revision.conflict`. They use `options.user` (or `game.user`) and require `isGM === true`; `options.timestamp` and `options.userId` allow deterministic manual/internal callers. A supplied `userId`, or the authorized user's fallback ID, must normalize to a non-empty trimmed string. Supplying `userId` never bypasses the GM check. No socket forwarding is provided.
 
 ## Revision and metadata lifecycle
 
-Active revisions are always non-negative integers. Stored finite revisions use `Math.max(0, Math.trunc(value))`; missing, negative, and malformed values normalize to `0`. `getVoyageEventRevision` therefore returns only `null` or a non-negative integer. `expectedRevision` must exactly equal the current normalized active revision (or be `null` when no event is active). A successful new active runtime starts at revision `1`; every later successful active write increments the normalized current revision exactly once. Caller runtime revision values are ignored.
+Active revisions are always non-negative integers. Stored finite revisions use `Math.max(0, Math.trunc(value))`; missing, negative, and malformed values normalize to `0`. `getVoyageEventRevision` therefore returns only `null` or a non-negative integer. `expectedRevision` must exactly equal the current normalized active revision; `null` is valid and conflicts when an active runtime exists. A successful new active runtime starts at revision `1`; every later successful active write increments the normalized current revision exactly once. Caller runtime revision values are ignored.
 
 A non-null active runtime must normalize to a non-empty `runtimeId`, otherwise it rejects with `voyage.persistence.runtimeId.required`. A same valid normalized `runtimeId` preserves `createdAt` and `createdByUserId`; a different ID establishes authoritative creation metadata. Caller-provided creation metadata never overrides those values. Every active write sets `updatedAt` and the normalized non-empty `updatedByUserId`.
 
@@ -53,6 +53,7 @@ Do not run these as part of this task. In a Foundry world, import the helpers in
 6. Call with an active runtime whose `runtimeId` is `""` or whitespace; confirm `voyage.persistence.runtimeId.required` and no Actor update.
 7. Call an otherwise valid active write with `userId: "   "`; confirm `voyage.persistence.options.invalid` and no Actor update.
 8. Call it again using `expectedRevision: 1`, a later timestamp, and the same valid `runtimeId`; confirm revision `2`, unchanged creation metadata, and changed update metadata.
-9. Retry with `expectedRevision: 1`; confirm `voyage.persistence.revision.conflict`, details `{ expectedRevision: 1, actualRevision: 2 }`, and no Actor update.
-10. Compare sibling fields such as `flags.arcflight.system.installState`, `refitPressure`, and `stations` before and after; confirm they are unchanged.
-11. Freeze or deep-compare the caller container/runtime before and after each write; confirm it remains unchanged.
+9. After persisting an active runtime at revision `1`, attempt another write with `expectedRevision: null`; confirm `voyage.persistence.revision.conflict`, details `{ expectedRevision: null, actualRevision: 1 }`, and no Actor update.
+10. Retry with a stale integer `expectedRevision: 1` after revision `2`; confirm `voyage.persistence.revision.conflict`, details `{ expectedRevision: 1, actualRevision: 2 }`, and no Actor update.
+11. Compare sibling fields such as `flags.arcflight.system.installState`, `refitPressure`, and `stations` before and after; confirm they are unchanged.
+12. Freeze or deep-compare the caller container/runtime before and after each write; confirm it remains unchanged.

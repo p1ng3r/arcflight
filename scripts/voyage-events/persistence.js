@@ -103,15 +103,6 @@ function assertRevisionMatches(expectedRevision, actualRevision) {
   }
 }
 
-function assertExpectedRevisionForCurrent(expectedRevision, actualRevision) {
-  if (expectedRevision === null && actualRevision !== null) {
-    throw new VoyageEventPersistenceError(
-      "voyage.persistence.options.invalid",
-      "Voyage Event expectedRevision may be null only when no active event exists."
-    );
-  }
-}
-
 function stampOptions(options, user) {
   const timestamp = options.timestamp ?? Date.now();
   const suppliedUserId = Object.hasOwn(options, "userId");
@@ -182,7 +173,6 @@ export async function persistVoyageEventsContainer(shipActor, nextContainer, opt
   const user = resolveAuthorizedUser(options);
   const current = getVoyageEventsContainer(shipActor);
   const actualRevision = current.active?.revision ?? null;
-  assertExpectedRevisionForCurrent(options.expectedRevision, actualRevision);
   assertRevisionMatches(options.expectedRevision, actualRevision);
 
   if (!isPlainObject(nextContainer)) {
