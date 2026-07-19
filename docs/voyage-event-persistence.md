@@ -1,59 +1,73 @@
 # Voyage Event Persistence Helpers
 
-`scripts/voyage-events/persistence.js` is the small GM-authoritative persistence boundary for Voyage Event runtime data. It is not the Voyage Event state machine and does not implement transitions, sockets, UI, rolls, catalogs, or content.
+`scripts/voyage-events/persistence.js` is the GM-authoritative persistence boundary for Voyage Event runtime data. It does not implement a state machine, gameplay transitions, sockets, UI, rolls, catalogs, or bundled content.
 
-## Storage and eligibility
+## Storage and public API
 
-The exact and only update path is `flags.arcflight.system.voyageEvents` (exported as `VOYAGE_EVENTS_FLAG_PATH`). Writes use a single dotted Actor update payload:
+The sole Actor update payload is:
 
 ```js
-{ "flags.arcflight.system.voyageEvents": normalizedContainer }
+{ [ARCFLIGHT_VOYAGE_EVENT_FLAG_PATH]: normalizedContainer }
+// ARCFLIGHT_VOYAGE_EVENT_FLAG_PATH === "flags.arcflight.system.voyageEvents"
 ```
 
-This preserves sibling `flags.arcflight.system` data, including install state, refit pressure, and station data. It never writes PF2e `system` data. A writable Actor must have `type === "vehicle"`, `flags.arcflight.enabled === true`, and `flags.arcflight.actorType === "arcflightShip"`.
+This dotted update preserves every sibling under `flags.arcflight.system` and never writes PF2e `system` data. The required exported API is:
 
-## Public API
+- `ARCFLIGHT_VOYAGE_EVENT_FLAG_PATH`
+- `VOYAGE_EVENT_PERSISTENCE_ERROR_CODES`
+- `isArcflightVoyageShip(shipActor)`
+- `getVoyageEventsContainer(shipActor)`
+- `getActiveVoyageEvent(shipActor)`
+- `getActiveVoyageEventRevision(shipActor)`
+- `persistVoyageEventsContainer(shipActor, nextContainer, options)`
+- `persistActiveVoyageEvent(shipActor, nextRuntime, options)`
 
-- `getVoyageEventsContainer(shipActor)` returns an independent normalized container. Missing or malformed data reads as `{ schemaVersion: 1, active: null, archive: [] }` and does not update the Actor.
-- `getActiveVoyageEvent(shipActor)` returns an independent normalized active runtime or `null`.
-- `getVoyageEventRevision(shipActor)` returns the active runtime revision or `null`.
-- `isEligibleVoyageEventShip(shipActor)` reports the Actor eligibility check.
-- `persistVoyageEventsContainer(shipActor, nextContainer, options)` writes a full normalized container.
-- `persistActiveVoyageEvent(shipActor, nextRuntime, options)` writes an active runtime and returns it.
+Backward-compatible aliases remain available: `VOYAGE_EVENTS_FLAG_PATH`, `isEligibleVoyageEventShip`, and `getVoyageEventRevision`. A writable Actor must be a `vehicle` with `flags.arcflight.enabled === true` and `flags.arcflight.actorType === "arcflightShip"`. Writes require an authorized user with `isGM === true`.
 
-Both write APIs require `{ expectedRevision }`. `expectedRevision` may be `null`, representing the caller's belief that no active event exists, or a non-negative integer. Decimal, negative, and other invalid non-null values reject with `voyage.persistence.options.invalid` before conflict comparison. Any valid nonmatching value—including `null` against an existing active revision—rejects with `voyage.persistence.revision.conflict`. They use `options.user` (or `game.user`) and require `isGM === true`; `options.timestamp` and `options.userId` allow deterministic manual/internal callers. A supplied `userId`, or the authorized user's fallback ID, must normalize to a non-empty trimmed string. Supplying `userId` never bypasses the GM check. No socket forwarding is provided.
+## Revision, active runtime, and metadata behavior
 
-## Revision and metadata lifecycle
+Active revisions are normalized to non-negative integers using `Math.max(0, Math.trunc(value))` for finite numbers; malformed values become `0`. `expectedRevision` is required and must be `null` or a non-negative integer. Valid nonmatching values—including `null` against an active runtime—throw a revision conflict with `{ expectedRevision, actualRevision }`; invalid non-null types, negative integers, and decimals are options errors.
 
-Active revisions are always non-negative integers. Stored finite revisions use `Math.max(0, Math.trunc(value))`; missing, negative, and malformed values normalize to `0`. `getVoyageEventRevision` therefore returns only `null` or a non-negative integer. `expectedRevision` must exactly equal the current normalized active revision; `null` is valid and conflicts when an active runtime exists. A successful new active runtime starts at revision `1`; every later successful active write increments the normalized current revision exactly once. Caller runtime revision values are ignored.
+A new active runtime starts at revision `1`; a later active write increments the normalized current revision once. Caller revisions are ignored. Non-null active runtimes require a non-empty trimmed `runtimeId`. Matching runtime IDs preserve authoritative creation metadata; different IDs establish it anew. Every active write stamps update metadata. Responsible user IDs come from a supplied `options.userId` or the authorized user and must normalize to a non-empty string. Explicit timestamps must be finite and non-negative; omitted timestamps use `Date.now()`.
 
-A non-null active runtime must normalize to a non-empty `runtimeId`, otherwise it rejects with `voyage.persistence.runtimeId.required`. A same valid normalized `runtimeId` preserves `createdAt` and `createdByUserId`; a different ID establishes authoritative creation metadata. Caller-provided creation metadata never overrides those values. Every active write sets `updatedAt` and the normalized non-empty `updatedByUserId`.
+`persistActiveVoyageEvent(ship, null, options)` clears only `active`, preserving the container schema and archive. It requires the exact active revision, delegates to the container writer, performs one dotted-path update, and returns `null`; it does not archive or add history.
 
-## Error contract
+## Error registry
 
-`VoyageEventPersistenceError` exposes `code` and serializable `details`. Stable codes are:
+`VOYAGE_EVENT_PERSISTENCE_ERROR_CODES` is frozen and has these values:
 
-- `voyage.persistence.actor.invalid`
-- `voyage.persistence.authority.denied`
-- `voyage.persistence.expectedRevision.required`
-- `voyage.persistence.revision.conflict` (details include `expectedRevision` and `actualRevision`)
-- `voyage.persistence.update.unavailable`
-- `voyage.persistence.options.invalid`
-- `voyage.persistence.runtimeId.required`
+- `INVALID_SHIP`: `voyage.persistence.actor.invalid`
+- `UNAUTHORIZED_USER`: `voyage.persistence.authority.denied`
+- `EXPECTED_REVISION_REQUIRED`: `voyage.persistence.expectedRevision.required`
+- `REVISION_CONFLICT`: `voyage.persistence.revision.conflict`
+- `INVALID_CONTAINER`: `voyage.persistence.container.invalid`
+- `INVALID_RUNTIME`: `voyage.persistence.runtime.invalid`
+- `UNSAFE_DATA`: `voyage.persistence.data.unsafe`
+- `UPDATE_UNAVAILABLE`: `voyage.persistence.update.unavailable`
+- `INVALID_OPTIONS`: `voyage.persistence.options.invalid`
+- `RUNTIME_ID_REQUIRED`: `voyage.persistence.runtimeId.required`
+
+Complete containers must be plain objects; non-null runtimes must be plain objects. Nested unsafe data rejects before normalization with `UNSAFE_DATA`: functions, symbols, bigints, `undefined`, non-finite numbers, class instances, and cyclic references are all unsafe. Defensive reads remain safe for malformed persisted Actor data. Error details are independent JSON-compatible plain data.
 
 ## Manual Foundry console inspection
 
-Do not run these as part of this task. In a Foundry world, import the helpers in the console and use an eligible Arcflight ship Actor as `ship`.
+Do not run these as part of this task. In a Foundry console, load the module and select an eligible ship:
 
-1. Confirm `getVoyageEventsContainer(ship)` returns `{ schemaVersion: 1, active: null, archive: [] }` for a ship with no Voyage Event flag; inspect `ship.flags.arcflight.system` before and after to confirm no write.
-2. Call `persistActiveVoyageEvent(ship, runtime, { expectedRevision: null, user: { id: "player", isGM: false } })`; verify it rejects with `voyage.persistence.authority.denied` and spy on `ship.update` to confirm no call.
-3. As a GM, call `persistActiveVoyageEvent(ship, runtime, { expectedRevision: null, timestamp: 1000, userId: "gm" })`; inspect the dotted-path payload and confirm `revision === 1` plus creation/update metadata.
-4. Seed an active flag with `revision: 2.9`, then read it; confirm the returned revision is `2`. Repeat with missing, negative, or malformed revisions and confirm each normalizes to `0` without a write.
-5. Call with `expectedRevision: 1.5`; confirm `voyage.persistence.options.invalid` and no Actor update.
-6. Call with an active runtime whose `runtimeId` is `""` or whitespace; confirm `voyage.persistence.runtimeId.required` and no Actor update.
-7. Call an otherwise valid active write with `userId: "   "`; confirm `voyage.persistence.options.invalid` and no Actor update.
-8. Call it again using `expectedRevision: 1`, a later timestamp, and the same valid `runtimeId`; confirm revision `2`, unchanged creation metadata, and changed update metadata.
-9. After persisting an active runtime at revision `1`, attempt another write with `expectedRevision: null`; confirm `voyage.persistence.revision.conflict`, details `{ expectedRevision: null, actualRevision: 1 }`, and no Actor update.
-10. Retry with a stale integer `expectedRevision: 1` after revision `2`; confirm `voyage.persistence.revision.conflict`, details `{ expectedRevision: 1, actualRevision: 2 }`, and no Actor update.
-11. Compare sibling fields such as `flags.arcflight.system.installState`, `refitPressure`, and `stations` before and after; confirm they are unchanged.
-12. Freeze or deep-compare the caller container/runtime before and after each write; confirm it remains unchanged.
+```js
+const persistence = await import("/modules/arcflight/scripts/voyage-events/persistence.js");
+const ship = game.actors.find((actor) => persistence.isArcflightVoyageShip(actor));
+const runtime = { runtimeId: "manual-voyage", packageId: "manual", shipUuid: ship.uuid };
+```
+
+1. Confirm `persistence.getVoyageEventsContainer(ship)` returns `{ schemaVersion: 1, active: null, archive: [] }` for a ship with no flag and does not write.
+2. As a GM, persist `runtime` using `expectedRevision: null`, a valid timestamp, and a non-empty user ID; confirm revision `1`.
+3. Persist the same runtime with `expectedRevision: 1`; confirm revision `2` and preserved creation metadata.
+4. Retry with stale `expectedRevision: 1`; confirm `REVISION_CONFLICT`, details `{ expectedRevision: 1, actualRevision: 2 }`, and no update.
+5. With an active runtime, write using `expectedRevision: null`; confirm `REVISION_CONFLICT`, details containing `null` and the active revision, and no update.
+6. Clear with `persistActiveVoyageEvent(ship, null, { expectedRevision: 2, userId: "gm", timestamp: 3 })`; confirm it returns `null`, performs one update, and the stored `active` value is `null`.
+7. Attempt a valid active write with `timestamp: -1`; confirm `INVALID_OPTIONS` and no update.
+8. Pass a non-object container to `persistVoyageEventsContainer`; confirm `INVALID_CONTAINER` and no update.
+9. Pass a non-object non-null runtime to `persistActiveVoyageEvent`; confirm `INVALID_RUNTIME` and no update.
+10. Attempt inputs containing a function, `new Date()`, `Infinity`, and a cyclic object; confirm `UNSAFE_DATA` and no update for each.
+11. Compare `flags.arcflight.system.installState`, `refitPressure`, and `stations` before and after successful writes; confirm sibling data is unchanged.
+12. Freeze or deep-compare each caller input before and after persistence; confirm it remains unchanged.
