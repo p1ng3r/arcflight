@@ -47,7 +47,7 @@ A new active runtime starts at revision `1`; a later active write increments the
 - `INVALID_OPTIONS`: `voyage.persistence.options.invalid`
 - `RUNTIME_ID_REQUIRED`: `voyage.persistence.runtimeId.required`
 
-Complete containers must be plain objects; non-null runtimes must be plain objects. Safe caller-owned containers and runtimes are independently deep-cloned before normalization, so default factories never receive caller-owned objects. Nested unsafe data rejects before normalization with `UNSAFE_DATA`: functions, symbols, bigints, `undefined`, non-finite numbers, class instances, cyclic references, and accessor properties are all unsafe. Accessors are rejected by inspecting own property descriptors without invoking their getters or setters. Defensive reads remain safe for malformed persisted Actor data. Error details are independent JSON-compatible plain data.
+Complete containers must be plain objects; non-null runtimes must be plain objects. No candidate property, including top-level `active`, is read before descriptor-safe validation. Safe caller-owned containers and runtimes are independently deep-cloned before normalization, so default factories never receive caller-owned objects. Nested unsafe data rejects before normalization with `UNSAFE_DATA`: functions, symbols, bigints, `undefined`, non-finite numbers, class instances, cyclic references, and accessor properties are all unsafe. Accessors are rejected by inspecting own property descriptors without invoking their getters or setters. Cloning defines own data properties, so JSON-parsed `__proto__` keys remain data and never invoke inherited setters or mutate prototypes. Defensive reads remain safe for malformed persisted Actor data. Error details are independent JSON-compatible plain data.
 
 Explicit `options.timestamp` values must be finite and non-negative, and explicit `options.userId` values must be non-empty after trimming. These option checks apply to every write, including active-runtime clearing. Candidate validation, safety inspection, cloning, and normalization occur before the current Actor container is read. The exact revision comparison then occurs at the authoritative write boundary with no asynchronous gap before the dotted Actor update.
 
@@ -72,6 +72,7 @@ const runtime = { runtimeId: "manual-voyage", packageId: "manual", shipUuid: shi
 9. Pass a non-object non-null runtime to `persistActiveVoyageEvent`; confirm `INVALID_RUNTIME` and no update.
 10. Attempt inputs containing a function, `new Date()`, `Infinity`, and a cyclic object; confirm `UNSAFE_DATA` and no update for each.
 11. Clear with `timestamp: -1`; confirm `INVALID_OPTIONS` and no update. Repeat with a blank explicit `userId` and confirm the same result.
-12. Attempt a plain object with an own getter property; confirm `UNSAFE_DATA`, no update, and that the getter was not invoked.
-13. Compare `flags.arcflight.system.installState`, `refitPressure`, and `stations` before and after successful writes; confirm sibling data is unchanged.
-14. Freeze or deep-compare each caller input before and after persistence; confirm it remains unchanged.
+12. Attempt a candidate with an enumerable getter specifically at `active`; confirm `UNSAFE_DATA`, no update, and zero getter calls.
+13. Persist a JSON-parsed container with its own `__proto__` data key; confirm its source prototype and `Object.prototype` remain unchanged, and the source retains its own key.
+14. Compare `flags.arcflight.system.installState`, `refitPressure`, and `stations` before and after successful writes; confirm sibling data is unchanged.
+15. Freeze or deep-compare each caller input before and after persistence; confirm it remains unchanged.

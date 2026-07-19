@@ -47,13 +47,21 @@ function cloneJsonCompatibleData(value) {
   if (Array.isArray(value)) {
     const clone = [];
     for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-      if (key !== "length" && descriptor.enumerable) clone[key] = cloneJsonCompatibleData(descriptor.value);
+      if (key !== "length" && descriptor.enumerable) {
+        Object.defineProperty(clone, key, {
+          value: cloneJsonCompatibleData(descriptor.value), enumerable: true, configurable: true, writable: true
+        });
+      }
     }
     return clone;
   }
-  const clone = {};
+  const clone = Object.create(Object.getPrototypeOf(value));
   for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-    if (descriptor.enumerable) clone[key] = cloneJsonCompatibleData(descriptor.value);
+    if (descriptor.enumerable) {
+      Object.defineProperty(clone, key, {
+        value: cloneJsonCompatibleData(descriptor.value), enumerable: true, configurable: true, writable: true
+      });
+    }
   }
   return clone;
 }
@@ -216,11 +224,12 @@ export async function persistVoyageEventsContainer(shipActor, nextContainer, opt
   if (!isPlainObject(nextContainer)) {
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_CONTAINER, "Voyage Event container must be a plain object.");
   }
-  if (nextContainer.active !== null && nextContainer.active !== undefined && !isPlainObject(nextContainer.active)) {
+  assertSafeData(nextContainer);
+  const candidate = cloneJsonCompatibleData(nextContainer);
+  if (candidate.active !== null && candidate.active !== undefined && !isPlainObject(candidate.active)) {
     throw persistenceError(VOYAGE_EVENT_PERSISTENCE_ERROR_CODES.INVALID_RUNTIME, "Voyage Event active runtime must be a plain object or null.");
   }
-  assertSafeData(nextContainer);
-  const normalized = normalizeVoyageEventsContainer(cloneJsonCompatibleData(nextContainer));
+  const normalized = normalizeVoyageEventsContainer(candidate);
 
   const current = getVoyageEventsContainer(shipActor);
   const actualRevision = current.active?.revision ?? null;
