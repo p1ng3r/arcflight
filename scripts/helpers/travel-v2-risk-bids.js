@@ -103,23 +103,25 @@ function validateSessionSelection(selection, requireTier = false) {
 }
 
 function sanitizeRiskBidSelectionRecord(record) {
-  const tier = normalizeTravelV2RiskBidTier(record?.tier);
-  const stationKey = safeString(record?.stationKey);
-  const actionId = safeString(record?.actionId);
-  const round = normalizeRoundSelection(record);
-
-  if (!tier || !stationKey || !actionId || !round.hasRound) return null;
-
+  if (!record || typeof record !== "object" || Array.isArray(record) || record.selected !== true) return null;
+  const tier = normalizeTravelV2RiskBidTier(record.tier);
+  const dcModifier = normalizeTravelV2RiskBidTier(record.dcModifier);
+  const stationKey = safeString(record.stationKey);
+  const actionId = safeString(record.actionId);
+  const selectedAt = safeString(record.selectedAt);
+  const roundIndex = record.roundIndex;
+  const roundNumber = record.roundNumber;
+  if (!tier || dcModifier !== tier || !stationKey || !actionId || !selectedAt || !Number.isInteger(roundIndex) || roundIndex < 0 || !Number.isInteger(roundNumber) || roundNumber < 1) return null;
   return {
     version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
-    selected: record?.selected !== false,
-    roundIndex: round.roundIndex,
-    roundNumber: round.roundNumber,
+    selected: true,
+    roundIndex,
+    roundNumber,
     stationKey,
     actionId,
     tier,
-    dcModifier: tier,
-    selectedAt: safeString(record?.selectedAt)
+    dcModifier,
+    selectedAt
   };
 }
 
