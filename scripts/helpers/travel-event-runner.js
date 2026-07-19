@@ -1524,6 +1524,7 @@ function normalizeStationCardSkillApproaches(card = {}, prompt = {}) {
       label: typeof entry.label === "string" ? entry.label : (typeof entry.skill === "string" ? humanizeIdentifier(entry.skill) : ""),
       helpText: typeof entry.helpText === "string" ? entry.helpText : "",
       dc: Number.isFinite(Number(entry.dc)) ? Number(entry.dc) : null,
+      riskBids: Array.isArray(entry.riskBids) ? cloneData(entry.riskBids) : [],
       boardResultFeedback: normalizeDegreeTextMap(entry.boardResultFeedback, entry.rollFeedback),
       gmNarrationFeedback: normalizeDegreeTextMap(entry.gmNarrationFeedback, entry.boardResultFeedback ?? entry.rollFeedback),
       gmOnlyConsequence: typeof entry.gmOnlyConsequence === "string" ? entry.gmOnlyConsequence : "",

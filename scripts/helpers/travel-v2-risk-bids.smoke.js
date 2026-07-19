@@ -4,6 +4,7 @@ import {
   selectTravelV2RiskBidForRunnerSession,
   clearTravelV2RiskBidSelectionForRunnerSession
 } from "./travel-v2-risk-bids.js";
+import { prepareTravelV2RiskBidClearRunnerUpdate, prepareTravelV2RiskBidSelectRunnerUpdate } from "../apps/travel-event-runner.js";
 
 const FORBIDDEN_OUTPUT_TERMS = Object.freeze([
   "gmOnly",
@@ -190,6 +191,10 @@ export function runTravelV2RiskBidsSmokeChecks() {
     const lockedSession = JSON.parse(snap(validCoupledSelection.session));
     lockedSession.roundResults[0].stationOrderCommitments.navigator.committed = true;
     const lockedBefore = snap(lockedSession);
+    const lockedRiskBids = { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course" };
+    for (const update of [prepareTravelV2RiskBidSelectRunnerUpdate(lockedSession, lockedRiskBids, 5), prepareTravelV2RiskBidClearRunnerUpdate(lockedSession, lockedRiskBids)]) {
+      assertSmoke(update.nextSession === lockedSession && !update.shouldUpdateSession && !update.shouldRerender, "blocked risk-bid wrappers preserve the original session and skip rerender");
+    }
     for (const operation of [
       () => selectTravelV2RiskBidForRunnerSession(lockedSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 8 }),
       () => clearTravelV2RiskBidSelectionForRunnerSession(lockedSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course" })
@@ -212,7 +217,7 @@ export function runTravelV2RiskBidsSmokeChecks() {
     globalThis.game = prior.game;
   }
 
-  return { ok: true, checked: ["risk-bid-alpha-closeout-tier-normalization", "risk-bid-alpha-closeout-invalid-tier-rejection", "risk-bid-alpha-closeout-prepared-option-sanitization", "risk-bid-alpha-closeout-prepared-deduplication", "risk-bid-alpha-closeout-session-selection-cloning", "risk-bid-alpha-closeout-selection-replacement", "risk-bid-alpha-closeout-selection-clearing", "risk-bid-alpha-closeout-blocked-selection-validation", "risk-bid-alpha-closeout-forbidden-output-guard", "risk-bid-alpha-closeout-no-side-effects"] };
+  return { ok: true, checked: ["risk-bid-alpha-closeout-tier-normalization", "risk-bid-alpha-closeout-invalid-tier-rejection", "risk-bid-alpha-closeout-prepared-option-sanitization", "risk-bid-alpha-closeout-prepared-deduplication", "risk-bid-alpha-closeout-session-selection-cloning", "risk-bid-alpha-closeout-selection-replacement", "risk-bid-alpha-closeout-selection-clearing", "risk-bid-alpha-closeout-blocked-selection-validation", "risk-bid-alpha-closeout-forbidden-output-guard", "risk-bid-alpha-closeout-no-side-effects", "risk-bid-authoritative-tier-rejection", "risk-bid-locked-wrapper-no-update-no-rerender", "risk-bid-planning-gate-direct-helper-blocks"] };
 }
 
 export default runTravelV2RiskBidsSmokeChecks;
