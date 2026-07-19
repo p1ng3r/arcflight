@@ -1,5 +1,6 @@
 import {
   normalizeTravelV2RiskBidTier,
+  normalizeTravelV2RiskBidSelectionContainer,
   prepareTravelV2RiskBidOptionsForStationAction,
   selectTravelV2RiskBidForRunnerSession,
   clearTravelV2RiskBidSelectionForRunnerSession
@@ -88,6 +89,14 @@ export function runTravelV2RiskBidsSmokeChecks() {
     assertEqual(prepared.options.map((option) => option.text).join("|"), "Small risk.|Valid|Large risk.", "prepared options preserve safe authored text in deterministic authored order");
     assertSmoke(!snap(prepared).includes(snap(rawBid)) && !Object.hasOwn(prepared.options[1], "gmOnly"), "prepared output contains no raw input object dumps");
     assertNoForbiddenOutput(prepared, "prepared risk bid output");
+
+    const strictContainer = normalizeTravelV2RiskBidSelectionContainer({ records: [
+      { selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 5, dcModifier: 5, selectedAt: "t", secret: "drop" },
+      { selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 5, selectedAt: "t" },
+      { selected: "true", roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 5, dcModifier: 5, selectedAt: "t" }
+    ] });
+    assertEqual(strictContainer.records.length, 1, "selection container drops repaired or non-boolean selected records");
+    assertOnlyKeys(strictContainer.records[0], ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"], "strict container retains only safe record fields");
 
     const containerKeys = ["version", "records"];
     const recordKeys = ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"];
