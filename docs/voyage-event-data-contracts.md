@@ -40,6 +40,7 @@ Packages are declarative data. Stable IDs link actions, bids, catalog entries, a
   hiddenGmSummary: "A GM-only premise.",
   artworkRoles: { cover: "event-cover" },
   rounds: [],
+  narrativeComponents: [],
   finalOutcomeNarrative: {},
   aftermathPackages: [],
   validShipScarCategories: ["structure"],
@@ -47,7 +48,9 @@ Packages are declarative data. Stable IDs link actions, bids, catalog entries, a
 }
 ```
 
-A round has a stable ID/number, goals and opening variants, visible/hidden danger IDs, station actions keyed by station, five result conclusions, prepared Critical Success advantage ID, Failure consequence IDs, flag changes, and transitions.
+A package owns one canonical `narrativeComponents` collection containing all narrative component objects; rounds and actions only store their stable component IDs and never embed duplicate component objects. A round has a stable ID/number, goals, `openingNarrativeVariants` component ID arrays, visible/hidden danger IDs, station actions keyed by station, five `shipResultConclusions` component IDs, a prepared Critical Success advantage ID, Failure consequence IDs, flag changes, and `nextRoundTransitions` component ID arrays. Each action's `narrativeComponentIds` is likewise an array of package-local component IDs. A narrative component's optional `actionId` references a package-local action ID.
+
+Rewards, dangers, Hazards, prepared advantages, and consequences remain external catalog references. They are not package-local narrative components.
 
 ## Action and catalog example
 
