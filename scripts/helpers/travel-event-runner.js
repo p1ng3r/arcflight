@@ -3594,7 +3594,9 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
   if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
   const canonicalRiskBidAction = nextSession.roundResults[roundIndex].travelV2RiskBidActions?.[stationKey];
-  const canonicalActionId = typeof canonicalRiskBidAction?.actionId === "string" ? canonicalRiskBidAction.actionId.trim() : "";
+  const selectedStationOption = prepareStationRows(nextSession, currentRound, nextSession.roundResults[roundIndex], options)
+    .find((row) => row.stationKey === stationKey)?.stationOptions?.find((option) => option.selected === true) ?? null;
+  const canonicalActionId = typeof canonicalRiskBidAction?.actionId === "string" && canonicalRiskBidAction.actionId === selectedStationOption?.optionKey ? canonicalRiskBidAction.actionId.trim() : "";
   const authoredTiers = new Set((Array.isArray(canonicalRiskBidAction?.riskBids) ? canonicalRiskBidAction.riskBids : []).map((bid) => Number(bid?.tier)).filter((tier) => [2, 5, 8].includes(tier)));
   const selectedRiskBid = nextSession.travelV2RiskBidSelections?.records?.find((record) => record?.selected !== false && record?.stationKey === stationKey && record?.roundIndex === roundIndex && record?.roundNumber === roundIndex + 1 && record?.actionId === canonicalActionId && authoredTiers.has(Number(record?.tier)));
   nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true, riskBidLocked: Boolean(selectedRiskBid), riskBidActionId: selectedRiskBid ? canonicalActionId : "", riskBidTier: selectedRiskBid ? Number(selectedRiskBid.tier) : null };
@@ -4650,13 +4652,19 @@ function persistTravelV2RiskBidActionIdentity(session, roundIndex, stationKey, s
   session.roundResults[roundIndex].travelV2RiskBidActions[stationKey] = { actionId, riskBids };
 }
 
-function clearTravelV2RiskBidSelectionsForStationAction(session, roundIndex, stationKey) {
-  const records = session?.travelV2RiskBidSelections?.records;
-  if (!Array.isArray(records)) return;
+function clearTravelV2RiskBidCouplingForStationAction(session, roundIndex, stationKey) {
+  const roundResult = session?.roundResults?.[roundIndex];
+  if (!isPlainObject(roundResult)) return;
   const roundNumber = roundIndex + 1;
-  const retained = records.filter((record) => record?.stationKey !== stationKey || (record?.roundIndex !== roundIndex && record?.roundNumber !== roundNumber));
-  if (retained.length === records.length) return;
-  session.travelV2RiskBidSelections = { version: 1, records: retained };
+  const records = session?.travelV2RiskBidSelections?.records;
+  if (Array.isArray(records)) {
+    const retained = records.filter((record) => record?.stationKey !== stationKey || (record?.roundIndex !== roundIndex && record?.roundNumber !== roundNumber));
+    if (retained.length !== records.length) session.travelV2RiskBidSelections = { version: 1, records: retained };
+  }
+  if (isPlainObject(roundResult.travelV2RiskBidActions)) delete roundResult.travelV2RiskBidActions[stationKey];
+  if (isPlainObject(roundResult.stationOrderCommitments?.[stationKey])) {
+    roundResult.stationOrderCommitments[stationKey] = { ...roundResult.stationOrderCommitments[stationKey], riskBidLocked: false, riskBidActionId: "", riskBidTier: null };
+  }
 }
 
 function stationActionPlanningGateBlockedResult(gate, message = "Station action is blocked until Crew Planning is committed for this round.") {
@@ -4697,6 +4705,7 @@ export function setTravelEventRunnerStationSkillApproach(session, roundIndex, st
   nextSession.roundResults[index].selectedStationOptionLabels[stationKey] = approaches.find((entry) => entry.skill === skill)?.label ?? "";
   nextSession.roundResults[index].stationActions = normalizeStationActions(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationActions[stationKey] = eventApproach();
+  clearTravelV2RiskBidCouplingForStationAction(nextSession, index, stationKey);
   nextSession.updatedAt = nowIso(options);
   nextSession.summary = null;
   return { ok: true, errors: [], warnings: [], session: nextSession };
@@ -4736,7 +4745,7 @@ export function setTravelEventRunnerStationAction(session, roundIndex, stationKe
   nextSession.roundResults[index].stationOrderCommitments = normalizeStationOrderCommitments(nextSession.roundResults[index], round);
   nextSession.roundResults[index].stationOrderCommitments[stationKey] = { committed: false, source: "", selectedFocusAbility: "" };
   // A bid belongs to the selected action; never carry it into a replacement action.
-  clearTravelV2RiskBidSelectionsForStationAction(nextSession, index, stationKey);
+  clearTravelV2RiskBidCouplingForStationAction(nextSession, index, stationKey);
   const stabilizeUpdate = syncTravelStabilizeResolutionRecordsForStationResult(nextSession, index, stationKey, options);
   if (!stabilizeUpdate.ok) return stabilizeUpdate;
   Object.assign(nextSession, stabilizeUpdate.session);
