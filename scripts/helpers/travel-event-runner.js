@@ -3594,11 +3594,19 @@ export function prepareTravelV2StationActionLockRunnerUpdate(currentSession, opt
   if (lockedState.stations?.[stationKey]?.locked !== true) return { result: { ok: false, errors: [`${formatTravelEventRunnerStationName(stationKey)} station action could not be locked.`], warnings: [] }, nextSession: currentSession, shouldUpdateSession: false, shouldRerender: false };
   const nextSession = cloneData(normalized.session);
   const canonicalRiskBidAction = nextSession.roundResults[roundIndex].travelV2RiskBidActions?.[stationKey];
-  const selectedStationOption = prepareStationRows(nextSession, currentRound, nextSession.roundResults[roundIndex], options)
-    .find((row) => row.stationKey === stationKey)?.stationOptions?.find((option) => option.selected === true) ?? null;
-  const canonicalActionId = typeof canonicalRiskBidAction?.actionId === "string" && canonicalRiskBidAction.actionId === selectedStationOption?.optionKey ? canonicalRiskBidAction.actionId.trim() : "";
+  const stationOptions = prepareStationRows(nextSession, currentRound, nextSession.roundResults[roundIndex], options)
+    .find((row) => row.stationKey === stationKey)?.stationOptions ?? [];
+  const candidateActionId = typeof canonicalRiskBidAction?.actionId === "string" ? canonicalRiskBidAction.actionId.trim() : "";
+  const selectedStationOption = stationOptions.find((option) => option.optionKey === candidateActionId && !option.suppressedByHazard && !option.disabled && !option.unavailable) ?? null;
+  const selectedSkill = nextSession.roundResults[roundIndex]?.selectedStationSkills?.[stationKey] ?? "";
+  const actionMatchesOption = selectedStationOption && action?.type === selectedStationOption.actionType
+    && (![ARCFLIGHT_TRAVEL_STATION_ACTIONS.EVENT_APPROACH, ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT].includes(selectedStationOption.actionType) || selectedStationOption.skill === selectedSkill)
+    && (selectedStationOption.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.STABILIZE || action.stabilizePressureKey === selectedStationOption.stabilizePressureKey)
+    && (selectedStationOption.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.SUPPORT || (action.targetStationKey === selectedStationOption.targetStationKey && action.supportKey === selectedStationOption.supportKey && action.supportMode === selectedStationOption.supportMode))
+    && (selectedStationOption.actionType !== ARCFLIGHT_TRAVEL_STATION_ACTIONS.HAZARD_RESPONSE || action.hazardRecordId === selectedStationOption.hazardRecordId);
+  const canonicalActionId = actionMatchesOption ? candidateActionId : "";
   const authoredTiers = new Set((Array.isArray(canonicalRiskBidAction?.riskBids) ? canonicalRiskBidAction.riskBids : []).map((bid) => Number(bid?.tier)).filter((tier) => [2, 5, 8].includes(tier)));
-  const selectedRiskBid = nextSession.travelV2RiskBidSelections?.records?.find((record) => record?.selected !== false && record?.stationKey === stationKey && record?.roundIndex === roundIndex && record?.roundNumber === roundIndex + 1 && record?.actionId === canonicalActionId && authoredTiers.has(Number(record?.tier)));
+  const selectedRiskBid = nextSession.travelV2RiskBidSelections?.records?.find((record) => record?.selected !== false && record?.stationKey === stationKey && record?.roundIndex === roundIndex && record?.roundNumber === currentRound.roundNumber && record?.actionId === canonicalActionId && authoredTiers.has(Number(record?.tier)));
   nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] = { ...(nextSession.roundResults[roundIndex].stationOrderCommitments[stationKey] ?? {}), committed: true, riskBidLocked: Boolean(selectedRiskBid), riskBidActionId: selectedRiskBid ? canonicalActionId : "", riskBidTier: selectedRiskBid ? Number(selectedRiskBid.tier) : null };
   nextSession.updatedAt = nowIso(options);
   return { result: { ok: true, errors: [], warnings: [], stationKey, locked: true, message: `${formatTravelEventRunnerStationName(stationKey)} station action locked.` }, nextSession, shouldUpdateSession: true, shouldRerender: true };
@@ -4655,7 +4663,7 @@ function persistTravelV2RiskBidActionIdentity(session, roundIndex, stationKey, s
 function clearTravelV2RiskBidCouplingForStationAction(session, roundIndex, stationKey) {
   const roundResult = session?.roundResults?.[roundIndex];
   if (!isPlainObject(roundResult)) return;
-  const roundNumber = roundIndex + 1;
+  const roundNumber = Number.isInteger(roundResult.roundNumber) ? roundResult.roundNumber : null;
   const records = session?.travelV2RiskBidSelections?.records;
   if (Array.isArray(records)) {
     const retained = records.filter((record) => record?.stationKey !== stationKey || (record?.roundIndex !== roundIndex && record?.roundNumber !== roundNumber));

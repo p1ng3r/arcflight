@@ -4,7 +4,7 @@ import {
   selectTravelV2RiskBidForRunnerSession,
   clearTravelV2RiskBidSelectionForRunnerSession
 } from "./travel-v2-risk-bids.js";
-import { prepareTravelV2RiskBidClearRunnerUpdate, prepareTravelV2RiskBidSelectRunnerUpdate } from "../apps/travel-event-runner.js";
+import { prepareTravelV2RiskBidClearRunnerUpdate, prepareTravelV2RiskBidSelectRunnerUpdate } from "./travel-v2-risk-bid-runner-updates.js";
 
 const FORBIDDEN_OUTPUT_TERMS = Object.freeze([
   "gmOnly",
