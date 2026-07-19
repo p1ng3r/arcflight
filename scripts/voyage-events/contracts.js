@@ -1,7 +1,8 @@
 import { VOYAGE_EVENT_BID_BANDS, VOYAGE_EVENT_HAZARD_SEVERITIES, VOYAGE_EVENT_STATION_KEYS } from "./constants.js";
 import { createVoyageEventBid, createVoyageEventPackage, createVoyageEventsContainer } from "./defaults.js";
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+  && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 const nonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 
 /**
@@ -164,7 +165,9 @@ export function isVoyageEventCatalogEntry(value) {
   return isObject(value) && nonEmptyString(value.id) && nonEmptyString(value.type) && nonEmptyString(value.timing)
     && isObject(value.targets) && nonEmptyString(value.duration) && isObject(value.expiration)
     && nonEmptyString(value.stackingGroup) && nonEmptyString(value.stackingRule) && isObject(value.parameters)
-    && Array.isArray(value.narrativeTags) && Array.isArray(value.invalidConditions);
+    && Array.isArray(value.narrativeTags) && value.narrativeTags.every(nonEmptyString)
+    && Array.isArray(value.invalidConditions) && value.invalidConditions.every(isObject)
+    && (value.criticalSuccessEnhancement === undefined || isObject(value.criticalSuccessEnhancement));
 }
 
 /** Verifies the declared Hazard severity is one of the two alpha severities. */
