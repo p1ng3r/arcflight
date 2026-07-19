@@ -14,21 +14,24 @@ This branch was created from current `main` after the V3-003 audit showed that t
 
 1. Open Codex.
 2. Select repository `p1ng3r/arcflight`.
-3. Select branch `rebuild/arcflight-voyage-events-alpha`.
-4. Tell Codex to read `AGENTS.md` and the named task file.
-5. Use Ask mode for audits and Code mode for explicit implementation tasks.
-6. Review every result before accepting changes.
-7. Do not ask Codex to merge, rebase, reset, push, open a pull request, or run Foundry.
-8. The user performs manual Foundry validation after each accepted coding task.
+3. Select branch `rebuild/arcflight-voyage-events-alpha` as the starting branch.
+4. Codex creates a separate temporary working branch for the task.
+5. Tell Codex to read `AGENTS.md` and the named task file.
+6. Use Ask mode for audits and Code mode for explicit implementation tasks.
+7. Review every result before accepting changes.
+8. Do not ask Codex to merge, rebase, reset, open a pull request, or run Foundry while implementing.
+9. After review, create a PR from the temporary Codex branch into `rebuild/arcflight-voyage-events-alpha`.
+10. The user performs manual Foundry validation when the task calls for runtime inspection.
 
 ## Completed
 
 - V3-003 — branch and architecture audit.
 - V3-004 — Voyage Event data contracts, constants, defaults, and documentation.
+- V3-005 — package validation, canonical narrative references, and pure catalog registries.
 
 ## Next
 
-- V3-005 — validate Voyage Event packages, correct per-station action arrays, and define pure catalog registries.
+- V3-006 — GM-authoritative Voyage Event flag persistence with revision protection.
 
 ## Standard completion report
 
