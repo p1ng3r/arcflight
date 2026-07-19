@@ -1,9 +1,11 @@
 import {
   normalizeTravelV2RiskBidTier,
+  normalizeTravelV2RiskBidSelectionContainer,
   prepareTravelV2RiskBidOptionsForStationAction,
   selectTravelV2RiskBidForRunnerSession,
   clearTravelV2RiskBidSelectionForRunnerSession
 } from "./travel-v2-risk-bids.js";
+import { prepareTravelV2RiskBidClearRunnerUpdate, prepareTravelV2RiskBidSelectRunnerUpdate } from "./travel-v2-risk-bid-runner-updates.js";
 
 const FORBIDDEN_OUTPUT_TERMS = Object.freeze([
   "gmOnly",
@@ -88,10 +90,27 @@ export function runTravelV2RiskBidsSmokeChecks() {
     assertSmoke(!snap(prepared).includes(snap(rawBid)) && !Object.hasOwn(prepared.options[1], "gmOnly"), "prepared output contains no raw input object dumps");
     assertNoForbiddenOutput(prepared, "prepared risk bid output");
 
+    const strictContainer = normalizeTravelV2RiskBidSelectionContainer({ records: [
+      { selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 5, dcModifier: 5, selectedAt: "t", secret: "drop" },
+      { selected: true, roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 5, selectedAt: "t" },
+      { selected: "true", roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course", tier: 5, dcModifier: 5, selectedAt: "t" }
+    ] });
+    assertEqual(strictContainer.records.length, 1, "selection container drops repaired or non-boolean selected records");
+    assertOnlyKeys(strictContainer.records[0], ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"], "strict container retains only safe record fields");
+
     const containerKeys = ["version", "records"];
     const recordKeys = ["version", "selected", "roundIndex", "roundNumber", "stationKey", "actionId", "tier", "dcModifier", "selectedAt"];
     const original = {
       id: "session-1",
+      currentRoundIndex: 0,
+      roundPhase: "stationOrders",
+      event: { rounds: [{ roundNumber: 1, activeStations: ["navigator"], stationPrompts: {} }] },
+      roundResults: [{
+        actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] },
+        stationActions: { navigator: { type: "eventApproach" } },
+        travelV2RiskBidActions: { navigator: { actionId: "plot-course", riskBids: [{ tier: 2 }, { tier: 5 }, { tier: 8 }] } },
+        stationOrderCommitments: { navigator: { committed: false } }
+      }],
       travelV2RiskBidSelections: {
         version: 99,
         gmOnly: true,
@@ -168,6 +187,36 @@ export function runTravelV2RiskBidsSmokeChecks() {
       assertSmoke(!blocked.ok && blocked.blockedReasons.length > 0, "missing station/action/round/tier blocks safely");
       assertNoForbiddenOutput(blocked, "blocked selection result");
     }
+    const canonical = {
+      currentRoundIndex: 0, roundPhase: "stationOrders",
+      event: { rounds: [{ roundNumber: 1, activeStations: ["navigator"] }] },
+      roundResults: [{ actionOrder: { roundIndex: 0, roundNumber: 1, status: "committed", committedStationKeys: ["navigator"] }, stationActions: { navigator: { type: "eventApproach" } }, travelV2RiskBidActions: { navigator: { actionId: "plot-course", riskBids: [{ tier: 5 }] } }, stationOrderCommitments: { navigator: { committed: false } } }]
+    };
+    const canonicalBefore = snap(canonical);
+    const validCoupledSelection = selectTravelV2RiskBidForRunnerSession(canonical, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 5 }, { selectedAt: "fixed" });
+    assertSmoke(validCoupledSelection.ok && validCoupledSelection.session !== canonical, "canonical pre-lock selection succeeds");
+    const unauthoredTier = selectTravelV2RiskBidForRunnerSession(canonical, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 8 });
+    assertSmoke(unauthoredTier.blocked && unauthoredTier.reasonCode === "risk-bid-tier-not-authored", "globally valid but unauthored tier is blocked");
+    const lockedSession = JSON.parse(snap(validCoupledSelection.session));
+    lockedSession.roundResults[0].stationOrderCommitments.navigator.committed = true;
+    const lockedBefore = snap(lockedSession);
+    const lockedRiskBids = { roundIndex: 0, roundNumber: 1, stationKey: "navigator", actionId: "plot-course" };
+    for (const update of [prepareTravelV2RiskBidSelectRunnerUpdate(lockedSession, lockedRiskBids, 5), prepareTravelV2RiskBidClearRunnerUpdate(lockedSession, lockedRiskBids)]) {
+      assertSmoke(update.nextSession === lockedSession && !update.shouldUpdateSession && !update.shouldRerender, "blocked risk-bid wrappers preserve the original session and skip rerender");
+    }
+    for (const operation of [
+      () => selectTravelV2RiskBidForRunnerSession(lockedSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 8 }),
+      () => clearTravelV2RiskBidSelectionForRunnerSession(lockedSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course" })
+    ]) {
+      const blocked = operation();
+      assertSmoke(blocked.blocked && blocked.reasonCode === "station-action-locked" && blocked.session === undefined && Object.isFrozen(blocked) && Object.isFrozen(blocked.planningGate), "locked risk-bid mutation is player-safe, frozen, and has no replacement session");
+      assertEqual(snap(lockedSession), lockedBefore, "blocked lock mutation preserves session");
+    }
+    for (const badSession of [null, { ...canonical, roundPhase: "crewPlanning" }, { ...canonical, currentRoundIndex: 1 }, { ...canonical, roundResults: [{ ...canonical.roundResults[0], actionOrder: { ...canonical.roundResults[0].actionOrder, committedStationKeys: ["captain"] } }] }]) {
+      const blocked = selectTravelV2RiskBidForRunnerSession(badSession, { roundIndex: 0, stationKey: "navigator", actionId: "plot-course", tier: 2 });
+      assertSmoke(blocked.blocked && blocked.session === undefined, "authoritative planning gate blocks direct helper bypasses");
+    }
+    assertEqual(snap(canonical), canonicalBefore, "risk-bid gate failures do not mutate or create containers");
     assertEqual(sideEffects.length, 0, "risk bid helpers do not call actor, item, chat, journal, socket, or world mutation APIs");
   } finally {
     globalThis.Actor = prior.Actor;
@@ -177,7 +226,7 @@ export function runTravelV2RiskBidsSmokeChecks() {
     globalThis.game = prior.game;
   }
 
-  return { ok: true, checked: ["risk-bid-alpha-closeout-tier-normalization", "risk-bid-alpha-closeout-invalid-tier-rejection", "risk-bid-alpha-closeout-prepared-option-sanitization", "risk-bid-alpha-closeout-prepared-deduplication", "risk-bid-alpha-closeout-session-selection-cloning", "risk-bid-alpha-closeout-selection-replacement", "risk-bid-alpha-closeout-selection-clearing", "risk-bid-alpha-closeout-blocked-selection-validation", "risk-bid-alpha-closeout-forbidden-output-guard", "risk-bid-alpha-closeout-no-side-effects"] };
+  return { ok: true, checked: ["risk-bid-alpha-closeout-tier-normalization", "risk-bid-alpha-closeout-invalid-tier-rejection", "risk-bid-alpha-closeout-prepared-option-sanitization", "risk-bid-alpha-closeout-prepared-deduplication", "risk-bid-alpha-closeout-session-selection-cloning", "risk-bid-alpha-closeout-selection-replacement", "risk-bid-alpha-closeout-selection-clearing", "risk-bid-alpha-closeout-blocked-selection-validation", "risk-bid-alpha-closeout-forbidden-output-guard", "risk-bid-alpha-closeout-no-side-effects", "risk-bid-authoritative-tier-rejection", "risk-bid-locked-wrapper-no-update-no-rerender", "risk-bid-planning-gate-direct-helper-blocks"] };
 }
 
 export default runTravelV2RiskBidsSmokeChecks;

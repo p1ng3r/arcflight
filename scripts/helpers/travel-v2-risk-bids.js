@@ -1,3 +1,5 @@
+import { prepareTravelV2StationActionPlanningGate } from "./travel-v2-station-action-planning-gate.js";
+
 export const TRAVEL_V2_RISK_BID_MODEL_VERSION = 1;
 export const TRAVEL_V2_RISK_BID_TIERS = Object.freeze([2, 5, 8]);
 
@@ -101,60 +103,91 @@ function validateSessionSelection(selection, requireTier = false) {
 }
 
 function sanitizeRiskBidSelectionRecord(record) {
-  const tier = normalizeTravelV2RiskBidTier(record?.tier);
-  const stationKey = safeString(record?.stationKey);
-  const actionId = safeString(record?.actionId);
-  const round = normalizeRoundSelection(record);
-
-  if (!tier || !stationKey || !actionId || !round.hasRound) return null;
-
+  if (!record || typeof record !== "object" || Array.isArray(record) || record.selected !== true) return null;
+  const tier = normalizeTravelV2RiskBidTier(record.tier);
+  const dcModifier = normalizeTravelV2RiskBidTier(record.dcModifier);
+  const stationKey = safeString(record.stationKey);
+  const actionId = safeString(record.actionId);
+  const selectedAt = safeString(record.selectedAt);
+  const roundIndex = record.roundIndex;
+  const roundNumber = record.roundNumber;
+  if (!tier || dcModifier !== tier || !stationKey || !actionId || !selectedAt || !Number.isInteger(roundIndex) || roundIndex < 0 || !Number.isInteger(roundNumber) || roundNumber < 1) return null;
   return {
     version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
-    selected: record?.selected !== false,
-    roundIndex: round.roundIndex,
-    roundNumber: round.roundNumber,
+    selected: true,
+    roundIndex,
+    roundNumber,
     stationKey,
     actionId,
     tier,
-    dcModifier: tier,
-    selectedAt: safeString(record?.selectedAt)
+    dcModifier,
+    selectedAt
   };
+}
+
+export function normalizeTravelV2RiskBidSelectionContainer(source = {}) {
+  const records = Array.isArray(source?.records) ? source.records.map((record) => sanitizeRiskBidSelectionRecord(record)).filter(Boolean) : [];
+  return { version: TRAVEL_V2_RISK_BID_MODEL_VERSION, records };
+}
+
+function canonicalRiskBidAction(session, roundIndex, stationKey) {
+  const source = session?.roundResults?.[roundIndex]?.travelV2RiskBidActions?.[stationKey];
+  const actionId = safeString(source?.actionId);
+  const riskBids = Array.isArray(source?.riskBids) ? source.riskBids : [];
+  return { actionId, tiers: new Set(riskBids.map((bid) => normalizeTravelV2RiskBidTier(bid?.tier)).filter(Boolean)) };
+}
+
+function stationActionIsLocked(session, roundIndex, stationKey) {
+  const commitment = session?.roundResults?.[roundIndex]?.stationOrderCommitments?.[stationKey];
+  return commitment?.committed === true || commitment?.locked === true;
+}
+
+function blockedRiskBidResult(gate, reasonCode = gate?.reasonCode ?? "") {
+  return freezeRiskBidOutput({
+    ok: false,
+    blocked: true,
+    selected: false,
+    cleared: false,
+    reasonCode,
+    blockedReasons: [reasonCode || "risk-bid-blocked"],
+    error: reasonCode || "risk-bid-blocked",
+    planningGate: gate ?? null,
+    playerSafe: true,
+    readOnly: true
+  });
+}
+
+function validateRiskBidMutation(session, selection, requireTier) {
+  const validation = validateSessionSelection(selection, requireTier);
+  if (validation.blockedReasons.length > 0) return { validation, blocked: blockedRiskBidResult(null, validation.blockedReasons[0]) };
+  const gate = prepareTravelV2StationActionPlanningGate(session, validation.stationKey, { requestedRoundIndex: validation.round.roundIndex });
+  if (gate.blocked) return { validation, blocked: blockedRiskBidResult(gate) };
+  if ((validation.round.roundIndex !== null && validation.round.roundIndex !== gate.roundIndex) || (validation.round.roundNumber !== null && validation.round.roundNumber !== gate.roundNumber)) return { validation, gate, blocked: blockedRiskBidResult(gate, "wrong-station-action-round") };
+  const action = canonicalRiskBidAction(session, gate.roundIndex, validation.stationKey);
+  if (!action.actionId || action.actionId !== validation.actionId) return { validation, gate, blocked: blockedRiskBidResult(gate, "incompatible-station-action") };
+  if (requireTier && !action.tiers.has(validation.tier)) return { validation, gate, blocked: blockedRiskBidResult(gate, "risk-bid-tier-not-authored") };
+  if (stationActionIsLocked(session, gate.roundIndex, validation.stationKey)) return { validation, gate, blocked: blockedRiskBidResult(gate, "station-action-locked") };
+  return { validation, gate, blocked: null };
 }
 
 function ensureSelectionContainer(session) {
   const cloned = clonePlain(session);
-  const existing = cloned.travelV2RiskBidSelections && typeof cloned.travelV2RiskBidSelections === "object"
-    ? cloned.travelV2RiskBidSelections
-    : {};
-  const rawRecords = Array.isArray(existing.records) ? existing.records : [];
-  const sanitizedRecords = rawRecords
-    .map((record) => sanitizeRiskBidSelectionRecord(record))
-    .filter(Boolean);
-  cloned.travelV2RiskBidSelections = {
-    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
-    records: sanitizedRecords
-  };
+  cloned.travelV2RiskBidSelections = normalizeTravelV2RiskBidSelectionContainer(cloned.travelV2RiskBidSelections);
   return cloned;
 }
 
+/** Mutates only a cloned canonical session after the station-action planning gate allows it. */
 export function selectTravelV2RiskBidForRunnerSession(session, selection = {}, options = {}) {
-  const validation = validateSessionSelection(selection, true);
+  const checked = validateRiskBidMutation(session, selection, true);
+  if (checked.blocked) return checked.blocked;
+  const { validation } = checked;
   const cloned = ensureSelectionContainer(session);
-  if (validation.blockedReasons.length > 0) {
-    return { ok: false, selected: false, session: cloned, selectionRecord: null, blockedReasons: validation.blockedReasons, error: validation.blockedReasons[0] };
-  }
-
   const selectedAt = safeString(options?.selectedAt) || (typeof options?.now === "function" ? safeString(options.now()) : safeString(options?.now)) || new Date().toISOString();
   const selectionRecord = {
-    version: TRAVEL_V2_RISK_BID_MODEL_VERSION,
-    selected: true,
-    roundIndex: validation.round.roundIndex,
-    roundNumber: validation.round.roundNumber,
-    stationKey: validation.stationKey,
-    actionId: validation.actionId,
-    tier: validation.tier,
-    dcModifier: validation.tier,
-    selectedAt
+    version: TRAVEL_V2_RISK_BID_MODEL_VERSION, selected: true,
+    roundIndex: checked.gate.roundIndex, roundNumber: checked.gate.roundNumber,
+    stationKey: validation.stationKey, actionId: validation.actionId, tier: validation.tier,
+    dcModifier: validation.tier, selectedAt
   };
   const key = riskBidRecordKey(selectionRecord);
   cloned.travelV2RiskBidSelections.records = cloned.travelV2RiskBidSelections.records.filter((record) => riskBidRecordKey(record) !== key);
@@ -163,12 +196,10 @@ export function selectTravelV2RiskBidForRunnerSession(session, selection = {}, o
 }
 
 export function clearTravelV2RiskBidSelectionForRunnerSession(session, selection = {}, options = {}) {
-  const validation = validateSessionSelection(selection, false);
+  const checked = validateRiskBidMutation(session, selection, false);
+  if (checked.blocked) return checked.blocked;
+  const { validation } = checked;
   const cloned = ensureSelectionContainer(session);
-  if (validation.blockedReasons.length > 0) {
-    return { ok: false, cleared: false, session: cloned, clearedRecord: null, blockedReasons: validation.blockedReasons, error: validation.blockedReasons[0] };
-  }
-
   const target = { roundIndex: validation.round.roundIndex, roundNumber: validation.round.roundNumber, stationKey: validation.stationKey, actionId: validation.actionId };
   const key = riskBidRecordKey(target);
   let clearedRecord = null;

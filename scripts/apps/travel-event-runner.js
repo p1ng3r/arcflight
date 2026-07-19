@@ -16,7 +16,7 @@ import { prepareTravelV2FinalOutcomePreservationActorPreview } from "../helpers/
 import { applyTravelV2FinalOutcomeToShip } from "../helpers/travel-v2-event-outcome-package.js";
 import { prepareTravelV2ActorApplicationPreviewFromSession, applyTravelV2ActorApplicationPreview } from "../helpers/travel-v2-actor-application-bridge.js";
 import { updateTravelV2FollowUpStatus } from "../helpers/travel-v2-followups.js";
-import { selectTravelV2RiskBidForRunnerSession, clearTravelV2RiskBidSelectionForRunnerSession } from "../helpers/travel-v2-risk-bids.js";
+import { prepareTravelV2RiskBidSelectRunnerUpdate, prepareTravelV2RiskBidClearRunnerUpdate } from "../helpers/travel-v2-risk-bid-runner-updates.js";
 import { prepareTravelV2RiskBidQueueInsertionIntent } from "../helpers/travel-v2-risk-bid-queue-insertion-intent.js";
 import { clearAllTravelV2RiskBidReviewQueueRecordSelections, clearTravelV2RiskBidReviewQueueRecordSelection, insertTravelV2RiskBidReviewQueueRecords, selectTravelV2RiskBidReviewQueueRecord, updateTravelV2RiskBidReviewQueueRecordStatus } from "../helpers/travel-v2-risk-bid-review-queue.js";
 import { commitTravelV2RoundActionOrderToSession, moveTravelV2RoundActionOrderCandidate, normalizeTravelV2ProposedRoundActionOrder, prepareTravelV2RoundActionOrderState, unlockTravelV2RoundActionOrderInSession } from "../helpers/travel-v2-round-action-order-state.js";
@@ -470,27 +470,6 @@ export function prepareTravelV2RoundActionOrderUnlockRunnerUpdate(currentSession
   };
 }
 
-function prepareTravelV2RiskBidSelectionFromState(riskBids = {}, tier = null) {
-  return {
-    roundIndex: Number.isInteger(riskBids?.roundIndex) ? riskBids.roundIndex : riskBids?.selectedRecord?.roundIndex ?? null,
-    roundNumber: Number.isInteger(riskBids?.roundNumber) ? riskBids.roundNumber : riskBids?.selectedRecord?.roundNumber ?? null,
-    stationKey: typeof riskBids?.stationKey === "string" ? riskBids.stationKey : "",
-    actionId: typeof riskBids?.actionId === "string" ? riskBids.actionId : "",
-    ...(tier == null ? {} : { tier })
-  };
-}
-
-export function prepareTravelV2RiskBidSelectRunnerUpdate(currentSession, riskBids = {}, tier, options = {}) {
-  const result = selectTravelV2RiskBidForRunnerSession(currentSession, prepareTravelV2RiskBidSelectionFromState(riskBids, tier), options);
-  const shouldUpdateSession = result?.session !== undefined && (result.ok === true || result.ok === false);
-  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: true };
-}
-
-export function prepareTravelV2RiskBidClearRunnerUpdate(currentSession, riskBids = {}, options = {}) {
-  const result = clearTravelV2RiskBidSelectionForRunnerSession(currentSession, prepareTravelV2RiskBidSelectionFromState(riskBids), options);
-  const shouldUpdateSession = result?.session !== undefined && (result.ok === true || result.ok === false);
-  return { result, nextSession: shouldUpdateSession ? result.session : currentSession, shouldUpdateSession, shouldRerender: true };
-}
 
 export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(ApplicationV2) {
   #boundRunnerClick = this.#onRunnerClick.bind(this);
@@ -1385,7 +1364,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ? `Risk bid +${update.result.selectionRecord?.tier ?? tier} selected for ${riskBids.stationName || riskBids.stationKey || "the current station"} / ${riskBids.actionName || riskBids.actionId || "action"} in session-local state only.`
       : `Risk bid selection blocked: ${update.result?.error ?? "invalid risk bid selection"}.`;
     globalThis.ui?.notifications?.[update.result?.ok ? "info" : "warn"]?.(this.statusMessage);
-    return this.render(true);
+    return update.shouldRerender ? this.render(true) : update;
   }
 
   async #clearTravelV2RiskBid() {
@@ -1399,7 +1378,7 @@ export class ArcflightTravelEventRunner extends HandlebarsApplicationMixin(Appli
       ? (update.result.cleared ? "Risk bid selection cleared for the current station/action in session-local state only." : "No risk bid selection was set for the current station/action.")
       : `Risk bid clear blocked: ${update.result?.error ?? "invalid risk bid context"}.`;
     globalThis.ui?.notifications?.[update.result?.ok ? "info" : "warn"]?.(this.statusMessage);
-    return this.render(true);
+    return update.shouldRerender ? this.render(true) : update;
   }
 
   async #refreshTravelV2Narration() {
