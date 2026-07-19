@@ -1819,6 +1819,24 @@ function getActorByAssignment(assignment, options = {}) {
 }
 
 
+function normalizeTravelV2RiskBidActions(source = {}, round = null) {
+  const records = isPlainObject(source) ? source : {};
+  const active = new Set(Array.isArray(round?.activeStations) ? round.activeStations : []);
+  const output = {};
+  for (const [stationKey, record] of Object.entries(records)) {
+    if (!active.has(stationKey) || !isPlainObject(record) || typeof record.actionId !== "string" || !record.actionId.trim()) continue;
+    const seen = new Set();
+    const riskBids = (Array.isArray(record.riskBids) ? record.riskBids : []).flatMap((bid) => {
+      const tier = Number(bid?.tier);
+      if (![2, 5, 8].includes(tier) || seen.has(tier)) return [];
+      seen.add(tier);
+      return [{ tier, label: typeof bid?.label === "string" ? bid.label.trim() : "", text: typeof bid?.text === "string" ? bid.text.trim() : "" }];
+    });
+    output[stationKey] = { actionId: record.actionId.trim(), riskBids };
+  }
+  return output;
+}
+
 function normalizeSelectedStationSkills(roundResult = {}, round = null) {
   const source = isPlainObject(roundResult?.selectedStationSkills) ? roundResult.selectedStationSkills : {};
   const activeKeys = Array.isArray(round?.activeStations) ? round.activeStations : Object.keys(roundResult?.stationResults ?? {});
@@ -2301,7 +2319,7 @@ export function normalizeTravelEventRunnerSession(session, options = {}) {
       stationSummary: isPlainObject(source?.stationSummary) ? cloneData(source.stationSummary) : undefined,
       stationRollResolutions: isPlainObject(source?.stationRollResolutions) ? cloneData(source.stationRollResolutions) : undefined,
       actionOrder: isPlainObject(source?.actionOrder) ? cloneData(source.actionOrder) : undefined,
-      travelV2RiskBidActions: isPlainObject(source?.travelV2RiskBidActions) ? cloneData(source.travelV2RiskBidActions) : undefined,
+      travelV2RiskBidActions: normalizeTravelV2RiskBidActions(source?.travelV2RiskBidActions, event.rounds[index]),
       travelV2RoundResolution: isPlainObject(source?.travelV2RoundResolution) ? cloneData(source.travelV2RoundResolution) : undefined,
       travelV2RoundResolutionRecord: isPlainObject(source?.travelV2RoundResolutionRecord) ? cloneData(source.travelV2RoundResolutionRecord) : undefined,
       roundResolution: isPlainObject(source?.roundResolution) ? cloneData(source.roundResolution) : undefined,
