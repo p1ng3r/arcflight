@@ -24,10 +24,11 @@ This branch was created from current `main` after the V3-003 audit showed that t
 ## Completed
 
 - V3-003 — branch and architecture audit.
+- V3-004 — Voyage Event data contracts, constants, defaults, and documentation.
 
 ## Next
 
-- V3-004 — define Voyage Event data contracts and validation foundations.
+- V3-005 — validate Voyage Event packages, correct per-station action arrays, and define pure catalog registries.
 
 ## Standard completion report
 
