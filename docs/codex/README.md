@@ -22,6 +22,7 @@ This branch was created from current `main` after the V3-003 audit showed that t
 8. Do not ask Codex to merge, rebase, reset, open a pull request, or run Foundry while implementing.
 9. After review, create a PR from the temporary Codex branch into `rebuild/arcflight-voyage-events-alpha`.
 10. The user performs manual Foundry validation when the task calls for runtime inspection.
+11. For sliced work, finish review, PR, manual validation, merge, and issue closeout for one slice before starting the next slice. Do not run dependent slices in parallel.
 
 ## Completed
 
@@ -30,9 +31,18 @@ This branch was created from current `main` after the V3-003 audit showed that t
 - V3-005 — package validation, canonical narrative references, and pure catalog registries.
 - V3-006 — GM-authoritative Voyage Event flag persistence with revision protection.
 
-## Next
+## Next — V3-007 slices
 
-- V3-007 — active-runtime lifecycle manager with validated start, pause/resume, strict phase transitions, round-boundary reset, and audited GM overrides.
+Parent plan: `docs/codex/V3-007-voyage-event-lifecycle-manager.md`
+
+Run these in order, one at a time:
+
+1. V3-007A — pure lifecycle transition policy and error contract.
+2. V3-007B — validated active-event start.
+3. V3-007C — guarded pause and resume.
+4. V3-007D — strict normal phase advancement.
+5. V3-007E — round-boundary advancement and reset.
+6. V3-007F — audited GM override and consolidated lifecycle documentation.
 
 ## Standard completion report
 
