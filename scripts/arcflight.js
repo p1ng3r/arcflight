@@ -3,6 +3,7 @@ import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import { createVoyageEncounterState, normalizeVoyageEncounterState } from "./voyage/domain/state.js";
 import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
+import { validateVoyageEncounterActivationReadiness } from "./voyage/domain/activation-readiness.js";
 import { applyContextPreservingVoyageLifecycleTransition } from "./voyage/domain/lifecycle-application.js";
 import {
   getAllowedVoyageLifecycleTransitions,
@@ -347,6 +348,7 @@ Hooks.once("init", () => {
     createVoyageEncounterState,
     normalizeVoyageEncounterState,
     validateVoyageEncounterState,
+    validateVoyageEncounterActivationReadiness,
     applyContextPreservingVoyageLifecycleTransition,
     getAllowedVoyageLifecycleTransitions,
     isLegalVoyageLifecycleTransition,
@@ -356,6 +358,7 @@ Hooks.once("init", () => {
       createVoyageEncounterState,
       normalizeVoyageEncounterState,
       validateVoyageEncounterState,
+      validateVoyageEncounterActivationReadiness,
       applyContextPreservingVoyageLifecycleTransition,
       getAllowedVoyageLifecycleTransitions,
       isLegalVoyageLifecycleTransition,
@@ -442,6 +445,7 @@ export {
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
   validateVoyageEncounterState,
+  validateVoyageEncounterActivationReadiness,
   applyContextPreservingVoyageLifecycleTransition,
   getAllowedVoyageLifecycleTransitions,
   isLegalVoyageLifecycleTransition,
