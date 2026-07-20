@@ -49,7 +49,7 @@ Exact schema representation is deferred to V3-003.
 
 ### Decision
 
-Every Voyage Encounter includes title and description, current situation, objective, participants, available stations, current stage, round number, player-visible information, GM-secret information, success conditions, failure conditions, permanent consequences, and temporary consequences.
+Every Voyage Encounter includes stable identity, lifecycle and revision state, definition reference, title and description, primary ship, current situation, objective, participants, available stations, current stage, round and phase when active, player-visible information, GM-secret information, success conditions, failure conditions, permanent consequences, temporary consequences, and recovery metadata.
 
 ### Reason
 
@@ -61,6 +61,7 @@ A consistent required structure gives the GM, players, persistence layer, projec
 - Empty consequence collections remain explicit.
 - Visible and secret information are separate from the beginning.
 - Success and failure conditions are authored before play.
+- Lifecycle and recovery state are first-class rather than inferred from a window.
 
 ### Rejected alternatives
 
@@ -224,7 +225,7 @@ Some thresholds represent unique dramatic events while others represent recurrin
 
 - Authoritative state records threshold history.
 - Remaining on a threshold does not count as a new crossing.
-- Stage and round snapshots must preserve the history needed for reset and recovery.
+- Stage and round snapshots preserve the history needed for reset and recovery.
 
 ### Rejected alternatives
 
@@ -233,7 +234,7 @@ Some thresholds represent unique dramatic events while others represent recurrin
 
 ### Unresolved questions
 
-Reset commands use snapshots rather than informal history deletion.
+Reset commands restore recorded snapshot history rather than informally deleting threshold records.
 
 ---
 
@@ -392,6 +393,7 @@ Voyage content ranges from simple hazards to discoveries with meaningful route a
 - Every encounter still has a current stage.
 - Each stage defines its situation, objective, stations, actions, tracks, entry and exit conditions, possible next stages, and information boundaries.
 - Stage transitions use explicit timing.
+- Entering a stage captures a stage-entry snapshot.
 - GM overrides create domain events rather than silent data replacement.
 
 ### Rejected alternatives
@@ -418,7 +420,7 @@ The phases clearly separate presentation, simultaneous decisions, validation, PF
 ### Consequences
 
 - Commands are phase-restricted.
-- Phase-start and round-start snapshots support reset and recovery.
+- Round-start and phase-start snapshots support reset and recovery.
 - The GM controls authoritative advancement.
 - Cleanup produces one next state: next round, next stage, success, failure, or pause.
 
@@ -560,6 +562,7 @@ Voyage gameplay requires hidden tracks, concealed DCs, secret stages, complicati
 - Hidden information is omitted, not merely hidden visually.
 - Unavailable-action reasons are sanitized.
 - Player-specific visibility is possible when authored.
+- Lifecycle and permanent-consequence information is filtered by viewer authorization.
 
 ### Rejected alternatives
 
@@ -589,6 +592,7 @@ A single authority prevents conflicting writes, cheating, accidental secret expo
 - Duplicate request IDs are idempotent.
 - No active GM means mutations pause.
 - A replacement active GM resumes from persisted state.
+- Permanent consequence retries also use a stable consequence idempotency key.
 
 ### Rejected alternatives
 
@@ -610,12 +614,13 @@ Permanent ship state remains on ship and component records. Temporary Voyage sta
 
 ### Reason
 
-Temporary plans, locks, tracks, and pending checks must not pollute permanent ship configuration or be owned by windows.
+Temporary plans, locks, tracks, pending checks, and lifecycle state must not pollute permanent ship configuration or be owned by windows.
 
 ### Consequences
 
 - Ship configuration and finalized long-term consequences remain durable.
-- Stage, round, phase, selections, bids, reservations, thresholds, hidden data, and recovery history stay with the encounter.
+- Lifecycle, stage, round, phase, selections, bids, reservations, thresholds, hidden data, consequence status, snapshots, and recovery history stay with the encounter.
+- Permanent target records may store durable consequence idempotency markers.
 - Exact Foundry persistence type is deferred.
 
 ### Rejected alternatives
@@ -633,20 +638,21 @@ The Foundry document or flag host is selected in V3-003.
 
 ### Decision
 
-Every mutation validates, creates a complete candidate state, persists it completely, then publishes. Failures before persistence leave authoritative state unchanged.
+Every normal encounter mutation validates, creates a complete candidate state, persists it completely, increments revision, then publishes. Failures before persistence leave authoritative encounter state unchanged.
 
 ### Reason
 
-Partial locks, spending, threshold history, and projections would make multiplayer recovery unreliable.
+Partial locks, reservations, threshold history, and projections would make multiplayer recovery unreliable.
 
 ### Consequences
 
-- Persistence failure does not publish candidate state.
+- Persistence failure does not publish candidate encounter state.
 - Reload restores the latest persisted revision.
 - Player disconnect preserves selections and locks.
 - Pending thresholds and consequences survive reconnect.
 - Missing references are quarantined rather than deleting encounter state.
-- Corrupt or unknown state opens GM recovery mode rather than being silently rewritten.
+- Corrupt or unknown state opens Recovery rather than being silently rewritten.
+- Cross-document permanent consequences use the separate idempotent protocol in Decision 026.
 
 ### Rejected alternatives
 
@@ -655,26 +661,26 @@ Partial locks, spending, threshold history, and projections would make multiplay
 
 ### Unresolved questions
 
-Exact snapshot retention and recovery UI are deferred.
+Exact persistence host and transaction mechanics are deferred.
 
 ---
 
-## V3-002-024 — Distinct cancellation, reset, completion, abandonment, and discard commands
+## V3-002-024 — Distinct cancellation, pause, reset, completion, abandonment, and discard commands
 
 ### Decision
 
-Cancel current input, unlock one station, reset current phase, reset current round, return to previous stage, end successfully, end in failure, abandon encounter, and discard encounter are separate operations.
+Cancel current input, unlock one station, pause, resume, reset current phase, reset current round, return to previous stage, end successfully, end in failure, abandon encounter, and discard encounter are separate operations.
 
 ### Reason
 
-These operations have different authority, persistence, resource, threshold-history, and permanent-consequence effects and must not be represented by one ambiguous Reset button.
+These operations have different authority, persistence, resource, snapshot, lifecycle, threshold-history, and permanent-consequence effects and must not be represented by one ambiguous Reset button.
 
 ### Consequences
 
 - Local cancellation does not change authoritative state.
 - Unlock releases provisional reservations.
-- Phase and round reset restore recorded snapshots.
-- Previous-stage recovery requires a stage-entry snapshot.
+- Pause preserves round state while blocking ordinary player mutation.
+- Phase, round, and stage recovery use explicit snapshots.
 - Success and failure finalize defined permanent outcomes.
 - Abandonment requires explicit decisions about pending permanent results.
 - Discard removes temporary state but never silently reverses permanent ship changes.
@@ -690,6 +696,116 @@ Exact permissions and confirmation dialogs belong to later Foundry UI work.
 
 ---
 
+## V3-002-025 — Explicit encounter lifecycle and activation
+
+### Decision
+
+Use explicit lifecycle states: Draft, Configuration, Ready, Active, Paused, Recovery, Completed — Success, Completed — Failure, Abandoned, and Discarded.
+
+Creating an encounter establishes a stable identifier and revision `0`. Configuration selects the definition, primary ship, participants, initial stage, tracks, station availability, temporary operators, visibility, and outcome definitions. Ready requires activation validation. Activating Ready initializes round `1`, enters Situation, captures the initial round-start and phase-start snapshots, persists, increments revision, and publishes filtered projections.
+
+### Reason
+
+The round model alone does not explain how an encounter is created, validated, started, paused, recovered, or ended. Those transitions must not be inferred from which window happens to be open.
+
+### Consequences
+
+- Lifecycle state is independent from round phase.
+- Only Active runs Voyage Rounds.
+- Paused preserves all active state but rejects ordinary player mutations.
+- Recovery is entered for corrupt state, missing required references, interrupted checks, or uncertain consequence commits.
+- Lifecycle transitions are revisioned commands and domain events.
+- Completed and Abandoned summaries are historical records rather than reusable active instances.
+
+### Rejected alternatives
+
+- Begin every encounter directly in Situation with no activation boundary.
+- Let the UI infer lifecycle from missing fields.
+- Treat pause, recovery, and completion as the same inactive state.
+
+### Unresolved questions
+
+Exact persistence representation, pre-encounter player UI, and recovery interface are deferred to V3-003 and later.
+
+---
+
+## V3-002-026 — Idempotent permanent consequence commitment
+
+### Decision
+
+Generating a permanent consequence does not apply it automatically. Each permanent consequence has a stable `consequenceId`, explicit status, and commitment timing.
+
+Supported conceptual statuses are Proposed, Approved, Committing, Committed, Cancelled, and Commit failed. Commitment timing is Immediate or Finalization.
+
+The commit protocol validates authority and targets, uses `consequenceId` as an idempotency key, persists the durable target change with a durable marker or journal entry, records the encounter result, and reconciles interrupted commits without applying the effect twice.
+
+### Reason
+
+Permanent consequences may update a ship or component document outside the temporary encounter record. Without stable idempotency and reconciliation, a retry or encounter finalization could apply the same damage, resource loss, salvage, or reward twice.
+
+### Consequences
+
+- A failed target-document write leaves the consequence uncommitted.
+- If the target write succeeded but encounter persistence or acknowledgement failed, Recovery detects the durable marker and records Committed without repeating the effect.
+- Finalization applies only Approved consequences that are not already Committed or Cancelled.
+- Success and failure may approve different pending consequences.
+- Abandonment explicitly commits or cancels every Approved pending permanent consequence.
+- Reset and discard never silently reverse a Committed permanent consequence.
+- Reversal requires a separate compensating consequence or audited administrative recovery action.
+
+### Rejected alternatives
+
+- Apply permanent consequences immediately when generated with no status record.
+- Reapply every permanent consequence during finalization.
+- Use only transient socket request IDs for deduplication.
+- Let ordinary reset roll back permanent ship documents.
+
+### Unresolved questions
+
+Exact durable marker or commitment-journal storage and multi-document adapter mechanics are deferred, but the idempotency semantics are mandatory.
+
+---
+
+## V3-002-027 — Exact snapshot and reset semantics
+
+### Decision
+
+Capture stage-entry, round-start, and phase-start snapshots of temporary authoritative encounter state.
+
+A round-start snapshot is captured before Situation mutates the new round. A phase-start snapshot is captured at the beginning of every phase after the previous phase completes. The first round-start and Situation phase-start snapshots are captured during activation.
+
+Reset is a new authoritative command with a new monotonically increasing revision. It restores temporary state from the selected snapshot but does not roll back permanent documents or committed consequences.
+
+### Reason
+
+“Reset phase” and “reset round” are unsafe and ambiguous unless the architecture defines exactly when snapshots are captured, what they contain, and which state may not be reversed.
+
+### Consequences
+
+- Snapshots include stage, round, phase, temporary participants, assignments, selections, bids, assistance, locks, readiness, reservations, tracks, threshold history, pending queues, pending checks, temporary consequences, uncommitted permanent consequence status, hidden information, and recovery markers as applicable.
+- Snapshots exclude interface state and rollback copies of permanent Foundry documents.
+- Encounter revisions never decrease.
+- A reset restores temporary locks, reservations, tracks, threshold state, and pending queues to the snapshot.
+- External checks and adapter requests created after the snapshot are invalidated so late results cannot apply.
+- Processed request identifiers and audit history remain available to prevent replay, while superseded gameplay changes are marked as reset.
+- Committed permanent consequences and durable idempotency markers remain in force.
+- A consequence durably applied after the snapshot is reconciled, not erased or applied again.
+- Stage recovery uses stage-entry snapshots under the same rules.
+
+### Rejected alternatives
+
+- Capture only one informal snapshot during Situation.
+- Move the encounter revision backward during reset.
+- Delete request history and allow old commands to replay.
+- Store full ship-document rollback copies inside the encounter.
+- Reverse committed permanent consequences through ordinary phase or round reset.
+
+### Unresolved questions
+
+Exact snapshot format, compression, retention count, and recovery UI are deferred. Snapshot meaning and reset behavior are accepted architecture.
+
+---
+
 ## Implementation boundary accepted for V3-002
 
 The following remain deliberately deferred:
@@ -697,11 +813,14 @@ The following remain deliberately deferred:
 - executable encounter schemas;
 - Foundry persistence type;
 - socket message implementation;
+- active-GM election details;
 - UI applications;
 - PF2e roll implementation;
 - authored Voyage Action library;
 - authored Risk Bid levels;
 - stage and track editors;
+- exact snapshot storage and retention;
+- exact permanent consequence idempotency-marker storage;
 - migrations and recovery tools.
 
 Future work must conform to these decisions or explicitly amend this log through a reviewed architecture change.
