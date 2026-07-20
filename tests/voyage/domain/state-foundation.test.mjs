@@ -123,25 +123,56 @@ test("validation reports duplicate domain IDs and malformed snapshots or recover
   assert.ok(report.errors.some((entry) => entry.code === "malformed-recovery"));
 });
 
-test("domain modules import without Foundry globals and registration exposes helpers", async () => {
-  const previousHooks = globalThis.Hooks;
-  const previousConfig = globalThis.CONFIG;
-  const previousGame = globalThis.game;
+test("domain modules load without Foundry globals", () => {
+  assert.equal(typeof createVoyageEncounterState, "function");
+  assert.equal(typeof normalizeVoyageEncounterState, "function");
+  assert.equal(typeof validateVoyageEncounterState, "function");
+
+  const created = createVoyageEncounterState({ encounterId: "voyage-domain-only" });
+  const normalized = normalizeVoyageEncounterState(created);
+  const report = validateVoyageEncounterState(normalized);
+
+  assert.equal(normalized.encounterId, "voyage-domain-only");
+  assert.equal(report.valid, true);
+});
+
+test("Arcflight registration exposes Voyage helpers", async () => {
+  const previousGlobals = Object.fromEntries(
+    ["foundry", "Hooks", "CONFIG", "game"].map((key) => [key, {
+      exists: Object.hasOwn(globalThis, key),
+      value: globalThis[key]
+    }])
+  );
   let initCallback;
-  globalThis.Hooks = { once: (_event, callback) => { initCallback = callback; } };
-  globalThis.CONFIG = {};
-  globalThis.game = {};
 
-  await import("../../../scripts/arcflight.js");
-  initCallback();
-  assert.equal(typeof globalThis.game.arcflight.createVoyageEncounterState, "function");
-  assert.equal(typeof globalThis.game.arcflight.normalizeVoyageEncounterState, "function");
-  assert.equal(typeof globalThis.game.arcflight.validateVoyageEncounterState, "function");
-  assert.equal(typeof globalThis.game.arcflight.devTools.createVoyageEncounterState, "function");
-  assert.equal(typeof globalThis.game.arcflight.devTools.normalizeVoyageEncounterState, "function");
-  assert.equal(typeof globalThis.game.arcflight.devTools.validateVoyageEncounterState, "function");
+  class TestActorSheetV2 {}
 
-  globalThis.Hooks = previousHooks;
-  globalThis.CONFIG = previousConfig;
-  globalThis.game = previousGame;
+  try {
+    globalThis.foundry = {
+      applications: {
+        api: { HandlebarsApplicationMixin: (Base) => Base },
+        sheets: { ActorSheetV2: TestActorSheetV2 },
+        apps: {}
+      },
+      documents: {},
+      utils: {}
+    };
+    globalThis.Hooks = { once: (_event, callback) => { initCallback = callback; } };
+    globalThis.CONFIG = {};
+    globalThis.game = {};
+
+    await import("../../../scripts/arcflight.js");
+    initCallback();
+    assert.equal(typeof globalThis.game.arcflight.createVoyageEncounterState, "function");
+    assert.equal(typeof globalThis.game.arcflight.normalizeVoyageEncounterState, "function");
+    assert.equal(typeof globalThis.game.arcflight.validateVoyageEncounterState, "function");
+    assert.equal(typeof globalThis.game.arcflight.devTools.createVoyageEncounterState, "function");
+    assert.equal(typeof globalThis.game.arcflight.devTools.normalizeVoyageEncounterState, "function");
+    assert.equal(typeof globalThis.game.arcflight.devTools.validateVoyageEncounterState, "function");
+  } finally {
+    for (const [key, previous] of Object.entries(previousGlobals)) {
+      if (previous.exists) globalThis[key] = previous.value;
+      else delete globalThis[key];
+    }
+  }
 });
