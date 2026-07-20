@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Gameplay V3-003C - Context-Preserving Voyage Lifecycle Application
+
+- Added a Foundry-free lifecycle application helper for Draft to Configuration, Configuration to Draft, Ready to Configuration, Active to Paused, and Paused to Active transitions.
+- Successful transitions recursively clone encounter data, change only lifecycle state and revision, and return one lifecycle-transitioned domain event; all other policy-legal edges require specialized future operations.
+- Exposed the helper through `game.arcflight` and `game.arcflight.devTools`, with unrun Node test coverage and implementation documentation.
+
 ### Gameplay V3-003B - Voyage Encounter Lifecycle Transition Policy
 
 - Added a Foundry-free, immutable internal lifecycle transition policy with copy-safe inspection and validation helpers.
