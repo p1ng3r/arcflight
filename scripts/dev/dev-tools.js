@@ -55,7 +55,11 @@ function isTemporaryArcflightTestItem(item) {
 export function createArcflightDevTools({
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
-  validateVoyageEncounterState
+  validateVoyageEncounterState,
+  getAllowedVoyageLifecycleTransitions,
+  isLegalVoyageLifecycleTransition,
+  validateVoyageLifecycleTransition,
+  getVoyageLifecycleTransitionPolicy
 } = {}) {
   return Object.freeze({
     /**
@@ -257,6 +261,26 @@ export function createArcflightDevTools({
      * Structurally validate plain Voyage Encounter state.
      */
     validateVoyageEncounterState,
+
+    /**
+     * Return legal Voyage Encounter lifecycle targets for a source state.
+     */
+    getAllowedVoyageLifecycleTransitions,
+
+    /**
+     * Return whether a Voyage Encounter lifecycle transition is permitted.
+     */
+    isLegalVoyageLifecycleTransition,
+
+    /**
+     * Validate a Voyage Encounter lifecycle transition without changing state.
+     */
+    validateVoyageLifecycleTransition,
+
+    /**
+     * Return a copy of the complete Voyage Encounter lifecycle policy.
+     */
+    getVoyageLifecycleTransitionPolicy,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
