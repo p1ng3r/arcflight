@@ -57,6 +57,7 @@ export function createArcflightDevTools({
   normalizeVoyageEncounterState,
   validateVoyageEncounterState,
   validateVoyageEncounterActivationReadiness,
+  validateVoyageEncounterActivationStart,
   applyContextPreservingVoyageLifecycleTransition,
   applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,
@@ -269,6 +270,11 @@ export function createArcflightDevTools({
      * Read-only validation for Configuration encounter activation readiness.
      */
     validateVoyageEncounterActivationReadiness,
+
+    /**
+     * Read-only validation for Ready encounter activation start.
+     */
+    validateVoyageEncounterActivationStart,
 
     /**
      * Apply a lifecycle transition that preserves all encounter context.
