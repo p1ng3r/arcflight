@@ -78,7 +78,10 @@ test("terminal lifecycle states have no allowed transitions", () => {
   for (const lifecycleState of [STATES.COMPLETED_SUCCESS, STATES.COMPLETED_FAILURE, STATES.ABANDONED, STATES.DISCARDED]) {
     assert.deepEqual(getAllowedVoyageLifecycleTransitions(lifecycleState), []);
   }
-  assert.deepEqual(getAllowedVoyageLifecycleTransitions("unknown-state"), []);
+  for (const lifecycleState of ["unknown-state", "constructor", "toString", "__proto__"]) {
+    assert.doesNotThrow(() => getAllowedVoyageLifecycleTransitions(lifecycleState));
+    assert.deepEqual(getAllowedVoyageLifecycleTransitions(lifecycleState), []);
+  }
 });
 
 test("allowed transition arrays do not expose internal policy", () => {

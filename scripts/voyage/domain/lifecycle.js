@@ -57,7 +57,8 @@ function issue(errors, code, path, message) {
  * Return legal target lifecycle states without exposing internal policy data.
  */
 export function getAllowedVoyageLifecycleTransitions(lifecycleState) {
-  return [...(VOYAGE_LIFECYCLE_TRANSITION_POLICY[lifecycleState] ?? [])];
+  if (!isRecognizedLifecycleState(lifecycleState)) return [];
+  return [...VOYAGE_LIFECYCLE_TRANSITION_POLICY[lifecycleState]];
 }
 
 /**
