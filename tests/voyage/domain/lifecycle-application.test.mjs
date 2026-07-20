@@ -131,18 +131,25 @@ test("policy-legal specialized edges require specialized lifecycle operations", 
 
 test("candidate validation failures are atomic", () => {
   const encounter = createEncounter(STATES.READY);
-  let primaryShipReads = 0;
-  Object.defineProperty(encounter, "primaryShip", {
+  let encounterIdReads = 0;
+
+  Object.defineProperty(encounter, "encounterId", {
     enumerable: true,
     get() {
-      primaryShipReads += 1;
-      return primaryShipReads <= 2 ? { actorId: "ship-1" } : "invalid-candidate-ship";
+      encounterIdReads += 1;
+      return encounterIdReads === 1
+        ? "voyage-lifecycle-application"
+        : "";
     }
   });
 
-  const result = applyContextPreservingVoyageLifecycleTransition(encounter, STATES.CONFIGURATION);
+  const result = applyContextPreservingVoyageLifecycleTransition(
+    encounter,
+    STATES.CONFIGURATION
+  );
+
   assertFailure(result);
-  assert.equal(result.errors[0].code, "invalid-primary-ship");
+  assert.equal(result.errors[0].code, "invalid-encounter-id");
 });
 
 test("lifecycle application imports without Foundry globals", () => {
