@@ -12,9 +12,12 @@ import {
 import { createDraftVoyageEncounterDefaults, isPlainObject } from "./defaults.js";
 
 const COLLECTION_DEFAULTS = createDraftVoyageEncounterDefaults();
-const ACTIVE = VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE;
+const ROUND_CONTEXT_REQUIRED_STATES = new Set([
+  VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE,
+  VOYAGE_ENCOUNTER_LIFECYCLE_STATES.PAUSED
+]);
 const DEFINITION_REQUIRED_STATES = new Set([
-  VOYAGE_ENCOUNTER_LIFECYCLE_STATES.READY, ACTIVE, VOYAGE_ENCOUNTER_LIFECYCLE_STATES.PAUSED,
+  VOYAGE_ENCOUNTER_LIFECYCLE_STATES.READY, ...ROUND_CONTEXT_REQUIRED_STATES,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES.COMPLETED_SUCCESS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES.COMPLETED_FAILURE,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ABANDONED
 ]);
@@ -65,10 +68,10 @@ export function validateVoyageEncounterState(value) {
   if (state.primaryShip !== null && !isPlainObject(state.primaryShip)) issue(errors, "error", "invalid-primary-ship", "primaryShip", "Primary ship reference must be a plain object or null.");
   if (SHIP_REQUIRED_STATES.has(state.lifecycleState) && !isPlainObject(state.primaryShip)) issue(errors, "error", "missing-primary-ship", "primaryShip", "This lifecycle state requires a primary ship reference.");
 
-  if (state.lifecycleState === ACTIVE) {
-    if (!isPlainObject(state.currentStage)) issue(errors, "error", "missing-current-stage", "currentStage", "Active encounters require a current stage.");
-    if (!Number.isInteger(state.roundNumber) || state.roundNumber <= 0) issue(errors, "error", "invalid-active-round", "roundNumber", "Active encounters require a positive round number.");
-    if (!isEnumValue(state.phase, VOYAGE_ROUND_PHASES)) issue(errors, "error", "invalid-active-phase", "phase", "Active encounters require a valid round phase.");
+  if (ROUND_CONTEXT_REQUIRED_STATES.has(state.lifecycleState)) {
+    if (!isPlainObject(state.currentStage)) issue(errors, "error", "missing-current-stage", "currentStage", "Active and paused encounters require a current stage.");
+    if (!Number.isInteger(state.roundNumber) || state.roundNumber <= 0) issue(errors, "error", "invalid-active-round", "roundNumber", "Active and paused encounters require a positive round number.");
+    if (!isEnumValue(state.phase, VOYAGE_ROUND_PHASES)) issue(errors, "error", "invalid-active-phase", "phase", "Active and paused encounters require a valid round phase.");
   }
 
   if (Array.isArray(state.tracks)) state.tracks.forEach((track, index) => {

@@ -10,6 +10,19 @@ export function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
+/**
+ * Clone serializable plain data without relying on JSON serialization.
+ * Non-plain objects are retained as supplied because they are outside the
+ * Voyage domain's plain-data contract.
+ */
+export function clonePlainData(value) {
+  if (Array.isArray(value)) return value.map((entry) => clonePlainData(entry));
+  if (isPlainObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, clonePlainData(entry)]));
+  }
+  return value;
+}
+
 export function createDefaultVoyageEncounterCollections() {
   return {
     primaryShip: null,

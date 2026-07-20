@@ -1,4 +1,5 @@
-import { createDraftVoyageEncounterDefaults, isPlainObject } from "./defaults.js";
+import { VOYAGE_ENCOUNTER_SCHEMA_VERSION } from "./constants.js";
+import { clonePlainData, createDraftVoyageEncounterDefaults, isPlainObject } from "./defaults.js";
 
 function generateEncounterId(context) {
   if (typeof context?.idGenerator === "function") {
@@ -24,6 +25,7 @@ export function createVoyageEncounterState(input = {}, context = {}) {
     ? supplied.encounterId
     : generateEncounterId(context);
   state.lifecycleState = "draft";
+  state.schemaVersion = VOYAGE_ENCOUNTER_SCHEMA_VERSION;
   state.revision = 0;
   state.currentStage = null;
   state.roundNumber = null;
@@ -38,13 +40,13 @@ export function createVoyageEncounterState(input = {}, context = {}) {
 export function normalizeVoyageEncounterState(value) {
   const source = isPlainObject(value) ? value : {};
   const defaults = createDraftVoyageEncounterDefaults();
-  const normalized = { ...source };
+  const normalized = clonePlainData(source);
 
   for (const [key, defaultValue] of Object.entries(defaults)) {
     if (Array.isArray(defaultValue)) {
-      normalized[key] = Array.isArray(source[key]) ? [...source[key]] : [];
+      normalized[key] = Array.isArray(source[key]) ? clonePlainData(source[key]) : [];
     } else if (isPlainObject(defaultValue)) {
-      normalized[key] = isPlainObject(source[key]) ? { ...source[key] } : {};
+      normalized[key] = isPlainObject(source[key]) ? clonePlainData(source[key]) : {};
     } else if (!(key in source)) {
       normalized[key] = defaultValue;
     }
