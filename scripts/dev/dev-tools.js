@@ -52,7 +52,11 @@ function isTemporaryArcflightTestItem(item) {
  * not touch compendium content or embedded actor items unless a future helper
  * explicitly documents that behavior.
  */
-export function createArcflightDevTools() {
+export function createArcflightDevTools({
+  createVoyageEncounterState,
+  normalizeVoyageEncounterState,
+  validateVoyageEncounterState
+} = {}) {
   return Object.freeze({
     /**
      * Create the suggested Arcflight folder tree in the world Items panel.
@@ -238,6 +242,21 @@ export function createArcflightDevTools() {
      * Dry-run by default. Backfill all Arcflight ships' install-state records from existing installed data.
      */
     backfillInstallStateForAllShips,
+
+    /**
+     * Create a Draft Voyage Encounter state without accessing Foundry data.
+     */
+    createVoyageEncounterState,
+
+    /**
+     * Safely normalize plain Voyage Encounter state without activating it.
+     */
+    normalizeVoyageEncounterState,
+
+    /**
+     * Structurally validate plain Voyage Encounter state.
+     */
+    validateVoyageEncounterState,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
