@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-003E - Configuration-to-Ready Voyage Lifecycle Application
+
+- Added a Foundry-free specialized Configuration-to-Ready application that reuses activation-readiness validation, clones the complete encounter, changes only lifecycle state and revision, validates the Ready candidate, and emits one lifecycle-transitioned domain event.
+- Exposed the operation through `game.arcflight` and `game.arcflight.devTools`, with unrun Node test coverage and implementation documentation.
+
 ### Gameplay V3-003D - Voyage Encounter Activation Readiness Validation
 
 - Added a Foundry-free, read-only validator for Configuration encounter readiness, including internal Ready-candidate validation and required initial-stage, conditions, stations, inactive round context, and empty planning state checks.

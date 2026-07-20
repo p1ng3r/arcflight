@@ -5,6 +5,7 @@ import { createVoyageEncounterState, normalizeVoyageEncounterState } from "./voy
 import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
 import { validateVoyageEncounterActivationReadiness } from "./voyage/domain/activation-readiness.js";
 import { applyContextPreservingVoyageLifecycleTransition } from "./voyage/domain/lifecycle-application.js";
+import { applyVoyageEncounterReadyTransition } from "./voyage/domain/readiness-application.js";
 import {
   getAllowedVoyageLifecycleTransitions,
   getVoyageLifecycleTransitionPolicy,
@@ -350,6 +351,7 @@ Hooks.once("init", () => {
     validateVoyageEncounterState,
     validateVoyageEncounterActivationReadiness,
     applyContextPreservingVoyageLifecycleTransition,
+    applyVoyageEncounterReadyTransition,
     getAllowedVoyageLifecycleTransitions,
     isLegalVoyageLifecycleTransition,
     validateVoyageLifecycleTransition,
@@ -360,6 +362,7 @@ Hooks.once("init", () => {
       validateVoyageEncounterState,
       validateVoyageEncounterActivationReadiness,
       applyContextPreservingVoyageLifecycleTransition,
+      applyVoyageEncounterReadyTransition,
       getAllowedVoyageLifecycleTransitions,
       isLegalVoyageLifecycleTransition,
       validateVoyageLifecycleTransition,
@@ -447,6 +450,7 @@ export {
   validateVoyageEncounterState,
   validateVoyageEncounterActivationReadiness,
   applyContextPreservingVoyageLifecycleTransition,
+  applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,
   isLegalVoyageLifecycleTransition,
   validateVoyageLifecycleTransition,
