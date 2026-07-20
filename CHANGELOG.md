@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Gameplay V3-003B - Voyage Encounter Lifecycle Transition Policy
+
+- Added a Foundry-free, immutable internal lifecycle transition policy with copy-safe inspection and validation helpers.
+- Exposed lifecycle policy helpers through `game.arcflight` and matching `game.arcflight.devTools` aliases without adding lifecycle execution, persistence, commands, or UI.
+- Added unrun Node test coverage for the accepted graph, rejection paths, copy isolation, Foundry-free imports, and API registration.
+
 ### Gameplay V3-003A - Voyage Encounter Core State Foundation
 
 - Added pure-JavaScript Voyage Encounter Draft creation, non-mutating normalization, and structural validation helpers with no Foundry domain dependencies.

@@ -4,6 +4,12 @@ import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import { createVoyageEncounterState, normalizeVoyageEncounterState } from "./voyage/domain/state.js";
 import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
 import {
+  getAllowedVoyageLifecycleTransitions,
+  getVoyageLifecycleTransitionPolicy,
+  isLegalVoyageLifecycleTransition,
+  validateVoyageLifecycleTransition
+} from "./voyage/domain/lifecycle.js";
+import {
   createArcflightItem,
   createArkengine,
   createArkengineMod,
@@ -340,10 +346,18 @@ Hooks.once("init", () => {
     createVoyageEncounterState,
     normalizeVoyageEncounterState,
     validateVoyageEncounterState,
+    getAllowedVoyageLifecycleTransitions,
+    isLegalVoyageLifecycleTransition,
+    validateVoyageLifecycleTransition,
+    getVoyageLifecycleTransitionPolicy,
     devTools: createArcflightDevTools({
       createVoyageEncounterState,
       normalizeVoyageEncounterState,
-      validateVoyageEncounterState
+      validateVoyageEncounterState,
+      getAllowedVoyageLifecycleTransitions,
+      isLegalVoyageLifecycleTransition,
+      validateVoyageLifecycleTransition,
+      getVoyageLifecycleTransitionPolicy
     })
   });
 
@@ -425,6 +439,10 @@ export {
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
   validateVoyageEncounterState,
+  getAllowedVoyageLifecycleTransitions,
+  isLegalVoyageLifecycleTransition,
+  validateVoyageLifecycleTransition,
+  getVoyageLifecycleTransitionPolicy,
   organizeArcflightItems,
   CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,
