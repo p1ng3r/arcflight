@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Gameplay V3-003A - Voyage Encounter Core State Foundation
+
+- Added pure-JavaScript Voyage Encounter Draft creation, non-mutating normalization, and structural validation helpers with no Foundry domain dependencies.
+- Added immutable lifecycle, round phase, track, threshold, limit, and permanent consequence vocabulary constants.
+- Exposed Voyage state helpers through `game.arcflight` and matching `game.arcflight.devTools` aliases without adding persistence, activation, sockets, UI, or gameplay resolution.
+- Added unrun Node test coverage for Draft defaults, normalization, validation failures, duplicate IDs, Foundry-free domain imports, and Arcflight API exposure.
+
 ### Gameplay V3-001 - Foundry v14 Foundation Compatibility
 
 - Updated Arcflight sheet registration to Foundry v14's `foundry.applications.apps.DocumentSheetConfig.registerSheet` API and declared Foundry v14 as the manifest minimum and verified compatibility.

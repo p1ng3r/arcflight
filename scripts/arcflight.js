@@ -1,6 +1,8 @@
 import { ARCFLIGHT } from "./config/constants.js";
 import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
+import { createVoyageEncounterState, normalizeVoyageEncounterState } from "./voyage/domain/state.js";
+import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
 import {
   createArcflightItem,
   createArkengine,
@@ -335,7 +337,14 @@ Hooks.once("init", () => {
     cleanupDuplicateItems: cleanupDuplicateArcflightItems,
     findDuplicateArcflightItems,
     cleanupDuplicateArcflightItems,
-    devTools: createArcflightDevTools()
+    createVoyageEncounterState,
+    normalizeVoyageEncounterState,
+    validateVoyageEncounterState,
+    devTools: createArcflightDevTools({
+      createVoyageEncounterState,
+      normalizeVoyageEncounterState,
+      validateVoyageEncounterState
+    })
   });
 
   game.arcflight = CONFIG.arcflight;
@@ -413,6 +422,9 @@ export {
   syncCoreArcflightItems,
   findDuplicateArcflightItems,
   cleanupDuplicateArcflightItems,
+  createVoyageEncounterState,
+  normalizeVoyageEncounterState,
+  validateVoyageEncounterState,
   organizeArcflightItems,
   CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,
