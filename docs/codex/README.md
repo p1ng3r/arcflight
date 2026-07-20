@@ -28,10 +28,11 @@ This branch was created from current `main` after the V3-003 audit showed that t
 - V3-003 — branch and architecture audit.
 - V3-004 — Voyage Event data contracts, constants, defaults, and documentation.
 - V3-005 — package validation, canonical narrative references, and pure catalog registries.
+- V3-006 — GM-authoritative Voyage Event flag persistence with revision protection.
 
 ## Next
 
-- V3-006 — GM-authoritative Voyage Event flag persistence with revision protection.
+- V3-007 — active-runtime lifecycle manager with validated start, pause/resume, strict phase transitions, round-boundary reset, and audited GM overrides.
 
 ## Standard completion report
 
