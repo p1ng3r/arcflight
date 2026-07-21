@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-003G - Voyage Boundary Snapshot Construction
+
+- Added a Foundry-free, read-only helper that validates and recursively clones the explicitly allowlisted temporary state of an Active Voyage Encounter into caller-identified round-start or phase-start boundary snapshots, without appending, restoring, persisting, or otherwise mutating encounter state.
+- Exposed the helper through `game.arcflight` and `game.arcflight.devTools`, with unrun focused Node test coverage and implementation documentation.
+
 ### Gameplay V3-003F - Ready-to-Active Voyage Activation Start Validation
 
 - Added a Foundry-free, read-only Ready-to-Active start validator that validates lifecycle policy, an internal Active candidate, initial-stage and pre-round requirements, without applying activation, changing revision, or creating snapshots.

@@ -58,6 +58,7 @@ export function createArcflightDevTools({
   validateVoyageEncounterState,
   validateVoyageEncounterActivationReadiness,
   validateVoyageEncounterActivationStart,
+  createVoyageEncounterBoundarySnapshot,
   applyContextPreservingVoyageLifecycleTransition,
   applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,
@@ -275,6 +276,11 @@ export function createArcflightDevTools({
      * Read-only validation for Ready encounter activation start.
      */
     validateVoyageEncounterActivationStart,
+
+    /**
+     * Construct a read-only temporary-state boundary snapshot for an Active Voyage Encounter.
+     */
+    createVoyageEncounterBoundarySnapshot,
 
     /**
      * Apply a lifecycle transition that preserves all encounter context.
