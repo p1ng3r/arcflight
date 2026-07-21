@@ -6,6 +6,8 @@ import { prepareVoyageEncounterCrewPlanningCompleteness } from "./domain/crew-pl
 import { prepareVoyageEncounterCrewPlanningReadiness } from "./domain/crew-planning-readiness.js";
 import { applyVoyageEncounterCrewPlanningLock } from "./domain/crew-planning-lock.js";
 import { validateVoyageEncounterRiskBids, applyVoyageEncounterRiskBidSelection, applyVoyageEncounterRiskBidChange, applyVoyageEncounterRiskBidClear } from "./domain/risk-bids.js";
+import { prepareVoyageEncounterResolutionOrder } from "./domain/resolution-order.js";
+import { applyVoyageEncounterResolutionTransition } from "./domain/resolution-transition.js";
 
 /**
  * Extend Arcflight's frozen public API with the V3-003L station-selection
@@ -32,7 +34,9 @@ export function registerVoyageStationSelectionEditingApi() {
     validateVoyageEncounterRiskBids,
     applyVoyageEncounterRiskBidSelection,
     applyVoyageEncounterRiskBidChange,
-    applyVoyageEncounterRiskBidClear
+    applyVoyageEncounterRiskBidClear,
+    prepareVoyageEncounterResolutionOrder,
+    applyVoyageEncounterResolutionTransition
   });
 
   const extendedApi = Object.freeze({
@@ -46,6 +50,8 @@ export function registerVoyageStationSelectionEditingApi() {
     applyVoyageEncounterRiskBidSelection,
     applyVoyageEncounterRiskBidChange,
     applyVoyageEncounterRiskBidClear,
+    prepareVoyageEncounterResolutionOrder,
+    applyVoyageEncounterResolutionTransition,
     devTools
   });
 
@@ -67,5 +73,7 @@ export {
   validateVoyageEncounterRiskBids,
   applyVoyageEncounterRiskBidSelection,
   applyVoyageEncounterRiskBidChange,
-  applyVoyageEncounterRiskBidClear
+  applyVoyageEncounterRiskBidClear,
+  prepareVoyageEncounterResolutionOrder,
+  applyVoyageEncounterResolutionTransition
 };

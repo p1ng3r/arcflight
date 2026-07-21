@@ -1,0 +1,6 @@
+import assert from "node:assert/strict"; import test from "node:test";
+import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
+import { applyVoyageEncounterResolutionTransition } from "../../../scripts/voyage/domain/resolution-transition.js";
+function state(){const s=createVoyageEncounterState({encounterId:"e",definitionId:"d",primaryShip:{id:"s"},lifecycleState:"active",currentStage:{stageId:"x"},roundNumber:1,phase:"lock-readiness"});s.lifecycleState="active";s.currentStage={stageId:"x"};s.roundNumber=1;s.phase="lock-readiness";s.availableStations=[{stationId:"a",actions:[{actionId:"one"}]}];s.selections={a:{stationId:"a",actionId:"one"}};return s;}
+test("atomically starts resolution with a phase snapshot",()=>{const s=state();const r=applyVoyageEncounterResolutionTransition(s,{phaseStartSnapshotId:"resolution-1"});assert.equal(r.ok,true);assert.equal(s.phase,"lock-readiness");assert.equal(r.nextState.phase,"resolution");assert.equal(r.nextState.revision,s.revision+1);assert.equal(r.nextState.snapshots.at(-1).phase,"resolution");assert.equal(r.events[0].type,"voyage.resolution-started");});
+test("rejects nonempty pending checks",()=>{const s=state();s.pendingChecks.push({});assert.equal(applyVoyageEncounterResolutionTransition(s,{phaseStartSnapshotId:"x"}).ok,false);});

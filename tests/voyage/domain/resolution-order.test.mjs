@@ -1,0 +1,6 @@
+import assert from "node:assert/strict"; import test from "node:test";
+import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
+import { prepareVoyageEncounterResolutionOrder } from "../../../scripts/voyage/domain/resolution-order.js";
+function state(){const s=createVoyageEncounterState({encounterId:"e",definitionId:"d",primaryShip:{id:"s"},lifecycleState:"active",currentStage:{stageId:"x"},roundNumber:1,phase:"lock-readiness"});s.lifecycleState="active";s.currentStage={stageId:"x"};s.roundNumber=1;s.phase="lock-readiness";s.availableStations=[{stationId:"b",actions:[{actionId:"two",resolutionPriority:3}]},{stationId:"a",actions:[{actionId:"one",resolutionPriority:-1}]}];s.selections={b:{stationId:"b",actionId:"two"},a:{stationId:"a",actionId:"one"}};return s;}
+test("orders selected locked actions by authored priority",()=>{const r=prepareVoyageEncounterResolutionOrder(state());assert.equal(r.readyForResolution,true);assert.deepEqual(r.orderedActions.map(x=>x.actionId),["one","two"]);assert.equal(r.orderedActions[0].riskBidId,null);});
+test("rejects invalid supplied priority even when unselected",()=>{const s=state();s.availableStations[0].actions.push({actionId:"bad",resolutionPriority:null});assert.equal(prepareVoyageEncounterResolutionOrder(s).readyForResolution,false);});
