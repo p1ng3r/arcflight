@@ -460,6 +460,7 @@ export {
   validateVoyageEncounterActivationReadiness,
   validateVoyageEncounterActivationStart,
   createVoyageEncounterBoundarySnapshot,
+  applyVoyageEncounterActivation,
   applyContextPreservingVoyageLifecycleTransition,
   applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,

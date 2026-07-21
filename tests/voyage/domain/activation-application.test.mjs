@@ -91,8 +91,8 @@ test("activates a Ready encounter atomically with ordered caller-identified snap
 test("propagates activation-start failures before validating requests", () => {
   const cases = [
     [{ ...readyEncounter(), schemaVersion: 99 }, "unsupported-schema-version"],
-    [{ ...readyEncounter(), lifecycleState: STATES.CONFIGURATION }, "activation-lifecycle-must-be-ready"],
-    [{ ...readyEncounter(), lifecycleState: STATES.ACTIVE, roundNumber: 1, phase: "situation" }, "activation-lifecycle-must-be-ready"],
+    [{ ...readyEncounter(), lifecycleState: STATES.CONFIGURATION }, "activation-start-requires-ready"],
+    [{ ...readyEncounter(), lifecycleState: STATES.ACTIVE, roundNumber: 1, phase: "situation" }, "activation-start-requires-ready"],
     [{ ...readyEncounter(), definitionId: null, definitionRef: null }, "missing-definition"],
     [{ ...readyEncounter(), primaryShip: null }, "missing-primary-ship"],
     [{ ...readyEncounter(), selections: { captain: {} } }, "activation-planning-state-not-empty"]
