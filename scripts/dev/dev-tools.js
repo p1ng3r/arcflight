@@ -65,7 +65,11 @@ export function createArcflightDevTools({
   getAllowedVoyageLifecycleTransitions,
   isLegalVoyageLifecycleTransition,
   validateVoyageLifecycleTransition,
-  getVoyageLifecycleTransitionPolicy
+  getVoyageLifecycleTransitionPolicy,
+  getAllowedVoyagePhaseTransitions,
+  isLegalVoyagePhaseTransition,
+  validateVoyagePhaseTransition,
+  getVoyagePhaseTransitionPolicy
 } = {}) {
   return Object.freeze({
     /**
@@ -317,6 +321,26 @@ export function createArcflightDevTools({
      * Return a copy of the complete Voyage Encounter lifecycle policy.
      */
     getVoyageLifecycleTransitionPolicy,
+
+    /**
+     * Return legal ordinary Voyage Round phase targets for a source phase.
+     */
+    getAllowedVoyagePhaseTransitions,
+
+    /**
+     * Return whether an ordinary Voyage Round phase transition is permitted.
+     */
+    isLegalVoyagePhaseTransition,
+
+    /**
+     * Validate an ordinary Voyage Round phase transition without changing state.
+     */
+    validateVoyagePhaseTransition,
+
+    /**
+     * Return a copy of the complete ordinary Voyage Round phase policy.
+     */
+    getVoyagePhaseTransitionPolicy,
 
     /**
      * TEMPORARY DEV CLEANUP TOOLING: delete known legacy Arcflight world test items.
