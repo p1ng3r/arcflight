@@ -16,6 +16,12 @@ import {
   validateVoyageLifecycleTransition
 } from "./voyage/domain/lifecycle.js";
 import {
+  getAllowedVoyagePhaseTransitions,
+  getVoyagePhaseTransitionPolicy,
+  isLegalVoyagePhaseTransition,
+  validateVoyagePhaseTransition
+} from "./voyage/domain/phase.js";
+import {
   createArcflightItem,
   createArkengine,
   createArkengineMod,
@@ -362,6 +368,10 @@ Hooks.once("init", () => {
     isLegalVoyageLifecycleTransition,
     validateVoyageLifecycleTransition,
     getVoyageLifecycleTransitionPolicy,
+    getAllowedVoyagePhaseTransitions,
+    isLegalVoyagePhaseTransition,
+    validateVoyagePhaseTransition,
+    getVoyagePhaseTransitionPolicy,
     devTools: createArcflightDevTools({
       createVoyageEncounterState,
       normalizeVoyageEncounterState,
@@ -375,7 +385,11 @@ Hooks.once("init", () => {
       getAllowedVoyageLifecycleTransitions,
       isLegalVoyageLifecycleTransition,
       validateVoyageLifecycleTransition,
-      getVoyageLifecycleTransitionPolicy
+      getVoyageLifecycleTransitionPolicy,
+      getAllowedVoyagePhaseTransitions,
+      isLegalVoyagePhaseTransition,
+      validateVoyagePhaseTransition,
+      getVoyagePhaseTransitionPolicy
     })
   });
 
@@ -467,6 +481,10 @@ export {
   isLegalVoyageLifecycleTransition,
   validateVoyageLifecycleTransition,
   getVoyageLifecycleTransitionPolicy,
+  getAllowedVoyagePhaseTransitions,
+  isLegalVoyagePhaseTransition,
+  validateVoyagePhaseTransition,
+  getVoyagePhaseTransitionPolicy,
   organizeArcflightItems,
   CORE_CREW_ASSET_KEYS,
   CORE_ROOM_KEYS,

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-003I - Voyage Round Phase Transition Policy
+
+- Added a Foundry-free, immutable ordinary Voyage Round phase policy with copy-safe inspection and validation helpers for its five forward edges; Cleanup and Advance remains terminal until a future atomic round-advancement operation.
+- Exposed the phase policy helpers through `game.arcflight` and `game.arcflight.devTools`, with unrun focused Node test coverage and implementation documentation.
+
 ### Gameplay V3-003H - Ready-to-Active Voyage Encounter Application
 
 - Added a Foundry-free, atomic Ready-to-Active activation operation that reuses activation-start and lifecycle validation, creates caller-identified round-start and phase-start snapshots in deterministic order, increments revision once, validates the complete candidate, and emits one lifecycle event without persistence or gameplay effects.
