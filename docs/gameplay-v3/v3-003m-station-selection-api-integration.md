@@ -6,13 +6,18 @@ Expose the V3-003L station-action selection change and clear domain helpers thro
 
 ## Integration scope
 
-This slice registers both helpers on:
+This slice adds `scripts/voyage/station-selection-api.js` as a second Foundry ES module, loaded immediately after the main Arcflight bootstrap. Its `init` callback extends the already-built frozen API without reopening the large bootstrap module.
+
+Both helpers are registered on:
 
 - `game.arcflight`;
+- `CONFIG.arcflight`;
 - `game.arcflight.devTools`;
-- named exports from `scripts/arcflight.js`.
+- named exports from `scripts/voyage/station-selection-api.js`.
 
-It also adds focused exposure coverage so the runtime API, development aliases, and ES module exports remain synchronized.
+The extension preserves all existing public and development helpers, freezes the replacement API objects, and returns `null` without mutation when the base API is unavailable.
+
+Focused Node coverage verifies public exposure, dev-tools exposure, preservation of existing functions, object freezing, named exports, and the unavailable-base failure path.
 
 ## Deferred work
 
