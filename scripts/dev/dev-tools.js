@@ -60,6 +60,7 @@ export function createArcflightDevTools({
   validateVoyageEncounterActivationStart,
   createVoyageEncounterBoundarySnapshot,
   applyVoyageEncounterActivation,
+  applyVoyageEncounterCrewPlanningTransition,
   applyContextPreservingVoyageLifecycleTransition,
   applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,
@@ -291,6 +292,11 @@ export function createArcflightDevTools({
      * Apply the specialized Ready-to-Active Voyage Encounter activation.
      */
     applyVoyageEncounterActivation,
+
+    /**
+     * Apply the Active Situation-to-Crew-Planning Voyage Encounter transition.
+     */
+    applyVoyageEncounterCrewPlanningTransition,
 
     /**
      * Apply a lifecycle transition that preserves all encounter context.
