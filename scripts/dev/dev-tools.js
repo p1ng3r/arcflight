@@ -56,6 +56,8 @@ export function createArcflightDevTools({
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
   validateVoyageEncounterState,
+  validateVoyageEncounterStationSelections,
+  applyVoyageEncounterStationActionSelection,
   validateVoyageEncounterActivationReadiness,
   validateVoyageEncounterActivationStart,
   createVoyageEncounterBoundarySnapshot,
@@ -272,6 +274,16 @@ export function createArcflightDevTools({
      * Structurally validate plain Voyage Encounter state.
      */
     validateVoyageEncounterState,
+
+    /**
+     * Validate persisted, encounter-local Voyage station action selections.
+     */
+    validateVoyageEncounterStationSelections,
+
+    /**
+     * Atomically add one initial Voyage station action selection.
+     */
+    applyVoyageEncounterStationActionSelection,
 
     /**
      * Read-only validation for Configuration encounter activation readiness.
