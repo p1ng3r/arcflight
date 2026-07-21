@@ -42,7 +42,7 @@ test("validates empty, one, and multiple exact stored selections without mutatio
 test("propagates structural state errors and returns a fresh warnings array", () => {
   const source = encounter(); source.schemaVersion = 99; source.selections = null;
   const structural = validateVoyageEncounterState(source); const result = validateVoyageEncounterStationSelections(source);
-  assert.equal(result.errors, structural.errors); assert.notEqual(result.warnings, structural.warnings);
+  assert.deepEqual(result.errors, structural.errors); assert.notEqual(result.warnings, structural.warnings);
 });
 
 test("rejects stored selection shape, IDs, unsafe keys, relations, and exact-case mismatches", () => {
@@ -67,13 +67,20 @@ test("atomically creates one isolated initial selection, revision, and event", (
   const result = applyVoyageEncounterStationActionSelection(source, request);
   assert.equal(result.ok, true); assert.deepEqual(result.errors, []); assert.equal(result.events.length, 1); assert.ok(Array.isArray(result.warnings));
   assert.deepEqual(result.nextState.selections, { engineer: { stationId: "engineer", actionId: "stabilize-strain" }, captain: { stationId: "captain", actionId: "rally-crew" } });
-  assert.deepEqual(Object.keys(result.nextState.selections.captain), ["stationId", "actionId"]); assert.equal(result.nextState.revision, 8); assert.equal(result.nextState.snapshots.length, before.snapshots.length);
+  assert.deepEqual(Object.keys(result.nextState.selections.captain), ["stationId", "actionId"]); assert.equal(result.nextState.lifecycleState, STATES.ACTIVE); assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(result.nextState.roundNumber, before.roundNumber); assert.deepEqual(result.nextState.currentStage, before.currentStage); assert.deepEqual(result.nextState.snapshots, before.snapshots); assert.equal(result.nextState.snapshots.length, before.snapshots.length); assert.equal(result.nextState.revision, 8);
   assert.deepEqual(result.events[0], { type: "voyage.station-action-selected", encounterId: "station-selection", lifecycleState: STATES.ACTIVE, roundNumber: 2, phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, stationId: "captain", actionId: "rally-crew", previousRevision: 7, revision: 8 });
   assert.equal(validateVoyageEncounterStationSelections(result.nextState).valid, true); assert.deepEqual(source, before); assert.deepEqual(request, requestBefore);
   for (const key of ["selections", "currentStage", "participants", "availableStations", "metadata", "snapshots"]) assert.notEqual(result.nextState[key], source[key]);
   result.nextState.currentStage.details.tags.push("next"); result.nextState.availableStations[0].actions[0].authored.skill = "next"; result.nextState.selections.captain.actionId = "next";
   assert.equal(source.currentStage.details.tags.includes("next"), false); assert.equal(source.availableStations[0].actions[0].authored.skill, "diplomacy"); assert.equal(source.selections.captain, undefined);
   source.metadata.nested.retained = false; assert.equal(result.nextState.metadata.nested.retained, true);
+});
+
+test("preserves successful exact IDs with surrounding whitespace", () => {
+  const source = encounter(); const stationId = " captain "; const actionId = " rally-crew ";
+  source.availableStations[0].stationId = stationId; source.availableStations[0].actions[0].actionId = actionId;
+  const result = applyVoyageEncounterStationActionSelection(source, { stationId, actionId });
+  assert.equal(result.ok, true); assert.equal(Object.hasOwn(result.nextState.selections, stationId), true); assert.equal(result.nextState.selections[stationId].stationId, stationId); assert.equal(result.nextState.selections[stationId].actionId, actionId); assert.equal(result.events[0].stationId, stationId); assert.equal(result.events[0].actionId, actionId);
 });
 
 test("rejects malformed state before request, lifecycle and phase before request, and request errors in order", () => {
@@ -84,13 +91,33 @@ test("rejects malformed state before request, lifecycle and phase before request
   for (const stationId of ["__proto__", "constructor", "prototype"]) assert.equal(applyVoyageEncounterStationActionSelection(encounter(), { stationId, actionId: "x" }).errors[0].code, "unsafe-station-selection-key");
 });
 
-test("rejects ambiguous or unavailable options and only own existing selections", () => {
+test("rejects ambiguous or unavailable options", () => {
   for (const [mutate, code] of [
     [(source) => { source.availableStations = []; }, "station-not-available"], [(source) => { source.availableStations.push(clonePlainData(source.availableStations[0])); }, "available-station-is-ambiguous"],
     [(source) => { source.availableStations[0].actions = {}; }, "invalid-available-station-actions"], [(source) => { source.availableStations[0].actions = []; }, "station-action-not-available"],
-    [(source) => { source.availableStations[0].actions.push({ actionId: "rally-crew" }); }, "station-action-is-ambiguous"], [(source) => { source.selections.captain = { stationId: "captain", actionId: "rally-crew" }; }, "station-selection-already-exists"]
+    [(source) => { source.availableStations[0].actions.push({ actionId: "rally-crew" }); }, "station-action-is-ambiguous"]
   ]) { const source = encounter(); mutate(source); failure(applyVoyageEncounterStationActionSelection(source, { stationId: "captain", actionId: "rally-crew" }), [code]); }
-  const source = encounter(); Object.setPrototypeOf(source.selections, { captain: { stationId: "captain", actionId: "rally-crew" } }); assert.equal(applyVoyageEncounterStationActionSelection(source, { stationId: "captain", actionId: "rally-crew" }).ok, true);
+});
+
+test("does not treat inherited selections as existing own selections", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, "captain"); const source = encounter(); const request = { stationId: "captain", actionId: "rally-crew" };
+  try {
+    Object.defineProperty(Object.prototype, "captain", { value: { stationId: "captain", actionId: "rally-crew" }, configurable: true });
+    assert.equal(Object.hasOwn(source.selections, "captain"), false);
+    assert.equal(applyVoyageEncounterStationActionSelection(source, request).ok, true);
+  } finally {
+    if (descriptor) Object.defineProperty(Object.prototype, "captain", descriptor);
+    else delete Object.prototype.captain;
+  }
+  assert.deepEqual(Object.getOwnPropertyDescriptor(Object.prototype, "captain"), descriptor);
+});
+
+test("rejects existing own selections atomically without replacement", () => {
+  const source = encounter(); const request = { stationId: "captain", actionId: "coordinate-orders" };
+  source.selections.captain = { stationId: "captain", actionId: "rally-crew" };
+  const before = clonePlainData(source); const requestBefore = clonePlainData(request);
+  const result = applyVoyageEncounterStationActionSelection(source, request);
+  failure(result, ["station-selection-already-exists"]); assert.deepEqual(source.selections.captain, before.selections.captain); assert.equal(source.revision, before.revision); assert.deepEqual(source, before); assert.deepEqual(request, requestBefore);
 });
 
 test("clone construction failures and final validation failures are atomic", () => {
@@ -113,6 +140,6 @@ test("Arcflight registers station selection functions and devTools aliases", asy
     globalThis.foundry = { applications: { api: { HandlebarsApplicationMixin: (Base) => Base }, sheets: { ActorSheetV2: TestActorSheetV2 }, apps: {} }, documents: {}, utils: {} };
     globalThis.Hooks = { once: (_event, callback) => { init = callback; } }; globalThis.CONFIG = {}; globalThis.game = {};
     const arcflight = await import(`../../../scripts/arcflight.js?station-selection=${Date.now()}`); init();
-    assert.equal(typeof arcflight.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof arcflight.applyVoyageEncounterStationActionSelection, "function"); assert.equal(typeof game.arcflight.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof game.arcflight.devTools.applyVoyageEncounterStationActionSelection, "function");
+    assert.equal(typeof arcflight.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof arcflight.applyVoyageEncounterStationActionSelection, "function"); assert.equal(typeof game.arcflight.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof game.arcflight.applyVoyageEncounterStationActionSelection, "function"); assert.equal(typeof game.arcflight.devTools.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof game.arcflight.devTools.applyVoyageEncounterStationActionSelection, "function");
   } finally { for (const [key, value] of Object.entries(previous)) { if (value.exists) globalThis[key] = value.value; else delete globalThis[key]; } }
 });
