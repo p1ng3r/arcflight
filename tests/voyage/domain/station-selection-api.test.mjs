@@ -3,6 +3,9 @@ import test from "node:test";
 import {
   applyVoyageEncounterStationActionSelectionChange,
   applyVoyageEncounterStationActionSelectionClear,
+  applyVoyageEncounterCrewPlanningLock,
+  prepareVoyageEncounterCrewPlanningCompleteness,
+  prepareVoyageEncounterCrewPlanningReadiness,
   registerVoyageStationSelectionEditingApi
 } from "../../../scripts/voyage/station-selection-api.js";
 
@@ -24,6 +27,10 @@ test("registers station-selection editing helpers on public and devTools APIs", 
     assert.equal(result.devTools.existingTool(), "kept");
     assert.equal(result.applyVoyageEncounterStationActionSelectionChange, applyVoyageEncounterStationActionSelectionChange);
     assert.equal(result.applyVoyageEncounterStationActionSelectionClear, applyVoyageEncounterStationActionSelectionClear);
+    for (const helper of [prepareVoyageEncounterCrewPlanningCompleteness, prepareVoyageEncounterCrewPlanningReadiness, applyVoyageEncounterCrewPlanningLock]) {
+      assert.equal(result[helper.name], helper);
+      assert.equal(result.devTools[helper.name], helper);
+    }
     assert.equal(result.devTools.applyVoyageEncounterStationActionSelectionChange, applyVoyageEncounterStationActionSelectionChange);
     assert.equal(result.devTools.applyVoyageEncounterStationActionSelectionClear, applyVoyageEncounterStationActionSelectionClear);
     assert.equal(globalThis.CONFIG.arcflight, result);
@@ -57,5 +64,8 @@ test("returns null without replacing state when the base API is unavailable", ()
 test("station-selection editing API module exposes named helpers", () => {
   assert.equal(typeof applyVoyageEncounterStationActionSelectionChange, "function");
   assert.equal(typeof applyVoyageEncounterStationActionSelectionClear, "function");
+  assert.equal(typeof prepareVoyageEncounterCrewPlanningCompleteness, "function");
+  assert.equal(typeof prepareVoyageEncounterCrewPlanningReadiness, "function");
+  assert.equal(typeof applyVoyageEncounterCrewPlanningLock, "function");
   assert.equal(typeof registerVoyageStationSelectionEditingApi, "function");
 });
