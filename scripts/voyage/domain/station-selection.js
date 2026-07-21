@@ -4,6 +4,7 @@ import {
 } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
+import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 
 const UNSAFE_STATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -37,8 +38,9 @@ function findAvailableActions(actions, actionId) {
 
 function validateCrewPlanningMutationContext(encounterState) {
   const validation = validateVoyageEncounterStationSelections(encounterState);
-  const warnings = [...validation.warnings];
-  if (!validation.valid) return { ok: false, errors: validation.errors, warnings };
+  const bidValidation = validateVoyageEncounterRiskBids(encounterState);
+  const warnings = [...validation.warnings, ...bidValidation.warnings];
+  if (!validation.valid || !bidValidation.valid) return { ok: false, errors: [...validation.errors, ...bidValidation.errors], warnings };
 
   const errors = [];
   if (encounterState.lifecycleState !== VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE) {
@@ -292,11 +294,14 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
     stationId: selectionRequest.stationId,
     actionId: selectionRequest.actionId
   };
+  const clearedRiskBidId = Object.hasOwn(candidate.riskBids, selectionRequest.stationId) ? candidate.riskBids[selectionRequest.stationId].riskBidId : null;
+  if (clearedRiskBidId !== null) delete candidate.riskBids[selectionRequest.stationId];
   candidate.revision = encounterState.revision + 1;
 
   const candidateValidation = validateVoyageEncounterStationSelections(candidate);
-  warnings.push(...candidateValidation.warnings);
-  if (!candidateValidation.valid) return { ok: false, nextState: null, events: [], errors: candidateValidation.errors, warnings };
+  const candidateBids = validateVoyageEncounterRiskBids(candidate);
+  warnings.push(...candidateValidation.warnings, ...candidateBids.warnings);
+  if (!candidateValidation.valid || !candidateBids.valid) return { ok: false, nextState: null, events: [], errors: [...candidateValidation.errors, ...candidateBids.errors], warnings };
 
   return {
     ok: true,
@@ -310,6 +315,7 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
       stationId: selectionRequest.stationId,
       previousActionId: previousSelection.actionId,
       actionId: selectionRequest.actionId,
+      ...(clearedRiskBidId !== null ? { clearedRiskBidId } : {}),
       previousRevision: encounterState.revision,
       revision: candidate.revision
     }],
@@ -347,12 +353,15 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
   );
   if (!candidate) return { ok: false, nextState: null, events: [], errors, warnings };
 
+  const clearedRiskBidId = Object.hasOwn(candidate.riskBids, clearRequest.stationId) ? candidate.riskBids[clearRequest.stationId].riskBidId : null;
   delete candidate.selections[clearRequest.stationId];
+  if (clearedRiskBidId !== null) delete candidate.riskBids[clearRequest.stationId];
   candidate.revision = encounterState.revision + 1;
 
   const candidateValidation = validateVoyageEncounterStationSelections(candidate);
-  warnings.push(...candidateValidation.warnings);
-  if (!candidateValidation.valid) return { ok: false, nextState: null, events: [], errors: candidateValidation.errors, warnings };
+  const candidateBids = validateVoyageEncounterRiskBids(candidate);
+  warnings.push(...candidateValidation.warnings, ...candidateBids.warnings);
+  if (!candidateValidation.valid || !candidateBids.valid) return { ok: false, nextState: null, events: [], errors: [...candidateValidation.errors, ...candidateBids.errors], warnings };
 
   return {
     ok: true,
@@ -365,6 +374,7 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
       phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
       stationId: clearRequest.stationId,
       actionId: previousSelection.actionId,
+      ...(clearedRiskBidId !== null ? { clearedRiskBidId } : {}),
       previousRevision: encounterState.revision,
       revision: candidate.revision
     }],
