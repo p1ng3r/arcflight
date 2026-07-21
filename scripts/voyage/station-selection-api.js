@@ -2,6 +2,9 @@ import {
   applyVoyageEncounterStationActionSelectionChange,
   applyVoyageEncounterStationActionSelectionClear
 } from "./domain/station-selection.js";
+import { prepareVoyageEncounterCrewPlanningCompleteness } from "./domain/crew-planning-completeness.js";
+import { prepareVoyageEncounterCrewPlanningReadiness } from "./domain/crew-planning-readiness.js";
+import { applyVoyageEncounterCrewPlanningLock } from "./domain/crew-planning-lock.js";
 
 /**
  * Extend Arcflight's frozen public API with the V3-003L station-selection
@@ -20,12 +23,18 @@ export function registerVoyageStationSelectionEditingApi() {
 
   const devTools = Object.freeze({
     ...currentDevTools,
+    prepareVoyageEncounterCrewPlanningCompleteness,
+    prepareVoyageEncounterCrewPlanningReadiness,
+    applyVoyageEncounterCrewPlanningLock,
     applyVoyageEncounterStationActionSelectionChange,
     applyVoyageEncounterStationActionSelectionClear
   });
 
   const extendedApi = Object.freeze({
     ...currentApi,
+    prepareVoyageEncounterCrewPlanningCompleteness,
+    prepareVoyageEncounterCrewPlanningReadiness,
+    applyVoyageEncounterCrewPlanningLock,
     applyVoyageEncounterStationActionSelectionChange,
     applyVoyageEncounterStationActionSelectionClear,
     devTools
@@ -42,5 +51,8 @@ if (globalThis.Hooks?.once) {
 
 export {
   applyVoyageEncounterStationActionSelectionChange,
-  applyVoyageEncounterStationActionSelectionClear
+  applyVoyageEncounterStationActionSelectionClear,
+  prepareVoyageEncounterCrewPlanningCompleteness,
+  prepareVoyageEncounterCrewPlanningReadiness,
+  applyVoyageEncounterCrewPlanningLock
 };
