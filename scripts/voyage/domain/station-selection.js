@@ -35,6 +35,76 @@ function findAvailableActions(actions, actionId) {
   return matches;
 }
 
+function validateCrewPlanningMutationContext(encounterState) {
+  const validation = validateVoyageEncounterStationSelections(encounterState);
+  const warnings = [...validation.warnings];
+  if (!validation.valid) return { ok: false, errors: validation.errors, warnings };
+
+  const errors = [];
+  if (encounterState.lifecycleState !== VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE) {
+    issue(errors, "station-selection-requires-active", "lifecycleState", "Changing a Voyage station action selection requires an Active encounter.");
+  } else if (encounterState.phase !== VOYAGE_ROUND_PHASES.CREW_PLANNING) {
+    issue(errors, "station-selection-requires-crew-planning", "phase", "Changing a Voyage station action selection requires the Crew Planning phase.");
+  }
+
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateStationIdRequest(request, errors, requestPath) {
+  if (!isPlainObject(request)) {
+    issue(errors, "invalid-station-selection-request", requestPath, "Voyage station selection request must be a plain object.");
+    return false;
+  }
+
+  const validStationId = hasNonEmptyId(request.stationId);
+  if (!validStationId) {
+    issue(errors, "invalid-station-id", `${requestPath}.stationId`, "Voyage station selection requires a non-empty stationId.");
+    return false;
+  }
+  if (!isSafeStationKey(request.stationId)) {
+    issue(errors, "unsafe-station-selection-key", `${requestPath}.stationId`, "Voyage station selection requires a safe station map key.");
+    return false;
+  }
+  return true;
+}
+
+function validateRequestedAction(encounterState, request, errors, requestPath) {
+  const validActionId = hasNonEmptyId(request.actionId);
+  if (!validActionId) {
+    issue(errors, "invalid-action-id", `${requestPath}.actionId`, "Voyage station selection requires a non-empty actionId.");
+    return;
+  }
+
+  const stationMatches = findAvailableStations(encounterState.availableStations, request.stationId);
+  if (stationMatches.length === 0) {
+    issue(errors, "station-not-available", `${requestPath}.stationId`, "Requested Voyage station is not currently available.");
+    return;
+  }
+  if (stationMatches.length > 1) {
+    issue(errors, "available-station-is-ambiguous", `${requestPath}.stationId`, "Requested Voyage station matches more than one available station.");
+    return;
+  }
+
+  const { station, index } = stationMatches[0];
+  if (!Array.isArray(station.actions)) {
+    issue(errors, "invalid-available-station-actions", `availableStations[${index}].actions`, "Available Voyage station actions must be an array.");
+    return;
+  }
+
+  const actionMatches = findAvailableActions(station.actions, request.actionId);
+  if (actionMatches.length === 0) issue(errors, "station-action-not-available", `${requestPath}.actionId`, "Requested Voyage action is not available for the selected station.");
+  if (actionMatches.length > 1) issue(errors, "station-action-is-ambiguous", `${requestPath}.actionId`, "Requested Voyage action matches more than one action for the selected station.");
+}
+
+function cloneSelectionCandidate(encounterState, errors, failureCode, message) {
+  try {
+    return clonePlainData(encounterState);
+  } catch (_error) {
+    issue(errors, failureCode, "encounterState", message);
+    return null;
+  }
+}
+
 /**
  * Validate persisted, encounter-local Voyage station action selections.
  */
@@ -146,13 +216,13 @@ export function applyVoyageEncounterStationActionSelection(encounterState, selec
   }
   if (errors.length > 0) return { ok: false, nextState: null, events: [], errors, warnings };
 
-  let candidate;
-  try {
-    candidate = clonePlainData(encounterState);
-  } catch (_error) {
-    issue(errors, "station-selection-candidate-construction-failed", "encounterState", "Voyage station selection could not clone encounter state.");
-    return { ok: false, nextState: null, events: [], errors, warnings };
-  }
+  const candidate = cloneSelectionCandidate(
+    encounterState,
+    errors,
+    "station-selection-candidate-construction-failed",
+    "Voyage station selection could not clone encounter state."
+  );
+  if (!candidate) return { ok: false, nextState: null, events: [], errors, warnings };
 
   Object.defineProperty(candidate.selections, selectionRequest.stationId, {
     value: { stationId: selectionRequest.stationId, actionId: selectionRequest.actionId },
@@ -177,6 +247,124 @@ export function applyVoyageEncounterStationActionSelection(encounterState, selec
       phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
       stationId: selectionRequest.stationId,
       actionId: selectionRequest.actionId,
+      previousRevision: encounterState.revision,
+      revision: candidate.revision
+    }],
+    errors: [],
+    warnings
+  };
+}
+
+/**
+ * Atomically replace one existing Crew Planning station action selection.
+ */
+export function applyVoyageEncounterStationActionSelectionChange(encounterState, selectionRequest) {
+  const context = validateCrewPlanningMutationContext(encounterState);
+  if (!context.ok) return { ok: false, nextState: null, events: [], errors: context.errors, warnings: context.warnings };
+
+  const errors = [];
+  const warnings = [...context.warnings];
+  const validStationId = validateStationIdRequest(selectionRequest, errors, "selectionRequest");
+  if (validStationId) validateRequestedAction(encounterState, selectionRequest, errors, "selectionRequest");
+
+  let previousSelection = null;
+  if (validStationId) {
+    if (!Object.hasOwn(encounterState.selections, selectionRequest.stationId)) {
+      issue(errors, "station-selection-does-not-exist", `selections.${selectionRequest.stationId}`, "Voyage station does not have a selected action to change.");
+    } else {
+      previousSelection = encounterState.selections[selectionRequest.stationId];
+      if (hasNonEmptyId(selectionRequest.actionId) && previousSelection.actionId === selectionRequest.actionId) {
+        issue(errors, "station-selection-unchanged", "selectionRequest.actionId", "Requested Voyage station action is already selected.");
+      }
+    }
+  }
+  if (errors.length > 0) return { ok: false, nextState: null, events: [], errors, warnings };
+
+  const candidate = cloneSelectionCandidate(
+    encounterState,
+    errors,
+    "station-selection-change-candidate-construction-failed",
+    "Voyage station selection change could not clone encounter state."
+  );
+  if (!candidate) return { ok: false, nextState: null, events: [], errors, warnings };
+
+  candidate.selections[selectionRequest.stationId] = {
+    stationId: selectionRequest.stationId,
+    actionId: selectionRequest.actionId
+  };
+  candidate.revision = encounterState.revision + 1;
+
+  const candidateValidation = validateVoyageEncounterStationSelections(candidate);
+  warnings.push(...candidateValidation.warnings);
+  if (!candidateValidation.valid) return { ok: false, nextState: null, events: [], errors: candidateValidation.errors, warnings };
+
+  return {
+    ok: true,
+    nextState: candidate,
+    events: [{
+      type: "voyage.station-action-selection-changed",
+      encounterId: candidate.encounterId,
+      lifecycleState: VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE,
+      roundNumber: candidate.roundNumber,
+      phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+      stationId: selectionRequest.stationId,
+      previousActionId: previousSelection.actionId,
+      actionId: selectionRequest.actionId,
+      previousRevision: encounterState.revision,
+      revision: candidate.revision
+    }],
+    errors: [],
+    warnings
+  };
+}
+
+/**
+ * Atomically clear one existing Crew Planning station action selection.
+ */
+export function applyVoyageEncounterStationActionSelectionClear(encounterState, clearRequest) {
+  const context = validateCrewPlanningMutationContext(encounterState);
+  if (!context.ok) return { ok: false, nextState: null, events: [], errors: context.errors, warnings: context.warnings };
+
+  const errors = [];
+  const warnings = [...context.warnings];
+  const validStationId = validateStationIdRequest(clearRequest, errors, "clearRequest");
+
+  let previousSelection = null;
+  if (validStationId) {
+    if (!Object.hasOwn(encounterState.selections, clearRequest.stationId)) {
+      issue(errors, "station-selection-does-not-exist", `selections.${clearRequest.stationId}`, "Voyage station does not have a selected action to clear.");
+    } else {
+      previousSelection = encounterState.selections[clearRequest.stationId];
+    }
+  }
+  if (errors.length > 0) return { ok: false, nextState: null, events: [], errors, warnings };
+
+  const candidate = cloneSelectionCandidate(
+    encounterState,
+    errors,
+    "station-selection-clear-candidate-construction-failed",
+    "Voyage station selection clear could not clone encounter state."
+  );
+  if (!candidate) return { ok: false, nextState: null, events: [], errors, warnings };
+
+  delete candidate.selections[clearRequest.stationId];
+  candidate.revision = encounterState.revision + 1;
+
+  const candidateValidation = validateVoyageEncounterStationSelections(candidate);
+  warnings.push(...candidateValidation.warnings);
+  if (!candidateValidation.valid) return { ok: false, nextState: null, events: [], errors: candidateValidation.errors, warnings };
+
+  return {
+    ok: true,
+    nextState: candidate,
+    events: [{
+      type: "voyage.station-action-selection-cleared",
+      encounterId: candidate.encounterId,
+      lifecycleState: VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE,
+      roundNumber: candidate.roundNumber,
+      phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+      stationId: clearRequest.stationId,
+      actionId: previousSelection.actionId,
       previousRevision: encounterState.revision,
       revision: candidate.revision
     }],
