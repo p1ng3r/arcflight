@@ -160,7 +160,7 @@ test("clone failures remain atomic", () => {
     configurable: true,
     get() {
       reads += 1;
-      if (reads >= 2) throw new Error("clone failure");
+      if (reads >= 4) throw new Error("clone failure");
       return metadata;
     }
   });

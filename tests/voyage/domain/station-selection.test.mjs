@@ -122,7 +122,7 @@ test("rejects existing own selections atomically without replacement", () => {
 
 test("clone construction failures and final validation failures are atomic", () => {
   const source = encounter(); const request = { stationId: "captain", actionId: "rally-crew" }; const requestBefore = clonePlainData(request); const metadata = source.metadata; let reads = 0;
-  Object.defineProperty(source, "metadata", { enumerable: true, configurable: true, get() { reads += 1; if (reads >= 2) throw new Error("clone failure"); return metadata; } });
+  Object.defineProperty(source, "metadata", { enumerable: true, configurable: true, get() { reads += 1; if (reads >= 3) throw new Error("clone failure"); return metadata; } });
   failure(applyVoyageEncounterStationActionSelection(source, request), ["station-selection-candidate-construction-failed"]); assert.equal(source.revision, 7); assert.deepEqual(source.selections, {}); assert.deepEqual(request, requestBefore);
   const candidateFailure = encounter(); const candidateMetadata = candidateFailure.metadata; let candidateReads = 0;
   Object.defineProperty(candidateFailure, "metadata", { enumerable: true, configurable: true, get() { candidateReads += 1; return candidateReads === 1 ? candidateMetadata : null; } });
@@ -142,4 +142,20 @@ test("Arcflight registers station selection functions and devTools aliases", asy
     const arcflight = await import(`../../../scripts/arcflight.js?station-selection=${Date.now()}`); init();
     assert.equal(typeof arcflight.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof arcflight.applyVoyageEncounterStationActionSelection, "function"); assert.equal(typeof game.arcflight.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof game.arcflight.applyVoyageEncounterStationActionSelection, "function"); assert.equal(typeof game.arcflight.devTools.validateVoyageEncounterStationSelections, "function"); assert.equal(typeof game.arcflight.devTools.applyVoyageEncounterStationActionSelection, "function");
   } finally { for (const [key, value] of Object.entries(previous)) { if (value.exists) globalThis[key] = value.value; else delete globalThis[key]; } }
+});
+
+test("initial selection rejects invalid persisted Risk Bids atomically and validates accepted candidates", async () => {
+  const { validateVoyageEncounterRiskBids } = await import("../../../scripts/voyage/domain/risk-bids.js");
+  const source = encounter();
+  source.riskBids.navigator = { stationId: "navigator", actionId: "thread", riskBidId: "close" };
+  const before = clonePlainData(source);
+  const result = applyVoyageEncounterStationActionSelection(source, { stationId: "captain", actionId: "rally-crew" });
+  failure(result, ["risk-bid-selection-missing"]);
+  assert.equal(source.revision, before.revision); assert.deepEqual(source, before);
+  const mismatch = encounter(); mismatch.selections.engineer = { stationId: "engineer", actionId: "stabilize-strain" };
+  mismatch.availableStations[1].actions[0].riskBidOptions = [{ riskBidId: "close" }];
+  mismatch.riskBids.engineer = { stationId: "engineer", actionId: "hard-burn-prep", riskBidId: "close" };
+  assert.equal(applyVoyageEncounterStationActionSelection(mismatch, { stationId: "captain", actionId: "rally-crew" }).ok, false);
+  const valid = encounter(); const accepted = applyVoyageEncounterStationActionSelection(valid, { stationId: "captain", actionId: "rally-crew" });
+  assert.equal(accepted.ok, true); assert.equal(validateVoyageEncounterStationSelections(accepted.nextState).valid, true); assert.equal(validateVoyageEncounterRiskBids(accepted.nextState).valid, true);
 });

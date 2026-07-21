@@ -9,8 +9,8 @@ import { clonePlainData, createDraftVoyageEncounterDefaults } from "../../../scr
 function encounter() {
   return { ...createDraftVoyageEncounterDefaults(), encounterId: "lock", definitionId: "glassback", lifecycleState: STATES.ACTIVE, revision: 4,
     primaryShip: { actorId: "ship" }, currentStage: { stageId: "opening" }, currentSituation: { threatId: "debris" }, objective: { objectiveId: "survive" }, roundNumber: 1,
-    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally" }, { actionId: "command" }] }, { stationId: "navigator", actions: [{ actionId: "course" }] }],
-    selections: { captain: { stationId: "captain", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } }, targets: { retained: true }, riskBids: { retained: true }, assistance: [{ retained: true }], reservations: [{ retained: true }],
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally", riskBidOptions: [{ riskBidId: "close" }] }, { actionId: "command" }] }, { stationId: "navigator", actions: [{ actionId: "course" }] }],
+    selections: { captain: { stationId: "captain", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } }, targets: { retained: true }, riskBids: { captain: { stationId: "captain", actionId: "rally", riskBidId: "close" } }, assistance: [{ retained: true }], reservations: [{ retained: true }],
     successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }], snapshots: [], recovery: {}, metadata: { retained: true } };
 }
 function failure(result) { assert.equal(result.ok, false); assert.equal(result.nextState, null); assert.deepEqual(result.events, []); }

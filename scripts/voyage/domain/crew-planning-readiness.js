@@ -4,6 +4,7 @@ import {
 } from "./constants.js";
 import { prepareVoyageEncounterCrewPlanningCompleteness } from "./crew-planning-completeness.js";
 import { validateVoyageEncounterState } from "./validation.js";
+import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 
 function issue(errors, code, path, message) {
   errors.push({ code, path, message, severity: "error" });
@@ -27,11 +28,12 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
   const errors = [...structural.errors];
   const warnings = [...structural.warnings];
   const completeness = prepareVoyageEncounterCrewPlanningCompleteness(encounterState);
+  const riskBids = validateVoyageEncounterRiskBids(encounterState);
+  errors.push(...riskBids.errors.map((entry) => ({ ...entry })));
+  warnings.push(...riskBids.warnings.map((entry) => ({ ...entry })));
 
-  // Completeness owns persisted selection and available-station validation.
-  for (const entry of completeness.errors) {
-    if (!errors.some((existing) => existing.code === entry.code && existing.path === entry.path)) errors.push({ ...entry });
-  }
+  // Completeness owns available-station completion validation.
+  errors.push(...completeness.errors.map((entry) => ({ ...entry })));
   warnings.push(...completeness.warnings.map((entry) => ({ ...entry })));
 
   const active = structural.valid

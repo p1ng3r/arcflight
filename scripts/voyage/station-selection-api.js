@@ -5,10 +5,11 @@ import {
 import { prepareVoyageEncounterCrewPlanningCompleteness } from "./domain/crew-planning-completeness.js";
 import { prepareVoyageEncounterCrewPlanningReadiness } from "./domain/crew-planning-readiness.js";
 import { applyVoyageEncounterCrewPlanningLock } from "./domain/crew-planning-lock.js";
+import { validateVoyageEncounterRiskBids, applyVoyageEncounterRiskBidSelection, applyVoyageEncounterRiskBidChange, applyVoyageEncounterRiskBidClear } from "./domain/risk-bids.js";
 
 /**
  * Extend Arcflight's frozen public API with the V3-003L station-selection
- * editing helpers after the main Arcflight init callback has built it.
+ * planning helpers, including action-coupled Risk Bids, after the main Arcflight init callback has built it.
  */
 export function registerVoyageStationSelectionEditingApi() {
   const currentApi = globalThis.CONFIG?.arcflight ?? globalThis.game?.arcflight;
@@ -27,7 +28,11 @@ export function registerVoyageStationSelectionEditingApi() {
     prepareVoyageEncounterCrewPlanningReadiness,
     applyVoyageEncounterCrewPlanningLock,
     applyVoyageEncounterStationActionSelectionChange,
-    applyVoyageEncounterStationActionSelectionClear
+    applyVoyageEncounterStationActionSelectionClear,
+    validateVoyageEncounterRiskBids,
+    applyVoyageEncounterRiskBidSelection,
+    applyVoyageEncounterRiskBidChange,
+    applyVoyageEncounterRiskBidClear
   });
 
   const extendedApi = Object.freeze({
@@ -37,6 +42,10 @@ export function registerVoyageStationSelectionEditingApi() {
     applyVoyageEncounterCrewPlanningLock,
     applyVoyageEncounterStationActionSelectionChange,
     applyVoyageEncounterStationActionSelectionClear,
+    validateVoyageEncounterRiskBids,
+    applyVoyageEncounterRiskBidSelection,
+    applyVoyageEncounterRiskBidChange,
+    applyVoyageEncounterRiskBidClear,
     devTools
   });
 
@@ -54,5 +63,9 @@ export {
   applyVoyageEncounterStationActionSelectionClear,
   prepareVoyageEncounterCrewPlanningCompleteness,
   prepareVoyageEncounterCrewPlanningReadiness,
-  applyVoyageEncounterCrewPlanningLock
+  applyVoyageEncounterCrewPlanningLock,
+  validateVoyageEncounterRiskBids,
+  applyVoyageEncounterRiskBidSelection,
+  applyVoyageEncounterRiskBidChange,
+  applyVoyageEncounterRiskBidClear
 };
