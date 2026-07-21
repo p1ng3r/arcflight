@@ -1,0 +1,61 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  applyVoyageEncounterStationActionSelectionChange,
+  applyVoyageEncounterStationActionSelectionClear,
+  registerVoyageStationSelectionEditingApi
+} from "../../../scripts/voyage/station-selection-api.js";
+
+test("registers station-selection editing helpers on public and devTools APIs", () => {
+  const previousConfig = globalThis.CONFIG;
+  const previousGame = globalThis.game;
+
+  try {
+    const originalDevTools = Object.freeze({ existingTool: () => "kept" });
+    const originalApi = Object.freeze({ existingApi: () => "kept", devTools: originalDevTools });
+    globalThis.CONFIG = { arcflight: originalApi };
+    globalThis.game = { arcflight: originalApi };
+
+    const result = registerVoyageStationSelectionEditingApi();
+
+    assert.ok(Object.isFrozen(result));
+    assert.ok(Object.isFrozen(result.devTools));
+    assert.equal(result.existingApi(), "kept");
+    assert.equal(result.devTools.existingTool(), "kept");
+    assert.equal(result.applyVoyageEncounterStationActionSelectionChange, applyVoyageEncounterStationActionSelectionChange);
+    assert.equal(result.applyVoyageEncounterStationActionSelectionClear, applyVoyageEncounterStationActionSelectionClear);
+    assert.equal(result.devTools.applyVoyageEncounterStationActionSelectionChange, applyVoyageEncounterStationActionSelectionChange);
+    assert.equal(result.devTools.applyVoyageEncounterStationActionSelectionClear, applyVoyageEncounterStationActionSelectionClear);
+    assert.equal(globalThis.CONFIG.arcflight, result);
+    assert.equal(globalThis.game.arcflight, result);
+  } finally {
+    if (previousConfig === undefined) delete globalThis.CONFIG;
+    else globalThis.CONFIG = previousConfig;
+    if (previousGame === undefined) delete globalThis.game;
+    else globalThis.game = previousGame;
+  }
+});
+
+test("returns null without replacing state when the base API is unavailable", () => {
+  const previousConfig = globalThis.CONFIG;
+  const previousGame = globalThis.game;
+
+  try {
+    globalThis.CONFIG = {};
+    globalThis.game = {};
+    assert.equal(registerVoyageStationSelectionEditingApi(), null);
+    assert.equal(globalThis.CONFIG.arcflight, undefined);
+    assert.equal(globalThis.game.arcflight, undefined);
+  } finally {
+    if (previousConfig === undefined) delete globalThis.CONFIG;
+    else globalThis.CONFIG = previousConfig;
+    if (previousGame === undefined) delete globalThis.game;
+    else globalThis.game = previousGame;
+  }
+});
+
+test("station-selection editing API module exposes named helpers", () => {
+  assert.equal(typeof applyVoyageEncounterStationActionSelectionChange, "function");
+  assert.equal(typeof applyVoyageEncounterStationActionSelectionClear, "function");
+  assert.equal(typeof registerVoyageStationSelectionEditingApi, "function");
+});

@@ -11,7 +11,8 @@
     "styles/arcflight.css"
   ],
   "esmodules": [
-    "scripts/arcflight.js"
+    "scripts/arcflight.js",
+    "scripts/voyage/station-selection-api.js"
   ],
   "languages": [
     {
