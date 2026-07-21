@@ -6,6 +6,7 @@ import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
 import { validateVoyageEncounterActivationReadiness } from "./voyage/domain/activation-readiness.js";
 import { validateVoyageEncounterActivationStart } from "./voyage/domain/activation-start-readiness.js";
 import { createVoyageEncounterBoundarySnapshot } from "./voyage/domain/boundary-snapshots.js";
+import { applyVoyageEncounterActivation } from "./voyage/domain/activation-application.js";
 import { applyContextPreservingVoyageLifecycleTransition } from "./voyage/domain/lifecycle-application.js";
 import { applyVoyageEncounterReadyTransition } from "./voyage/domain/readiness-application.js";
 import {
@@ -354,6 +355,7 @@ Hooks.once("init", () => {
     validateVoyageEncounterActivationReadiness,
     validateVoyageEncounterActivationStart,
     createVoyageEncounterBoundarySnapshot,
+    applyVoyageEncounterActivation,
     applyContextPreservingVoyageLifecycleTransition,
     applyVoyageEncounterReadyTransition,
     getAllowedVoyageLifecycleTransitions,
@@ -367,6 +369,7 @@ Hooks.once("init", () => {
       validateVoyageEncounterActivationReadiness,
       validateVoyageEncounterActivationStart,
       createVoyageEncounterBoundarySnapshot,
+      applyVoyageEncounterActivation,
       applyContextPreservingVoyageLifecycleTransition,
       applyVoyageEncounterReadyTransition,
       getAllowedVoyageLifecycleTransitions,
@@ -457,6 +460,7 @@ export {
   validateVoyageEncounterActivationReadiness,
   validateVoyageEncounterActivationStart,
   createVoyageEncounterBoundarySnapshot,
+  applyVoyageEncounterActivation,
   applyContextPreservingVoyageLifecycleTransition,
   applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,

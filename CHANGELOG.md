@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-003H - Ready-to-Active Voyage Encounter Application
+
+- Added a Foundry-free, atomic Ready-to-Active activation operation that reuses activation-start and lifecycle validation, creates caller-identified round-start and phase-start snapshots in deterministic order, increments revision once, validates the complete candidate, and emits one lifecycle event without persistence or gameplay effects.
+- Exposed the operation through `game.arcflight` and `game.arcflight.devTools`, with unrun focused Node test coverage and implementation documentation.
+
 ### Gameplay V3-003G - Voyage Boundary Snapshot Construction
 
 - Added a Foundry-free, read-only helper that validates and recursively clones the explicitly allowlisted temporary state of an Active Voyage Encounter into caller-identified round-start or phase-start boundary snapshots, without appending, restoring, persisting, or otherwise mutating encounter state.
