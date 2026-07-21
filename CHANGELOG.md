@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-003K - Voyage Station Action Selection Foundation
+
+- Added Foundry-free validation and atomic initial Crew Planning station-action selection using exact encounter-local options, unsafe-key protection, recursive clone isolation, one revision increment, and one domain event without snapshots, action execution, persistence, or UI.
+- Exposed both helpers through `game.arcflight` and `game.arcflight.devTools`, with focused Node tests written but not run and implementation documentation.
+
 ### Gameplay V3-003J - Situation-to-Crew-Planning Application
 
 - Added a Foundry-free, atomic Active Situation-to-Crew-Planning transition that validates clean planning input, appends one caller-identified phase-start snapshot, increments revision once, and emits one phase-transition event without persistence or gameplay resolution.

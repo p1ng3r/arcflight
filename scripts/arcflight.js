@@ -3,6 +3,7 @@ import { createArcflightDevTools } from "./dev/dev-tools.js";
 import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import { createVoyageEncounterState, normalizeVoyageEncounterState } from "./voyage/domain/state.js";
 import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
+import { applyVoyageEncounterStationActionSelection, validateVoyageEncounterStationSelections } from "./voyage/domain/station-selection.js";
 import { validateVoyageEncounterActivationReadiness } from "./voyage/domain/activation-readiness.js";
 import { validateVoyageEncounterActivationStart } from "./voyage/domain/activation-start-readiness.js";
 import { createVoyageEncounterBoundarySnapshot } from "./voyage/domain/boundary-snapshots.js";
@@ -359,6 +360,8 @@ Hooks.once("init", () => {
     createVoyageEncounterState,
     normalizeVoyageEncounterState,
     validateVoyageEncounterState,
+    validateVoyageEncounterStationSelections,
+    applyVoyageEncounterStationActionSelection,
     validateVoyageEncounterActivationReadiness,
     validateVoyageEncounterActivationStart,
     createVoyageEncounterBoundarySnapshot,
@@ -378,6 +381,8 @@ Hooks.once("init", () => {
       createVoyageEncounterState,
       normalizeVoyageEncounterState,
       validateVoyageEncounterState,
+      validateVoyageEncounterStationSelections,
+      applyVoyageEncounterStationActionSelection,
       validateVoyageEncounterActivationReadiness,
       validateVoyageEncounterActivationStart,
       createVoyageEncounterBoundarySnapshot,
@@ -474,6 +479,8 @@ export {
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
   validateVoyageEncounterState,
+  validateVoyageEncounterStationSelections,
+  applyVoyageEncounterStationActionSelection,
   validateVoyageEncounterActivationReadiness,
   validateVoyageEncounterActivationStart,
   createVoyageEncounterBoundarySnapshot,
