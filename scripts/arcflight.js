@@ -4,6 +4,7 @@ import { runFrameworkSmokeTest } from "./dev/framework-smoke-test.js";
 import { createVoyageEncounterState, normalizeVoyageEncounterState } from "./voyage/domain/state.js";
 import { validateVoyageEncounterState } from "./voyage/domain/validation.js";
 import { validateVoyageEncounterActivationReadiness } from "./voyage/domain/activation-readiness.js";
+import { validateVoyageEncounterActivationStart } from "./voyage/domain/activation-start-readiness.js";
 import { applyContextPreservingVoyageLifecycleTransition } from "./voyage/domain/lifecycle-application.js";
 import { applyVoyageEncounterReadyTransition } from "./voyage/domain/readiness-application.js";
 import {
@@ -350,6 +351,7 @@ Hooks.once("init", () => {
     normalizeVoyageEncounterState,
     validateVoyageEncounterState,
     validateVoyageEncounterActivationReadiness,
+    validateVoyageEncounterActivationStart,
     applyContextPreservingVoyageLifecycleTransition,
     applyVoyageEncounterReadyTransition,
     getAllowedVoyageLifecycleTransitions,
@@ -361,6 +363,7 @@ Hooks.once("init", () => {
       normalizeVoyageEncounterState,
       validateVoyageEncounterState,
       validateVoyageEncounterActivationReadiness,
+      validateVoyageEncounterActivationStart,
       applyContextPreservingVoyageLifecycleTransition,
       applyVoyageEncounterReadyTransition,
       getAllowedVoyageLifecycleTransitions,
@@ -449,6 +452,7 @@ export {
   normalizeVoyageEncounterState,
   validateVoyageEncounterState,
   validateVoyageEncounterActivationReadiness,
+  validateVoyageEncounterActivationStart,
   applyContextPreservingVoyageLifecycleTransition,
   applyVoyageEncounterReadyTransition,
   getAllowedVoyageLifecycleTransitions,

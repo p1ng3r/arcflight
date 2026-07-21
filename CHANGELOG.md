@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Gameplay V3-003F - Ready-to-Active Voyage Activation Start Validation
+
+- Added a Foundry-free, read-only Ready-to-Active start validator that validates lifecycle policy, an internal Active candidate, initial-stage and pre-round requirements, without applying activation, changing revision, or creating snapshots.
+- Exposed the validator through `game.arcflight` and `game.arcflight.devTools`, with unrun focused Node test coverage and implementation documentation.
+
 ### Gameplay V3-003E - Configuration-to-Ready Voyage Lifecycle Application
 
 - Added a Foundry-free specialized Configuration-to-Ready application that reuses activation-readiness validation, clones the complete encounter, changes only lifecycle state and revision, validates the Ready candidate, and emits one lifecycle-transitioned domain event.
