@@ -7,7 +7,18 @@ import { validateVoyageEncounterStationSelections } from "./station-selection.js
 import { validateVoyageEncounterState } from "./validation.js";
 
 function error(code, path, message) { return { code, path, message, severity: "error" }; }
-function failure(errors, warnings) { return { ok: false, nextState: null, events: [], errors, warnings }; }
+function deduplicateIssues(issues) {
+  const seen = new Set();
+  return issues.filter((entry) => {
+    const identity = `${entry.code}\u0000${entry.path}\u0000${entry.message}\u0000${entry.severity}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+function failure(errors, warnings) {
+  return { ok: false, nextState: null, events: [], errors: deduplicateIssues(errors), warnings: deduplicateIssues(warnings) };
+}
 
 function validateRequest(request, snapshots) {
   if (!isPlainObject(request)) return [error("invalid-crew-planning-lock-request", "lockRequest", "Crew Planning lock request must be a plain object.")];
@@ -62,5 +73,5 @@ export function applyVoyageEncounterCrewPlanningLock(encounterState, lockRequest
     previousPhase: encounterState.phase, phase: candidate.phase,
     previousRevision: encounterState.revision, revision: candidate.revision,
     phaseStartSnapshotId: lockRequest.phaseStartSnapshotId
-  }], errors: [], warnings };
+  }], errors: [], warnings: deduplicateIssues(warnings) };
 }

@@ -27,4 +27,14 @@ test("reports required omissions, malformed persisted data, context failures, an
   const wrongPhase = encounter(); wrongPhase.phase = VOYAGE_ROUND_PHASES.LOCK_READINESS; assert.ok(prepareVoyageEncounterCrewPlanningReadiness(wrongPhase).errors.some((item) => item.code === "crew-planning-readiness-requires-crew-planning"));
 });
 
+test("requires a deterministic non-empty current stage ID before reporting lock readiness", () => {
+  for (const currentStage of [{}, { stageId: "   " }]) {
+    const source = encounter(); source.currentStage = currentStage;
+    source.selections = { " Captain ": { stationId: " Captain ", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } };
+    const report = prepareVoyageEncounterCrewPlanningReadiness(source);
+    assert.equal(report.readyToLock, false);
+    assert.deepEqual(report.errors, [{ code: "invalid-crew-planning-readiness-stage-id", path: "currentStage.stageId", message: "Crew Planning readiness requires a non-empty current stageId for the Lock Readiness snapshot.", severity: "error" }]);
+  }
+});
+
 test("readiness imports without Foundry globals", () => assert.equal(typeof prepareVoyageEncounterCrewPlanningReadiness, "function"));

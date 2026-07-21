@@ -9,6 +9,16 @@ function issue(errors, code, path, message) {
   errors.push({ code, path, message, severity: "error" });
 }
 
+function deduplicateIssues(issues) {
+  const seen = new Set();
+  return issues.filter((entry) => {
+    const identity = `${entry.code}\u0000${entry.path}\u0000${entry.message}\u0000${entry.severity}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 /**
  * Prepare a read-only, derived report for locking an Active Crew Plan.
  */
@@ -34,6 +44,11 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
   if (structural.valid && !crewPlanning) {
     issue(errors, "crew-planning-readiness-requires-crew-planning", "phase", "Preparing Crew Planning readiness requires the Crew Planning phase.");
   }
+  if (structural.valid && (!encounterState.currentStage
+    || typeof encounterState.currentStage.stageId !== "string"
+    || !encounterState.currentStage.stageId.trim())) {
+    issue(errors, "invalid-crew-planning-readiness-stage-id", "currentStage.stageId", "Crew Planning readiness requires a non-empty current stageId for the Lock Readiness snapshot.");
+  }
 
   return {
     structurallyValid: structural.valid,
@@ -45,7 +60,7 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
     missingRequiredStationIds: [...completeness.missingRequiredStationIds],
     complete: completeness.complete,
     readyToLock: errors.length === 0 && active && crewPlanning && completeness.complete,
-    errors,
-    warnings
+    errors: deduplicateIssues(errors),
+    warnings: deduplicateIssues(warnings)
   };
 }
