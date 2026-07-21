@@ -7,6 +7,19 @@ import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 
 const UNSAFE_STATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+function deduplicateIssues(issues) {
+  const seen = new Set();
+  return issues.filter((entry) => {
+    const identity = `${entry.code}\u0000${entry.path}\u0000${entry.message}\u0000${entry.severity}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+function validationResult(validation) {
+  return { errors: deduplicateIssues(validation.errors), warnings: deduplicateIssues(validation.warnings) };
+}
+
 
 function issue(errors, code, path, message) {
   errors.push({ code, path, message, severity: "error" });
@@ -39,8 +52,9 @@ function findAvailableActions(actions, actionId) {
 function validateCrewPlanningMutationContext(encounterState) {
   const validation = validateVoyageEncounterStationSelections(encounterState);
   const bidValidation = validateVoyageEncounterRiskBids(encounterState);
-  const warnings = [...validation.warnings, ...bidValidation.warnings];
-  if (!validation.valid || !bidValidation.valid) return { ok: false, errors: [...validation.errors, ...bidValidation.errors], warnings };
+  const combined = validationResult({ errors: [...validation.errors, ...bidValidation.errors], warnings: [...validation.warnings, ...bidValidation.warnings] });
+  if (!validation.valid || !bidValidation.valid) return { ok: false, ...combined };
+  const warnings = combined.warnings;
 
   const errors = [];
   if (encounterState.lifecycleState !== VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE) {
@@ -166,9 +180,9 @@ export function validateVoyageEncounterStationSelections(encounterState) {
  * Atomically add one initial, encounter-local Voyage station action selection.
  */
 export function applyVoyageEncounterStationActionSelection(encounterState, selectionRequest) {
-  const validation = validateVoyageEncounterStationSelections(encounterState);
-  const warnings = [...validation.warnings];
-  if (!validation.valid) return { ok: false, nextState: null, events: [], errors: validation.errors, warnings };
+  const riskValidation = validateVoyageEncounterRiskBids(encounterState);
+  const warnings = [...riskValidation.warnings];
+  if (!riskValidation.valid) return { ok: false, nextState: null, events: [], errors: riskValidation.errors, warnings: deduplicateIssues(warnings) };
 
   if (encounterState.lifecycleState !== VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ACTIVE) {
     const errors = [];
@@ -234,9 +248,9 @@ export function applyVoyageEncounterStationActionSelection(encounterState, selec
   });
   candidate.revision = encounterState.revision + 1;
 
-  const candidateValidation = validateVoyageEncounterStationSelections(candidate);
+  const candidateValidation = validateVoyageEncounterRiskBids(candidate);
   warnings.push(...candidateValidation.warnings);
-  if (!candidateValidation.valid) return { ok: false, nextState: null, events: [], errors: candidateValidation.errors, warnings };
+  if (!candidateValidation.valid) return { ok: false, nextState: null, events: [], errors: candidateValidation.errors, warnings: deduplicateIssues(warnings) };
 
   return {
     ok: true,
@@ -301,7 +315,9 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
   const candidateValidation = validateVoyageEncounterStationSelections(candidate);
   const candidateBids = validateVoyageEncounterRiskBids(candidate);
   warnings.push(...candidateValidation.warnings, ...candidateBids.warnings);
-  if (!candidateValidation.valid || !candidateBids.valid) return { ok: false, nextState: null, events: [], errors: [...candidateValidation.errors, ...candidateBids.errors], warnings };
+  const candidateIssues = validationResult({ errors: [...candidateValidation.errors, ...candidateBids.errors], warnings });
+  if (!candidateValidation.valid || !candidateBids.valid) return { ok: false, nextState: null, events: [], ...candidateIssues };
+  warnings.splice(0, warnings.length, ...candidateIssues.warnings);
 
   return {
     ok: true,
@@ -361,7 +377,9 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
   const candidateValidation = validateVoyageEncounterStationSelections(candidate);
   const candidateBids = validateVoyageEncounterRiskBids(candidate);
   warnings.push(...candidateValidation.warnings, ...candidateBids.warnings);
-  if (!candidateValidation.valid || !candidateBids.valid) return { ok: false, nextState: null, events: [], errors: [...candidateValidation.errors, ...candidateBids.errors], warnings };
+  const candidateIssues = validationResult({ errors: [...candidateValidation.errors, ...candidateBids.errors], warnings });
+  if (!candidateValidation.valid || !candidateBids.valid) return { ok: false, nextState: null, events: [], ...candidateIssues };
+  warnings.splice(0, warnings.length, ...candidateIssues.warnings);
 
   return {
     ok: true,

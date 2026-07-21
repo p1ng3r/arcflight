@@ -32,10 +32,8 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
   errors.push(...riskBids.errors.map((entry) => ({ ...entry })));
   warnings.push(...riskBids.warnings.map((entry) => ({ ...entry })));
 
-  // Completeness owns persisted selection and available-station validation.
-  for (const entry of completeness.errors) {
-    if (!errors.some((existing) => existing.code === entry.code && existing.path === entry.path)) errors.push({ ...entry });
-  }
+  // Completeness owns available-station completion validation.
+  errors.push(...completeness.errors.map((entry) => ({ ...entry })));
   warnings.push(...completeness.warnings.map((entry) => ({ ...entry })));
 
   const active = structural.valid

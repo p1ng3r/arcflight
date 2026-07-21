@@ -7,11 +7,20 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const issue = (errors, code, path, message) => errors.push({ code, path, message, severity: "error" });
 const hasId = (value) => typeof value === "string" && value.trim().length > 0;
 const safeKey = (value) => !UNSAFE_KEYS.has(value);
-const failure = (errors, warnings) => ({ ok: false, nextState: null, events: [], errors, warnings });
+function deduplicateIssues(issues) {
+  const seen = new Set();
+  return issues.filter((entry) => {
+    const identity = `${entry.code}\u0000${entry.path}\u0000${entry.message}\u0000${entry.severity}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+const failure = (errors, warnings) => ({ ok: false, nextState: null, events: [], errors: deduplicateIssues(errors), warnings: deduplicateIssues(warnings) });
 function stations(state, id) { return state.availableStations.reduce((found, station, index) => isPlainObject(station) && station.stationId === id ? [...found, { station, index }] : found, []); }
 function actions(station, id) { return station.actions.reduce((found, action, index) => isPlainObject(action) && action.actionId === id ? [...found, { action, index }] : found, []); }
 function options(action, path, errors) {
-  if (!Object.hasOwn(action, "riskBidOptions") || action.riskBidOptions === undefined) return [];
+  if (!Object.hasOwn(action, "riskBidOptions")) return [];
   if (!Array.isArray(action.riskBidOptions)) { issue(errors, "invalid-risk-bid-options", path, "Authored Risk Bid options must be an array when supplied."); return null; }
   const ids = new Set();
   action.riskBidOptions.forEach((option, index) => {
@@ -48,7 +57,7 @@ export function validateVoyageEncounterRiskBids(state) {
     if (!safeKey(key)) { issue(errors, "unsafe-risk-bid-station-key", path, "Stored Risk Bid uses an unsafe station key."); continue; }
     const bid = state.riskBids[key];
     if (!isPlainObject(bid)) { issue(errors, "invalid-risk-bid", path, "Stored Risk Bid must be a plain object."); continue; }
-    for (const field of ["stationId", "actionId", "riskBidId"]) if (!Object.hasOwn(bid, field) || !hasId(bid[field])) issue(errors, `invalid-risk-bid-${field}`, `${path}.${field}`, `Stored Risk Bid requires a non-empty ${field}.`);
+    for (const field of ["stationId", "actionId", "riskBidId"]) if (!Object.hasOwn(bid, field) || !hasId(bid[field])) issue(errors, ({ stationId: "invalid-risk-bid-station-id", actionId: "invalid-risk-bid-action-id", riskBidId: "invalid-risk-bid-id" })[field], `${path}.${field}`, `Stored Risk Bid requires a non-empty ${field}.`);
     if (!hasId(bid.stationId) || !hasId(bid.actionId) || !hasId(bid.riskBidId)) continue;
     if (bid.stationId !== key) { issue(errors, "risk-bid-station-key-mismatch", `${path}.stationId`, "Stored Risk Bid stationId must match its riskBids map key."); continue; }
     if (!Object.hasOwn(state.selections, key)) { issue(errors, "risk-bid-selection-missing", path, "Stored Risk Bid requires an existing station action selection."); continue; }
@@ -56,7 +65,7 @@ export function validateVoyageEncounterRiskBids(state) {
     if (!isPlainObject(selection) || selection.actionId !== bid.actionId) { issue(errors, "risk-bid-action-mismatch", `${path}.actionId`, "Stored Risk Bid actionId must match the station's selected action."); continue; }
     resolve(state, bid.stationId, bid.actionId, bid.riskBidId, errors, path);
   }
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors: deduplicateIssues(errors), warnings: deduplicateIssues(warnings) };
 }
 function request(state, value, needsExisting) {
   const errors = []; if (!isPlainObject(value)) issue(errors, "invalid-risk-bid-request", "bidRequest", "Risk Bid request must be a plain object.");
@@ -79,7 +88,7 @@ function mutate(state, value, type, existing = false, clear = false) {
   if (clear) delete candidate.riskBids[input.stationId]; else candidate.riskBids[input.stationId] = { stationId: input.stationId, actionId: input.selection.actionId, riskBidId: input.riskBidId };
   candidate.revision = state.revision + 1; const final = validateVoyageEncounterRiskBids(candidate); warnings.push(...final.warnings); if (!final.valid) return failure(final.errors, warnings);
   const event = { type, encounterId: candidate.encounterId, lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber, phase: candidate.phase, stationId: input.stationId, actionId: previous?.actionId ?? input.selection.actionId, ...(previous ? { previousRiskBidId: previous.riskBidId } : {}), riskBidId: clear ? previous.riskBidId : input.riskBidId, previousRevision: state.revision, revision: candidate.revision };
-  return { ok: true, nextState: candidate, events: [event], errors: [], warnings };
+  return { ok: true, nextState: candidate, events: [event], errors: [], warnings: deduplicateIssues(warnings) };
 }
 export const applyVoyageEncounterRiskBidSelection = (state, request) => mutate(state, request, "voyage.risk-bid-selected");
 export const applyVoyageEncounterRiskBidChange = (state, request) => mutate(state, request, "voyage.risk-bid-changed", true);
