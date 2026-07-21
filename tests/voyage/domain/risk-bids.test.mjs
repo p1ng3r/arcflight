@@ -15,3 +15,28 @@ test("selects, changes, and clears Risk Bids with exact events and no input muta
 test("rejects bid mutation requests atomically", () => { const source = state(); for (const [request, code] of [[null, "invalid-risk-bid-request"], [{ stationId: "__proto__", riskBidId: "close" }, "unsafe-risk-bid-station-key"], [{ stationId: "navigator", riskBidId: "unknown" }, "risk-bid-not-available"]]) failure(applyVoyageEncounterRiskBidSelection(source, request), code); const noSelection = state(); delete noSelection.selections.navigator; failure(applyVoyageEncounterRiskBidSelection(noSelection, { stationId: "navigator", riskBidId: "close" }), "risk-bid-selection-missing"); const selected = applyVoyageEncounterRiskBidSelection(source, { stationId: "navigator", riskBidId: "close" }); failure(applyVoyageEncounterRiskBidSelection(selected.nextState, { stationId: "navigator", riskBidId: "bold" }), "risk-bid-already-exists"); failure(applyVoyageEncounterRiskBidChange(selected.nextState, { stationId: "navigator", riskBidId: "close" }), "risk-bid-unchanged"); failure(applyVoyageEncounterRiskBidClear(source, { stationId: "navigator" }), "risk-bid-does-not-exist"); });
 test("action edits clear valid bids only on successful primary events", () => { const source = state(); source.riskBids.navigator = bid(); const changed = applyVoyageEncounterStationActionSelectionChange(source, { stationId: "navigator", actionId: "safe" }); assert.equal(changed.events.length, 1); assert.equal(changed.events[0].clearedRiskBidId, "close"); assert.equal(changed.nextState.revision, 4); const cleared = applyVoyageEncounterStationActionSelectionClear(source, { stationId: "navigator" }); assert.equal(cleared.events[0].clearedRiskBidId, "close"); const failed = applyVoyageEncounterStationActionSelectionChange(source, { stationId: "navigator", actionId: "thread" }); failure(failed, "station-selection-unchanged"); assert.deepEqual(source.riskBids.navigator, bid()); });
 test("imports without Foundry globals", () => { assert.equal(typeof validateVoyageEncounterRiskBids, "function"); assert.equal(typeof applyVoyageEncounterRiskBidSelection, "function"); });
+
+test("validates authored Risk Bid options even without persisted bids", () => {
+  for (const [value, code] of [[undefined, "invalid-risk-bid-options"], [null, "invalid-risk-bid-options"], [{}, "invalid-risk-bid-options"], ["x", "invalid-risk-bid-options"], [[null], "invalid-risk-bid-option"], [[{}], "invalid-risk-bid-id"], [[{ riskBidId: " " }], "invalid-risk-bid-id"], [[{ riskBidId: "close" }, { riskBidId: "close" }], "duplicate-risk-bid-id"]]) {
+    const source = state(); source.availableStations[0].actions[0].riskBidOptions = value;
+    assert.ok(validateVoyageEncounterRiskBids(source).errors.some((entry) => entry.code === code), code);
+  }
+  const omitted = state(); delete omitted.availableStations[0].actions[0].riskBidOptions;
+  const empty = state(); empty.availableStations[0].actions[0].riskBidOptions = [];
+  assert.equal(validateVoyageEncounterRiskBids(omitted).valid, true);
+  assert.equal(validateVoyageEncounterRiskBids(empty).valid, true);
+});
+
+test("initial selection, readiness, and locking reject malformed unbid authored options atomically", async () => {
+  const { applyVoyageEncounterStationActionSelection } = await import("../../../scripts/voyage/domain/station-selection.js");
+  const { prepareVoyageEncounterCrewPlanningReadiness } = await import("../../../scripts/voyage/domain/crew-planning-readiness.js");
+  const { applyVoyageEncounterCrewPlanningLock } = await import("../../../scripts/voyage/domain/crew-planning-lock.js");
+  const source = state(); source.availableStations[0].actions[0].riskBidOptions = undefined;
+  const before = clonePlainData(source);
+  const selected = applyVoyageEncounterStationActionSelection(source, { stationId: "captain", actionId: "rally" });
+  failure(selected, "invalid-risk-bid-options"); assert.deepEqual(source, before);
+  const readiness = prepareVoyageEncounterCrewPlanningReadiness(source);
+  assert.equal(readiness.readyToLock, false); assert.ok(readiness.errors.some((entry) => entry.code === "invalid-risk-bid-options"));
+  const locked = applyVoyageEncounterCrewPlanningLock(source, { phaseStartSnapshotId: "blocked" });
+  failure(locked, "invalid-risk-bid-options"); assert.deepEqual(source, before);
+});

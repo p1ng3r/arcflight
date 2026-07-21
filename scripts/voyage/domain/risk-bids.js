@@ -32,7 +32,19 @@ function options(action, path, errors) {
   });
   return action.riskBidOptions;
 }
-function resolve(state, stationId, actionId, riskBidId, errors, path) {
+function validateAuthoredOptions(state, errors) {
+  const collections = new Map();
+  state.availableStations.forEach((station, stationIndex) => {
+    if (!isPlainObject(station) || !Array.isArray(station.actions)) return;
+    Object.keys(station.actions).forEach((actionKey) => {
+      const action = station.actions[actionKey];
+      if (!isPlainObject(action)) return;
+      collections.set(action, options(action, `availableStations[${stationIndex}].actions[${actionKey}].riskBidOptions`, errors));
+    });
+  });
+  return collections;
+}
+function resolve(state, stationId, actionId, riskBidId, errors, path, authoredOptions = null) {
   const stationMatches = stations(state, stationId);
   if (stationMatches.length !== 1) { issue(errors, stationMatches.length ? "risk-bid-station-ambiguous" : "risk-bid-station-not-available", `${path}.stationId`, "Risk Bid station must match exactly one available station."); return null; }
   const { station, index } = stationMatches[0];
@@ -40,7 +52,7 @@ function resolve(state, stationId, actionId, riskBidId, errors, path) {
   const actionMatches = actions(station, actionId);
   if (actionMatches.length !== 1) { issue(errors, actionMatches.length ? "risk-bid-action-ambiguous" : "risk-bid-action-not-available", `${path}.actionId`, "Risk Bid action must match exactly one authored action."); return null; }
   const { action, index: actionIndex } = actionMatches[0];
-  const optionList = options(action, `availableStations[${index}].actions[${actionIndex}].riskBidOptions`, errors);
+  const optionList = authoredOptions?.get(action) ?? options(action, `availableStations[${index}].actions[${actionIndex}].riskBidOptions`, errors);
   if (!optionList) return null;
   const matches = optionList.filter((option) => isPlainObject(option) && Object.hasOwn(option, "riskBidId") && option.riskBidId === riskBidId);
   if (matches.length !== 1) issue(errors, matches.length ? "risk-bid-option-ambiguous" : "risk-bid-not-available", `${path}.riskBidId`, "Risk Bid must match exactly one authored option for the selected action.");
@@ -52,6 +64,7 @@ export function validateVoyageEncounterRiskBids(state) {
   if (!structural.valid) return { valid: false, errors: [...structural.errors], warnings: [...structural.warnings] };
   const selections = validateVoyageEncounterStationSelections(state);
   const errors = [...selections.errors]; const warnings = [...structural.warnings, ...selections.warnings];
+  const authoredOptions = validateAuthoredOptions(state, errors);
   for (const key of Object.keys(state.riskBids)) {
     const path = `riskBids.${key}`;
     if (!safeKey(key)) { issue(errors, "unsafe-risk-bid-station-key", path, "Stored Risk Bid uses an unsafe station key."); continue; }
@@ -63,7 +76,7 @@ export function validateVoyageEncounterRiskBids(state) {
     if (!Object.hasOwn(state.selections, key)) { issue(errors, "risk-bid-selection-missing", path, "Stored Risk Bid requires an existing station action selection."); continue; }
     const selection = state.selections[key];
     if (!isPlainObject(selection) || selection.actionId !== bid.actionId) { issue(errors, "risk-bid-action-mismatch", `${path}.actionId`, "Stored Risk Bid actionId must match the station's selected action."); continue; }
-    resolve(state, bid.stationId, bid.actionId, bid.riskBidId, errors, path);
+    resolve(state, bid.stationId, bid.actionId, bid.riskBidId, errors, path, authoredOptions);
   }
   return { valid: errors.length === 0, errors: deduplicateIssues(errors), warnings: deduplicateIssues(warnings) };
 }
