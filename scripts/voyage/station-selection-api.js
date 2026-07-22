@@ -8,10 +8,12 @@ import { applyVoyageEncounterCrewPlanningLock } from "./domain/crew-planning-loc
 import { validateVoyageEncounterRiskBids, applyVoyageEncounterRiskBidSelection, applyVoyageEncounterRiskBidChange, applyVoyageEncounterRiskBidClear } from "./domain/risk-bids.js";
 import { prepareVoyageEncounterResolutionOrder } from "./domain/resolution-order.js";
 import { applyVoyageEncounterResolutionTransition } from "./domain/resolution-transition.js";
+import { validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests } from "./domain/resolution-execution-requests.js";
+import { validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation } from "./domain/pending-checks.js";
 
 /**
- * Extend Arcflight's frozen public API with the V3-003L station-selection
- * planning helpers, including action-coupled Risk Bids, after the main Arcflight init callback has built it.
+ * Extend Arcflight's frozen public API with Voyage planning and Resolution
+ * preparation helpers after the main Arcflight init callback has built it.
  */
 export function registerVoyageStationSelectionEditingApi() {
   const currentApi = globalThis.CONFIG?.arcflight ?? globalThis.game?.arcflight;
@@ -36,7 +38,11 @@ export function registerVoyageStationSelectionEditingApi() {
     applyVoyageEncounterRiskBidChange,
     applyVoyageEncounterRiskBidClear,
     prepareVoyageEncounterResolutionOrder,
-    applyVoyageEncounterResolutionTransition
+    applyVoyageEncounterResolutionTransition,
+    validateVoyageEncounterActionExecutionDefinitions,
+    prepareVoyageEncounterActionExecutionRequests,
+    validateVoyageEncounterPendingChecks,
+    applyVoyageEncounterPendingCheckPreparation
   });
 
   const extendedApi = Object.freeze({
@@ -52,6 +58,10 @@ export function registerVoyageStationSelectionEditingApi() {
     applyVoyageEncounterRiskBidClear,
     prepareVoyageEncounterResolutionOrder,
     applyVoyageEncounterResolutionTransition,
+    validateVoyageEncounterActionExecutionDefinitions,
+    prepareVoyageEncounterActionExecutionRequests,
+    validateVoyageEncounterPendingChecks,
+    applyVoyageEncounterPendingCheckPreparation,
     devTools
   });
 
@@ -75,5 +85,9 @@ export {
   applyVoyageEncounterRiskBidChange,
   applyVoyageEncounterRiskBidClear,
   prepareVoyageEncounterResolutionOrder,
-  applyVoyageEncounterResolutionTransition
+  applyVoyageEncounterResolutionTransition,
+  validateVoyageEncounterActionExecutionDefinitions,
+  prepareVoyageEncounterActionExecutionRequests,
+  validateVoyageEncounterPendingChecks,
+  applyVoyageEncounterPendingCheckPreparation
 };
