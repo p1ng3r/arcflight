@@ -105,21 +105,37 @@ function ownPlainObject(value, path, errors) {
 }
 
 function captureStatisticOptions(value, errors) {
-  if (!Array.isArray(value)) {
+  let array;
+  try { array = Array.isArray(value); } catch {
+    issue(errors, "voyage-pf2e-invalid-statistic-options", "statisticOptions", "Statistic option array identity could not be inspected safely.");
+    return [];
+  }
+  if (!array) {
     issue(errors, "voyage-pf2e-invalid-statistic-options", "statisticOptions", "Statistic options must be an array.");
     return [];
   }
-  const options = [];
-  let length;
-  try { length = value.length; } catch {
-    issue(errors, "voyage-pf2e-invalid-statistic-options", "statisticOptions", "Statistic option length could not be read safely.");
+
+  let keys;
+  try { keys = Reflect.ownKeys(value); } catch {
+    issue(errors, "voyage-pf2e-invalid-statistic-options", "statisticOptions", "Statistic option keys could not be inspected safely.");
     return [];
   }
-  for (let index = 0; index < length; index += 1) {
-    const read = readOwn(value, index, `statisticOptions[${index}]`, errors, "voyage-pf2e-invalid-statistic-options");
+
+  const indices = [];
+  for (const key of keys) {
+    if (typeof key !== "string") continue;
+    const numeric = Number(key);
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric >= 4294967295 || String(numeric) !== key) continue;
+    indices.push({ key, numeric });
+  }
+  indices.sort((left, right) => left.numeric - right.numeric);
+
+  const options = [];
+  for (const index of indices) {
+    const read = readOwn(value, index.key, `statisticOptions[${index.key}]`, errors, "voyage-pf2e-invalid-statistic-options");
     if (!read.present && read.ok) continue;
     if (!read.ok) continue;
-    if (!nonBlankString(read.value)) issue(errors, "voyage-pf2e-invalid-statistic-options", `statisticOptions[${index}]`, "Statistic options must be non-blank exact strings.");
+    if (!nonBlankString(read.value)) issue(errors, "voyage-pf2e-invalid-statistic-options", `statisticOptions[${index.key}]`, "Statistic options must be non-blank exact strings.");
     else options.push(read.value);
   }
   if (options.length === 0 && errors.length === 0) issue(errors, "voyage-pf2e-invalid-statistic-options", "statisticOptions", "Statistic options require an own numeric entry.");

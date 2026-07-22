@@ -64,10 +64,14 @@ The caller supplies the runtime-only operations:
 Dependency exceptions become structured failures rather than escaping.
 
 `statisticOptions` is an ordered fallback list. The adapter visits only own,
-numeric array entries in ascending index order. Each option must be an exact
-non-blank authored string; it is passed unchanged to `getStatistic`. The first
-truthy statistic selects that same authored `statisticSlug`. No slug trimming,
-case conversion, Lore inference, or PF2e-specific lookup behavior is added here.
+canonical numeric array-index entries in ascending index order. Array identity
+and own-key inspection are protected: failures become structured
+`voyage-pf2e-invalid-statistic-options` blocked results. Iteration does not use
+an untrusted array `length`, and inherited or non-index properties are ignored.
+Each option must be an exact non-blank authored string; it is passed unchanged to
+`getStatistic`. The first truthy statistic selects that same authored
+`statisticSlug`. No slug trimming, case conversion, Lore inference, or
+PF2e-specific lookup behavior is added here.
 
 Secrecy is converted to an abstract visibility value only: `public` maps to
 `publicroll`, and `secret` maps to `blindroll`.
