@@ -9,6 +9,11 @@ const indices = (a) => Array.isArray(a) ? Array.from({ length: a.length }, (_, i
 const isNonBlankExactString = (value) => typeof value === "string" && value.trim().length > 0;
 const sourceKinds = new Set(Object.values(SOURCES).filter((value) => value !== SOURCES.NO_ROLL));
 const dcKinds = new Set(Object.values(DCS));
+function readOwnValue(object, key, path, errors) {
+  if (!own(object, key)) return { present: false, ok: true, value: undefined };
+  try { return { present: true, ok: true, value: object[key] }; }
+  catch { issue(errors, "execution-data-read-failed", path, "Execution data could not be read safely."); return { present: true, ok: false, value: undefined }; }
+}
 function validatePlainData(value, path, errors, ancestors = new Set()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") { if (Number.isFinite(value)) return true; issue(errors, "invalid-execution-plain-data", path, "Execution data numbers must be finite."); return false; }
@@ -16,7 +21,7 @@ function validatePlainData(value, path, errors, ancestors = new Set()) {
   if (!Array.isArray(value) && !isPlainObject(value)) { issue(errors, "invalid-execution-plain-data", path, "Execution data must be recursively plain."); return false; }
   ancestors.add(value);
   const keys = Array.isArray(value) ? indices(value) : Object.keys(value);
-  for (const key of keys) validatePlainData(value[key], `${path}[${JSON.stringify(key)}]`, errors, ancestors);
+  for (const key of keys) { const read = readOwnValue(value, key, `${path}[${JSON.stringify(key)}]`, errors); if (read.ok) validatePlainData(read.value, `${path}[${JSON.stringify(key)}]`, errors, ancestors); }
   ancestors.delete(value); return true;
 }
 function cloneExecutionPlainData(value, path, errors, ancestors = new Set()) {
@@ -25,14 +30,16 @@ function cloneExecutionPlainData(value, path, errors, ancestors = new Set()) {
   if (Array.isArray(value)) { const result = []; for (const index of indices(value)) result[index] = cloneExecutionPlainData(value[index], `${path}[${index}]`, errors); return result; }
   const result = {};
   for (const key of Object.keys(value)) {
-    const cloned = cloneExecutionPlainData(value[key], `${path}.${key}`, errors);
+    const read = readOwnValue(value, key, `${path}.${key}`, errors);
+    const cloned = read.ok ? cloneExecutionPlainData(read.value, `${path}.${key}`, errors) : null;
     Object.defineProperty(result, key, { value: cloned, enumerable: true, writable: true, configurable: true });
   }
   return result;
 }
 function checkDefinition(action, path, errors) {
-  if (!own(action, "check")) return;
-  const check = action.check;
+  const checkRead = readOwnValue(action, "check", `${path}.check`, errors);
+  if (!checkRead.present || !checkRead.ok) return;
+  const check = checkRead.value;
   if (!isPlainObject(check)) { issue(errors, "invalid-action-check", `${path}.check`, "Action check must be a plain object when authored."); return; }
   for (const field of ["source", "statisticOptions", "dcSource", "secrecy"]) if (!own(check, field)) issue(errors, "missing-action-check-field", `${path}.check.${field}`, `Action check requires ${field}.`);
   if (own(check, "source")) {
@@ -80,19 +87,26 @@ function selectedAction(state, stationId, actionId) {
   return null;
 }
 export function prepareVoyageEncounterActionExecutionRequests(state) {
+  let structural = null;
+  let active = false;
+  let resolution = false;
   try {
-  const structural = validateVoyageEncounterState(state), order = analyzeVoyageEncounterResolutionOrder(state), definitions = validateVoyageEncounterActionExecutionDefinitions(state);
-  const errors = [...order.errors, ...definitions.errors], warnings = [...structural.warnings, ...order.warnings, ...definitions.warnings]; const active = state?.lifecycleState === LIFE.ACTIVE, resolution = state?.phase === PHASES.RESOLUTION;
+  structural = validateVoyageEncounterState(state); active = state?.lifecycleState === LIFE.ACTIVE; resolution = state?.phase === PHASES.RESOLUTION;
+  const order = analyzeVoyageEncounterResolutionOrder(state), definitions = validateVoyageEncounterActionExecutionDefinitions(state);
+  const errors = [...order.errors, ...definitions.errors], warnings = [...structural.warnings, ...order.warnings, ...definitions.warnings];
   if (structural.valid && !active) issue(errors, "execution-requires-active", "lifecycleState", "Preparing execution requests requires an Active encounter.");
   if (structural.valid && !resolution) issue(errors, "execution-requires-resolution", "phase", "Preparing execution requests requires Resolution phase.");
   const validPlan = structural.valid && active && resolution && order.valid && definitions.valid;
   const requests = [];
   if (validPlan) for (let rowIndex = 0; rowIndex < order.orderedActions.length; rowIndex += 1) {
     const row = order.orderedActions[rowIndex], action = selectedAction(state, row.stationId, row.actionId);
-    const target = own(state.targets, row.stationId) ? cloneExecutionPlainData(state.targets[row.stationId], `targets.${row.stationId}`, errors) : null;
+    const targetRead = readOwnValue(state.targets, row.stationId, `targets.${row.stationId}`, errors);
+    const target = targetRead.present && targetRead.ok ? cloneExecutionPlainData(targetRead.value, `targets.${row.stationId}`, errors) : null;
     if (errors.length) continue;
     if (!own(action, "check")) { requests.push({ ...row, target, mode: MODES.NO_ROLL, source: { kind: SOURCES.NO_ROLL }, statisticOptions: [], dcSource: null, secrecy: SECRECY.PUBLIC, metadata: {} }); continue; }
-    const check = action.check;
+    const checkRead = readOwnValue(action, "check", `${row.stationId}.${row.actionId}.check`, errors);
+    if (!checkRead.ok) continue;
+    const check = checkRead.value;
     requests.push({ ...row, target, mode: MODES.CHECK, source: cloneExecutionPlainData(check.source, "check.source", errors), statisticOptions: indices(check.statisticOptions).map((i) => check.statisticOptions[i]), dcSource: cloneExecutionPlainData(check.dcSource, "check.dcSource", errors), secrecy: check.secrecy, metadata: own(check, "metadata") ? cloneExecutionPlainData(check.metadata, "check.metadata", errors) : {} });
   }
   const final = deduplicateVoyageResolutionIssues(errors), checkCount = requests.filter((r) => r.mode === MODES.CHECK).length;
@@ -100,6 +114,6 @@ export function prepareVoyageEncounterActionExecutionRequests(state) {
   return { structurallyValid: structural.valid, active, resolution, pendingChecksEmpty, readyForExecution: validPlan && final.length === 0, pendingCheckPreparationRequired: validPlan && checkCount > 0, readyToPreparePendingChecks: validPlan && checkCount > 0 && pendingChecksEmpty && final.length === 0, actionCount: requests.length, checkCount, noRollActionCount: requests.length - checkCount, executionRequests: requests, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
   } catch {
     const errors = []; issue(errors, "execution-data-read-failed", "$", "Execution data could not be read safely.");
-    return { structurallyValid: false, active: false, resolution: false, pendingChecksEmpty: false, readyForExecution: false, pendingCheckPreparationRequired: false, readyToPreparePendingChecks: false, actionCount: 0, checkCount: 0, noRollActionCount: 0, executionRequests: [], errors, warnings: [] };
+    return { structurallyValid: structural?.valid ?? false, active, resolution, pendingChecksEmpty: false, readyForExecution: false, pendingCheckPreparationRequired: false, readyToPreparePendingChecks: false, actionCount: 0, checkCount: 0, noRollActionCount: 0, executionRequests: [], errors, warnings: structural?.warnings ?? [] };
   }
 }

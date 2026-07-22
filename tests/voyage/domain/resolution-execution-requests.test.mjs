@@ -5,3 +5,20 @@ import { prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterA
 function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "automatic", resolutionPriority: 1 }, { actionId: "check", resolutionPriority: -1, check: { source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } } }] }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; value.targets = { captain: { id: "target" } }; return value; }
 test("validates authored checks and prepares isolated deterministic check requests", () => { const value = state(), before = structuredClone(value); assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true); const report = prepareVoyageEncounterActionExecutionRequests(value); assert.equal(report.readyForExecution, true); assert.equal(report.checkCount, 1); assert.deepEqual(report.executionRequests[0], { sequence: 0, stationId: "captain", actionId: "check", resolutionPriority: -1, riskBidId: null, target: { id: "target" }, mode: "check", source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } }); report.executionRequests[0].source.nested.id = "changed"; assert.equal(value.availableStations[0].actions[1].check.source.nested.id, "x"); assert.deepEqual(value, before); });
 test("omitted check is valid no-roll while malformed own checks are rejected", () => { const value = state(); value.selections.captain.actionId = "automatic"; assert.equal(prepareVoyageEncounterActionExecutionRequests(value).executionRequests[0].mode, "no-roll"); value.availableStations[0].actions[0].check = null; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); });
+
+test("getter failures retain Resolution facts and return structured errors", () => {
+  const value = state();
+  Object.defineProperty(value.targets, "captain", { enumerable: true, get() { throw new Error("adversarial"); } });
+  let report;
+  assert.doesNotThrow(() => { report = prepareVoyageEncounterActionExecutionRequests(value); });
+  assert.equal(report.structurallyValid, true); assert.equal(report.active, true); assert.equal(report.resolution, true);
+  assert.equal(report.readyForExecution, false); assert.deepEqual(report.executionRequests, []);
+  assert.ok(report.errors.some((entry) => entry.code === "execution-data-read-failed" && entry.path === "targets.captain"));
+});
+
+test("prototype-sensitive execution data is cloned as ordinary own data", () => {
+  const value = state(); value.availableStations[0].actions[1].check.source = { kind: "character", __proto__: null };
+  Object.defineProperty(value.availableStations[0].actions[1].check.source, "__proto__", { value: { nested: true }, enumerable: true });
+  const source = prepareVoyageEncounterActionExecutionRequests(value).executionRequests[0].source;
+  assert.ok(Object.hasOwn(source, "__proto__")); assert.equal(Object.getPrototypeOf(source), Object.prototype); assert.equal({}.nested, undefined);
+});
