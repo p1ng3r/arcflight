@@ -136,3 +136,46 @@ test("valid identity is included in runtime validation blocks", async () => {
   const result = await preflightVoyagePf2ePendingCheckInFoundry(check(), {});
   assert.equal(result.pendingCheckId, "runtime-check-1"); assert.equal(result.sequence, 4);
 });
+
+test("wrapper reads the fromUuid getter exactly once", async () => {
+  let reads = 0;
+  const value = { game: { system: { id: "pf2e" } }, get fromUuid() { reads += 1; return async () => ({ documentName: "Actor", getStatistic: () => ({}) }); } };
+  assert.equal((await preflightVoyagePf2ePendingCheckInFoundry(check(), value)).ok, true); assert.equal(reads, 1);
+});
+
+test("public dependency factory reads the fromUuid getter exactly once", () => {
+  let reads = 0;
+  createVoyagePf2eRuntimeDependencies({ get fromUuid() { reads += 1; return () => null; } });
+  assert.equal(reads, 1);
+});
+
+test("a second-read-throwing fromUuid getter succeeds because no second read occurs", async () => {
+  let reads = 0;
+  const value = { game: { system: { id: "pf2e" } }, get fromUuid() { if (++reads > 1) throw new Error("second read"); return async () => ({ documentName: "Actor", getStatistic: () => ({}) }); } };
+  assert.equal((await preflightVoyagePf2ePendingCheckInFoundry(check(), value)).ok, true); assert.equal(reads, 1);
+});
+
+test("only the first captured fromUuid function is used", async () => {
+  let reads = 0; let firstCalls = 0; let secondCalls = 0;
+  const value = { game: { system: { id: "pf2e" } }, get fromUuid() { reads += 1; return reads === 1 ? async () => { firstCalls += 1; return { documentName: "Actor", getStatistic: () => ({}) }; } : async () => { secondCalls += 1; return null; }; } };
+  assert.equal((await preflightVoyagePf2ePendingCheckInFoundry(check(), value)).ok, true); assert.equal(firstCalls, 1); assert.equal(secondCalls, 0); assert.equal(reads, 1);
+});
+
+test("captured resolver invocation exception retains source-resolution failure", async () => {
+  const value = runtime({ fromUuid: async () => { throw new Error("resolver"); } });
+  assert.equal(errorCode(await preflightVoyagePf2ePendingCheckInFoundry(check(), value)), "voyage-pf2e-source-resolution-failed");
+});
+
+test("missing hostile and non-function first fromUuid reads retain UUID-resolver-unavailable", async () => {
+  for (const value of [
+    { game: { system: { id: "pf2e" } } },
+    { game: { system: { id: "pf2e" } }, fromUuid: null },
+    { game: { system: { id: "pf2e" } }, get fromUuid() { throw new Error("hostile"); } }
+  ]) assert.equal(errorCode(await preflightVoyagePf2ePendingCheckInFoundry(check(), value)), "voyage-pf2e-uuid-resolver-unavailable");
+});
+
+test("creating dependencies does not invoke the captured resolver", () => {
+  let calls = 0;
+  createVoyagePf2eRuntimeDependencies({ fromUuid() { calls += 1; } });
+  assert.equal(calls, 0);
+});

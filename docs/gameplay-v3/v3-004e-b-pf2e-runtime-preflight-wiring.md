@@ -17,9 +17,13 @@ internals, caches, or network access. The factory creates exactly these lazy
 dependencies for V3-004E-A: `resolveUuid`, `getActorFromResolvedDocument`, and
 `getStatistic`.
 
-`resolveUuid(uuid)` calls `runtime.fromUuid` once with `runtime` as its
-receiver, preserves the authored UUID unchanged, and supports its asynchronous
-result. Factory creation resolves nothing.
+The wrapper and public factory each safely capture `runtime.fromUuid` exactly
+once per construction, validate that captured value, and reuse that exact
+function during resolution. `resolveUuid(uuid)` calls the captured resolver
+once with `runtime` as its receiver, preserves the authored UUID unchanged, and
+supports its asynchronous result. The runtime property is never reread after
+capture. Lazy means the resolver function is captured but not invoked until
+preflight resolution; factory creation resolves nothing.
 
 An Actor is accepted when its safely-read `documentName` is exactly `"Actor"`.
 Otherwise a TokenDocument-like resolved document may provide a non-null object

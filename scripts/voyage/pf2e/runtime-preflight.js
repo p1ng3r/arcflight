@@ -41,16 +41,11 @@ function runtimeBlocked(pendingCheck, code, path, message) {
   };
 }
 
-/**
- * Creates the exact public-runtime dependency contract consumed by the
- * runtime-independent adapter. Creation is lazy: no UUID is resolved here.
- */
-export function createVoyagePf2eRuntimeDependencies(runtime = globalThis) {
+function createRuntimeDependenciesFromResolver(runtime, capturedResolver) {
   return {
     async resolveUuid(uuid) {
-      const resolver = safeRead(runtime, "fromUuid");
-      if (!resolver.ok || typeof resolver.value !== "function") throw new Error("Foundry UUID resolver is unavailable.");
-      return resolver.value.call(runtime, uuid);
+      if (typeof capturedResolver !== "function") throw new Error("Foundry UUID resolver is unavailable.");
+      return capturedResolver.call(runtime, uuid);
     },
 
     getActorFromResolvedDocument(document) {
@@ -71,6 +66,16 @@ export function createVoyagePf2eRuntimeDependencies(runtime = globalThis) {
       return lookup.value.call(actor, slug) ?? null;
     }
   };
+}
+
+/**
+ * Creates the exact public-runtime dependency contract consumed by the
+ * runtime-independent adapter. Creation captures, but does not invoke, the
+ * current UUID resolver; resolveUuid never rereads the runtime property.
+ */
+export function createVoyagePf2eRuntimeDependencies(runtime = globalThis) {
+  const resolver = safeRead(runtime, "fromUuid");
+  return createRuntimeDependenciesFromResolver(runtime, resolver.ok && typeof resolver.value === "function" ? resolver.value : null);
 }
 
 /**
@@ -101,5 +106,5 @@ export async function preflightVoyagePf2ePendingCheckInFoundry(pendingCheck, run
   if (!resolver.ok || typeof resolver.value !== "function") {
     return runtimeBlocked(pendingCheck, "voyage-pf2e-uuid-resolver-unavailable", "runtime.fromUuid", "Foundry UUID resolver is unavailable.");
   }
-  return preflightVoyagePf2ePendingCheck(pendingCheck, createVoyagePf2eRuntimeDependencies(runtime));
+  return preflightVoyagePf2ePendingCheck(pendingCheck, createRuntimeDependenciesFromResolver(runtime, resolver.value));
 }
