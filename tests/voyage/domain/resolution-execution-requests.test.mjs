@@ -3,6 +3,7 @@ import test from "node:test";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
 import { prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterActionExecutionDefinitions } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
 function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "automatic", resolutionPriority: 1 }, { actionId: "check", resolutionPriority: -1, check: { source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } } }] }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; value.targets = { captain: { id: "target" } }; return value; }
+function withCustomArrayPrototype(array, prototype, callback) { const previous = Object.getPrototypeOf(array); Object.setPrototypeOf(array, prototype); try { return callback(); } finally { Object.setPrototypeOf(array, previous); } }
 test("validates authored checks and prepares isolated deterministic check requests", () => { const value = state(), before = structuredClone(value); assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true); const report = prepareVoyageEncounterActionExecutionRequests(value); assert.equal(report.readyForExecution, true); assert.equal(report.checkCount, 1); assert.deepEqual(report.executionRequests[0], { sequence: 0, stationId: "captain", actionId: "check", resolutionPriority: -1, riskBidId: null, target: { id: "target" }, mode: "check", source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } }); report.executionRequests[0].source.nested.id = "changed"; assert.equal(value.availableStations[0].actions[1].check.source.nested.id, "x"); assert.deepEqual(value, before); });
 test("omitted check is valid no-roll while malformed own checks are rejected", () => { const value = state(); value.selections.captain.actionId = "automatic"; assert.equal(prepareVoyageEncounterActionExecutionRequests(value).executionRequests[0].mode, "no-roll"); value.availableStations[0].actions[0].check = null; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); });
 
@@ -47,6 +48,101 @@ test("statistic options retain exact valid strings and reject blanks and duplica
   for (const option of ["", " ", "\t", "\n", 2]) { const value = state(); value.availableStations[0].actions[1].check.statisticOptions = [option]; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); }
   const value = state(); value.availableStations[0].actions[1].check.statisticOptions = ["sailing", "Sailing", " sailing "];
   const report = prepareVoyageEncounterActionExecutionRequests(value); assert.deepEqual(report.executionRequests[0].statisticOptions, ["sailing", "Sailing", " sailing "]);
+});
+
+test("accepts statisticOptions arrays with custom prototypes", () => {
+  const value = state();
+  const options = [" Sailing "];
+  withCustomArrayPrototype(options, Object.create(Array.prototype), () => {
+    value.availableStations[0].actions[1].check.statisticOptions = options;
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    assert.equal(report.readyForExecution, true);
+  });
+});
+
+test("ignores inherited statistic options without evaluating them", () => {
+  const value = state();
+  const options = [" Sailing "];
+  options.length = 2;
+  let readCount = 0;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, get() { readCount += 1; throw new Error("inherited statistic option"); } });
+  withCustomArrayPrototype(options, prototype, () => {
+    value.availableStations[0].actions[1].check.statisticOptions = options;
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    assert.equal(report.readyForExecution, true);
+    assert.equal(readCount, 0);
+  });
+});
+
+test("normalized statisticOptions contain only own options", () => {
+  const value = state();
+  const options = [" Sailing "];
+  options.length = 2;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, value: "inherited", enumerable: true });
+  withCustomArrayPrototype(options, prototype, () => {
+    value.availableStations[0].actions[1].check.statisticOptions = options;
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    const normalized = report.executionRequests[0].statisticOptions;
+    assert.equal(report.readyForExecution, true);
+    assert.equal(normalized.length, 2);
+    assert.deepEqual(Object.keys(normalized), ["0"]);
+    assert.equal(normalized[0], " Sailing ");
+    assert.equal(Object.hasOwn(normalized, 1), false);
+  });
+});
+
+test("nested source arrays with custom prototypes capture only own entries", () => {
+  const value = state();
+  const nested = ["own"];
+  nested.length = 2;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, value: "inherited", enumerable: true });
+  withCustomArrayPrototype(nested, prototype, () => {
+    value.availableStations[0].actions[1].check.source.nested = nested;
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    const captured = report.executionRequests[0].source.nested;
+    assert.equal(report.readyForExecution, true);
+    assert.deepEqual(Object.keys(captured), ["0"]);
+    assert.equal(captured[0], "own");
+    assert.equal(Object.hasOwn(captured, 1), false);
+  });
+});
+
+test("target arrays with custom prototypes capture only own entries", () => {
+  const value = state();
+  const target = [{ id: "own" }];
+  target.length = 2;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, value: { id: "inherited" }, enumerable: true });
+  withCustomArrayPrototype(target, prototype, () => {
+    value.targets.captain = target;
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    const captured = report.executionRequests[0].target;
+    assert.equal(report.readyForExecution, true);
+    assert.deepEqual(Object.keys(captured), ["0"]);
+    assert.deepEqual(captured[0], { id: "own" });
+    assert.equal(Object.hasOwn(captured, 1), false);
+  });
+});
+
+test("throwing inherited numeric getters are never executed", () => {
+  const value = state();
+  const options = [" Sailing "]; options.length = 2;
+  const sourceValues = ["own"]; sourceValues.length = 2;
+  const target = [{ id: "own" }]; target.length = 2;
+  let readCount = 0;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, get() { readCount += 1; throw new Error("inherited numeric entry"); } });
+  withCustomArrayPrototype(options, prototype, () => withCustomArrayPrototype(sourceValues, prototype, () => withCustomArrayPrototype(target, prototype, () => {
+    value.availableStations[0].actions[1].check.statisticOptions = options;
+    value.availableStations[0].actions[1].check.source.nested = sourceValues;
+    value.targets.captain = target;
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    assert.equal(report.readyForExecution, true);
+    assert.equal(readCount, 0);
+  })));
 });
 
 test("fixed DC and secrecy contracts reject invalid values", () => {
@@ -203,19 +299,21 @@ test("a first-read getter failure is reported without throwing", () => {
 test("inherited station holes are ignored", () => {
   const value = state();
   value.availableStations.length = 2;
-  Object.setPrototypeOf(value.availableStations, { get 1() { throw new Error("inherited station"); } });
-  const report = prepareVoyageEncounterActionExecutionRequests(value);
-  assert.equal(report.readyForExecution, true);
-  assert.equal(report.executionRequests.length, 1);
+  withCustomArrayPrototype(value.availableStations, { get 1() { throw new Error("inherited station"); } }, () => {
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    assert.equal(report.readyForExecution, true);
+    assert.equal(report.executionRequests.length, 1);
+  });
 });
 
 test("inherited action holes are ignored", () => {
   const value = state();
   value.availableStations[0].actions.length = 3;
-  Object.setPrototypeOf(value.availableStations[0].actions, { get 2() { throw new Error("inherited action"); } });
-  const report = prepareVoyageEncounterActionExecutionRequests(value);
-  assert.equal(report.readyForExecution, true);
-  assert.equal(report.executionRequests.length, 1);
+  withCustomArrayPrototype(value.availableStations[0].actions, { get 2() { throw new Error("inherited action"); } }, () => {
+    const report = prepareVoyageEncounterActionExecutionRequests(value);
+    assert.equal(report.readyForExecution, true);
+    assert.equal(report.executionRequests.length, 1);
+  });
 });
 
 test("constructor, prototype, and __proto__ keys remain own data without pollution", () => {

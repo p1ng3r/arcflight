@@ -3,6 +3,7 @@ import test from "node:test";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
 import { applyVoyageEncounterPendingCheckPreparation, validateVoyageEncounterPendingChecks } from "../../../scripts/voyage/domain/pending-checks.js";
 function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "check", check: { source: { kind: "character" }, statisticOptions: ["diplomacy"], dcSource: { kind: "fixed", value: 20 }, secrecy: "public" } }] }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; return value; }
+function withCustomArrayPrototype(array, prototype, callback) { const previous = Object.getPrototypeOf(array); Object.setPrototypeOf(array, prototype); try { return callback(); } finally { Object.setPrototypeOf(array, previous); } }
 function requestShape(value, seen = new Set()) {
   if (value === null || typeof value !== "object" || seen.has(value)) return value;
   seen.add(value);
@@ -118,6 +119,33 @@ test("valid persisted field getters are each read once", () => {
   for (const field of fields) assert.equal(reads.get(field), 1, field);
 });
 
+test("accepts persisted pending-check statisticOptions with a custom prototype", () => {
+  const value = state();
+  value.availableStations[0].actions[0].check.statisticOptions.length = 2;
+  const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] });
+  assert.equal(result.ok, true);
+  const options = result.nextState.pendingChecks[0].statisticOptions;
+  withCustomArrayPrototype(options, Object.create(Array.prototype), () => {
+    assert.equal(validateVoyageEncounterPendingChecks(result.nextState).valid, true);
+  });
+});
+
+test("ignores inherited persisted statistic options without evaluating them", () => {
+  const value = state();
+  value.availableStations[0].actions[0].check.statisticOptions.length = 2;
+  const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] });
+  assert.equal(result.ok, true);
+  const options = result.nextState.pendingChecks[0].statisticOptions;
+  let readCount = 0;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, get() { readCount += 1; throw new Error("inherited persisted statistic option"); } });
+  withCustomArrayPrototype(options, prototype, () => {
+    const report = validateVoyageEncounterPendingChecks(result.nextState);
+    assert.equal(report.valid, true);
+    assert.equal(readCount, 0);
+  });
+});
+
 test("throwing pendingCheckIds getter returns a mutation failure", () => {
   const value = state();
   const before = structuredClone(value);
@@ -203,4 +231,31 @@ test("valid mapping getters are each read once", () => {
   assert.equal(idReads, 1);
   assert.deepEqual(value, before);
   assert.deepEqual(requestShape(request), requestBefore);
+});
+
+test("preparation mappings ignore inherited numeric entries", () => {
+  const value = state();
+  const pendingCheckIds = [{ sequence: 0, pendingCheckId: "pending-1" }];
+  pendingCheckIds.length = 2;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, value: { sequence: 99, pendingCheckId: "inherited" }, enumerable: true });
+  withCustomArrayPrototype(pendingCheckIds, prototype, () => {
+    const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds });
+    assert.equal(result.ok, true);
+    assert.equal(result.nextState.pendingChecks[0].pendingCheckId, "pending-1");
+  });
+});
+
+test("throwing inherited mapping getters are never executed", () => {
+  const value = state();
+  const pendingCheckIds = [{ sequence: 0, pendingCheckId: "pending-1" }];
+  pendingCheckIds.length = 2;
+  let readCount = 0;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 1, { configurable: true, get() { readCount += 1; throw new Error("inherited mapping"); } });
+  withCustomArrayPrototype(pendingCheckIds, prototype, () => {
+    const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds });
+    assert.equal(result.ok, true);
+    assert.equal(readCount, 0);
+  });
 });

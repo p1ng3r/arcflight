@@ -66,7 +66,7 @@ function capturePlainData(value, path, errors, ancestors = new Set()) {
   }
 
   const array = Array.isArray(value);
-  if ((!array && !isPlainObject(value)) || (array && Object.getPrototypeOf(value) !== Array.prototype)) {
+  if (!array && !isPlainObject(value)) {
     issue(errors, "invalid-execution-plain-data", path, "Execution data must be recursively plain.");
     return { ok: false, value: undefined };
   }
