@@ -20,6 +20,10 @@ import {
   validateVoyagePf2eAdapterDependencies,
   createVoyagePf2eRuntimeDependencies,
   preflightVoyagePf2ePendingCheckInFoundry,
+  executeVoyagePf2ePendingCheck,
+  validateVoyagePf2eExecutionDependencies,
+  createVoyagePf2eRuntimeExecutionDependencies,
+  executeVoyagePf2ePendingCheckInFoundry,
   registerVoyageStationSelectionEditingApi
 } from "../../../scripts/voyage/station-selection-api.js";
 
@@ -42,7 +46,7 @@ test("registers station-selection editing helpers on public and devTools APIs", 
     assert.equal(result.applyVoyageEncounterStationActionSelectionChange, applyVoyageEncounterStationActionSelectionChange);
     assert.equal(result.applyVoyageEncounterStationActionSelectionClear, applyVoyageEncounterStationActionSelectionClear);
     for (const helper of [validateVoyageEncounterRiskBids, applyVoyageEncounterRiskBidSelection, applyVoyageEncounterRiskBidChange, applyVoyageEncounterRiskBidClear]) { assert.equal(result[helper.name], helper); assert.equal(result.devTools[helper.name], helper); }
-    for (const helper of [prepareVoyageEncounterCrewPlanningCompleteness, prepareVoyageEncounterCrewPlanningReadiness, applyVoyageEncounterCrewPlanningLock, prepareVoyageEncounterResolutionOrder, applyVoyageEncounterResolutionTransition, validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation, preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies, createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry]) {
+    for (const helper of [prepareVoyageEncounterCrewPlanningCompleteness, prepareVoyageEncounterCrewPlanningReadiness, applyVoyageEncounterCrewPlanningLock, prepareVoyageEncounterResolutionOrder, applyVoyageEncounterResolutionTransition, validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation, preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies, createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry, executeVoyagePf2ePendingCheck, validateVoyagePf2eExecutionDependencies, createVoyagePf2eRuntimeExecutionDependencies, executeVoyagePf2ePendingCheckInFoundry]) {
       assert.equal(result[helper.name], helper);
       assert.equal(result.devTools[helper.name], helper);
     }
@@ -82,6 +86,6 @@ test("station-selection editing API module exposes named helpers", () => {
   assert.equal(typeof prepareVoyageEncounterCrewPlanningCompleteness, "function");
   assert.equal(typeof prepareVoyageEncounterCrewPlanningReadiness, "function");
   assert.equal(typeof applyVoyageEncounterCrewPlanningLock, "function");
-  for (const helper of [validateVoyageEncounterRiskBids, applyVoyageEncounterRiskBidSelection, applyVoyageEncounterRiskBidChange, applyVoyageEncounterRiskBidClear, prepareVoyageEncounterResolutionOrder, applyVoyageEncounterResolutionTransition, validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation, preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies, createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry]) assert.equal(typeof helper, "function");
+  for (const helper of [validateVoyageEncounterRiskBids, applyVoyageEncounterRiskBidSelection, applyVoyageEncounterRiskBidChange, applyVoyageEncounterRiskBidClear, prepareVoyageEncounterResolutionOrder, applyVoyageEncounterResolutionTransition, validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation, preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies, createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry, executeVoyagePf2ePendingCheck, validateVoyagePf2eExecutionDependencies, createVoyagePf2eRuntimeExecutionDependencies, executeVoyagePf2ePendingCheckInFoundry]) assert.equal(typeof helper, "function");
   assert.equal(typeof registerVoyageStationSelectionEditingApi, "function");
 });

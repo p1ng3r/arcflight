@@ -1,0 +1,5 @@
+import assert from "node:assert/strict"; import test from "node:test";
+import { executeVoyagePf2ePendingCheckInFoundry } from "../../../scripts/voyage/pf2e/runtime-execution.js";
+const pending={pendingCheckId:"live-1",sequence:0,status:"pending",mode:"check",source:{kind:"character",uuid:"Actor.live"},statisticOptions:["athletics"],dcSource:{kind:"fixed",value:15},secrecy:"secret"};
+test("runtime captures and calls Statistic.roll once",async()=>{let calls=0, receiver;const statistic={roll(p){calls++;receiver=this;assert.equal(p.messageMode,"blindroll");return {total:16,degreeOfSuccess:2};}};const actor={documentName:"Actor",getStatistic:()=>statistic};const runtime={game:{system:{id:"pf2e"}},fromUuid:async uuid=>{assert.equal(uuid,"Actor.live");return actor;}};const result=await executeVoyagePf2ePendingCheckInFoundry(pending,runtime);assert.equal(result.status,"rolled");assert.equal(calls,1);assert.equal(receiver,statistic);});
+test("wrong runtime never rolls",async()=>{const r=await executeVoyagePf2ePendingCheckInFoundry(pending,{game:{system:{id:"other"}},fromUuid(){throw Error();}});assert.equal(r.errors[0].code,"voyage-pf2e-system-mismatch");});

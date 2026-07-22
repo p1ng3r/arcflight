@@ -12,6 +12,8 @@ import { validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncount
 import { validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation } from "./domain/pending-checks.js";
 import { preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies } from "./pf2e/resolution-check-adapter.js";
 import { createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry } from "./pf2e/runtime-preflight.js";
+import { executeVoyagePf2ePendingCheck, validateVoyagePf2eExecutionDependencies } from "./pf2e/resolution-check-executor.js";
+import { createVoyagePf2eRuntimeExecutionDependencies, executeVoyagePf2ePendingCheckInFoundry } from "./pf2e/runtime-execution.js";
 
 /**
  * Extend Arcflight's frozen public API with Voyage planning and Resolution
@@ -48,7 +50,11 @@ export function registerVoyageStationSelectionEditingApi() {
     preflightVoyagePf2ePendingCheck,
     validateVoyagePf2eAdapterDependencies,
     createVoyagePf2eRuntimeDependencies,
-    preflightVoyagePf2ePendingCheckInFoundry
+    preflightVoyagePf2ePendingCheckInFoundry,
+    executeVoyagePf2ePendingCheck,
+    validateVoyagePf2eExecutionDependencies,
+    createVoyagePf2eRuntimeExecutionDependencies,
+    executeVoyagePf2ePendingCheckInFoundry
   });
 
   const extendedApi = Object.freeze({
@@ -72,6 +78,10 @@ export function registerVoyageStationSelectionEditingApi() {
     validateVoyagePf2eAdapterDependencies,
     createVoyagePf2eRuntimeDependencies,
     preflightVoyagePf2ePendingCheckInFoundry,
+    executeVoyagePf2ePendingCheck,
+    validateVoyagePf2eExecutionDependencies,
+    createVoyagePf2eRuntimeExecutionDependencies,
+    executeVoyagePf2ePendingCheckInFoundry,
     devTools
   });
 
@@ -103,5 +113,9 @@ export {
   preflightVoyagePf2ePendingCheck,
   validateVoyagePf2eAdapterDependencies,
   createVoyagePf2eRuntimeDependencies,
-  preflightVoyagePf2ePendingCheckInFoundry
+  preflightVoyagePf2ePendingCheckInFoundry,
+  executeVoyagePf2ePendingCheck,
+  validateVoyagePf2eExecutionDependencies,
+  createVoyagePf2eRuntimeExecutionDependencies,
+  executeVoyagePf2ePendingCheckInFoundry
 };
