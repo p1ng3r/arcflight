@@ -1,11 +1,26 @@
 # V3-004E-C — Live PF2e Check Execution
 
-Execution shares the internal `resolveVoyagePf2ePendingCheckContext` path with preflight, so UUID, Actor, and authored fallback Statistic resolution occur once per execution. Live context never leaves the boundary. Dependencies are four own functions: `resolveUuid`, `getActorFromResolvedDocument`, `getStatistic`, and `rollStatistic`.
+Preflight and execution share `resolveVoyagePf2ePendingCheckContext`: one execution captures the caller dependencies once and resolves UUID, Actor, and the first authored Statistic exactly once. The live context never escapes. The execution contract is four own callable functions: `resolveUuid`, `getActorFromResolvedDocument`, `getStatistic`, and `rollStatistic`.
 
-The Foundry wrapper invokes public `Statistic.roll` once with `{ dc, messageMode, skipDialog: true, createMessage: true, identifier }`, where modes are `publicroll` or `blindroll`. PF2e creates its standard chat message. The isolated rolled result contains only finite `total`, degree `0..3`, and its mapped slug (`critical-failure`, `failure`, `success`, `critical-success`). Failures include invalid execution dependencies, unavailable statistic roll, roll failed, roll cancelled, and invalid roll result.
+The Foundry wrapper captures `runtime.fromUuid` once and invokes that exact function once with the **original runtime object** as receiver. It captures `statistic.roll` once and calls it once with the Statistic receiver. PF2e receives exactly `{ dc, messageMode, skipDialog: true, createMessage: true, identifier }`; public is `publicroll`, secret is `blindroll`.
 
-One successful call is one live chat roll. Chat creation is the only intended mutation: this slice does not update Actors, Tokens, encounters, or pending checks; it neither prevents duplicates nor persists results. V3-004F owns result application and the Consequences transition.
+Success returns only `{ total, degreeOfSuccess, degreeOfSuccessSlug }`: degree 0–3 maps to `critical-failure`, `failure`, `success`, and `critical-success`. Errors are `voyage-pf2e-invalid-execution-dependencies`, `voyage-pf2e-statistic-roll-unavailable`, `voyage-pf2e-roll-failed`, `voyage-pf2e-roll-cancelled`, and `voyage-pf2e-invalid-roll-result`, alongside retained preflight/runtime codes.
 
-## Manual Foundry validation (not performed in cloud)
+One successful call creates one live PF2e chat roll. Chat creation is the only intended mutation: no Actor, Token, encounter, or pending-check mutation occurs. Duplicate prevention, result persistence, and Consequences transition remain deferred to V3-004F.
 
-In a PF2e v14 browser console, confirm all four helpers exist on `game.arcflight`. Create a pending check using an Actor UUID and then a TokenDocument UUID; execute once each with Athletics or Perception. Use public then secret secrecy and compare `game.messages.size` before/after: each successful call creates exactly one respectively public or blind PF2e message. Inspect returned values for finite `result.total`, degree 0–3, correct slug, and no Actor, Statistic, Roll, dice, terms, or ChatMessage. Repeat with an unknown statistic and invalid runtime and confirm no message. Snapshot Actor, TokenDocument, encounter, and pending-check input before/after; the input remains `status: "pending"` and `result: null`. **Each successful call is a real roll: run it once per test case.**
+## Manual Foundry validation (not run in cloud)
+
+```js
+const api=game.arcflight; const actor=game.actors.contents[0]; const token=canvas.tokens.placeables[0]?.document;
+const make=(uuid,secrecy,id)=>({pendingCheckId:id,sequence:0,status:"pending",result:null,mode:"check",source:{kind:"character",uuid},statisticOptions:["athletics","perception"],dcSource:{kind:"fixed",value:20},secrecy});
+const actorBefore=actor.toObject(), tokenBefore=token?.toObject(), encounterBefore=game.combat?.toObject();
+const publicCheck=make(actor.uuid,"public","manual-live-public"); const before=game.messages.size;
+const publicResult=await api.executeVoyagePf2ePendingCheckInFoundry(publicCheck); console.assert(game.messages.size===before+1,publicResult);
+const secretCheck=make(token.uuid,"secret","manual-live-secret"); const secretBefore=game.messages.size;
+const secretResult=await api.executeVoyagePf2ePendingCheckInFoundry(secretCheck); console.assert(game.messages.size===secretBefore+1,secretResult);
+console.assert(Number.isFinite(publicResult.result.total)&&publicResult.result.degreeOfSuccess>=0&&publicResult.result.degreeOfSuccess<=3);
+console.assert(!Object.values(publicResult).some(x=>x===actor||x===token)); console.assert(JSON.stringify(actor.toObject())===JSON.stringify(actorBefore)); console.assert(JSON.stringify(token?.toObject())===JSON.stringify(tokenBefore)); console.assert(JSON.stringify(game.combat?.toObject())===JSON.stringify(encounterBefore)); console.assert(publicCheck.status==="pending"&&publicCheck.result===null);
+const unknown=make(actor.uuid,"public","manual-live-unknown"); unknown.statisticOptions=["not-a-statistic"]; const noMessage=game.messages.size; console.assert((await api.executeVoyagePf2ePendingCheckInFoundry(unknown)).ok===false&&game.messages.size===noMessage);
+```
+
+Each successful invocation makes a real chat roll: run each case once.

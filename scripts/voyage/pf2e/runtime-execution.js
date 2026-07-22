@@ -1,5 +1,5 @@
 /** Foundry runtime execution wiring. One successful call creates one PF2e chat roll. */
-import { createVoyagePf2eRuntimeDependencies } from "./runtime-preflight.js";
+import { createRuntimeDependenciesFromResolver } from "./runtime-preflight.js";
 import { executeVoyagePf2ePendingCheck } from "./resolution-check-executor.js";
 const safeRead = (object, key) => { try { return { ok: true, value: object?.[key] }; } catch { return { ok: false, value: undefined }; } };
 function identity(value) { const output = {}; try { if (value && Object.hasOwn(value, "pendingCheckId") && typeof value.pendingCheckId === "string") output.pendingCheckId = value.pendingCheckId; if (value && Object.hasOwn(value, "sequence") && Number.isSafeInteger(value.sequence)) output.sequence = value.sequence; } catch {} return output; }
@@ -14,7 +14,8 @@ function validRuntime(pendingCheck, runtime) {
   return resolver.value;
 }
 export function createVoyagePf2eRuntimeExecutionDependencies(runtime = globalThis) {
-  const base = createVoyagePf2eRuntimeDependencies(runtime);
+  const resolver = safeRead(runtime, "fromUuid");
+  const base = createRuntimeDependenciesFromResolver(runtime, resolver.ok && typeof resolver.value === "function" ? resolver.value : null);
   return { ...base, rollStatistic(statistic, parameters) {
     const roll = safeRead(statistic, "roll");
     if (!roll.ok || typeof roll.value !== "function") { const failure = new Error("Statistic roll unavailable."); failure.code = "voyage-pf2e-statistic-roll-unavailable"; throw failure; }
@@ -24,9 +25,9 @@ export function createVoyagePf2eRuntimeExecutionDependencies(runtime = globalThi
 export async function executeVoyagePf2ePendingCheckInFoundry(pendingCheck, runtime = globalThis) {
   const resolver = validRuntime(pendingCheck, runtime);
   if (typeof resolver !== "function") return resolver;
-  // Capture once here and construct dependencies from a facade so neither helper rereads runtime.fromUuid.
-  const facade = Object.create(runtime); Object.defineProperty(facade, "fromUuid", { value: resolver });
-  const result = await executeVoyagePf2ePendingCheck(pendingCheck, createVoyagePf2eRuntimeExecutionDependencies(facade));
+  const base = createRuntimeDependenciesFromResolver(runtime, resolver);
+  const dependencies = { ...base, rollStatistic(statistic, parameters) { const roll = safeRead(statistic, "roll"); if (!roll.ok || typeof roll.value !== "function") { const failure = new Error("Statistic roll unavailable."); failure.code = "voyage-pf2e-statistic-roll-unavailable"; throw failure; } return roll.value.call(statistic, parameters); } };
+  const result = await executeVoyagePf2ePendingCheck(pendingCheck, dependencies);
   if (result.errors?.[0]?.code === "voyage-pf2e-roll-failed") {
     // Runtime roll availability is distinguishable from an exception thrown by a callable roll.
     return result;

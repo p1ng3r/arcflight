@@ -41,7 +41,7 @@ function runtimeBlocked(pendingCheck, code, path, message) {
   };
 }
 
-function createRuntimeDependenciesFromResolver(runtime, capturedResolver) {
+export function createRuntimeDependenciesFromResolver(runtime, capturedResolver) {
   return {
     async resolveUuid(uuid) {
       if (typeof capturedResolver !== "function") throw new Error("Foundry UUID resolver is unavailable.");
