@@ -26,3 +26,17 @@ test("keeps structural validity separate and reports context alongside plan erro
   const report = prepareVoyageEncounterResolutionOrder(s); assert.equal(report.structurallyValid, true); assert.equal(report.readyForResolution, false);
   assert.deepEqual(report.errors.map((entry) => entry.code), ["invalid-resolution-priority", "resolution-order-requires-active", "resolution-order-requires-lock-readiness"]);
 });
+
+test("inherited entries in real array holes are unavailable and cannot satisfy plans", () => {
+  const s = state(); const stations = new Array(1); const proto = Object.create(Array.prototype);
+  Object.defineProperty(proto, "0", { value: { stationId: "ghost", actions: [{ actionId: "ghost-action" }] }, configurable: true });
+  Object.setPrototypeOf(stations, proto); s.availableStations = stations; s.selections = { ghost: { stationId: "ghost", actionId: "ghost-action" } };
+  try { const report = prepareVoyageEncounterResolutionOrder(s); assert.equal(report.readyForResolution, false); assert.equal(report.orderedActions.length, 0); assert.ok(report.errors.some((entry) => entry.code === "selected-station-not-available")); } finally { Object.setPrototypeOf(stations, Array.prototype); }
+});
+
+test("inherited actions and Risk Bid options in real holes are unavailable", () => {
+  const s = state(); const actions = new Array(1); const actionProto = Object.create(Array.prototype);
+  Object.defineProperty(actionProto, "0", { value: { actionId: "ghost", riskBidOptions: [{ riskBidId: "bid" }] }, configurable: true }); Object.setPrototypeOf(actions, actionProto);
+  s.availableStations = [{ stationId: "a", actions }]; s.selections = { a: { stationId: "a", actionId: "ghost" } };
+  try { assert.ok(prepareVoyageEncounterResolutionOrder(s).errors.some((entry) => entry.code === "selected-action-not-available")); } finally { Object.setPrototypeOf(actions, Array.prototype); }
+});
