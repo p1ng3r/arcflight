@@ -23,7 +23,12 @@ function cloneExecutionPlainData(value, path, errors, ancestors = new Set()) {
   if (!validatePlainData(value, path, errors, ancestors)) return null;
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) { const result = []; for (const index of indices(value)) result[index] = cloneExecutionPlainData(value[index], `${path}[${index}]`, errors); return result; }
-  const result = {}; for (const key of Object.keys(value)) result[key] = cloneExecutionPlainData(value[key], `${path}.${key}`, errors); return result;
+  const result = {};
+  for (const key of Object.keys(value)) {
+    const cloned = cloneExecutionPlainData(value[key], `${path}.${key}`, errors);
+    Object.defineProperty(result, key, { value: cloned, enumerable: true, writable: true, configurable: true });
+  }
+  return result;
 }
 function checkDefinition(action, path, errors) {
   if (!own(action, "check")) return;
@@ -51,9 +56,14 @@ function checkDefinition(action, path, errors) {
   for (const field of ["source", "dcSource", "metadata"]) if (own(check, field)) validatePlainData(check[field], `${path}.check.${field}`, errors);
 }
 export function validateVoyageEncounterActionExecutionDefinitions(state) {
-  const structural = validateVoyageEncounterState(state); const errors = [...structural.errors], warnings = [...structural.warnings];
-  if (structural.valid && Array.isArray(state.availableStations)) for (const si of indices(state.availableStations)) { const station = state.availableStations[si]; if (!isPlainObject(station) || !Array.isArray(station.actions)) continue; for (const ai of indices(station.actions)) { const action = station.actions[ai]; if (isPlainObject(action)) checkDefinition(action, `availableStations[${si}].actions[${ai}]`, errors); } }
-  const final = deduplicateVoyageResolutionIssues(errors); return { valid: final.length === 0, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+  try {
+    const structural = validateVoyageEncounterState(state); const errors = [...structural.errors], warnings = [...structural.warnings];
+    if (structural.valid && Array.isArray(state.availableStations)) for (const si of indices(state.availableStations)) { const station = state.availableStations[si]; if (!isPlainObject(station) || !Array.isArray(station.actions)) continue; for (const ai of indices(station.actions)) { const action = station.actions[ai]; if (isPlainObject(action)) checkDefinition(action, `availableStations[${si}].actions[${ai}]`, errors); } }
+    const final = deduplicateVoyageResolutionIssues(errors); return { valid: final.length === 0, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+  } catch {
+    const errors = []; issue(errors, "execution-data-read-failed", "$", "Execution data could not be read safely.");
+    return { valid: false, errors, warnings: [] };
+  }
 }
 function selectedAction(state, stationId, actionId) {
   const stations = state.availableStations;
@@ -70,6 +80,7 @@ function selectedAction(state, stationId, actionId) {
   return null;
 }
 export function prepareVoyageEncounterActionExecutionRequests(state) {
+  try {
   const structural = validateVoyageEncounterState(state), order = analyzeVoyageEncounterResolutionOrder(state), definitions = validateVoyageEncounterActionExecutionDefinitions(state);
   const errors = [...order.errors, ...definitions.errors], warnings = [...structural.warnings, ...order.warnings, ...definitions.warnings]; const active = state?.lifecycleState === LIFE.ACTIVE, resolution = state?.phase === PHASES.RESOLUTION;
   if (structural.valid && !active) issue(errors, "execution-requires-active", "lifecycleState", "Preparing execution requests requires an Active encounter.");
@@ -87,4 +98,8 @@ export function prepareVoyageEncounterActionExecutionRequests(state) {
   const final = deduplicateVoyageResolutionIssues(errors), checkCount = requests.filter((r) => r.mode === MODES.CHECK).length;
   const pendingChecksEmpty = structural.valid && Array.isArray(state.pendingChecks) && indices(state.pendingChecks).length === 0;
   return { structurallyValid: structural.valid, active, resolution, pendingChecksEmpty, readyForExecution: validPlan && final.length === 0, pendingCheckPreparationRequired: validPlan && checkCount > 0, readyToPreparePendingChecks: validPlan && checkCount > 0 && pendingChecksEmpty && final.length === 0, actionCount: requests.length, checkCount, noRollActionCount: requests.length - checkCount, executionRequests: requests, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+  } catch {
+    const errors = []; issue(errors, "execution-data-read-failed", "$", "Execution data could not be read safely.");
+    return { structurallyValid: false, active: false, resolution: false, pendingChecksEmpty: false, readyForExecution: false, pendingCheckPreparationRequired: false, readyToPreparePendingChecks: false, actionCount: 0, checkCount: 0, noRollActionCount: 0, executionRequests: [], errors, warnings: [] };
+  }
 }
