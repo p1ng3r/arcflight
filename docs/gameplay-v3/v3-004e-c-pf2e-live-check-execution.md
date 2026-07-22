@@ -2,9 +2,9 @@
 
 Execution shares `resolveVoyagePf2ePendingCheckContext` with preflight, so UUID, Actor, and authored Statistic resolution happen once. It captures the four own callable dependencies (`resolveUuid`, `getActorFromResolvedDocument`, `getStatistic`, `rollStatistic`) once. The Foundry wrapper reads `runtime.fromUuid` once and invokes the captured resolver with the original runtime receiver; it captures `Statistic.roll` once with the Statistic receiver.
 
-PF2e receives exactly `{ dc, messageMode, skipDialog: true, createMessage: true, identifier }`. Public uses `publicroll`; secret uses `blindroll`. The isolated success result is `{ total, degreeOfSuccess, degreeOfSuccessSlug }`, mapping `0..3` to `critical-failure`, `failure`, `success`, and `critical-success`. Failures include `voyage-pf2e-invalid-execution-dependencies`, `voyage-pf2e-statistic-roll-unavailable`, `voyage-pf2e-roll-failed`, `voyage-pf2e-roll-cancelled`, and `voyage-pf2e-invalid-roll-result`.
+PF2e receives exactly `{ dc, messageMode, skipDialog: true, createMessage: true, identifier }`. Public uses `public`; secret uses `blind`. The isolated success result is `{ total, degreeOfSuccess, degreeOfSuccessSlug }`, mapping `0..3` to `critical-failure`, `failure`, `success`, and `critical-success`. Failures include `voyage-pf2e-invalid-execution-dependencies`, `voyage-pf2e-statistic-roll-unavailable`, `voyage-pf2e-roll-failed`, `voyage-pf2e-roll-cancelled`, and `voyage-pf2e-invalid-roll-result`.
 
-**Every successful call creates a real PF2e chat roll. Invoke each case once only.** Chat creation is the sole intended mutation. No Actor, Token, encounter, or pending-check update occurs; duplicate prevention, persistence, result application, and Consequences transition are deferred to V3-004F.
+**Every successful call creates a real PF2e chat roll. Invoke each case once only.** An earlier manual run failed because Arcflight supplied invalid `publicroll`/`blindroll` keys; this slice now requests PF2e’s valid `public` and `blind` message modes. Chat creation is the sole intended mutation. No Actor, Token, encounter, or pending-check update occurs; duplicate prevention, persistence, result application, and Consequences transition are deferred to V3-004F.
 
 ## Manual Foundry validation (not run in cloud)
 
@@ -31,6 +31,7 @@ const secretCheck = make(token.uuid, "secret", "manual-live-secret"); const secr
 const secretResult = await api.executeVoyagePf2ePendingCheckInFoundry(secretCheck);
 if (game.messages.size !== secretCount + 1) throw new Error("Secret check did not create exactly one message.");
 const secretMessage = game.messages.contents.at(-1); if (!secretMessage.blind && !secretMessage.whisper?.length) throw new Error("Secret message is neither blind nor GM-only.");
+if (publicResult.rollMode !== "public" || secretResult.rollMode !== "blind") throw new Error("Returned PF2e message modes are incorrect.");
 for (const result of [publicResult, secretResult]) { if (!Number.isFinite(result.result?.total) || !Number.isSafeInteger(result.result?.degreeOfSuccess) || result.result.degreeOfSuccess < 0 || result.result.degreeOfSuccess > 3 || result.result.degreeOfSuccessSlug !== degrees[result.result.degreeOfSuccess] || !noLive(result)) throw new Error("Result is invalid or leaked a live object."); }
 const unknown = make(actor.uuid,"public","manual-live-unknown"); unknown.statisticOptions=["not-a-statistic"]; const beforeUnknown=game.messages.size; if ((await api.executeVoyagePf2ePendingCheckInFoundry(unknown)).ok || game.messages.size!==beforeUnknown) throw new Error("Unknown statistic created a message.");
 const beforeRuntime=game.messages.size; if ((await api.executeVoyagePf2ePendingCheckInFoundry(publicCheck,{})).ok || game.messages.size!==beforeRuntime) throw new Error("Invalid runtime created a message.");

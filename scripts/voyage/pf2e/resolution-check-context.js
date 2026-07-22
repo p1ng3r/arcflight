@@ -190,8 +190,8 @@ export async function resolveVoyagePf2ePendingCheckContext(pendingCheck, depende
   }
   const options = captureStatisticOptions(captured.statisticOptions, errors);
   let rollMode;
-  if (captured.secrecy === "public") rollMode = "publicroll";
-  else if (captured.secrecy === "secret") rollMode = "blindroll";
+  if (captured.secrecy === "public") rollMode = "public";
+  else if (captured.secrecy === "secret") rollMode = "blind";
   else issue(errors, "voyage-pf2e-invalid-secrecy", "secrecy", "Secrecy must be public or secret.");
   if (errors.length) return blocked(captured, errors);
 

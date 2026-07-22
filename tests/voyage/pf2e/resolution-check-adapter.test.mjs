@@ -12,7 +12,7 @@ function dependencies(overrides = {}) {
 async function preflight(overrides, dependencyOverrides) { return preflightVoyagePf2ePendingCheck(check(overrides), dependencies(dependencyOverrides)); }
 function code(result) { return result.errors[0]?.code; }
 
-test("successful character UUID resolution", async () => { const result = await preflight(); assert.deepEqual(result, { ok: true, status: "ready", pendingCheckId: "check-1", sequence: 0, sourceKind: "character", sourceUuid: "Actor.abc123", statisticSlug: "athletics", dc: 20, rollMode: "publicroll", errors: [], warnings: [] }); });
+test("successful character UUID resolution", async () => { const result = await preflight(); assert.deepEqual(result, { ok: true, status: "ready", pendingCheckId: "check-1", sequence: 0, sourceKind: "character", sourceUuid: "Actor.abc123", statisticSlug: "athletics", dc: 20, rollMode: "public", errors: [], warnings: [] }); });
 test("Actor document source", async () => { const actor = {}; const result = await preflight({}, { resolveUuid: async () => actor, getActorFromResolvedDocument: (document) => document }); assert.equal(result.ok, true); });
 test("Token-like document actor extraction", async () => { const actor = {}; const result = await preflight({}, { resolveUuid: async () => ({ actor }), getActorFromResolvedDocument: (document) => document.actor }); assert.equal(result.ok, true); });
 test("missing UUID", async () => { const source = { kind: "character" }; assert.equal(code(await preflight({ source })), "voyage-pf2e-missing-source-uuid"); });
@@ -36,8 +36,8 @@ test("fractional fixed DC rejected", async () => { assert.equal(code(await prefl
 test("unsafe integer fixed DC rejected", async () => { assert.equal(code(await preflight({ dcSource: { kind: "fixed", value: Number.MAX_SAFE_INTEGER + 1 } })), "voyage-pf2e-invalid-fixed-dc"); });
 test("unsupported DC kinds", async () => { assert.equal(code(await preflight({ dcSource: { kind: "stage" } })), "voyage-pf2e-unsupported-dc-source"); });
 test("unsupported source kinds", async () => { assert.equal(code(await preflight({ source: { kind: "ship", uuid: "Actor.x" } })), "voyage-pf2e-unsupported-source-kind"); });
-test("public secrecy mapping", async () => { assert.equal((await preflight({ secrecy: "public" })).rollMode, "publicroll"); });
-test("secret secrecy mapping", async () => { assert.equal((await preflight({ secrecy: "secret" })).rollMode, "blindroll"); });
+test("public secrecy mapping", async () => { assert.equal((await preflight({ secrecy: "public" })).rollMode, "public"); });
+test("secret secrecy mapping", async () => { assert.equal((await preflight({ secrecy: "secret" })).rollMode, "blind"); });
 test("invalid secrecy", async () => { assert.equal(code(await preflight({ secrecy: "gm" })), "voyage-pf2e-invalid-secrecy"); });
 test("non-pending record blocked", async () => { assert.equal(code(await preflight({ status: "resolved" })), "voyage-pf2e-check-not-pending"); });
 test("missing dependency functions", async () => { const result = await preflightVoyagePf2ePendingCheck(check(), {}); assert.equal(code(result), "voyage-pf2e-invalid-dependencies"); assert.equal(validateVoyagePf2eAdapterDependencies({}).valid, false); });

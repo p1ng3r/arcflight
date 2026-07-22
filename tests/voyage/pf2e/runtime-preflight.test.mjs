@@ -20,7 +20,7 @@ const errorCode = (result) => result.errors[0]?.code;
 test("valid PF2e runtime preflights a public fixed-DC check without mutation", async () => {
   const value = check(); const before = JSON.stringify(value);
   const result = await preflightVoyagePf2ePendingCheckInFoundry(value, runtime());
-  assert.deepEqual(result, { ok: true, status: "ready", pendingCheckId: "runtime-check-1", sequence: 4, sourceKind: "character", sourceUuid: "Actor.runtime", statisticSlug: "athletics", dc: 20, rollMode: "publicroll", errors: [], warnings: [] });
+  assert.deepEqual(result, { ok: true, status: "ready", pendingCheckId: "runtime-check-1", sequence: 4, sourceKind: "character", sourceUuid: "Actor.runtime", statisticSlug: "athletics", dc: 20, rollMode: "public", errors: [], warnings: [] });
   assert.equal(JSON.stringify(value), before);
 });
 
@@ -93,7 +93,7 @@ test("secret mapping and existing adapter blocked results pass through without r
   let forbidden = 0;
   const actor = { documentName: "Actor", getStatistic: () => ({}) };
   const result = await preflightVoyagePf2ePendingCheckInFoundry(check({ secrecy: "secret" }), { ...runtime({ document: actor }), roll() { forbidden += 1; }, ChatMessage() { forbidden += 1; }, update() { forbidden += 1; } });
-  assert.equal(result.rollMode, "blindroll"); assert.equal(forbidden, 0);
+  assert.equal(result.rollMode, "blind"); assert.equal(forbidden, 0);
   assert.equal(errorCode(await preflightVoyagePf2ePendingCheckInFoundry(check({ status: "resolved" }), runtime({ document: actor }))), "voyage-pf2e-check-not-pending");
 });
 
