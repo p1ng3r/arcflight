@@ -7,10 +7,28 @@
 
 const issue = (errors, code, path, message) => errors.push({ code, path, message, severity: "error" });
 const nonBlankString = (value) => typeof value === "string" && value.trim().length > 0;
-const plainObject = (value) => value !== null && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+const UNSAFE_PENDING_CHECK_IDS = new Set(["__proto__", "constructor", "prototype"]);
+const validPendingCheckId = (value) => nonBlankString(value) && !UNSAFE_PENDING_CHECK_IDS.has(value);
+
+function plainObject(value, path, errors, code = "voyage-pf2e-invalid-request") {
+  if (value === null || typeof value !== "object") return false;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    issue(errors, code, path, "Value prototype could not be inspected safely.");
+    return false;
+  }
+}
 
 function readOwn(object, key, path, errors, code = "voyage-pf2e-invalid-request") {
-  if (object === null || (typeof object !== "object" && typeof object !== "function") || !Object.hasOwn(object, key)) return { present: false, ok: true, value: undefined };
+  if (object === null || (typeof object !== "object" && typeof object !== "function")) return { present: false, ok: true, value: undefined };
+  let present;
+  try { present = Object.hasOwn(object, key); } catch {
+    issue(errors, code, path, "Value ownness could not be inspected safely.");
+    return { present: false, ok: false, value: undefined };
+  }
+  if (!present) return { present: false, ok: true, value: undefined };
   try {
     return { present: true, ok: true, value: object[key] };
   } catch {
@@ -26,7 +44,7 @@ function baseResult(captured = {}) {
     errors: [],
     warnings: []
   };
-  if (nonBlankString(captured.pendingCheckId)) result.pendingCheckId = captured.pendingCheckId;
+  if (validPendingCheckId(captured.pendingCheckId)) result.pendingCheckId = captured.pendingCheckId;
   if (Number.isSafeInteger(captured.sequence) && captured.sequence >= 0) result.sequence = captured.sequence;
   return result;
 }
@@ -40,15 +58,16 @@ function blocked(captured, errors) {
 function capturePendingCheck(value) {
   const errors = [];
   const captured = Object.create(null);
-  if (!plainObject(value)) {
+  if (!plainObject(value, "pendingCheck", errors)) {
     issue(errors, "voyage-pf2e-invalid-request", "pendingCheck", "Pending check must be a plain object.");
     return { captured, errors };
   }
 
-  for (const key of ["pendingCheckId", "sequence", "status", "source", "statisticOptions", "dcSource", "secrecy"]) {
+  for (const key of ["pendingCheckId", "sequence", "status", "mode", "source", "statisticOptions", "dcSource", "secrecy"]) {
     const read = readOwn(value, key, key, errors);
+    if (!read.ok) continue;
     if (!read.present) issue(errors, "voyage-pf2e-invalid-request", key, `Pending check requires ${key}.`);
-    else if (read.ok) captured[key] = read.value;
+    else captured[key] = read.value;
   }
   return { captured, errors };
 }
@@ -78,7 +97,7 @@ export function validateVoyagePf2eAdapterDependencies(dependencies) {
 }
 
 function ownPlainObject(value, path, errors) {
-  if (!plainObject(value)) {
+  if (!plainObject(value, path, errors)) {
     issue(errors, "voyage-pf2e-invalid-request", path, "Value must be a plain object.");
     return null;
   }
@@ -91,9 +110,14 @@ function captureStatisticOptions(value, errors) {
     return [];
   }
   const options = [];
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index)) continue;
+  let length;
+  try { length = value.length; } catch {
+    issue(errors, "voyage-pf2e-invalid-statistic-options", "statisticOptions", "Statistic option length could not be read safely.");
+    return [];
+  }
+  for (let index = 0; index < length; index += 1) {
     const read = readOwn(value, index, `statisticOptions[${index}]`, errors, "voyage-pf2e-invalid-statistic-options");
+    if (!read.present && read.ok) continue;
     if (!read.ok) continue;
     if (!nonBlankString(read.value)) issue(errors, "voyage-pf2e-invalid-statistic-options", `statisticOptions[${index}]`, "Statistic options must be non-blank exact strings.");
     else options.push(read.value);
@@ -115,8 +139,16 @@ export async function preflightVoyagePf2ePendingCheck(pendingCheck, dependencies
     issue(errors, "voyage-pf2e-check-not-pending", "status", "Only pending checks can be preflighted.");
     return blocked(captured, errors);
   }
-  if (!nonBlankString(captured.pendingCheckId) || !Number.isSafeInteger(captured.sequence) || captured.sequence < 0) {
-    issue(errors, "voyage-pf2e-invalid-request", "pendingCheck", "Pending check ID and sequence must be valid.");
+  if (captured.mode !== "check") {
+    issue(errors, "voyage-pf2e-invalid-check-mode", "mode", "Pending check mode must be check.");
+    return blocked(captured, errors);
+  }
+  if (!validPendingCheckId(captured.pendingCheckId)) {
+    issue(errors, "voyage-pf2e-invalid-pending-check-id", "pendingCheckId", "Pending check ID must be a safe non-blank exact string.");
+    return blocked(captured, errors);
+  }
+  if (!Number.isSafeInteger(captured.sequence) || captured.sequence < 0) {
+    issue(errors, "voyage-pf2e-invalid-request", "sequence", "Pending check sequence must be a non-negative safe integer.");
     return blocked(captured, errors);
   }
 

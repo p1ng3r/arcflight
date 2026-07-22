@@ -17,13 +17,22 @@ It accepts untrusted plain data, reads relevant own properties once, and returns
 only isolated serializable data. It never returns an Actor, TokenDocument,
 Statistic, Roll, ChatMessage, function, or runtime dependency.
 
+Prototype and own-property inspection are also treated as untrusted operations.
+Inspection traps and throwing property getters return structured blocked results
+(`voyage-pf2e-invalid-request`, or `voyage-pf2e-invalid-dependencies` for the
+dependency object) rather than escaping exceptions.
+
 ## Supported contract
 
-Only persisted records whose `status` is `"pending"` are accepted. The currently
-supported check shape is:
+Only persisted records whose `status` is `"pending"` and whose own `mode` is
+`"check"` are accepted. Pending-check IDs must be non-blank exact strings and
+may not be `__proto__`, `constructor`, or `prototype`; the adapter neither trims
+nor rewrites them. The currently supported check shape is:
 
 ```js
 {
+  pendingCheckId: "check-1",
+  mode: "check",
   source: { kind: "character", uuid: "Actor.abc123" },
   statisticOptions: ["athletics", "acrobatics"],
   dcSource: { kind: "fixed", value: 20 },
