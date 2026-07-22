@@ -1,0 +1,52 @@
+import { VOYAGE_ACTION_EXECUTION_MODES as MODES, VOYAGE_CHECK_SECRECY as SECRECY, VOYAGE_CHECK_SOURCE_KINDS as SOURCES, VOYAGE_DC_SOURCE_KINDS as DCS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
+import { clonePlainData, isPlainObject } from "./defaults.js";
+import { validateVoyageEncounterState } from "./validation.js";
+import { analyzeVoyageEncounterResolutionOrder, deduplicateVoyageResolutionIssues } from "./resolution-order.js";
+
+const issue = (errors, code, path, message) => errors.push({ code, path, message, severity: "error" });
+const own = (v, key) => Object.hasOwn(v, key);
+const indices = (a) => Array.isArray(a) ? Array.from({ length: a.length }, (_, i) => i).filter((i) => own(a, i)) : [];
+const nonEmpty = (v) => typeof v === "string" && v.length > 0;
+const sourceKinds = new Set(Object.values(SOURCES).filter((value) => value !== SOURCES.NO_ROLL));
+const dcKinds = new Set(Object.values(DCS));
+function checkDefinition(action, path, errors) {
+  if (!own(action, "check")) return;
+  const check = action.check;
+  if (!isPlainObject(check)) { issue(errors, "invalid-action-check", `${path}.check`, "Action check must be a plain object when authored."); return; }
+  for (const field of ["source", "statisticOptions", "dcSource", "secrecy"]) if (!own(check, field)) issue(errors, "missing-action-check-field", `${path}.check.${field}`, `Action check requires ${field}.`);
+  if (own(check, "source")) {
+    if (!isPlainObject(check.source)) issue(errors, "invalid-check-source", `${path}.check.source`, "Check source must be a plain object.");
+    else if (!own(check.source, "kind") || !sourceKinds.has(check.source.kind)) issue(errors, "invalid-check-source-kind", `${path}.check.source.kind`, "Check source kind is not recognized.");
+  }
+  if (own(check, "statisticOptions")) {
+    const options = check.statisticOptions;
+    if (!Array.isArray(options)) issue(errors, "invalid-check-statistic-options", `${path}.check.statisticOptions`, "statisticOptions must be an array.");
+    else {
+      const numeric = indices(options); if (!numeric.length) issue(errors, "empty-check-statistic-options", `${path}.check.statisticOptions`, "statisticOptions requires an own numeric entry.");
+      const seen = new Set(); for (const i of numeric) { const value = options[i]; if (!nonEmpty(value)) issue(errors, "invalid-check-statistic-option", `${path}.check.statisticOptions[${i}]`, "Statistic option must be a non-empty exact string."); else if (seen.has(value)) issue(errors, "duplicate-check-statistic-option", `${path}.check.statisticOptions[${i}]`, "Statistic options must be unique."); else seen.add(value); }
+    }
+  }
+  if (own(check, "dcSource")) {
+    if (!isPlainObject(check.dcSource)) issue(errors, "invalid-check-dc-source", `${path}.check.dcSource`, "DC source must be a plain object.");
+    else { if (!own(check.dcSource, "kind") || !dcKinds.has(check.dcSource.kind)) issue(errors, "invalid-check-dc-source-kind", `${path}.check.dcSource.kind`, "DC source kind is not recognized."); if (check.dcSource.kind === DCS.FIXED && (!own(check.dcSource, "value") || !Number.isSafeInteger(check.dcSource.value) || check.dcSource.value < 0)) issue(errors, "invalid-fixed-check-dc", `${path}.check.dcSource.value`, "Fixed DC requires a non-negative safe integer value."); }
+  }
+  if (own(check, "secrecy") && !Object.values(SECRECY).includes(check.secrecy)) issue(errors, "invalid-check-secrecy", `${path}.check.secrecy`, "Check secrecy must be public or secret.");
+  if (own(check, "metadata") && !isPlainObject(check.metadata)) issue(errors, "invalid-check-metadata", `${path}.check.metadata`, "Check metadata must be a plain object.");
+}
+export function validateVoyageEncounterActionExecutionDefinitions(state) {
+  const structural = validateVoyageEncounterState(state); const errors = [...structural.errors], warnings = [...structural.warnings];
+  if (structural.valid && Array.isArray(state.availableStations)) for (const si of indices(state.availableStations)) { const station = state.availableStations[si]; if (!isPlainObject(station) || !Array.isArray(station.actions)) continue; for (const ai of indices(station.actions)) { const action = station.actions[ai]; if (isPlainObject(action)) checkDefinition(action, `availableStations[${si}].actions[${ai}]`, errors); } }
+  const final = deduplicateVoyageResolutionIssues(errors); return { valid: final.length === 0, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+}
+function selectedAction(state, stationId, actionId) { for (const station of state.availableStations) if (station?.stationId === stationId) for (const action of station.actions ?? []) if (action?.actionId === actionId) return action; return null; }
+export function prepareVoyageEncounterActionExecutionRequests(state) {
+  const structural = validateVoyageEncounterState(state), order = analyzeVoyageEncounterResolutionOrder(state), definitions = validateVoyageEncounterActionExecutionDefinitions(state);
+  const errors = [...order.errors, ...definitions.errors], warnings = [...structural.warnings, ...order.warnings, ...definitions.warnings]; const active = state?.lifecycleState === LIFE.ACTIVE, resolution = state?.phase === PHASES.RESOLUTION;
+  if (structural.valid && !active) issue(errors, "execution-requires-active", "lifecycleState", "Preparing execution requests requires an Active encounter.");
+  if (structural.valid && !resolution) issue(errors, "execution-requires-resolution", "phase", "Preparing execution requests requires Resolution phase.");
+  const validPlan = structural.valid && active && resolution && order.valid && definitions.valid;
+  const requests = validPlan ? order.orderedActions.map((row) => { const action = selectedAction(state, row.stationId, row.actionId); const target = own(state.targets, row.stationId) ? clonePlainData(state.targets[row.stationId]) : null; if (!own(action, "check")) return { ...row, target, mode: MODES.NO_ROLL, source: { kind: SOURCES.NO_ROLL }, statisticOptions: [], dcSource: null, secrecy: SECRECY.PUBLIC, metadata: {} }; const check = action.check; return { ...row, target, mode: MODES.CHECK, source: clonePlainData(check.source), statisticOptions: indices(check.statisticOptions).map((i) => check.statisticOptions[i]), dcSource: clonePlainData(check.dcSource), secrecy: check.secrecy, metadata: own(check, "metadata") ? clonePlainData(check.metadata) : {} }; }) : [];
+  const final = deduplicateVoyageResolutionIssues(errors), checkCount = requests.filter((r) => r.mode === MODES.CHECK).length;
+  const pendingChecksEmpty = structural.valid && Array.isArray(state.pendingChecks) && indices(state.pendingChecks).length === 0;
+  return { structurallyValid: structural.valid, active, resolution, pendingChecksEmpty, readyForExecution: validPlan && final.length === 0, pendingCheckPreparationRequired: validPlan && checkCount > 0, readyToPreparePendingChecks: validPlan && checkCount > 0 && pendingChecksEmpty && final.length === 0, actionCount: requests.length, checkCount, noRollActionCount: requests.length - checkCount, executionRequests: requests, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+}
