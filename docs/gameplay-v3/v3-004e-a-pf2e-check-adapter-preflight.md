@@ -74,7 +74,7 @@ Each option must be an exact non-blank authored string; it is passed unchanged t
 PF2e-specific lookup behavior is added here.
 
 Secrecy is converted to an abstract visibility value only: `public` maps to
-`publicroll`, and `secret` maps to `blindroll`.
+`public`, and `secret` maps to `blind`.
 
 ## Results and boundary
 

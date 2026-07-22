@@ -5,43 +5,22 @@
  */
 
 import { preflightVoyagePf2ePendingCheck } from "./resolution-check-adapter.js";
+import { captureVoyagePf2eResultIdentity } from "./result-identity.js";
 
-const UNSAFE_PENDING_CHECK_IDS = new Set(["__proto__", "constructor", "prototype"]);
+function safeRead(object, key) { try { return { ok: true, value: object?.[key] }; } catch { return { ok: false, value: undefined }; } }
 
-function safeRead(object, key) {
-  try {
-    return { ok: true, value: object?.[key] };
-  } catch {
-    return { ok: false, value: undefined };
-  }
-}
-
-function captureResultIdentity(pendingCheck) {
-  const identity = {};
-  if (pendingCheck === null || typeof pendingCheck !== "object") return identity;
-  for (const key of ["pendingCheckId", "sequence"]) {
-    let present;
-    try { present = Object.hasOwn(pendingCheck, key); } catch { continue; }
-    if (!present) continue;
-    const read = safeRead(pendingCheck, key);
-    if (!read.ok) continue;
-    if (key === "pendingCheckId" && typeof read.value === "string" && read.value.trim() && !UNSAFE_PENDING_CHECK_IDS.has(read.value)) identity.pendingCheckId = read.value;
-    if (key === "sequence" && Number.isSafeInteger(read.value) && read.value >= 0) identity.sequence = read.value;
-  }
-  return identity;
-}
 
 function runtimeBlocked(pendingCheck, code, path, message) {
   return {
     ok: false,
     status: "blocked",
-    ...captureResultIdentity(pendingCheck),
+    ...captureVoyagePf2eResultIdentity(pendingCheck),
     errors: [{ code, path, message, severity: "error" }],
     warnings: []
   };
 }
 
-function createRuntimeDependenciesFromResolver(runtime, capturedResolver) {
+export function createRuntimeDependenciesFromResolver(runtime, capturedResolver) {
   return {
     async resolveUuid(uuid) {
       if (typeof capturedResolver !== "function") throw new Error("Foundry UUID resolver is unavailable.");

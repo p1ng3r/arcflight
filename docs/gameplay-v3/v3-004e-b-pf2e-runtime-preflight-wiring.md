@@ -66,8 +66,8 @@ const token = canvas.tokens.placeables[0]?.document;
 await fromUuid(actor.uuid);                 // resolves the Actor
 await fromUuid(token.uuid);                 // resolves the TokenDocument
 const base = { pendingCheckId: "manual-preflight-1", sequence: 0, status: "pending", mode: "check", source: { kind: "character", uuid: actor.uuid }, statisticOptions: ["perception", "athletics"], dcSource: { kind: "fixed", value: 20 }, secrecy: "public" };
-await api.preflightVoyagePf2ePendingCheckInFoundry(base); // ready, publicroll
-await api.preflightVoyagePf2ePendingCheckInFoundry({ ...base, secrecy: "secret" }); // ready, blindroll
+await api.preflightVoyagePf2ePendingCheckInFoundry(base); // ready, public
+await api.preflightVoyagePf2ePendingCheckInFoundry({ ...base, secrecy: "secret" }); // ready, blind
 await api.preflightVoyagePf2ePendingCheckInFoundry({ ...base, statisticOptions: ["not-a-pf2e-statistic"] }); // blocked
 ```
 
