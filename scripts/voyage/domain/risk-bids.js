@@ -17,31 +17,51 @@ function deduplicateIssues(issues) {
   });
 }
 const failure = (errors, warnings) => ({ ok: false, nextState: null, events: [], errors: deduplicateIssues(errors), warnings: deduplicateIssues(warnings) });
-function stations(state, id) { return state.availableStations.reduce((found, station, index) => isPlainObject(station) && station.stationId === id ? [...found, { station, index }] : found, []); }
-function actions(station, id) { return station.actions.reduce((found, action, index) => isPlainObject(action) && action.actionId === id ? [...found, { action, index }] : found, []); }
+function stations(state, id) {
+  const found = [];
+  for (let index = 0; index < state.availableStations.length; index += 1) {
+    if (!Object.hasOwn(state.availableStations, index)) continue;
+    const station = state.availableStations[index];
+    if (isPlainObject(station) && station.stationId === id) found.push({ station, index });
+  }
+  return found;
+}
+function actions(station, id) {
+  const found = [];
+  for (let index = 0; index < station.actions.length; index += 1) {
+    if (!Object.hasOwn(station.actions, index)) continue;
+    const action = station.actions[index];
+    if (isPlainObject(action) && action.actionId === id) found.push({ action, index });
+  }
+  return found;
+}
 function options(action, path, errors) {
   if (!Object.hasOwn(action, "riskBidOptions")) return [];
   if (!Array.isArray(action.riskBidOptions)) { issue(errors, "invalid-risk-bid-options", path, "Authored Risk Bid options must be an array when supplied."); return null; }
-  const ids = new Set();
-  action.riskBidOptions.forEach((option, index) => {
-    if (!isPlainObject(option)) { issue(errors, "invalid-risk-bid-option", `${path}[${index}]`, "Authored Risk Bid option must be a plain object."); return; }
-    if (!Object.hasOwn(option, "riskBidId") || !hasId(option.riskBidId)) { issue(errors, "invalid-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId."); return; }
+  const ids = new Set(); const result = [];
+  for (let index = 0; index < action.riskBidOptions.length; index += 1) {
+    if (!Object.hasOwn(action.riskBidOptions, index)) continue;
+    const option = action.riskBidOptions[index]; result.push(option);
+    if (!isPlainObject(option)) { issue(errors, "invalid-risk-bid-option", `${path}[${index}]`, "Authored Risk Bid option must be a plain object."); continue; }
+    if (!Object.hasOwn(option, "riskBidId") || !hasId(option.riskBidId)) { issue(errors, "invalid-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId."); continue; }
     if (!safeKey(option.riskBidId)) issue(errors, "unsafe-risk-bid-key", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
     if (ids.has(option.riskBidId)) issue(errors, "duplicate-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action.");
     ids.add(option.riskBidId);
-  });
-  return action.riskBidOptions;
+  }
+  return result;
 }
 function validateAuthoredOptions(state, errors) {
   const collections = new Map();
-  state.availableStations.forEach((station, stationIndex) => {
-    if (!isPlainObject(station) || !Array.isArray(station.actions)) return;
-    Object.keys(station.actions).forEach((actionKey) => {
-      const action = station.actions[actionKey];
-      if (!isPlainObject(action)) return;
-      collections.set(action, options(action, `availableStations[${stationIndex}].actions[${actionKey}].riskBidOptions`, errors));
-    });
-  });
+  for (let stationIndex = 0; stationIndex < state.availableStations.length; stationIndex += 1) {
+    if (!Object.hasOwn(state.availableStations, stationIndex)) continue;
+    const station = state.availableStations[stationIndex];
+    if (!isPlainObject(station) || !Array.isArray(station.actions)) continue;
+    for (let actionIndex = 0; actionIndex < station.actions.length; actionIndex += 1) {
+      if (!Object.hasOwn(station.actions, actionIndex)) continue;
+      const action = station.actions[actionIndex];
+      if (isPlainObject(action)) collections.set(action, options(action, `availableStations[${stationIndex}].actions[${actionIndex}].riskBidOptions`, errors));
+    }
+  }
   return collections;
 }
 function resolve(state, stationId, actionId, riskBidId, errors, path, authoredOptions = null) {

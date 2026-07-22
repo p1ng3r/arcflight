@@ -159,3 +159,11 @@ test("initial selection rejects invalid persisted Risk Bids atomically and valid
   const valid = encounter(); const accepted = applyVoyageEncounterStationActionSelection(valid, { stationId: "captain", actionId: "rally-crew" });
   assert.equal(accepted.ok, true); assert.equal(validateVoyageEncounterStationSelections(accepted.nextState).valid, true); assert.equal(validateVoyageEncounterRiskBids(accepted.nextState).valid, true);
 });
+
+test("ignores inherited stations and actions in real sparse array holes", () => {
+  const source = encounter();
+  const stations = new Array(1); const stationPrototype = Object.create(Array.prototype);
+  Object.defineProperty(stationPrototype, "0", { value: { stationId: "inherited", actions: [{ actionId: "ghost" }] }, configurable: true }); Object.setPrototypeOf(stations, stationPrototype);
+  source.availableStations = stations; source.selections = { inherited: { stationId: "inherited", actionId: "ghost" } };
+  try { assert.ok(validateVoyageEncounterStationSelections(source).errors.some((entry) => entry.code === "selected-station-not-available")); } finally { Object.setPrototypeOf(stations, Array.prototype); }
+});

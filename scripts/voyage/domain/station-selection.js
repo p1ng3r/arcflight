@@ -35,17 +35,21 @@ function isSafeStationKey(stationId) {
 
 function findAvailableStations(availableStations, stationId) {
   const matches = [];
-  availableStations.forEach((station, index) => {
+  for (let index = 0; index < availableStations.length; index += 1) {
+    if (!Object.hasOwn(availableStations, index)) continue;
+    const station = availableStations[index];
     if (isPlainObject(station) && station.stationId === stationId) matches.push({ station, index });
-  });
+  }
   return matches;
 }
 
 function findAvailableActions(actions, actionId) {
   const matches = [];
-  actions.forEach((action, index) => {
+  for (let index = 0; index < actions.length; index += 1) {
+    if (!Object.hasOwn(actions, index)) continue;
+    const action = actions[index];
     if (isPlainObject(action) && action.actionId === actionId) matches.push({ action, index });
-  });
+  }
   return matches;
 }
 
