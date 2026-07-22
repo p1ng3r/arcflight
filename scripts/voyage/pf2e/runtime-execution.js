@@ -1,9 +1,9 @@
 /** Foundry runtime execution wiring. One successful call creates one PF2e chat roll. */
 import { createRuntimeDependenciesFromResolver } from "./runtime-preflight.js";
 import { executeVoyagePf2ePendingCheck } from "./resolution-check-executor.js";
+import { captureVoyagePf2eResultIdentity } from "./result-identity.js";
 const safeRead = (object, key) => { try { return { ok: true, value: object?.[key] }; } catch { return { ok: false, value: undefined }; } };
-function identity(value) { const output = {}; try { if (value && Object.hasOwn(value, "pendingCheckId") && typeof value.pendingCheckId === "string") output.pendingCheckId = value.pendingCheckId; if (value && Object.hasOwn(value, "sequence") && Number.isSafeInteger(value.sequence)) output.sequence = value.sequence; } catch {} return output; }
-function blocked(value, code, path, message) { return { ok: false, status: "blocked", ...identity(value), errors: [{ code, path, message, severity: "error" }], warnings: [] }; }
+function blocked(value, code, path, message) { return { ok: false, status: "blocked", ...captureVoyagePf2eResultIdentity(value), errors: [{ code, path, message, severity: "error" }], warnings: [] }; }
 function validRuntime(pendingCheck, runtime) {
   if (!runtime || (typeof runtime !== "object" && typeof runtime !== "function")) return blocked(pendingCheck, "voyage-pf2e-runtime-unavailable", "runtime", "Foundry runtime is unavailable.");
   const game = safeRead(runtime, "game"), system = game.ok ? safeRead(game.value, "system") : { ok: false }, id = system.ok ? safeRead(system.value, "id") : { ok: false };
