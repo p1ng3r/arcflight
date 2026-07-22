@@ -40,3 +40,12 @@ test("initial selection, readiness, and locking reject malformed unbid authored 
   const locked = applyVoyageEncounterCrewPlanningLock(source, { phaseStartSnapshotId: "blocked" });
   failure(locked, "invalid-risk-bid-options"); assert.deepEqual(source, before);
 });
+
+test("ignores inherited Risk Bid options in a real array hole", () => {
+  const encounter = state();
+  const options = new Array(1); const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, "0", { value: { riskBidId: "inherited-bid" }, configurable: true }); Object.setPrototypeOf(options, prototype);
+  encounter.availableStations[0].actions[0].riskBidOptions = options;
+  encounter.riskBids.navigator = { stationId: "navigator", actionId: encounter.selections.navigator.actionId, riskBidId: "inherited-bid" };
+  try { const result = validateVoyageEncounterRiskBids(encounter); assert.equal(result.valid, false); assert.ok(result.errors.some((entry) => entry.code === "risk-bid-not-available")); } finally { Object.setPrototypeOf(options, Array.prototype); }
+});
