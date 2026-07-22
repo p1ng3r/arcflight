@@ -3,15 +3,38 @@ import test from "node:test";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
 import { applyVoyageEncounterPendingCheckPreparation, validateVoyageEncounterPendingChecks } from "../../../scripts/voyage/domain/pending-checks.js";
 function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "check", check: { source: { kind: "character" }, statisticOptions: ["diplomacy"], dcSource: { kind: "fixed", value: 20 }, secrecy: "public" } }] }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; return value; }
+function requestShape(value, seen = new Set()) {
+  if (value === null || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const children = {};
+  for (const key of Reflect.ownKeys(descriptors)) {
+    if (Object.hasOwn(descriptors[key], "value") && descriptors[key].value && typeof descriptors[key].value === "object") children[key] = requestShape(descriptors[key].value, seen);
+  }
+  return { descriptors, children };
+}
+
+function assertFailedPreparation(value, request, result, before, requestBefore) {
+  assert.equal(result.ok, false);
+  assert.equal(result.nextState, null);
+  assert.deepEqual(result.events, []);
+  assert.deepEqual(value, before);
+  assert.deepEqual(requestShape(request), requestBefore);
+  assert.equal(value.revision, before.revision);
+  assert.deepEqual(value.pendingChecks, before.pendingChecks);
+  assert.deepEqual(value.snapshots, before.snapshots);
+}
+
 test("atomically prepares matching pending checks", () => { const value = state(), before = structuredClone(value); assert.equal(validateVoyageEncounterPendingChecks(value).valid, true); const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "pending-1" }] }); assert.equal(result.ok, true); assert.equal(result.nextState.revision, 1); assert.equal(result.nextState.pendingChecks[0].pendingCheckId, "pending-1"); assert.equal(validateVoyageEncounterPendingChecks(result.nextState).valid, true); assert.equal(result.events[0].type, "voyage.pending-checks-prepared"); assert.deepEqual(value, before); });
-test("rejects unsafe and incomplete mappings without mutation", () => { const value = state(), before = structuredClone(value); const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "__proto__" }] }); assert.equal(result.ok, false); assert.deepEqual(value, before); });
+test("rejects unsafe and incomplete mappings without mutation", () => { const value = state(), before = structuredClone(value), request = { pendingCheckIds: [{ sequence: 0, pendingCheckId: "__proto__" }] }, requestBefore = requestShape(request); const result = applyVoyageEncounterPendingCheckPreparation(value, request); assertFailedPreparation(value, request, result, before, requestBefore); });
 
 test("accepts valid empty pre-preparation state and rejects blank mapping IDs atomically", () => {
   for (const pendingCheckId of ["", " ", "\t", "\n"]) {
     const value = state(), before = structuredClone(value), request = { pendingCheckIds: [{ sequence: 0, pendingCheckId }] };
+    const requestBefore = requestShape(request);
     assert.equal(validateVoyageEncounterPendingChecks(value).valid, true);
     const result = applyVoyageEncounterPendingCheckPreparation(value, request);
-    assert.equal(result.ok, false); assert.equal(result.nextState, null); assert.deepEqual(result.events, []); assert.deepEqual(value, before);
+    assertFailedPreparation(value, request, result, before, requestBefore);
   }
 });
 
@@ -33,4 +56,151 @@ test("pending validator rejects persisted contract mismatches", () => {
     const prepared = applyVoyageEncounterPendingCheckPreparation(state(), { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] }).nextState;
     mutate(prepared.pendingChecks[0]); assert.equal(validateVoyageEncounterPendingChecks(prepared).valid, false);
   }
+});
+
+function preparedState() {
+  const value = state();
+  const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] });
+  assert.equal(result.ok, true);
+  return result.nextState;
+}
+
+function withInheritedGetter(key, getter, callback) {
+  const previous = Object.getOwnPropertyDescriptor(Object.prototype, key);
+  Object.defineProperty(Object.prototype, key, { configurable: true, get: getter });
+  try {
+    return callback();
+  } finally {
+    if (previous) Object.defineProperty(Object.prototype, key, previous);
+    else delete Object.prototype[key];
+  }
+}
+
+test("throwing pendingCheckId getter returns validation errors", () => {
+  const value = preparedState();
+  Object.defineProperty(value.pendingChecks[0], "pendingCheckId", { configurable: true, enumerable: true, get() { throw new Error("pending id"); } });
+  const report = validateVoyageEncounterPendingChecks(value);
+  assert.ok(report.errors.some((entry) => entry.code === "pending-check-data-read-failed" && entry.path === "pendingChecks[0].pendingCheckId"));
+});
+
+test("throwing sequence getter returns validation errors", () => {
+  const value = preparedState();
+  Object.defineProperty(value.pendingChecks[0], "sequence", { configurable: true, enumerable: true, get() { throw new Error("sequence"); } });
+  const report = validateVoyageEncounterPendingChecks(value);
+  assert.ok(report.errors.some((entry) => entry.code === "pending-check-data-read-failed" && entry.path === "pendingChecks[0].sequence"));
+});
+
+test("inherited required fields are reported missing", () => {
+  const value = preparedState();
+  delete value.pendingChecks[0].pendingCheckId;
+  const report = withInheritedGetter("pendingCheckId", () => "inherited", () => validateVoyageEncounterPendingChecks(value));
+  assert.ok(report.errors.some((entry) => entry.code === "missing-pending-check-field" && entry.path === "pendingChecks[0].pendingCheckId"));
+});
+
+test("inherited required-field getters are never evaluated", () => {
+  const value = preparedState();
+  delete value.pendingChecks[0].pendingCheckId;
+  let readCount = 0;
+  const report = withInheritedGetter("pendingCheckId", () => { readCount += 1; throw new Error("inherited field"); }, () => validateVoyageEncounterPendingChecks(value));
+  assert.equal(readCount, 0);
+  assert.ok(report.errors.some((entry) => entry.code === "missing-pending-check-field" && entry.path === "pendingChecks[0].pendingCheckId"));
+});
+
+test("valid persisted field getters are each read once", () => {
+  const value = preparedState();
+  const record = value.pendingChecks[0];
+  const snapshot = structuredClone(record);
+  const fields = ["pendingCheckId", "preparedRevision", "stageId", "roundNumber", "sequence", "stationId", "actionId", "resolutionPriority", "riskBidId", "target", "mode", "source", "statisticOptions", "dcSource", "secrecy", "metadata", "status", "result"];
+  const reads = new Map(fields.map((field) => [field, 0]));
+  for (const field of fields) Object.defineProperty(record, field, { configurable: true, enumerable: true, get() { reads.set(field, reads.get(field) + 1); return snapshot[field]; } });
+  const report = validateVoyageEncounterPendingChecks(value);
+  assert.equal(report.valid, true);
+  for (const field of fields) assert.equal(reads.get(field), 1, field);
+});
+
+test("throwing pendingCheckIds getter returns a mutation failure", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const request = {};
+  Object.defineProperty(request, "pendingCheckIds", { configurable: true, enumerable: true, get() { throw new Error("ids"); } });
+  const requestBefore = requestShape(request);
+  const result = applyVoyageEncounterPendingCheckPreparation(value, request);
+  assertFailedPreparation(value, request, result, before, requestBefore);
+});
+
+test("inherited pendingCheckIds is rejected without evaluation", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const request = {};
+  let readCount = 0;
+  const result = withInheritedGetter("pendingCheckIds", () => { readCount += 1; throw new Error("inherited ids"); }, () => applyVoyageEncounterPendingCheckPreparation(value, request));
+  assertFailedPreparation(value, request, result, before, requestShape(request));
+  assert.equal(readCount, 0);
+});
+
+test("throwing mapping entry getter returns a mutation failure", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const entry = {};
+  Object.defineProperty(entry, "sequence", { configurable: true, enumerable: true, value: 0 });
+  Object.defineProperty(entry, "pendingCheckId", { configurable: true, enumerable: true, value: "pending-1" });
+  const request = { pendingCheckIds: [] };
+  Object.defineProperty(request.pendingCheckIds, 0, { configurable: true, enumerable: true, get() { throw new Error("entry"); } });
+  request.pendingCheckIds.length = 1;
+  const requestBefore = requestShape(request);
+  const result = applyVoyageEncounterPendingCheckPreparation(value, request);
+  assertFailedPreparation(value, request, result, before, requestBefore);
+});
+
+test("throwing mapping sequence getter returns a mutation failure", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const entry = { pendingCheckId: "pending-1" };
+  Object.defineProperty(entry, "sequence", { configurable: true, enumerable: true, get() { throw new Error("mapping sequence"); } });
+  const request = { pendingCheckIds: [entry] };
+  const requestBefore = requestShape(request);
+  const result = applyVoyageEncounterPendingCheckPreparation(value, request);
+  assertFailedPreparation(value, request, result, before, requestBefore);
+});
+
+test("throwing mapping pendingCheckId getter returns a mutation failure", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const entry = { sequence: 0 };
+  Object.defineProperty(entry, "pendingCheckId", { configurable: true, enumerable: true, get() { throw new Error("mapping id"); } });
+  const request = { pendingCheckIds: [entry] };
+  const requestBefore = requestShape(request);
+  const result = applyVoyageEncounterPendingCheckPreparation(value, request);
+  assertFailedPreparation(value, request, result, before, requestBefore);
+});
+
+test("inherited mapping fields are rejected without evaluation", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const request = { pendingCheckIds: [{}] };
+  let sequenceReads = 0;
+  let idReads = 0;
+  const requestBefore = requestShape(request);
+  const result = withInheritedGetter("sequence", () => { sequenceReads += 1; throw new Error("inherited sequence"); }, () => withInheritedGetter("pendingCheckId", () => { idReads += 1; throw new Error("inherited id"); }, () => applyVoyageEncounterPendingCheckPreparation(value, request)));
+  assertFailedPreparation(value, request, result, before, requestBefore);
+  assert.equal(sequenceReads, 0);
+  assert.equal(idReads, 0);
+});
+
+test("valid mapping getters are each read once", () => {
+  const value = state();
+  const before = structuredClone(value);
+  const entry = {};
+  let sequenceReads = 0;
+  let idReads = 0;
+  Object.defineProperty(entry, "sequence", { configurable: true, enumerable: true, get() { sequenceReads += 1; return 0; } });
+  Object.defineProperty(entry, "pendingCheckId", { configurable: true, enumerable: true, get() { idReads += 1; return "pending-1"; } });
+  const request = { pendingCheckIds: [entry] };
+  const requestBefore = requestShape(request);
+  const result = applyVoyageEncounterPendingCheckPreparation(value, request);
+  assert.equal(result.ok, true);
+  assert.equal(sequenceReads, 1);
+  assert.equal(idReads, 1);
+  assert.deepEqual(value, before);
+  assert.deepEqual(requestShape(request), requestBefore);
 });

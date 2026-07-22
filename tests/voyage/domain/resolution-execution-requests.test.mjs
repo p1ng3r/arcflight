@@ -53,3 +53,181 @@ test("fixed DC and secrecy contracts reject invalid values", () => {
   for (const dc of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "20"]) { const value = state(); value.availableStations[0].actions[1].check.dcSource.value = dc; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); }
   for (const secrecy of [true, "Public", "hidden"]) { const value = state(); value.availableStations[0].actions[1].check.secrecy = secrecy; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); }
 });
+
+function assertReadyWithOneRead(value, readCount) {
+  const report = prepareVoyageEncounterActionExecutionRequests(value);
+  assert.equal(report.readyForExecution, true);
+  assert.equal(report.executionRequests.length, 1);
+  assert.equal(readCount(), 1);
+  return report;
+}
+
+test("action.check getter is read once", () => {
+  const value = state();
+  const action = value.availableStations[0].actions[1];
+  const check = action.check;
+  let readCount = 0;
+  Object.defineProperty(action, "check", { enumerable: true, configurable: true, get() { readCount += 1; return check; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("check.source getter is read once", () => {
+  const value = state();
+  const check = value.availableStations[0].actions[1].check;
+  const source = check.source;
+  let readCount = 0;
+  Object.defineProperty(check, "source", { enumerable: true, configurable: true, get() { readCount += 1; return source; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("source.kind getter is read once", () => {
+  const value = state();
+  const source = value.availableStations[0].actions[1].check.source;
+  let readCount = 0;
+  Object.defineProperty(source, "kind", { enumerable: true, configurable: true, get() { readCount += 1; return "character"; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("check.statisticOptions getter is read once", () => {
+  const value = state();
+  const check = value.availableStations[0].actions[1].check;
+  const options = check.statisticOptions;
+  let readCount = 0;
+  Object.defineProperty(check, "statisticOptions", { enumerable: true, configurable: true, get() { readCount += 1; return options; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("own statistic-option getter is read once", () => {
+  const value = state();
+  const options = value.availableStations[0].actions[1].check.statisticOptions;
+  let readCount = 0;
+  Object.defineProperty(options, 0, { enumerable: true, configurable: true, get() { readCount += 1; return " Sailing "; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("check.dcSource getter is read once", () => {
+  const value = state();
+  const check = value.availableStations[0].actions[1].check;
+  const dcSource = check.dcSource;
+  let readCount = 0;
+  Object.defineProperty(check, "dcSource", { enumerable: true, configurable: true, get() { readCount += 1; return dcSource; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("dcSource.kind getter is read once", () => {
+  const value = state();
+  const dcSource = value.availableStations[0].actions[1].check.dcSource;
+  let readCount = 0;
+  Object.defineProperty(dcSource, "kind", { enumerable: true, configurable: true, get() { readCount += 1; return "fixed"; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("fixed dcSource.value getter is read once", () => {
+  const value = state();
+  const dcSource = value.availableStations[0].actions[1].check.dcSource;
+  let readCount = 0;
+  Object.defineProperty(dcSource, "value", { enumerable: true, configurable: true, get() { readCount += 1; return 20; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("check.secrecy getter is read once", () => {
+  const value = state();
+  const check = value.availableStations[0].actions[1].check;
+  let readCount = 0;
+  Object.defineProperty(check, "secrecy", { enumerable: true, configurable: true, get() { readCount += 1; return "secret"; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("check.metadata getter is read once", () => {
+  const value = state();
+  const check = value.availableStations[0].actions[1].check;
+  const metadata = check.metadata;
+  let readCount = 0;
+  Object.defineProperty(check, "metadata", { enumerable: true, configurable: true, get() { readCount += 1; return metadata; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("nested source getter is read once", () => {
+  const value = state();
+  const source = value.availableStations[0].actions[1].check.source;
+  let readCount = 0;
+  Object.defineProperty(source, "nested", { enumerable: true, configurable: true, get() { readCount += 1; return { id: "nested" }; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("target getter is read once", () => {
+  const value = state();
+  let readCount = 0;
+  const target = { id: "target" };
+  Object.defineProperty(value.targets, "captain", { enumerable: true, configurable: true, get() { readCount += 1; return target; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("nested target getter is read once", () => {
+  const value = state();
+  let readCount = 0;
+  const target = {};
+  Object.defineProperty(target, "nested", { enumerable: true, configurable: true, get() { readCount += 1; return { id: "nested" }; } });
+  value.targets.captain = target;
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("secrecy is captured on its first read", () => {
+  const value = state();
+  const check = value.availableStations[0].actions[1].check;
+  let readCount = 0;
+  Object.defineProperty(check, "secrecy", { enumerable: true, configurable: true, get() { readCount += 1; return readCount === 1 ? "secret" : "public"; } });
+  const report = assertReadyWithOneRead(value, () => readCount);
+  assert.equal(report.executionRequests[0].secrecy, "secret");
+});
+
+test("a getter that would throw on a second read succeeds after one read", () => {
+  const value = state();
+  const action = value.availableStations[0].actions[1];
+  const check = action.check;
+  let readCount = 0;
+  Object.defineProperty(action, "check", { enumerable: true, configurable: true, get() { readCount += 1; if (readCount > 1) throw new Error("second read"); return check; } });
+  assertReadyWithOneRead(value, () => readCount);
+});
+
+test("a first-read getter failure is reported without throwing", () => {
+  const value = state();
+  const action = value.availableStations[0].actions[1];
+  Object.defineProperty(action, "check", { enumerable: true, configurable: true, get() { throw new Error("first read"); } });
+  let report;
+  assert.doesNotThrow(() => { report = prepareVoyageEncounterActionExecutionRequests(value); });
+  assert.equal(report.readyForExecution, false);
+  assert.ok(report.errors.some((entry) => entry.code === "execution-data-read-failed"));
+});
+
+test("inherited station holes are ignored", () => {
+  const value = state();
+  value.availableStations.length = 2;
+  Object.setPrototypeOf(value.availableStations, { get 1() { throw new Error("inherited station"); } });
+  const report = prepareVoyageEncounterActionExecutionRequests(value);
+  assert.equal(report.readyForExecution, true);
+  assert.equal(report.executionRequests.length, 1);
+});
+
+test("inherited action holes are ignored", () => {
+  const value = state();
+  value.availableStations[0].actions.length = 3;
+  Object.setPrototypeOf(value.availableStations[0].actions, { get 2() { throw new Error("inherited action"); } });
+  const report = prepareVoyageEncounterActionExecutionRequests(value);
+  assert.equal(report.readyForExecution, true);
+  assert.equal(report.executionRequests.length, 1);
+});
+
+test("constructor, prototype, and __proto__ keys remain own data without pollution", () => {
+  const value = state();
+  const source = Object.create(null);
+  for (const key of ["__proto__", "constructor", "prototype"]) Object.defineProperty(source, key, { value: { key }, enumerable: true, writable: true, configurable: true });
+  Object.defineProperty(source, "kind", { value: "character", enumerable: true, writable: true, configurable: true });
+  value.availableStations[0].actions[1].check.source = source;
+  const report = prepareVoyageEncounterActionExecutionRequests(value);
+  const captured = report.executionRequests[0].source;
+  assert.equal(report.readyForExecution, true);
+  for (const key of ["__proto__", "constructor", "prototype"]) assert.ok(Object.hasOwn(captured, key));
+  assert.equal(Object.getPrototypeOf(captured), Object.prototype);
+  assert.equal(Object.prototype.key, undefined);
+});
