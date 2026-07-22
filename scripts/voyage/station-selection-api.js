@@ -10,6 +10,7 @@ import { prepareVoyageEncounterResolutionOrder } from "./domain/resolution-order
 import { applyVoyageEncounterResolutionTransition } from "./domain/resolution-transition.js";
 import { validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests } from "./domain/resolution-execution-requests.js";
 import { validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation } from "./domain/pending-checks.js";
+import { preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies } from "./pf2e/resolution-check-adapter.js";
 
 /**
  * Extend Arcflight's frozen public API with Voyage planning and Resolution
@@ -42,7 +43,9 @@ export function registerVoyageStationSelectionEditingApi() {
     validateVoyageEncounterActionExecutionDefinitions,
     prepareVoyageEncounterActionExecutionRequests,
     validateVoyageEncounterPendingChecks,
-    applyVoyageEncounterPendingCheckPreparation
+    applyVoyageEncounterPendingCheckPreparation,
+    preflightVoyagePf2ePendingCheck,
+    validateVoyagePf2eAdapterDependencies
   });
 
   const extendedApi = Object.freeze({
@@ -62,6 +65,8 @@ export function registerVoyageStationSelectionEditingApi() {
     prepareVoyageEncounterActionExecutionRequests,
     validateVoyageEncounterPendingChecks,
     applyVoyageEncounterPendingCheckPreparation,
+    preflightVoyagePf2ePendingCheck,
+    validateVoyagePf2eAdapterDependencies,
     devTools
   });
 
@@ -89,5 +94,7 @@ export {
   validateVoyageEncounterActionExecutionDefinitions,
   prepareVoyageEncounterActionExecutionRequests,
   validateVoyageEncounterPendingChecks,
-  applyVoyageEncounterPendingCheckPreparation
+  applyVoyageEncounterPendingCheckPreparation,
+  preflightVoyagePf2ePendingCheck,
+  validateVoyagePf2eAdapterDependencies
 };
