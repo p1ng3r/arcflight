@@ -1,26 +1,39 @@
 # V3-004E-C — Live PF2e Check Execution
 
-Preflight and execution share `resolveVoyagePf2ePendingCheckContext`: one execution captures the caller dependencies once and resolves UUID, Actor, and the first authored Statistic exactly once. The live context never escapes. The execution contract is four own callable functions: `resolveUuid`, `getActorFromResolvedDocument`, `getStatistic`, and `rollStatistic`.
+Execution shares `resolveVoyagePf2ePendingCheckContext` with preflight, so UUID, Actor, and authored Statistic resolution happen once. It captures the four own callable dependencies (`resolveUuid`, `getActorFromResolvedDocument`, `getStatistic`, `rollStatistic`) once. The Foundry wrapper reads `runtime.fromUuid` once and invokes the captured resolver with the original runtime receiver; it captures `Statistic.roll` once with the Statistic receiver.
 
-The Foundry wrapper captures `runtime.fromUuid` once and invokes that exact function once with the **original runtime object** as receiver. It captures `statistic.roll` once and calls it once with the Statistic receiver. PF2e receives exactly `{ dc, messageMode, skipDialog: true, createMessage: true, identifier }`; public is `publicroll`, secret is `blindroll`.
+PF2e receives exactly `{ dc, messageMode, skipDialog: true, createMessage: true, identifier }`. Public uses `publicroll`; secret uses `blindroll`. The isolated success result is `{ total, degreeOfSuccess, degreeOfSuccessSlug }`, mapping `0..3` to `critical-failure`, `failure`, `success`, and `critical-success`. Failures include `voyage-pf2e-invalid-execution-dependencies`, `voyage-pf2e-statistic-roll-unavailable`, `voyage-pf2e-roll-failed`, `voyage-pf2e-roll-cancelled`, and `voyage-pf2e-invalid-roll-result`.
 
-Success returns only `{ total, degreeOfSuccess, degreeOfSuccessSlug }`: degree 0–3 maps to `critical-failure`, `failure`, `success`, and `critical-success`. Errors are `voyage-pf2e-invalid-execution-dependencies`, `voyage-pf2e-statistic-roll-unavailable`, `voyage-pf2e-roll-failed`, `voyage-pf2e-roll-cancelled`, and `voyage-pf2e-invalid-roll-result`, alongside retained preflight/runtime codes.
-
-One successful call creates one live PF2e chat roll. Chat creation is the only intended mutation: no Actor, Token, encounter, or pending-check mutation occurs. Duplicate prevention, result persistence, and Consequences transition remain deferred to V3-004F.
+**Every successful call creates a real PF2e chat roll. Invoke each case once only.** Chat creation is the sole intended mutation. No Actor, Token, encounter, or pending-check update occurs; duplicate prevention, persistence, result application, and Consequences transition are deferred to V3-004F.
 
 ## Manual Foundry validation (not run in cloud)
 
-```js
-const api=game.arcflight; const actor=game.actors.contents[0]; const token=canvas.tokens.placeables[0]?.document;
-const make=(uuid,secrecy,id)=>({pendingCheckId:id,sequence:0,status:"pending",result:null,mode:"check",source:{kind:"character",uuid},statisticOptions:["athletics","perception"],dcSource:{kind:"fixed",value:20},secrecy});
-const actorBefore=actor.toObject(), tokenBefore=token?.toObject(), encounterBefore=game.combat?.toObject();
-const publicCheck=make(actor.uuid,"public","manual-live-public"); const before=game.messages.size;
-const publicResult=await api.executeVoyagePf2ePendingCheckInFoundry(publicCheck); console.assert(game.messages.size===before+1,publicResult);
-const secretCheck=make(token.uuid,"secret","manual-live-secret"); const secretBefore=game.messages.size;
-const secretResult=await api.executeVoyagePf2ePendingCheckInFoundry(secretCheck); console.assert(game.messages.size===secretBefore+1,secretResult);
-console.assert(Number.isFinite(publicResult.result.total)&&publicResult.result.degreeOfSuccess>=0&&publicResult.result.degreeOfSuccess<=3);
-console.assert(!Object.values(publicResult).some(x=>x===actor||x===token)); console.assert(JSON.stringify(actor.toObject())===JSON.stringify(actorBefore)); console.assert(JSON.stringify(token?.toObject())===JSON.stringify(tokenBefore)); console.assert(JSON.stringify(game.combat?.toObject())===JSON.stringify(encounterBefore)); console.assert(publicCheck.status==="pending"&&publicCheck.result===null);
-const unknown=make(actor.uuid,"public","manual-live-unknown"); unknown.statisticOptions=["not-a-statistic"]; const noMessage=game.messages.size; console.assert((await api.executeVoyagePf2ePendingCheckInFoundry(unknown)).ok===false&&game.messages.size===noMessage);
-```
+Paste this as one block in a PF2e v14 browser console. It throws clear errors when suitable documents are unavailable.
 
-Each successful invocation makes a real chat roll: run each case once.
+```js
+const api = game.arcflight;
+for (const key of ["executeVoyagePf2ePendingCheck", "validateVoyagePf2eExecutionDependencies", "createVoyagePf2eRuntimeExecutionDependencies", "executeVoyagePf2ePendingCheckInFoundry"]) {
+  if (typeof api?.[key] !== "function" || typeof api?.devTools?.[key] !== "function") throw new Error(`Missing Arcflight helper: ${key}`);
+}
+const actor = game.actors.contents.find(a => ["character", "npc"].includes(a.type) && (a.getStatistic("athletics") || a.getStatistic("perception")));
+if (!actor) throw new Error("No character or NPC Actor with Athletics or Perception is available.");
+const token = canvas.tokens.placeables.map(t => t.document).find(d => d?.actor && (d.actor.getStatistic("athletics") || d.actor.getStatistic("perception")));
+if (!token) throw new Error("No placed TokenDocument or synthetic Token Actor with Athletics or Perception is available.");
+const make = (uuid, secrecy, id) => ({ pendingCheckId:id, sequence:0, status:"pending", result:null, mode:"check", source:{kind:"character",uuid}, statisticOptions:["athletics","perception"], dcSource:{kind:"fixed",value:20}, secrecy });
+const degrees = ["critical-failure", "failure", "success", "critical-success"];
+const noLive = value => { const seen = new Set(); const walk = v => { if (!v || typeof v !== "object" || seen.has(v)) return true; seen.add(v); if (v === actor || v === token || v?.documentName === "Actor" || v?.constructor?.name === "Roll" || "terms" in v || "dice" in v || "options" in v || v?.documentName === "ChatMessage") return false; return Object.values(v).every(walk); }; return walk(value); };
+const actorBefore = actor.toObject(), tokenBefore = token.toObject(), encounterBefore = game.combat?.toObject();
+const publicCheck = make(actor.uuid, "public", "manual-live-public"); const publicCount = game.messages.size;
+const publicResult = await api.executeVoyagePf2ePendingCheckInFoundry(publicCheck);
+if (game.messages.size !== publicCount + 1) throw new Error("Public check did not create exactly one message.");
+const publicMessage = game.messages.contents.at(-1); if (publicMessage.blind) throw new Error("Public message is unexpectedly blind.");
+const secretCheck = make(token.uuid, "secret", "manual-live-secret"); const secretCount = game.messages.size;
+const secretResult = await api.executeVoyagePf2ePendingCheckInFoundry(secretCheck);
+if (game.messages.size !== secretCount + 1) throw new Error("Secret check did not create exactly one message.");
+const secretMessage = game.messages.contents.at(-1); if (!secretMessage.blind && !secretMessage.whisper?.length) throw new Error("Secret message is neither blind nor GM-only.");
+for (const result of [publicResult, secretResult]) { if (!Number.isFinite(result.result?.total) || !Number.isSafeInteger(result.result?.degreeOfSuccess) || result.result.degreeOfSuccess < 0 || result.result.degreeOfSuccess > 3 || result.result.degreeOfSuccessSlug !== degrees[result.result.degreeOfSuccess] || !noLive(result)) throw new Error("Result is invalid or leaked a live object."); }
+const unknown = make(actor.uuid,"public","manual-live-unknown"); unknown.statisticOptions=["not-a-statistic"]; const beforeUnknown=game.messages.size; if ((await api.executeVoyagePf2ePendingCheckInFoundry(unknown)).ok || game.messages.size!==beforeUnknown) throw new Error("Unknown statistic created a message.");
+const beforeRuntime=game.messages.size; if ((await api.executeVoyagePf2ePendingCheckInFoundry(publicCheck,{})).ok || game.messages.size!==beforeRuntime) throw new Error("Invalid runtime created a message.");
+if (JSON.stringify(actor.toObject())!==JSON.stringify(actorBefore) || JSON.stringify(token.toObject())!==JSON.stringify(tokenBefore) || JSON.stringify(game.combat?.toObject())!==JSON.stringify(encounterBefore) || publicCheck.status!=="pending" || publicCheck.result!==null || secretCheck.status!=="pending" || secretCheck.result!==null) throw new Error("Execution mutated protected state.");
+console.log({publicResult,secretResult});
+```
