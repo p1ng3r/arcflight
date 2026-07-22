@@ -22,3 +22,34 @@ test("prototype-sensitive execution data is cloned as ordinary own data", () => 
   const source = prepareVoyageEncounterActionExecutionRequests(value).executionRequests[0].source;
   assert.ok(Object.hasOwn(source, "__proto__")); assert.equal(Object.getPrototypeOf(source), Object.prototype); assert.equal({}.nested, undefined);
 });
+
+test("rejects each malformed authored check shape", () => {
+  for (const check of [undefined, null, [], "check", 1]) {
+    const value = state(); value.availableStations[0].actions[1].check = check;
+    assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false);
+  }
+});
+
+test("accepts every source and DC kind while rejecting authored no-roll", () => {
+  for (const kind of ["character", "ship", "station", "crew", "custom"]) {
+    const value = state(); value.availableStations[0].actions[1].check.source.kind = kind;
+    assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true);
+  }
+  for (const kind of ["level-based", "encounter", "stage", "hazard", "opposed", "track", "gm-entered"]) {
+    const value = state(); value.availableStations[0].actions[1].check.dcSource = { kind };
+    assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true);
+  }
+  const value = state(); value.availableStations[0].actions[1].check.source.kind = "no-roll";
+  assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false);
+});
+
+test("statistic options retain exact valid strings and reject blanks and duplicates", () => {
+  for (const option of ["", " ", "\t", "\n", 2]) { const value = state(); value.availableStations[0].actions[1].check.statisticOptions = [option]; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); }
+  const value = state(); value.availableStations[0].actions[1].check.statisticOptions = ["sailing", "Sailing", " sailing "];
+  const report = prepareVoyageEncounterActionExecutionRequests(value); assert.deepEqual(report.executionRequests[0].statisticOptions, ["sailing", "Sailing", " sailing "]);
+});
+
+test("fixed DC and secrecy contracts reject invalid values", () => {
+  for (const dc of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "20"]) { const value = state(); value.availableStations[0].actions[1].check.dcSource.value = dc; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); }
+  for (const secrecy of [true, "Public", "hidden"]) { const value = state(); value.availableStations[0].actions[1].check.secrecy = secrecy; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); }
+});

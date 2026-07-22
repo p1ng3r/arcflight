@@ -20,3 +20,17 @@ test("pending validation rejects unexpected own persisted fields", () => {
   prepared.pendingChecks[0].extra = true;
   assert.ok(validateVoyageEncounterPendingChecks(prepared).errors.some((entry) => entry.code === "unexpected-pending-check-field"));
 });
+
+test("preparation stores mappings in execution order and exact pending keys", () => {
+  const value = state(); value.availableStations.push({ stationId: "navigator", actions: [{ actionId: "second", resolutionPriority: -1, check: { source: { kind: "ship" }, statisticOptions: ["perception"], dcSource: { kind: "fixed", value: 0 }, secrecy: "secret" } }] }); value.selections.navigator = { stationId: "navigator", actionId: "second" };
+  const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 1, pendingCheckId: "first" }, { sequence: 0, pendingCheckId: "second" }] });
+  assert.equal(result.ok, true); assert.deepEqual(result.nextState.pendingChecks.map((entry) => entry.sequence), [0, 1]);
+  assert.deepEqual(Object.keys(result.nextState.pendingChecks[0]).sort(), ["actionId", "dcSource", "metadata", "mode", "pendingCheckId", "preparedRevision", "resolutionPriority", "result", "riskBidId", "roundNumber", "secrecy", "sequence", "source", "stageId", "stationId", "statisticOptions", "status", "target"].sort());
+});
+
+test("pending validator rejects persisted contract mismatches", () => {
+  for (const mutate of [(r) => { r.status = "resolved"; }, (r) => { r.result = {}; }, (r) => { r.sequence = 4; }, (r) => { r.preparedRevision = 999; }]) {
+    const prepared = applyVoyageEncounterPendingCheckPreparation(state(), { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] }).nextState;
+    mutate(prepared.pendingChecks[0]); assert.equal(validateVoyageEncounterPendingChecks(prepared).valid, false);
+  }
+});

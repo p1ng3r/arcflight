@@ -25,15 +25,37 @@ function validatePlainData(value, path, errors, ancestors = new Set()) {
   ancestors.delete(value); return true;
 }
 function cloneExecutionPlainData(value, path, errors, ancestors = new Set()) {
-  if (!validatePlainData(value, path, errors, ancestors)) return null;
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) { const result = []; for (const index of indices(value)) result[index] = cloneExecutionPlainData(value[index], `${path}[${index}]`, errors); return result; }
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return value;
+    issue(errors, "invalid-execution-plain-data", path, "Execution data numbers must be finite.");
+    return null;
+  }
+  if (typeof value !== "object" || ancestors.has(value)) {
+    issue(errors, "invalid-execution-plain-data", path, "Execution data must be recursively plain and acyclic.");
+    return null;
+  }
+  if (!Array.isArray(value) && !isPlainObject(value)) {
+    issue(errors, "invalid-execution-plain-data", path, "Execution data must be recursively plain.");
+    return null;
+  }
+  ancestors.add(value);
+  if (Array.isArray(value)) {
+    const result = [];
+    for (const index of indices(value)) {
+      const read = readOwnValue(value, index, `${path}[${index}]`, errors);
+      if (read.ok) result[index] = cloneExecutionPlainData(read.value, `${path}[${index}]`, errors, ancestors);
+    }
+    ancestors.delete(value);
+    return result;
+  }
   const result = {};
   for (const key of Object.keys(value)) {
     const read = readOwnValue(value, key, `${path}.${key}`, errors);
-    const cloned = read.ok ? cloneExecutionPlainData(read.value, `${path}.${key}`, errors) : null;
+    const cloned = read.ok ? cloneExecutionPlainData(read.value, `${path}.${key}`, errors, ancestors) : null;
     Object.defineProperty(result, key, { value: cloned, enumerable: true, writable: true, configurable: true });
   }
+  ancestors.delete(value);
   return result;
 }
 function checkDefinition(action, path, errors) {
