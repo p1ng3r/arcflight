@@ -8,7 +8,7 @@ import { validateVoyageEncounterState } from "./validation.js";
 const issue = (errors, code, path, message) => errors.push({ code, path, message, severity: "error" });
 
 /** Report whether Resolution has completed without mutating encounter state. */
-export function prepareVoyageEncounterResolutionCompletion(state) {
+function prepare(state) {
   const structural = validateVoyageEncounterState(state);
   const errors = [...structural.errors];
   const warnings = [...structural.warnings];
@@ -30,4 +30,11 @@ export function prepareVoyageEncounterResolutionCompletion(state) {
   if (unresolvedChecks.length) issue(errors, "resolution-completion-checks-unresolved", "pendingChecks", "Every prepared pending check must be resolved.");
   const final = deduplicateVoyageResolutionIssues(errors);
   return { structurallyValid: structural.valid, active: state?.lifecycleState === LIFE.ACTIVE, resolution: state?.phase === PHASES.RESOLUTION, readyForConsequences: readyForConsequences && final.length === 0, actionCount: execution.actionCount, checkCount: execution.checkCount, noRollActionCount: execution.noRollActionCount, pendingCheckCount, resolvedCheckCount, unresolvedCheckCount: unresolvedChecks.length, unresolvedChecks, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+}
+
+
+export function prepareVoyageEncounterResolutionCompletion(state) {
+  try { return prepare(state); } catch {
+    return { structurallyValid: false, active: false, resolution: false, readyForConsequences: false, actionCount: 0, checkCount: 0, noRollActionCount: 0, pendingCheckCount: 0, resolvedCheckCount: 0, unresolvedCheckCount: 0, unresolvedChecks: [], errors: [{ code: "resolution-completion-data-read-failed", path: "$", message: "Resolution completion data could not be read safely.", severity: "error" }], warnings: [] };
+  }
 }

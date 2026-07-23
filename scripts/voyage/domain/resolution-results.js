@@ -10,6 +10,14 @@ const SLUGS = ["critical-failure", "failure", "success", "critical-success"];
 const error = (code, path, message) => ({ code, path, message, severity: "error" });
 const failure = (errors, warnings = []) => ({ ok: false, nextState: null, events: [], errors: deduplicateVoyageResolutionIssues(errors), warnings: deduplicateVoyageResolutionIssues(warnings) });
 const own = (value, key) => Object.hasOwn(value, key);
+function hasOwnStatisticOption(options, slug) {
+  if (!Array.isArray(options)) return false;
+  for (let index = 0; index < options.length; index += 1) {
+    if (!Object.hasOwn(options, index)) continue;
+    if (options[index] === slug) return true;
+  }
+  return false;
+}
 
 function exactObject(value, fields) {
   return isPlainObject(value) && Object.keys(value).length === fields.length && fields.every((field) => own(value, field));
@@ -21,7 +29,7 @@ function captureExecution(value) {
   if (!exactObject(value, EXECUTION_FIELDS) || !exactObject(value.result, RESULT_FIELDS)) return null;
   const output = {};
   for (const field of EXECUTION_FIELDS) output[field] = value[field];
-  if (output.ok !== true || output.status !== "rolled" || !emptyDenseArray(output.errors) || !emptyDenseArray(output.warnings)
+  if (output.ok !== true || output.status !== "rolled" || output.sourceKind !== "character" || !emptyDenseArray(output.errors) || !emptyDenseArray(output.warnings)
     || typeof output.pendingCheckId !== "string" || !output.pendingCheckId.trim()
     || !Number.isSafeInteger(output.sequence) || output.sequence < 0
     || typeof output.sourceKind !== "string" || !output.sourceKind.trim()
@@ -55,14 +63,17 @@ export function applyVoyageEncounterPendingCheckResult(state, executionResult) {
     if (record.status !== STATUSES.PENDING) return failure([error("pending-check-result-already-persisted", `pendingChecks[${idIndex}].status`, "This pending check has already been resolved.")], warnings);
     const expected = [
       ["sourceKind", record.source?.kind], ["sourceUuid", record.source?.uuid],
-      ["statisticSlug", record.statisticOptions?.includes(execution.statisticSlug) ? execution.statisticSlug : undefined],
+      ["statisticSlug", hasOwnStatisticOption(record.statisticOptions, execution.statisticSlug) ? execution.statisticSlug : undefined],
       ["dc", record.dcSource?.kind === "fixed" ? record.dcSource.value : undefined],
       ["rollMode", record.secrecy === "secret" ? "blind" : "public"]
     ];
     for (const [field, expectedValue] of expected) if (execution[field] !== expectedValue) return failure([error(`pending-check-result-${field}-mismatch`, `executionResult.${field}`, `Execution ${field} does not match the prepared pending check.`)], warnings);
 
     const persistedResult = { total: execution.result.total, degreeOfSuccess: execution.result.degreeOfSuccess, degreeOfSuccessSlug: execution.result.degreeOfSuccessSlug, statisticSlug: execution.statisticSlug, dc: execution.dc, rollMode: execution.rollMode };
-    const candidate = clonePlainData(state);
+    let candidate;
+    try { candidate = clonePlainData(state); } catch {
+      return failure([error("pending-check-result-candidate-construction-failed", "encounterState", "Pending check result candidate could not be cloned.")], warnings);
+    }
     candidate.pendingChecks[idIndex].status = STATUSES.RESOLVED;
     candidate.pendingChecks[idIndex].result = persistedResult;
     candidate.revision = state.revision + 1;
