@@ -258,8 +258,10 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       const captured = captureRecord(record, path, errors);
       const capturedRecord = captured.captured;
       const originalResult = captured.originals.result;
-      for (const key of Object.keys(record)) {
-        if (!REQUIRED_SET.has(key)) issue(errors, "unexpected-pending-check-field", `${path}.${key}`, "Pending check has an unexpected own field.");
+      for (const key of Reflect.ownKeys(record)) {
+        if (typeof key !== "string" || !REQUIRED_SET.has(key)) {
+          issue(errors, "unexpected-pending-check-field", `${path}.${String(key)}`, "Pending check has an unexpected own field.");
+        }
       }
 
       const pendingCheckId = capturedRecord.pendingCheckId;
@@ -293,13 +295,23 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (![STATUSES.PENDING, STATUSES.RESOLVED].includes(capturedRecord.status)) issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
       if (capturedRecord.status === STATUSES.PENDING && capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
       if (capturedRecord.status === STATUSES.RESOLVED) {
-        const result = capturedRecord.result;
+        const result = capturedRecord.result ?? originalResult;
         const keys = ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"];
         if (!hasExactOwnDataFields(originalResult, keys)) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
         else {
           const slugs = ["critical-failure", "failure", "success", "critical-success"];
           if (!Number.isFinite(result.total) || !Number.isSafeInteger(result.degreeOfSuccess) || result.degreeOfSuccess < 0 || result.degreeOfSuccess > 3 || result.degreeOfSuccessSlug !== slugs[result.degreeOfSuccess]) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved result degree or total is invalid.");
-          if (!Array.isArray(capturedRecord.statisticOptions) || !capturedRecord.statisticOptions.includes(result.statisticSlug)) issue(errors, "invalid-pending-check-result", `${path}.result.statisticSlug`, "Resolved result statistic must be authored.");
+          let authoredStatistic = false;
+          if (Array.isArray(capturedRecord.statisticOptions)) {
+            for (let optionIndex = 0; optionIndex < capturedRecord.statisticOptions.length; optionIndex += 1) {
+              if (Object.hasOwn(capturedRecord.statisticOptions, optionIndex)
+                && capturedRecord.statisticOptions[optionIndex] === result.statisticSlug) {
+                authoredStatistic = true;
+                break;
+              }
+            }
+          }
+          if (!authoredStatistic) issue(errors, "invalid-pending-check-result", `${path}.result.statisticSlug`, "Resolved result statistic must be authored.");
           if (!Number.isSafeInteger(result.dc) || result.dc < 0 || capturedRecord.dcSource?.kind !== "fixed" || result.dc !== capturedRecord.dcSource.value) issue(errors, "invalid-pending-check-result", `${path}.result.dc`, "Resolved result DC must match fixed authored DC.");
           const expectedMode = capturedRecord.secrecy === "secret" ? "blind" : "public";
           if (result.rollMode !== expectedMode) issue(errors, "invalid-pending-check-result", `${path}.result.rollMode`, "Resolved result roll mode must match secrecy.");

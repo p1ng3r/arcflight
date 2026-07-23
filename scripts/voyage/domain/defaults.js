@@ -16,7 +16,13 @@ export function isPlainObject(value) {
  * Voyage domain's plain-data contract.
  */
 export function clonePlainData(value) {
-  if (Array.isArray(value)) return value.map((entry) => clonePlainData(entry));
+  if (Array.isArray(value)) {
+    const clone = new Array(value.length);
+    for (let index = 0; index < value.length; index += 1) {
+      if (Object.hasOwn(value, index)) clone[index] = clonePlainData(value[index]);
+    }
+    return clone;
+  }
   if (isPlainObject(value)) {
     return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, clonePlainData(entry)]));
   }
