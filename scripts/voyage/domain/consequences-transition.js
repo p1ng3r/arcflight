@@ -12,16 +12,18 @@ export function applyVoyageEncounterConsequencesTransition(state, transitionRequ
  try {
   const structural = validateVoyageEncounterState(state);
   if (!structural.valid) return failure(structural.errors, structural.warnings);
+  if (state.lifecycleState !== "active") return failure([error("consequences-transition-requires-active", "lifecycleState", "Consequences transition requires Active.")]);
+  if (state.phase !== PHASES.RESOLUTION) return failure([error("consequences-transition-requires-resolution", "phase", "Consequences transition requires Resolution.")]);
+  const phase = validateVoyagePhaseTransition(state.phase, PHASES.CONSEQUENCES);
+  if (!phase.valid) return failure(phase.errors, phase.warnings);
   const completion = prepareVoyageEncounterResolutionCompletion(state);
   const warnings = [...structural.warnings, ...completion.warnings];
-  if (!completion.readyForConsequences) return failure(completion.errors, warnings);
+  if (!completion.readyForConsequences) return failure([error("resolution-incomplete", "pendingChecks", "Resolution is incomplete.")], warnings);
   if (!isPlainObject(transitionRequest) || Object.keys(transitionRequest).length !== 1 || !Object.hasOwn(transitionRequest, "phaseStartSnapshotId")) return failure([error("invalid-consequences-transition-request", "transitionRequest", "Consequences transition requires exactly one phaseStartSnapshotId.")], warnings);
   const snapshotId = transitionRequest.phaseStartSnapshotId;
   if (typeof snapshotId !== "string" || !snapshotId.trim() || ["__proto__", "constructor", "prototype"].includes(snapshotId)) return failure([error("invalid-phase-start-snapshot-id", "transitionRequest.phaseStartSnapshotId", "Consequences snapshot ID must be safe and non-empty.")], warnings);
   if (state.snapshots.some((snapshot) => snapshot?.snapshotId === snapshotId)) return failure([error("phase-start-snapshot-id-already-exists", "transitionRequest.phaseStartSnapshotId", "Consequences phase-start snapshot ID already exists.")], warnings);
-  const phase = validateVoyagePhaseTransition(state.phase, PHASES.CONSEQUENCES);
   warnings.push(...phase.warnings);
-  if (!phase.valid) return failure(phase.errors, warnings);
   let candidate; try { candidate = clonePlainData(state); } catch { return failure([error("consequences-candidate-construction-failed", "encounterState", "Consequences candidate could not be cloned.")], warnings); }
   candidate.phase = PHASES.CONSEQUENCES;
   let snapshot; try { snapshot = createVoyageEncounterBoundarySnapshot(candidate, { snapshotId, boundaryType: "phase-start" }); } catch { return failure([error("consequences-snapshot-construction-failed", "phaseStartSnapshot", "Consequences snapshot could not be constructed.")], warnings); }

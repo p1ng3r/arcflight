@@ -26,21 +26,27 @@ function exactObject(value, fields) {
 function emptyDenseArray(value) { return Array.isArray(value) && value.length === 0 && Object.keys(value).length === 0; }
 
 function captureExecution(value) {
-  if (!exactObject(value, EXECUTION_FIELDS) || !exactObject(value.result, RESULT_FIELDS)) return null;
-  const output = {};
-  for (const field of EXECUTION_FIELDS) output[field] = value[field];
-  if (output.ok !== true || output.status !== "rolled" || output.sourceKind !== "character" || !emptyDenseArray(output.errors) || !emptyDenseArray(output.warnings)
-    || typeof output.pendingCheckId !== "string" || !output.pendingCheckId.trim()
-    || !Number.isSafeInteger(output.sequence) || output.sequence < 0
-    || typeof output.sourceKind !== "string" || !output.sourceKind.trim()
-    || typeof output.sourceUuid !== "string" || !output.sourceUuid.trim()
-    || typeof output.statisticSlug !== "string" || !output.statisticSlug.trim()
-    || !Number.isSafeInteger(output.dc) || output.dc < 0
-    || !["public", "blind"].includes(output.rollMode)
-    || !Number.isFinite(output.result.total)
-    || !Number.isSafeInteger(output.result.degreeOfSuccess) || output.result.degreeOfSuccess < 0 || output.result.degreeOfSuccess > 3
-    || output.result.degreeOfSuccessSlug !== SLUGS[output.result.degreeOfSuccess]) return null;
-  return output;
+  try {
+    if (!isPlainObject(value)) return { error: "invalid-execution-result-shape" };
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key !== "string")) return { error: "unexpected-execution-result-field" };
+    for (const field of EXECUTION_FIELDS) if (!own(value, field)) return { error: "missing-execution-result-field" };
+    if (keys.some((key) => !EXECUTION_FIELDS.includes(key))) return { error: "unexpected-execution-result-field" };
+    const output = {}; for (const field of EXECUTION_FIELDS) output[field] = value[field];
+    if (output.status !== "rolled" || output.ok !== true) return { error: "invalid-execution-result-status" };
+    if (!emptyDenseArray(output.errors)) return { error: "execution-result-contains-errors" };
+    if (!emptyDenseArray(output.warnings)) return { error: "execution-result-contains-warnings" };
+    if (!isPlainObject(output.result) || Reflect.ownKeys(output.result).length !== RESULT_FIELDS.length || !RESULT_FIELDS.every((field) => own(output.result, field))) return { error: "invalid-execution-result-result" };
+    if (typeof output.pendingCheckId !== "string" || !output.pendingCheckId.trim()) return { error: "invalid-pending-check-id" };
+    if (!Number.isSafeInteger(output.sequence) || output.sequence < 0) return { error: "invalid-sequence" };
+    if (output.sourceKind !== "character") return { error: "invalid-source-kind" };
+    if (typeof output.sourceUuid !== "string" || !output.sourceUuid.trim()) return { error: "invalid-source-uuid" };
+    if (typeof output.statisticSlug !== "string" || !output.statisticSlug.trim()) return { error: "invalid-statistic-slug" };
+    if (!Number.isSafeInteger(output.dc) || output.dc < 0) return { error: "invalid-dc" };
+    if (!["public", "blind"].includes(output.rollMode)) return { error: "invalid-roll-mode" };
+    if (!Number.isFinite(output.result.total) || !Number.isSafeInteger(output.result.degreeOfSuccess) || output.result.degreeOfSuccess < 0 || output.result.degreeOfSuccess > 3 || output.result.degreeOfSuccessSlug !== SLUGS[output.result.degreeOfSuccess]) return { error: "invalid-execution-result-result" };
+    return { value: output };
+  } catch { return { error: "invalid-execution-result-shape" }; }
 }
 
 /** Persist exactly one fully normalized successful V3-004E-C execution result. */
@@ -53,8 +59,9 @@ export function applyVoyageEncounterPendingCheckResult(state, executionResult) {
     if (!pending.valid) return failure(pending.errors, warnings);
     if (state.lifecycleState !== LIFE.ACTIVE) return failure([error("pending-check-result-requires-active", "lifecycleState", "Persisting a check result requires an Active encounter.")], warnings);
     if (state.phase !== PHASES.RESOLUTION) return failure([error("pending-check-result-requires-resolution", "phase", "Persisting a check result requires Resolution phase.")], warnings);
-    const execution = captureExecution(executionResult);
-    if (!execution) return failure([error("invalid-pending-check-execution-result", "executionResult", "Execution result must be the exact successful V3-004E-C plain-data result.")], warnings);
+    const captured = captureExecution(executionResult);
+    if (captured.error) return failure([error(captured.error, "executionResult", "Execution result is invalid.")], warnings);
+    const execution = captured.value;
 
     const idIndex = state.pendingChecks.findIndex((check) => check.pendingCheckId === execution.pendingCheckId);
     if (idIndex < 0) return failure([error("unknown-pending-check-result", "executionResult.pendingCheckId", "Execution result does not identify a prepared pending check.")], warnings);
