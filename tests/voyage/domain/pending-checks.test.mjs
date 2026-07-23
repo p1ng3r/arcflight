@@ -59,6 +59,17 @@ test("pending validator rejects persisted contract mismatches", () => {
   }
 });
 
+test("resolved pending checks require the exact six-field persisted result", () => {
+  const valid = () => ({ total: 24, degreeOfSuccess: 2, degreeOfSuccessSlug: "success", statisticSlug: "diplomacy", dc: 20, rollMode: "public" });
+  for (const mutate of [result => delete result.rollMode, result => result.extra = true, result => result.dc = Infinity]) {
+    const prepared = applyVoyageEncounterPendingCheckPreparation(state(), { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] }).nextState;
+    prepared.pendingChecks[0].status = "resolved";
+    prepared.pendingChecks[0].result = valid();
+    mutate(prepared.pendingChecks[0].result);
+    assert.equal(validateVoyageEncounterPendingChecks(prepared).valid, false);
+  }
+});
+
 function preparedState() {
   const value = state();
   const result = applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] });
@@ -258,4 +269,21 @@ test("throwing inherited mapping getters are never executed", () => {
     assert.equal(result.ok, true);
     assert.equal(readCount, 0);
   });
+});
+
+test("accepts an exact six-field resolved result in Resolution", () => {
+  const prepared = applyVoyageEncounterPendingCheckPreparation(state(), { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] }).nextState;
+  prepared.pendingChecks[0].status = "resolved";
+  prepared.pendingChecks[0].result = { total: 24, degreeOfSuccess: 2, degreeOfSuccessSlug: "success", statisticSlug: "diplomacy", dc: 20, rollMode: "public" };
+  assert.equal(validateVoyageEncounterPendingChecks(prepared).valid, true);
+});
+
+test("rejects symbol and non-enumerable resolved-result keys", () => {
+  for (const key of [Symbol("extra"), "hidden"]) {
+    const prepared = applyVoyageEncounterPendingCheckPreparation(state(), { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] }).nextState;
+    prepared.pendingChecks[0].status = "resolved";
+    prepared.pendingChecks[0].result = { total: 24, degreeOfSuccess: 2, degreeOfSuccessSlug: "success", statisticSlug: "diplomacy", dc: 20, rollMode: "public" };
+    Object.defineProperty(prepared.pendingChecks[0].result, key, { value: true, enumerable: false });
+    assert.equal(validateVoyageEncounterPendingChecks(prepared).valid, false);
+  }
 });
