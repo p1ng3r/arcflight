@@ -274,8 +274,22 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.stageId !== state.currentStage?.stageId) issue(errors, "pending-check-stage-mismatch", `${path}.stageId`, "Pending check stage must match current stage.");
       if (capturedRecord.roundNumber !== state.roundNumber) issue(errors, "pending-check-round-mismatch", `${path}.roundNumber`, "Pending check round must match current round.");
       if (capturedRecord.mode !== MODES.CHECK) issue(errors, "invalid-pending-check-mode", `${path}.mode`, "Pending check mode must be check.");
-      if (capturedRecord.status !== "pending") issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending.");
-      if (capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
+      const result = capturedRecord.result;
+      if (capturedRecord.status === "pending") {
+        if (result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "A pending check result must be null.");
+      } else if (capturedRecord.status === "resolved") {
+        if (!isPlainObject(result)
+          || !Number.isFinite(result.total)
+          || !Number.isSafeInteger(result.degreeOfSuccess)
+          || result.degreeOfSuccess < 0
+          || result.degreeOfSuccess > 3
+          || result.degreeOfSuccessSlug !== ["critical-failure", "failure", "success", "critical-success"][result.degreeOfSuccess]
+          || Object.keys(result).length !== 3) {
+          issue(errors, "invalid-pending-check-result", `${path}.result`, "A resolved check requires an isolated PF2e total and degree of success.");
+        }
+      } else {
+        issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
+      }
 
       const request = expected.get(sequence);
       if (!request) {
@@ -308,7 +322,14 @@ export function validateVoyageEncounterPendingChecks(state) {
   const structural = validateVoyageEncounterState(state);
   if (!structural.valid) return { valid: false, errors: deduplicateVoyageResolutionIssues(structural.errors), warnings: deduplicateVoyageResolutionIssues(structural.warnings) };
 
-  const report = prepareVoyageEncounterActionExecutionRequests(state);
+  // Resolved records remain part of the authoritative round while the phase
+  // advances to Consequences.  Their request identity is still evaluated
+  // against the same Resolution selections without treating Consequences as a
+  // new execution opportunity.
+  const reportState = state.phase === PHASES.CONSEQUENCES
+    ? { ...state, phase: PHASES.RESOLUTION }
+    : state;
+  const report = prepareVoyageEncounterActionExecutionRequests(reportState);
   return validatePendingChecksAgainstReport(state, report, structural);
 }
 
