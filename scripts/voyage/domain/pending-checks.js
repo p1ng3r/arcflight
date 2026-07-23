@@ -1,12 +1,13 @@
 import {
   VOYAGE_ACTION_EXECUTION_MODES as MODES,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE,
+  VOYAGE_PENDING_CHECK_STATUSES as STATUSES,
   VOYAGE_ROUND_PHASES as PHASES
 } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
-import { prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
+import { analyzeVoyageEncounterActionExecutionRequests, prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
 
 const REQUIRED = Object.freeze([
   "pendingCheckId",
@@ -275,16 +276,19 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.roundNumber !== state.roundNumber) issue(errors, "pending-check-round-mismatch", `${path}.roundNumber`, "Pending check round must match current round.");
       if (capturedRecord.mode !== MODES.CHECK) issue(errors, "invalid-pending-check-mode", `${path}.mode`, "Pending check mode must be check.");
       const result = capturedRecord.result;
-      if (capturedRecord.status === "pending") {
+      if (capturedRecord.status === STATUSES.PENDING) {
         if (result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "A pending check result must be null.");
-      } else if (capturedRecord.status === "resolved") {
+      } else if (capturedRecord.status === STATUSES.RESOLVED) {
         if (!isPlainObject(result)
           || !Number.isFinite(result.total)
           || !Number.isSafeInteger(result.degreeOfSuccess)
           || result.degreeOfSuccess < 0
           || result.degreeOfSuccess > 3
           || result.degreeOfSuccessSlug !== ["critical-failure", "failure", "success", "critical-success"][result.degreeOfSuccess]
-          || Object.keys(result).length !== 3) {
+          || typeof result.statisticSlug !== "string" || !result.statisticSlug.trim()
+          || !Number.isSafeInteger(result.dc) || result.dc < 0
+          || !["public", "blind"].includes(result.rollMode)
+          || Object.keys(result).length !== 6) {
           issue(errors, "invalid-pending-check-result", `${path}.result`, "A resolved check requires an isolated PF2e total and degree of success.");
         }
       } else {
@@ -322,14 +326,7 @@ export function validateVoyageEncounterPendingChecks(state) {
   const structural = validateVoyageEncounterState(state);
   if (!structural.valid) return { valid: false, errors: deduplicateVoyageResolutionIssues(structural.errors), warnings: deduplicateVoyageResolutionIssues(structural.warnings) };
 
-  // Resolved records remain part of the authoritative round while the phase
-  // advances to Consequences.  Their request identity is still evaluated
-  // against the same Resolution selections without treating Consequences as a
-  // new execution opportunity.
-  const reportState = state.phase === PHASES.CONSEQUENCES
-    ? { ...state, phase: PHASES.RESOLUTION }
-    : state;
-  const report = prepareVoyageEncounterActionExecutionRequests(reportState);
+  const report = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
   return validatePendingChecksAgainstReport(state, report, structural);
 }
 
@@ -442,7 +439,7 @@ export function applyVoyageEncounterPendingCheckPreparation(state, preparationRe
         stageId: candidate.currentStage.stageId,
         roundNumber: candidate.roundNumber,
         ...clonePlainData(request),
-        status: "pending",
+        status: STATUSES.PENDING,
         result: null
       });
     }

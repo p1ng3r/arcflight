@@ -315,7 +315,9 @@ export function validateVoyageEncounterActionExecutionDefinitions(state) {
   }
 }
 
-export function prepareVoyageEncounterActionExecutionRequests(state) {
+/** Shared request analysis; callers that inspect persisted Resolution records
+ * may opt out of the public helper's current-phase gate. */
+export function analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution = true } = {}) {
   let structural = null;
   let active = false;
   let resolution = false;
@@ -333,9 +335,9 @@ export function prepareVoyageEncounterActionExecutionRequests(state) {
     const warnings = [...structural.warnings, ...order.warnings];
 
     if (structural.valid && !active) issue(errors, "execution-requires-active", "lifecycleState", "Preparing execution requests requires an Active encounter.");
-    if (structural.valid && !resolution) issue(errors, "execution-requires-resolution", "phase", "Preparing execution requests requires Resolution phase.");
+    if (structural.valid && requireResolution && !resolution) issue(errors, "execution-requires-resolution", "phase", "Preparing execution requests requires Resolution phase.");
 
-    const validPlan = structural.valid && active && resolution && order.valid && errors.length === 0;
+    const validPlan = structural.valid && active && (!requireResolution || resolution) && order.valid && errors.length === 0;
     const requests = [];
 
     if (validPlan) {
@@ -398,4 +400,8 @@ export function prepareVoyageEncounterActionExecutionRequests(state) {
       warnings: structural?.warnings ?? []
     };
   }
+}
+
+export function prepareVoyageEncounterActionExecutionRequests(state) {
+  return analyzeVoyageEncounterActionExecutionRequests(state);
 }

@@ -1,83 +1,77 @@
-import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
+import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_PENDING_CHECK_STATUSES as STATUSES, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterPendingChecks } from "./pending-checks.js";
-import { validateVoyagePhaseTransition } from "./phase.js";
 import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
 import { validateVoyageEncounterState } from "./validation.js";
 
+const EXECUTION_FIELDS = Object.freeze(["ok", "status", "pendingCheckId", "sequence", "sourceKind", "sourceUuid", "statisticSlug", "dc", "rollMode", "result", "errors", "warnings"]);
+const RESULT_FIELDS = Object.freeze(["total", "degreeOfSuccess", "degreeOfSuccessSlug"]);
 const SLUGS = ["critical-failure", "failure", "success", "critical-success"];
 const error = (code, path, message) => ({ code, path, message, severity: "error" });
 const failure = (errors, warnings = []) => ({ ok: false, nextState: null, events: [], errors: deduplicateVoyageResolutionIssues(errors), warnings: deduplicateVoyageResolutionIssues(warnings) });
+const own = (value, key) => Object.hasOwn(value, key);
 
-function validResult(value) {
-  return isPlainObject(value)
-    && Object.keys(value).length === 3
-    && Number.isFinite(value.total)
-    && Number.isSafeInteger(value.degreeOfSuccess)
-    && value.degreeOfSuccess >= 0
-    && value.degreeOfSuccess <= 3
-    && value.degreeOfSuccessSlug === SLUGS[value.degreeOfSuccess];
+function exactObject(value, fields) {
+  return isPlainObject(value) && Object.keys(value).length === fields.length && fields.every((field) => own(value, field));
 }
 
-/**
- * Persist one successful, already-posted PF2e check.  This deliberately does
- * not invoke PF2e: callers execute exactly once, then persist its isolated
- * result through the authoritative encounter mutation path.
- */
+function emptyDenseArray(value) { return Array.isArray(value) && value.length === 0 && Object.keys(value).length === 0; }
+
+function captureExecution(value) {
+  if (!exactObject(value, EXECUTION_FIELDS) || !exactObject(value.result, RESULT_FIELDS)) return null;
+  const output = {};
+  for (const field of EXECUTION_FIELDS) output[field] = value[field];
+  if (output.ok !== true || output.status !== "rolled" || !emptyDenseArray(output.errors) || !emptyDenseArray(output.warnings)
+    || typeof output.pendingCheckId !== "string" || !output.pendingCheckId.trim()
+    || !Number.isSafeInteger(output.sequence) || output.sequence < 0
+    || typeof output.sourceKind !== "string" || !output.sourceKind.trim()
+    || typeof output.sourceUuid !== "string" || !output.sourceUuid.trim()
+    || typeof output.statisticSlug !== "string" || !output.statisticSlug.trim()
+    || !Number.isSafeInteger(output.dc) || output.dc < 0
+    || !["public", "blind"].includes(output.rollMode)
+    || !Number.isFinite(output.result.total)
+    || !Number.isSafeInteger(output.result.degreeOfSuccess) || output.result.degreeOfSuccess < 0 || output.result.degreeOfSuccess > 3
+    || output.result.degreeOfSuccessSlug !== SLUGS[output.result.degreeOfSuccess]) return null;
+  return output;
+}
+
+/** Persist exactly one fully normalized successful V3-004E-C execution result. */
 export function applyVoyageEncounterPendingCheckResult(state, executionResult) {
   try {
-  const structural = validateVoyageEncounterState(state);
-  if (!structural.valid) return failure(structural.errors, structural.warnings);
-  const pending = validateVoyageEncounterPendingChecks(state);
-  const warnings = [...structural.warnings, ...pending.warnings];
-  if (!pending.valid) return failure(pending.errors, warnings);
-  if (state.lifecycleState !== LIFE.ACTIVE) return failure([error("pending-check-result-requires-active", "lifecycleState", "Persisting a check result requires an Active encounter.")], warnings);
-  if (state.phase !== PHASES.RESOLUTION) return failure([error("pending-check-result-requires-resolution", "phase", "Persisting a check result requires Resolution phase.")], warnings);
-  if (!isPlainObject(executionResult)) return failure([error("invalid-pending-check-execution-result", "executionResult", "Execution result must be a plain object.")], warnings);
-  if (executionResult.ok !== true || executionResult.status !== "rolled") return failure([error("pending-check-execution-not-rolled", "executionResult.status", "Only a successful PF2e rolled result can be persisted.")], warnings);
-  if (typeof executionResult.pendingCheckId !== "string" || !executionResult.pendingCheckId.trim()) return failure([error("invalid-pending-check-result-id", "executionResult.pendingCheckId", "Execution result requires a non-empty pending check ID.")], warnings);
-  if (!Number.isSafeInteger(executionResult.sequence) || executionResult.sequence < 0) return failure([error("invalid-pending-check-result-sequence", "executionResult.sequence", "Execution result requires a non-negative sequence.")], warnings);
-  if (!validResult(executionResult.result)) return failure([error("invalid-pending-check-result", "executionResult.result", "Execution result must contain a valid isolated PF2e result.")], warnings);
+    const structural = validateVoyageEncounterState(state);
+    if (!structural.valid) return failure(structural.errors, structural.warnings);
+    const pending = validateVoyageEncounterPendingChecks(state);
+    const warnings = [...structural.warnings, ...pending.warnings];
+    if (!pending.valid) return failure(pending.errors, warnings);
+    if (state.lifecycleState !== LIFE.ACTIVE) return failure([error("pending-check-result-requires-active", "lifecycleState", "Persisting a check result requires an Active encounter.")], warnings);
+    if (state.phase !== PHASES.RESOLUTION) return failure([error("pending-check-result-requires-resolution", "phase", "Persisting a check result requires Resolution phase.")], warnings);
+    const execution = captureExecution(executionResult);
+    if (!execution) return failure([error("invalid-pending-check-execution-result", "executionResult", "Execution result must be the exact successful V3-004E-C plain-data result.")], warnings);
 
-  const index = state.pendingChecks.findIndex((check) => check.pendingCheckId === executionResult.pendingCheckId && check.sequence === executionResult.sequence);
-  if (index < 0) return failure([error("unknown-pending-check-result", "executionResult.pendingCheckId", "Execution result does not identify a prepared pending check.")], warnings);
-  if (state.pendingChecks[index].status !== "pending") return failure([error("pending-check-result-already-persisted", `pendingChecks[${index}].status`, "This pending check has already been resolved.")], warnings);
+    const idIndex = state.pendingChecks.findIndex((check) => check.pendingCheckId === execution.pendingCheckId);
+    if (idIndex < 0) return failure([error("unknown-pending-check-result", "executionResult.pendingCheckId", "Execution result does not identify a prepared pending check.")], warnings);
+    const record = state.pendingChecks[idIndex];
+    if (record.sequence !== execution.sequence) return failure([error("pending-check-result-sequence-mismatch", "executionResult.sequence", "Execution sequence does not match the identified pending check.")], warnings);
+    if (record.status !== STATUSES.PENDING) return failure([error("pending-check-result-already-persisted", `pendingChecks[${idIndex}].status`, "This pending check has already been resolved.")], warnings);
+    const expected = [
+      ["sourceKind", record.source?.kind], ["sourceUuid", record.source?.uuid],
+      ["statisticSlug", record.statisticOptions?.includes(execution.statisticSlug) ? execution.statisticSlug : undefined],
+      ["dc", record.dcSource?.kind === "fixed" ? record.dcSource.value : undefined],
+      ["rollMode", record.secrecy === "secret" ? "blind" : "public"]
+    ];
+    for (const [field, expectedValue] of expected) if (execution[field] !== expectedValue) return failure([error(`pending-check-result-${field}-mismatch`, `executionResult.${field}`, `Execution ${field} does not match the prepared pending check.`)], warnings);
 
-  let candidate;
-  try {
-    candidate = clonePlainData(state);
-    candidate.pendingChecks[index].status = "resolved";
-    candidate.pendingChecks[index].result = clonePlainData(executionResult.result);
+    const persistedResult = { total: execution.result.total, degreeOfSuccess: execution.result.degreeOfSuccess, degreeOfSuccessSlug: execution.result.degreeOfSuccessSlug, statisticSlug: execution.statisticSlug, dc: execution.dc, rollMode: execution.rollMode };
+    const candidate = clonePlainData(state);
+    candidate.pendingChecks[idIndex].status = STATUSES.RESOLVED;
+    candidate.pendingChecks[idIndex].result = persistedResult;
     candidate.revision = state.revision + 1;
-  } catch {
-    return failure([error("pending-check-result-candidate-construction-failed", "encounterState", "Pending check result could not be persisted safely.")], warnings);
-  }
-
-  const allResolved = candidate.pendingChecks.every((check) => check.status === "resolved");
-  if (allResolved) {
-    const transition = validateVoyagePhaseTransition(candidate.phase, PHASES.CONSEQUENCES);
-    warnings.push(...transition.warnings);
-    if (!transition.valid) return failure(transition.errors, warnings);
-    candidate.phase = PHASES.CONSEQUENCES;
-  }
-
-  const final = validateVoyageEncounterState(candidate);
-  const finalPending = validateVoyageEncounterPendingChecks(candidate);
-  warnings.push(...final.warnings, ...finalPending.warnings);
-  if (!final.valid || !finalPending.valid) return failure([...final.errors, ...finalPending.errors], warnings);
-
-  const resultEvent = {
-    type: "voyage.pending-check-result-persisted",
-    encounterId: candidate.encounterId,
-    roundNumber: candidate.roundNumber,
-    pendingCheckId: candidate.pendingChecks[index].pendingCheckId,
-    sequence: candidate.pendingChecks[index].sequence,
-    previousRevision: state.revision,
-    revision: candidate.revision
-  };
-  const events = [resultEvent];
-  if (allResolved) events.push({ type: "voyage.consequences-started", encounterId: candidate.encounterId, roundNumber: candidate.roundNumber, previousPhase: PHASES.RESOLUTION, phase: PHASES.CONSEQUENCES, previousRevision: state.revision, revision: candidate.revision });
-    return { ok: true, nextState: candidate, events, errors: [], warnings: deduplicateVoyageResolutionIssues(warnings) };
+    const final = validateVoyageEncounterState(candidate);
+    const finalPending = validateVoyageEncounterPendingChecks(candidate);
+    warnings.push(...final.warnings, ...finalPending.warnings);
+    if (!final.valid || !finalPending.valid) return failure([...final.errors, ...finalPending.errors], warnings);
+    const resolvedCount = candidate.pendingChecks.filter((check) => check.status === STATUSES.RESOLVED).length;
+    return { ok: true, nextState: candidate, events: [{ type: "voyage.pending-check-resolved", encounterId: candidate.encounterId, lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber, phase: candidate.phase, pendingCheckId: record.pendingCheckId, sequence: record.sequence, resolvedCount, pendingCheckCount: candidate.pendingChecks.length, unresolvedCount: candidate.pendingChecks.length - resolvedCount, previousRevision: state.revision, revision: candidate.revision }], errors: [], warnings: deduplicateVoyageResolutionIssues(warnings) };
   } catch {
     return failure([error("pending-check-result-data-read-failed", "executionResult", "Pending check result data could not be read safely.")]);
   }

@@ -1,0 +1,32 @@
+import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_PENDING_CHECK_STATUSES as STATUSES, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
+import { clonePlainData } from "./defaults.js";
+import { validateVoyageEncounterPendingChecks } from "./pending-checks.js";
+import { prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
+import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
+import { validateVoyageEncounterState } from "./validation.js";
+
+const issue = (errors, code, path, message) => errors.push({ code, path, message, severity: "error" });
+
+/** Report whether Resolution has completed without mutating encounter state. */
+export function prepareVoyageEncounterResolutionCompletion(state) {
+  const structural = validateVoyageEncounterState(state);
+  const errors = [...structural.errors];
+  const warnings = [...structural.warnings];
+  const execution = prepareVoyageEncounterActionExecutionRequests(state);
+  const pending = structural.valid ? validateVoyageEncounterPendingChecks(state) : { valid: false, errors: [], warnings: [] };
+  warnings.push(...execution.warnings, ...pending.warnings);
+  if (structural.valid && state.lifecycleState !== LIFE.ACTIVE) issue(errors, "resolution-completion-requires-active", "lifecycleState", "Resolution completion requires an Active encounter.");
+  if (structural.valid && state.phase !== PHASES.RESOLUTION) issue(errors, "resolution-completion-requires-resolution", "phase", "Resolution completion requires Resolution phase.");
+  if (!pending.valid) errors.push(...pending.errors);
+  const records = Array.isArray(state?.pendingChecks) ? state.pendingChecks : [];
+  const unresolvedChecks = records.filter((check) => check?.status === STATUSES.PENDING).map((check) => clonePlainData(check));
+  const resolvedCheckCount = records.filter((check) => check?.status === STATUSES.RESOLVED).length;
+  const preparedCheckCount = records.length;
+  const allChecksPrepared = execution.checkCount === preparedCheckCount && (execution.checkCount === 0 || preparedCheckCount > 0);
+  const noRollOnly = execution.readyForExecution && execution.checkCount === 0;
+  const readyForCompletion = structural.valid && state.lifecycleState === LIFE.ACTIVE && state.phase === PHASES.RESOLUTION && execution.readyForExecution && pending.valid && allChecksPrepared && unresolvedChecks.length === 0;
+  if (execution.readyForExecution && !allChecksPrepared) issue(errors, "resolution-completion-checks-unprepared", "pendingChecks", "Every check-producing action must have a prepared pending check.");
+  if (unresolvedChecks.length) issue(errors, "resolution-completion-checks-unresolved", "pendingChecks", "Every prepared pending check must be resolved.");
+  const final = deduplicateVoyageResolutionIssues(errors);
+  return { structurallyValid: structural.valid, active: state?.lifecycleState === LIFE.ACTIVE, resolution: state?.phase === PHASES.RESOLUTION, readyForCompletion: readyForCompletion && final.length === 0, readyForConsequences: readyForCompletion && final.length === 0, actionCount: execution.actionCount, checkCount: execution.checkCount, noRollActionCount: execution.noRollActionCount, noRollOnly, preparedCheckCount, resolvedCheckCount, unresolvedCheckCount: unresolvedChecks.length, unresolvedChecks, errors: final, warnings: deduplicateVoyageResolutionIssues(warnings) };
+}

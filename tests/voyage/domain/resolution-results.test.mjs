@@ -15,18 +15,18 @@ function state() {
   return applyVoyageEncounterPendingCheckPreparation(value, { pendingCheckIds: [{ sequence: 0, pendingCheckId: "check-1" }] }).nextState;
 }
 
-const rolled = (overrides = {}) => ({ ok: true, status: "rolled", pendingCheckId: "check-1", sequence: 0, result: { total: 24, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" }, ...overrides });
+const rolled = (overrides = {}) => ({ ok: true, status: "rolled", pendingCheckId: "check-1", sequence: 0, sourceKind: "character", sourceUuid: "Actor.a", statisticSlug: "athletics", dc: 20, rollMode: "public", result: { total: 24, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" }, errors: [], warnings: [], ...overrides });
 
-test("persists an isolated PF2e result and enters Consequences after the last check", () => {
+test("persists an isolated PF2e result without advancing Resolution", () => {
   const before = state();
   const result = applyVoyageEncounterPendingCheckResult(before, rolled());
   assert.equal(result.ok, true);
   assert.equal(before.pendingChecks[0].status, "pending");
   assert.equal(result.nextState.pendingChecks[0].status, "resolved");
-  assert.deepEqual(result.nextState.pendingChecks[0].result, rolled().result);
-  assert.equal(result.nextState.phase, "consequences");
+  assert.deepEqual(result.nextState.pendingChecks[0].result, { ...rolled().result, statisticSlug: "athletics", dc: 20, rollMode: "public" });
+  assert.equal(result.nextState.phase, "resolution");
   assert.equal(result.nextState.revision, before.revision + 1);
-  assert.deepEqual(result.events.map((event) => event.type), ["voyage.pending-check-result-persisted", "voyage.consequences-started"]);
+  assert.deepEqual(result.events.map((event) => event.type), ["voyage.pending-check-resolved"]);
 });
 
 test("rejects duplicate, blocked, mismatched, and malformed result persistence without mutation", () => {
