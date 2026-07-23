@@ -8,6 +8,17 @@ import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterPendingChecks } from "./pending-checks.js";
 const error = (code, path, message) => ({ code, path, message, severity: "error" });
 const failure = (errors, warnings = []) => ({ ok: false, nextState: null, events: [], errors: deduplicateVoyageResolutionIssues(errors), warnings: deduplicateVoyageResolutionIssues(warnings) });
+function captureTransitionRequest(value) {
+  try {
+    if (!isPlainObject(value)) return { error: "consequences-transition-request-read-failed" };
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== 1 || keys[0] !== "phaseStartSnapshotId") return { error: "consequences-transition-request-read-failed" };
+    const descriptor = Object.getOwnPropertyDescriptor(value, "phaseStartSnapshotId");
+    if (!descriptor || !descriptor.enumerable) return { error: "consequences-transition-request-read-failed" };
+    return { value: value.phaseStartSnapshotId };
+  } catch { return { error: "consequences-transition-request-read-failed" }; }
+}
+
 export function applyVoyageEncounterConsequencesTransition(state, transitionRequest) {
  try {
   const structural = validateVoyageEncounterState(state);
@@ -19,8 +30,9 @@ export function applyVoyageEncounterConsequencesTransition(state, transitionRequ
   const completion = prepareVoyageEncounterResolutionCompletion(state);
   const warnings = [...structural.warnings, ...completion.warnings];
   if (!completion.readyForConsequences) return failure([error("resolution-incomplete", "pendingChecks", "Resolution is incomplete.")], warnings);
-  if (!isPlainObject(transitionRequest) || Object.keys(transitionRequest).length !== 1 || !Object.hasOwn(transitionRequest, "phaseStartSnapshotId")) return failure([error("invalid-consequences-transition-request", "transitionRequest", "Consequences transition requires exactly one phaseStartSnapshotId.")], warnings);
-  const snapshotId = transitionRequest.phaseStartSnapshotId;
+  const capturedRequest = captureTransitionRequest(transitionRequest);
+  if (capturedRequest.error) return failure([error(capturedRequest.error, "transitionRequest", "Consequences transition request could not be read safely.")], warnings);
+  const snapshotId = capturedRequest.value;
   if (typeof snapshotId !== "string" || !snapshotId.trim() || ["__proto__", "constructor", "prototype"].includes(snapshotId)) return failure([error("invalid-phase-start-snapshot-id", "transitionRequest.phaseStartSnapshotId", "Consequences snapshot ID must be safe and non-empty.")], warnings);
   if (state.snapshots.some((snapshot) => snapshot?.snapshotId === snapshotId)) return failure([error("phase-start-snapshot-id-already-exists", "transitionRequest.phaseStartSnapshotId", "Consequences phase-start snapshot ID already exists.")], warnings);
   warnings.push(...phase.warnings);
@@ -35,5 +47,5 @@ export function applyVoyageEncounterConsequencesTransition(state, transitionRequ
   if (!final.valid) return failure(final.errors, [...warnings, ...final.warnings]);
   if (!finalPending.valid) return failure(finalPending.errors, [...warnings, ...finalPending.warnings]);
   return { ok: true, nextState: candidate, events: [{ type: "voyage.consequences-started", encounterId: candidate.encounterId, lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber, previousPhase: state.phase, phase: candidate.phase, actionCount: completion.actionCount, checkCount: completion.checkCount, noRollActionCount: completion.noRollActionCount, resolvedCheckCount: completion.resolvedCheckCount, previousRevision: state.revision, revision: candidate.revision, phaseStartSnapshotId: snapshotId }], errors: [], warnings: deduplicateVoyageResolutionIssues(warnings) };
- } catch { return failure([error("invalid-consequences-transition-request", "transitionRequest", "Consequences transition request could not be read safely.")]); }
+ } catch { return failure([error("consequences-transition-state-read-failed", "encounterState", "Consequences transition state could not be read safely.")]); }
 }
