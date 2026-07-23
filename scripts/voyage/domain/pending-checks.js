@@ -1,12 +1,13 @@
 import {
   VOYAGE_ACTION_EXECUTION_MODES as MODES,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE,
-  VOYAGE_ROUND_PHASES as PHASES
+  VOYAGE_ROUND_PHASES as PHASES,
+  VOYAGE_PENDING_CHECK_STATUSES as STATUSES
 } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
-import { prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
+import { analyzeVoyageEncounterActionExecutionRequests, prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
 
 const REQUIRED = Object.freeze([
   "pendingCheckId",
@@ -274,8 +275,21 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.stageId !== state.currentStage?.stageId) issue(errors, "pending-check-stage-mismatch", `${path}.stageId`, "Pending check stage must match current stage.");
       if (capturedRecord.roundNumber !== state.roundNumber) issue(errors, "pending-check-round-mismatch", `${path}.roundNumber`, "Pending check round must match current round.");
       if (capturedRecord.mode !== MODES.CHECK) issue(errors, "invalid-pending-check-mode", `${path}.mode`, "Pending check mode must be check.");
-      if (capturedRecord.status !== "pending") issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending.");
-      if (capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
+      if (![STATUSES.PENDING, STATUSES.RESOLVED].includes(capturedRecord.status)) issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
+      if (capturedRecord.status === STATUSES.PENDING && capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
+      if (capturedRecord.status === STATUSES.RESOLVED) {
+        const result = capturedRecord.result;
+        const keys = ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"];
+        if (!isPlainObject(result) || Object.keys(result).length !== keys.length || keys.some((key) => !Object.hasOwn(result, key))) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
+        else {
+          const slugs = ["critical-failure", "failure", "success", "critical-success"];
+          if (!Number.isFinite(result.total) || !Number.isSafeInteger(result.degreeOfSuccess) || result.degreeOfSuccess < 0 || result.degreeOfSuccess > 3 || result.degreeOfSuccessSlug !== slugs[result.degreeOfSuccess]) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved result degree or total is invalid.");
+          if (!Array.isArray(capturedRecord.statisticOptions) || !capturedRecord.statisticOptions.includes(result.statisticSlug)) issue(errors, "invalid-pending-check-result", `${path}.result.statisticSlug`, "Resolved result statistic must be authored.");
+          if (!Number.isSafeInteger(result.dc) || result.dc < 0 || capturedRecord.dcSource?.kind !== "fixed" || result.dc !== capturedRecord.dcSource.value) issue(errors, "invalid-pending-check-result", `${path}.result.dc`, "Resolved result DC must match fixed authored DC.");
+          const expectedMode = capturedRecord.secrecy === "secret" ? "blind" : "public";
+          if (result.rollMode !== expectedMode) issue(errors, "invalid-pending-check-result", `${path}.result.rollMode`, "Resolved result roll mode must match secrecy.");
+        }
+      }
 
       const request = expected.get(sequence);
       if (!request) {
@@ -308,7 +322,7 @@ export function validateVoyageEncounterPendingChecks(state) {
   const structural = validateVoyageEncounterState(state);
   if (!structural.valid) return { valid: false, errors: deduplicateVoyageResolutionIssues(structural.errors), warnings: deduplicateVoyageResolutionIssues(structural.warnings) };
 
-  const report = prepareVoyageEncounterActionExecutionRequests(state);
+  const report = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
   return validatePendingChecksAgainstReport(state, report, structural);
 }
 

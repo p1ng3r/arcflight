@@ -31,6 +31,7 @@ export const VOYAGE_ACTION_EXECUTION_MODES = Object.freeze({ CHECK: "check", NO_
 export const VOYAGE_CHECK_SOURCE_KINDS = Object.freeze({ CHARACTER: "character", SHIP: "ship", STATION: "station", CREW: "crew", CUSTOM: "custom", NO_ROLL: "no-roll" });
 export const VOYAGE_DC_SOURCE_KINDS = Object.freeze({ FIXED: "fixed", LEVEL_BASED: "level-based", ENCOUNTER: "encounter", STAGE: "stage", HAZARD: "hazard", OPPOSED: "opposed", TRACK: "track", GM_ENTERED: "gm-entered" });
 export const VOYAGE_CHECK_SECRECY = Object.freeze({ PUBLIC: "public", SECRET: "secret" });
+export const VOYAGE_PENDING_CHECK_STATUSES = Object.freeze({ PENDING: "pending", RESOLVED: "resolved" });
 
 export const VOYAGE_TRACK_VISIBILITY = Object.freeze({
   EXACT: "exact",
