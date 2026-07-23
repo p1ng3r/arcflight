@@ -63,6 +63,14 @@ function numericIndices(array) {
   return result;
 }
 
+function hasOwnStatisticOption(options, slug) {
+  if (!Array.isArray(options)) return false;
+  for (const index of numericIndices(options)) {
+    if (options[index] === slug) return true;
+  }
+  return false;
+}
+
 function capturePlainData(value, path, errors, ancestors = new Set()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return { ok: true, value };
@@ -291,6 +299,10 @@ function validatePendingChecksAgainstReport(state, report, structural) {
           || Object.keys(result).length !== 6) {
           issue(errors, "invalid-pending-check-result", `${path}.result`, "A resolved check requires an isolated PF2e total and degree of success.");
         }
+        if (!hasOwnStatisticOption(capturedRecord.statisticOptions, result?.statisticSlug)) issue(errors, "pending-check-result-statistic-mismatch", `${path}.result.statisticSlug`, "Resolved statisticSlug must be an authored pending-check statistic option.");
+        if (capturedRecord.dcSource?.kind !== "fixed" || result?.dc !== capturedRecord.dcSource.value) issue(errors, "pending-check-result-dc-mismatch", `${path}.result.dc`, "Resolved DC must match the pending check fixed DC.");
+        const expectedRollMode = capturedRecord.secrecy === "secret" ? "blind" : "public";
+        if (result?.rollMode !== expectedRollMode) issue(errors, "pending-check-result-roll-mode-mismatch", `${path}.result.rollMode`, "Resolved roll mode must match pending check secrecy.");
       } else {
         issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
       }

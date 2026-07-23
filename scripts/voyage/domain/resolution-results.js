@@ -70,8 +70,9 @@ export function applyVoyageEncounterPendingCheckResult(state, executionResult) {
     const finalPending = validateVoyageEncounterPendingChecks(candidate);
     warnings.push(...final.warnings, ...finalPending.warnings);
     if (!final.valid || !finalPending.valid) return failure([...final.errors, ...finalPending.errors], warnings);
-    const resolvedCount = candidate.pendingChecks.filter((check) => check.status === STATUSES.RESOLVED).length;
-    return { ok: true, nextState: candidate, events: [{ type: "voyage.pending-check-resolved", encounterId: candidate.encounterId, lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber, phase: candidate.phase, pendingCheckId: record.pendingCheckId, sequence: record.sequence, resolvedCount, pendingCheckCount: candidate.pendingChecks.length, unresolvedCount: candidate.pendingChecks.length - resolvedCount, previousRevision: state.revision, revision: candidate.revision }], errors: [], warnings: deduplicateVoyageResolutionIssues(warnings) };
+    const resolvedCheckCount = candidate.pendingChecks.filter((check) => check.status === STATUSES.RESOLVED).length;
+    const remainingCheckCount = candidate.pendingChecks.length - resolvedCheckCount;
+    return { ok: true, nextState: candidate, events: [{ type: "voyage.pending-check-resolved", encounterId: candidate.encounterId, lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber, phase: candidate.phase, pendingCheckId: record.pendingCheckId, sequence: record.sequence, stationId: record.stationId, actionId: record.actionId, resolvedCheckCount, remainingCheckCount, allChecksResolved: remainingCheckCount === 0, previousRevision: state.revision, revision: candidate.revision }], errors: [], warnings: deduplicateVoyageResolutionIssues(warnings) };
   } catch {
     return failure([error("pending-check-result-data-read-failed", "executionResult", "Pending check result data could not be read safely.")]);
   }
