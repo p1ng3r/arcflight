@@ -150,6 +150,22 @@ function capturePlainData(value, path, errors, ancestors = new Set()) {
   return { ok, value: ok ? result : undefined };
 }
 
+function captureResolvedResult(value, path, errors) {
+  const fields = ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"];
+  try {
+    if (!isPlainObject(value)) return capturePlainData(value, path, errors);
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== fields.length || keys.some((key) => typeof key !== "string") || !fields.every((field) => Object.hasOwn(value, field)) || keys.some((key) => !fields.includes(key))) {
+      issue(errors, "invalid-pending-check-result", path, "Resolved result must contain exactly six own fields.");
+      return { ok: false, value: undefined };
+    }
+    return capturePlainData(value, path, errors);
+  } catch {
+    issue(errors, "invalid-pending-check-result", path, "Resolved result could not be inspected safely.");
+    return { ok: false, value: undefined };
+  }
+}
+
 function captureRecord(record, path, errors) {
   const captured = Object.create(null);
   const present = new Set();
@@ -166,7 +182,7 @@ function captureRecord(record, path, errors) {
     present.add(field);
     if (!read.ok) continue;
 
-    const value = capturePlainData(read.value, fieldPath, errors);
+    const value = field === "result" ? captureResolvedResult(read.value, fieldPath, errors) : capturePlainData(read.value, fieldPath, errors);
     if (value.ok) {
       Object.defineProperty(captured, field, {
         value: value.value,
