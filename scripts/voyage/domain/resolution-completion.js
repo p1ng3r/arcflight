@@ -18,11 +18,20 @@ function prepare(state) {
   if (structural.valid && state.lifecycleState !== LIFE.ACTIVE) issue(errors, "resolution-completion-requires-active", "lifecycleState", "Resolution completion requires an Active encounter.");
   if (structural.valid && state.phase !== PHASES.RESOLUTION) issue(errors, "resolution-completion-requires-resolution", "phase", "Resolution completion requires Resolution phase.");
   if (!pending.valid) errors.push(...pending.errors);
-  const records = Array.isArray(state?.pendingChecks) ? state.pendingChecks : [];
-  const unresolvedChecks = records.filter((check) => check?.status === STATUSES.PENDING)
-    .sort((left, right) => left.sequence - right.sequence)
-    .map((check) => ({ pendingCheckId: check.pendingCheckId, sequence: check.sequence, stationId: check.stationId, actionId: check.actionId }));
-  const resolvedCheckCount = records.filter((check) => check?.status === STATUSES.RESOLVED).length;
+  const collection = state?.pendingChecks;
+  if (!Array.isArray(collection)) throw new Error("pendingChecks must be an array");
+  const records = [];
+  for (let index = 0; index < collection.length; index += 1) {
+    if (!Object.hasOwn(collection, index)) continue;
+    records.push(collection[index]);
+  }
+  const unresolvedChecks = [];
+  let resolvedCheckCount = 0;
+  for (const check of records) {
+    if (check.status === STATUSES.RESOLVED) resolvedCheckCount += 1;
+    if (check.status === STATUSES.PENDING) unresolvedChecks.push({ pendingCheckId: check.pendingCheckId, sequence: check.sequence, stationId: check.stationId, actionId: check.actionId });
+  }
+  unresolvedChecks.sort((left, right) => left.sequence - right.sequence);
   const pendingCheckCount = records.length;
   const allChecksPrepared = execution.checkCount === pendingCheckCount && (execution.checkCount === 0 || pendingCheckCount > 0);
   const readyForConsequences = structural.valid && state.lifecycleState === LIFE.ACTIVE && state.phase === PHASES.RESOLUTION && execution.readyForExecution && pending.valid && allChecksPrepared && unresolvedChecks.length === 0;

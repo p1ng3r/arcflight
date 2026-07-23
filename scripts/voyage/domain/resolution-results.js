@@ -23,7 +23,9 @@ function exactObject(value, fields) {
   return isPlainObject(value) && Object.keys(value).length === fields.length && fields.every((field) => own(value, field));
 }
 
-function emptyDenseArray(value) { return Array.isArray(value) && value.length === 0 && Object.keys(value).length === 0; }
+function emptyDenseArray(value) {
+  try { return Array.isArray(value) && Object.getPrototypeOf(value) === Array.prototype && value.length === 0 && Reflect.ownKeys(value).length === 1 && Object.getOwnPropertyDescriptor(value, "length")?.value === 0; } catch { return false; }
+}
 
 function captureExecution(value) {
   try {
