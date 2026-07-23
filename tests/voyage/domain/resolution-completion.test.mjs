@@ -1,0 +1,8 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { prepareVoyageEncounterResolutionCompletion } from "../../../scripts/voyage/domain/resolution-completion.js";
+import { applyVoyageEncounterPendingCheckResult } from "../../../scripts/voyage/domain/resolution-results.js";
+import { applyVoyageEncounterPendingCheckPreparation } from "../../../scripts/voyage/domain/pending-checks.js";
+import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
+function s(){const x=createVoyageEncounterState({encounterId:"e",definitionId:"d",primaryShip:{id:"s"}});Object.assign(x,{lifecycleState:"active",currentStage:{stageId:"s"},roundNumber:1,phase:"resolution",availableStations:[{stationId:"a",actions:[{actionId:"b",check:{source:{kind:"character",uuid:"Actor.x"},statisticOptions:["diplomacy"],dcSource:{kind:"fixed",value:20},secrecy:"public"}}]}],selections:{a:{stationId:"a",actionId:"b"}}});return applyVoyageEncounterPendingCheckPreparation(x,{pendingCheckIds:[{sequence:0,pendingCheckId:"p"}]}).nextState;}
+test("pending check is not ready and valid resolved check is ready",()=>{let x=s();assert.equal(prepareVoyageEncounterResolutionCompletion(x).readyForConsequences,false);x=applyVoyageEncounterPendingCheckResult(x,{ok:true,status:"rolled",pendingCheckId:"p",sequence:0,sourceKind:"character",sourceUuid:"Actor.x",statisticSlug:"diplomacy",dc:20,rollMode:"public",result:{total:20,degreeOfSuccess:2,degreeOfSuccessSlug:"success"},errors:[],warnings:[]}).nextState;assert.equal(prepareVoyageEncounterResolutionCompletion(x).readyForConsequences,true);});

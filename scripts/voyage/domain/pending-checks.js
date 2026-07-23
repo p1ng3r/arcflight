@@ -199,6 +199,17 @@ function equal(left, right) {
 }
 
 const validId = (value) => typeof value === "string" && value.trim().length > 0 && !UNSAFE.has(value);
+function hasExactOwnDataFields(value, fields) {
+  if (!isPlainObject(value)) return false;
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== fields.length || keys.some((key) => typeof key !== "string" || !fields.includes(key))) return false;
+    return fields.every((field) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, field);
+      return descriptor && Object.hasOwn(descriptor, "value");
+    });
+  } catch { return false; }
+}
 
 function pendingChecksAreEmpty(pendingChecks) {
   if (!Array.isArray(pendingChecks)) return false;
@@ -280,7 +291,7 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.status === STATUSES.RESOLVED) {
         const result = capturedRecord.result;
         const keys = ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"];
-        if (!isPlainObject(result) || Object.keys(result).length !== keys.length || keys.some((key) => !Object.hasOwn(result, key))) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
+        if (!hasExactOwnDataFields(record.result, keys)) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
         else {
           const slugs = ["critical-failure", "failure", "success", "critical-success"];
           if (!Number.isFinite(result.total) || !Number.isSafeInteger(result.degreeOfSuccess) || result.degreeOfSuccess < 0 || result.degreeOfSuccess > 3 || result.degreeOfSuccessSlug !== slugs[result.degreeOfSuccess]) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved result degree or total is invalid.");

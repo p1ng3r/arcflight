@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
+import { applyVoyageEncounterPendingCheckPreparation } from "../../../scripts/voyage/domain/pending-checks.js";
+import { applyVoyageEncounterPendingCheckResult } from "../../../scripts/voyage/domain/resolution-results.js";
+function state(secret=false) { const s=createVoyageEncounterState({encounterId:"event",definitionId:"definition",primaryShip:{id:"ship"}}); Object.assign(s,{lifecycleState:"active",currentStage:{stageId:"stage"},roundNumber:1,phase:"resolution",availableStations:[{stationId:"captain",actions:[{actionId:"check",check:{source:{kind:"character",uuid:"Actor.x"},statisticOptions:["diplomacy"],dcSource:{kind:"fixed",value:20},secrecy:secret?"secret":"public"}}]}],selections:{captain:{stationId:"captain",actionId:"check"}}}); return applyVoyageEncounterPendingCheckPreparation(s,{pendingCheckIds:[{sequence:0,pendingCheckId:"check-1"}]}).nextState; }
+function result(secret=false) { return {ok:true,status:"rolled",pendingCheckId:"check-1",sequence:0,sourceKind:"character",sourceUuid:"Actor.x",statisticSlug:"diplomacy",dc:20,rollMode:secret?"blind":"public",result:{total:25,degreeOfSuccess:2,degreeOfSuccessSlug:"success"},errors:[],warnings:[]}; }
+test("successful public persistence persists six isolated result fields",()=>{const s=state(), r=result(), out=applyVoyageEncounterPendingCheckResult(s,r); assert.equal(out.ok,true); assert.deepEqual(Object.keys(out.nextState.pendingChecks[0].result),["total","degreeOfSuccess","degreeOfSuccessSlug","statisticSlug","dc","rollMode"]); r.result.total=1;assert.equal(out.nextState.pendingChecks[0].result.total,25);});
+test("successful secret persistence requires blind",()=>assert.equal(applyVoyageEncounterPendingCheckResult(state(true),result(true)).ok,true));
+test("unexpected symbol execution fields are rejected atomically",()=>{const s=state(),r=result();r[Symbol("x")]=1;const out=applyVoyageEncounterPendingCheckResult(s,r);assert.equal(out.ok,false);assert.equal(out.nextState,null);});
