@@ -145,6 +145,7 @@ function capturePlainData(value, path, errors, ancestors = new Set()) {
 function captureRecord(record, path, errors) {
   const captured = Object.create(null);
   const present = new Set();
+  const originals = Object.create(null);
 
   for (let fieldIndex = 0; fieldIndex < REQUIRED.length; fieldIndex += 1) {
     const field = REQUIRED[fieldIndex];
@@ -156,6 +157,7 @@ function captureRecord(record, path, errors) {
     }
 
     present.add(field);
+    if (field === "result") Object.defineProperty(originals, field, { value: read.value, enumerable: true });
     if (!read.ok) continue;
 
     const value = capturePlainData(read.value, fieldPath, errors);
@@ -169,7 +171,7 @@ function captureRecord(record, path, errors) {
     }
   }
 
-  return { captured, present };
+  return { captured, present, originals };
 }
 
 function equal(left, right) {
@@ -253,7 +255,9 @@ function validatePendingChecksAgainstReport(state, report, structural) {
         continue;
       }
 
-      const capturedRecord = captureRecord(record, path, errors).captured;
+      const captured = captureRecord(record, path, errors);
+      const capturedRecord = captured.captured;
+      const originalResult = captured.originals.result;
       for (const key of Object.keys(record)) {
         if (!REQUIRED_SET.has(key)) issue(errors, "unexpected-pending-check-field", `${path}.${key}`, "Pending check has an unexpected own field.");
       }
@@ -291,7 +295,7 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.status === STATUSES.RESOLVED) {
         const result = capturedRecord.result;
         const keys = ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"];
-        if (!hasExactOwnDataFields(record.result, keys)) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
+        if (!hasExactOwnDataFields(originalResult, keys)) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
         else {
           const slugs = ["critical-failure", "failure", "success", "critical-success"];
           if (!Number.isFinite(result.total) || !Number.isSafeInteger(result.degreeOfSuccess) || result.degreeOfSuccess < 0 || result.degreeOfSuccess > 3 || result.degreeOfSuccessSlug !== slugs[result.degreeOfSuccess]) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved result degree or total is invalid.");
