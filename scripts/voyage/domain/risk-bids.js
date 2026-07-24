@@ -35,23 +35,32 @@ function actions(station, id) {
   }
   return found;
 }
-function options(action, path, errors) {
+export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
   if (!Object.hasOwn(action, "riskBidOptions")) return [];
-  if (!Array.isArray(action.riskBidOptions)) { issue(errors, "invalid-risk-bid-options", path, "Authored Risk Bid options must be an array when supplied."); return null; }
-  const ids = new Set(); const result = [];
-  for (let index = 0; index < action.riskBidOptions.length; index += 1) {
-    if (!Object.hasOwn(action.riskBidOptions, index)) continue;
-    const option = action.riskBidOptions[index]; result.push(option);
+  const optionsDescriptor = Object.getOwnPropertyDescriptor(action, "riskBidOptions");
+  if (!optionsDescriptor || !("value" in optionsDescriptor)) {
+    issue(errors, "outcome-data-read-failed", path, "Risk Bid data could not be read safely.");
+    return null;
+  }
+  const source = optionsDescriptor.value;
+  if (!Array.isArray(source)) { issue(errors, "invalid-risk-bid-options", path, "Authored Risk Bid options must be an array when supplied."); return null; }
+  const ids = new Set(); const result = new Array(source.length);
+  for (let index = 0; index < source.length; index += 1) {
+    if (!Object.hasOwn(source, index)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(source, index);
+    if (!descriptor || !("value" in descriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}]`, "Risk Bid data could not be read safely."); continue; }
+    const option = descriptor.value; result[index] = option;
     if (!isPlainObject(option)) { issue(errors, "invalid-risk-bid-option", `${path}[${index}]`, "Authored Risk Bid option must be a plain object."); continue; }
-    if (!Object.hasOwn(option, "riskBidId") || !hasId(option.riskBidId)) { issue(errors, "invalid-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId."); continue; }
-    if (!safeKey(option.riskBidId)) issue(errors, "unsafe-risk-bid-key", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
-    if (ids.has(option.riskBidId)) issue(errors, "duplicate-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action.");
-    ids.add(option.riskBidId);
+    const idDescriptor = Object.getOwnPropertyDescriptor(option, "riskBidId"); const riskBidId = idDescriptor && "value" in idDescriptor ? idDescriptor.value : undefined;
+    if (!idDescriptor || !("value" in idDescriptor) || !hasId(riskBidId)) { issue(errors, "invalid-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId."); continue; }
+    if (!safeKey(riskBidId)) issue(errors, "unsafe-risk-bid-key", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
+    if (ids.has(riskBidId)) issue(errors, "duplicate-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action.");
+    ids.add(riskBidId);
     for (const field of ["rewardEffectIds", "dangerEffectIds"]) {
       if (!Object.hasOwn(option, field)) continue;
-      const descriptor = Object.getOwnPropertyDescriptor(option, field);
-      if (!descriptor || !("value" in descriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}].${field}`, "Risk Bid data could not be read safely."); continue; }
-      const referenceList = descriptor.value;
+      const listDescriptor = Object.getOwnPropertyDescriptor(option, field);
+      if (!listDescriptor || !("value" in listDescriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}].${field}`, "Risk Bid data could not be read safely."); continue; }
+      const referenceList = listDescriptor.value;
       if (!Array.isArray(referenceList)) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${path}[${index}].${field}`, `${field} must be an array when supplied.`); continue; }
       const references = new Set();
       for (let referenceIndex = 0; referenceIndex < referenceList.length; referenceIndex += 1) {
@@ -67,6 +76,7 @@ function options(action, path, errors) {
   }
   return result;
 }
+function options(action, path, errors) { return analyzeAuthoredVoyageRiskBidOptions(action, path, errors); }
 function validateAuthoredOptions(state, errors) {
   const collections = new Map();
   for (let stationIndex = 0; stationIndex < state.availableStations.length; stationIndex += 1) {

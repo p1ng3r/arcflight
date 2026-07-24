@@ -2,6 +2,7 @@ import { VOYAGE_ACTION_OUTCOME_BRANCHES as BRANCHES, VOYAGE_EFFECT_INTENT_TYPES 
 import { isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterActionExecutionDefinitions } from "./resolution-execution-requests.js";
+import { analyzeAuthoredVoyageRiskBidOptions } from "./risk-bids.js";
 
 const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
 const CHECK_BRANCHES = [BRANCHES.CRITICAL_FAILURE, BRANCHES.FAILURE, BRANCHES.SUCCESS, BRANCHES.CRITICAL_SUCCESS];
@@ -36,7 +37,9 @@ function captureSafePlainData(value, path, errors, ancestors = new Set()) {
   ancestors.add(value); const array = Array.isArray(value); const result = array ? new Array(value.length) : {};
   let ok = true;
   for (const key of array ? numericIndices(value) : Reflect.ownKeys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key); const childPath = array ? `${path}[${key}]` : `${path}.${String(key)}`;
+    const childPath = array ? `${path}[${key}]` : `${path}.${typeof key === "symbol" ? "[symbol]" : key}`;
+    if (typeof key === "symbol") { issue(errors, "invalid-effect-payload", childPath, "Effect payload must not contain symbol keys."); ok = false; continue; }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || !("value" in descriptor)) { issue(errors, "invalid-effect-payload", childPath, "Effect payload properties must be data properties."); ok = false; continue; }
     const child = captureSafePlainData(descriptor.value, childPath, errors, ancestors); if (!child.ok) { ok = false; continue; }
     Object.defineProperty(result, key, { value: child.value, enumerable: true, configurable: true, writable: true });
@@ -85,15 +88,13 @@ function analyzeEffectRule(value, path, errors, effectIds, effectPaths) {
   return { effectId: rule.effectId, intentType: rule.intentType, timing: rule.timing, visibility: rule.visibility, target, payload: payload.value };
 }
 function analyzeRiskBidOptions(action, path, mode, errors, references) {
-  const read = readOwnDataProperty(action, "riskBidOptions", `${path}.riskBidOptions`, errors); if (!read.present) return [];
-  if (!read.ok || !Array.isArray(read.value)) { issue(errors, "invalid-risk-bid-options", `${path}.riskBidOptions`, "Authored Risk Bid options must be an array when supplied."); return []; }
-  const result = new Array(read.value.length); const ids = new Set();
-  for (const index of numericIndices(read.value)) {
-    const optionPath = `${path}.riskBidOptions[${index}]`; const optionRead = readOwnDataProperty(read.value, index, optionPath, errors); if (!optionRead.ok || !isPlainObject(optionRead.value)) { issue(errors, "invalid-risk-bid-option", optionPath, "Authored Risk Bid option must be a plain object."); continue; }
-    const option = optionRead.value; const id = readOwnDataProperty(option, "riskBidId", `${optionPath}.riskBidId`, errors);
-    if (!id.present || !id.ok || typeof id.value !== "string" || !id.value.trim()) issue(errors, "invalid-risk-bid-id", `${optionPath}.riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId.");
-    else if (UNSAFE.has(id.value)) issue(errors, "unsafe-risk-bid-key", `${optionPath}.riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
-    else if (ids.has(id.value)) issue(errors, "duplicate-risk-bid-id", `${optionPath}.riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action."); else ids.add(id.value);
+  const source = analyzeAuthoredVoyageRiskBidOptions(action, `${path}.riskBidOptions`, errors);
+  if (!source) return [];
+  const result = new Array(source.length);
+  for (const index of numericIndices(source)) {
+    const optionPath = `${path}.riskBidOptions[${index}]`; const option = source[index];
+    if (!isPlainObject(option)) continue;
+    const id = readOwnDataProperty(option, "riskBidId", `${optionPath}.riskBidId`, errors);
     const lists = {};
     for (const field of ["rewardEffectIds", "dangerEffectIds"]) { const list = readOwnDataProperty(option, field, `${optionPath}.${field}`, errors); if (!list.present) lists[field] = []; else if (!list.ok || !Array.isArray(list.value)) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${optionPath}.${field}`, `${field} must be an array when supplied.`); lists[field] = []; } else lists[field] = validateReferenceList(list.value, `${optionPath}.${field}`, errors, references); }
     if (mode === "no-roll" && (lists.rewardEffectIds.some(Boolean) || lists.dangerEffectIds.some(Boolean))) issue(errors, "no-roll-risk-bid-result-reference", optionPath, "No-roll actions cannot reference result effects.");
