@@ -13,6 +13,7 @@ import { validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckP
 import { applyVoyageEncounterPendingCheckResult } from "./domain/resolution-results.js";
 import { prepareVoyageEncounterResolutionCompletion } from "./domain/resolution-completion.js";
 import { applyVoyageEncounterConsequencesTransition } from "./domain/consequences-transition.js";
+import { validateVoyageEncounterActionOutcomeDefinitions, analyzeVoyageEncounterActionOutcomeDefinitions } from "./domain/consequence-rules.js";
 import { preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies } from "./pf2e/resolution-check-adapter.js";
 import { createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry } from "./pf2e/runtime-preflight.js";
 import { executeVoyagePf2ePendingCheck, validateVoyagePf2eExecutionDependencies } from "./pf2e/resolution-check-executor.js";
@@ -53,6 +54,8 @@ export function registerVoyageStationSelectionEditingApi() {
     applyVoyageEncounterPendingCheckResult,
     prepareVoyageEncounterResolutionCompletion,
     applyVoyageEncounterConsequencesTransition,
+    validateVoyageEncounterActionOutcomeDefinitions,
+    analyzeVoyageEncounterActionOutcomeDefinitions,
     preflightVoyagePf2ePendingCheck,
     validateVoyagePf2eAdapterDependencies,
     createVoyagePf2eRuntimeDependencies,
@@ -83,6 +86,8 @@ export function registerVoyageStationSelectionEditingApi() {
     applyVoyageEncounterPendingCheckResult,
     prepareVoyageEncounterResolutionCompletion,
     applyVoyageEncounterConsequencesTransition,
+    validateVoyageEncounterActionOutcomeDefinitions,
+    analyzeVoyageEncounterActionOutcomeDefinitions,
     preflightVoyagePf2ePendingCheck,
     validateVoyagePf2eAdapterDependencies,
     createVoyagePf2eRuntimeDependencies,
@@ -122,6 +127,8 @@ export {
   applyVoyageEncounterPendingCheckResult,
   prepareVoyageEncounterResolutionCompletion,
   applyVoyageEncounterConsequencesTransition,
+  validateVoyageEncounterActionOutcomeDefinitions,
+  analyzeVoyageEncounterActionOutcomeDefinitions,
   preflightVoyagePf2ePendingCheck,
   validateVoyagePf2eAdapterDependencies,
   createVoyagePf2eRuntimeDependencies,

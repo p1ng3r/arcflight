@@ -32,6 +32,11 @@ export const VOYAGE_CHECK_SOURCE_KINDS = Object.freeze({ CHARACTER: "character",
 export const VOYAGE_DC_SOURCE_KINDS = Object.freeze({ FIXED: "fixed", LEVEL_BASED: "level-based", ENCOUNTER: "encounter", STAGE: "stage", HAZARD: "hazard", OPPOSED: "opposed", TRACK: "track", GM_ENTERED: "gm-entered" });
 export const VOYAGE_CHECK_SECRECY = Object.freeze({ PUBLIC: "public", SECRET: "secret" });
 export const VOYAGE_PENDING_CHECK_STATUSES = Object.freeze({ PENDING: "pending", RESOLVED: "resolved" });
+export const VOYAGE_ACTION_OUTCOME_BRANCHES = Object.freeze({ CRITICAL_FAILURE: "critical-failure", FAILURE: "failure", SUCCESS: "success", CRITICAL_SUCCESS: "critical-success", NO_ROLL: "no-roll" });
+export const VOYAGE_EFFECT_INTENT_TYPES = Object.freeze({ TRACK_CHANGE: "track-change", TEMPORARY_CONSEQUENCE: "temporary-consequence", PERMANENT_CONSEQUENCE_PROPOSAL: "permanent-consequence-proposal", DISCOVERY: "discovery", SETBACK: "setback", TEMPORARY_MODIFIER: "temporary-modifier", STAGE_OUTCOME: "stage-outcome", ENCOUNTER_OUTCOME: "encounter-outcome" });
+export const VOYAGE_EFFECT_INTENT_TIMING = Object.freeze({ CONSEQUENCES: "consequences", GM_CONFIRMED: "gm-confirmed", END_OF_ROUND: "end-of-round" });
+export const VOYAGE_EFFECT_INTENT_VISIBILITY = Object.freeze({ PUBLIC: "public", GM_SECRET: "gm-secret" });
+export const VOYAGE_EFFECT_TARGET_KINDS = Object.freeze({ ENCOUNTER: "encounter", CURRENT_STAGE: "current-stage", PRIMARY_SHIP: "primary-ship", SOURCE_STATION: "source-station", SELECTED_TARGET: "selected-target", TRACK: "track", PARTICIPANT: "participant", STATION: "station" });
 
 export const VOYAGE_TRACK_VISIBILITY = Object.freeze({
   EXACT: "exact",
