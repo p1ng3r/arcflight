@@ -49,11 +49,16 @@ function options(action, path, errors) {
     ids.add(option.riskBidId);
     for (const field of ["rewardEffectIds", "dangerEffectIds"]) {
       if (!Object.hasOwn(option, field)) continue;
-      if (!Array.isArray(option[field])) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${path}[${index}].${field}`, `${field} must be an array when supplied.`); continue; }
+      const descriptor = Object.getOwnPropertyDescriptor(option, field);
+      if (!descriptor || !("value" in descriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}].${field}`, "Risk Bid data could not be read safely."); continue; }
+      const referenceList = descriptor.value;
+      if (!Array.isArray(referenceList)) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${path}[${index}].${field}`, `${field} must be an array when supplied.`); continue; }
       const references = new Set();
-      for (let referenceIndex = 0; referenceIndex < option[field].length; referenceIndex += 1) {
-        if (!Object.hasOwn(option[field], referenceIndex)) continue;
-        const reference = option[field][referenceIndex];
+      for (let referenceIndex = 0; referenceIndex < referenceList.length; referenceIndex += 1) {
+        if (!Object.hasOwn(referenceList, referenceIndex)) continue;
+        const referenceDescriptor = Object.getOwnPropertyDescriptor(referenceList, referenceIndex);
+        if (!referenceDescriptor || !("value" in referenceDescriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid data could not be read safely."); continue; }
+        const reference = referenceDescriptor.value;
         if (!hasId(reference) || !safeKey(reference)) issue(errors, "invalid-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be non-empty safe strings.");
         else if (references.has(reference)) issue(errors, "duplicate-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be unique within a list.");
         references.add(reference);

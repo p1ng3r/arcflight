@@ -1,41 +1,126 @@
-import { VOYAGE_ACTION_OUTCOME_BRANCHES as BRANCHES, VOYAGE_EFFECT_INTENT_TYPES as TYPES, VOYAGE_EFFECT_INTENT_TIMING as TIMING, VOYAGE_EFFECT_INTENT_VISIBILITY as VISIBILITY, VOYAGE_EFFECT_TARGET_KINDS as TARGETS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
+import { VOYAGE_ACTION_OUTCOME_BRANCHES as BRANCHES, VOYAGE_EFFECT_INTENT_TYPES as INTENTS, VOYAGE_EFFECT_INTENT_TIMING as TIMINGS, VOYAGE_EFFECT_INTENT_VISIBILITY as VISIBILITIES, VOYAGE_EFFECT_TARGET_KINDS as TARGETS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterActionExecutionDefinitions } from "./resolution-execution-requests.js";
 
-const unsafe = new Set(["__proto__", "constructor", "prototype"]);
-const own = (o, k) => Object.hasOwn(o, k);
-const indices = (a) => Array.isArray(a) ? Array.from({ length: a.length }, (_, i) => i).filter((i) => own(a, i)) : [];
-const add = (xs, code, path, message, severity = "error") => xs.push({ code, path, message, severity });
-const dedupe = (xs) => xs.filter((x, i) => xs.findIndex((y) => `${y.code}\0${y.path}\0${y.message}\0${y.severity}` === `${x.code}\0${x.path}\0${x.message}\0${x.severity}`) === i);
-function read(o, k, path, errors) { if (!own(o, k)) return { present: false, ok: true }; try { return { present: true, ok: true, value: o[k] }; } catch { add(errors, "outcome-data-read-failed", path, "Outcome data could not be read safely."); return { present: true, ok: false }; } }
-function safeId(v) { return typeof v === "string" && v.trim() && !unsafe.has(v); }
-function capture(v, path, errors, seen = new Set()) {
-  if (v === null || typeof v === "string" || typeof v === "boolean") return { ok: true, value: v };
-  if (typeof v === "number") { if (Number.isFinite(v)) return { ok: true, value: v }; add(errors, "invalid-effect-payload", path, "Effect payload must contain finite plain data."); return { ok: false }; }
-  if (typeof v !== "object" || seen.has(v) || (!Array.isArray(v) && !isPlainObject(v))) { add(errors, "invalid-effect-payload", path, "Effect payload must be recursively plain and acyclic."); return { ok: false }; }
-  seen.add(v); const out = Array.isArray(v) ? new Array(v.length) : {};
-  for (const k of Array.isArray(v) ? indices(v) : Object.keys(v)) { const d = Object.getOwnPropertyDescriptor(v, k); if (!d || !("value" in d)) { add(errors, "invalid-effect-payload", `${path}${Array.isArray(v) ? `[${k}]` : `.${k}`}`, "Effect payload properties must be data properties."); continue; } const c = capture(d.value, `${path}${Array.isArray(v) ? `[${k}]` : `.${k}`}`, errors, seen); if (c.ok) Object.defineProperty(out, k, { value: c.value, enumerable: true, configurable: true, writable: true }); }
-  seen.delete(v); return { ok: errors.every((e) => !e.path.startsWith(path)), value: out };
+const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
+const CHECK_BRANCHES = [BRANCHES.CRITICAL_FAILURE, BRANCHES.FAILURE, BRANCHES.SUCCESS, BRANCHES.CRITICAL_SUCCESS];
+const ID_TARGETS = new Set([TARGETS.TRACK, TARGETS.PARTICIPANT, TARGETS.STATION]);
+const issue = (list, code, path, message, severity = "error") => list.push({ code, path, message, severity });
+const safeId = (value) => typeof value === "string" && value.trim().length > 0 && !UNSAFE.has(value);
+const numericIndices = (value) => Array.isArray(value) ? Array.from({ length: value.length }, (_, index) => index).filter((index) => Object.hasOwn(value, index)) : [];
+function deduplicateIssues(issues) { const seen = new Set(); return issues.filter((entry) => { const key = `${entry.code}\0${entry.path}\0${entry.message}\0${entry.severity}`; if (seen.has(key)) return false; seen.add(key); return true; }); }
+function readOwnDataProperty(object, key, path, errors) {
+  if (!object || (typeof object !== "object" && typeof object !== "function") || !Object.hasOwn(object, key)) return { present: false, ok: true, value: undefined };
+  let descriptor; try { descriptor = Object.getOwnPropertyDescriptor(object, key); } catch { issue(errors, "outcome-data-read-failed", path, "Outcome data could not be read safely."); return { present: true, ok: false }; }
+  if (!descriptor || !("value" in descriptor)) { issue(errors, "outcome-data-read-failed", path, "Outcome data must use data properties."); return { present: true, ok: false }; }
+  return { present: true, ok: true, value: descriptor.value };
 }
-const checkBranches = [BRANCHES.CRITICAL_FAILURE, BRANCHES.FAILURE, BRANCHES.SUCCESS, BRANCHES.CRITICAL_SUCCESS];
-function exactKeys(o, keys, path, errors, invalid, unexpected) { if (!isPlainObject(o)) { add(errors, invalid, path, "Outcome data must be a plain object."); return false; } let ok = true; for (const k of Object.keys(o)) if (!keys.includes(k)) { add(errors, unexpected, `${path}.${k}`, "Unexpected authored field."); ok = false; } for (const k of keys) if (!own(o, k)) { add(errors, invalid, `${path}.${k}`, "Required authored field is missing."); ok = false; } return ok; }
-function refs(value, path, errors, used) { if (!Array.isArray(value)) { add(errors, "invalid-effect-reference-list", path, "Effect references must be an array."); return []; } const out = new Array(value.length), seen = new Set(); for (const i of indices(value)) { const r = read(value, i, `${path}[${i}]`, errors); if (!r.ok) continue; if (typeof r.value !== "string" || !r.value.trim()) add(errors, "invalid-effect-reference", `${path}[${i}]`, "Effect reference must be a non-blank exact string."); else if (unsafe.has(r.value)) add(errors, "unsafe-effect-reference", `${path}[${i}]`, "Effect reference must be safe."); else if (seen.has(r.value)) add(errors, "duplicate-effect-reference", `${path}[${i}]`, "Effect references must be unique within a list."); else { seen.add(r.value); used.add(r.value); out[i] = r.value; } } return out; }
-function analyzeAction(action, path, stationId, errors, warnings) {
-  const actionId = read(action, "actionId", `${path}.actionId`, errors).value;
-  const check = read(action, "check", `${path}.check`, errors); const mode = check.present ? "check" : "no-roll";
-  const branchKeys = mode === "check" ? checkBranches : [BRANCHES.NO_ROLL]; const normalized = { stationId, actionId, mode, effectRules: [], branches: Object.fromEntries(branchKeys.map((x) => [x, []])), riskBidOptions: [] };
-  const outcome = read(action, "outcomeDefinition", `${path}.outcomeDefinition`, errors);
-  const ids = new Set(), used = new Set();
-  if (outcome.present && outcome.ok) {
-    if (!exactKeys(outcome.value, ["effectRules", "branches"], `${path}.outcomeDefinition`, errors, "invalid-action-outcome-definition", "unexpected-action-outcome-field")) return normalized;
-    const rules = read(outcome.value, "effectRules", `${path}.outcomeDefinition.effectRules`, errors);
-    if (!rules.ok || !Array.isArray(rules.value)) add(errors, "invalid-action-effect-rules", `${path}.outcomeDefinition.effectRules`, "effectRules must be an array.");
-    else for (const i of indices(rules.value)) { const r = read(rules.value, i, `${path}.outcomeDefinition.effectRules[${i}]`, errors); if (!r.ok || !exactKeys(r.value, ["effectId", "intentType", "timing", "visibility", "target", "payload"], `${path}.outcomeDefinition.effectRules[${i}]`, errors, "invalid-effect-rule", "unexpected-effect-rule-field")) continue; const base = `${path}.outcomeDefinition.effectRules[${i}]`; const vals = {}; for (const k of ["effectId", "intentType", "timing", "visibility", "target", "payload"]) { const q=read(r.value,k,`${base}.${k}`,errors); vals[k]=q.value; } if (typeof vals.effectId !== "string" || !vals.effectId.trim()) add(errors,"invalid-effect-id",`${base}.effectId`, "effectId must be a non-blank exact string."); else if (unsafe.has(vals.effectId)) add(errors,"unsafe-effect-id",`${base}.effectId`, "effectId must be safe."); else if(ids.has(vals.effectId)) add(errors,"duplicate-effect-id",`${base}.effectId`, "effectId must be unique."); else ids.add(vals.effectId); if(!Object.values(TYPES).includes(vals.intentType)) add(errors,"invalid-effect-intent-type",`${base}.intentType`, "Effect intent type is not recognized."); if(!Object.values(TIMING).includes(vals.timing)) add(errors,"invalid-effect-intent-timing",`${base}.timing`, "Effect timing is not recognized."); if(!Object.values(VISIBILITY).includes(vals.visibility)) add(errors,"invalid-effect-intent-visibility",`${base}.visibility`, "Effect visibility is not recognized."); const idTarget=[TARGETS.TRACK,TARGETS.PARTICIPANT,TARGETS.STATION].includes(vals.target?.kind); if(!isPlainObject(vals.target)) add(errors,"invalid-effect-target",`${base}.target`, "Effect target must be a plain object."); else { const allowed=idTarget?["kind","targetId"]:["kind"]; for(const k of Object.keys(vals.target)) if(!allowed.includes(k)) add(errors,"unexpected-effect-target-field",`${base}.target.${k}`,"Unexpected target field."); if(!Object.values(TARGETS).includes(vals.target.kind)) add(errors,"invalid-effect-target-kind",`${base}.target.kind`, "Effect target kind is not recognized."); if(idTarget && !own(vals.target,"targetId")) add(errors,"missing-effect-target-id",`${base}.target.targetId`, "Target requires targetId."); else if(idTarget && !safeId(vals.target.targetId)) add(errors,"invalid-effect-target-id",`${base}.target.targetId`, "Target ID must be a non-blank safe exact string."); else if(!idTarget && own(vals.target,"targetId")) add(errors,"unexpected-effect-target-id",`${base}.target.targetId`, "Target ID is not allowed for this target kind."); } const p=capture(vals.payload,`${base}.payload`,errors); if(p.ok) normalized.effectRules[i]={ effectId: vals.effectId, intentType: vals.intentType, timing: vals.timing, visibility: vals.visibility, target: vals.target, payload:p.value }; }
-    const branches=read(outcome.value,"branches",`${path}.outcomeDefinition.branches`,errors); if(!branches.ok || !exactKeys(branches.value,branchKeys,`${path}.outcomeDefinition.branches`,errors,"invalid-action-outcome-branches","invalid-action-outcome-branch-set")) {} else for(const k of branchKeys) normalized.branches[k]=refs(read(branches.value,k,`${path}.outcomeDefinition.branches.${k}`,errors).value,`${path}.outcomeDefinition.branches.${k}`,errors,used);
+function exactPlainObject(value, fields, path, errors, invalidCode, unexpectedCode) {
+  if (!isPlainObject(value)) { issue(errors, invalidCode, path, "Authored data must be a plain object."); return null; }
+  const values = {};
+  for (const key of Reflect.ownKeys(value)) {
+    const display = typeof key === "symbol" ? "[symbol]" : `.${key}`;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (typeof key !== "string" || !fields.includes(key)) issue(errors, unexpectedCode, `${path}${display}`, "Unexpected authored field.");
+    else if (!descriptor || !("value" in descriptor)) issue(errors, "outcome-data-read-failed", `${path}.${key}`, "Outcome data must use data properties.");
+    else values[key] = descriptor.value;
   }
-  const bids=read(action,"riskBidOptions",`${path}.riskBidOptions`,errors); if(bids.present && bids.ok && Array.isArray(bids.value)) for(const i of indices(bids.value)){const o=read(bids.value,i,`${path}.riskBidOptions[${i}]`,errors); if(!o.ok||!isPlainObject(o))continue; const riskBidId=read(o.value,"riskBidId",`${path}.riskBidOptions[${i}].riskBidId`,errors).value; const reward=read(o.value,"rewardEffectIds",`${path}.riskBidOptions[${i}].rewardEffectIds`,errors); const danger=read(o.value,"dangerEffectIds",`${path}.riskBidOptions[${i}].dangerEffectIds`,errors); const rr=reward.present?refs(reward.value,`${path}.riskBidOptions[${i}].rewardEffectIds`,errors,used):[]; const dd=danger.present?refs(danger.value,`${path}.riskBidOptions[${i}].dangerEffectIds`,errors,used):[]; if(reward.present&&!Array.isArray(reward.value)) add(errors,"invalid-risk-bid-reward-effect-ids",`${path}.riskBidOptions[${i}].rewardEffectIds`, "Risk Bid rewardEffectIds must be an array."); if(danger.present&&!Array.isArray(danger.value)) add(errors,"invalid-risk-bid-danger-effect-ids",`${path}.riskBidOptions[${i}].dangerEffectIds`, "Risk Bid dangerEffectIds must be an array."); if(mode==="no-roll"&&(rr.some(Boolean)||dd.some(Boolean))) add(errors,"no-roll-risk-bid-result-reference",`${path}.riskBidOptions[${i}]`, "No-roll actions cannot reference result effects."); normalized.riskBidOptions[i]={riskBidId,rewardEffectIds:rr,dangerEffectIds:dd}; }
-  for(const id of used) if(!ids.has(id)) add(errors,"missing-effect-reference",path, "Effect reference must resolve to an action-local effect rule."); for(const id of ids) if(!used.has(id)) add(warnings,"unreferenced-effect-rule",path, "Effect rule is not referenced by a branch or Risk Bid option.","warning"); return normalized;
+  for (const field of fields) if (!Object.hasOwn(values, field)) issue(errors, invalidCode, `${path}.${field}`, "Required authored field is missing.");
+  return values;
 }
-export function analyzeVoyageEncounterActionOutcomeDefinitions(state) { let structural; try { structural=validateVoyageEncounterState(state); const check=validateVoyageEncounterActionExecutionDefinitions(state); const errors=[...structural.errors,...check.errors], warnings=[...structural.warnings,...check.warnings], actions=[]; if(structural.valid&&Array.isArray(state.availableStations)) for(const si of indices(state.availableStations)){const s=state.availableStations[si]; if(!isPlainObject(s)||!Array.isArray(s.actions))continue; for(const ai of indices(s.actions)){const a=s.actions[ai]; if(isPlainObject(a))actions.push(analyzeAction(a,`availableStations[${si}].actions[${ai}]`,s.stationId,errors,warnings));}} const bad=new Set(errors.map(e=>e.path.match(/^availableStations\[\d+\]\.actions\[\d+\]/)?.[0]).filter(Boolean)); const valid=structural.valid&&errors.length===0; const cc=actions.filter(a=>a.mode==="check").length; return { structurallyValid:structural.valid, definitionsValid:valid, active:state?.lifecycleState===LIFE.ACTIVE, consequences:state?.phase===PHASES.CONSEQUENCES, readyForInterpretation:valid&&state?.lifecycleState===LIFE.ACTIVE&&state?.phase===PHASES.CONSEQUENCES, actionCount:actions.length, validActionCount:actions.filter((_,i)=>!bad.has(`availableStations[${Math.floor(i)}].actions[${i}]`)).length, invalidActionCount:bad.size, checkActionCount:cc, noRollActionCount:actions.length-cc, effectRuleCount:actions.reduce((n,a)=>n+indices(a.effectRules).length,0), actions, errors:dedupe(errors), warnings:dedupe(warnings) }; } catch { return { structurallyValid:false,definitionsValid:false,active:false,consequences:false,readyForInterpretation:false,actionCount:0,validActionCount:0,invalidActionCount:0,checkActionCount:0,noRollActionCount:0,effectRuleCount:0,actions:[],errors:[{code:"outcome-data-read-failed",path:"$",message:"Outcome data could not be read safely.",severity:"error"}],warnings:[]}; } }
-export function validateVoyageEncounterActionOutcomeDefinitions(state) { const r=analyzeVoyageEncounterActionOutcomeDefinitions(state); return { valid:r.structurallyValid&&r.definitionsValid, errors:[...r.errors], warnings:[...r.warnings] }; }
+function captureSafePlainData(value, path, errors, ancestors = new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return { ok: true, value };
+  if (typeof value === "number") { if (Number.isFinite(value)) return { ok: true, value }; issue(errors, "invalid-effect-payload", path, "Effect payload must contain finite plain data."); return { ok: false }; }
+  if (typeof value !== "object" || ancestors.has(value) || (!Array.isArray(value) && !isPlainObject(value))) { issue(errors, "invalid-effect-payload", path, "Effect payload must be recursively plain and acyclic."); return { ok: false }; }
+  ancestors.add(value); const array = Array.isArray(value); const result = array ? new Array(value.length) : {};
+  let ok = true;
+  for (const key of array ? numericIndices(value) : Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key); const childPath = array ? `${path}[${key}]` : `${path}.${String(key)}`;
+    if (!descriptor || !("value" in descriptor)) { issue(errors, "invalid-effect-payload", childPath, "Effect payload properties must be data properties."); ok = false; continue; }
+    const child = captureSafePlainData(descriptor.value, childPath, errors, ancestors); if (!child.ok) { ok = false; continue; }
+    Object.defineProperty(result, key, { value: child.value, enumerable: true, configurable: true, writable: true });
+  }
+  ancestors.delete(value); return { ok, value: result };
+}
+function validateReferenceList(value, path, errors, references) {
+  if (!Array.isArray(value)) { issue(errors, "invalid-effect-reference-list", path, "Effect references must be an array."); return []; }
+  const result = new Array(value.length); const seen = new Set();
+  for (const index of numericIndices(value)) {
+    const read = readOwnDataProperty(value, index, `${path}[${index}]`, errors); if (!read.ok) continue;
+    if (typeof read.value !== "string" || !read.value.trim()) issue(errors, "invalid-effect-reference", `${path}[${index}]`, "Effect reference must be a non-blank exact string.");
+    else if (UNSAFE.has(read.value)) issue(errors, "unsafe-effect-reference", `${path}[${index}]`, "Effect reference must be safe.");
+    else if (seen.has(read.value)) issue(errors, "duplicate-effect-reference", `${path}[${index}]`, "Effect references must be unique within a list.");
+    else { seen.add(read.value); result[index] = read.value; references.push({ effectId: read.value, path: `${path}[${index}]` }); }
+  }
+  return result;
+}
+function analyzeTarget(value, path, errors) {
+  if (!isPlainObject(value)) { issue(errors, "invalid-effect-target", path, "Effect target must be a plain object."); return null; }
+  const kindDescriptor = Object.getOwnPropertyDescriptor(value, "kind");
+  const kind = kindDescriptor && "value" in kindDescriptor ? kindDescriptor.value : undefined;
+  const known = Object.values(TARGETS).includes(kind);
+  const idBearing = known && ID_TARGETS.has(kind);
+  const target = exactPlainObject(value, idBearing ? ["kind", "targetId"] : ["kind"], path, errors, "invalid-effect-target", "unexpected-effect-target-field");
+  if (!target) return null;
+  if (!known) { issue(errors, "invalid-effect-target-kind", `${path}.kind`, "Effect target kind is not recognized."); return null; }
+  if (idBearing && !Object.hasOwn(target, "targetId")) issue(errors, "missing-effect-target-id", `${path}.targetId`, "Target requires targetId.");
+  if (idBearing && Object.hasOwn(target, "targetId") && !safeId(target.targetId)) issue(errors, "invalid-effect-target-id", `${path}.targetId`, "Target ID must be a non-blank safe exact string.");
+  const result = { kind }; if (idBearing && safeId(target.targetId)) result.targetId = target.targetId; return result;
+}
+function analyzeEffectRule(value, path, errors, effectIds, effectPaths) {
+  const rule = exactPlainObject(value, ["effectId", "intentType", "timing", "visibility", "target", "payload"], path, errors, "invalid-effect-rule", "unexpected-effect-rule-field");
+  if (!rule) return null;
+  if (typeof rule.effectId !== "string" || !rule.effectId.trim()) issue(errors, "invalid-effect-id", `${path}.effectId`, "effectId must be a non-blank exact string.");
+  else if (UNSAFE.has(rule.effectId)) issue(errors, "unsafe-effect-id", `${path}.effectId`, "effectId must be safe.");
+  else if (effectIds.has(rule.effectId)) issue(errors, "duplicate-effect-id", `${path}.effectId`, "effectId must be unique within an action.");
+  else { effectIds.add(rule.effectId); effectPaths.set(rule.effectId, `${path}.effectId`); }
+  if (!Object.values(INTENTS).includes(rule.intentType)) issue(errors, "invalid-effect-intent-type", `${path}.intentType`, "Effect intent type is not recognized.");
+  if (!Object.values(TIMINGS).includes(rule.timing)) issue(errors, "invalid-effect-intent-timing", `${path}.timing`, "Effect timing is not recognized.");
+  if (!Object.values(VISIBILITIES).includes(rule.visibility)) issue(errors, "invalid-effect-intent-visibility", `${path}.visibility`, "Effect visibility is not recognized.");
+  const target = analyzeTarget(rule.target, `${path}.target`, errors); const payload = captureSafePlainData(rule.payload, `${path}.payload`, errors);
+  return { effectId: rule.effectId, intentType: rule.intentType, timing: rule.timing, visibility: rule.visibility, target, payload: payload.value };
+}
+function analyzeRiskBidOptions(action, path, mode, errors, references) {
+  const read = readOwnDataProperty(action, "riskBidOptions", `${path}.riskBidOptions`, errors); if (!read.present) return [];
+  if (!read.ok || !Array.isArray(read.value)) { issue(errors, "invalid-risk-bid-options", `${path}.riskBidOptions`, "Authored Risk Bid options must be an array when supplied."); return []; }
+  const result = new Array(read.value.length); const ids = new Set();
+  for (const index of numericIndices(read.value)) {
+    const optionPath = `${path}.riskBidOptions[${index}]`; const optionRead = readOwnDataProperty(read.value, index, optionPath, errors); if (!optionRead.ok || !isPlainObject(optionRead.value)) { issue(errors, "invalid-risk-bid-option", optionPath, "Authored Risk Bid option must be a plain object."); continue; }
+    const option = optionRead.value; const id = readOwnDataProperty(option, "riskBidId", `${optionPath}.riskBidId`, errors);
+    if (!id.present || !id.ok || typeof id.value !== "string" || !id.value.trim()) issue(errors, "invalid-risk-bid-id", `${optionPath}.riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId.");
+    else if (UNSAFE.has(id.value)) issue(errors, "unsafe-risk-bid-key", `${optionPath}.riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
+    else if (ids.has(id.value)) issue(errors, "duplicate-risk-bid-id", `${optionPath}.riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action."); else ids.add(id.value);
+    const lists = {};
+    for (const field of ["rewardEffectIds", "dangerEffectIds"]) { const list = readOwnDataProperty(option, field, `${optionPath}.${field}`, errors); if (!list.present) lists[field] = []; else if (!list.ok || !Array.isArray(list.value)) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${optionPath}.${field}`, `${field} must be an array when supplied.`); lists[field] = []; } else lists[field] = validateReferenceList(list.value, `${optionPath}.${field}`, errors, references); }
+    if (mode === "no-roll" && (lists.rewardEffectIds.some(Boolean) || lists.dangerEffectIds.some(Boolean))) issue(errors, "no-roll-risk-bid-result-reference", optionPath, "No-roll actions cannot reference result effects.");
+    result[index] = { riskBidId: id.value, rewardEffectIds: lists.rewardEffectIds, dangerEffectIds: lists.dangerEffectIds };
+  }
+  return result;
+}
+function analyzeAction(action, stationId, stationIndex, actionIndex, errors, warnings) {
+  const actionPath = `availableStations[${stationIndex}].actions[${actionIndex}]`; const check = readOwnDataProperty(action, "check", `${actionPath}.check`, errors); const mode = check.present ? "check" : "no-roll";
+  const result = { stationId, actionId: readOwnDataProperty(action, "actionId", `${actionPath}.actionId`, errors).value, mode, effectRules: [], branches: Object.fromEntries((mode === "check" ? CHECK_BRANCHES : [BRANCHES.NO_ROLL]).map((key) => [key, []])), riskBidOptions: [] };
+  const references = []; const effectIds = new Set(); const effectPaths = new Map(); const outcome = readOwnDataProperty(action, "outcomeDefinition", `${actionPath}.outcomeDefinition`, errors);
+  if (outcome.present && outcome.ok) {
+    const definition = exactPlainObject(outcome.value, ["effectRules", "branches"], `${actionPath}.outcomeDefinition`, errors, "invalid-action-outcome-definition", "unexpected-action-outcome-field");
+    if (definition) {
+      if (!Array.isArray(definition.effectRules)) issue(errors, "invalid-action-effect-rules", `${actionPath}.outcomeDefinition.effectRules`, "effectRules must be an array."); else for (const index of numericIndices(definition.effectRules)) { const rule = analyzeEffectRule(readOwnDataProperty(definition.effectRules, index, `${actionPath}.outcomeDefinition.effectRules[${index}]`, errors).value, `${actionPath}.outcomeDefinition.effectRules[${index}]`, errors, effectIds, effectPaths); if (rule) result.effectRules[index] = rule; }
+      const expected = mode === "check" ? CHECK_BRANCHES : [BRANCHES.NO_ROLL];
+      if (!isPlainObject(definition.branches)) issue(errors, "invalid-action-outcome-branches", `${actionPath}.outcomeDefinition.branches`, "branches must be a plain object."); else { const branchValues = exactPlainObject(definition.branches, expected, `${actionPath}.outcomeDefinition.branches`, errors, "invalid-action-outcome-branch-set", "invalid-action-outcome-branch-set"); if (branchValues) for (const key of expected) result.branches[key] = validateReferenceList(branchValues[key], `${actionPath}.outcomeDefinition.branches.${key}`, errors, references); }
+    }
+  }
+  result.riskBidOptions = analyzeRiskBidOptions(action, actionPath, mode, errors, references);
+  const referenced = new Set(); for (const reference of references) { referenced.add(reference.effectId); if (!effectIds.has(reference.effectId)) issue(errors, "missing-effect-reference", reference.path, "Effect reference must resolve to an action-local effect rule."); }
+  for (const [effectId, effectPath] of effectPaths) if (!referenced.has(effectId)) issue(warnings, "unreferenced-effect-rule", effectPath, "Effect rule is not referenced by a branch or Risk Bid option.", "warning");
+  return { actionPath, result };
+}
+export function analyzeVoyageEncounterActionOutcomeDefinitions(state) {
+  try {
+    const structural = validateVoyageEncounterState(state); const execution = validateVoyageEncounterActionExecutionDefinitions(state); const errors = [...structural.errors, ...execution.errors]; const warnings = [...structural.warnings, ...execution.warnings]; const analyses = [];
+    if (structural.valid && Array.isArray(state.availableStations)) for (const stationIndex of numericIndices(state.availableStations)) { const station = state.availableStations[stationIndex]; if (!isPlainObject(station) || !Array.isArray(station.actions)) continue; for (const actionIndex of numericIndices(station.actions)) { const action = station.actions[actionIndex]; if (isPlainObject(action)) analyses.push(analyzeAction(action, station.stationId, stationIndex, actionIndex, errors, warnings)); } }
+    const finalErrors = deduplicateIssues(errors); const invalid = analyses.filter(({ actionPath }) => finalErrors.some((entry) => entry.path === actionPath || entry.path.startsWith(`${actionPath}.`) || entry.path.startsWith(`${actionPath}[`))).length; const actions = analyses.map(({ result }) => result); const definitionsValid = structural.valid && finalErrors.length === 0;
+    return { structurallyValid: structural.valid, definitionsValid, active: state?.lifecycleState === LIFE.ACTIVE, consequences: state?.phase === PHASES.CONSEQUENCES, readyForInterpretation: definitionsValid && state?.lifecycleState === LIFE.ACTIVE && state?.phase === PHASES.CONSEQUENCES, actionCount: actions.length, validActionCount: actions.length - invalid, invalidActionCount: invalid, checkActionCount: actions.filter((action) => action.mode === "check").length, noRollActionCount: actions.filter((action) => action.mode === "no-roll").length, effectRuleCount: actions.reduce((count, action) => count + numericIndices(action.effectRules).length, 0), actions, errors: finalErrors, warnings: deduplicateIssues(warnings) };
+  } catch { return { structurallyValid: false, definitionsValid: false, active: false, consequences: false, readyForInterpretation: false, actionCount: 0, validActionCount: 0, invalidActionCount: 0, checkActionCount: 0, noRollActionCount: 0, effectRuleCount: 0, actions: [], errors: [{ code: "outcome-data-read-failed", path: "$", message: "Outcome data could not be read safely.", severity: "error" }], warnings: [] }; }
+}
+export function validateVoyageEncounterActionOutcomeDefinitions(state) { const report = analyzeVoyageEncounterActionOutcomeDefinitions(state); return { valid: report.structurallyValid && report.definitionsValid, errors: [...report.errors], warnings: [...report.warnings] }; }
