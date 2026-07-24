@@ -91,9 +91,10 @@ function analyzeRiskBidOptions(action, path, mode, errors, references) {
   const analysis = analyzeAuthoredVoyageRiskBidOptions(action, `${path}.riskBidOptions`, errors);
   if (!analysis) return [];
   references.push(...analysis.referenceRecords);
-  for (const option of analysis.options) {
-    if (option && mode === "no-roll" && (option.rewardEffectIds.some(Boolean) || option.dangerEffectIds.some(Boolean))) {
-      issue(errors, "no-roll-risk-bid-result-reference", path, "No-roll actions cannot reference result effects.");
+  for (const record of analysis.optionRecords) {
+    const option = record.option;
+    if (mode === "no-roll" && (option.rewardEffectIds.some(Boolean) || option.dangerEffectIds.some(Boolean))) {
+      issue(errors, "no-roll-risk-bid-result-reference", record.optionPath, "No-roll actions cannot reference result effects.");
     }
   }
   return analysis.options;

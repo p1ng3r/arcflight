@@ -36,7 +36,7 @@ function actions(station, id) {
   return found;
 }
 export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
-  if (!Object.hasOwn(action, "riskBidOptions")) return { options: [], referenceRecords: [] };
+  if (!Object.hasOwn(action, "riskBidOptions")) return { options: [], optionRecords: [], referenceRecords: [] };
   const optionsDescriptor = Object.getOwnPropertyDescriptor(action, "riskBidOptions");
   if (!optionsDescriptor || !("value" in optionsDescriptor)) {
     issue(errors, "outcome-data-read-failed", path, "Risk Bid data could not be read safely.");
@@ -44,7 +44,7 @@ export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
   }
   const source = optionsDescriptor.value;
   if (!Array.isArray(source)) { issue(errors, "invalid-risk-bid-options", path, "Authored Risk Bid options must be an array when supplied."); return null; }
-  const ids = new Set(); const options = new Array(source.length); const referenceRecords = [];
+  const ids = new Set(); const options = new Array(source.length); const optionRecords = []; const referenceRecords = [];
   for (let index = 0; index < source.length; index += 1) {
     if (!Object.hasOwn(source, index)) continue;
     const descriptor = Object.getOwnPropertyDescriptor(source, index);
@@ -58,6 +58,7 @@ export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
     ids.add(riskBidId);
     const normalized = { riskBidId, rewardEffectIds: [], dangerEffectIds: [] };
     options[index] = normalized;
+    optionRecords.push({ optionIndex: index, optionPath: `${path}[${index}]`, option: normalized });
     for (const field of ["rewardEffectIds", "dangerEffectIds"]) {
       if (!Object.hasOwn(option, field)) continue;
       const listDescriptor = Object.getOwnPropertyDescriptor(option, field);
@@ -70,15 +71,15 @@ export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
         const referenceDescriptor = Object.getOwnPropertyDescriptor(referenceList, referenceIndex);
         if (!referenceDescriptor || !("value" in referenceDescriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid data could not be read safely."); continue; }
         const reference = referenceDescriptor.value;
-        if (!hasId(reference) || !safeKey(reference)) issue(errors, "invalid-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be non-empty safe strings.");
-        else if (references.has(reference)) issue(errors, "duplicate-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be unique within a list.");
+        if (!hasId(reference) || !safeKey(reference)) { issue(errors, "invalid-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be non-empty safe strings."); continue; }
+        if (references.has(reference)) { issue(errors, "duplicate-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be unique within a list."); continue; }
         references.add(reference);
         normalized[field][referenceIndex] = reference;
         referenceRecords.push({ effectId: reference, path: `${path}[${index}].${field}[${referenceIndex}]` });
       }
     }
   }
-  return { options, referenceRecords };
+  return { options, optionRecords, referenceRecords };
 }
 function options(action, path, errors) { return analyzeAuthoredVoyageRiskBidOptions(action, path, errors); }
 function validateAuthoredOptions(state, errors) {
