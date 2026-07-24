@@ -239,6 +239,7 @@ function validatePendingChecksAgainstReport(state, report, structural) {
 
   const ids = new Set();
   const sequences = new Set();
+  const capturedRecords = [];
   let previous = -1;
 
   if (Array.isArray(pendingChecks)) {
@@ -328,6 +329,8 @@ function validatePendingChecksAgainstReport(state, report, structural) {
           if (!equal(capturedRecord[field], request[field])) issue(errors, "pending-check-request-mismatch", `${path}.${field}`, `Pending check ${field} must match its execution request.`);
         }
       }
+
+      capturedRecords.push({ pendingCheckIndex: index, record: capturedRecord });
     }
   }
 
@@ -341,16 +344,101 @@ function validatePendingChecksAgainstReport(state, report, structural) {
   return {
     valid: final.length === 0,
     errors: final,
-    warnings: deduplicateVoyageResolutionIssues(warnings)
+    warnings: deduplicateVoyageResolutionIssues(warnings),
+    capturedRecords
   };
 }
 
-export function validateVoyageEncounterPendingChecks(state) {
-  const structural = validateVoyageEncounterState(state);
-  if (!structural.valid) return { valid: false, errors: deduplicateVoyageResolutionIssues(structural.errors), warnings: deduplicateVoyageResolutionIssues(structural.warnings) };
+function normalizePendingCheck({ pendingCheckIndex, record }) {
+  return {
+    pendingCheckIndex,
+    pendingCheckId: record.pendingCheckId,
+    preparedRevision: record.preparedRevision,
+    stageId: record.stageId,
+    roundNumber: record.roundNumber,
+    sequence: record.sequence,
+    stationId: record.stationId,
+    actionId: record.actionId,
+    resolutionPriority: record.resolutionPriority,
+    riskBidId: record.riskBidId,
+    target: record.target,
+    mode: record.mode,
+    source: record.source,
+    statisticOptions: record.statisticOptions,
+    dcSource: record.dcSource,
+    secrecy: record.secrecy,
+    metadata: record.metadata,
+    status: record.status,
+    result: record.result
+  };
+}
 
-  const report = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
-  return validatePendingChecksAgainstReport(state, report, structural);
+export function analyzeVoyageEncounterPendingChecks(state) {
+  try {
+    const structural = validateVoyageEncounterState(state);
+    const structuralErrors = deduplicateVoyageResolutionIssues(structural.errors);
+    const structuralWarnings = deduplicateVoyageResolutionIssues(structural.warnings);
+    if (!structural.valid) {
+      return {
+        structurallyValid: false,
+        pendingChecksValid: false,
+        pendingCheckCount: 0,
+        unresolvedCheckCount: 0,
+        resolvedCheckCount: 0,
+        pendingChecks: [],
+        errors: structuralErrors,
+        warnings: structuralWarnings
+      };
+    }
+
+    const execution = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
+    const validation = validatePendingChecksAgainstReport(state, execution, structural);
+    if (!validation.valid) {
+      return {
+        structurallyValid: true,
+        pendingChecksValid: false,
+        pendingCheckCount: 0,
+        unresolvedCheckCount: 0,
+        resolvedCheckCount: 0,
+        pendingChecks: [],
+        errors: validation.errors,
+        warnings: validation.warnings
+      };
+    }
+
+    const pendingChecks = validation.capturedRecords.map(normalizePendingCheck);
+    const unresolvedCheckCount = pendingChecks.filter((record) => record.status === STATUSES.PENDING).length;
+    return {
+      structurallyValid: true,
+      pendingChecksValid: true,
+      pendingCheckCount: pendingChecks.length,
+      unresolvedCheckCount,
+      resolvedCheckCount: pendingChecks.length - unresolvedCheckCount,
+      pendingChecks,
+      errors: validation.errors,
+      warnings: validation.warnings
+    };
+  } catch {
+    return {
+      structurallyValid: false,
+      pendingChecksValid: false,
+      pendingCheckCount: 0,
+      unresolvedCheckCount: 0,
+      resolvedCheckCount: 0,
+      pendingChecks: [],
+      errors: [{ code: "invalid-pending-checks", path: "pendingChecks", message: "pendingChecks could not be analyzed safely.", severity: "error" }],
+      warnings: []
+    };
+  }
+}
+
+export function validateVoyageEncounterPendingChecks(state) {
+  const report = analyzeVoyageEncounterPendingChecks(state);
+  return {
+    valid: report.structurallyValid && report.pendingChecksValid,
+    errors: [...report.errors],
+    warnings: [...report.warnings]
+  };
 }
 
 const fail = (errors, warnings = []) => ({
