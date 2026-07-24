@@ -1,0 +1,9 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
+import { analyzeVoyageEncounterActionOutcomeDefinitions, validateVoyageEncounterActionOutcomeDefinitions } from "../../../scripts/voyage/domain/consequence-rules.js";
+import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "../../../scripts/voyage/domain/constants.js";
+function state(action = { actionId: "wait" }) { return { ...createDraftVoyageEncounterDefaults(), encounterId:"e", definitionId:"d", lifecycleState:LIFE.ACTIVE, revision:0, primaryShip:{actorId:"s"}, currentStage:{stageId:"s"}, roundNumber:1, phase:PHASES.CONSEQUENCES, availableStations:[{stationId:"captain",actions:[action]}], successConditions:[{conditionId:"x"}], failureConditions:[{conditionId:"y"}] }; }
+test("omitted definitions normalize no-roll actions", () => { const r=analyzeVoyageEncounterActionOutcomeDefinitions(state()); assert.deepEqual(r.actions[0].branches,{"no-roll":[]}); assert.equal(r.readyForInterpretation,true); });
+test("validates local rule references and warns on unreferenced rules", () => { const a={actionId:"wait",outcomeDefinition:{effectRules:[{effectId:"x",intentType:"discovery",timing:"consequences",visibility:"public",target:{kind:"encounter"},payload:{delta:1}}],branches:{"no-roll":[]}}}; const r=validateVoyageEncounterActionOutcomeDefinitions(state(a)); assert.equal(r.valid,true); assert.equal(r.warnings[0].code,"unreferenced-effect-rule"); });
+test("rejects unsafe payload values", () => { const a={actionId:"wait",outcomeDefinition:{effectRules:[{effectId:"x",intentType:"discovery",timing:"consequences",visibility:"public",target:{kind:"encounter"},payload:{bad:undefined}}],branches:{"no-roll":[]}}}; assert.equal(validateVoyageEncounterActionOutcomeDefinitions(state(a)).valid,false); });

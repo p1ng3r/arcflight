@@ -47,6 +47,18 @@ function options(action, path, errors) {
     if (!safeKey(option.riskBidId)) issue(errors, "unsafe-risk-bid-key", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
     if (ids.has(option.riskBidId)) issue(errors, "duplicate-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action.");
     ids.add(option.riskBidId);
+    for (const field of ["rewardEffectIds", "dangerEffectIds"]) {
+      if (!Object.hasOwn(option, field)) continue;
+      if (!Array.isArray(option[field])) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${path}[${index}].${field}`, `${field} must be an array when supplied.`); continue; }
+      const references = new Set();
+      for (let referenceIndex = 0; referenceIndex < option[field].length; referenceIndex += 1) {
+        if (!Object.hasOwn(option[field], referenceIndex)) continue;
+        const reference = option[field][referenceIndex];
+        if (!hasId(reference) || !safeKey(reference)) issue(errors, "invalid-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be non-empty safe strings.");
+        else if (references.has(reference)) issue(errors, "duplicate-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be unique within a list.");
+        references.add(reference);
+      }
+    }
   }
   return result;
 }
