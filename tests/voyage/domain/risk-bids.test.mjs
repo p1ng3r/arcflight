@@ -49,3 +49,12 @@ test("ignores inherited Risk Bid options in a real array hole", () => {
   encounter.riskBids.navigator = { stationId: "navigator", actionId: encounter.selections.navigator.actionId, riskBidId: "inherited-bid" };
   try { const result = validateVoyageEncounterRiskBids(encounter); assert.equal(result.valid, false); assert.ok(result.errors.some((entry) => entry.code === "risk-bid-not-available")); } finally { Object.setPrototypeOf(options, Array.prototype); }
 });
+test("shared authored option analyzer returns isolated options and exact reference records", async () => {
+  const { analyzeAuthoredVoyageRiskBidOptions } = await import("../../../scripts/voyage/domain/risk-bids.js");
+  const action = { riskBidOptions: [{ riskBidId: "bid", rewardEffectIds: ["reward"], dangerEffectIds: ["danger"] }] };
+  const errors = []; const analysis = analyzeAuthoredVoyageRiskBidOptions(action, "action.riskBidOptions", errors);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(analysis.referenceRecords, [{ effectId: "reward", path: "action.riskBidOptions[0].rewardEffectIds[0]" }, { effectId: "danger", path: "action.riskBidOptions[0].dangerEffectIds[0]" }]);
+  analysis.options[0].rewardEffectIds[0] = "changed";
+  assert.equal(action.riskBidOptions[0].rewardEffectIds[0], "reward");
+});

@@ -36,7 +36,7 @@ function actions(station, id) {
   return found;
 }
 export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
-  if (!Object.hasOwn(action, "riskBidOptions")) return [];
+  if (!Object.hasOwn(action, "riskBidOptions")) return { options: [], referenceRecords: [] };
   const optionsDescriptor = Object.getOwnPropertyDescriptor(action, "riskBidOptions");
   if (!optionsDescriptor || !("value" in optionsDescriptor)) {
     issue(errors, "outcome-data-read-failed", path, "Risk Bid data could not be read safely.");
@@ -44,18 +44,20 @@ export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
   }
   const source = optionsDescriptor.value;
   if (!Array.isArray(source)) { issue(errors, "invalid-risk-bid-options", path, "Authored Risk Bid options must be an array when supplied."); return null; }
-  const ids = new Set(); const result = new Array(source.length);
+  const ids = new Set(); const options = new Array(source.length); const referenceRecords = [];
   for (let index = 0; index < source.length; index += 1) {
     if (!Object.hasOwn(source, index)) continue;
     const descriptor = Object.getOwnPropertyDescriptor(source, index);
     if (!descriptor || !("value" in descriptor)) { issue(errors, "outcome-data-read-failed", `${path}[${index}]`, "Risk Bid data could not be read safely."); continue; }
-    const option = descriptor.value; result[index] = option;
+    const option = descriptor.value;
     if (!isPlainObject(option)) { issue(errors, "invalid-risk-bid-option", `${path}[${index}]`, "Authored Risk Bid option must be a plain object."); continue; }
     const idDescriptor = Object.getOwnPropertyDescriptor(option, "riskBidId"); const riskBidId = idDescriptor && "value" in idDescriptor ? idDescriptor.value : undefined;
     if (!idDescriptor || !("value" in idDescriptor) || !hasId(riskBidId)) { issue(errors, "invalid-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a non-empty riskBidId."); continue; }
     if (!safeKey(riskBidId)) issue(errors, "unsafe-risk-bid-key", `${path}[${index}].riskBidId`, "Authored Risk Bid option requires a safe riskBidId.");
     if (ids.has(riskBidId)) issue(errors, "duplicate-risk-bid-id", `${path}[${index}].riskBidId`, "Authored Risk Bid option riskBidId must be unique within an action.");
     ids.add(riskBidId);
+    const normalized = { riskBidId, rewardEffectIds: [], dangerEffectIds: [] };
+    options[index] = normalized;
     for (const field of ["rewardEffectIds", "dangerEffectIds"]) {
       if (!Object.hasOwn(option, field)) continue;
       const listDescriptor = Object.getOwnPropertyDescriptor(option, field);
@@ -71,10 +73,12 @@ export function analyzeAuthoredVoyageRiskBidOptions(action, path, errors) {
         if (!hasId(reference) || !safeKey(reference)) issue(errors, "invalid-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be non-empty safe strings.");
         else if (references.has(reference)) issue(errors, "duplicate-effect-reference", `${path}[${index}].${field}[${referenceIndex}]`, "Risk Bid effect references must be unique within a list.");
         references.add(reference);
+        normalized[field][referenceIndex] = reference;
+        referenceRecords.push({ effectId: reference, path: `${path}[${index}].${field}[${referenceIndex}]` });
       }
     }
   }
-  return result;
+  return { options, referenceRecords };
 }
 function options(action, path, errors) { return analyzeAuthoredVoyageRiskBidOptions(action, path, errors); }
 function validateAuthoredOptions(state, errors) {
@@ -101,7 +105,7 @@ function resolve(state, stationId, actionId, riskBidId, errors, path, authoredOp
   const { action, index: actionIndex } = actionMatches[0];
   const optionList = authoredOptions?.get(action) ?? options(action, `availableStations[${index}].actions[${actionIndex}].riskBidOptions`, errors);
   if (!optionList) return null;
-  const matches = optionList.filter((option) => isPlainObject(option) && Object.hasOwn(option, "riskBidId") && option.riskBidId === riskBidId);
+  const matches = optionList.options.filter((option) => option && option.riskBidId === riskBidId);
   if (matches.length !== 1) issue(errors, matches.length ? "risk-bid-option-ambiguous" : "risk-bid-not-available", `${path}.riskBidId`, "Risk Bid must match exactly one authored option for the selected action.");
   return matches.length === 1 ? { station, action } : null;
 }

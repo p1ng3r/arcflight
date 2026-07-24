@@ -88,19 +88,15 @@ function analyzeEffectRule(value, path, errors, effectIds, effectPaths) {
   return { effectId: rule.effectId, intentType: rule.intentType, timing: rule.timing, visibility: rule.visibility, target, payload: payload.value };
 }
 function analyzeRiskBidOptions(action, path, mode, errors, references) {
-  const source = analyzeAuthoredVoyageRiskBidOptions(action, `${path}.riskBidOptions`, errors);
-  if (!source) return [];
-  const result = new Array(source.length);
-  for (const index of numericIndices(source)) {
-    const optionPath = `${path}.riskBidOptions[${index}]`; const option = source[index];
-    if (!isPlainObject(option)) continue;
-    const id = readOwnDataProperty(option, "riskBidId", `${optionPath}.riskBidId`, errors);
-    const lists = {};
-    for (const field of ["rewardEffectIds", "dangerEffectIds"]) { const list = readOwnDataProperty(option, field, `${optionPath}.${field}`, errors); if (!list.present) lists[field] = []; else if (!list.ok || !Array.isArray(list.value)) { issue(errors, field === "rewardEffectIds" ? "invalid-risk-bid-reward-effect-ids" : "invalid-risk-bid-danger-effect-ids", `${optionPath}.${field}`, `${field} must be an array when supplied.`); lists[field] = []; } else lists[field] = validateReferenceList(list.value, `${optionPath}.${field}`, errors, references); }
-    if (mode === "no-roll" && (lists.rewardEffectIds.some(Boolean) || lists.dangerEffectIds.some(Boolean))) issue(errors, "no-roll-risk-bid-result-reference", optionPath, "No-roll actions cannot reference result effects.");
-    result[index] = { riskBidId: id.value, rewardEffectIds: lists.rewardEffectIds, dangerEffectIds: lists.dangerEffectIds };
+  const analysis = analyzeAuthoredVoyageRiskBidOptions(action, `${path}.riskBidOptions`, errors);
+  if (!analysis) return [];
+  references.push(...analysis.referenceRecords);
+  for (const option of analysis.options) {
+    if (option && mode === "no-roll" && (option.rewardEffectIds.some(Boolean) || option.dangerEffectIds.some(Boolean))) {
+      issue(errors, "no-roll-risk-bid-result-reference", path, "No-roll actions cannot reference result effects.");
+    }
   }
-  return result;
+  return analysis.options;
 }
 function analyzeAction(action, stationId, stationIndex, actionIndex, errors, warnings) {
   const actionPath = `availableStations[${stationIndex}].actions[${actionIndex}]`; const check = readOwnDataProperty(action, "check", `${actionPath}.check`, errors); const mode = check.present ? "check" : "no-roll";
