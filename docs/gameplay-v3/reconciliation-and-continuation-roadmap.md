@@ -111,7 +111,7 @@ The following remain explicitly deferred at this checkpoint:
 
 ## 5. Next pure-round implementation sequence
 
-There are **six planned slices remaining to complete the current pure Voyage round engine**. This count does not represent the complete table-playable alpha; Foundry integration, multiplayer, UI, content, recovery, and aftermath work follow later.
+There are **seven planned slices remaining to complete the current pure Voyage round engine**. This count does not represent the complete table-playable alpha; Foundry integration, multiplayer, UI, content, recovery, and aftermath work follow later.
 
 Use the full prefix **Gameplay V3** in issue titles, task documents, branches, commits, and PR titles. Do not refer to a future task only as `V3-005` because that identifier already exists in the other workstream.
 
@@ -182,9 +182,9 @@ Expected scope:
 - preservation of audit and resolved outcome state;
 - no round increment yet.
 
-### Gameplay V3-005F — Cleanup and round, stage, or terminal advance
+### Gameplay V3-005F — Normal Cleanup and round, stage, or terminal advance
 
-Close the round and perform exactly one accepted advance path.
+Close the round and perform exactly one normal accepted advance path.
 
 Expected scope:
 
@@ -193,15 +193,29 @@ Expected scope:
 - next round in the same stage;
 - transition to another stage;
 - completion candidate for success or failure;
-- authorized pause when a GM decision is required;
+- authorized pause when an authored or normal policy requires a GM decision;
 - round-start and Situation phase-start snapshots for a new round;
-- audited GM override only where normal advancement cannot apply and an explicit reason is supplied.
+- no bypass of readiness or transition policy.
 
-The detailed scope of each slice must be reviewed immediately before its Codex task is written. This roadmap does not authorize implementing all six slices in parallel.
+### Gameplay V3-005G — Audited GM override
+
+Add the explicit correction path only after normal Cleanup and advancement are complete.
+
+Expected scope:
+
+- GM-only authority contract at the pure-domain boundary;
+- mandatory non-empty reason;
+- exactly one audit entry containing the responsible user identifier, timestamp supplied by the adapter boundary, prior state reference, requested correction, and reason;
+- preservation of prior audit history;
+- explicit restrictions on which state may be corrected;
+- no silent deletion of checks, consequences, snapshots, or permanent commitment records;
+- no persistence, sockets, UI, or durable document mutation in the pure-domain slice.
+
+The detailed scope of each slice must be reviewed immediately before its Codex task is written. This roadmap does not authorize implementing all seven slices in parallel.
 
 ## 6. Post-round integration workstreams
 
-After Gameplay V3-005F, create later task files only one dependency at a time. The expected workstreams are:
+After Gameplay V3-005G, create later task files only one dependency at a time. The expected workstreams are:
 
 1. **Package and catalog reconciliation**
    - audit the alpha-branch package validator and registries;
