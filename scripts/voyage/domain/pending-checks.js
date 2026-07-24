@@ -1,12 +1,13 @@
 import {
   VOYAGE_ACTION_EXECUTION_MODES as MODES,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE,
-  VOYAGE_ROUND_PHASES as PHASES
+  VOYAGE_ROUND_PHASES as PHASES,
+  VOYAGE_PENDING_CHECK_STATUSES as STATUSES
 } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
-import { prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
+import { analyzeVoyageEncounterActionExecutionRequests, prepareVoyageEncounterActionExecutionRequests } from "./resolution-execution-requests.js";
 
 const REQUIRED = Object.freeze([
   "pendingCheckId",
@@ -144,6 +145,7 @@ function capturePlainData(value, path, errors, ancestors = new Set()) {
 function captureRecord(record, path, errors) {
   const captured = Object.create(null);
   const present = new Set();
+  const originals = Object.create(null);
 
   for (let fieldIndex = 0; fieldIndex < REQUIRED.length; fieldIndex += 1) {
     const field = REQUIRED[fieldIndex];
@@ -155,6 +157,7 @@ function captureRecord(record, path, errors) {
     }
 
     present.add(field);
+    if (field === "result") Object.defineProperty(originals, field, { value: read.value, enumerable: true });
     if (!read.ok) continue;
 
     const value = capturePlainData(read.value, fieldPath, errors);
@@ -168,7 +171,7 @@ function captureRecord(record, path, errors) {
     }
   }
 
-  return { captured, present };
+  return { captured, present, originals };
 }
 
 function equal(left, right) {
@@ -198,6 +201,17 @@ function equal(left, right) {
 }
 
 const validId = (value) => typeof value === "string" && value.trim().length > 0 && !UNSAFE.has(value);
+function hasExactOwnDataFields(value, fields) {
+  if (!isPlainObject(value)) return false;
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== fields.length || keys.some((key) => typeof key !== "string" || !fields.includes(key))) return false;
+    return fields.every((field) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, field);
+      return descriptor && Object.hasOwn(descriptor, "value");
+    });
+  } catch { return false; }
+}
 
 function pendingChecksAreEmpty(pendingChecks) {
   if (!Array.isArray(pendingChecks)) return false;
@@ -241,9 +255,13 @@ function validatePendingChecksAgainstReport(state, report, structural) {
         continue;
       }
 
-      const capturedRecord = captureRecord(record, path, errors).captured;
-      for (const key of Object.keys(record)) {
-        if (!REQUIRED_SET.has(key)) issue(errors, "unexpected-pending-check-field", `${path}.${key}`, "Pending check has an unexpected own field.");
+      const captured = captureRecord(record, path, errors);
+      const capturedRecord = captured.captured;
+      const originalResult = captured.originals.result;
+      for (const key of Reflect.ownKeys(record)) {
+        if (typeof key !== "string" || !REQUIRED_SET.has(key)) {
+          issue(errors, "unexpected-pending-check-field", `${path}.${String(key)}`, "Pending check has an unexpected own field.");
+        }
       }
 
       const pendingCheckId = capturedRecord.pendingCheckId;
@@ -274,8 +292,31 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.stageId !== state.currentStage?.stageId) issue(errors, "pending-check-stage-mismatch", `${path}.stageId`, "Pending check stage must match current stage.");
       if (capturedRecord.roundNumber !== state.roundNumber) issue(errors, "pending-check-round-mismatch", `${path}.roundNumber`, "Pending check round must match current round.");
       if (capturedRecord.mode !== MODES.CHECK) issue(errors, "invalid-pending-check-mode", `${path}.mode`, "Pending check mode must be check.");
-      if (capturedRecord.status !== "pending") issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending.");
-      if (capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
+      if (![STATUSES.PENDING, STATUSES.RESOLVED].includes(capturedRecord.status)) issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
+      if (capturedRecord.status === STATUSES.PENDING && capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
+      if (capturedRecord.status === STATUSES.RESOLVED) {
+        const result = capturedRecord.result ?? originalResult;
+        const keys = ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"];
+        if (!hasExactOwnDataFields(originalResult, keys)) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved pending check result has an invalid shape.");
+        else {
+          const slugs = ["critical-failure", "failure", "success", "critical-success"];
+          if (!Number.isFinite(result.total) || !Number.isSafeInteger(result.degreeOfSuccess) || result.degreeOfSuccess < 0 || result.degreeOfSuccess > 3 || result.degreeOfSuccessSlug !== slugs[result.degreeOfSuccess]) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved result degree or total is invalid.");
+          let authoredStatistic = false;
+          if (Array.isArray(capturedRecord.statisticOptions)) {
+            for (let optionIndex = 0; optionIndex < capturedRecord.statisticOptions.length; optionIndex += 1) {
+              if (Object.hasOwn(capturedRecord.statisticOptions, optionIndex)
+                && capturedRecord.statisticOptions[optionIndex] === result.statisticSlug) {
+                authoredStatistic = true;
+                break;
+              }
+            }
+          }
+          if (!authoredStatistic) issue(errors, "invalid-pending-check-result", `${path}.result.statisticSlug`, "Resolved result statistic must be authored.");
+          if (!Number.isSafeInteger(result.dc) || result.dc < 0 || capturedRecord.dcSource?.kind !== "fixed" || result.dc !== capturedRecord.dcSource.value) issue(errors, "invalid-pending-check-result", `${path}.result.dc`, "Resolved result DC must match fixed authored DC.");
+          const expectedMode = capturedRecord.secrecy === "secret" ? "blind" : "public";
+          if (result.rollMode !== expectedMode) issue(errors, "invalid-pending-check-result", `${path}.result.rollMode`, "Resolved result roll mode must match secrecy.");
+        }
+      }
 
       const request = expected.get(sequence);
       if (!request) {
@@ -308,7 +349,7 @@ export function validateVoyageEncounterPendingChecks(state) {
   const structural = validateVoyageEncounterState(state);
   if (!structural.valid) return { valid: false, errors: deduplicateVoyageResolutionIssues(structural.errors), warnings: deduplicateVoyageResolutionIssues(structural.warnings) };
 
-  const report = prepareVoyageEncounterActionExecutionRequests(state);
+  const report = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
   return validatePendingChecksAgainstReport(state, report, structural);
 }
 

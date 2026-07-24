@@ -1,0 +1,148 @@
+import { createVoyageEncounterBoundarySnapshot } from "./boundary-snapshots.js";
+import {
+  VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE,
+  VOYAGE_ROUND_PHASES as PHASES
+} from "./constants.js";
+import { clonePlainData, isPlainObject } from "./defaults.js";
+import { validateVoyagePhaseTransition } from "./phase.js";
+import { validateVoyageEncounterState } from "./validation.js";
+import { validateVoyageEncounterPendingChecks } from "./pending-checks.js";
+import { prepareVoyageEncounterResolutionCompletion } from "./resolution-completion.js";
+import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
+
+const UNSAFE_SNAPSHOT_IDS = new Set(["__proto__", "constructor", "prototype"]);
+const error = (code, path, message) => ({ code, path, message, severity: "error" });
+
+const fail = (errors, warnings = []) => ({
+  ok: false,
+  nextState: null,
+  events: [],
+  errors: deduplicateVoyageResolutionIssues(errors),
+  warnings: deduplicateVoyageResolutionIssues(warnings)
+});
+
+function validRequest(value) {
+  try {
+    if (!isPlainObject(value)) return false;
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== 1 || keys[0] !== "phaseStartSnapshotId") return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, "phaseStartSnapshotId");
+    const id = descriptor?.value;
+    return Boolean(descriptor)
+      && Object.hasOwn(descriptor, "value")
+      && typeof id === "string"
+      && id.trim().length > 0
+      && !UNSAFE_SNAPSHOT_IDS.has(id);
+  } catch {
+    return false;
+  }
+}
+
+function hasSnapshotId(state, snapshotId) {
+  for (let index = 0; index < state.snapshots.length; index += 1) {
+    if (!Object.hasOwn(state.snapshots, index)) continue;
+    const snapshot = state.snapshots[index];
+    if (isPlainObject(snapshot) && Object.hasOwn(snapshot, "snapshotId") && snapshot.snapshotId === snapshotId) return true;
+  }
+  return false;
+}
+
+export function applyVoyageEncounterConsequencesTransition(state, request) {
+  try {
+    const structural = validateVoyageEncounterState(state);
+    if (!structural.valid) return fail(structural.errors, structural.warnings);
+
+    const warnings = [...structural.warnings];
+    if (state.lifecycleState !== LIFE.ACTIVE || state.phase !== PHASES.RESOLUTION) {
+      return fail([
+        error(
+          "consequences-transition-requires-resolution",
+          "phase",
+          "Consequences requires an Active Resolution encounter."
+        )
+      ], warnings);
+    }
+
+    const phase = validateVoyagePhaseTransition(state.phase, PHASES.CONSEQUENCES);
+    if (!phase.valid) return fail(phase.errors, warnings);
+
+    const completion = prepareVoyageEncounterResolutionCompletion(state);
+    warnings.push(...completion.warnings);
+    if (!completion.readyForConsequences) {
+      return fail(
+        completion.errors.length > 0
+          ? completion.errors
+          : [error("resolution-not-complete", "pendingChecks", "Resolution is not complete.")],
+        warnings
+      );
+    }
+
+    if (!validRequest(request)) {
+      return fail([
+        error(
+          "invalid-phase-start-snapshot-id",
+          "transitionRequest.phaseStartSnapshotId",
+          "Consequences requires a safe non-empty phase-start snapshot ID."
+        )
+      ], warnings);
+    }
+
+    if (hasSnapshotId(state, request.phaseStartSnapshotId)) {
+      return fail([
+        error(
+          "phase-start-snapshot-id-already-exists",
+          "transitionRequest.phaseStartSnapshotId",
+          "Snapshot ID already exists."
+        )
+      ], warnings);
+    }
+
+    const candidate = clonePlainData(state);
+    candidate.phase = PHASES.CONSEQUENCES;
+
+    const snapshot = createVoyageEncounterBoundarySnapshot(candidate, {
+      snapshotId: request.phaseStartSnapshotId,
+      boundaryType: "phase-start"
+    });
+    warnings.push(...snapshot.warnings);
+    if (!snapshot.ok) return fail(snapshot.errors, warnings);
+
+    candidate.snapshots.push(snapshot.snapshot);
+    candidate.revision = state.revision + 1;
+
+    const final = validateVoyageEncounterState(candidate);
+    const pending = validateVoyageEncounterPendingChecks(candidate);
+    warnings.push(...final.warnings, ...pending.warnings);
+    if (!final.valid || !pending.valid) return fail([...final.errors, ...pending.errors], warnings);
+
+    return {
+      ok: true,
+      nextState: candidate,
+      events: [{
+        type: "voyage.consequences-started",
+        encounterId: candidate.encounterId,
+        lifecycleState: candidate.lifecycleState,
+        roundNumber: candidate.roundNumber,
+        previousPhase: state.phase,
+        phase: candidate.phase,
+        actionCount: completion.actionCount,
+        checkCount: completion.checkCount,
+        noRollActionCount: completion.noRollActionCount,
+        resolvedCheckCount: completion.resolvedCheckCount,
+        previousRevision: state.revision,
+        revision: candidate.revision,
+        phaseStartSnapshotId: request.phaseStartSnapshotId
+      }],
+      errors: [],
+      warnings: deduplicateVoyageResolutionIssues(warnings)
+    };
+  } catch {
+    return fail([
+      error(
+        "consequences-transition-failed",
+        "transitionRequest",
+        "Consequences transition could not be completed safely."
+      )
+    ]);
+  }
+}

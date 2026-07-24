@@ -10,6 +10,9 @@ import { prepareVoyageEncounterResolutionOrder } from "./domain/resolution-order
 import { applyVoyageEncounterResolutionTransition } from "./domain/resolution-transition.js";
 import { validateVoyageEncounterActionExecutionDefinitions, prepareVoyageEncounterActionExecutionRequests } from "./domain/resolution-execution-requests.js";
 import { validateVoyageEncounterPendingChecks, applyVoyageEncounterPendingCheckPreparation } from "./domain/pending-checks.js";
+import { applyVoyageEncounterPendingCheckResult } from "./domain/resolution-results.js";
+import { prepareVoyageEncounterResolutionCompletion } from "./domain/resolution-completion.js";
+import { applyVoyageEncounterConsequencesTransition } from "./domain/consequences-transition.js";
 import { preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies } from "./pf2e/resolution-check-adapter.js";
 import { createVoyagePf2eRuntimeDependencies, preflightVoyagePf2ePendingCheckInFoundry } from "./pf2e/runtime-preflight.js";
 import { executeVoyagePf2ePendingCheck, validateVoyagePf2eExecutionDependencies } from "./pf2e/resolution-check-executor.js";
@@ -47,6 +50,9 @@ export function registerVoyageStationSelectionEditingApi() {
     prepareVoyageEncounterActionExecutionRequests,
     validateVoyageEncounterPendingChecks,
     applyVoyageEncounterPendingCheckPreparation,
+    applyVoyageEncounterPendingCheckResult,
+    prepareVoyageEncounterResolutionCompletion,
+    applyVoyageEncounterConsequencesTransition,
     preflightVoyagePf2ePendingCheck,
     validateVoyagePf2eAdapterDependencies,
     createVoyagePf2eRuntimeDependencies,
@@ -74,6 +80,9 @@ export function registerVoyageStationSelectionEditingApi() {
     prepareVoyageEncounterActionExecutionRequests,
     validateVoyageEncounterPendingChecks,
     applyVoyageEncounterPendingCheckPreparation,
+    applyVoyageEncounterPendingCheckResult,
+    prepareVoyageEncounterResolutionCompletion,
+    applyVoyageEncounterConsequencesTransition,
     preflightVoyagePf2ePendingCheck,
     validateVoyagePf2eAdapterDependencies,
     createVoyagePf2eRuntimeDependencies,
@@ -110,6 +119,9 @@ export {
   prepareVoyageEncounterActionExecutionRequests,
   validateVoyageEncounterPendingChecks,
   applyVoyageEncounterPendingCheckPreparation,
+  applyVoyageEncounterPendingCheckResult,
+  prepareVoyageEncounterResolutionCompletion,
+  applyVoyageEncounterConsequencesTransition,
   preflightVoyagePf2ePendingCheck,
   validateVoyagePf2eAdapterDependencies,
   createVoyagePf2eRuntimeDependencies,
