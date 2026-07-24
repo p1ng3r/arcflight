@@ -61,6 +61,9 @@ function analyzeTarget(value, path, errors) {
   const kind = kindDescriptor && "value" in kindDescriptor ? kindDescriptor.value : undefined;
   const known = Object.values(TARGETS).includes(kind);
   const idBearing = known && ID_TARGETS.has(kind);
+  if (known && !idBearing && Object.hasOwn(value, "targetId")) {
+    issue(errors, "unexpected-effect-target-id", `${path}.targetId`, "Target ID is not allowed for this target kind.");
+  }
   const target = exactPlainObject(value, idBearing ? ["kind", "targetId"] : ["kind"], path, errors, "invalid-effect-target", "unexpected-effect-target-field");
   if (!target) return null;
   if (!known) { issue(errors, "invalid-effect-target-kind", `${path}.kind`, "Effect target kind is not recognized."); return null; }
