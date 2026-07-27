@@ -8,7 +8,7 @@ const TEMPORARY_STATE_FIELDS = [
   "objective",
   "participants",
   "availableStations",
-  "temporaryStationAssignments",
+  "stationAssignments",
   "currentStage",
   "roundNumber",
   "phase",

@@ -20,6 +20,7 @@ const REPORT_KEYS = [
   "errors",
   "warnings"
 ];
+const STATION_IDS = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
 
 function state({ checks = 0, prepare = false } = {}) {
   const encounter = createVoyageEncounterState({
@@ -28,6 +29,7 @@ function state({ checks = 0, prepare = false } = {}) {
     primaryShip: { id: "ship" }
   });
   const availableStations = [];
+  const stationAssignments = [];
   const selections = {};
 
   if (checks === 0) {
@@ -35,10 +37,14 @@ function state({ checks = 0, prepare = false } = {}) {
       stationId: "captain",
       actions: [{ actionId: "observe" }]
     });
+    stationAssignments.push({
+      stationId: "captain",
+      operator: { kind: "actor", uuid: "Actor.captain" }
+    });
     selections.captain = { stationId: "captain", actionId: "observe" };
   } else {
     for (let index = 0; index < checks; index += 1) {
-      const stationId = `station-${index}`;
+      const stationId = STATION_IDS[index];
       const actionId = `action-${index}`;
       availableStations.push({
         stationId,
@@ -52,6 +58,10 @@ function state({ checks = 0, prepare = false } = {}) {
           }
         }]
       });
+      stationAssignments.push({
+        stationId,
+        operator: { kind: "actor", uuid: `Actor.operator-${index}` }
+      });
       selections[stationId] = { stationId, actionId };
     }
   }
@@ -62,6 +72,7 @@ function state({ checks = 0, prepare = false } = {}) {
     roundNumber: 1,
     phase: "resolution",
     availableStations,
+    stationAssignments,
     selections
   });
 
@@ -139,8 +150,8 @@ test("reports pending checks and unresolved identities in sequence order", () =>
   assert.equal(report.resolvedCheckCount, 0);
   assert.equal(report.unresolvedCheckCount, 2);
   assert.deepEqual(report.unresolvedChecks, [
-    { pendingCheckId: "pending-0", sequence: 0, stationId: "station-0", actionId: "action-0" },
-    { pendingCheckId: "pending-1", sequence: 1, stationId: "station-1", actionId: "action-1" }
+    { pendingCheckId: "pending-0", sequence: 0, stationId: "captain", actionId: "action-0" },
+    { pendingCheckId: "pending-1", sequence: 1, stationId: "engineer", actionId: "action-1" }
   ]);
   for (const entry of report.unresolvedChecks) {
     assert.deepEqual(Object.keys(entry), ["pendingCheckId", "sequence", "stationId", "actionId"]);

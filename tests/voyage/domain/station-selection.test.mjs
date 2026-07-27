@@ -17,7 +17,12 @@ function encounter() {
     participants: [{ participantId: "captain", details: { userId: "user" } }],
     availableStations: [
       { stationId: "captain", actions: [{ actionId: "rally-crew", authored: { skill: "diplomacy" } }, { actionId: "coordinate-orders" }], authored: { title: "Captain" } },
-      { stationId: "engineer", actions: [{ actionId: "stabilize-strain" }, { actionId: "hard-burn-prep" }], authored: { title: "Engineer" } }
+      { stationId: "engineer", actions: [{ actionId: "stabilize-strain" }, { actionId: "hard-burn-prep" }], authored: { title: "Engineer" } },
+      { stationId: "navigator", actions: [{ actionId: "plot-course" }], authored: { title: "Navigator" } }
+    ],
+    stationAssignments: [
+      { stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } },
+      { stationId: "engineer", operator: { kind: "crewAsset", uuid: "Item.engineer" } }
     ],
     successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }],
     snapshots: [{ snapshotId: "planning-start", boundaryType: "phase-start", lifecycleState: STATES.ACTIVE, stageId: "opening", roundNumber: 2, phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, temporaryState: { currentStage: { stageId: "opening" } } }],
@@ -76,11 +81,31 @@ test("atomically creates one isolated initial selection, revision, and event", (
   source.metadata.nested.retained = false; assert.equal(result.nextState.metadata.nested.retained, true);
 });
 
-test("preserves successful exact IDs with surrounding whitespace", () => {
-  const source = encounter(); const stationId = " captain "; const actionId = " rally-crew ";
-  source.availableStations[0].stationId = stationId; source.availableStations[0].actions[0].actionId = actionId;
+test("preserves successful exact action IDs with surrounding whitespace", () => {
+  const source = encounter(); const stationId = "captain"; const actionId = " rally-crew ";
+  source.availableStations[0].actions[0].actionId = actionId;
   const result = applyVoyageEncounterStationActionSelection(source, { stationId, actionId });
   assert.equal(result.ok, true); assert.equal(Object.hasOwn(result.nextState.selections, stationId), true); assert.equal(result.nextState.selections[stationId].stationId, stationId); assert.equal(result.nextState.selections[stationId].actionId, actionId); assert.equal(result.events[0].stationId, stationId); assert.equal(result.events[0].actionId, actionId);
+});
+
+test("rejects persisted and requested selections for an unoccupied available station", () => {
+  const persisted = encounter();
+  persisted.selections.navigator = { stationId: "navigator", actionId: "plot-course" };
+  assert.ok(
+    validateVoyageEncounterStationSelections(persisted).errors
+      .some((entry) => entry.code === "selected-station-not-occupied")
+  );
+
+  const source = encounter();
+  const before = clonePlainData(source);
+  failure(
+    applyVoyageEncounterStationActionSelection(
+      source,
+      { stationId: "navigator", actionId: "plot-course" }
+    ),
+    ["station-not-occupied"]
+  );
+  assert.deepEqual(source, before);
 });
 
 test("rejects malformed state before request, lifecycle and phase before request, and request errors in order", () => {

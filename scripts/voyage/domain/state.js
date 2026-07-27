@@ -41,6 +41,9 @@ export function normalizeVoyageEncounterState(value) {
   const source = isPlainObject(value) ? value : {};
   const defaults = createDraftVoyageEncounterDefaults();
   const normalized = clonePlainData(source);
+  if (Object.hasOwn(normalized, "temporaryStationAssignments")) {
+    delete normalized.temporaryStationAssignments;
+  }
 
   for (const [key, defaultValue] of Object.entries(defaults)) {
     if (Array.isArray(defaultValue)) {

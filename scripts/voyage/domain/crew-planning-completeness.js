@@ -3,6 +3,7 @@ import {
   VOYAGE_ROUND_PHASES
 } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
+import { deriveOccupiedVoyageStationIds } from "./station-assignments.js";
 import { validateVoyageEncounterStationSelections } from "./station-selection.js";
 
 const UNSAFE_STATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -30,9 +31,13 @@ function isValidOwnSelection(selections, station) {
     || !hasNonEmptyId(selection.actionId)
     || !Array.isArray(station.actions)) return false;
 
-  return station.actions.filter((action) => (
-    isPlainObject(action) && action.actionId === selection.actionId
-  )).length === 1;
+  let matches = 0;
+  for (let index = 0; index < station.actions.length; index += 1) {
+    if (!Object.hasOwn(station.actions, index)) continue;
+    const action = station.actions[index];
+    if (isPlainObject(action) && action.actionId === selection.actionId) matches += 1;
+  }
+  return matches === 1;
 }
 
 /**
@@ -42,16 +47,14 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
   const selectionValidation = validateVoyageEncounterStationSelections(encounterState);
   const errors = [...selectionValidation.errors];
   const warnings = [...selectionValidation.warnings];
-  const requiredStationIds = [];
-  const optionalStationIds = [];
+  const occupiedStationIds = deriveOccupiedVoyageStationIds(encounterState?.stationAssignments);
   const selectedStationIds = [];
 
   if (!selectionValidation.valid) {
     return {
-      requiredStationIds,
-      optionalStationIds,
+      occupiedStationIds,
       selectedStationIds,
-      missingRequiredStationIds: [],
+      missingOccupiedStationIds: [...occupiedStationIds],
       complete: false,
       errors,
       warnings
@@ -65,43 +68,47 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
   }
 
   const seenStationIds = new Set();
-  encounterState.availableStations.forEach((station, index) => {
+  const availableStations = new Map();
+  for (let index = 0; index < encounterState.availableStations.length; index += 1) {
+    if (!Object.hasOwn(encounterState.availableStations, index)) continue;
+    const station = encounterState.availableStations[index];
     const path = `availableStations[${index}]`;
     if (!isPlainObject(station)) {
       issue(errors, "invalid-available-station", path, "Available Voyage station must be a plain object.");
-      return;
+      continue;
     }
     if (!Object.hasOwn(station, "stationId") || !hasNonEmptyId(station.stationId)) {
       issue(errors, "invalid-available-station-id", `${path}.stationId`, "Available Voyage station requires a non-empty stationId.");
-      return;
+      continue;
     }
     if (!isSafeStationKey(station.stationId)) {
       issue(errors, "unsafe-available-station-id", `${path}.stationId`, "Available Voyage station requires a safe stationId.");
-      return;
+      continue;
     }
     if (seenStationIds.has(station.stationId)) {
       issue(errors, "duplicate-available-station-id", `${path}.stationId`, "Available Voyage station IDs must be unique.");
-      return;
+      continue;
     }
     seenStationIds.add(station.stationId);
     if (!Object.hasOwn(station, "actions") || !Array.isArray(station.actions)) {
       issue(errors, "invalid-available-station-actions", `${path}.actions`, "Available Voyage station actions must be an array.");
-      return;
+      continue;
     }
+    availableStations.set(station.stationId, station);
+  }
 
-    if (Object.hasOwn(station, "selectionRequired") && station.selectionRequired === false) optionalStationIds.push(station.stationId);
-    else requiredStationIds.push(station.stationId);
-    if (isValidOwnSelection(encounterState.selections, station)) selectedStationIds.push(station.stationId);
-  });
+  for (const stationId of occupiedStationIds) {
+    const station = availableStations.get(stationId);
+    if (station && isValidOwnSelection(encounterState.selections, station)) selectedStationIds.push(stationId);
+  }
 
   const selectedIds = new Set(selectedStationIds);
-  const missingRequiredStationIds = requiredStationIds.filter((stationId) => !selectedIds.has(stationId));
+  const missingOccupiedStationIds = occupiedStationIds.filter((stationId) => !selectedIds.has(stationId));
   return {
-    requiredStationIds,
-    optionalStationIds,
+    occupiedStationIds,
     selectedStationIds,
-    missingRequiredStationIds,
-    complete: errors.length === 0 && missingRequiredStationIds.length === 0,
+    missingOccupiedStationIds,
+    complete: errors.length === 0 && missingOccupiedStationIds.length === 0,
     errors,
     warnings
   };

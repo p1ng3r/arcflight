@@ -43,6 +43,8 @@ test("normalization recursively isolates nested plain data and unknown extension
     participants: [{ participantId: "crew-1", assignments: [{ stationId: "captain" }] }],
     tracks: [{ trackId: "progress", thresholds: [{ timing: "immediate", details: { label: "First mark" } }] }],
     metadata: { audit: { tags: ["alpha"] } },
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", id: "captain-actor", uuid: "Actor.captain-actor", name: "Captain" } }],
+    temporaryStationAssignments: [{ stationId: "pilot", operator: { kind: "actor", id: "pilot-actor", uuid: "Actor.pilot-actor", name: "Pilot" } }],
     extension: { nested: [{ value: "preserve me" }] }
   };
   const normalized = normalizeVoyageEncounterState(source);
@@ -54,11 +56,37 @@ test("normalization recursively isolates nested plain data and unknown extension
   normalized.participants[0].assignments[0].stationId = "engineer";
   normalized.tracks[0].thresholds[0].details.label = "Changed";
   normalized.metadata.audit.tags.push("changed");
+  normalized.stationAssignments[0].stationId = "engineer";
   normalized.extension.nested[0].value = "changed";
   assert.equal(source.participants[0].assignments[0].stationId, "captain");
   assert.equal(source.tracks[0].thresholds[0].details.label, "First mark");
   assert.deepEqual(source.metadata.audit.tags, ["alpha"]);
-  assert.equal(source.extension.nested[0].value, "preserve me");
+  assert.equal(source.stationAssignments[0].stationId, "captain");
+  assert.deepEqual(source.extension.nested[0].value, "preserve me");
+});
+
+test("default Draft state contains stationAssignments and omits temporaryStationAssignments", () => {
+  const state = createVoyageEncounterState({ encounterId: "voyage-1" });
+
+  assert.deepEqual(state.stationAssignments, []);
+  assert.equal(Object.hasOwn(state, "temporaryStationAssignments"), false);
+});
+
+test("normalization is non-mutating and preserves stationAssignments", () => {
+  const source = {
+    encounterId: "voyage-1",
+    lifecycleState: "configuration",
+    revision: 2,
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", id: "captain-actor", uuid: "Actor.captain-actor", name: "Captain" } }],
+    temporaryStationAssignments: [{ stationId: "pilot", operator: { kind: "actor", id: "pilot-actor", uuid: "Actor.pilot-actor", name: "Pilot" } }]
+  };
+  const normalized = normalizeVoyageEncounterState(source);
+
+  assert.deepEqual(source.temporaryStationAssignments[0].stationId, "pilot");
+  assert.deepEqual(normalized.stationAssignments, source.stationAssignments);
+  assert.equal(Object.hasOwn(normalized, "temporaryStationAssignments"), false);
+  normalized.stationAssignments[0].stationId = "engineer";
+  assert.equal(source.stationAssignments[0].stationId, "captain");
 });
 
 test("validation reports structural state errors", () => {

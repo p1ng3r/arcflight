@@ -41,6 +41,25 @@ test("returns a clean report for a valid Ready encounter without exposing or mut
   assert.equal(Object.hasOwn(report, "nextState"), false);
 });
 
+test("rejects malformed fixed assignments through canonical state validation", () => {
+  const encounter = readyEncounter();
+  encounter.stationAssignments = [
+    {
+      stationId: "captain",
+      operator: { kind: "actor", id: "shared", uuid: "Actor.shared" }
+    },
+    {
+      stationId: "engineer",
+      operator: { kind: "actor", id: "shared", uuid: "Actor.shared" }
+    }
+  ];
+
+  const report = validateVoyageEncounterActivationStart(encounter);
+
+  assert.equal(report.ready, false);
+  assert.ok(errorCodes(report).includes("duplicate-station-operator"));
+});
+
 test("returns existing supplied-state validation reports unchanged", () => {
   const malformed = readyEncounter();
   malformed.schemaVersion = 999;

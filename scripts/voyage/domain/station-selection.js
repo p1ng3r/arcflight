@@ -3,6 +3,7 @@ import {
   VOYAGE_ROUND_PHASES
 } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
+import { deriveOccupiedVoyageStationIds } from "./station-assignments.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 
@@ -31,6 +32,10 @@ function hasNonEmptyId(value) {
 
 function isSafeStationKey(stationId) {
   return !UNSAFE_STATION_KEYS.has(stationId);
+}
+
+function isOccupiedStation(encounterState, stationId) {
+  return deriveOccupiedVoyageStationIds(encounterState.stationAssignments).includes(stationId);
 }
 
 function findAvailableStations(availableStations, stationId) {
@@ -106,6 +111,10 @@ function validateRequestedAction(encounterState, request, errors, requestPath) {
   }
 
   const { station, index } = stationMatches[0];
+  if (!isOccupiedStation(encounterState, request.stationId)) {
+    issue(errors, "station-not-occupied", `${requestPath}.stationId`, "Requested Voyage station is not occupied for this event.");
+    return;
+  }
   if (!Array.isArray(station.actions)) {
     issue(errors, "invalid-available-station-actions", `availableStations[${index}].actions`, "Available Voyage station actions must be an array.");
     return;
@@ -166,6 +175,10 @@ export function validateVoyageEncounterStationSelections(encounterState) {
       issue(errors, "selected-station-is-ambiguous", `${selectionPath}.stationId`, "Stored Voyage station selection references an ambiguous available station.");
       continue;
     }
+    if (!isOccupiedStation(encounterState, selection.stationId)) {
+      issue(errors, "selected-station-not-occupied", `${selectionPath}.stationId`, "Stored Voyage station selection references an unoccupied station.");
+      continue;
+    }
 
     const { station, index } = stationMatches[0];
     if (!Array.isArray(station.actions)) {
@@ -220,7 +233,12 @@ export function applyVoyageEncounterStationActionSelection(encounterState, selec
     if (stationMatches.length === 1) matchingStation = stationMatches[0];
   }
 
-  if (matchingStation && validActionId) {
+  const occupiedStation = matchingStation && isOccupiedStation(encounterState, selectionRequest.stationId);
+  if (matchingStation && !occupiedStation) {
+    issue(errors, "station-not-occupied", "selectionRequest.stationId", "Requested Voyage station is not occupied for this event.");
+  }
+
+  if (matchingStation && occupiedStation && validActionId) {
     const { station, index } = matchingStation;
     if (!Array.isArray(station.actions)) {
       issue(errors, "invalid-available-station-actions", `availableStations[${index}].actions`, "Available Voyage station actions must be an array.");
@@ -286,9 +304,10 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
   const warnings = [...context.warnings];
   const validStationId = validateStationIdRequest(selectionRequest, errors, "selectionRequest");
   if (validStationId) validateRequestedAction(encounterState, selectionRequest, errors, "selectionRequest");
+  const occupiedStation = validStationId && isOccupiedStation(encounterState, selectionRequest.stationId);
 
   let previousSelection = null;
-  if (validStationId) {
+  if (validStationId && occupiedStation) {
     if (!Object.hasOwn(encounterState.selections, selectionRequest.stationId)) {
       issue(errors, "station-selection-does-not-exist", `selections.${selectionRequest.stationId}`, "Voyage station does not have a selected action to change.");
     } else {
@@ -354,9 +373,13 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
   const errors = [];
   const warnings = [...context.warnings];
   const validStationId = validateStationIdRequest(clearRequest, errors, "clearRequest");
+  const occupiedStation = validStationId && isOccupiedStation(encounterState, clearRequest.stationId);
+  if (validStationId && !occupiedStation) {
+    issue(errors, "station-not-occupied", "clearRequest.stationId", "Requested Voyage station is not occupied for this event.");
+  }
 
   let previousSelection = null;
-  if (validStationId) {
+  if (validStationId && occupiedStation) {
     if (!Object.hasOwn(encounterState.selections, clearRequest.stationId)) {
       issue(errors, "station-selection-does-not-exist", `selections.${clearRequest.stationId}`, "Voyage station does not have a selected action to clear.");
     } else {

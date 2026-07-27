@@ -12,6 +12,7 @@ function createEncounter(lifecycleState, revision = 7) {
     revision,
     metadata: { nested: { preserved: true } },
     selections: { captain: { actionId: "hold-course" } },
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }],
     reservations: [{ reservationId: "reserve-1", details: { station: "captain" } }],
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [] }],
     pendingChecks: [{ checkId: "check-1", data: { dc: 20 } }],
@@ -76,6 +77,8 @@ test("success recursively clones mutable encounter data", () => {
   assert.notEqual(result.nextState.metadata.nested, encounter.metadata.nested);
   assert.notEqual(result.nextState.reservations, encounter.reservations);
   assert.notEqual(result.nextState.reservations[0], encounter.reservations[0]);
+  assert.notEqual(result.nextState.stationAssignments, encounter.stationAssignments);
+  assert.notEqual(result.nextState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   assert.notEqual(result.nextState.snapshots[0].temporaryState, encounter.snapshots[0].temporaryState);
 });
 
@@ -84,7 +87,7 @@ test("pausing and resuming preserve the complete active round context", () => {
     const encounter = createEncounter(fromLifecycleState);
     const result = applyContextPreservingVoyageLifecycleTransition(encounter, toLifecycleState);
 
-    for (const field of ["roundNumber", "phase", "currentStage", "selections", "reservations", "tracks", "pendingChecks", "temporaryConsequences", "snapshots", "recovery", "metadata"]) {
+    for (const field of ["roundNumber", "phase", "currentStage", "stationAssignments", "selections", "reservations", "tracks", "pendingChecks", "temporaryConsequences", "snapshots", "recovery", "metadata"]) {
       assert.deepEqual(result.nextState[field], encounter[field], field);
     }
   }

@@ -1,5 +1,6 @@
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES, VOYAGE_ROUND_PHASES } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
+import { deriveOccupiedVoyageStationIds } from "./station-assignments.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterStationSelections } from "./station-selection.js";
 import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
@@ -53,9 +54,10 @@ export function analyzeVoyageEncounterResolutionOrder(state) {
     stations.set(station.stationId, { station, stationIndex, actions });
   }
 
-  for (const [stationId, entry] of stations) {
-    const optional = Object.hasOwn(entry.station, "selectionRequired") && entry.station.selectionRequired === false;
-    if (!optional && !Object.hasOwn(state.selections, stationId)) issue(errors, "missing-required-station-selection", `selections.${stationId}`, "Required Voyage station has no selected action.");
+  for (const stationId of deriveOccupiedVoyageStationIds(state.stationAssignments)) {
+    if (!Object.hasOwn(state.selections, stationId)) {
+      issue(errors, "missing-occupied-station-selection", `selections.${stationId}`, "Occupied Voyage station has no selected action.");
+    }
   }
 
   const rows = [];

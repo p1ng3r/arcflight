@@ -12,6 +12,7 @@ function activeSituationEncounter() {
     primaryShip: { actorId: "ship", nested: { hull: "glassback" } }, currentStage: { stageId: "opening", details: { tags: ["alpha"] } },
     currentSituation: { details: { threat: "debris" } }, objective: { id: "survive" }, roundNumber: 2, phase: VOYAGE_ROUND_PHASES.SITUATION,
     participants: [{ participantId: "captain", details: { userId: "user" } }], availableStations: [{ stationId: "captain", actions: [{ actionId: "command" }] }],
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" } }],
     successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }], playerVisibleInformation: { clues: ["wake"] }, gmSecretInformation: { threat: { id: "hidden" } },
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [] }], metadata: { nested: { retained: true } },
     snapshots: [{ snapshotId: "existing", boundaryType: "phase-start", lifecycleState: STATES.ACTIVE, stageId: "previous", roundNumber: 1, phase: "situation", temporaryState: {} }],
@@ -35,9 +36,11 @@ test("atomically enters Crew Planning with one appended phase-start snapshot and
   const result = applyVoyageEncounterCrewPlanningTransition(encounter, request);
   assert.equal(result.ok, true); assert.deepEqual(result.errors, []); assert.ok(Array.isArray(result.warnings)); assert.equal(result.events.length, 1);
   assert.equal(result.nextState.lifecycleState, STATES.ACTIVE); assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(result.nextState.roundNumber, 2); assert.equal(result.nextState.revision, 5);
+  assert.deepEqual(result.nextState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.stationAssignments, encounter.stationAssignments); assert.notEqual(result.nextState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   assert.deepEqual(result.nextState.snapshots.slice(0, -1), before.snapshots);
   const snapshot = result.nextState.snapshots.at(-1);
   assert.equal(snapshot.snapshotId, "  planning-start  "); assert.equal(snapshot.boundaryType, "phase-start"); assert.equal(snapshot.lifecycleState, STATES.ACTIVE); assert.equal(snapshot.roundNumber, 2); assert.equal(snapshot.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(snapshot.temporaryState.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(snapshot.temporaryState.roundNumber, 2);
+  assert.deepEqual(snapshot.temporaryState.stationAssignments, before.stationAssignments); assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, result.nextState.stationAssignments[0].operator);
   assert.deepEqual(result.events[0], { type: "voyage.phase-transitioned", encounterId: "crew-planning", lifecycleState: STATES.ACTIVE, roundNumber: 2, fromPhase: VOYAGE_ROUND_PHASES.SITUATION, toPhase: VOYAGE_ROUND_PHASES.CREW_PLANNING, previousRevision: 4, revision: 5, phaseStartSnapshotId: "  planning-start  " });
   assert.deepEqual(encounter, before); assert.deepEqual(request, requestBefore); assert.equal(validateVoyageEncounterState(result.nextState).valid, true);
   assert.notEqual(result.nextState.currentStage, encounter.currentStage); assert.notEqual(result.nextState.currentSituation, encounter.currentSituation); assert.notEqual(result.nextState.participants, encounter.participants); assert.notEqual(result.nextState.availableStations, encounter.availableStations); assert.notEqual(result.nextState.playerVisibleInformation, encounter.playerVisibleInformation); assert.notEqual(result.nextState.gmSecretInformation, encounter.gmSecretInformation); assert.notEqual(result.nextState.tracks, encounter.tracks); assert.notEqual(result.nextState.metadata, encounter.metadata);

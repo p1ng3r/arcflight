@@ -14,6 +14,7 @@ function readyEncounter() {
     currentStage: { stageId: "opening", details: { tags: ["alpha"] } },
     participants: [{ participantId: "captain", details: { operatorId: "player-1" } }],
     availableStations: [{ stationId: "captain", actions: [{ actionId: "command" }] }],
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }],
     playerVisibleInformation: { clues: [{ id: "debris" }] },
     successConditions: [{ conditionId: "reach-wreck" }], failureConditions: [{ conditionId: "ship-lost" }],
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [], details: { current: 1 } }],
@@ -60,11 +61,16 @@ test("activates a Ready encounter atomically with ordered caller-identified snap
     assert.equal(snapshot.phase, VOYAGE_ROUND_PHASES.SITUATION);
     assert.equal(snapshot.temporaryState.roundNumber, 1);
     assert.equal(snapshot.temporaryState.phase, VOYAGE_ROUND_PHASES.SITUATION);
+    assert.deepEqual(snapshot.temporaryState.stationAssignments, encounterBefore.stationAssignments);
+    assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   }
   assert.notEqual(roundStart.temporaryState, phaseStart.temporaryState);
   assert.notEqual(result.nextState.currentStage, encounter.currentStage);
   assert.notEqual(result.nextState.participants, encounter.participants);
   assert.notEqual(result.nextState.availableStations, encounter.availableStations);
+  assert.deepEqual(result.nextState.stationAssignments, encounterBefore.stationAssignments);
+  assert.notEqual(result.nextState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
+  assert.notEqual(roundStart.temporaryState.stationAssignments[0].operator, phaseStart.temporaryState.stationAssignments[0].operator);
   assert.notEqual(result.nextState.playerVisibleInformation, encounter.playerVisibleInformation);
   assert.notEqual(result.nextState.tracks, encounter.tracks);
   assert.notEqual(result.nextState.metadata, encounter.metadata);

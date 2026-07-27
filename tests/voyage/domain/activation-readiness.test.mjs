@@ -38,6 +38,39 @@ test("returns a clean ready result for a fully configured encounter without muta
   assert.equal(Object.hasOwn(report, "readyCandidate"), false);
 });
 
+test("accepts valid empty and partial fixed assignment sets", () => {
+  const empty = configuredEncounter();
+  const partial = configuredEncounter();
+  partial.stationAssignments = [{
+    stationId: "captain",
+    operator: {
+      kind: "actor",
+      id: "captain-actor",
+      uuid: "Actor.captain-actor",
+      name: "Captain"
+    }
+  }];
+  const partialBefore = structuredClone(partial);
+
+  assert.equal(validateVoyageEncounterActivationReadiness(empty).ready, true);
+  assert.equal(validateVoyageEncounterActivationReadiness(partial).ready, true);
+  assert.deepEqual(partial, partialBefore);
+});
+
+test("rejects malformed fixed assignments through canonical state validation", () => {
+  const encounter = configuredEncounter();
+  encounter.stationAssignments = [{
+    stationId: "captain",
+    operator: { kind: "actor", id: "" }
+  }];
+
+  const report = validateVoyageEncounterActivationReadiness(encounter);
+
+  assert.equal(report.ready, false);
+  assert.ok(errorCodes(report).includes("invalid-station-operator-id"));
+  assert.ok(errorCodes(report).includes("missing-station-operator-identity"));
+});
+
 test("preserves existing structural validation errors before readiness checks", () => {
   const malformed = configuredEncounter();
   malformed.schemaVersion = 999;

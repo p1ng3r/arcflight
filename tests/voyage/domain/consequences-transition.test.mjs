@@ -33,6 +33,7 @@ function noRollState() {
     roundNumber: 1,
     phase: "resolution",
     availableStations: [{ stationId: "captain", actions: [{ actionId: "observe" }] }],
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }],
     selections: { captain: { stationId: "captain", actionId: "observe" } }
   });
   return state;
@@ -61,6 +62,10 @@ function resolvedCheckState() {
         },
         riskBidOptions: [{ riskBidId: "risk" }]
       }]
+    }],
+    stationAssignments: [{
+      stationId: "captain",
+      operator: { kind: "actor", uuid: "Actor.captain" }
     }],
     selections: { captain: { stationId: "captain", actionId: "check" } },
     targets: { captain: { targetId: "target" } },
@@ -137,6 +142,10 @@ test("transitions a ready no-roll plan and creates a Consequences phase-start sn
   assert.equal(snapshot.snapshotId, "consequences-start");
   assert.equal(snapshot.boundaryType, "phase-start");
   assert.equal(snapshot.phase, "consequences");
+  assert.deepEqual(result.nextState.stationAssignments, before.stationAssignments);
+  assert.notEqual(result.nextState.stationAssignments[0].operator, state.stationAssignments[0].operator);
+  assert.deepEqual(snapshot.temporaryState.stationAssignments, before.stationAssignments);
+  assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, result.nextState.stationAssignments[0].operator);
   assert.deepEqual(state, before);
 });
 

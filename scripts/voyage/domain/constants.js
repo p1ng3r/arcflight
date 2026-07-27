@@ -27,6 +27,22 @@ export const VOYAGE_ROUND_PHASES = Object.freeze({
   CLEANUP_ADVANCE: "cleanup-advance"
 });
 
+export const VOYAGE_EVENT_RUNNER_STATION_IDS = Object.freeze([
+  "captain",
+  "engineer",
+  "navigator",
+  "watchmaster",
+  "veilwarden"
+]);
+
+export const VOYAGE_EVENT_RUNNER_PRESSURE_SYSTEM_BY_STATION_ID = Object.freeze({
+  captain: "crew-morale",
+  engineer: "arkengine",
+  navigator: "levstone-array",
+  watchmaster: "solar-sail-rig",
+  veilwarden: "lifeveil"
+});
+
 export const VOYAGE_ACTION_EXECUTION_MODES = Object.freeze({ CHECK: "check", NO_ROLL: "no-roll" });
 export const VOYAGE_CHECK_SOURCE_KINDS = Object.freeze({ CHARACTER: "character", SHIP: "ship", STATION: "station", CREW: "crew", CUSTOM: "custom", NO_ROLL: "no-roll" });
 export const VOYAGE_DC_SOURCE_KINDS = Object.freeze({ FIXED: "fixed", LEVEL_BASED: "level-based", ENCOUNTER: "encounter", STAGE: "stage", HAZARD: "hazard", OPPOSED: "opposed", TRACK: "track", GM_ENTERED: "gm-entered" });
