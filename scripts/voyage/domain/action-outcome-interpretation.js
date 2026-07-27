@@ -4,281 +4,484 @@ import { analyzeVoyageEncounterActionExecutionRequests } from "./resolution-exec
 import { analyzeVoyageEncounterPendingChecks } from "./pending-checks.js";
 import { analyzeVoyageEncounterActionOutcomeDefinitions } from "./consequence-rules.js";
 
-export function analyzeVoyageEncounterActionOutcomes(state) {
-  // Lightweight safe clone that never invokes getters and preserves sparse arrays
-  function safeClone(value, ancestors = new Set()) {
-    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
-    if (ancestors.has(value)) return undefined;
-    if (Array.isArray(value)) {
-      const clone = new Array(value.length);
-      for (let i = 0; i < value.length; i += 1) {
-        if (!Object.hasOwn(value, i)) continue;
-        const desc = Object.getOwnPropertyDescriptor(value, i);
-        if (!desc || !Object.prototype.hasOwnProperty.call(desc, "value")) continue;
-        ancestors.add(value);
-        clone[i] = safeClone(desc.value, ancestors);
-        ancestors.delete(value);
-      }
-      return clone;
-    }
-    if (typeof value === "object") {
-      const result = {};
-      const keys = Reflect.ownKeys(value);
-      for (const key of keys) {
-        const desc = Object.getOwnPropertyDescriptor(value, key);
-        if (!desc || !Object.prototype.hasOwnProperty.call(desc, "value")) continue;
-        ancestors.add(value);
-        result[key] = safeClone(desc.value, ancestors);
-        ancestors.delete(value);
-      }
-      return result;
-    }
-    return undefined;
-  }
+const CHECK_BRANCHES = new Set(["critical-failure", "failure", "success", "critical-success"]);
 
-  const structural = validateVoyageEncounterState(state);
-  const order = analyzeVoyageEncounterResolutionOrder(state);
-  const execution = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
-  const pending = analyzeVoyageEncounterPendingChecks(state);
-  const definitions = analyzeVoyageEncounterActionOutcomeDefinitions(state);
+function issue(code, path, message) {
+  return { code, path, message, severity: "error" };
+}
 
-  const upstreamErrors = [...structural.errors, ...order.errors, ...execution.errors, ...pending.errors, ...definitions.errors];
-  const upstreamWarnings = [...structural.warnings, ...order.warnings, ...execution.warnings, ...pending.warnings, ...definitions.warnings];
-
-  // Compute resolutionComplete independently
-  const resolutionComplete = Boolean(
-    order.valid
-    && execution.readyForExecution
-    && pending.pendingChecksValid
-    && (pending.pendingCheckCount === (execution.checkCount || 0))
-    && (pending.resolvedCheckCount === pending.pendingCheckCount)
-  );
-
-  const reportTemplate = {
-    structurallyValid: structural.valid,
-    definitionsValid: definitions.definitionsValid,
-    pendingChecksValid: !!pending.pendingChecksValid,
+function createReport({
+  structurallyValid = false,
+  definitionsValid = false,
+  pendingChecksValid = false,
+  resolutionComplete = false,
+  active = false,
+  consequences = false,
+  actionCount = 0,
+  checkActionCount = 0,
+  noRollActionCount = 0,
+  errors = [],
+  warnings = []
+} = {}) {
+  return {
+    structurallyValid,
+    definitionsValid,
+    pendingChecksValid,
     resolutionComplete,
-    active: state?.lifecycleState === "active",
-    consequences: state?.phase === "consequences",
+    active,
+    consequences,
     readyForInterpretation: false,
-    actionCount: order.orderedActions.length,
+    actionCount,
     interpretedActionCount: 0,
-    checkActionCount: execution.checkCount ?? 0,
-    noRollActionCount: execution.noRollActionCount ?? 0,
+    checkActionCount,
+    noRollActionCount,
     intentCount: 0,
     actions: [],
     intents: [],
-    errors: [],
-    warnings: []
+    errors,
+    warnings
   };
+}
 
-  // Start with upstream issues but keep them until dedupe at end
-  reportTemplate.errors.push(...upstreamErrors);
-  reportTemplate.warnings.push(...upstreamWarnings);
+function createDataReadFailureReport(existingReport = null) {
+  const report = existingReport ?? createReport();
+  report.readyForInterpretation = false;
+  report.interpretedActionCount = 0;
+  report.intentCount = 0;
+  report.actions = [];
+  report.intents = [];
+  report.errors = deduplicateVoyageResolutionIssues([
+    ...report.errors,
+    issue(
+      "outcome-interpretation-data-read-failed",
+      "$",
+      "Outcome interpretation data could not be read safely."
+    )
+  ]);
+  report.warnings = deduplicateVoyageResolutionIssues(report.warnings);
+  return report;
+}
 
-  // Interpreter-owned gate checks: require Active before doing any interpretation work.
-  if (!reportTemplate.active) {
-    reportTemplate.errors.push({ code: "outcome-interpretation-requires-active", path: "lifecycleState", message: "Interpretation requires an Active encounter.", severity: "error" });
-    reportTemplate.errors = deduplicateVoyageResolutionIssues(reportTemplate.errors);
-    reportTemplate.warnings = deduplicateVoyageResolutionIssues(reportTemplate.warnings);
-    return reportTemplate;
+function readOwnDataValue(value, key) {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (!descriptor) return undefined;
+  if (!Object.hasOwn(descriptor, "value")) throw new TypeError("Expected an own data property.");
+  return descriptor.value;
+}
+
+function ownArrayEntries(value) {
+  if (!Array.isArray(value)) return [];
+
+  const entries = [];
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) continue;
+    entries.push({ index, value: readOwnDataValue(value, index) });
+  }
+  return entries;
+}
+
+function clonePlainDataSafely(value, ancestors = new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "object" || ancestors.has(value)) throw new TypeError("Expected finite acyclic plain data.");
+
+  const array = Array.isArray(value);
+  const clone = array ? new Array(value.length) : {};
+  ancestors.add(value);
+
+  const keys = array
+    ? ownArrayEntries(value).map(({ index }) => String(index))
+    : Reflect.ownKeys(value);
+
+  for (const key of keys) {
+    if (typeof key === "symbol") throw new TypeError("Plain data cannot contain symbol keys.");
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) throw new TypeError("Plain data properties must be data properties.");
+    Object.defineProperty(clone, key, {
+      value: clonePlainDataSafely(descriptor.value, ancestors),
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
   }
 
-  // Preflight every ordered action and collect potential interpreter issues
-  const interpreterValidationErrors = [];
+  ancestors.delete(value);
+  return clone;
+}
 
-  const requests = execution.executionRequests || [];
-  const defs = definitions.actions || [];
-  const pchecks = pending.pendingChecks || [];
-
-  // If outcome definitions are invalid, block interpretation early so callers
-  // do not emit actions/intents based on malformed authored data.
-  if (!definitions.definitionsValid) {
-    interpreterValidationErrors.push({ code: "outcome-interpretation-definitions-invalid", path: "availableStations", message: "Outcome definitions are invalid.", severity: "error" });
+function findMatches(records, predicate) {
+  const matches = [];
+  for (const entry of ownArrayEntries(records)) {
+    if (predicate(entry.value)) matches.push(entry);
   }
+  return matches;
+}
 
-  // helper to find matches without Map overwrites
-  function findMatches(arr, predicate) {
-    const matches = [];
-    for (let i = 0; i < arr.length; i += 1) {
-      if (!Object.hasOwn(arr, i)) continue;
-      try {
-        if (predicate(arr[i])) matches.push({ index: i, value: arr[i] });
-      } catch (e) {
-        interpreterValidationErrors.push({ code: "outcome-interpretation-data-read-failed", path: "$", message: "Data could not be read safely.", severity: "error" });
-      }
+function finalizeReport(report) {
+  report.errors = deduplicateVoyageResolutionIssues(report.errors);
+  report.warnings = deduplicateVoyageResolutionIssues(report.warnings);
+  return report;
+}
+
+export function analyzeVoyageEncounterActionOutcomes(state) {
+  let report = null;
+  try {
+    const structural = validateVoyageEncounterState(state);
+    const order = analyzeVoyageEncounterResolutionOrder(state);
+    const execution = analyzeVoyageEncounterActionExecutionRequests(state, { requireResolution: false });
+    const pending = analyzeVoyageEncounterPendingChecks(state);
+    const definitions = analyzeVoyageEncounterActionOutcomeDefinitions(state);
+
+    const active = execution.active === true;
+    const consequences = definitions.consequences === true;
+    const checkActionCount = execution.checkCount ?? 0;
+    const resolutionComplete = Boolean(
+      order.valid
+      && execution.readyForExecution
+      && pending.pendingChecksValid
+      && pending.pendingCheckCount === checkActionCount
+      && pending.resolvedCheckCount === pending.pendingCheckCount
+    );
+
+    report = createReport({
+      structurallyValid: structural.valid,
+      definitionsValid: definitions.definitionsValid,
+      pendingChecksValid: Boolean(pending.pendingChecksValid),
+      resolutionComplete,
+      active,
+      consequences,
+      actionCount: order.orderedActions.length,
+      checkActionCount,
+      noRollActionCount: execution.noRollActionCount ?? 0,
+      errors: [
+        ...structural.errors,
+        ...order.errors,
+        ...execution.errors,
+        ...pending.errors,
+        ...definitions.errors
+      ],
+      warnings: [
+        ...structural.warnings,
+        ...order.warnings,
+        ...execution.warnings,
+        ...pending.warnings,
+        ...definitions.warnings
+      ]
+    });
+
+    const lifecycleState = readOwnDataValue(state, "lifecycleState");
+    const phase = readOwnDataValue(state, "phase");
+    const currentStage = readOwnDataValue(state, "currentStage");
+    const encounterId = readOwnDataValue(state, "encounterId");
+    const roundNumber = readOwnDataValue(state, "roundNumber");
+    const stageId = readOwnDataValue(currentStage, "stageId");
+    if ((lifecycleState === "active") !== active || (phase === "consequences") !== consequences) {
+      throw new TypeError("Normalized encounter context does not match source data.");
     }
-    return matches;
-  }
 
-  // Preflight loop
-  for (let ordIndex = 0; ordIndex < order.orderedActions.length; ordIndex += 1) {
-    const row = order.orderedActions[ordIndex];
-    const { sequence, stationId, actionId } = row;
+    if (!active) {
+      report.errors.push(
+        issue(
+          "outcome-interpretation-requires-active",
+          "lifecycleState",
+          "Interpretation requires an Active encounter."
+        )
+      );
+    }
+    if (!consequences) {
+      report.errors.push(
+        issue(
+          "outcome-interpretation-requires-consequences",
+          "phase",
+          "Interpretation requires the Consequences phase."
+        )
+      );
+    }
+    if (!resolutionComplete) {
+      report.errors.push(
+        issue(
+          "outcome-interpretation-resolution-incomplete",
+          "pendingChecks",
+          "Interpretation requires complete action resolution."
+        )
+      );
+    }
 
-    // execution requests match by sequence, stationId, actionId
-    const reqMatches = findMatches(requests, (r) => r.sequence === sequence && r.stationId === stationId && r.actionId === actionId);
-    if (reqMatches.length === 0) interpreterValidationErrors.push({ code: "outcome-interpretation-execution-request-missing", path: `orderedActions[${sequence}]`, message: "Execution request missing.", severity: "error" });
-    if (reqMatches.length > 1) interpreterValidationErrors.push({ code: "outcome-interpretation-execution-request-ambiguous", path: `orderedActions[${sequence}]`, message: "Execution request ambiguous.", severity: "error" });
-    if (reqMatches.length !== 1) continue;
-    const req = reqMatches[0].value;
+    const requests = execution.executionRequests;
+    const normalizedDefinitions = definitions.actions;
+    const pendingChecks = pending.pendingChecks;
+    const preflightRecords = [];
 
-    if (req.mode !== "check" && req.mode !== "no-roll") interpreterValidationErrors.push({ code: "outcome-interpretation-mode-mismatch", path: `executionRequests[${reqMatches[0].index}]`, message: "Execution request mode invalid.", severity: "error" });
+    for (const { index: orderedIndex, value: row } of ownArrayEntries(order.orderedActions)) {
+      const recordErrorStart = report.errors.length;
+      let recordComplete = true;
+      const { sequence, stationId, actionId } = row;
+      const orderedPath = `orderedActions[${sequence}]`;
 
-    // definitions match by stationId/actionId
-    const defMatches = findMatches(defs, (d) => d.stationId === stationId && d.actionId === actionId);
-    if (defMatches.length === 0) interpreterValidationErrors.push({ code: "outcome-interpretation-definition-missing", path: `selections.${stationId}`, message: "Outcome definition missing.", severity: "error" });
-    if (defMatches.length > 1) interpreterValidationErrors.push({ code: "outcome-interpretation-definition-ambiguous", path: `selections.${stationId}`, message: "Outcome definition ambiguous.", severity: "error" });
-    if (defMatches.length !== 1) continue;
-    const def = defMatches[0].value;
+      const requestMatches = findMatches(
+        requests,
+        (request) => request.sequence === sequence
+          && request.stationId === stationId
+          && request.actionId === actionId
+      );
+      if (requestMatches.length === 0) {
+        report.errors.push(
+          issue(
+            "outcome-interpretation-execution-request-missing",
+            orderedPath,
+            "Execution request missing."
+          )
+        );
+      } else if (requestMatches.length > 1) {
+        report.errors.push(
+          issue(
+            "outcome-interpretation-execution-request-ambiguous",
+            orderedPath,
+            "Execution request ambiguous."
+          )
+        );
+      }
+      if (requestMatches.length !== 1) continue;
+      const requestRecord = requestMatches[0];
+      const request = requestRecord.value;
 
-    if (def.mode !== req.mode) interpreterValidationErrors.push({ code: "outcome-interpretation-mode-mismatch", path: `availableStations`, message: "Definition and request mode mismatch.", severity: "error" });
+      if (request.mode !== "check" && request.mode !== "no-roll") {
+        report.errors.push(
+          issue(
+            "outcome-interpretation-mode-mismatch",
+            `executionRequests[${requestRecord.index}].mode`,
+            "Execution request mode is invalid."
+          )
+        );
+      }
 
-    // For check mode, find pending check matches
-    let branch = def.mode === "no-roll" ? "no-roll" : null;
-    if (def.mode === "check") {
-      const pMatches = findMatches(pchecks, (p) => p.stageId === state.currentStage?.stageId && p.roundNumber === state.roundNumber && p.sequence === sequence && p.stationId === stationId && p.actionId === actionId && p.mode === req.mode);
-      if (pMatches.length === 0) interpreterValidationErrors.push({ code: "outcome-interpretation-pending-check-missing", path: `orderedActions[${sequence}]`, message: "Pending check missing.", severity: "error" });
-      if (pMatches.length > 1) interpreterValidationErrors.push({ code: "outcome-interpretation-pending-check-ambiguous", path: `orderedActions[${sequence}]`, message: "Pending check ambiguous.", severity: "error" });
-      if (pMatches.length !== 1) continue;
-      const p = pMatches[0].value;
-      if (p.status !== "resolved") interpreterValidationErrors.push({ code: "outcome-interpretation-pending-check-unresolved", path: `pendingChecks[${p.pendingCheckIndex}].status`, message: "Pending check unresolved.", severity: "error" });
-      if (!p.result) interpreterValidationErrors.push({ code: "outcome-interpretation-pending-check-unresolved", path: `pendingChecks[${p.pendingCheckIndex}].result`, message: "Pending check has no result.", severity: "error" });
-      if (!p.result || typeof p.result.degreeOfSuccessSlug !== "string") {
-        interpreterValidationErrors.push({ code: "outcome-interpretation-result-branch-invalid", path: `pendingChecks[${p.pendingCheckIndex}].result.degreeOfSuccessSlug`, message: "Result branch invalid.", severity: "error" });
+      const definitionMatches = findMatches(
+        normalizedDefinitions,
+        (definition) => definition.stationId === stationId && definition.actionId === actionId
+      );
+      if (definitionMatches.length === 0) {
+        report.errors.push(
+          issue(
+            "outcome-interpretation-definition-missing",
+            `selections.${stationId}`,
+            "Outcome definition missing."
+          )
+        );
+      } else if (definitionMatches.length > 1) {
+        report.errors.push(
+          issue(
+            "outcome-interpretation-definition-ambiguous",
+            `selections.${stationId}`,
+            "Outcome definition ambiguous."
+          )
+        );
+      }
+      if (definitionMatches.length !== 1) continue;
+      const definitionRecord = definitionMatches[0];
+      const definition = definitionRecord.value;
+
+      if (definition.mode !== request.mode) {
+        report.errors.push(
+          issue(
+            "outcome-interpretation-mode-mismatch",
+            `definitions[${definitionRecord.index}].mode`,
+            "Definition and execution request modes do not match."
+          )
+        );
+      }
+
+      let pendingCheckRecord = null;
+      let branch = "no-roll";
+      if (definition.mode === "check") {
+        const pendingMatches = findMatches(
+          pendingChecks,
+          (pendingCheck) => pendingCheck.stageId === stageId
+            && pendingCheck.roundNumber === roundNumber
+            && pendingCheck.sequence === sequence
+            && pendingCheck.stationId === stationId
+            && pendingCheck.actionId === actionId
+            && pendingCheck.mode === request.mode
+        );
+        if (pendingMatches.length === 0) {
+          report.errors.push(
+            issue(
+              "outcome-interpretation-pending-check-missing",
+              orderedPath,
+              "Pending check missing."
+            )
+          );
+        } else if (pendingMatches.length > 1) {
+          report.errors.push(
+            issue(
+              "outcome-interpretation-pending-check-ambiguous",
+              orderedPath,
+              "Pending check ambiguous."
+            )
+          );
+        }
+        if (pendingMatches.length !== 1) continue;
+        pendingCheckRecord = pendingMatches[0];
+        const pendingCheck = pendingCheckRecord.value;
+        const pendingPath = `pendingChecks[${pendingCheck.pendingCheckIndex}]`;
+
+        if (pendingCheck.status !== "resolved") {
+          report.errors.push(
+            issue(
+              "outcome-interpretation-pending-check-unresolved",
+              `${pendingPath}.status`,
+              "Pending check unresolved."
+            )
+          );
+          continue;
+        }
+        if (pendingCheck.result === null || typeof pendingCheck.result !== "object") {
+          report.errors.push(
+            issue(
+              "outcome-interpretation-pending-check-unresolved",
+              `${pendingPath}.result`,
+              "Pending check has no result."
+            )
+          );
+          continue;
+        }
+
+        branch = readOwnDataValue(pendingCheck.result, "degreeOfSuccessSlug");
+        if (!CHECK_BRANCHES.has(branch)) {
+          report.errors.push(
+            issue(
+              "outcome-interpretation-result-branch-invalid",
+              `${pendingPath}.result.degreeOfSuccessSlug`,
+              "Result branch is invalid."
+            )
+          );
+          continue;
+        }
+      }
+
+      const branches = definition.branches;
+      const branchEffectIds = readOwnDataValue(branches, branch);
+      if (!Array.isArray(branchEffectIds)) {
+        if (definitions.definitionsValid) {
+          throw new TypeError("Normalized outcome branch must be an array.");
+        }
+        recordComplete = false;
         continue;
       }
-      const slug = p.result.degreeOfSuccessSlug;
-      const validSlugs = new Set(["critical-failure", "failure", "success", "critical-success"]);
-      if (!validSlugs.has(slug)) {
-        interpreterValidationErrors.push({ code: "outcome-interpretation-result-branch-invalid", path: `pendingChecks[${p.pendingCheckIndex}].result.degreeOfSuccessSlug`, message: "Result branch invalid.", severity: "error" });
-        continue;
+
+      const effectRecords = [];
+      for (const referenceRecord of ownArrayEntries(branchEffectIds)) {
+        const effectId = referenceRecord.value;
+        const effectRuleMatches = findMatches(
+          definition.effectRules,
+          (effectRule) => effectRule?.effectId === effectId
+        );
+        const referencePath = `${orderedPath}.branches.${branch}[${referenceRecord.index}]`;
+        if (effectRuleMatches.length === 0) {
+          report.errors.push(
+            issue(
+              "outcome-interpretation-effect-rule-missing",
+              referencePath,
+              "Effect rule missing."
+            )
+          );
+        } else if (effectRuleMatches.length > 1) {
+          recordComplete = false;
+        } else {
+          effectRecords.push({
+            referenceIndex: referenceRecord.index,
+            effectId,
+            effectRuleRecord: effectRuleMatches[0]
+          });
+        }
       }
-      branch = slug;
-    }
 
-    // Validate branch references resolve to effect rules (only own numeric entries)
-    const branches = def.branches || {};
-    const branchRefs = Object.hasOwn(branches, branch) ? branches[branch] : [];
-    for (let refIndex = 0; refIndex < (branchRefs ? branchRefs.length : 0); refIndex += 1) {
-      if (!Object.hasOwn(branchRefs, refIndex)) continue;
-      const effectId = branchRefs[refIndex];
-      if (!effectId) continue;
-      // find own effect rule by effectId
-      const found = findMatches(def.effectRules || [], (er) => er && er.effectId === effectId);
-      if (found.length === 0) {
-        interpreterValidationErrors.push({ code: "outcome-interpretation-effect-rule-missing", path: `orderedActions[${sequence}].branches.${branch}[${refIndex}]`, message: "Effect rule missing.", severity: "error" });
+      if (recordComplete && report.errors.length === recordErrorStart) {
+        preflightRecords.push({
+          orderedActionRecord: { index: orderedIndex, value: row },
+          executionRequestRecord: requestRecord,
+          definitionRecord,
+          pendingCheckRecord,
+          branchRecord: {
+            branch,
+            branchEffectIds,
+            effectRecords
+          }
+        });
       }
     }
-  }
 
-  // If any interpreter validation error, return atomic empty output with deduped issues
-  if (interpreterValidationErrors.length) {
-    reportTemplate.errors.push(...interpreterValidationErrors);
-    reportTemplate.errors = deduplicateVoyageResolutionIssues(reportTemplate.errors);
-    reportTemplate.warnings = deduplicateVoyageResolutionIssues(reportTemplate.warnings);
-    reportTemplate.readyForInterpretation = false;
-    reportTemplate.interpretedActionCount = 0;
-    reportTemplate.intentCount = 0;
-    reportTemplate.actions = [];
-    reportTemplate.intents = [];
-    return reportTemplate;
-  }
-
-  // All preflight checks passed — now emit actions and intents
-  // Mark readyForInterpretation only if we are in the Consequences phase.
-  reportTemplate.readyForInterpretation = reportTemplate.consequences === true;
-
-  for (let ordIndex = 0; ordIndex < order.orderedActions.length; ordIndex += 1) {
-    const row = order.orderedActions[ordIndex];
-    const { sequence, stationId, actionId } = row;
-
-    // locate single execution request and definition (guaranteed by preflight)
-    const reqMatch = requests.find((r, i) => Object.hasOwn(requests, i) && r.sequence === sequence && r.stationId === stationId && r.actionId === actionId);
-    const defMatch = defs.find((d, i) => Object.hasOwn(defs, i) && d.stationId === stationId && d.actionId === actionId);
-    const req = reqMatch;
-    const def = defMatch;
-
-    const mode = req.mode;
-    let branch = def.mode === "no-roll" ? "no-roll" : null;
-    let pendingRecord = null;
-    if (def.mode === "check") {
-      pendingRecord = pchecks.find((p, i) => Object.hasOwn(pchecks, i) && p.stageId === state.currentStage?.stageId && p.roundNumber === state.roundNumber && p.sequence === sequence && p.stationId === stationId && p.actionId === actionId && p.mode === req.mode);
-      branch = pendingRecord.result.degreeOfSuccessSlug;
+    finalizeReport(report);
+    if (report.errors.length > 0) return report;
+    if (preflightRecords.length !== report.actionCount) {
+      throw new TypeError("Every accepted action requires one complete preflight record.");
     }
 
-    // Build branchEffectIds preserving sparse own indexes
-    const branchRefs = Object.hasOwn(def.branches || {}, branch) ? def.branches[branch] : [];
-    const branchEffectIds = new Array(branchRefs.length);
-    for (let idx = 0; idx < branchRefs.length; idx += 1) {
-      if (!Object.hasOwn(branchRefs, idx)) continue;
-      const eff = branchRefs[idx];
-      branchEffectIds[idx] = safeClone(eff);
-    }
+    const actions = [];
+    const intents = [];
+    for (const preflight of preflightRecords) {
+      const row = preflight.orderedActionRecord.value;
+      const request = preflight.executionRequestRecord.value;
+      const { branch, branchEffectIds, effectRecords } = preflight.branchRecord;
+      const intentIds = [];
 
-    const riskBidEffectIds = [];
-
-    // Intents
-    const intentIds = [];
-    if (Array.isArray(branchRefs)) {
-      for (let idx = 0; idx < branchRefs.length; idx += 1) {
-        if (!Object.hasOwn(branchRefs, idx)) continue;
-        const effectId = branchRefs[idx];
-        if (!effectId) continue;
-        const rule = (def.effectRules || []).find((r) => r && r.effectId === effectId);
-        if (!rule) continue; // preflight ensures presence
-
-        const intentId = `arcflight-intent:${JSON.stringify([state.encounterId, state.currentStage?.stageId, state.roundNumber, sequence, "branch", idx, effectId])}`;
-
-        const intent = {
+      for (const effectRecord of effectRecords) {
+        const effectRule = effectRecord.effectRuleRecord.value;
+        const intentId = `arcflight-intent:${JSON.stringify([
+          encounterId,
+          stageId,
+          roundNumber,
+          row.sequence,
+          "branch",
+          effectRecord.referenceIndex,
+          effectRecord.effectId
+        ])}`;
+        intents.push({
           intentId,
-          encounterId: state.encounterId,
-          stageId: state.currentStage?.stageId,
-          roundNumber: state.roundNumber,
-          sequence,
-          stationId,
-          actionId,
-          mode,
+          encounterId,
+          stageId,
+          roundNumber,
+          sequence: row.sequence,
+          stationId: row.stationId,
+          actionId: row.actionId,
+          mode: request.mode,
           branch,
           riskBidId: row.riskBidId ?? null,
           activationSource: "branch",
-          referenceIndex: idx,
-          effectId,
-          intentType: rule.intentType,
-          timing: rule.timing,
-          visibility: rule.visibility,
-          target: safeClone(rule.target),
-          selectedTarget: safeClone(req.target ?? null),
-          payload: safeClone(rule.payload)
-        };
-
-        reportTemplate.intents.push(intent);
+          referenceIndex: effectRecord.referenceIndex,
+          effectId: effectRecord.effectId,
+          intentType: effectRule.intentType,
+          timing: effectRule.timing,
+          visibility: effectRule.visibility,
+          target: clonePlainDataSafely(effectRule.target),
+          selectedTarget: clonePlainDataSafely(request.target ?? null),
+          payload: clonePlainDataSafely(effectRule.payload)
+        });
         intentIds.push(intentId);
       }
+
+      actions.push({
+        sequence: row.sequence,
+        stationId: row.stationId,
+        actionId: row.actionId,
+        mode: request.mode,
+        branch,
+        riskBidId: row.riskBidId ?? null,
+        branchEffectIds: clonePlainDataSafely(branchEffectIds),
+        riskBidEffectIds: [],
+        intentIds
+      });
     }
 
-    const actionRecord = {
-      sequence,
-      stationId,
-      actionId,
-      mode,
-      branch,
-      riskBidId: row.riskBidId ?? null,
-      branchEffectIds,
-      riskBidEffectIds,
-      intentIds
-    };
-
-    reportTemplate.actions.push(actionRecord);
+    report.readyForInterpretation = true;
+    report.actions = actions;
+    report.intents = intents;
+    report.interpretedActionCount = actions.length;
+    report.intentCount = intents.length;
+    return report;
+  } catch {
+    return createDataReadFailureReport(report);
   }
-
-  reportTemplate.interpretedActionCount = reportTemplate.actions.length;
-  reportTemplate.intentCount = reportTemplate.intents.length;
-  reportTemplate.errors = deduplicateVoyageResolutionIssues(reportTemplate.errors);
-  reportTemplate.warnings = deduplicateVoyageResolutionIssues(reportTemplate.warnings);
-
-  return reportTemplate;
 }
 
 // Note: only named export `analyzeVoyageEncounterActionOutcomes` is provided.

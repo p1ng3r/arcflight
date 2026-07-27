@@ -5,240 +5,701 @@ import { applyVoyageEncounterPendingCheckPreparation } from "../../../scripts/vo
 import { applyVoyageEncounterPendingCheckResult } from "../../../scripts/voyage/domain/resolution-results.js";
 import { analyzeVoyageEncounterActionOutcomes } from "../../../scripts/voyage/domain/action-outcome-interpretation.js";
 
-test("empty Active Consequences plan returns empty results and ready", () => {
-  const s = createVoyageEncounterState({ encounterId: "empty", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  s.availableStations = [];
-  s.selections = {};
+const CHECK_BRANCHES = ["critical-failure", "failure", "success", "critical-success"];
+const ROLL_DETAILS = [
+  "total",
+  "dc",
+  "degreeOfSuccess",
+  "degreeOfSuccessSlug",
+  "statisticSlug",
+  "rollMode",
+  "pendingCheckId",
+  "pendingCheckIndex"
+];
 
-  const report = analyzeVoyageEncounterActionOutcomes(s);
-  const keys = [
-    "structurallyValid","definitionsValid","pendingChecksValid","resolutionComplete","active","consequences","readyForInterpretation","actionCount","interpretedActionCount","checkActionCount","noRollActionCount","intentCount","actions","intents","errors","warnings"
-  ];
-  assert.deepEqual(Object.keys(report), keys);
+function state({
+  encounterId = "encounter",
+  phase = "consequences",
+  availableStations = [],
+  selections = {},
+  targets = {}
+} = {}) {
+  const result = createVoyageEncounterState({
+    encounterId,
+    definitionId: "definition",
+    primaryShip: { id: "ship" }
+  });
+  result.lifecycleState = "active";
+  result.currentStage = { stageId: "stage" };
+  result.roundNumber = 1;
+  result.phase = phase;
+  result.availableStations = availableStations;
+  result.selections = selections;
+  result.targets = targets;
+  return result;
+}
+
+function effectRule(effectId, { payload = null, target = { kind: "encounter" } } = {}) {
+  return {
+    effectId,
+    intentType: "track-change",
+    timing: "consequences",
+    visibility: "public",
+    target,
+    payload
+  };
+}
+
+function noRollAction(actionId, effectIds, effectRules = effectIds.filter(Boolean).map((id) => effectRule(id))) {
+  return {
+    actionId,
+    outcomeDefinition: {
+      effectRules,
+      branches: { "no-roll": effectIds }
+    }
+  };
+}
+
+function checkAction(actionId, actionIndex, branch, effectId) {
+  const branches = Object.fromEntries(CHECK_BRANCHES.map((slug) => [slug, []]));
+  branches[branch] = [effectId];
+  return {
+    actionId,
+    check: {
+      source: { kind: "character", uuid: `Actor.${actionIndex}` },
+      statisticOptions: ["diplomacy"],
+      dcSource: { kind: "fixed", value: 20 + actionIndex },
+      secrecy: "public",
+      metadata: {}
+    },
+    outcomeDefinition: {
+      effectRules: [effectRule(effectId)],
+      branches
+    }
+  };
+}
+
+function executionResult(sequence, degreeOfSuccessSlug) {
+  return {
+    ok: true,
+    status: "rolled",
+    pendingCheckId: `pending-${sequence}`,
+    sequence,
+    sourceKind: "character",
+    sourceUuid: `Actor.${sequence}`,
+    statisticSlug: "diplomacy",
+    dc: 20 + sequence,
+    rollMode: "public",
+    result: {
+      total: 20 + sequence,
+      degreeOfSuccess: CHECK_BRANCHES.indexOf(degreeOfSuccessSlug),
+      degreeOfSuccessSlug
+    },
+    errors: [],
+    warnings: []
+  };
+}
+
+function resolveChecks(source, branches) {
+  const prepared = applyVoyageEncounterPendingCheckPreparation(source, {
+    pendingCheckIds: branches.map((_, sequence) => ({
+      sequence,
+      pendingCheckId: `pending-${sequence}`
+    }))
+  });
+  assert.equal(prepared.ok, true);
+
+  let nextState = prepared.nextState;
+  for (let sequence = 0; sequence < branches.length; sequence += 1) {
+    const applied = applyVoyageEncounterPendingCheckResult(
+      nextState,
+      executionResult(sequence, branches[sequence])
+    );
+    assert.equal(applied.ok, true);
+    nextState = applied.nextState;
+  }
+  nextState.phase = "consequences";
+  return nextState;
+}
+
+function assertAtomic(report) {
+  assert.equal(report.readyForInterpretation, false);
+  assert.equal(report.interpretedActionCount, 0);
+  assert.equal(report.intentCount, 0);
+  assert.deepEqual(report.actions, []);
+  assert.deepEqual(report.intents, []);
+}
+
+function hasError(report, code, path = undefined) {
+  return report.errors.some((entry) => entry.code === code && (path === undefined || entry.path === path));
+}
+
+test("empty Active Consequences plan returns the exact ready report shape", () => {
+  const report = analyzeVoyageEncounterActionOutcomes(state({ encounterId: "empty" }));
+  assert.deepEqual(Object.keys(report), [
+    "structurallyValid",
+    "definitionsValid",
+    "pendingChecksValid",
+    "resolutionComplete",
+    "active",
+    "consequences",
+    "readyForInterpretation",
+    "actionCount",
+    "interpretedActionCount",
+    "checkActionCount",
+    "noRollActionCount",
+    "intentCount",
+    "actions",
+    "intents",
+    "errors",
+    "warnings"
+  ]);
   assert.equal(report.resolutionComplete, true);
   assert.equal(report.readyForInterpretation, true);
-  assert.equal(report.actions.length, 0);
-  assert.equal(report.intents.length, 0);
+  assert.deepEqual(report.actions, []);
+  assert.deepEqual(report.intents, []);
 });
 
-test("successful no-roll interpretation produces exact action and intent shapes", () => {
-  const s = createVoyageEncounterState({ encounterId: "e", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  s.availableStations = [{ stationId: "a", actions: [{ actionId: "doit", outcomeDefinition: { effectRules: [{ effectId: "e1", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: { n: 1 } } ], branches: { "no-roll": [ "e1" ] } } }]}];
-  s.selections = { a: { stationId: "a", actionId: "doit" } };
-  s.targets = { a: { id: "t" } };
+test("successful no-roll interpretation has exact shapes and excludes every roll detail", () => {
+  const source = state({
+    encounterId: "no-roll",
+    availableStations: [{
+      stationId: "captain",
+      actions: [noRollAction("command", ["effect"], [
+        effectRule("effect", { payload: { amount: 1 } })
+      ])]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "command" } },
+    targets: { captain: { id: "target" } }
+  });
 
-  const report = analyzeVoyageEncounterActionOutcomes(s);
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(report.readyForInterpretation, true);
   assert.equal(report.interpretedActionCount, 1);
+  assert.equal(report.checkActionCount, 0);
+  assert.equal(report.pendingChecksValid, true);
+  assert.equal(report.resolutionComplete, true);
   assert.equal(report.intentCount, 1);
-  const act = report.actions[0];
-  assert.deepEqual(Object.keys(act), ["sequence","stationId","actionId","mode","branch","riskBidId","branchEffectIds","riskBidEffectIds","intentIds"]);
-  const intent = report.intents[0];
-  const expectedIntentKeys = [
-    "intentId","encounterId","stageId","roundNumber","sequence","stationId","actionId","mode","branch","riskBidId","activationSource","referenceIndex","effectId","intentType","timing","visibility","target","selectedTarget","payload"
-  ];
-  assert.deepEqual(Object.keys(intent), expectedIntentKeys);
-  // roll details must not be present
-  for (const forbidden of ["total","dc","degreeOfSuccess","statisticSlug","rollMode","pendingCheckId","pendingCheckIndex"]) assert.equal(Object.hasOwn(intent, forbidden), false);
+  assert.equal(report.actions[0].mode, "no-roll");
+  assert.equal(report.actions[0].branch, "no-roll");
+  assert.deepEqual(report.actions[0].branchEffectIds, ["effect"]);
+  assert.deepEqual(report.actions[0].riskBidEffectIds, []);
+  assert.equal(report.actions[0].intentIds.length, 1);
+  assert.deepEqual(Object.keys(report.actions[0]), [
+    "sequence",
+    "stationId",
+    "actionId",
+    "mode",
+    "branch",
+    "riskBidId",
+    "branchEffectIds",
+    "riskBidEffectIds",
+    "intentIds"
+  ]);
+  assert.deepEqual(Object.keys(report.intents[0]), [
+    "intentId",
+    "encounterId",
+    "stageId",
+    "roundNumber",
+    "sequence",
+    "stationId",
+    "actionId",
+    "mode",
+    "branch",
+    "riskBidId",
+    "activationSource",
+    "referenceIndex",
+    "effectId",
+    "intentType",
+    "timing",
+    "visibility",
+    "target",
+    "selectedTarget",
+    "payload"
+  ]);
+  for (const record of [report.actions[0], report.intents[0]]) {
+    for (const field of ROLL_DETAILS) assert.equal(Object.hasOwn(record, field), false);
+  }
 });
 
-test("four resolved check branches interpreted correctly", () => {
-  const state = createVoyageEncounterState({ encounterId: "branches", definitionId: "def", primaryShip: { id: "ship" } });
-  state.lifecycleState = "active";
-  state.currentStage = { stageId: "stage" };
-  state.roundNumber = 1;
-  state.phase = "resolution";
-
-  const branches = ["critical-failure","failure","success","critical-success"];
+test("all four resolved check degrees map to their exact authored branches", () => {
   const availableStations = [];
   const selections = {};
-  for (let i = 0; i < 4; i += 1) {
-    const stationId = `s${i}`;
-    const actionId = `a${i}`;
-    const branchObj = { "critical-failure": [], "failure": [], "success": [], "critical-success": [] };
-    branchObj[branches[i]] = [`r-${i}`].map((v) => v.replace('-', ''));
-    availableStations.push({ stationId, actions: [{ actionId, check: { source: { kind: "character", uuid: `Actor.${i}` }, statisticOptions: ["diplomacy"], dcSource: { kind: "fixed", value: 20 + i }, secrecy: "public", metadata: {} }, outcomeDefinition: { effectRules: [{ effectId: `r${i}`, intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: branchObj } }] });
+  for (let index = 0; index < CHECK_BRANCHES.length; index += 1) {
+    const stationId = `station-${index}`;
+    const actionId = `action-${index}`;
+    availableStations.push({
+      stationId,
+      actions: [checkAction(actionId, index, CHECK_BRANCHES[index], `effect-${index}`)]
+    });
     selections[stationId] = { stationId, actionId };
   }
 
-  Object.assign(state, { availableStations, selections, targets: {} });
-
-  // prepare pending checks
-  const prepared = applyVoyageEncounterPendingCheckPreparation(state, { pendingCheckIds: Array.from({ length: 4 }, (_, sequence) => ({ sequence, pendingCheckId: `p-${sequence}` })) });
-  assert.equal(prepared.ok, true);
-  let after = prepared.nextState;
-
-  // apply results to resolve each pending check
-  for (let seq = 0; seq < 4; seq += 1) {
-    const result = {
-      ok: true,
-      status: "rolled",
-      pendingCheckId: `p-${seq}`,
-      sequence: seq,
-      sourceKind: "character",
-      sourceUuid: `Actor.${seq}`,
-      statisticSlug: "diplomacy",
-      dc: 20 + seq,
-      rollMode: "public",
-      result: {
-        total: 20 + seq,
-        degreeOfSuccess: seq, // map 0..3
-        degreeOfSuccessSlug: branches[seq]
-      },
-      errors: [],
-      warnings: []
-    };
-    const applied = applyVoyageEncounterPendingCheckResult(after, result);
-    assert.equal(applied.ok, true);
-    after = applied.nextState;
-  }
-
-  // move to consequences for interpretation
-  after.phase = "consequences";
-  const report = analyzeVoyageEncounterActionOutcomes(after);
+  const resolved = resolveChecks(
+    state({ encounterId: "branches", phase: "resolution", availableStations, selections }),
+    CHECK_BRANCHES
+  );
+  const report = analyzeVoyageEncounterActionOutcomes(resolved);
   assert.equal(report.resolutionComplete, true);
   assert.equal(report.readyForInterpretation, true);
   assert.equal(report.interpretedActionCount, 4);
   assert.equal(report.intentCount, 4);
+
+  for (let index = 0; index < CHECK_BRANCHES.length; index += 1) {
+    assert.equal(report.actions[index].branch, CHECK_BRANCHES[index]);
+    assert.deepEqual(report.actions[index].branchEffectIds, [`effect-${index}`]);
+    assert.equal(report.intents[index].branch, CHECK_BRANCHES[index]);
+    assert.equal(report.intents[index].effectId, `effect-${index}`);
+    assert.equal(report.intents[index].referenceIndex, 0);
+  }
 });
 
-test("complete plan with invalid definition is incomplete for interpretation but resolutionComplete true", () => {
-  const s = createVoyageEncounterState({ encounterId: "baddef", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  // a no-roll action with malformed branches (invalid definition)
-  s.availableStations = [{ stationId: "x", actions: [{ actionId: "bad", outcomeDefinition: { effectRules: [], branches: null } }]}];
-  s.selections = { x: { stationId: "x", actionId: "bad" } };
+test("non-Consequences phase returns the exact phase gate and atomic empty output", () => {
+  const source = state({
+    phase: "resolution",
+    availableStations: [{
+      stationId: "captain",
+      actions: [noRollAction("command", ["effect"])]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "command" } }
+  });
 
-  const report = analyzeVoyageEncounterActionOutcomes(s);
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(report.resolutionComplete, true);
+  assert.equal(
+    hasError(report, "outcome-interpretation-requires-consequences", "phase"),
+    true
+  );
+  assertAtomic(report);
+});
+
+test("non-Active lifecycle reports the exact Active gate and atomic empty output", () => {
+  const source = state({
+    availableStations: [{
+      stationId: "captain",
+      actions: [noRollAction("command", ["effect"])]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "command" } }
+  });
+  source.lifecycleState = "paused";
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(report.active, false);
+  assert.equal(
+    hasError(report, "outcome-interpretation-requires-active", "lifecycleState"),
+    true
+  );
+  assertAtomic(report);
+});
+
+test("incomplete check resolution reports both the completion gate and missing check atomically", () => {
+  const source = state({
+    availableStations: [{
+      stationId: "engineer",
+      actions: [checkAction("repair", 0, "success", "effect")]
+    }],
+    selections: { engineer: { stationId: "engineer", actionId: "repair" } }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(report.resolutionComplete, false);
+  assert.equal(
+    hasError(report, "outcome-interpretation-resolution-incomplete", "pendingChecks"),
+    true
+  );
+  assert.equal(hasError(report, "outcome-interpretation-pending-check-missing"), true);
+  assertAtomic(report);
+});
+
+test("invalid definitions preserve precise upstream errors without a summary diagnostic", () => {
+  const source = state({
+    availableStations: [{
+      stationId: "captain",
+      actions: [{
+        actionId: "bad",
+        outcomeDefinition: { effectRules: [], branches: null }
+      }]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "bad" } }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
   assert.equal(report.resolutionComplete, true);
   assert.equal(report.definitionsValid, false);
   assert.equal(report.readyForInterpretation, false);
-  assert.equal(report.interpretedActionCount, 0);
-  assert.equal(report.intentCount, 0);
+  assert.equal(hasError(report, "invalid-action-outcome-branches"), true);
+  assert.equal(hasError(report, "outcome-interpretation-definitions-invalid"), false);
+  assertAtomic(report);
 });
 
-test("selected check action with no pending check yields missing pending check diagnostic and atomic empty output", () => {
-  const s = createVoyageEncounterState({ encounterId: "nopending", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "resolution";
-  s.availableStations = [{ stationId: "b", actions: [{ actionId: "chk", check: { source: { kind: "character" }, statisticOptions: ["X"], dcSource: { kind: "fixed", value: 5 }, secrecy: "public", metadata: {} }, outcomeDefinition: { effectRules: [{ effectId: "r1", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "critical-failure": ["r1"], "failure": [], "success": [], "critical-success": [] } } }]}];
-  s.selections = { b: { stationId: "b", actionId: "chk" } };
-  s.targets = { b: { id: "t" } };
-  // no pendingChecks prepared
-  s.pendingChecks = [];
-  const report = analyzeVoyageEncounterActionOutcomes(s);
-  assert.ok(report.errors.some((e) => e.code === "outcome-interpretation-pending-check-missing"));
-  assert.equal(report.interpretedActionCount, 0);
-  assert.equal(report.intentCount, 0);
+test("missing effect rules preserve upstream diagnostics and fail interpreter preflight atomically", () => {
+  const source = state({
+    availableStations: [{
+      stationId: "captain",
+      actions: [noRollAction("command", ["missing"], [])]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "command" } }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(hasError(report, "missing-effect-reference"), true);
+  assert.equal(hasError(report, "outcome-interpretation-effect-rule-missing"), true);
+  assertAtomic(report);
 });
 
-test("unresolved sparse pending check at index 3 yields exact path and atomic empty output", () => {
-  const s = createVoyageEncounterState({ encounterId: "sparse", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "resolution";
-  s.availableStations = [{ stationId: "b", actions: [{ actionId: "chk", check: { source: { kind: "character" }, statisticOptions: ["X"], dcSource: { kind: "fixed", value: 5 }, secrecy: "public", metadata: {} }, outcomeDefinition: { effectRules: [{ effectId: "r1", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "critical-failure": ["r1"], "failure": [], "success": [], "critical-success": [] } } }]}];
-  s.selections = { b: { stationId: "b", actionId: "chk" } };
-  s.targets = { b: { id: "t" } };
-  s.pendingChecks = [];
-  s.pendingChecks.length = 4;
-  s.pendingChecks[3] = { pendingCheckId: "pc3", preparedRevision: 0, stageId: "stage", roundNumber: 1, sequence: 0, stationId: "b", actionId: "chk", resolutionPriority: 0, riskBidId: null, target: { id: "t" }, mode: "check", source: { kind: "character" }, statisticOptions: ["X"], dcSource: { kind: "fixed", value: 5 }, secrecy: "public", metadata: {}, status: "pending", result: null };
+test("an invalid resolved result remains atomic and preserves its precise validation error", () => {
+  const source = state({
+    phase: "resolution",
+    availableStations: [{
+      stationId: "navigator",
+      actions: [checkAction("navigate", 0, "success", "effect")]
+    }],
+    selections: { navigator: { stationId: "navigator", actionId: "navigate" } }
+  });
+  const resolved = resolveChecks(source, ["success"]);
+  resolved.pendingChecks[0].result.degreeOfSuccessSlug = "not-a-degree";
 
-  const report = analyzeVoyageEncounterActionOutcomes(s);
-  assert.ok(report.errors.some((e) => e.code === "outcome-interpretation-pending-check-unresolved" && e.path === "pendingChecks[3].status"));
-  assert.equal(report.resolutionComplete, false);
-  assert.equal(report.interpretedActionCount, 0);
-  assert.equal(report.intentCount, 0);
+  const report = analyzeVoyageEncounterActionOutcomes(resolved);
+  assert.equal(hasError(report, "invalid-pending-check-result"), true);
+  assert.equal(
+    hasError(report, "outcome-interpretation-resolution-incomplete", "pendingChecks"),
+    true
+  );
+  assertAtomic(report);
 });
 
-test("two selected actions from two stations interpret in priority order", () => {
-  const s = createVoyageEncounterState({ encounterId: "prio", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  s.availableStations = [
-    { stationId: "one", actions: [{ actionId: "a", resolutionPriority: 5, outcomeDefinition: { effectRules: [{ effectId: "r1", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "no-roll": ["r1"] } } }] },
-    { stationId: "two", actions: [{ actionId: "b", resolutionPriority: 1, outcomeDefinition: { effectRules: [{ effectId: "r2", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "no-roll": ["r2"] } } }] }
-  ];
-  s.selections = { one: { stationId: "one", actionId: "a" }, two: { stationId: "two", actionId: "b" } };
-  s.targets = {};
-  const report = analyzeVoyageEncounterActionOutcomes(s);
-  assert.equal(report.interpretedActionCount, 2);
-  // sequence numbers should reflect resolutionPriority order: b then a
-  assert.equal(report.actions[0].stationId, "two");
-  assert.equal(report.actions[1].stationId, "one");
+test("an unresolved sparse pending check reports its original index path atomically", () => {
+  const source = state({
+    phase: "resolution",
+    availableStations: [{
+      stationId: "engineer",
+      actions: [checkAction("repair", 0, "success", "effect")]
+    }],
+    selections: { engineer: { stationId: "engineer", actionId: "repair" } },
+    targets: { engineer: { id: "target" } }
+  });
+  source.pendingChecks.length = 4;
+  source.pendingChecks[3] = {
+    pendingCheckId: "pending-3",
+    preparedRevision: 0,
+    stageId: "stage",
+    roundNumber: 1,
+    sequence: 0,
+    stationId: "engineer",
+    actionId: "repair",
+    resolutionPriority: 0,
+    riskBidId: null,
+    target: { id: "target" },
+    mode: "check",
+    source: { kind: "character", uuid: "Actor.0" },
+    statisticOptions: ["diplomacy"],
+    dcSource: { kind: "fixed", value: 20 },
+    secrecy: "public",
+    metadata: {},
+    status: "pending",
+    result: null
+  };
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(
+    hasError(
+      report,
+      "outcome-interpretation-pending-check-unresolved",
+      "pendingChecks[3].status"
+    ),
+    true
+  );
+  assertAtomic(report);
 });
 
-test("sparse own branch refs ignore inherited getters and preserve indexes", () => {
-  const s = createVoyageEncounterState({ encounterId: "sparse-ref", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  const branches = [];
-  branches.length = 3;
-  Object.defineProperty(branches, 0, { configurable: true, enumerable: true, value: "r0" });
-  // put an inherited getter at index 1 that would throw if read
-  const proto = Object.create(Array.prototype);
-  Object.defineProperty(proto, 1, { configurable: true, get() { throw new Error("inherited"); } });
-  Object.setPrototypeOf(branches, proto);
+test("two selected actions emit in deterministic resolution-priority order", () => {
+  const source = state({
+    availableStations: [
+      {
+        stationId: "late",
+        actions: [{ ...noRollAction("later", ["late-effect"]), resolutionPriority: 5 }]
+      },
+      {
+        stationId: "early",
+        actions: [{ ...noRollAction("earlier", ["early-effect"]), resolutionPriority: 1 }]
+      }
+    ],
+    selections: {
+      late: { stationId: "late", actionId: "later" },
+      early: { stationId: "early", actionId: "earlier" }
+    }
+  });
 
-  s.availableStations = [{ stationId: "s", actions: [{ actionId: "a", outcomeDefinition: { effectRules: [{ effectId: "r0", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "no-roll": branches } } }]}];
-  s.selections = { s: { stationId: "s", actionId: "a" } };
-  const report = analyzeVoyageEncounterActionOutcomes(s);
-  // should create only one intent for own index 0 and preserve index 0
-  assert.equal(report.intentCount, 1);
-  assert.equal(report.intents[0].referenceIndex, 0);
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.deepEqual(report.actions.map(({ stationId }) => stationId), ["early", "late"]);
+  assert.deepEqual(report.actions.map(({ sequence }) => sequence), [0, 1]);
+  assert.deepEqual(report.intents.map(({ stationId }) => stationId), ["early", "late"]);
+  assert.deepEqual(report.intents.map(({ sequence }) => sequence), [0, 1]);
 });
 
-test("deterministic intent IDs and uniqueness across sequences and refs", () => {
-  const s = createVoyageEncounterState({ encounterId: "det", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  s.availableStations = [{ stationId: "x", actions: [{ actionId: "a", outcomeDefinition: { effectRules: [{ effectId: "e1", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "no-roll": ["e1"] } } }, { actionId: "b", outcomeDefinition: { effectRules: [{ effectId: "e2", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: null } ], branches: { "no-roll": ["e2"] } } }] }];
-  s.selections = { x: { stationId: "x", actionId: "a" } };
-  s.targets = {};
-  const r1 = analyzeVoyageEncounterActionOutcomes(s);
-  const ids1 = r1.intents.map((i) => i.intentId);
-  const r2 = analyzeVoyageEncounterActionOutcomes(s);
-  const ids2 = r2.intents.map((i) => i.intentId);
-  assert.deepEqual(ids1, ids2);
-  // different sequence -> different id
-  s.selections = { x: { stationId: "x", actionId: "b" } };
-  const r3 = analyzeVoyageEncounterActionOutcomes(s);
-  assert.notDeepEqual(r3.intents.map((i) => i.intentId), ids1);
+test("sparse own branch references ignore inherited getters and preserve indexes", () => {
+  const references = [];
+  references.length = 4;
+  Object.defineProperty(references, 1, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: "first"
+  });
+  Object.defineProperty(references, 3, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: "second"
+  });
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, 2, {
+    configurable: true,
+    get() {
+      throw new Error("Inherited getter must not run.");
+    }
+  });
+  Object.setPrototypeOf(references, prototype);
+
+  const source = state({
+    availableStations: [{
+      stationId: "watchmaster",
+      actions: [noRollAction(
+        "observe",
+        references,
+        [effectRule("first"), effectRule("second")]
+      )]
+    }],
+    selections: { watchmaster: { stationId: "watchmaster", actionId: "observe" } }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(report.readyForInterpretation, true);
+  assert.equal(report.intentCount, 2);
+  assert.deepEqual(report.intents.map(({ referenceIndex }) => referenceIndex), [1, 3]);
+  assert.equal(report.actions[0].branchEffectIds.length, 4);
+  assert.equal(Object.hasOwn(report.actions[0].branchEffectIds, 0), false);
+  assert.equal(report.actions[0].branchEffectIds[1], "first");
+  assert.equal(Object.hasOwn(report.actions[0].branchEffectIds, 2), false);
+  assert.equal(report.actions[0].branchEffectIds[3], "second");
 });
 
-test("deep isolation: mutating returned data does not affect source and later reports", () => {
-  const s = createVoyageEncounterState({ encounterId: "iso", definitionId: "def", primaryShip: { id: "ship" } });
-  s.lifecycleState = "active";
-  s.currentStage = { stageId: "stage" };
-  s.roundNumber = 1;
-  s.phase = "consequences";
-  s.availableStations = [{ stationId: "a", actions: [{ actionId: "doit", outcomeDefinition: { effectRules: [{ effectId: "e1", intentType: "track-change", timing: "consequences", visibility: "public", target: { kind: "encounter" }, payload: { nested: { v: 1 } } } ], branches: { "no-roll": [ "e1" ] } } }]}];
-  s.selections = { a: { stationId: "a", actionId: "doit" } };
-  const r1 = analyzeVoyageEncounterActionOutcomes(s);
-  // mutate returned arrays and objects
-  r1.actions[0].branchEffectIds[0] = "mut";
-  r1.intents[0].payload.nested.v = 999;
-  // re-run report
-  const r2 = analyzeVoyageEncounterActionOutcomes(s);
-  assert.equal(r2.actions[0].branchEffectIds[0], "e1");
-  assert.equal(r2.intents[0].payload.nested.v, 1);
+test("intent IDs are deterministic and distinguish action sequences and original reference indexes", () => {
+  const references = [];
+  references.length = 3;
+  references[0] = "effect,one";
+  references[2] = "effect:[two]";
+  const source = state({
+    encounterId: "encounter,with:[delimiters]",
+    availableStations: [
+      {
+        stationId: "captain",
+        actions: [noRollAction(
+          "command",
+          references,
+          [effectRule("effect,one"), effectRule("effect:[two]")]
+        )]
+      },
+      {
+        stationId: "engineer",
+        actions: [noRollAction("repair", ["effect,one"])]
+      }
+    ],
+    selections: {
+      captain: { stationId: "captain", actionId: "command" },
+      engineer: { stationId: "engineer", actionId: "repair" }
+    }
+  });
+
+  const first = analyzeVoyageEncounterActionOutcomes(source);
+  const second = analyzeVoyageEncounterActionOutcomes(source);
+  assert.deepEqual(
+    first.intents.map(({ intentId }) => intentId),
+    second.intents.map(({ intentId }) => intentId)
+  );
+  assert.equal(new Set(first.intents.map(({ intentId }) => intentId)).size, 3);
+  assert.notEqual(first.intents[0].intentId, first.intents[1].intentId);
+  assert.notEqual(first.intents[0].intentId, first.intents[2].intentId);
+  assert.equal(first.intents[0].sequence, 0);
+  assert.equal(first.intents[1].sequence, 0);
+  assert.equal(first.intents[2].sequence, 1);
+  assert.equal(
+    first.intents[0].intentId,
+    `arcflight-intent:${JSON.stringify([
+      "encounter,with:[delimiters]",
+      "stage",
+      1,
+      0,
+      "branch",
+      0,
+      "effect,one"
+    ])}`
+  );
+  assert.equal(first.intents[1].referenceIndex, 2);
+  assert.equal(first.intents[2].referenceIndex, 0);
+});
+
+test("source, sibling outputs, and later invocations remain deeply isolated", () => {
+  const firstPayload = { nested: { values: [1, { value: 2 }] } };
+  const secondPayload = { nested: { values: [4, { value: 5 }] } };
+  const firstTarget = { id: "first-target", nested: { value: 3 } };
+  const secondTarget = { id: "second-target", nested: { value: 6 } };
+  const source = state({
+    availableStations: [
+      {
+        stationId: "veilwarden",
+        actions: [noRollAction("ward", ["first-effect"], [
+          effectRule("first-effect", { payload: firstPayload })
+        ])]
+      },
+      {
+        stationId: "engineer",
+        actions: [noRollAction("repair", ["second-effect"], [
+          effectRule("second-effect", { payload: secondPayload })
+        ])]
+      }
+    ],
+    selections: {
+      veilwarden: { stationId: "veilwarden", actionId: "ward" },
+      engineer: { stationId: "engineer", actionId: "repair" }
+    },
+    targets: {
+      veilwarden: firstTarget,
+      engineer: secondTarget
+    }
+  });
+  const sourceSnapshot = structuredClone(source);
+  const sourceRevision = source.revision;
+
+  const first = analyzeVoyageEncounterActionOutcomes(source);
+  first.actions[0].branchEffectIds[0] = "changed";
+  first.actions[0].riskBidEffectIds.push("changed");
+  first.actions[0].intentIds[0] = "changed";
+  first.intents[0].target.kind = "changed";
+  first.intents[0].selectedTarget.nested.value = 30;
+  first.intents[0].payload.nested.values[1].value = 20;
+  assert.deepEqual(first.actions[1].branchEffectIds, ["second-effect"]);
+  assert.deepEqual(first.actions[1].riskBidEffectIds, []);
+  assert.equal(first.intents[1].selectedTarget.nested.value, 6);
+  assert.equal(first.intents[1].payload.nested.values[1].value, 5);
+  assert.deepEqual(source, sourceSnapshot);
+  assert.equal(source.revision, sourceRevision);
+
+  const second = analyzeVoyageEncounterActionOutcomes(source);
+  assert.notEqual(first.actions, second.actions);
+  assert.notEqual(first.intents, second.intents);
+  assert.deepEqual(second.actions[0].branchEffectIds, ["first-effect"]);
+  assert.deepEqual(second.actions[0].riskBidEffectIds, []);
+  assert.notEqual(second.actions[0].intentIds[0], "changed");
+  assert.deepEqual(second.intents[0].target, { kind: "encounter" });
+  assert.equal(second.intents[0].selectedTarget.nested.value, 3);
+  assert.equal(second.intents[0].payload.nested.values[1].value, 2);
+  assert.equal(second.intents[1].selectedTarget.nested.value, 6);
+  assert.equal(second.intents[1].payload.nested.values[1].value, 5);
+  assert.equal(firstTarget.nested.value, 3);
+  assert.equal(firstPayload.nested.values[1].value, 2);
+  assert.deepEqual(source, sourceSnapshot);
+  assert.equal(source.revision, sourceRevision);
+});
+
+test("duplicate effect rules preserve upstream errors without a noncontract interpreter diagnostic", () => {
+  const source = state({
+    availableStations: [{
+      stationId: "captain",
+      actions: [noRollAction(
+        "command",
+        ["duplicate"],
+        [effectRule("duplicate"), effectRule("duplicate")]
+      )]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "command" } }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(hasError(report, "duplicate-effect-id"), true);
+  assert.equal(hasError(report, "outcome-interpretation-effect-rule-ambiguous"), false);
+  assertAtomic(report);
+});
+
+test("cloning preserves an own __proto__ payload key without changing the output prototype", () => {
+  const payload = { ordinary: true };
+  Object.defineProperty(payload, "__proto__", {
+    value: { preserved: true },
+    enumerable: true,
+    configurable: true,
+    writable: true
+  });
+  const source = state({
+    availableStations: [{
+      stationId: "engineer",
+      actions: [noRollAction("repair", ["effect"], [
+        effectRule("effect", { payload })
+      ])]
+    }],
+    selections: { engineer: { stationId: "engineer", actionId: "repair" } }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  const clonedPayload = report.intents[0].payload;
+  assert.equal(Object.getPrototypeOf(clonedPayload), Object.prototype);
+  assert.equal(Object.hasOwn(clonedPayload, "__proto__"), true);
+  assert.deepEqual(clonedPayload.__proto__, { preserved: true });
+  assert.equal(clonedPayload.ordinary, true);
+});
+
+test("unexpected hostile reads remain contained and return atomic output", () => {
+  const source = state();
+  Object.defineProperty(source, "lifecycleState", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      throw new Error("Hostile getter must be contained.");
+    }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(hasError(report, "outcome-interpretation-data-read-failed", "$"), true);
+  assertAtomic(report);
+});
+
+test("safe failure preserves constructed report facts, upstream diagnostics, and warnings", () => {
+  const source = state({
+    availableStations: [{
+      stationId: "captain",
+      actions: [{
+        actionId: "command",
+        outcomeDefinition: {
+          effectRules: [effectRule("unused")],
+          branches: null
+        }
+      }]
+    }],
+    selections: { captain: { stationId: "captain", actionId: "command" } }
+  });
+  Object.defineProperty(source.currentStage, "stageId", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return "stage";
+    }
+  });
+
+  const report = analyzeVoyageEncounterActionOutcomes(source);
+  assert.equal(report.structurallyValid, true);
+  assert.equal(report.definitionsValid, false);
+  assert.equal(report.pendingChecksValid, true);
+  assert.equal(report.resolutionComplete, true);
+  assert.equal(report.active, true);
+  assert.equal(report.consequences, true);
+  assert.equal(report.actionCount, 1);
+  assert.equal(report.checkActionCount, 0);
+  assert.equal(report.noRollActionCount, 1);
+  assert.equal(hasError(report, "invalid-action-outcome-branches"), true);
+  assert.equal(hasError(report, "outcome-interpretation-data-read-failed", "$"), true);
+  assert.equal(
+    report.errors.filter(({ code }) => code === "outcome-interpretation-data-read-failed").length,
+    1
+  );
+  assert.equal(report.warnings.some(({ code }) => code === "unreferenced-effect-rule"), true);
+  assertAtomic(report);
 });
