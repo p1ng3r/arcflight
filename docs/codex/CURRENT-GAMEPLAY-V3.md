@@ -9,37 +9,49 @@
 
 ## Authoritative branch
 
-```text
-rebuild/arcflight-gameplay-v3
-```
+`rebuild/arcflight-gameplay-v3`
 
 ## Accepted checkpoint
 
-Gameplay V3-005B-1 was merged through PR #566.
+Gameplay V3 Milestones 2A and 2B are complete, merged, and archived.
 
-```text
-Accepted head: 2963763ee99566fb5736415dd5a9ca636c81f223
-Merge commit: 9799fdaa8c14d18ecafca8372bf97e936fabce1b
-```
+Accepted authoritative head:
 
-Accepted behavior includes deterministic normal action branch interpretation with Active, Consequences, and complete-resolution gates; atomic safe failure; deterministic intent IDs; hostile-data safety; and focused regression coverage.
+`a09c8c35e3193b6a2322f76d1d5454eabdf4d325`
+
+Completed work:
+
+- Milestone 2A implementation: PR #568 — fixed operator assignments and occupied stations.
+- Milestone 2A archive: PR #569.
+- Milestone 2B implementation: PR #570 — round action authoring validation.
+- Milestone 2B archive: PR #571.
+
+Accepted behavior includes:
+
+- canonical fixed station-operator assignments;
+- occupied stations derived from valid assignments;
+- unoccupied stations allowed and skipped;
+- Crew Planning action selections required only for occupied stations;
+- authored round counts of 3, 5, 7, 9, or 11;
+- round-owned canonical station subsets;
+- exactly three authored actions per available station;
+- one to three approaches per action;
+- explicit third-approach distinction metadata;
+- exact statistic-or-ability and no-roll execution identities;
+- recursively plain, hostile-data-safe Event Definition validation.
 
 ## Current task
 
-```text
-Milestone 1A — Canonical rules documentation PR
-```
+**Milestone 2C — Approach selection and editing**
 
-This task is documentation only. It places the canonical Event Runner authority in the repository and aligns the older planning documents with the accepted checkpoint.
+Milestone 2C extends the existing Crew Planning station selection with a committed authored approach. It adds select, change, and clear operations; couples approach clearing to action changes; and requires every occupied station to have both a valid action and approach before Crew Planning can lock.
 
 ## Next implementation task
 
-```text
-Milestone 2A — Fixed operator assignments and occupied stations
-```
+**Milestone 2D — Player-committed station order**
 
-Do not begin Pressure, Hazards, Void Scars, rewards, or player/GM UI before canonical Crew Planning alignment.
+Do not begin canonical Risk Bids, execution-request alignment, Focus, Pressure, Hazards, Void Scars, rewards, or player/GM UI before the preceding Crew Planning contracts are complete.
 
 ## Crossover warning
 
-The branch `rebuild/arcflight-voyage-events-alpha` and its open V3-007 issues belong to a separate diverged workstream. They are reference and salvage material, not the sequential continuation of Gameplay V3. Do not merge or cherry-pick that branch wholesale. Reuse must occur through narrow contract audits and reviewed PRs on the authoritative Gameplay V3 branch.
+The branch `rebuild/arcflight-voyage-events-alpha` and its V3-007 issues belong to a separate diverged workstream. They are reference and salvage material, not the sequential continuation of Gameplay V3. Do not merge or cherry-pick that branch wholesale. Reuse must occur through narrow contract audits and reviewed PRs on the authoritative Gameplay V3 branch.
