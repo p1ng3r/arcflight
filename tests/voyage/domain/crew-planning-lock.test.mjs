@@ -6,12 +6,17 @@ import { applyVoyageEncounterStationActionSelection, applyVoyageEncounterStation
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as STATES, VOYAGE_ROUND_PHASES } from "../../../scripts/voyage/domain/constants.js";
 import { clonePlainData, createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 
+function statisticApproach(approachId, statisticSlugOrAbilityId = approachId) {
+  return { approachId, statisticSlugOrAbilityId };
+}
+function noRollApproach(approachId) { return { approachId, noRoll: true }; }
+
 function encounter() {
   return { ...createDraftVoyageEncounterDefaults(), encounterId: "lock", definitionId: "glassback", lifecycleState: STATES.ACTIVE, revision: 4,
     primaryShip: { actorId: "ship" }, currentStage: { stageId: "opening" }, currentSituation: { threatId: "debris" }, objective: { objectiveId: "survive" }, roundNumber: 1,
-    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally", riskBidOptions: [{ riskBidId: "close" }] }, { actionId: "command" }] }, { stationId: "navigator", actions: [{ actionId: "course" }] }],
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally", approaches: [statisticApproach("diplomacy"), noRollApproach("steady-command")], riskBidOptions: [{ riskBidId: "close" }] }, { actionId: "command", approaches: [statisticApproach("intimidation")] }] }, { stationId: "navigator", actions: [{ actionId: "course", approaches: [statisticApproach("survival"), noRollApproach("careful-course")] }] }],
     stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }, { stationId: "navigator", operator: { kind: "actor", uuid: "Actor.navigator", name: "Navigator" } }],
-    selections: { captain: { stationId: "captain", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } }, targets: { retained: true }, riskBids: { captain: { stationId: "captain", actionId: "rally", riskBidId: "close" } }, assistance: [{ retained: true }], reservations: [{ retained: true }],
+    selections: { captain: { stationId: "captain", actionId: "rally", approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy" }, navigator: { stationId: "navigator", actionId: "course", approachId: "survival", statisticSlugOrAbilityId: "survival" } }, targets: { retained: true }, riskBids: { captain: { stationId: "captain", actionId: "rally", riskBidId: "close" } }, assistance: [{ retained: true }], reservations: [{ retained: true }],
     successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }], snapshots: [], recovery: {}, metadata: { retained: true } };
 }
 function failure(result) { assert.equal(result.ok, false); assert.equal(result.nextState, null); assert.deepEqual(result.events, []); }
@@ -25,6 +30,44 @@ test("locks a complete plan atomically and creates the established phase-start s
   assert.deepEqual(result.events, [{ type: "voyage.crew-planning-locked", encounterId: "lock", lifecycleState: STATES.ACTIVE, roundNumber: 1, previousPhase: VOYAGE_ROUND_PHASES.CREW_PLANNING, phase: VOYAGE_ROUND_PHASES.LOCK_READINESS, previousRevision: 4, revision: 5, phaseStartSnapshotId: "lock-readiness-start" }]);
   assert.deepEqual(source, before);
   assert.deepEqual(request, { phaseStartSnapshotId: "lock-readiness-start" });
+});
+
+test("locks an explicit no-roll-approach-complete plan", () => {
+  const source = encounter();
+  source.selections.captain = { stationId: "captain", actionId: "rally", approachId: "steady-command", noRoll: true };
+  source.selections.navigator = { stationId: "navigator", actionId: "course", approachId: "careful-course", noRoll: true };
+  const before = clonePlainData(source);
+
+  const result = applyVoyageEncounterCrewPlanningLock(source, { phaseStartSnapshotId: "no-roll-lock" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.LOCK_READINESS);
+  assert.equal(result.nextState.revision, 5);
+  assert.deepEqual(result.nextState.selections, before.selections);
+  assert.deepEqual(source, before);
+});
+
+test("action-only and one-missing-approach plans cannot lock and remain atomic", () => {
+  const actionOnly = encounter();
+  actionOnly.selections = {
+    captain: { stationId: "captain", actionId: "rally" },
+    navigator: { stationId: "navigator", actionId: "course" }
+  };
+  const oneMissing = encounter();
+  oneMissing.selections.navigator = { stationId: "navigator", actionId: "course" };
+
+  for (const [source, snapshotId] of [
+    [actionOnly, "action-only"],
+    [oneMissing, "one-missing-approach"]
+  ]) {
+    const before = clonePlainData(source);
+    const request = { phaseStartSnapshotId: snapshotId };
+    const result = applyVoyageEncounterCrewPlanningLock(source, request);
+    failure(result);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(source, before);
+    assert.deepEqual(request, { phaseStartSnapshotId: snapshotId });
+  }
 });
 
 test("rejects request failures atomically without changing source state or request input", () => {

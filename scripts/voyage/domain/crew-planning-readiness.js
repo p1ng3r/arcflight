@@ -52,6 +52,13 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
     issue(errors, "invalid-crew-planning-readiness-stage-id", "currentStage.stageId", "Crew Planning readiness requires a non-empty current stageId for the Lock Readiness snapshot.");
   }
 
+  const readyToLock = errors.length === 0
+    && active
+    && crewPlanning
+    && completeness.complete
+    && completeness.missingOccupiedStationIds.length === 0
+    && completeness.missingApproachStationIds.length === 0;
+
   return {
     structurallyValid: structural.valid,
     active,
@@ -59,8 +66,10 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
     occupiedStationIds: [...completeness.occupiedStationIds],
     selectedStationIds: [...completeness.selectedStationIds],
     missingOccupiedStationIds: [...completeness.missingOccupiedStationIds],
+    approachSelectedStationIds: [...completeness.approachSelectedStationIds],
+    missingApproachStationIds: [...completeness.missingApproachStationIds],
     complete: completeness.complete,
-    readyToLock: errors.length === 0 && active && crewPlanning && completeness.complete,
+    readyToLock,
     errors: deduplicateIssues(errors),
     warnings: deduplicateIssues(warnings)
   };

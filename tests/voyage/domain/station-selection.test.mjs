@@ -2,11 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyVoyageEncounterStationActionSelection,
+  applyVoyageEncounterStationActionSelectionChange,
+  applyVoyageEncounterStationActionSelectionClear,
   validateVoyageEncounterStationSelections
 } from "../../../scripts/voyage/domain/station-selection.js";
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as STATES, VOYAGE_ROUND_PHASES } from "../../../scripts/voyage/domain/constants.js";
 import { clonePlainData, createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 import { validateVoyageEncounterState } from "../../../scripts/voyage/domain/validation.js";
+
+function statisticApproach(approachId, statisticSlugOrAbilityId = approachId) {
+  return { approachId, statisticSlugOrAbilityId };
+}
+
+function noRollApproach(approachId) {
+  return { approachId, noRoll: true };
+}
+
+function action(actionId, approaches, authored = {}) {
+  return { actionId, approaches, ...authored };
+}
 
 function encounter() {
   return {
@@ -16,9 +30,46 @@ function encounter() {
     currentSituation: { threat: { id: "debris" } }, objective: { id: "survive" }, roundNumber: 2, phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
     participants: [{ participantId: "captain", details: { userId: "user" } }],
     availableStations: [
-      { stationId: "captain", actions: [{ actionId: "rally-crew", authored: { skill: "diplomacy" } }, { actionId: "coordinate-orders" }], authored: { title: "Captain" } },
-      { stationId: "engineer", actions: [{ actionId: "stabilize-strain" }, { actionId: "hard-burn-prep" }], authored: { title: "Engineer" } },
-      { stationId: "navigator", actions: [{ actionId: "plot-course" }], authored: { title: "Navigator" } }
+      {
+        stationId: "captain",
+        actions: [
+          action("rally-crew", [
+            statisticApproach("diplomacy", "diplomacy"),
+            statisticApproach("commanding-presence", "cha"),
+            noRollApproach("steady-the-deck")
+          ], { authored: { skill: "diplomacy" } }),
+          action("coordinate-orders", [
+            statisticApproach("warfare-lore", "warfare-lore"),
+            noRollApproach("measured-orders"),
+            statisticApproach("crew-coordination", "society")
+          ])
+        ],
+        authored: { title: "Captain" }
+      },
+      {
+        stationId: "engineer",
+        actions: [
+          action("stabilize-strain", [
+            statisticApproach("crafting", "crafting"),
+            statisticApproach("arkengine-lore", "arkengine-lore"),
+            noRollApproach("automatic-shunt")
+          ]),
+          action("hard-burn-prep", [
+            statisticApproach("overcharge", "crafting"),
+            noRollApproach("prepared-sequence")
+          ])
+        ],
+        authored: { title: "Engineer" }
+      },
+      {
+        stationId: "navigator",
+        actions: [action("plot-course", [
+          statisticApproach("piloting-lore", "piloting-lore"),
+          statisticApproach("survival", "survival"),
+          statisticApproach("astronomy-lore", "astronomy-lore")
+        ])],
+        authored: { title: "Navigator" }
+      }
     ],
     stationAssignments: [
       { stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } },
@@ -28,6 +79,42 @@ function encounter() {
     snapshots: [{ snapshotId: "planning-start", boundaryType: "phase-start", lifecycleState: STATES.ACTIVE, stageId: "opening", roundNumber: 2, phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, temporaryState: { currentStage: { stageId: "opening" } } }],
     recovery: { status: "none" }, metadata: { nested: { retained: true } }
   };
+}
+
+function encounterWithSelection(selection, stationKey = selection.stationId) {
+  const source = encounter();
+  source.selections[stationKey] = selection;
+  return source;
+}
+
+function statisticSelection(overrides = {}) {
+  return {
+    stationId: "captain",
+    actionId: "rally-crew",
+    approachId: "diplomacy",
+    statisticSlugOrAbilityId: "diplomacy",
+    ...overrides
+  };
+}
+
+function noRollSelection(overrides = {}) {
+  return {
+    stationId: "captain",
+    actionId: "rally-crew",
+    approachId: "steady-the-deck",
+    noRoll: true,
+    ...overrides
+  };
+}
+
+function addRiskBid(source, stationId, actionId, riskBidId) {
+  const station = source.availableStations.find((entry) => entry.stationId === stationId);
+  const selectedAction = station.actions.find((entry) => entry.actionId === actionId);
+  selectedAction.riskBidOptions = [
+    ...(selectedAction.riskBidOptions ?? []),
+    { riskBidId }
+  ];
+  source.riskBids[stationId] = { stationId, actionId, riskBidId };
 }
 
 function failure(result, codes) {
@@ -42,6 +129,446 @@ test("validates empty, one, and multiple exact stored selections without mutatio
   const oneBefore = clonePlainData(source); assert.equal(validateVoyageEncounterStationSelections(source).valid, true); assert.deepEqual(source, oneBefore);
   source.selections.engineer = { stationId: "engineer", actionId: "stabilize-strain" };
   const multipleBefore = clonePlainData(source); assert.equal(validateVoyageEncounterStationSelections(source).valid, true); assert.deepEqual(source, multipleBefore);
+});
+
+test("accepts exact statistic and explicit no-roll committed selections without mutation", () => {
+  const statisticSource = encounterWithSelection(statisticSelection());
+  const statisticBefore = clonePlainData(statisticSource);
+  assert.deepEqual(
+    validateVoyageEncounterStationSelections(statisticSource),
+    { valid: true, errors: [], warnings: [] }
+  );
+  assert.deepEqual(statisticSource, statisticBefore);
+
+  const noRollSource = encounterWithSelection({
+    stationId: "engineer",
+    actionId: "stabilize-strain",
+    approachId: "automatic-shunt",
+    noRoll: true
+  });
+  const noRollBefore = clonePlainData(noRollSource);
+  assert.deepEqual(
+    validateVoyageEncounterStationSelections(noRollSource),
+    { valid: true, errors: [], warnings: [] }
+  );
+  assert.deepEqual(noRollSource, noRollBefore);
+});
+
+test("rejects partial and ambiguous persisted approach execution identities", () => {
+  const fixtures = [
+    {
+      selection: { approachId: "diplomacy" },
+      codes: ["missing-selection-approach-execution-identity"],
+      paths: ["selections.captain"]
+    },
+    {
+      selection: { statisticSlugOrAbilityId: "diplomacy" },
+      codes: ["missing-selection-approach-id"],
+      paths: ["selections.captain.approachId"]
+    },
+    {
+      selection: { approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy", noRoll: true },
+      codes: ["ambiguous-selection-approach-execution-identity"],
+      paths: ["selections.captain"]
+    }
+  ];
+
+  for (const fixture of fixtures) {
+    const source = encounterWithSelection({
+      stationId: "captain",
+      actionId: "rally-crew",
+      ...fixture.selection
+    });
+    const result = validateVoyageEncounterStationSelections(source);
+    assert.equal(result.valid, false);
+    assert.deepEqual(result.errors.map(({ code }) => code), fixture.codes);
+    assert.deepEqual(result.errors.map(({ path }) => path), fixture.paths);
+  }
+});
+
+test("rejects blank, unsafe, missing, cross-action, and ambiguous approach IDs", () => {
+  for (const [approachId, code] of [
+    ["", "invalid-selection-approach-id"],
+    ["   ", "invalid-selection-approach-id"],
+    ["__proto__", "unsafe-selection-approach-id"],
+    ["constructor", "unsafe-selection-approach-id"],
+    ["prototype", "unsafe-selection-approach-id"]
+  ]) {
+    const source = encounterWithSelection(statisticSelection({ approachId }));
+    assert.equal(validateVoyageEncounterStationSelections(source).errors[0].code, code);
+  }
+
+  for (const approachId of ["warfare-lore", "missing"]) {
+    const source = encounterWithSelection(statisticSelection({
+      approachId,
+      statisticSlugOrAbilityId: approachId
+    }));
+    const result = validateVoyageEncounterStationSelections(source);
+    assert.deepEqual(result.errors.map(({ code }) => code), ["selected-approach-not-available"]);
+    assert.equal(result.errors[0].path, "selections.captain.approachId");
+  }
+
+  const duplicate = encounterWithSelection(statisticSelection());
+  duplicate.availableStations[0].actions[0].approaches[1] = statisticApproach(
+    "diplomacy",
+    "diplomacy"
+  );
+  assert.deepEqual(
+    validateVoyageEncounterStationSelections(duplicate).errors.map(({ code, path }) => ({
+      code,
+      path
+    })),
+    [
+      {
+        code: "duplicate-authored-approach-id",
+        path: "availableStations[0].actions[0].approaches[1].approachId"
+      },
+      {
+        code: "selected-approach-is-ambiguous",
+        path: "selections.captain.approachId"
+      }
+    ]
+  );
+});
+
+test("requires persisted statistic identities to be exact, non-empty, and safe", () => {
+  for (const [statisticSlugOrAbilityId, code] of [
+    ["", "invalid-selection-statistic-or-ability-id"],
+    ["   ", "invalid-selection-statistic-or-ability-id"],
+    ["__proto__", "unsafe-selection-statistic-or-ability-id"],
+    ["constructor", "unsafe-selection-statistic-or-ability-id"],
+    ["prototype", "unsafe-selection-statistic-or-ability-id"]
+  ]) {
+    const source = encounterWithSelection(statisticSelection({ statisticSlugOrAbilityId }));
+    assert.equal(validateVoyageEncounterStationSelections(source).errors[0].code, code);
+  }
+
+  const mismatch = encounterWithSelection(statisticSelection({
+    statisticSlugOrAbilityId: "society"
+  }));
+  const result = validateVoyageEncounterStationSelections(mismatch);
+  assert.deepEqual(result.errors.map(({ code }) => code), [
+    "selection-statistic-or-ability-id-mismatch"
+  ]);
+  assert.equal(
+    result.errors[0].path,
+    "selections.captain.statisticSlugOrAbilityId"
+  );
+});
+
+test("requires noRoll to be exactly true and match the authored execution kind", () => {
+  const noRollFalse = encounterWithSelection({
+    stationId: "captain",
+    actionId: "rally-crew",
+    approachId: "steady-the-deck",
+    noRoll: false
+  });
+  assert.deepEqual(
+    validateVoyageEncounterStationSelections(noRollFalse).errors.map(({ code, path }) => ({
+      code,
+      path
+    })),
+    [{
+      code: "invalid-selection-no-roll-identity",
+      path: "selections.captain.noRoll"
+    }]
+  );
+
+  const statisticOnNoRoll = encounterWithSelection(statisticSelection({
+    approachId: "steady-the-deck",
+    statisticSlugOrAbilityId: "diplomacy"
+  }));
+  assert.equal(
+    validateVoyageEncounterStationSelections(statisticOnNoRoll).errors[0].code,
+    "selection-approach-execution-mismatch"
+  );
+
+  const noRollOnStatistic = encounterWithSelection({
+    stationId: "captain",
+    actionId: "rally-crew",
+    approachId: "diplomacy",
+    noRoll: true
+  });
+  assert.equal(
+    validateVoyageEncounterStationSelections(noRollOnStatistic).errors[0].code,
+    "selection-approach-execution-mismatch"
+  );
+});
+
+test("inherited persisted approach fields neither commit nor satisfy a committed shape", () => {
+  const prior = Object.fromEntries(
+    ["approachId", "statisticSlugOrAbilityId", "noRoll"].map((key) => [
+      key,
+      Object.getOwnPropertyDescriptor(Object.prototype, key)
+    ])
+  );
+  try {
+    Object.defineProperty(Object.prototype, "approachId", {
+      value: "diplomacy",
+      configurable: true
+    });
+    Object.defineProperty(Object.prototype, "statisticSlugOrAbilityId", {
+      value: "diplomacy",
+      configurable: true
+    });
+    Object.defineProperty(Object.prototype, "noRoll", {
+      value: true,
+      configurable: true
+    });
+
+    const actionOnly = encounter();
+    actionOnly.selections.captain = {
+      stationId: "captain",
+      actionId: "rally-crew"
+    };
+    assert.equal(validateVoyageEncounterStationSelections(actionOnly).valid, true);
+
+    const inheritedApproach = encounter();
+    inheritedApproach.selections.captain = {
+      stationId: "captain",
+      actionId: "rally-crew",
+      statisticSlugOrAbilityId: "diplomacy"
+    };
+    assert.deepEqual(
+      validateVoyageEncounterStationSelections(inheritedApproach).errors.map(({ code }) => code),
+      ["missing-selection-approach-id"]
+    );
+
+    const inheritedIdentity = encounter();
+    inheritedIdentity.selections.captain = {
+      stationId: "captain",
+      actionId: "rally-crew",
+      approachId: "diplomacy"
+    };
+    assert.deepEqual(
+      validateVoyageEncounterStationSelections(inheritedIdentity).errors.map(({ code }) => code),
+      ["missing-selection-approach-execution-identity"]
+    );
+  } finally {
+    for (const [key, descriptor] of Object.entries(prior)) {
+      if (descriptor) Object.defineProperty(Object.prototype, key, descriptor);
+      else delete Object.prototype[key];
+    }
+  }
+});
+
+test("rejects missing, non-array, sparse, and inherited authored approach collections", () => {
+  for (const [mutate, code, path] of [
+    [
+      (source) => {
+        delete source.availableStations[0].actions[0].approaches;
+      },
+      "missing-authored-approaches",
+      "availableStations[0].actions[0].approaches"
+    ],
+    [
+      (source) => {
+        source.availableStations[0].actions[0].approaches = {};
+      },
+      "invalid-authored-approaches",
+      "availableStations[0].actions[0].approaches"
+    ]
+  ]) {
+    const source = encounterWithSelection(statisticSelection());
+    mutate(source);
+    const result = validateVoyageEncounterStationSelections(source);
+    assert.equal(result.errors[0].code, code);
+    assert.equal(result.errors[0].path, path);
+  }
+
+  const sparse = encounterWithSelection(statisticSelection());
+  const approaches = new Array(3);
+  approaches[0] = statisticApproach("diplomacy", "diplomacy");
+  approaches[2] = noRollApproach("steady-the-deck");
+  const inheritedPrototype = Object.create(Array.prototype);
+  Object.defineProperty(inheritedPrototype, "1", {
+    value: statisticApproach("inherited", "society"),
+    configurable: true
+  });
+  Object.setPrototypeOf(approaches, inheritedPrototype);
+  sparse.availableStations[0].actions[0].approaches = approaches;
+  try {
+    const result = validateVoyageEncounterStationSelections(sparse);
+    assert.ok(result.errors.some(({ code }) => code === "sparse-authored-approaches"));
+    assert.equal(
+      result.errors.find(({ code }) => code === "sparse-authored-approaches").path,
+      "availableStations[0].actions[0].approaches[1]"
+    );
+  } finally {
+    Object.setPrototypeOf(approaches, Array.prototype);
+  }
+});
+
+test("rejects malformed authored approach records and identifiers at precise paths", () => {
+  for (const [approach, code, child = ""] of [
+    [null, "invalid-authored-approach"],
+    [[], "invalid-authored-approach"],
+    [{ statisticSlugOrAbilityId: "diplomacy" }, "missing-authored-approach-id", ".approachId"],
+    [statisticApproach("", "diplomacy"), "invalid-authored-approach-id", ".approachId"],
+    [statisticApproach("   ", "diplomacy"), "invalid-authored-approach-id", ".approachId"],
+    [statisticApproach("__proto__", "diplomacy"), "unsafe-authored-approach-id", ".approachId"]
+  ]) {
+    const source = encounterWithSelection(statisticSelection());
+    source.availableStations[0].actions[0].approaches[2] = approach;
+    const result = validateVoyageEncounterStationSelections(source);
+    const matchingIssue = result.errors.find((entry) => entry.code === code);
+    assert.ok(matchingIssue, code);
+    assert.equal(
+      matchingIssue.path,
+      `availableStations[0].actions[0].approaches[2]${child}`
+    );
+  }
+});
+
+test("rejects malformed authored execution identities", () => {
+  const fixtures = [
+    [
+      { approachId: "diplomacy" },
+      "missing-authored-approach-execution-identity",
+      "availableStations[0].actions[0].approaches[0]"
+    ],
+    [
+      { approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy", noRoll: true },
+      "ambiguous-authored-approach-execution-identity",
+      "availableStations[0].actions[0].approaches[0]"
+    ],
+    [
+      statisticApproach("diplomacy", " "),
+      "invalid-authored-statistic-or-ability-id",
+      "availableStations[0].actions[0].approaches[0].statisticSlugOrAbilityId"
+    ],
+    [
+      statisticApproach("diplomacy", "prototype"),
+      "unsafe-authored-statistic-or-ability-id",
+      "availableStations[0].actions[0].approaches[0].statisticSlugOrAbilityId"
+    ],
+    [
+      { approachId: "diplomacy", noRoll: false },
+      "invalid-authored-no-roll-identity",
+      "availableStations[0].actions[0].approaches[0].noRoll"
+    ]
+  ];
+
+  for (const [approach, code, path] of fixtures) {
+    const source = encounterWithSelection(statisticSelection());
+    source.availableStations[0].actions[0].approaches[0] = approach;
+    const result = validateVoyageEncounterStationSelections(source);
+    assert.ok(result.errors.some((entry) => entry.code === code), code);
+    assert.equal(result.errors.find((entry) => entry.code === code).path, path);
+  }
+});
+
+test("contains hostile authored descriptor reads without invoking accessors", () => {
+  const committedSelection = statisticSelection();
+  let reads = 0;
+  const approachesAccessor = encounterWithSelection(committedSelection);
+  Object.defineProperty(approachesAccessor.availableStations[0].actions[0], "approaches", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      throw new Error("must not run");
+    }
+  });
+  const approachesResult = validateVoyageEncounterStationSelections(approachesAccessor);
+  assert.equal(reads, 0);
+  assert.equal(approachesResult.errors[0].code, "station-selection-data-read-failed");
+  assert.equal(
+    approachesResult.errors[0].path,
+    "availableStations[0].actions[0].approaches"
+  );
+
+  const approachIdAccessor = encounterWithSelection(committedSelection);
+  Object.defineProperty(
+    approachIdAccessor.availableStations[0].actions[0].approaches[0],
+    "approachId",
+    {
+      enumerable: true,
+      get() {
+        reads += 1;
+        throw new Error("must not run");
+      }
+    }
+  );
+  const approachIdResult = validateVoyageEncounterStationSelections(approachIdAccessor);
+  assert.equal(reads, 0);
+  assert.equal(approachIdResult.errors[0].code, "station-selection-data-read-failed");
+  assert.equal(
+    approachIdResult.errors[0].path,
+    "availableStations[0].actions[0].approaches[0].approachId"
+  );
+
+  const statisticAccessor = encounterWithSelection(committedSelection);
+  Object.defineProperty(
+    statisticAccessor.availableStations[0].actions[0].approaches[0],
+    "statisticSlugOrAbilityId",
+    {
+      enumerable: true,
+      get() {
+        reads += 1;
+        throw new Error("must not run");
+      }
+    }
+  );
+  const statisticResult = validateVoyageEncounterStationSelections(statisticAccessor);
+  assert.equal(reads, 0);
+  assert.equal(statisticResult.errors[0].code, "station-selection-data-read-failed");
+  assert.equal(
+    statisticResult.errors[0].path,
+    "availableStations[0].actions[0].approaches[0].statisticSlugOrAbilityId"
+  );
+
+  const proxiedArray = encounterWithSelection(committedSelection);
+  proxiedArray.availableStations[0].actions[0].approaches = new Proxy(
+    proxiedArray.availableStations[0].actions[0].approaches,
+    {
+      getOwnPropertyDescriptor() {
+        throw new Error("hostile descriptor");
+      }
+    }
+  );
+  const proxyResult = validateVoyageEncounterStationSelections(proxiedArray);
+  assert.equal(proxyResult.valid, false);
+  assert.equal(proxyResult.errors[0].code, "station-selection-data-read-failed");
+  assert.equal(
+    proxyResult.errors[0].path,
+    "availableStations[0].actions[0].approaches.length"
+  );
+});
+
+test("reports committed approach issues deterministically in authored source order", () => {
+  const source = encounterWithSelection(statisticSelection({
+    actionId: "coordinate-orders",
+    approachId: "crew-coordination",
+    statisticSlugOrAbilityId: "society"
+  }));
+  source.availableStations[0].actions[1].approaches = [
+    { approachId: "warfare-lore" },
+    { approachId: "measured-orders", noRoll: false },
+    { approachId: "crew-coordination", statisticSlugOrAbilityId: "" }
+  ];
+  const before = clonePlainData(source);
+  const first = validateVoyageEncounterStationSelections(source);
+  const second = validateVoyageEncounterStationSelections(source);
+
+  assert.deepEqual(first.errors, second.errors);
+  assert.deepEqual(
+    first.errors.map(({ code, path }) => ({ code, path })),
+    [
+      {
+        code: "missing-authored-approach-execution-identity",
+        path: "availableStations[0].actions[1].approaches[0]"
+      },
+      {
+        code: "invalid-authored-no-roll-identity",
+        path: "availableStations[0].actions[1].approaches[1].noRoll"
+      },
+      {
+        code: "invalid-authored-statistic-or-ability-id",
+        path: "availableStations[0].actions[1].approaches[2].statisticSlugOrAbilityId"
+      }
+    ]
+  );
+  assert.deepEqual(source, before);
 });
 
 test("propagates structural state errors and returns a fresh warnings array", () => {
@@ -154,8 +681,277 @@ test("clone construction failures and final validation failures are atomic", () 
   failure(applyVoyageEncounterStationActionSelection(candidateFailure, request), ["invalid-collection-type"]); assert.equal(candidateFailure.revision, 7); assert.deepEqual(candidateFailure.selections, {});
 });
 
-test("the station selection domain module imports without Foundry globals", () => {
-  assert.equal(typeof validateVoyageEncounterStationSelections, "function"); assert.equal(typeof applyVoyageEncounterStationActionSelection, "function");
+test("initial action selection never auto-selects a sole statistic or no-roll approach", () => {
+  for (const soleApproach of [
+    statisticApproach("obvious-statistic", "diplomacy"),
+    noRollApproach("automatic-resolution")
+  ]) {
+    const source = encounter();
+    source.availableStations[0].actions[0].approaches = [soleApproach];
+    const request = { stationId: "captain", actionId: "rally-crew" };
+    const before = clonePlainData(source);
+    const requestBefore = clonePlainData(request);
+
+    const result = applyVoyageEncounterStationActionSelection(source, request);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.nextState.selections.captain, {
+      stationId: "captain",
+      actionId: "rally-crew"
+    });
+    assert.deepEqual(Object.keys(result.nextState.selections.captain), [
+      "stationId",
+      "actionId"
+    ]);
+    assert.deepEqual(source, before);
+    assert.deepEqual(request, requestBefore);
+  }
+});
+
+test("action change from action-only preserves the accepted event contract", () => {
+  const source = encounterWithSelection({
+    stationId: "captain",
+    actionId: "rally-crew"
+  });
+  const result = applyVoyageEncounterStationActionSelectionChange(source, {
+    stationId: "captain",
+    actionId: "coordinate-orders"
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.selections.captain, {
+    stationId: "captain",
+    actionId: "coordinate-orders"
+  });
+  assert.deepEqual(result.events, [{
+    type: "voyage.station-action-selection-changed",
+    encounterId: "station-selection",
+    lifecycleState: STATES.ACTIVE,
+    roundNumber: 2,
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+    stationId: "captain",
+    previousActionId: "rally-crew",
+    actionId: "coordinate-orders",
+    previousRevision: 7,
+    revision: 8
+  }]);
+  assert.equal(Object.hasOwn(result.events[0], "clearedApproachId"), false);
+});
+
+test("action change atomically clears a statistic approach and Risk Bid without inheriting a matching approach", () => {
+  const source = encounterWithSelection(statisticSelection());
+  source.availableStations[0].actions[1].approaches.push(
+    statisticApproach("diplomacy", "diplomacy")
+  );
+  source.selections.engineer = {
+    stationId: "engineer",
+    actionId: "stabilize-strain",
+    approachId: "automatic-shunt",
+    noRoll: true
+  };
+  addRiskBid(source, "captain", "rally-crew", "press");
+  addRiskBid(source, "engineer", "stabilize-strain", "hold");
+  const request = { stationId: "captain", actionId: "coordinate-orders" };
+  const before = clonePlainData(source);
+  const requestBefore = clonePlainData(request);
+
+  const result = applyVoyageEncounterStationActionSelectionChange(source, request);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.selections.captain, {
+    stationId: "captain",
+    actionId: "coordinate-orders"
+  });
+  assert.deepEqual(Object.keys(result.nextState.selections.captain), [
+    "stationId",
+    "actionId"
+  ]);
+  assert.equal(Object.hasOwn(result.nextState.riskBids, "captain"), false);
+  assert.deepEqual(result.nextState.selections.engineer, before.selections.engineer);
+  assert.deepEqual(result.nextState.riskBids.engineer, before.riskBids.engineer);
+  assert.deepEqual(result.nextState.metadata, before.metadata);
+  assert.equal(result.nextState.revision, 8);
+  assert.deepEqual(result.events, [{
+    type: "voyage.station-action-selection-changed",
+    encounterId: "station-selection",
+    lifecycleState: STATES.ACTIVE,
+    roundNumber: 2,
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+    stationId: "captain",
+    previousActionId: "rally-crew",
+    actionId: "coordinate-orders",
+    clearedApproachId: "diplomacy",
+    clearedRiskBidId: "press",
+    previousRevision: 7,
+    revision: 8
+  }]);
+  assert.deepEqual(source, before);
+  assert.deepEqual(request, requestBefore);
+
+  result.events[0].actionId = "event-only";
+  assert.equal(result.nextState.selections.captain.actionId, "coordinate-orders");
+  result.nextState.metadata.nested.retained = false;
+  assert.equal(source.metadata.nested.retained, true);
+});
+
+test("action change clears a no-roll approach and its obsolete identity", () => {
+  const source = encounterWithSelection(noRollSelection());
+  const result = applyVoyageEncounterStationActionSelectionChange(source, {
+    stationId: "captain",
+    actionId: "coordinate-orders"
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.selections.captain, {
+    stationId: "captain",
+    actionId: "coordinate-orders"
+  });
+  assert.equal(Object.hasOwn(result.nextState.selections.captain, "noRoll"), false);
+  assert.equal(
+    Object.hasOwn(result.nextState.selections.captain, "statisticSlugOrAbilityId"),
+    false
+  );
+  assert.equal(result.events[0].clearedApproachId, "steady-the-deck");
+  assert.equal(Object.hasOwn(result.events[0], "clearedRiskBidId"), false);
+});
+
+test("action clear deletes committed statistic and no-roll selections with exact audit metadata", () => {
+  for (const [selection, expectedApproachId] of [
+    [statisticSelection(), "diplomacy"],
+    [noRollSelection(), "steady-the-deck"]
+  ]) {
+    const source = encounterWithSelection(selection);
+    const request = { stationId: "captain" };
+    const before = clonePlainData(source);
+    const requestBefore = clonePlainData(request);
+
+    const result = applyVoyageEncounterStationActionSelectionClear(source, request);
+
+    assert.equal(result.ok, true);
+    assert.equal(Object.hasOwn(result.nextState.selections, "captain"), false);
+    assert.equal(result.nextState.revision, 8);
+    assert.deepEqual(result.events, [{
+      type: "voyage.station-action-selection-cleared",
+      encounterId: "station-selection",
+      lifecycleState: STATES.ACTIVE,
+      roundNumber: 2,
+      phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+      stationId: "captain",
+      actionId: "rally-crew",
+      clearedApproachId: expectedApproachId,
+      previousRevision: 7,
+      revision: 8
+    }]);
+    assert.deepEqual(source, before);
+    assert.deepEqual(request, requestBefore);
+  }
+});
+
+test("action clear atomically removes an approach and Risk Bid while preserving unrelated station data", () => {
+  const source = encounterWithSelection(statisticSelection());
+  source.selections.engineer = {
+    stationId: "engineer",
+    actionId: "stabilize-strain"
+  };
+  addRiskBid(source, "captain", "rally-crew", "press");
+  addRiskBid(source, "engineer", "stabilize-strain", "hold");
+  const before = clonePlainData(source);
+
+  const result = applyVoyageEncounterStationActionSelectionClear(source, {
+    stationId: "captain"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(Object.hasOwn(result.nextState.selections, "captain"), false);
+  assert.equal(Object.hasOwn(result.nextState.riskBids, "captain"), false);
+  assert.deepEqual(result.nextState.selections.engineer, before.selections.engineer);
+  assert.deepEqual(result.nextState.riskBids.engineer, before.riskBids.engineer);
+  assert.deepEqual(result.nextState.metadata, before.metadata);
+  assert.deepEqual(result.events[0], {
+    type: "voyage.station-action-selection-cleared",
+    encounterId: "station-selection",
+    lifecycleState: STATES.ACTIVE,
+    roundNumber: 2,
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+    stationId: "captain",
+    actionId: "rally-crew",
+    clearedApproachId: "diplomacy",
+    clearedRiskBidId: "press",
+    previousRevision: 7,
+    revision: 8
+  });
+  result.events[0].actionId = "event-only";
+  assert.deepEqual(source, before);
+});
+
+test("action clear omits approach metadata for an action-only selection", () => {
+  const source = encounterWithSelection({
+    stationId: "captain",
+    actionId: "rally-crew"
+  });
+  const result = applyVoyageEncounterStationActionSelectionClear(source, {
+    stationId: "captain"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(Object.hasOwn(result.nextState.selections, "captain"), false);
+  assert.equal(Object.hasOwn(result.events[0], "clearedApproachId"), false);
+});
+
+test("failed action change and malformed action clear preserve approach, Risk Bid, requests, and revision", () => {
+  const changeSource = encounterWithSelection(statisticSelection());
+  addRiskBid(changeSource, "captain", "rally-crew", "press");
+  const changeRequest = { stationId: "captain", actionId: "missing" };
+  const changeBefore = clonePlainData(changeSource);
+  const changeRequestBefore = clonePlainData(changeRequest);
+  const changeResult = applyVoyageEncounterStationActionSelectionChange(
+    changeSource,
+    changeRequest
+  );
+  failure(changeResult, ["station-action-not-available"]);
+  assert.deepEqual(changeSource, changeBefore);
+  assert.deepEqual(changeRequest, changeRequestBefore);
+
+  const clearSource = encounterWithSelection({
+    stationId: "captain",
+    actionId: "rally-crew",
+    approachId: "diplomacy"
+  });
+  addRiskBid(clearSource, "captain", "rally-crew", "press");
+  const clearRequest = { stationId: "captain" };
+  const clearBefore = clonePlainData(clearSource);
+  const clearRequestBefore = clonePlainData(clearRequest);
+  const clearResult = applyVoyageEncounterStationActionSelectionClear(
+    clearSource,
+    clearRequest
+  );
+  failure(clearResult, ["missing-selection-approach-execution-identity"]);
+  assert.deepEqual(clearSource, clearBefore);
+  assert.deepEqual(clearRequest, clearRequestBefore);
+});
+
+test("the station selection domain module imports without Foundry globals", async () => {
+  const previous = Object.fromEntries(
+    ["foundry", "CONFIG", "game"].map((key) => [
+      key,
+      { exists: Object.hasOwn(globalThis, key), value: globalThis[key] }
+    ])
+  );
+  try {
+    delete globalThis.foundry;
+    delete globalThis.CONFIG;
+    delete globalThis.game;
+    const module = await import(
+      `../../../scripts/voyage/domain/station-selection.js?foundry-free=${Date.now()}`
+    );
+    assert.equal(typeof module.validateVoyageEncounterStationSelections, "function");
+    assert.equal(typeof module.applyVoyageEncounterStationActionSelection, "function");
+  } finally {
+    for (const [key, entry] of Object.entries(previous)) {
+      if (entry.exists) globalThis[key] = entry.value;
+      else delete globalThis[key];
+    }
+  }
 });
 
 test("Arcflight registers station selection functions and devTools aliases", async () => {
