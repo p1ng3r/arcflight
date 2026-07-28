@@ -6,101 +6,200 @@ import { clonePlainData, createDraftVoyageEncounterDefaults } from "../../../scr
 
 function encounter() {
   return {
-    ...createDraftVoyageEncounterDefaults(), encounterId: "completeness", definitionId: "glassback", lifecycleState: STATES.ACTIVE,
-    revision: 3, primaryShip: { actorId: "ship" }, currentStage: { stageId: "opening" }, currentSituation: { threatId: "debris" },
-    objective: { objectiveId: "survive" }, roundNumber: 1, phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
+    ...createDraftVoyageEncounterDefaults(),
+    encounterId: "completeness",
+    definitionId: "glassback",
+    lifecycleState: STATES.ACTIVE,
+    revision: 3,
+    primaryShip: { actorId: "ship" },
+    currentStage: { stageId: "opening" },
+    currentSituation: { threatId: "debris" },
+    objective: { objectiveId: "survive" },
+    roundNumber: 1,
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
     availableStations: [
-      { stationId: "Captain", actions: [{ actionId: "rally" }] },
-      { stationId: " engineer ", actions: [{ actionId: "stabilize" }], selectionRequired: false },
+      { stationId: "captain", actions: [{ actionId: "rally" }], selectionRequired: false },
+      { stationId: "engineer", actions: [{ actionId: "stabilize" }], selectionRequired: true },
       { stationId: "navigator", actions: [{ actionId: "course" }] }
     ],
-    selections: {}, successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }], snapshots: [], recovery: {}, metadata: {}
+    stationAssignments: [
+      { stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } },
+      { stationId: "navigator", operator: { kind: "actor", uuid: "Actor.navigator", name: "Navigator" } }
+    ],
+    selections: {},
+    successConditions: [{ conditionId: "success" }],
+    failureConditions: [{ conditionId: "failure" }],
+    snapshots: [],
+    recovery: {},
+    metadata: {}
   };
 }
 
-function codes(result) { return result.errors.map(({ code }) => code); }
+function selectOccupiedStations(source) {
+  source.selections = {
+    captain: { stationId: "captain", actionId: "rally" },
+    navigator: { stationId: "navigator", actionId: "course" }
+  };
+}
 
-test("reports all required stations selected in available-station order", () => {
+function codes(result) {
+  return result.errors.map(({ code }) => code);
+}
+
+test("an occupied station without a selection is incomplete", () => {
   const source = encounter();
-  source.selections = { Captain: { stationId: "Captain", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } };
+  source.selections.captain = { stationId: "captain", actionId: "rally" };
+
   const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
-  assert.deepEqual(result.requiredStationIds, ["Captain", "navigator"]);
-  assert.deepEqual(result.optionalStationIds, [" engineer "]);
-  assert.deepEqual(result.selectedStationIds, ["Captain", "navigator"]);
-  assert.deepEqual(result.missingRequiredStationIds, []);
-  assert.equal(result.complete, true); assert.deepEqual(result.errors, []);
+
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.occupiedStationIds, ["captain", "navigator"]);
+  assert.deepEqual(result.selectedStationIds, ["captain"]);
+  assert.deepEqual(result.missingOccupiedStationIds, ["navigator"]);
 });
 
-test("reports one or multiple missing required stations deterministically", () => {
-  const one = encounter(); one.selections.Captain = { stationId: "Captain", actionId: "rally" };
-  assert.deepEqual(prepareVoyageEncounterCrewPlanningCompleteness(one).missingRequiredStationIds, ["navigator"]);
-  const multiple = encounter();
-  assert.deepEqual(prepareVoyageEncounterCrewPlanningCompleteness(multiple).missingRequiredStationIds, ["Captain", "navigator"]);
-});
-
-test("does not require optional stations, whether unselected or selected", () => {
-  const unselected = encounter(); unselected.selections = { Captain: { stationId: "Captain", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } };
-  assert.equal(prepareVoyageEncounterCrewPlanningCompleteness(unselected).complete, true);
-  unselected.selections[" engineer "] = { stationId: " engineer ", actionId: "stabilize" };
-  assert.deepEqual(prepareVoyageEncounterCrewPlanningCompleteness(unselected).selectedStationIds, ["Captain", " engineer ", "navigator"]);
-});
-
-test("requires own optional and selection properties", () => {
+test("every occupied station selected is complete in assignment order", () => {
   const source = encounter();
-  delete source.availableStations[1].selectionRequired;
-  const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, "selectionRequired");
-  try {
-    Object.defineProperty(Object.prototype, "selectionRequired", { value: false, configurable: true });
-    const report = prepareVoyageEncounterCrewPlanningCompleteness(source);
-    assert.deepEqual(report.requiredStationIds, ["Captain", " engineer ", "navigator"]);
-  } finally { if (descriptor) Object.defineProperty(Object.prototype, "selectionRequired", descriptor); else delete Object.prototype.selectionRequired; }
+  selectOccupiedStations(source);
 
-  const selected = encounter();
-  selected.selections.Captain = Object.create({ stationId: "Captain", actionId: "rally" });
-  assert.deepEqual(prepareVoyageEncounterCrewPlanningCompleteness(selected).selectedStationIds, []);
-});
-
-test("supports no available stations", () => {
-  const source = encounter(); source.availableStations = [];
   const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
-  assert.equal(result.complete, true); assert.deepEqual(result.requiredStationIds, []); assert.deepEqual(result.missingRequiredStationIds, []);
+
+  assert.equal(result.complete, true);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.occupiedStationIds, ["captain", "navigator"]);
+  assert.deepEqual(result.selectedStationIds, ["captain", "navigator"]);
+  assert.deepEqual(result.missingOccupiedStationIds, []);
 });
 
-test("rejects duplicate, malformed, missing, blank, and unsafe station entries", () => {
+test("an unoccupied available station requires no selection", () => {
+  const source = encounter();
+  selectOccupiedStations(source);
+
+  assert.equal(prepareVoyageEncounterCrewPlanningCompleteness(source).complete, true);
+});
+
+test("a selection for an unoccupied station is rejected", () => {
+  const source = encounter();
+  selectOccupiedStations(source);
+  source.selections.engineer = { stationId: "engineer", actionId: "stabilize" };
+
+  const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
+
+  assert.equal(result.complete, false);
+  assert.ok(codes(result).includes("selected-station-not-occupied"));
+});
+
+test("selectionRequired does not control occupied-station completeness", () => {
+  const source = encounter();
+
+  const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
+
+  assert.deepEqual(result.occupiedStationIds, ["captain", "navigator"]);
+  assert.deepEqual(result.missingOccupiedStationIds, ["captain", "navigator"]);
+  assert.equal(result.complete, false);
+});
+
+test("canonical reports use only the occupied-station result names", () => {
+  const result = prepareVoyageEncounterCrewPlanningCompleteness(encounter());
+
+  assert.equal(Object.hasOwn(result, "occupiedStationIds"), true);
+  assert.equal(Object.hasOwn(result, "selectedStationIds"), true);
+  assert.equal(Object.hasOwn(result, "missingOccupiedStationIds"), true);
+  assert.equal(Object.hasOwn(result, "requiredStationIds"), false);
+  assert.equal(Object.hasOwn(result, "optionalStationIds"), false);
+  assert.equal(Object.hasOwn(result, "missingRequiredStationIds"), false);
+});
+
+test("supports no occupied stations without requiring available station selections", () => {
+  const source = encounter();
+  source.stationAssignments = [];
+
+  const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
+
+  assert.equal(result.complete, true);
+  assert.deepEqual(result.occupiedStationIds, []);
+  assert.deepEqual(result.selectedStationIds, []);
+  assert.deepEqual(result.missingOccupiedStationIds, []);
+});
+
+test("rejects duplicate, malformed, missing, blank, and unsafe available station entries", () => {
   for (const [stations, code] of [
     [[{ stationId: "captain", actions: [] }, { stationId: "captain", actions: [] }], "duplicate-available-station-id"],
-    [[null], "invalid-available-station"], [[{ actions: [] }], "invalid-available-station-id"],
-    [[{ stationId: "   ", actions: [] }], "invalid-available-station-id"], [[{ stationId: "__proto__", actions: [] }], "unsafe-available-station-id"],
+    [[null], "invalid-available-station"],
+    [[{ actions: [] }], "invalid-available-station-id"],
+    [[{ stationId: "   ", actions: [] }], "invalid-available-station-id"],
+    [[{ stationId: "__proto__", actions: [] }], "unsafe-available-station-id"],
     [[{ stationId: "captain", actions: null }], "invalid-available-station-actions"]
-  ]) { const source = encounter(); source.availableStations = stations; assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(source)).includes(code)); }
+  ]) {
+    const source = encounter();
+    source.availableStations = stations;
+    assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(source)).includes(code));
+  }
 });
 
-test("returns structural, lifecycle, phase, and unknown-selection validation errors", () => {
-  const structural = encounter(); structural.schemaVersion = 0;
+test("returns structural, lifecycle, phase, and unavailable-selection validation errors", () => {
+  const structural = encounter();
+  structural.schemaVersion = 0;
   assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(structural)).includes("unsupported-schema-version"));
-  const inactive = encounter(); inactive.lifecycleState = STATES.PAUSED;
+
+  const inactive = encounter();
+  inactive.lifecycleState = STATES.PAUSED;
   assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(inactive)).includes("crew-planning-completeness-requires-active"));
-  const wrongPhase = encounter(); wrongPhase.phase = VOYAGE_ROUND_PHASES.SITUATION;
+
+  const wrongPhase = encounter();
+  wrongPhase.phase = VOYAGE_ROUND_PHASES.SITUATION;
   assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(wrongPhase)).includes("crew-planning-completeness-requires-crew-planning"));
-  const unknown = encounter(); unknown.selections.unknown = { stationId: "unknown", actionId: "none" };
-  assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(unknown)).includes("selected-station-not-available"));
+
+  const unavailable = encounter();
+  unavailable.selections.unknown = { stationId: "unknown", actionId: "none" };
+  assert.ok(codes(prepareVoyageEncounterCrewPlanningCompleteness(unavailable)).includes("selected-station-not-available"));
 });
 
-test("preserves exact case and whitespace station IDs", () => {
-  const source = encounter(); source.availableStations = [{ stationId: " Captain ", actions: [{ actionId: "rally" }] }];
-  source.selections = { " Captain ": { stationId: " Captain ", actionId: "rally" } };
+test("inherited and sparse available entries and inherited selections are ignored safely", () => {
+  const source = encounter();
+  const inheritedStations = [{ stationId: "captain", actions: [{ actionId: "rally" }] }];
+  inheritedStations.length = 3;
+  Object.defineProperty(inheritedStations, 1, {
+    value: { stationId: "navigator", actions: [{ actionId: "course" }] },
+    enumerable: false
+  });
+  Object.setPrototypeOf(inheritedStations, {
+    2: { stationId: "engineer", actions: [{ actionId: "stabilize" }] }
+  });
+  source.availableStations = inheritedStations;
+  source.stationAssignments = [
+    { stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } }
+  ];
+  source.selections = Object.create({
+    captain: { stationId: "captain", actionId: "rally" }
+  });
+
   const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
-  assert.deepEqual(result.requiredStationIds, [" Captain "]); assert.equal(result.complete, true);
+
+  assert.deepEqual(result.selectedStationIds, []);
+  assert.deepEqual(result.missingOccupiedStationIds, ["captain"]);
+  assert.equal(result.complete, false);
 });
 
-test("ignores inherited selections and returns isolated arrays without input mutation", () => {
-  const source = encounter(); const before = clonePlainData(source); const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, "Captain");
-  try {
-    Object.defineProperty(Object.prototype, "Captain", { value: { stationId: "Captain", actionId: "rally" }, configurable: true });
-    const first = prepareVoyageEncounterCrewPlanningCompleteness(source); const second = prepareVoyageEncounterCrewPlanningCompleteness(source);
-    assert.deepEqual(first.selectedStationIds, []); assert.notEqual(first, second); assert.notEqual(first.requiredStationIds, second.requiredStationIds);
-    first.requiredStationIds.push("mutated"); assert.deepEqual(second.requiredStationIds, ["Captain", "navigator"]); assert.deepEqual(source, before);
-  } finally { if (descriptor) Object.defineProperty(Object.prototype, "Captain", descriptor); else delete Object.prototype.Captain; }
+test("report arrays are fresh and isolated and source inputs remain unchanged", () => {
+  const source = encounter();
+  selectOccupiedStations(source);
+  const before = clonePlainData(source);
+
+  const first = prepareVoyageEncounterCrewPlanningCompleteness(source);
+  const second = prepareVoyageEncounterCrewPlanningCompleteness(source);
+
+  assert.notEqual(first, second);
+  assert.notEqual(first.occupiedStationIds, second.occupiedStationIds);
+  assert.notEqual(first.selectedStationIds, second.selectedStationIds);
+  assert.notEqual(first.missingOccupiedStationIds, second.missingOccupiedStationIds);
+  first.occupiedStationIds.push("engineer");
+  first.selectedStationIds.length = 0;
+  first.missingOccupiedStationIds.push("captain");
+  assert.deepEqual(second.occupiedStationIds, ["captain", "navigator"]);
+  assert.deepEqual(second.selectedStationIds, ["captain", "navigator"]);
+  assert.deepEqual(second.missingOccupiedStationIds, []);
+  assert.deepEqual(source, before);
 });
 
 test("the completeness helper imports without Foundry globals", () => {

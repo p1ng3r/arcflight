@@ -29,6 +29,7 @@ const EVENT_KEYS = [
   "previousRevision",
   "revision"
 ];
+const STATION_IDS = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
 
 function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
   const state = createVoyageEncounterState({
@@ -37,10 +38,11 @@ function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
     primaryShip: { id: "ship" }
   });
   const availableStations = [];
+  const stationAssignments = [];
   const selections = {};
 
   for (let index = 0; index < checks; index += 1) {
-    const stationId = `station-${index}`;
+    const stationId = STATION_IDS[index];
     const actionId = `action-${index}`;
     availableStations.push({
       stationId,
@@ -54,6 +56,10 @@ function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
         }
       }]
     });
+    stationAssignments.push({
+      stationId,
+      operator: { kind: "actor", uuid: `Actor.operator-${index}` }
+    });
     selections[stationId] = { stationId, actionId };
   }
 
@@ -63,6 +69,7 @@ function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
     roundNumber: 1,
     phase,
     availableStations,
+    stationAssignments,
     selections
   });
 

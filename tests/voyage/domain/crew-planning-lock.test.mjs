@@ -10,6 +10,7 @@ function encounter() {
   return { ...createDraftVoyageEncounterDefaults(), encounterId: "lock", definitionId: "glassback", lifecycleState: STATES.ACTIVE, revision: 4,
     primaryShip: { actorId: "ship" }, currentStage: { stageId: "opening" }, currentSituation: { threatId: "debris" }, objective: { objectiveId: "survive" }, roundNumber: 1,
     phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally", riskBidOptions: [{ riskBidId: "close" }] }, { actionId: "command" }] }, { stationId: "navigator", actions: [{ actionId: "course" }] }],
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }, { stationId: "navigator", operator: { kind: "actor", uuid: "Actor.navigator", name: "Navigator" } }],
     selections: { captain: { stationId: "captain", actionId: "rally" }, navigator: { stationId: "navigator", actionId: "course" } }, targets: { retained: true }, riskBids: { captain: { stationId: "captain", actionId: "rally", riskBidId: "close" } }, assistance: [{ retained: true }], reservations: [{ retained: true }],
     successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }], snapshots: [], recovery: {}, metadata: { retained: true } };
 }
@@ -18,7 +19,9 @@ function failure(result) { assert.equal(result.ok, false); assert.equal(result.n
 test("locks a complete plan atomically and creates the established phase-start snapshot", () => {
   const source = encounter(); const before = clonePlainData(source); const request = { phaseStartSnapshotId: "lock-readiness-start" }; const result = applyVoyageEncounterCrewPlanningLock(source, request);
   assert.equal(result.ok, true); assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.LOCK_READINESS); assert.equal(result.nextState.revision, 5); assert.deepEqual(result.nextState.selections, before.selections); assert.deepEqual(result.nextState.targets, before.targets); assert.deepEqual(result.nextState.riskBids, before.riskBids); assert.deepEqual(result.nextState.assistance, before.assistance); assert.deepEqual(result.nextState.reservations, before.reservations); assert.equal(result.nextState.snapshots.length, 1);
+  assert.deepEqual(result.nextState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.stationAssignments[0].operator, source.stationAssignments[0].operator);
   assert.equal(result.nextState.snapshots[0].phase, VOYAGE_ROUND_PHASES.LOCK_READINESS); assert.deepEqual(result.nextState.snapshots[0].temporaryState.selections, before.selections);
+  assert.deepEqual(result.nextState.snapshots[0].temporaryState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.snapshots[0].temporaryState.stationAssignments[0].operator, result.nextState.stationAssignments[0].operator);
   assert.deepEqual(result.events, [{ type: "voyage.crew-planning-locked", encounterId: "lock", lifecycleState: STATES.ACTIVE, roundNumber: 1, previousPhase: VOYAGE_ROUND_PHASES.CREW_PLANNING, phase: VOYAGE_ROUND_PHASES.LOCK_READINESS, previousRevision: 4, revision: 5, phaseStartSnapshotId: "lock-readiness-start" }]);
   assert.deepEqual(source, before);
   assert.deepEqual(request, { phaseStartSnapshotId: "lock-readiness-start" });

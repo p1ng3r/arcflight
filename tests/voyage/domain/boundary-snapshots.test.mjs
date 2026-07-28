@@ -5,7 +5,7 @@ import { createVoyageEncounterBoundarySnapshot } from "../../../scripts/voyage/d
 import { validateVoyageEncounterState } from "../../../scripts/voyage/domain/validation.js";
 
 const TEMPORARY_STATE_FIELDS = [
-  "currentSituation", "objective", "participants", "availableStations", "temporaryStationAssignments",
+  "currentSituation", "objective", "participants", "availableStations", "stationAssignments",
   "currentStage", "roundNumber", "phase", "playerVisibleInformation", "gmSecretInformation",
   "temporaryConsequences", "tracks", "thresholdHistory", "pendingThresholdQueue", "selections",
   "targets", "riskBids", "assistance", "reservations", "pendingChecks", "pendingConsequences"
@@ -18,7 +18,16 @@ function activeEncounter() {
     currentSituation: { clue: { id: "debris-field" } }, objective: null,
     participants: [{ participantId: "captain", details: { operatorId: "player-1" } }],
     availableStations: [{ stationId: "captain", actions: [{ id: "command" }] }],
-    temporaryStationAssignments: [], currentStage: { stageId: "opening", details: { tags: ["alpha"] } },
+    stationAssignments: [{
+      stationId: "captain",
+      operator: {
+        kind: "actor",
+        id: "captain-actor",
+        uuid: "Actor.captain-actor",
+        name: "Captain"
+      }
+    }],
+    currentStage: { stageId: "opening", details: { tags: ["alpha"] } },
     roundNumber: 2, phase: "crew-planning", playerVisibleInformation: { clues: [{ id: "hazard" }] },
     gmSecretInformation: {}, temporaryConsequences: [],
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [], details: { current: 1 } }],
@@ -55,7 +64,8 @@ test("constructs round-start snapshots with the exact allowed shape without muta
   assert.deepEqual(Object.keys(result.snapshot.temporaryState), TEMPORARY_STATE_FIELDS);
   assert.equal(result.snapshot.temporaryState.roundNumber, encounter.roundNumber);
   assert.equal(result.snapshot.temporaryState.phase, encounter.phase);
-  for (const fieldName of ["objective", "temporaryStationAssignments", "gmSecretInformation", "temporaryConsequences"]) assert.ok(Object.hasOwn(result.snapshot.temporaryState, fieldName));
+  for (const fieldName of ["objective", "stationAssignments", "gmSecretInformation", "temporaryConsequences"]) assert.ok(Object.hasOwn(result.snapshot.temporaryState, fieldName));
+  assert.equal(Object.hasOwn(result.snapshot.temporaryState, "temporaryStationAssignments"), false);
   for (const fieldName of ["schemaVersion", "snapshots", "permanentConsequences", "processedRequestIds", "recovery", "metadata", "extensionData"]) assert.equal(Object.hasOwn(result.snapshot.temporaryState, fieldName), false);
   assert.deepEqual(encounter, encounterBefore);
   assert.deepEqual(request, requestBefore);
@@ -80,10 +90,13 @@ test("recursively isolates captured temporary plain data in both directions", ()
   const encounter = activeEncounter();
   const result = createVoyageEncounterBoundarySnapshot(encounter, { snapshotId: "isolated", boundaryType: "round-start" });
   const snapshot = result.snapshot;
-  for (const fieldName of ["currentStage", "participants", "availableStations", "playerVisibleInformation", "tracks", "selections", "pendingConsequences"]) assert.notEqual(snapshot.temporaryState[fieldName], encounter[fieldName]);
+  for (const fieldName of ["currentStage", "participants", "availableStations", "stationAssignments", "playerVisibleInformation", "tracks", "selections", "pendingConsequences"]) assert.notEqual(snapshot.temporaryState[fieldName], encounter[fieldName]);
+  assert.notEqual(snapshot.temporaryState.stationAssignments[0], encounter.stationAssignments[0]);
+  assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   snapshot.temporaryState.currentStage.details.tags.push("snapshot-only");
   snapshot.temporaryState.participants[0].details.operatorId = "snapshot-player";
   snapshot.temporaryState.availableStations[0].actions[0].id = "snapshot-action";
+  snapshot.temporaryState.stationAssignments[0].operator.name = "Snapshot Captain";
   snapshot.temporaryState.playerVisibleInformation.clues[0].id = "snapshot-clue";
   snapshot.temporaryState.tracks[0].details.current = 9;
   snapshot.temporaryState.selections.captain.action = "snapshot-selection";
@@ -91,12 +104,33 @@ test("recursively isolates captured temporary plain data in both directions", ()
   assert.equal(encounter.currentStage.details.tags.includes("snapshot-only"), false);
   assert.equal(encounter.participants[0].details.operatorId, "player-1");
   assert.equal(encounter.availableStations[0].actions[0].id, "command");
+  assert.equal(encounter.stationAssignments[0].operator.name, "Captain");
   assert.equal(encounter.playerVisibleInformation.clues[0].id, "hazard");
   assert.equal(encounter.tracks[0].details.current, 1);
   assert.equal(encounter.selections.captain.action, "command");
   assert.equal(encounter.pendingConsequences[0].details.lane, "veil");
   encounter.currentStage.details.tags.push("encounter-only");
+  encounter.stationAssignments[0].operator.name = "Encounter Captain";
   assert.equal(snapshot.temporaryState.currentStage.details.tags.includes("encounter-only"), false);
+  assert.equal(snapshot.temporaryState.stationAssignments[0].operator.name, "Snapshot Captain");
+});
+
+test("round cleanup boundary preserves fixed assignments without introducing a legacy field", () => {
+  const encounter = activeEncounter();
+  encounter.phase = "cleanup-advance";
+  const before = structuredClone(encounter.stationAssignments);
+
+  const result = createVoyageEncounterBoundarySnapshot(encounter, {
+    snapshotId: "cleanup-boundary",
+    boundaryType: "phase-start"
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(encounter.stationAssignments, before);
+  assert.deepEqual(result.snapshot.temporaryState.stationAssignments, before);
+  assert.notEqual(result.snapshot.temporaryState.stationAssignments, encounter.stationAssignments);
+  assert.notEqual(result.snapshot.temporaryState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
+  assert.equal(Object.hasOwn(result.snapshot.temporaryState, "temporaryStationAssignments"), false);
 });
 
 test("returns existing malformed-state validation reports unchanged", () => {

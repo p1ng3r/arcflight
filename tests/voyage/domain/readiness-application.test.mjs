@@ -18,6 +18,7 @@ function configuredEncounter() {
     successConditions: [{ conditionId: "reach-wreck" }],
     failureConditions: [{ conditionId: "ship-lost" }],
     availableStations: [{ stationId: "captain" }],
+    stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }],
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [] }],
     snapshots: [{ snapshotId: "configured", temporaryState: { tracks: [] } }],
     recovery: { status: "none", detail: { preserved: true } },
@@ -63,6 +64,9 @@ test("transitions a fully configured encounter to Ready with one event and isola
   assert.equal(encounter.revision, before.revision);
   assert.deepEqual({ ...result.nextState, lifecycleState: STATES.CONFIGURATION, revision: before.revision }, before);
   assert.notEqual(result.nextState.primaryShip, encounter.primaryShip);
+  assert.deepEqual(result.nextState.stationAssignments, encounter.stationAssignments);
+  assert.notEqual(result.nextState.stationAssignments, encounter.stationAssignments);
+  assert.notEqual(result.nextState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   assert.notEqual(result.nextState.tracks, encounter.tracks);
   assert.notEqual(result.nextState.snapshots[0].temporaryState, encounter.snapshots[0].temporaryState);
   assert.notEqual(result.nextState.recovery, encounter.recovery);

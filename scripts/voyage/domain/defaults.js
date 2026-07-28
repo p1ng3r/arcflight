@@ -36,7 +36,7 @@ export function createDefaultVoyageEncounterCollections() {
     objective: null,
     participants: [],
     availableStations: [],
-    temporaryStationAssignments: [],
+    stationAssignments: [],
     playerVisibleInformation: {},
     gmSecretInformation: {},
     successConditions: [],

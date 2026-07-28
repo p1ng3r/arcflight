@@ -6,6 +6,7 @@ import { applyVoyageEncounterPendingCheckResult } from "../../../scripts/voyage/
 import { analyzeVoyageEncounterActionOutcomes } from "../../../scripts/voyage/domain/action-outcome-interpretation.js";
 
 const CHECK_BRANCHES = ["critical-failure", "failure", "success", "critical-success"];
+const STATION_IDS = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
 const ROLL_DETAILS = [
   "total",
   "dc",
@@ -34,6 +35,13 @@ function state({
   result.roundNumber = 1;
   result.phase = phase;
   result.availableStations = availableStations;
+  result.stationAssignments = Object.keys(selections).map((stationId) => ({
+    stationId,
+    operator: {
+      kind: "actor",
+      uuid: `Actor.operator-${stationId}`
+    }
+  }));
   result.selections = selections;
   result.targets = targets;
   return result;
@@ -226,7 +234,7 @@ test("all four resolved check degrees map to their exact authored branches", () 
   const availableStations = [];
   const selections = {};
   for (let index = 0; index < CHECK_BRANCHES.length; index += 1) {
-    const stationId = `station-${index}`;
+    const stationId = STATION_IDS[index];
     const actionId = `action-${index}`;
     availableStations.push({
       stationId,
@@ -416,24 +424,24 @@ test("two selected actions emit in deterministic resolution-priority order", () 
   const source = state({
     availableStations: [
       {
-        stationId: "late",
+        stationId: "captain",
         actions: [{ ...noRollAction("later", ["late-effect"]), resolutionPriority: 5 }]
       },
       {
-        stationId: "early",
+        stationId: "engineer",
         actions: [{ ...noRollAction("earlier", ["early-effect"]), resolutionPriority: 1 }]
       }
     ],
     selections: {
-      late: { stationId: "late", actionId: "later" },
-      early: { stationId: "early", actionId: "earlier" }
+      captain: { stationId: "captain", actionId: "later" },
+      engineer: { stationId: "engineer", actionId: "earlier" }
     }
   });
 
   const report = analyzeVoyageEncounterActionOutcomes(source);
-  assert.deepEqual(report.actions.map(({ stationId }) => stationId), ["early", "late"]);
+  assert.deepEqual(report.actions.map(({ stationId }) => stationId), ["engineer", "captain"]);
   assert.deepEqual(report.actions.map(({ sequence }) => sequence), [0, 1]);
-  assert.deepEqual(report.intents.map(({ stationId }) => stationId), ["early", "late"]);
+  assert.deepEqual(report.intents.map(({ stationId }) => stationId), ["engineer", "captain"]);
   assert.deepEqual(report.intents.map(({ sequence }) => sequence), [0, 1]);
 });
 

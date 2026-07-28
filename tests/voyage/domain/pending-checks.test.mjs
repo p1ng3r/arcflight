@@ -40,6 +40,10 @@ function encounter({ phase = "resolution", secret = false, statisticOptions = ["
         }
       }]
     }],
+    stationAssignments: [{
+      stationId: "captain",
+      operator: { kind: "actor", uuid: "Actor.captain" }
+    }],
     selections: { captain: { stationId: "captain", actionId: "check" } }
   });
 

@@ -32,7 +32,15 @@ function encounter() {
       {
         stationId: "engineer",
         actions: [{ actionId: "stabilize-strain" }]
+      },
+      {
+        stationId: "navigator",
+        actions: [{ actionId: "plot-course" }]
       }
+    ],
+    stationAssignments: [
+      { stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } },
+      { stationId: "engineer", operator: { kind: "crewAsset", uuid: "Item.engineer" } }
     ],
     selections: {
       captain: { stationId: "captain", actionId: "rally-crew" }
@@ -148,6 +156,27 @@ test("requires Active Crew Planning and safe exact station keys", () => {
   expectFailure(
     applyVoyageEncounterStationActionSelectionClear(encounter(), { stationId: "__proto__" }),
     "unsafe-station-selection-key"
+  );
+});
+
+test("change and clear reject an unoccupied available station", () => {
+  const changed = encounter();
+  changed.selections.navigator = { stationId: "navigator", actionId: "plot-course" };
+  expectFailure(
+    applyVoyageEncounterStationActionSelectionChange(
+      changed,
+      { stationId: "navigator", actionId: "plot-course" }
+    ),
+    "selected-station-not-occupied"
+  );
+
+  const cleared = encounter();
+  expectFailure(
+    applyVoyageEncounterStationActionSelectionClear(
+      cleared,
+      { stationId: "navigator" }
+    ),
+    "station-not-occupied"
   );
 });
 

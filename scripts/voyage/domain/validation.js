@@ -10,6 +10,7 @@ import {
   VOYAGE_TRACK_VISIBILITY
 } from "./constants.js";
 import { createDraftVoyageEncounterDefaults, isPlainObject } from "./defaults.js";
+import { validateVoyageStationAssignments } from "./station-assignments.js";
 
 const COLLECTION_DEFAULTS = createDraftVoyageEncounterDefaults();
 const ROUND_CONTEXT_REQUIRED_STATES = new Set([
@@ -86,6 +87,12 @@ export function validateVoyageEncounterState(value) {
       if (!isEnumValue(threshold.recurrence, VOYAGE_THRESHOLD_RECURRENCE)) issue(errors, "error", "invalid-threshold-recurrence", `tracks[${index}].thresholds[${thresholdIndex}].recurrence`, "Threshold recurrence is not recognized.");
     });
   });
+
+  if (Array.isArray(state.stationAssignments)) {
+    const assignmentValidation = validateVoyageStationAssignments(state.stationAssignments);
+    errors.push(...assignmentValidation.errors);
+    warnings.push(...assignmentValidation.warnings);
+  }
 
   if (Array.isArray(state.permanentConsequences)) state.permanentConsequences.forEach((consequence, index) => {
     if (!isPlainObject(consequence)) { issue(errors, "error", "invalid-permanent-consequence", `permanentConsequences[${index}]`, "Permanent consequence must be a plain object."); return; }
