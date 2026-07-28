@@ -8,6 +8,7 @@ import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 
 const UNSAFE_STATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const APPROACH_SELECTION_FIELDS = ["approachId", "statisticSlugOrAbilityId", "noRoll"];
 function deduplicateIssues(issues) {
   const seen = new Set();
   return issues.filter((entry) => {
@@ -32,6 +33,281 @@ function hasNonEmptyId(value) {
 
 function isSafeStationKey(stationId) {
   return !UNSAFE_STATION_KEYS.has(stationId);
+}
+
+function readOwnDataProperty(value, key, path, errors) {
+  let descriptor;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(value, key);
+  } catch {
+    issue(
+      errors,
+      "station-selection-data-read-failed",
+      path,
+      "Voyage station selection data could not be read safely."
+    );
+    return { present: true, ok: false, value: undefined };
+  }
+
+  if (!descriptor) return { present: false, ok: true, value: undefined };
+  if (!Object.hasOwn(descriptor, "value")) {
+    issue(
+      errors,
+      "station-selection-data-read-failed",
+      path,
+      "Voyage station selection properties must be own data properties."
+    );
+    return { present: true, ok: false, value: undefined };
+  }
+
+  return { present: true, ok: true, value: descriptor.value };
+}
+
+function inspectPlainObject(value, path, errors) {
+  try {
+    return { ok: true, plain: isPlainObject(value) };
+  } catch {
+    issue(
+      errors,
+      "station-selection-data-read-failed",
+      path,
+      "Voyage station selection data could not be inspected safely."
+    );
+    return { ok: false, plain: false };
+  }
+}
+
+function validateExactSafeId(value, path, errors, codes, label) {
+  if (!hasNonEmptyId(value)) {
+    issue(errors, codes.invalid, path, `${label} must be a non-empty exact string.`);
+    return false;
+  }
+  if (!isSafeStationKey(value)) {
+    issue(errors, codes.unsafe, path, `${label} must be safe.`);
+    return false;
+  }
+  return true;
+}
+
+function validatePersistedApproachFields(selection, selectionPath, errors) {
+  const reads = Object.create(null);
+  for (const field of APPROACH_SELECTION_FIELDS) {
+    reads[field] = readOwnDataProperty(selection, field, `${selectionPath}.${field}`, errors);
+  }
+  const committed = APPROACH_SELECTION_FIELDS.some((field) => reads[field].present);
+  if (!committed) return { committed: false, valid: true, reads };
+
+  let valid = APPROACH_SELECTION_FIELDS.every((field) => reads[field].ok);
+  const approachIdRead = reads.approachId;
+  if (!approachIdRead.present) {
+    issue(errors, "missing-selection-approach-id", `${selectionPath}.approachId`, "Committed Voyage station approach requires an own approachId.");
+    valid = false;
+  } else if (approachIdRead.ok) {
+    valid = validateExactSafeId(
+      approachIdRead.value,
+      `${selectionPath}.approachId`,
+      errors,
+      { invalid: "invalid-selection-approach-id", unsafe: "unsafe-selection-approach-id" },
+      "Committed Voyage station approach ID"
+    ) && valid;
+  }
+
+  const statisticRead = reads.statisticSlugOrAbilityId;
+  const noRollRead = reads.noRoll;
+  if (statisticRead.present && noRollRead.present) {
+    issue(errors, "ambiguous-selection-approach-execution-identity", selectionPath, "Committed Voyage station approach must not own both execution identities.");
+    valid = false;
+  } else if (!statisticRead.present && !noRollRead.present) {
+    issue(errors, "missing-selection-approach-execution-identity", selectionPath, "Committed Voyage station approach requires exactly one own execution identity.");
+    valid = false;
+  } else if (statisticRead.present && statisticRead.ok) {
+    valid = validateExactSafeId(
+      statisticRead.value,
+      `${selectionPath}.statisticSlugOrAbilityId`,
+      errors,
+      {
+        invalid: "invalid-selection-statistic-or-ability-id",
+        unsafe: "unsafe-selection-statistic-or-ability-id"
+      },
+      "Committed Voyage statistic or ability identity"
+    ) && valid;
+  } else if (noRollRead.present && noRollRead.ok && noRollRead.value !== true) {
+    issue(errors, "invalid-selection-no-roll-identity", `${selectionPath}.noRoll`, "Committed Voyage no-roll identity must be exactly true.");
+    valid = false;
+  }
+
+  return { committed, valid, reads };
+}
+
+export function analyzeAuthoredVoyageStationApproaches(action, actionPath, selectedApproachId, errors) {
+  const approachesPath = `${actionPath}.approaches`;
+  const approachesRead = readOwnDataProperty(action, "approaches", approachesPath, errors);
+  if (!approachesRead.present) {
+    issue(errors, "missing-authored-approaches", approachesPath, "Selected Voyage action requires an own approaches array.");
+    return { valid: false, matches: [] };
+  }
+  if (!approachesRead.ok) return { valid: false, matches: [] };
+
+  let approachesIsArray;
+  try {
+    approachesIsArray = Array.isArray(approachesRead.value);
+  } catch {
+    issue(errors, "station-selection-data-read-failed", approachesPath, "Selected Voyage action approaches could not be inspected safely.");
+    return { valid: false, matches: [] };
+  }
+  if (!approachesIsArray) {
+    issue(errors, "invalid-authored-approaches", approachesPath, "Selected Voyage action approaches must be an array.");
+    return { valid: false, matches: [] };
+  }
+
+  const lengthRead = readOwnDataProperty(approachesRead.value, "length", `${approachesPath}.length`, errors);
+  if (!lengthRead.ok || !lengthRead.present) return { valid: false, matches: [] };
+
+  let valid = true;
+  const matches = [];
+  const approachIdCounts = new Map();
+  for (let approachIndex = 0; approachIndex < lengthRead.value; approachIndex += 1) {
+    const approachPath = `${approachesPath}[${approachIndex}]`;
+    const approachRead = readOwnDataProperty(approachesRead.value, approachIndex, approachPath, errors);
+    if (!approachRead.present) {
+      issue(errors, "sparse-authored-approaches", approachPath, "Selected Voyage action approaches must be a dense own-entry array.");
+      valid = false;
+      continue;
+    }
+    if (!approachRead.ok) {
+      valid = false;
+      continue;
+    }
+
+    const plainInspection = inspectPlainObject(approachRead.value, approachPath, errors);
+    if (!plainInspection.ok) {
+      valid = false;
+      continue;
+    }
+    if (!plainInspection.plain) {
+      issue(errors, "invalid-authored-approach", approachPath, "Each selected Voyage action approach must be a plain object.");
+      valid = false;
+      continue;
+    }
+
+    const approachIdPath = `${approachPath}.approachId`;
+    const approachIdRead = readOwnDataProperty(approachRead.value, "approachId", approachIdPath, errors);
+    let approachIdValid = true;
+    if (!approachIdRead.present) {
+      issue(errors, "missing-authored-approach-id", approachIdPath, "Each selected Voyage action approach requires an own approachId.");
+      approachIdValid = false;
+      valid = false;
+    } else if (!approachIdRead.ok) {
+      approachIdValid = false;
+      valid = false;
+    } else {
+      approachIdValid = validateExactSafeId(
+        approachIdRead.value,
+        approachIdPath,
+        errors,
+        { invalid: "invalid-authored-approach-id", unsafe: "unsafe-authored-approach-id" },
+        "Authored Voyage approach ID"
+      );
+      if (!approachIdValid) {
+        valid = false;
+      } else {
+        const count = (approachIdCounts.get(approachIdRead.value) ?? 0) + 1;
+        approachIdCounts.set(approachIdRead.value, count);
+        if (count > 1) {
+          issue(errors, "duplicate-authored-approach-id", approachIdPath, "Authored Voyage approach IDs must be unique within the selected action.");
+          valid = false;
+        }
+      }
+    }
+
+    const statisticPath = `${approachPath}.statisticSlugOrAbilityId`;
+    const noRollPath = `${approachPath}.noRoll`;
+    const statisticRead = readOwnDataProperty(approachRead.value, "statisticSlugOrAbilityId", statisticPath, errors);
+    const noRollRead = readOwnDataProperty(approachRead.value, "noRoll", noRollPath, errors);
+    let executionKind = null;
+    let executionValid = statisticRead.ok && noRollRead.ok;
+    if (!executionValid) {
+      valid = false;
+    } else if (statisticRead.present && noRollRead.present) {
+      issue(errors, "ambiguous-authored-approach-execution-identity", approachPath, "Authored Voyage approach must not define both execution identities.");
+      executionValid = false;
+      valid = false;
+    } else if (!statisticRead.present && !noRollRead.present) {
+      issue(errors, "missing-authored-approach-execution-identity", approachPath, "Authored Voyage approach requires exactly one execution identity.");
+      executionValid = false;
+      valid = false;
+    } else if (statisticRead.present) {
+      executionValid = validateExactSafeId(
+        statisticRead.value,
+        statisticPath,
+        errors,
+        {
+          invalid: "invalid-authored-statistic-or-ability-id",
+          unsafe: "unsafe-authored-statistic-or-ability-id"
+        },
+        "Authored Voyage statistic or ability identity"
+      );
+      if (!executionValid) {
+        valid = false;
+      } else {
+        executionKind = "statistic-or-ability";
+      }
+    } else if (noRollRead.value !== true) {
+      issue(errors, "invalid-authored-no-roll-identity", noRollPath, "Authored Voyage no-roll identity must be exactly true.");
+      executionValid = false;
+      valid = false;
+    } else {
+      executionKind = "no-roll";
+    }
+
+    if (approachIdValid && approachIdRead.value === selectedApproachId) {
+      matches.push({
+        executionKind,
+        executionValid,
+        statisticSlugOrAbilityId: statisticRead.value
+      });
+    }
+  }
+
+  return { valid, matches };
+}
+
+function validateCommittedApproach(
+  selection,
+  selectionPath,
+  action,
+  actionPath,
+  errors
+) {
+  const persisted = validatePersistedApproachFields(selection, selectionPath, errors);
+  if (!persisted.committed || !persisted.valid) return;
+
+  const approachId = persisted.reads.approachId.value;
+  const authored = analyzeAuthoredVoyageStationApproaches(action, actionPath, approachId, errors);
+  if (authored.matches.length === 0) {
+    if (authored.valid) {
+      issue(errors, "selected-approach-not-available", `${selectionPath}.approachId`, "Stored Voyage station selection references an approach that is not available for its action.");
+    }
+    return;
+  }
+  if (authored.matches.length > 1) {
+    issue(errors, "selected-approach-is-ambiguous", `${selectionPath}.approachId`, "Stored Voyage station selection references an ambiguous authored approach.");
+    return;
+  }
+  if (!authored.valid || !authored.matches[0].executionValid) return;
+
+  const authoredApproach = authored.matches[0];
+  const statisticRead = persisted.reads.statisticSlugOrAbilityId;
+  const noRollRead = persisted.reads.noRoll;
+  if (authoredApproach.executionKind === "statistic-or-ability") {
+    if (!statisticRead.present) {
+      issue(errors, "selection-approach-execution-mismatch", `${selectionPath}.noRoll`, "Stored Voyage no-roll identity does not match the authored statistic or ability approach.");
+    } else if (statisticRead.value !== authoredApproach.statisticSlugOrAbilityId) {
+      issue(errors, "selection-statistic-or-ability-id-mismatch", `${selectionPath}.statisticSlugOrAbilityId`, "Stored Voyage statistic or ability identity must exactly match the authored approach.");
+    }
+  } else if (!noRollRead.present) {
+    issue(errors, "selection-approach-execution-mismatch", `${selectionPath}.statisticSlugOrAbilityId`, "Stored Voyage statistic or ability identity does not match the authored no-roll approach.");
+  }
 }
 
 function isOccupiedStation(encounterState, stationId) {
@@ -186,8 +462,23 @@ export function validateVoyageEncounterStationSelections(encounterState) {
       continue;
     }
     const actionMatches = findAvailableActions(station.actions, selection.actionId);
-    if (actionMatches.length === 0) issue(errors, "selected-action-not-available", `${selectionPath}.actionId`, "Stored Voyage station selection references an action that is not available for its station.");
-    if (actionMatches.length > 1) issue(errors, "selected-action-is-ambiguous", `${selectionPath}.actionId`, "Stored Voyage station selection references an ambiguous station action.");
+    if (actionMatches.length === 0) {
+      issue(errors, "selected-action-not-available", `${selectionPath}.actionId`, "Stored Voyage station selection references an action that is not available for its station.");
+      continue;
+    }
+    if (actionMatches.length > 1) {
+      issue(errors, "selected-action-is-ambiguous", `${selectionPath}.actionId`, "Stored Voyage station selection references an ambiguous station action.");
+      continue;
+    }
+
+    const { action, index: actionIndex } = actionMatches[0];
+    validateCommittedApproach(
+      selection,
+      selectionPath,
+      action,
+      `availableStations[${index}].actions[${actionIndex}]`,
+      errors
+    );
   }
 
   return { valid: errors.length === 0, errors, warnings };
@@ -331,6 +622,7 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
     stationId: selectionRequest.stationId,
     actionId: selectionRequest.actionId
   };
+  const clearedApproachId = Object.hasOwn(previousSelection, "approachId") ? previousSelection.approachId : null;
   const clearedRiskBidId = Object.hasOwn(candidate.riskBids, selectionRequest.stationId) ? candidate.riskBids[selectionRequest.stationId].riskBidId : null;
   if (clearedRiskBidId !== null) delete candidate.riskBids[selectionRequest.stationId];
   candidate.revision = encounterState.revision + 1;
@@ -354,6 +646,7 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
       stationId: selectionRequest.stationId,
       previousActionId: previousSelection.actionId,
       actionId: selectionRequest.actionId,
+      ...(clearedApproachId !== null ? { clearedApproachId } : {}),
       ...(clearedRiskBidId !== null ? { clearedRiskBidId } : {}),
       previousRevision: encounterState.revision,
       revision: candidate.revision
@@ -396,6 +689,7 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
   );
   if (!candidate) return { ok: false, nextState: null, events: [], errors, warnings };
 
+  const clearedApproachId = Object.hasOwn(previousSelection, "approachId") ? previousSelection.approachId : null;
   const clearedRiskBidId = Object.hasOwn(candidate.riskBids, clearRequest.stationId) ? candidate.riskBids[clearRequest.stationId].riskBidId : null;
   delete candidate.selections[clearRequest.stationId];
   if (clearedRiskBidId !== null) delete candidate.riskBids[clearRequest.stationId];
@@ -419,6 +713,7 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
       phase: VOYAGE_ROUND_PHASES.CREW_PLANNING,
       stationId: clearRequest.stationId,
       actionId: previousSelection.actionId,
+      ...(clearedApproachId !== null ? { clearedApproachId } : {}),
       ...(clearedRiskBidId !== null ? { clearedRiskBidId } : {}),
       previousRevision: encounterState.revision,
       revision: candidate.revision

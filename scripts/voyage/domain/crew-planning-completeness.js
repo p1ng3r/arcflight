@@ -40,6 +40,12 @@ function isValidOwnSelection(selections, station) {
   return matches === 1;
 }
 
+function hasValidatedCommittedApproach(selections, stationId) {
+  // The shared station-selection validator is authoritative: after it succeeds,
+  // an own approachId can only belong to a valid canonical committed approach.
+  return Object.hasOwn(selections[stationId], "approachId");
+}
+
 /**
  * Prepare a read-only Crew Planning action-selection completeness report.
  */
@@ -49,12 +55,15 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
   const warnings = [...selectionValidation.warnings];
   const occupiedStationIds = deriveOccupiedVoyageStationIds(encounterState?.stationAssignments);
   const selectedStationIds = [];
+  const approachSelectedStationIds = [];
 
   if (!selectionValidation.valid) {
     return {
       occupiedStationIds,
       selectedStationIds,
       missingOccupiedStationIds: [...occupiedStationIds],
+      approachSelectedStationIds,
+      missingApproachStationIds: [],
       complete: false,
       errors,
       warnings
@@ -99,16 +108,26 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
 
   for (const stationId of occupiedStationIds) {
     const station = availableStations.get(stationId);
-    if (station && isValidOwnSelection(encounterState.selections, station)) selectedStationIds.push(stationId);
+    if (!station || !isValidOwnSelection(encounterState.selections, station)) continue;
+    selectedStationIds.push(stationId);
+    if (hasValidatedCommittedApproach(encounterState.selections, stationId)) {
+      approachSelectedStationIds.push(stationId);
+    }
   }
 
   const selectedIds = new Set(selectedStationIds);
+  const approachSelectedIds = new Set(approachSelectedStationIds);
   const missingOccupiedStationIds = occupiedStationIds.filter((stationId) => !selectedIds.has(stationId));
+  const missingApproachStationIds = selectedStationIds.filter((stationId) => !approachSelectedIds.has(stationId));
   return {
     occupiedStationIds,
     selectedStationIds,
     missingOccupiedStationIds,
-    complete: errors.length === 0 && missingOccupiedStationIds.length === 0,
+    approachSelectedStationIds,
+    missingApproachStationIds,
+    complete: errors.length === 0
+      && missingOccupiedStationIds.length === 0
+      && missingApproachStationIds.length === 0,
     errors,
     warnings
   };
