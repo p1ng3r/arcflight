@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
+import { applyVoyageEncounterCrewPlanningLock } from "../../../scripts/voyage/domain/crew-planning-lock.js";
+import { applyVoyageEncounterResolutionTransition } from "../../../scripts/voyage/domain/resolution-transition.js";
+import { prepareVoyageEncounterActionExecutionRequests } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
 import { applyVoyageEncounterPendingCheckPreparation } from "../../../scripts/voyage/domain/pending-checks.js";
 import { applyVoyageEncounterPendingCheckResult } from "../../../scripts/voyage/domain/resolution-results.js";
+import { prepareVoyageEncounterResolutionCompletion } from "../../../scripts/voyage/domain/resolution-completion.js";
+import { applyVoyageEncounterConsequencesTransition } from "../../../scripts/voyage/domain/consequences-transition.js";
 import { analyzeVoyageEncounterActionOutcomes } from "../../../scripts/voyage/domain/action-outcome-interpretation.js";
 
 const CHECK_BRANCHES = ["critical-failure", "failure", "success", "critical-success"];
@@ -85,6 +90,20 @@ function checkAction(actionId, actionIndex, branch, effectId) {
     outcomeDefinition: {
       effectRules: [effectRule(effectId)],
       branches
+    }
+  };
+}
+
+function riskBidOption(riskBidId, dcAdjustment, overrides = {}) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: [],
+      ...overrides
     }
   };
 }
@@ -202,6 +221,7 @@ test("successful no-roll interpretation has exact shapes and excludes every roll
     "mode",
     "branch",
     "riskBidId",
+    "dcAdjustment",
     "branchEffectIds",
     "riskBidEffectIds",
     "intentIds"
@@ -217,6 +237,7 @@ test("successful no-roll interpretation has exact shapes and excludes every roll
     "mode",
     "branch",
     "riskBidId",
+    "dcAdjustment",
     "activationSource",
     "referenceIndex",
     "effectId",
@@ -262,6 +283,229 @@ test("all four resolved check degrees map to their exact authored branches", () 
     assert.equal(report.intents[index].effectId, `effect-${index}`);
     assert.equal(report.intents[index].referenceIndex, 0);
   }
+});
+
+test("selected Risk Bid metadata survives outcome analysis without activating its branch", () => {
+  const action = checkAction("command", 0, "success", "normal-effect");
+  action.approaches = [{
+    approachId: "diplomacy",
+    statisticSlugOrAbilityId: "diplomacy"
+  }];
+  action.riskBidOptions = [
+    riskBidOption("bid-5", 5, { success: ["risk-effect"] })
+  ];
+  action.outcomeDefinition.effectRules.push(effectRule("risk-effect"));
+  const source = state({
+    phase: "resolution",
+    availableStations: [{
+      stationId: "captain",
+      actions: [action]
+    }],
+    selections: {
+      captain: {
+        stationId: "captain",
+        actionId: "command",
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      }
+    },
+    targets: { captain: { id: "target" } }
+  });
+  source.riskBids.captain = {
+    stationId: "captain",
+    actionId: "command",
+    riskBidId: "bid-5",
+    dcAdjustment: 5
+  };
+  const resolved = resolveChecks(source, ["success"]);
+  const before = structuredClone(resolved);
+  const report = analyzeVoyageEncounterActionOutcomes(resolved);
+
+  assert.equal(report.readyForInterpretation, true);
+  assert.equal(report.interpretedActionCount, 1);
+  assert.equal(report.intentCount, 1);
+  assert.equal(report.actions[0].riskBidId, "bid-5");
+  assert.equal(report.actions[0].dcAdjustment, 5);
+  assert.deepEqual(report.actions[0].riskBidEffectIds, []);
+  assert.equal(report.intents[0].effectId, "normal-effect");
+  assert.equal(report.intents[0].riskBidId, "bid-5");
+  assert.equal(report.intents[0].dcAdjustment, 5);
+  assert.equal(
+    report.intents.some((intent) => intent.effectId === "risk-effect"),
+    false
+  );
+  assert.deepEqual(resolved, before);
+
+  const contradictory = structuredClone(resolved);
+  contradictory.pendingChecks[0].dcAdjustment = 8;
+  const failed = analyzeVoyageEncounterActionOutcomes(contradictory);
+  assertAtomic(failed);
+  assert.ok(failed.errors.some(
+    (entry) => entry.code === "pending-check-request-mismatch"
+      && entry.path === "pendingChecks[0].dcAdjustment"
+  ));
+});
+
+test("one canonical Risk Bid survives the complete lock-to-Consequences pipeline", () => {
+  const action = checkAction("command", 0, "success", "normal-effect");
+  action.approaches = [{
+    approachId: "diplomacy",
+    statisticSlugOrAbilityId: "diplomacy"
+  }];
+  action.riskBidOptions = [
+    riskBidOption("bid-5", 5, { success: ["risk-effect"] })
+  ];
+  action.outcomeDefinition.effectRules.push(effectRule("risk-effect"));
+  const source = state({
+    phase: "crew-planning",
+    availableStations: [{
+      stationId: "captain",
+      actions: [action]
+    }],
+    selections: {
+      captain: {
+        stationId: "captain",
+        actionId: "command",
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      }
+    },
+    targets: { captain: { id: "target" } },
+    committedStationOrder: []
+  });
+  source.proposedStationOrder = ["captain"];
+  source.riskBids.captain = {
+    stationId: "captain",
+    actionId: "command",
+    riskBidId: "bid-5",
+    dcAdjustment: 5
+  };
+  const sourceBefore = structuredClone(source);
+
+  const locked = applyVoyageEncounterCrewPlanningLock(source, {
+    phaseStartSnapshotId: "integration-lock"
+  });
+  assert.equal(locked.ok, true);
+  assert.deepEqual(locked.events[0].riskBids, [{
+    stationId: "captain",
+    actionId: "command",
+    riskBidId: "bid-5",
+    dcAdjustment: 5
+  }]);
+  assert.deepEqual(
+    locked.nextState.snapshots.at(-1).temporaryState.riskBids,
+    source.riskBids
+  );
+  assert.deepEqual(source, sourceBefore);
+
+  const lockStateBefore = structuredClone(locked.nextState);
+  const resolution = applyVoyageEncounterResolutionTransition(
+    locked.nextState,
+    { phaseStartSnapshotId: "integration-resolution" }
+  );
+  assert.equal(resolution.ok, true);
+  assert.deepEqual(resolution.events[0].orderedActions, [{
+    sequence: 0,
+    stationId: "captain",
+    actionId: "command",
+    resolutionPriority: 0,
+    riskBidId: "bid-5",
+    dcAdjustment: 5
+  }]);
+  assert.deepEqual(
+    resolution.nextState.snapshots.at(-1).temporaryState.riskBids,
+    source.riskBids
+  );
+  assert.deepEqual(locked.nextState, lockStateBefore);
+
+  const execution = prepareVoyageEncounterActionExecutionRequests(
+    resolution.nextState
+  );
+  assert.equal(execution.readyForExecution, true);
+  assert.equal(execution.executionRequests.length, 1);
+  assert.equal(execution.executionRequests[0].riskBidId, "bid-5");
+  assert.equal(execution.executionRequests[0].dcAdjustment, 5);
+  assert.deepEqual(
+    execution.executionRequests[0].dcSource,
+    { kind: "fixed", value: 20 }
+  );
+  assert.equal(
+    Object.hasOwn(execution.executionRequests[0], "finalDc"),
+    false
+  );
+  execution.executionRequests[0].riskBidId = "report-only";
+
+  const prepared = applyVoyageEncounterPendingCheckPreparation(
+    resolution.nextState,
+    {
+      pendingCheckIds: [{
+        sequence: 0,
+        pendingCheckId: "integration-pending"
+      }]
+    }
+  );
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.nextState.pendingChecks.length, 1);
+  assert.equal(prepared.nextState.pendingChecks[0].riskBidId, "bid-5");
+  assert.equal(prepared.nextState.pendingChecks[0].dcAdjustment, 5);
+  assert.equal(
+    Object.hasOwn(prepared.nextState.pendingChecks[0], "finalDc"),
+    false
+  );
+
+  const resolved = applyVoyageEncounterPendingCheckResult(
+    prepared.nextState,
+    {
+      ...executionResult(0, "success"),
+      pendingCheckId: "integration-pending"
+    }
+  );
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.nextState.pendingChecks[0].riskBidId, "bid-5");
+  assert.equal(resolved.nextState.pendingChecks[0].dcAdjustment, 5);
+  assert.deepEqual(Object.keys(resolved.nextState.pendingChecks[0].result), [
+    "total",
+    "degreeOfSuccess",
+    "degreeOfSuccessSlug",
+    "statisticSlug",
+    "dc",
+    "rollMode"
+  ]);
+  assert.equal(
+    prepareVoyageEncounterResolutionCompletion(
+      resolved.nextState
+    ).readyForConsequences,
+    true
+  );
+
+  const consequences = applyVoyageEncounterConsequencesTransition(
+    resolved.nextState,
+    { phaseStartSnapshotId: "integration-consequences" }
+  );
+  assert.equal(consequences.ok, true);
+  assert.deepEqual(consequences.nextState.riskBids, source.riskBids);
+  assert.equal(
+    consequences.nextState.pendingChecks[0].dcAdjustment,
+    5
+  );
+  assert.deepEqual(
+    consequences.nextState.snapshots.at(-1).temporaryState.riskBids,
+    source.riskBids
+  );
+
+  const report = analyzeVoyageEncounterActionOutcomes(
+    consequences.nextState
+  );
+  assert.equal(report.readyForInterpretation, true);
+  assert.equal(report.actions[0].riskBidId, "bid-5");
+  assert.equal(report.actions[0].dcAdjustment, 5);
+  assert.deepEqual(report.actions[0].riskBidEffectIds, []);
+  assert.deepEqual(
+    report.intents.map(({ effectId }) => effectId),
+    ["normal-effect"]
+  );
+  assert.equal(report.intents[0].riskBidId, "bid-5");
+  assert.equal(report.intents[0].dcAdjustment, 5);
 });
 
 test("non-Consequences phase returns the exact phase gate and atomic empty output", () => {
@@ -399,6 +643,7 @@ test("an unresolved sparse pending check reports its original index path atomica
     actionId: "repair",
     resolutionPriority: 0,
     riskBidId: null,
+    dcAdjustment: null,
     target: { id: "target" },
     mode: "check",
     source: { kind: "character", uuid: "Actor.0" },

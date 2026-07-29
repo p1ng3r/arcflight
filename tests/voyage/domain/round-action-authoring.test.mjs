@@ -35,6 +35,20 @@ function action(actionId, overrides = {}) {
   };
 }
 
+function riskBidOption(riskBidId, dcAdjustment, outcomeOverrides = {}) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: [],
+      ...outcomeOverrides
+    }
+  };
+}
+
 function station(stationId = "captain", overrides = {}) {
   return {
     stationId,
@@ -94,7 +108,8 @@ test("valid 3, 5, 7, 9, and 11 round definitions normalize isolated envelopes", 
               executionKind: "statistic-or-ability",
               statisticSlugOrAbilityId: "captain-action-1-statistic"
             }],
-            thirdApproachException: null
+            thirdApproachException: null,
+            riskBidOptions: []
           },
           {
             actionIndex: 1,
@@ -106,7 +121,8 @@ test("valid 3, 5, 7, 9, and 11 round definitions normalize isolated envelopes", 
               executionKind: "statistic-or-ability",
               statisticSlugOrAbilityId: "captain-action-2-statistic"
             }],
-            thirdApproachException: null
+            thirdApproachException: null,
+            riskBidOptions: []
           },
           {
             actionIndex: 2,
@@ -118,7 +134,8 @@ test("valid 3, 5, 7, 9, and 11 round definitions normalize isolated envelopes", 
               executionKind: "statistic-or-ability",
               statisticSlugOrAbilityId: "captain-action-3-statistic"
             }],
-            thirdApproachException: null
+            thirdApproachException: null,
+            riskBidOptions: []
           }
         ]
       }]
@@ -162,8 +179,79 @@ test("one and two approaches normalize statistic/ability and no-roll identities"
         statisticSlugOrAbilityId: null
       }
     ],
-    thirdApproachException: null
+    thirdApproachException: null,
+    riskBidOptions: []
   });
+});
+
+test("canonical Risk Bid tier subsets normalize inside each authored action", () => {
+  const source = definition();
+  const authored = [
+    riskBidOption("overcharge", 8),
+    riskBidOption("trim", 2),
+    riskBidOption("press", 5)
+  ];
+  source.rounds[0].availableStations[0].actions[0].riskBidOptions = authored;
+
+  const report = analyzeVoyageEventDefinitionRoundActionAuthoring(source);
+  const normalized = report.rounds[0].stations[0].actions[0].riskBidOptions;
+
+  assert.equal(report.authoringValid, true);
+  assert.deepEqual(normalized, authored);
+  assert.notEqual(normalized, authored);
+  assert.notEqual(normalized[0], authored[0]);
+  assert.notEqual(normalized[0].outcomes, authored[0].outcomes);
+  assert.notEqual(normalized[1].outcomes.success, authored[1].outcomes.success);
+  normalized[1].outcomes.success.push("changed");
+  assert.deepEqual(authored[1].outcomes.success, []);
+});
+
+test("invalid canonical Risk Bid authoring suppresses the normalized Event Definition", () => {
+  const fixtures = [
+    [
+      [riskBidOption("first", 2), riskBidOption("second", 2)],
+      "duplicate-risk-bid-dc-adjustment",
+      "rounds[0].availableStations[0].actions[0].riskBidOptions[1].dcAdjustment"
+    ],
+    [
+      [riskBidOption("bad-tier", 3)],
+      "invalid-risk-bid-dc-adjustment",
+      "rounds[0].availableStations[0].actions[0].riskBidOptions[0].dcAdjustment"
+    ],
+    [
+      [{ riskBidId: "legacy", rewardEffectIds: [], dangerEffectIds: [] }],
+      "unexpected-risk-bid-option-field",
+      "rounds[0].availableStations[0].actions[0].riskBidOptions[0].rewardEffectIds"
+    ]
+  ];
+
+  for (const [riskBidOptions, code, path] of fixtures) {
+    const source = definition();
+    source.rounds[0].availableStations[0].actions[0].riskBidOptions = riskBidOptions;
+    const report = analyzeVoyageEventDefinitionRoundActionAuthoring(source);
+    assert.equal(report.authoringValid, false);
+    assert.deepEqual(report.rounds, []);
+    assert.ok(report.errors.some(
+      (entry) => entry.code === code && entry.path === path
+    ));
+  }
+});
+
+test("an action whose approaches are all no-roll cannot author Risk Bids", () => {
+  const source = definition();
+  source.rounds[0].availableStations[0].actions[0] = action("automatic", {
+    approaches: [noRollApproach("automatic")],
+    riskBidOptions: [riskBidOption("impossible", 2)]
+  });
+
+  const report = analyzeVoyageEventDefinitionRoundActionAuthoring(source);
+
+  assert.equal(report.authoringValid, false);
+  assert.deepEqual(report.rounds, []);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "no-roll-risk-bid-options"
+      && entry.path === "rounds[0].availableStations[0].actions[0].riskBidOptions"
+  ));
 });
 
 test("all noncanonical round counts are rejected", () => {

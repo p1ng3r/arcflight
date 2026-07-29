@@ -6,6 +6,7 @@ import {
   analyzeVoyageEncounterPendingChecks,
   validateVoyageEncounterPendingChecks
 } from "../../../scripts/voyage/domain/pending-checks.js";
+import { prepareVoyageEncounterActionExecutionRequests } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
 
 const RESULT_FIELDS = [
   "total",
@@ -16,7 +17,20 @@ const RESULT_FIELDS = [
   "rollMode"
 ];
 
-function encounter({ phase = "resolution", secret = false, statisticOptions = ["diplomacy"] } = {}) {
+function riskBidOption(riskBidId, dcAdjustment) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
+function encounter({ phase = "resolution", secret = false, statisticOptions = ["diplomacy"], riskBidAdjustment = null } = {}) {
   const state = createVoyageEncounterState({
     encounterId: "pending-checks",
     definitionId: "definition",
@@ -47,6 +61,28 @@ function encounter({ phase = "resolution", secret = false, statisticOptions = ["
     selections: { captain: { stationId: "captain", actionId: "check" } },
     committedStationOrder: ["captain"]
   });
+
+  if (riskBidAdjustment !== null) {
+    state.availableStations[0].actions[0].approaches = [{
+      approachId: "diplomacy",
+      statisticSlugOrAbilityId: "diplomacy"
+    }];
+    state.availableStations[0].actions[0].riskBidOptions = [
+      riskBidOption(`bid-${riskBidAdjustment}`, riskBidAdjustment)
+    ];
+    state.selections.captain = {
+      stationId: "captain",
+      actionId: "check",
+      approachId: "diplomacy",
+      statisticSlugOrAbilityId: "diplomacy"
+    };
+    state.riskBids.captain = {
+      stationId: "captain",
+      actionId: "check",
+      riskBidId: `bid-${riskBidAdjustment}`,
+      dcAdjustment: riskBidAdjustment
+    };
+  }
 
   return state;
 }
@@ -127,6 +163,98 @@ test("pending-check preparation preserves committed station sequence", () => {
       { sequence: 1, stationId: "captain" }
     ]
   );
+});
+
+test("pending-check preparation preserves canonical Risk Bid metadata without another check or final DC", () => {
+  for (const dcAdjustment of [2, 5, 8]) {
+    const source = encounter({ riskBidAdjustment: dcAdjustment });
+    const before = structuredClone(source);
+    const result = applyVoyageEncounterPendingCheckPreparation(source, {
+      pendingCheckIds: [{ sequence: 0, pendingCheckId: `pending-${dcAdjustment}` }]
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.nextState.pendingChecks.length, 1);
+    assert.equal(
+      result.nextState.pendingChecks[0].riskBidId,
+      `bid-${dcAdjustment}`
+    );
+    assert.equal(
+      result.nextState.pendingChecks[0].dcAdjustment,
+      dcAdjustment
+    );
+    assert.equal(Object.hasOwn(result.nextState.pendingChecks[0], "finalDc"), false);
+    assert.equal(Object.hasOwn(result.nextState.pendingChecks[0], "outcomes"), false);
+    assert.deepEqual(result.nextState.pendingChecks[0].dcSource, {
+      kind: "fixed",
+      value: 20
+    });
+    assert.deepEqual(source, before);
+  }
+
+  const base = preparedEncounter();
+  assert.equal(base.pendingChecks[0].riskBidId, null);
+  assert.equal(base.pendingChecks[0].dcAdjustment, null);
+});
+
+test("pending-check validation rejects missing, forged, unexpected, and accessor-backed Risk Bid metadata", () => {
+  const missing = preparedEncounter({ riskBidAdjustment: 2 });
+  delete missing.pendingChecks[0].dcAdjustment;
+  let report = analyzeVoyageEncounterPendingChecks(missing);
+  assert.equal(report.pendingChecksValid, false);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "missing-pending-check-field"
+      && entry.path === "pendingChecks[0].dcAdjustment"
+  ));
+
+  const forged = preparedEncounter({ riskBidAdjustment: 2 });
+  forged.pendingChecks[0].dcAdjustment = 8;
+  report = analyzeVoyageEncounterPendingChecks(forged);
+  assert.equal(report.pendingChecksValid, false);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "pending-check-request-mismatch"
+      && entry.path === "pendingChecks[0].dcAdjustment"
+  ));
+
+  const unexpected = preparedEncounter();
+  unexpected.pendingChecks[0].riskBidId = "unexpected";
+  unexpected.pendingChecks[0].dcAdjustment = 2;
+  report = analyzeVoyageEncounterPendingChecks(unexpected);
+  assert.equal(report.pendingChecksValid, false);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "pending-check-request-mismatch"
+      && entry.path === "pendingChecks[0].riskBidId"
+  ));
+
+  const accessor = preparedEncounter({ riskBidAdjustment: 2 });
+  let reads = 0;
+  Object.defineProperty(accessor.pendingChecks[0], "dcAdjustment", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      throw new Error("must not execute");
+    }
+  });
+  report = analyzeVoyageEncounterPendingChecks(accessor);
+  assert.equal(report.pendingChecksValid, false);
+  assert.equal(reads, 0);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "pending-check-data-read-failed"
+      && entry.path === "pendingChecks[0].dcAdjustment"
+  ));
+});
+
+test("execution-request and pending-check Risk Bid metadata remain isolated", () => {
+  const prepared = preparedEncounter({ riskBidAdjustment: 5 });
+  const before = structuredClone(prepared.pendingChecks);
+  const first = prepareVoyageEncounterActionExecutionRequests(prepared);
+  const second = prepareVoyageEncounterActionExecutionRequests(prepared);
+
+  first.executionRequests[0].riskBidId = "request-only";
+  first.executionRequests[0].dcAdjustment = 8;
+  assert.equal(second.executionRequests[0].riskBidId, "bid-5");
+  assert.equal(second.executionRequests[0].dcAdjustment, 5);
+  assert.deepEqual(prepared.pendingChecks, before);
 });
 
 test("accepts pending checks with a null result and resolved checks with all degree/slug pairs", () => {
@@ -285,7 +413,7 @@ test("analyzes an exact isolated pending-check report contract", () => {
   assert.equal(report.resolvedCheckCount, 0);
   assert.deepEqual(Object.keys(report.pendingChecks[0]), [
     "pendingCheckIndex", "pendingCheckId", "preparedRevision", "stageId", "roundNumber",
-    "sequence", "stationId", "actionId", "resolutionPriority", "riskBidId", "target", "mode",
+    "sequence", "stationId", "actionId", "resolutionPriority", "riskBidId", "dcAdjustment", "target", "mode",
     "source", "statisticOptions", "dcSource", "secrecy", "metadata", "status", "result"
   ]);
   assert.equal(report.pendingChecks[0].pendingCheckIndex, 0);

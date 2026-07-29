@@ -18,6 +18,19 @@ function noRollApproach(approachId) {
   return { approachId, noRoll: true };
 }
 
+function riskBidOption(riskBidId, dcAdjustment = 2) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
 function action(actionId, approaches, authored = {}) {
   return { actionId, approaches, ...authored };
 }
@@ -107,14 +120,14 @@ function noRollSelection(overrides = {}) {
   };
 }
 
-function addRiskBid(source, stationId, actionId, riskBidId) {
+function addRiskBid(source, stationId, actionId, riskBidId, dcAdjustment = 2) {
   const station = source.availableStations.find((entry) => entry.stationId === stationId);
   const selectedAction = station.actions.find((entry) => entry.actionId === actionId);
   selectedAction.riskBidOptions = [
     ...(selectedAction.riskBidOptions ?? []),
-    { riskBidId }
+    riskBidOption(riskBidId, dcAdjustment)
   ];
-  source.riskBids[stationId] = { stationId, actionId, riskBidId };
+  source.riskBids[stationId] = { stationId, actionId, riskBidId, dcAdjustment };
 }
 
 function failure(result, codes) {
@@ -746,8 +759,8 @@ test("action change atomically clears a statistic approach and Risk Bid without 
   source.selections.engineer = {
     stationId: "engineer",
     actionId: "stabilize-strain",
-    approachId: "automatic-shunt",
-    noRoll: true
+    approachId: "crafting",
+    statisticSlugOrAbilityId: "crafting"
   };
   addRiskBid(source, "captain", "rally-crew", "press");
   addRiskBid(source, "engineer", "stabilize-strain", "hold");
@@ -782,6 +795,7 @@ test("action change atomically clears a statistic approach and Risk Bid without 
     actionId: "coordinate-orders",
     clearedApproachId: "diplomacy",
     clearedRiskBidId: "press",
+    clearedRiskBidDcAdjustment: 2,
     previousRevision: 7,
     revision: 8
   }]);
@@ -851,7 +865,9 @@ test("action clear atomically removes an approach and Risk Bid while preserving 
   const source = encounterWithSelection(statisticSelection());
   source.selections.engineer = {
     stationId: "engineer",
-    actionId: "stabilize-strain"
+    actionId: "stabilize-strain",
+    approachId: "crafting",
+    statisticSlugOrAbilityId: "crafting"
   };
   addRiskBid(source, "captain", "rally-crew", "press");
   addRiskBid(source, "engineer", "stabilize-strain", "hold");
@@ -877,6 +893,7 @@ test("action clear atomically removes an approach and Risk Bid while preserving 
     actionId: "rally-crew",
     clearedApproachId: "diplomacy",
     clearedRiskBidId: "press",
+    clearedRiskBidDcAdjustment: 2,
     previousRevision: 7,
     revision: 8
   });
@@ -925,7 +942,10 @@ test("failed action change and malformed action clear preserve approach, Risk Bi
     clearSource,
     clearRequest
   );
-  failure(clearResult, ["missing-selection-approach-execution-identity"]);
+  failure(clearResult, [
+    "missing-selection-approach-execution-identity",
+    "risk-bid-requires-committed-approach"
+  ]);
   assert.deepEqual(clearSource, clearBefore);
   assert.deepEqual(clearRequest, clearRequestBefore);
 });
@@ -968,14 +988,14 @@ test("Arcflight registers station selection functions and devTools aliases", asy
 test("initial selection rejects invalid persisted Risk Bids atomically and validates accepted candidates", async () => {
   const { validateVoyageEncounterRiskBids } = await import("../../../scripts/voyage/domain/risk-bids.js");
   const source = encounter();
-  source.riskBids.navigator = { stationId: "navigator", actionId: "thread", riskBidId: "close" };
+  source.riskBids.navigator = { stationId: "navigator", actionId: "thread", riskBidId: "close", dcAdjustment: 2 };
   const before = clonePlainData(source);
   const result = applyVoyageEncounterStationActionSelection(source, { stationId: "captain", actionId: "rally-crew" });
   failure(result, ["risk-bid-selection-missing"]);
   assert.equal(source.revision, before.revision); assert.deepEqual(source, before);
-  const mismatch = encounter(); mismatch.selections.engineer = { stationId: "engineer", actionId: "stabilize-strain" };
-  mismatch.availableStations[1].actions[0].riskBidOptions = [{ riskBidId: "close" }];
-  mismatch.riskBids.engineer = { stationId: "engineer", actionId: "hard-burn-prep", riskBidId: "close" };
+  const mismatch = encounter(); mismatch.selections.engineer = { stationId: "engineer", actionId: "stabilize-strain", approachId: "crafting", statisticSlugOrAbilityId: "crafting" };
+  mismatch.availableStations[1].actions[0].riskBidOptions = [riskBidOption("close")];
+  mismatch.riskBids.engineer = { stationId: "engineer", actionId: "hard-burn-prep", riskBidId: "close", dcAdjustment: 2 };
   assert.equal(applyVoyageEncounterStationActionSelection(mismatch, { stationId: "captain", actionId: "rally-crew" }).ok, false);
   const valid = encounter(); const accepted = applyVoyageEncounterStationActionSelection(valid, { stationId: "captain", actionId: "rally-crew" });
   assert.equal(accepted.ok, true); assert.equal(validateVoyageEncounterStationSelections(accepted.nextState).valid, true); assert.equal(validateVoyageEncounterRiskBids(accepted.nextState).valid, true);

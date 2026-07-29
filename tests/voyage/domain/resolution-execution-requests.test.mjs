@@ -2,9 +2,109 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
 import { prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterActionExecutionDefinitions } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
+function riskBidOption(riskBidId, dcAdjustment) { return { riskBidId, dcAdjustment, outcomes: { criticalSuccess: [], success: [], failure: [], criticalFailure: [] } }; }
 function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "automatic", resolutionPriority: 1 }, { actionId: "check", resolutionPriority: -1, check: { source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } } }] }]; value.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; value.targets = { captain: { id: "target" } }; value.committedStationOrder = ["captain"]; return value; }
 function withCustomArrayPrototype(array, prototype, callback) { const previous = Object.getPrototypeOf(array); Object.setPrototypeOf(array, prototype); try { return callback(); } finally { Object.setPrototypeOf(array, previous); } }
-test("validates authored checks and prepares isolated deterministic check requests", () => { const value = state(), before = structuredClone(value); assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true); const report = prepareVoyageEncounterActionExecutionRequests(value); assert.equal(report.readyForExecution, true); assert.equal(report.checkCount, 1); assert.deepEqual(report.executionRequests[0], { sequence: 0, stationId: "captain", actionId: "check", resolutionPriority: -1, riskBidId: null, target: { id: "target" }, mode: "check", source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } }); report.executionRequests[0].source.nested.id = "changed"; assert.equal(value.availableStations[0].actions[1].check.source.nested.id, "x"); assert.deepEqual(value, before); });
+test("validates authored checks and prepares isolated deterministic check requests", () => { const value = state(), before = structuredClone(value); assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true); const report = prepareVoyageEncounterActionExecutionRequests(value); assert.equal(report.readyForExecution, true); assert.equal(report.checkCount, 1); assert.deepEqual(report.executionRequests[0], { sequence: 0, stationId: "captain", actionId: "check", resolutionPriority: -1, riskBidId: null, dcAdjustment: null, target: { id: "target" }, mode: "check", source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } }); report.executionRequests[0].source.nested.id = "changed"; assert.equal(value.availableStations[0].actions[1].check.source.nested.id, "x"); assert.deepEqual(value, before); });
+
+test("execution requests preserve every canonical Risk Bid tier without DC arithmetic", () => {
+  for (const dcAdjustment of [2, 5, 8]) {
+    const value = state();
+    const action = value.availableStations[0].actions[1];
+    action.approaches = [{
+      approachId: "sailing",
+      statisticSlugOrAbilityId: "sailing"
+    }];
+    action.riskBidOptions = [
+      riskBidOption(`bid-${dcAdjustment}`, dcAdjustment)
+    ];
+    value.selections.captain = {
+      stationId: "captain",
+      actionId: "check",
+      approachId: "sailing",
+      statisticSlugOrAbilityId: "sailing"
+    };
+    value.riskBids.captain = {
+      stationId: "captain",
+      actionId: "check",
+      riskBidId: `bid-${dcAdjustment}`,
+      dcAdjustment
+    };
+    const before = structuredClone(value);
+    const first = prepareVoyageEncounterActionExecutionRequests(value);
+    const second = prepareVoyageEncounterActionExecutionRequests(value);
+
+    assert.equal(first.readyForExecution, true);
+    assert.equal(first.executionRequests.length, 1);
+    assert.equal(first.executionRequests[0].riskBidId, `bid-${dcAdjustment}`);
+    assert.equal(first.executionRequests[0].dcAdjustment, dcAdjustment);
+    assert.deepEqual(first.executionRequests[0].dcSource, {
+      kind: "fixed",
+      value: 20
+    });
+    assert.equal(Object.hasOwn(first.executionRequests[0], "finalDc"), false);
+    assert.equal(Object.hasOwn(first.executionRequests[0], "outcomes"), false);
+    first.executionRequests[0].riskBidId = "changed";
+    assert.equal(second.executionRequests[0].riskBidId, `bid-${dcAdjustment}`);
+    assert.deepEqual(value, before);
+  }
+});
+
+test("execution analysis rejects contradictory no-roll and stale Risk Bid state", () => {
+  const noRoll = state();
+  noRoll.availableStations[0].actions[0].approaches = [{
+    approachId: "automatic",
+    noRoll: true
+  }];
+  noRoll.availableStations[0].actions[0].riskBidOptions = [
+    riskBidOption("invalid-no-roll-bid", 2)
+  ];
+  noRoll.selections.captain = {
+    stationId: "captain",
+    actionId: "automatic",
+    approachId: "automatic",
+    noRoll: true
+  };
+  noRoll.riskBids.captain = {
+    stationId: "captain",
+    actionId: "automatic",
+    riskBidId: "invalid-no-roll-bid",
+    dcAdjustment: 2
+  };
+  let report = prepareVoyageEncounterActionExecutionRequests(noRoll);
+  assert.equal(report.readyForExecution, false);
+  assert.deepEqual(report.executionRequests, []);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "risk-bid-requires-rolled-approach"
+  ));
+
+  const stale = state();
+  stale.availableStations[0].actions[1].approaches = [{
+    approachId: "sailing",
+    statisticSlugOrAbilityId: "sailing"
+  }];
+  stale.availableStations[0].actions[1].riskBidOptions = [
+    riskBidOption("bid", 2)
+  ];
+  stale.selections.captain = {
+    stationId: "captain",
+    actionId: "check",
+    approachId: "sailing",
+    statisticSlugOrAbilityId: "sailing"
+  };
+  stale.riskBids.captain = {
+    stationId: "captain",
+    actionId: "check",
+    riskBidId: "bid",
+    dcAdjustment: 5
+  };
+  report = prepareVoyageEncounterActionExecutionRequests(stale);
+  assert.equal(report.readyForExecution, false);
+  assert.deepEqual(report.executionRequests, []);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "risk-bid-dc-adjustment-mismatch"
+  ));
+});
 
 test("execution requests preserve committed order when authored priorities conflict", () => {
   const value = state();

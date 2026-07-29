@@ -447,6 +447,7 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
           mode: request.mode,
           branch,
           riskBidId: row.riskBidId ?? null,
+          dcAdjustment: row.dcAdjustment ?? null,
           activationSource: "branch",
           referenceIndex: effectRecord.referenceIndex,
           effectId: effectRecord.effectId,
@@ -467,6 +468,7 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
         mode: request.mode,
         branch,
         riskBidId: row.riskBidId ?? null,
+        dcAdjustment: row.dcAdjustment ?? null,
         branchEffectIds: clonePlainDataSafely(branchEffectIds),
         riskBidEffectIds: [],
         intentIds

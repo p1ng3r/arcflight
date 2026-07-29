@@ -42,6 +42,61 @@ function activeEncounter() {
   return encounter;
 }
 
+function riskBidOption(riskBidId, dcAdjustment) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
+function canonicalRiskEncounter(count = 1) {
+  const encounter = activeEncounter();
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster"];
+  encounter.phase = "lock-readiness";
+  encounter.availableStations = stationIds.map((stationId, index) => ({
+    stationId,
+    actions: [{
+      actionId: `action-${stationId}`,
+      approaches: [{
+        approachId: `approach-${stationId}`,
+        statisticSlugOrAbilityId: `approach-${stationId}`
+      }],
+      riskBidOptions: [
+        riskBidOption(`bid-${stationId}`, [2, 5, 8, 2][index])
+      ]
+    }]
+  }));
+  encounter.stationAssignments = stationIds.map((stationId) => ({
+    stationId,
+    operator: { kind: "actor", uuid: `Actor.${stationId}` }
+  }));
+  encounter.selections = Object.fromEntries(stationIds.map(
+    (stationId) => [stationId, {
+      stationId,
+      actionId: `action-${stationId}`,
+      approachId: `approach-${stationId}`,
+      statisticSlugOrAbilityId: `approach-${stationId}`
+    }]
+  ));
+  encounter.proposedStationOrder = [];
+  encounter.committedStationOrder = [...stationIds];
+  encounter.riskBids = Object.fromEntries(
+    stationIds.slice(0, count).map((stationId, index) => [stationId, {
+      stationId,
+      actionId: `action-${stationId}`,
+      riskBidId: `bid-${stationId}`,
+      dcAdjustment: [2, 5, 8, 2][index]
+    }])
+  );
+  return encounter;
+}
+
 function errorCodes(result) {
   return result.errors.map((entry) => entry.code);
 }
@@ -116,6 +171,79 @@ test("constructs phase-start snapshots using the supplied recognized phase", () 
   assert.equal(result.snapshot.temporaryState.phase, "consequences");
 });
 
+test("snapshots preserve exact canonical Risk Bids as isolated records", () => {
+  const encounter = canonicalRiskEncounter(3);
+  const before = structuredClone(encounter);
+  const first = createVoyageEncounterBoundarySnapshot(encounter, {
+    snapshotId: "risk-bids-first",
+    boundaryType: "phase-start"
+  });
+  const second = createVoyageEncounterBoundarySnapshot(encounter, {
+    snapshotId: "risk-bids-second",
+    boundaryType: "phase-start"
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.deepEqual(first.snapshot.temporaryState.riskBids, before.riskBids);
+  assert.deepEqual(second.snapshot.temporaryState.riskBids, before.riskBids);
+  assert.notEqual(first.snapshot.temporaryState.riskBids, encounter.riskBids);
+  assert.notEqual(
+    first.snapshot.temporaryState.riskBids,
+    second.snapshot.temporaryState.riskBids
+  );
+  first.snapshot.temporaryState.riskBids.captain.dcAdjustment = 8;
+  assert.equal(encounter.riskBids.captain.dcAdjustment, 2);
+  assert.equal(second.snapshot.temporaryState.riskBids.captain.dcAdjustment, 2);
+  assert.deepEqual(encounter, before);
+});
+
+test("malformed, hostile, and over-limit Risk Bids block snapshots", () => {
+  const forged = canonicalRiskEncounter(1);
+  forged.riskBids.captain.dcAdjustment = 8;
+  let result = createVoyageEncounterBoundarySnapshot(forged, {
+    snapshotId: "forged-risk-bid",
+    boundaryType: "phase-start"
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.snapshot, null);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "risk-bid-dc-adjustment-mismatch"
+      && entry.path === "riskBids.captain.dcAdjustment"
+  ));
+
+  const overLimit = canonicalRiskEncounter(4);
+  result = createVoyageEncounterBoundarySnapshot(overLimit, {
+    snapshotId: "over-limit-risk-bids",
+    boundaryType: "phase-start"
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.snapshot, null);
+  assert.deepEqual(result.errors, [{
+    code: "risk-bid-round-limit-exceeded",
+    path: "riskBids",
+    message: "Boundary snapshots allow at most 3 selected Risk Bids.",
+    severity: "error"
+  }]);
+
+  const hostile = canonicalRiskEncounter(1);
+  let reads = 0;
+  Object.defineProperty(hostile.riskBids.captain, "dcAdjustment", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      throw new Error("must not execute");
+    }
+  });
+  result = createVoyageEncounterBoundarySnapshot(hostile, {
+    snapshotId: "hostile-risk-bid",
+    boundaryType: "phase-start"
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.snapshot, null);
+  assert.equal(reads, 0);
+});
+
 test("recursively isolates captured temporary plain data in both directions", () => {
   const encounter = activeEncounter();
   const result = createVoyageEncounterBoundarySnapshot(encounter, { snapshotId: "isolated", boundaryType: "round-start" });
@@ -147,6 +275,62 @@ test("recursively isolates captured temporary plain data in both directions", ()
   encounter.stationAssignments[0].operator.name = "Encounter Captain";
   assert.equal(snapshot.temporaryState.currentStage.details.tags.includes("encounter-only"), false);
   assert.equal(snapshot.temporaryState.stationAssignments[0].operator.name, "Snapshot Captain");
+});
+
+test("hostile non-order temporary data returns a contained atomic failure", () => {
+  const encounter = activeEncounter();
+  encounter.targets.loop = encounter.targets;
+
+  const result = createVoyageEncounterBoundarySnapshot(encounter, {
+    snapshotId: "hostile-targets",
+    boundaryType: "round-start"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.snapshot, null);
+  assert.deepEqual(result.errors, [{
+    code: "boundary-snapshot-data-read-failed",
+    path: "targets",
+    message: "Boundary snapshot temporary state could not be read safely.",
+    severity: "error"
+  }]);
+});
+
+test("hostile state-validation and request accessors return deterministic public failures", () => {
+  const hostileState = activeEncounter();
+  Object.defineProperty(hostileState, "schemaVersion", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      throw new Error("hostile schema version");
+    }
+  });
+  const hostileRequest = {
+    get snapshotId() {
+      throw new Error("hostile snapshot ID");
+    },
+    boundaryType: "round-start"
+  };
+
+  for (const result of [
+    createVoyageEncounterBoundarySnapshot(hostileState, {
+      snapshotId: "hostile-state",
+      boundaryType: "round-start"
+    }),
+    createVoyageEncounterBoundarySnapshot(activeEncounter(), hostileRequest)
+  ]) {
+    assert.deepEqual(result, {
+      ok: false,
+      snapshot: null,
+      errors: [{
+        code: "boundary-snapshot-data-read-failed",
+        path: "$",
+        message: "Boundary snapshot inputs could not be read safely.",
+        severity: "error"
+      }],
+      warnings: []
+    });
+  }
 });
 
 test("round cleanup boundary preserves fixed assignments without introducing a legacy field", () => {

@@ -22,7 +22,20 @@ const REPORT_KEYS = [
 ];
 const STATION_IDS = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
 
-function state({ checks = 0, prepare = false } = {}) {
+function riskBidOption(riskBidId, dcAdjustment) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
+function state({ checks = 0, prepare = false, riskBidAdjustment = null } = {}) {
   const encounter = createVoyageEncounterState({
     encounterId: "completion",
     definitionId: "definition",
@@ -62,7 +75,23 @@ function state({ checks = 0, prepare = false } = {}) {
         stationId,
         operator: { kind: "actor", uuid: `Actor.operator-${index}` }
       });
-      selections[stationId] = { stationId, actionId };
+      selections[stationId] = riskBidAdjustment !== null && index === 0
+        ? {
+          stationId,
+          actionId,
+          approachId: "diplomacy",
+          statisticSlugOrAbilityId: "diplomacy"
+        }
+        : { stationId, actionId };
+      if (riskBidAdjustment !== null && index === 0) {
+        availableStations[index].actions[0].approaches = [{
+          approachId: "diplomacy",
+          statisticSlugOrAbilityId: "diplomacy"
+        }];
+        availableStations[index].actions[0].riskBidOptions = [
+          riskBidOption(`bid-${riskBidAdjustment}`, riskBidAdjustment)
+        ];
+      }
     }
   }
 
@@ -74,6 +103,16 @@ function state({ checks = 0, prepare = false } = {}) {
     availableStations,
     stationAssignments,
     selections,
+    riskBids: riskBidAdjustment === null
+      ? {}
+      : {
+        captain: {
+          stationId: "captain",
+          actionId: "action-0",
+          riskBidId: `bid-${riskBidAdjustment}`,
+          dcAdjustment: riskBidAdjustment
+        }
+      },
     committedStationOrder: stationAssignments.map(({ stationId }) => stationId)
   });
 
@@ -173,6 +212,29 @@ test("becomes ready only after every prepared check is resolved", () => {
   assert.equal(report.pendingCheckCount, 2);
   assert.equal(report.resolvedCheckCount, 2);
   assert.equal(report.unresolvedCheckCount, 0);
+});
+
+test("completion analysis preserves resolved canonical Risk Bid metadata", () => {
+  const prepared = state({
+    checks: 1,
+    prepare: true,
+    riskBidAdjustment: 5
+  });
+  const resolved = applyVoyageEncounterPendingCheckResult(
+    prepared,
+    execution(0)
+  );
+  assert.equal(resolved.ok, true);
+  const before = structuredClone(resolved.nextState);
+  const report = prepareVoyageEncounterResolutionCompletion(
+    resolved.nextState
+  );
+
+  assert.equal(report.readyForConsequences, true);
+  assert.equal(resolved.nextState.pendingChecks.length, 1);
+  assert.equal(resolved.nextState.pendingChecks[0].riskBidId, "bid-5");
+  assert.equal(resolved.nextState.pendingChecks[0].dcAdjustment, 5);
+  assert.deepEqual(resolved.nextState, before);
 });
 
 test("rejects malformed and mismatched resolved checks", () => {
