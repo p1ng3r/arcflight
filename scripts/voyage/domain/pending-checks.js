@@ -23,8 +23,9 @@ const REQUIRED = Object.freeze([
   "target",
   "mode",
   "source",
-  "statisticOptions",
-  "dcSource",
+  "approachId",
+  "statisticSlugOrAbilityId",
+  "finalDc",
   "secrecy",
   "metadata",
   "status",
@@ -79,16 +80,6 @@ function readOwnDataValue(object, key, path, errors) {
     issue(errors, "pending-check-data-read-failed", path, "Pending check data could not be read safely.");
     return { present: true, ok: false, value: undefined };
   }
-}
-
-function numericIndices(array) {
-  if (!Array.isArray(array)) return [];
-
-  const result = [];
-  for (let index = 0; index < array.length; index += 1) {
-    if (Object.hasOwn(array, index)) result.push(index);
-  }
-  return result;
 }
 
 function capturePlainData(value, path, errors, ancestors = new Set()) {
@@ -178,7 +169,13 @@ function captureRecord(record, path, errors) {
   for (let fieldIndex = 0; fieldIndex < REQUIRED.length; fieldIndex += 1) {
     const field = REQUIRED[fieldIndex];
     const fieldPath = `${path}.${field}`;
-    const read = field === "riskBidId" || field === "dcAdjustment"
+    const read = [
+      "riskBidId",
+      "dcAdjustment",
+      "approachId",
+      "statisticSlugOrAbilityId",
+      "finalDc"
+    ].includes(field)
       ? readOwnDataValue(record, field, fieldPath, errors)
       : readOwnValue(record, field, fieldPath, errors);
     if (!read.present) {
@@ -323,6 +320,9 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (capturedRecord.stageId !== state.currentStage?.stageId) issue(errors, "pending-check-stage-mismatch", `${path}.stageId`, "Pending check stage must match current stage.");
       if (capturedRecord.roundNumber !== state.roundNumber) issue(errors, "pending-check-round-mismatch", `${path}.roundNumber`, "Pending check round must match current round.");
       if (capturedRecord.mode !== MODES.CHECK) issue(errors, "invalid-pending-check-mode", `${path}.mode`, "Pending check mode must be check.");
+      if (!validId(capturedRecord.approachId)) issue(errors, "invalid-pending-check-approach-id", `${path}.approachId`, "Pending check approachId must be a safe non-blank exact string.");
+      if (!validId(capturedRecord.statisticSlugOrAbilityId)) issue(errors, "invalid-pending-check-statistic-id", `${path}.statisticSlugOrAbilityId`, "Pending check statisticSlugOrAbilityId must be a safe non-blank exact string.");
+      if (!Number.isSafeInteger(capturedRecord.finalDc) || capturedRecord.finalDc < 0) issue(errors, "invalid-pending-check-final-dc", `${path}.finalDc`, "Pending check finalDc must be a non-negative safe integer.");
       if (![STATUSES.PENDING, STATUSES.RESOLVED].includes(capturedRecord.status)) issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
       if (capturedRecord.status === STATUSES.PENDING && capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
       if (capturedRecord.status === STATUSES.RESOLVED) {
@@ -332,18 +332,8 @@ function validatePendingChecksAgainstReport(state, report, structural) {
         else {
           const slugs = ["critical-failure", "failure", "success", "critical-success"];
           if (!Number.isFinite(result.total) || !Number.isSafeInteger(result.degreeOfSuccess) || result.degreeOfSuccess < 0 || result.degreeOfSuccess > 3 || result.degreeOfSuccessSlug !== slugs[result.degreeOfSuccess]) issue(errors, "invalid-pending-check-result", `${path}.result`, "Resolved result degree or total is invalid.");
-          let authoredStatistic = false;
-          if (Array.isArray(capturedRecord.statisticOptions)) {
-            for (let optionIndex = 0; optionIndex < capturedRecord.statisticOptions.length; optionIndex += 1) {
-              if (Object.hasOwn(capturedRecord.statisticOptions, optionIndex)
-                && capturedRecord.statisticOptions[optionIndex] === result.statisticSlug) {
-                authoredStatistic = true;
-                break;
-              }
-            }
-          }
-          if (!authoredStatistic) issue(errors, "invalid-pending-check-result", `${path}.result.statisticSlug`, "Resolved result statistic must be authored.");
-          if (!Number.isSafeInteger(result.dc) || result.dc < 0 || capturedRecord.dcSource?.kind !== "fixed" || result.dc !== capturedRecord.dcSource.value) issue(errors, "invalid-pending-check-result", `${path}.result.dc`, "Resolved result DC must match fixed authored DC.");
+          if (result.statisticSlug !== capturedRecord.statisticSlugOrAbilityId) issue(errors, "invalid-pending-check-result", `${path}.result.statisticSlug`, "Resolved result statistic must exactly match the committed statistic identity.");
+          if (!Number.isSafeInteger(result.dc) || result.dc < 0 || result.dc !== capturedRecord.finalDc) issue(errors, "invalid-pending-check-result", `${path}.result.dc`, "Resolved result DC must exactly match finalDc.");
           const expectedMode = capturedRecord.secrecy === "secret" ? "blind" : "public";
           if (result.rollMode !== expectedMode) issue(errors, "invalid-pending-check-result", `${path}.result.rollMode`, "Resolved result roll mode must match secrecy.");
         }
@@ -353,7 +343,7 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (!request) {
         issue(errors, "unexpected-pending-check", path, "Pending check does not correspond to a selected check action.");
       } else {
-        const fields = ["stationId", "actionId", "resolutionPriority", "riskBidId", "dcAdjustment", "target", "source", "statisticOptions", "dcSource", "secrecy", "metadata"];
+        const fields = ["stationId", "actionId", "resolutionPriority", "riskBidId", "dcAdjustment", "target", "source", "approachId", "statisticSlugOrAbilityId", "finalDc", "secrecy", "metadata"];
         for (let fieldIndex = 0; fieldIndex < fields.length; fieldIndex += 1) {
           const field = fields[fieldIndex];
           if (!equal(capturedRecord[field], request[field])) issue(errors, "pending-check-request-mismatch", `${path}.${field}`, `Pending check ${field} must match its execution request.`);
@@ -395,8 +385,9 @@ function normalizePendingCheck({ pendingCheckIndex, record }) {
     target: record.target,
     mode: record.mode,
     source: record.source,
-    statisticOptions: record.statisticOptions,
-    dcSource: record.dcSource,
+    approachId: record.approachId,
+    statisticSlugOrAbilityId: record.statisticSlugOrAbilityId,
+    finalDc: record.finalDc,
     secrecy: record.secrecy,
     metadata: record.metadata,
     status: record.status,
@@ -575,12 +566,18 @@ export function applyVoyageEncounterPendingCheckPreparation(state, preparationRe
     candidate.pendingChecks = [];
     for (let checkIndex = 0; checkIndex < checks.length; checkIndex += 1) {
       const request = checks[checkIndex];
+      const pendingRequest = clonePlainData(request);
+      delete pendingRequest.noRoll;
+      delete pendingRequest.baseDc;
+      delete pendingRequest.actionDcAdjustment;
+      delete pendingRequest.upgradeDcReduction;
+      delete pendingRequest.riskBidDcAdjustment;
       candidate.pendingChecks.push({
         pendingCheckId: mappings.get(request.sequence),
         preparedRevision: candidate.revision,
         stageId: candidate.currentStage.stageId,
         roundNumber: candidate.roundNumber,
-        ...clonePlainData(request),
+        ...pendingRequest,
         status: "pending",
         result: null
       });

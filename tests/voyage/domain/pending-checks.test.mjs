@@ -30,7 +30,14 @@ function riskBidOption(riskBidId, dcAdjustment) {
   };
 }
 
-function encounter({ phase = "resolution", secret = false, statisticOptions = ["diplomacy"], riskBidAdjustment = null } = {}) {
+function encounter({
+  phase = "resolution",
+  secret = false,
+  statisticOptions = ["diplomacy"],
+  riskBidAdjustment = null,
+  actionDcAdjustment = 0,
+  upgradeDcReduction = 0
+} = {}) {
   const state = createVoyageEncounterState({
     encounterId: "pending-checks",
     definitionId: "definition",
@@ -46,10 +53,16 @@ function encounter({ phase = "resolution", secret = false, statisticOptions = ["
       stationId: "captain",
       actions: [{
         actionId: "check",
+        approaches: [{
+          approachId: "diplomacy",
+          statisticSlugOrAbilityId: "diplomacy"
+        }],
         check: {
           source: { kind: "character", uuid: "Actor.captain" },
           statisticOptions,
           dcSource: { kind: "fixed", value: 20 },
+          actionDcAdjustment,
+          upgradeDcReduction,
           secrecy: secret ? "secret" : "public"
         }
       }]
@@ -58,7 +71,14 @@ function encounter({ phase = "resolution", secret = false, statisticOptions = ["
       stationId: "captain",
       operator: { kind: "actor", uuid: "Actor.captain" }
     }],
-    selections: { captain: { stationId: "captain", actionId: "check" } },
+    selections: {
+      captain: {
+        stationId: "captain",
+        actionId: "check",
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      }
+    },
     committedStationOrder: ["captain"]
   });
 
@@ -131,6 +151,10 @@ test("pending-check preparation preserves committed station sequence", () => {
     actions: [{
       actionId: "repair",
       resolutionPriority: 100,
+      approaches: [{
+        approachId: "crafting",
+        statisticSlugOrAbilityId: "crafting"
+      }],
       check: {
         source: { kind: "character", uuid: "Actor.engineer" },
         statisticOptions: ["crafting"],
@@ -143,7 +167,12 @@ test("pending-check preparation preserves committed station sequence", () => {
     stationId: "engineer",
     operator: { kind: "actor", uuid: "Actor.engineer" }
   });
-  state.selections.engineer = { stationId: "engineer", actionId: "repair" };
+  state.selections.engineer = {
+    stationId: "engineer",
+    actionId: "repair",
+    approachId: "crafting",
+    statisticSlugOrAbilityId: "crafting"
+  };
   state.committedStationOrder = ["engineer", "captain"];
 
   const result = applyVoyageEncounterPendingCheckPreparation(state, {
@@ -165,7 +194,7 @@ test("pending-check preparation preserves committed station sequence", () => {
   );
 });
 
-test("pending-check preparation preserves canonical Risk Bid metadata without another check or final DC", () => {
+test("pending-check preparation persists canonical identity and final DC once", () => {
   for (const dcAdjustment of [2, 5, 8]) {
     const source = encounter({ riskBidAdjustment: dcAdjustment });
     const before = structuredClone(source);
@@ -180,15 +209,39 @@ test("pending-check preparation preserves canonical Risk Bid metadata without an
       `bid-${dcAdjustment}`
     );
     assert.equal(
+      Object.hasOwn(result.nextState.pendingChecks[0], "statisticOptions"),
+      false
+    );
+    assert.equal(
+      Object.hasOwn(result.nextState.pendingChecks[0], "dcSource"),
+      false
+    );
+    assert.equal(
+      result.nextState.pendingChecks[0].approachId,
+      "diplomacy"
+    );
+    assert.equal(
+      result.nextState.pendingChecks[0].statisticSlugOrAbilityId,
+      "diplomacy"
+    );
+    assert.equal(
       result.nextState.pendingChecks[0].dcAdjustment,
       dcAdjustment
     );
-    assert.equal(Object.hasOwn(result.nextState.pendingChecks[0], "finalDc"), false);
+    for (const field of [
+      "baseDc",
+      "actionDcAdjustment",
+      "upgradeDcReduction",
+      "riskBidDcAdjustment"
+    ]) {
+      assert.equal(
+        Object.hasOwn(result.nextState.pendingChecks[0], field),
+        false,
+        field
+      );
+    }
     assert.equal(Object.hasOwn(result.nextState.pendingChecks[0], "outcomes"), false);
-    assert.deepEqual(result.nextState.pendingChecks[0].dcSource, {
-      kind: "fixed",
-      value: 20
-    });
+    assert.equal(result.nextState.pendingChecks[0].finalDc, 20 + dcAdjustment);
     assert.deepEqual(source, before);
   }
 
@@ -314,37 +367,28 @@ test("requires secrecy-specific public and blind roll modes", () => {
   }
 });
 
-test("uses only own statistic options and ignores inherited entries and getters", () => {
-  const sparseOptions = ["diplomacy"];
-  sparseOptions.length = 2;
-  const state = preparedEncounter({ statisticOptions: sparseOptions });
-  const options = state.pendingChecks[0].statisticOptions;
-  const prototype = Object.create(Array.prototype);
-  Object.defineProperty(prototype, 1, {
-    configurable: true,
-    get() {
-      throw new Error("inherited statistic option must not be read");
-    }
+test("obsolete pending-check compatibility authorities are rejected", () => {
+  const state = preparedEncounter({
+    statisticOptions: ["athletics", "diplomacy", "survival"]
   });
-  customPrototypeArray(options, prototype, () => {
-    setResolvedCheck(state, resolvedResult({ statisticSlug: "diplomacy" }));
-    assert.equal(validateVoyageEncounterPendingChecks(state).valid, true);
-  });
+  assert.equal(Object.hasOwn(state.pendingChecks[0], "statisticOptions"), false);
+  assert.equal(Object.hasOwn(state.pendingChecks[0], "dcSource"), false);
 
-  const inheritedSourceOptions = ["diplomacy"];
-  inheritedSourceOptions.length = 2;
-  const inheritedOnly = preparedEncounter({ statisticOptions: inheritedSourceOptions });
-  const inheritedOptions = inheritedOnly.pendingChecks[0].statisticOptions;
-  const inheritedPrototype = Object.create(Array.prototype);
-  Object.defineProperty(inheritedPrototype, 1, {
-    configurable: true,
-    value: "athletics",
-    enumerable: true
-  });
-  customPrototypeArray(inheritedOptions, inheritedPrototype, () => {
-    setResolvedCheck(inheritedOnly, resolvedResult({ statisticSlug: "athletics" }));
-    assert.equal(validateVoyageEncounterPendingChecks(inheritedOnly).valid, false);
-  });
+  for (const [field, value] of [
+    ["statisticOptions", ["diplomacy"]],
+    ["dcSource", { kind: "fixed", value: 20 }]
+  ]) {
+    const obsolete = structuredClone(state);
+    obsolete.pendingChecks[0][field] = value;
+    const first = analyzeVoyageEncounterPendingChecks(obsolete);
+    const second = analyzeVoyageEncounterPendingChecks(obsolete);
+    assert.equal(first.pendingChecksValid, false);
+    assert.deepEqual(first.errors, second.errors);
+    assert.ok(first.errors.some(
+      (entry) => entry.code === "unexpected-pending-check-field"
+        && entry.path === `pendingChecks[0].${field}`
+    ));
+  }
 });
 
 test("reads the resolved result property exactly once", () => {
@@ -414,7 +458,8 @@ test("analyzes an exact isolated pending-check report contract", () => {
   assert.deepEqual(Object.keys(report.pendingChecks[0]), [
     "pendingCheckIndex", "pendingCheckId", "preparedRevision", "stageId", "roundNumber",
     "sequence", "stationId", "actionId", "resolutionPriority", "riskBidId", "dcAdjustment", "target", "mode",
-    "source", "statisticOptions", "dcSource", "secrecy", "metadata", "status", "result"
+    "source", "approachId", "statisticSlugOrAbilityId", "finalDc",
+    "secrecy", "metadata", "status", "result"
   ]);
   assert.equal(report.pendingChecks[0].pendingCheckIndex, 0);
   assert.equal(report.pendingChecks[0].status, "pending");
@@ -442,20 +487,14 @@ test("isolates normalized records from source state and other reports", () => {
   const record = first.pendingChecks[0];
   assert.equal(record.target, null);
   record.source.changed = true;
-  record.statisticOptions.push("athletics");
-  record.dcSource.changed = true;
   record.metadata.changed = true;
   record.result.total = 1;
   assert.equal(state.pendingChecks[0].target, null);
   assert.equal(state.pendingChecks[0].source.changed, undefined);
-  assert.equal(state.pendingChecks[0].statisticOptions.includes("athletics"), false);
-  assert.equal(state.pendingChecks[0].dcSource.changed, undefined);
   assert.equal(state.pendingChecks[0].metadata.changed, undefined);
   assert.equal(state.pendingChecks[0].result.total, 20);
   assert.equal(second.pendingChecks[0].target, null);
   assert.equal(second.pendingChecks[0].source.changed, undefined);
-  assert.equal(second.pendingChecks[0].statisticOptions.includes("athletics"), false);
-  assert.equal(second.pendingChecks[0].dcSource.changed, undefined);
   assert.equal(second.pendingChecks[0].metadata.changed, undefined);
   assert.equal(second.pendingChecks[0].result.total, 20);
 });
@@ -510,4 +549,169 @@ test("analyzes a resolved result getter once and returns an isolated result", ()
   assert.equal(report.pendingChecksValid, true);
   report.pendingChecks[0].result.total = 1;
   assert.equal(result.total, 20);
+});
+
+test("pending-check construction copies final DC without repeating arithmetic", () => {
+  const source = encounter({
+    actionDcAdjustment: -3,
+    upgradeDcReduction: 4,
+    riskBidAdjustment: 5,
+    statisticOptions: ["athletics", "diplomacy", "survival"]
+  });
+  const execution = prepareVoyageEncounterActionExecutionRequests(source);
+  assert.equal(execution.executionRequests[0].finalDc, 20);
+
+  const request = {
+    pendingCheckIds: [{ sequence: 0, pendingCheckId: "canonical-dc" }]
+  };
+  const first = applyVoyageEncounterPendingCheckPreparation(source, request);
+  const second = applyVoyageEncounterPendingCheckPreparation(source, request);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.deepEqual(first.nextState.pendingChecks, second.nextState.pendingChecks);
+
+  const pending = first.nextState.pendingChecks[0];
+  assert.equal(pending.approachId, "diplomacy");
+  assert.equal(pending.statisticSlugOrAbilityId, "diplomacy");
+  assert.equal(pending.finalDc, 20);
+  assert.equal(Object.hasOwn(pending, "statisticOptions"), false);
+  assert.equal(Object.hasOwn(pending, "dcSource"), false);
+  for (const field of [
+    "baseDc",
+    "actionDcAdjustment",
+    "upgradeDcReduction",
+    "riskBidDcAdjustment"
+  ]) {
+    assert.equal(Object.hasOwn(pending, field), false, field);
+  }
+});
+
+test("canonical pending identity and final DC are required exact own data", () => {
+  for (const [field, value, code] of [
+    ["approachId", undefined, "missing-pending-check-field"],
+    ["statisticSlugOrAbilityId", undefined, "missing-pending-check-field"],
+    ["finalDc", undefined, "missing-pending-check-field"],
+    ["approachId", "", "invalid-pending-check-approach-id"],
+    ["statisticSlugOrAbilityId", " ", "invalid-pending-check-statistic-id"],
+    ["finalDc", "20", "invalid-pending-check-final-dc"],
+    ["finalDc", 1.5, "invalid-pending-check-final-dc"],
+    ["finalDc", Infinity, "invalid-pending-check-plain-data"],
+    ["finalDc", Number.MAX_SAFE_INTEGER + 1, "invalid-pending-check-final-dc"]
+  ]) {
+    const state = preparedEncounter();
+    if (value === undefined) delete state.pendingChecks[0][field];
+    else state.pendingChecks[0][field] = value;
+    const report = analyzeVoyageEncounterPendingChecks(state);
+    assert.equal(report.pendingChecksValid, false, `${field}:${String(value)}`);
+    assert.deepEqual(report.pendingChecks, []);
+    assert.ok(report.errors.some((entry) => entry.code === code), code);
+  }
+});
+
+test("canonical pending fields reject accessors without invoking them", () => {
+  for (const field of [
+    "approachId",
+    "statisticSlugOrAbilityId",
+    "finalDc"
+  ]) {
+    const state = preparedEncounter();
+    let reads = 0;
+    Object.defineProperty(state.pendingChecks[0], field, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        reads += 1;
+        throw new Error("hostile canonical field");
+      }
+    });
+    const report = analyzeVoyageEncounterPendingChecks(state);
+    assert.equal(report.pendingChecksValid, false, field);
+    assert.deepEqual(report.pendingChecks, []);
+    assert.equal(reads, 0, field);
+  }
+});
+
+test("canonical pending identities remain isolated across requests and siblings", () => {
+  const source = encounter();
+  source.availableStations.push({
+    stationId: "engineer",
+    actions: [{
+      actionId: "repair",
+      approaches: [{
+        approachId: "crafting",
+        statisticSlugOrAbilityId: "crafting"
+      }],
+      check: {
+        source: { kind: "character", uuid: "Actor.engineer" },
+        statisticOptions: ["crafting"],
+        dcSource: { kind: "fixed", value: 22 },
+        secrecy: "public"
+      }
+    }]
+  });
+  source.stationAssignments.push({
+    stationId: "engineer",
+    operator: { kind: "actor", uuid: "Actor.engineer" }
+  });
+  source.selections.engineer = {
+    stationId: "engineer",
+    actionId: "repair",
+    approachId: "crafting",
+    statisticSlugOrAbilityId: "crafting"
+  };
+  source.committedStationOrder = ["captain", "engineer"];
+  const requests = prepareVoyageEncounterActionExecutionRequests(source);
+  const prepared = applyVoyageEncounterPendingCheckPreparation(source, {
+    pendingCheckIds: [
+      { sequence: 0, pendingCheckId: "first" },
+      { sequence: 1, pendingCheckId: "second" }
+    ]
+  });
+  assert.equal(prepared.ok, true);
+  const [first, second] = prepared.nextState.pendingChecks;
+  assert.equal(Object.hasOwn(first, "statisticOptions"), false);
+  assert.equal(Object.hasOwn(first, "dcSource"), false);
+  assert.equal(Object.hasOwn(second, "statisticOptions"), false);
+  assert.equal(Object.hasOwn(second, "dcSource"), false);
+  assert.equal(Object.hasOwn(requests.executionRequests[0], "statisticOptions"), false);
+  assert.equal(Object.hasOwn(requests.executionRequests[0], "dcSource"), false);
+  first.source.uuid = "Actor.changed";
+  assert.equal(first.statisticSlugOrAbilityId, "diplomacy");
+  assert.equal(second.statisticSlugOrAbilityId, "crafting");
+  assert.equal(second.finalDc, 22);
+  assert.equal(requests.executionRequests[0].source.uuid, "Actor.captain");
+});
+
+test("no-roll plans never create synthetic pending checks", () => {
+  const source = encounter();
+  const action = source.availableStations[0].actions[0];
+  delete action.check;
+  action.approaches = [{ approachId: "automatic", noRoll: true }];
+  source.selections.captain = {
+    stationId: "captain",
+    actionId: "check",
+    approachId: "automatic",
+    noRoll: true
+  };
+  const before = structuredClone(source);
+  let result = applyVoyageEncounterPendingCheckPreparation(source, {
+    pendingCheckIds: []
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.nextState, null);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "pending-check-preparation-not-required"
+  ));
+  assert.deepEqual(source, before);
+
+  source.selections.captain.finalDc = 20;
+  result = applyVoyageEncounterPendingCheckPreparation(source, {
+    pendingCheckIds: []
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.nextState, null);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "unexpected-execution-approach-selection-field"
+  ));
+  assert.deepEqual(source.pendingChecks, []);
 });

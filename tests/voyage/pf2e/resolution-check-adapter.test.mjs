@@ -1,79 +1,490 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { preflightVoyagePf2ePendingCheck, validateVoyagePf2eAdapterDependencies } from "../../../scripts/voyage/pf2e/resolution-check-adapter.js";
+import {
+  preflightVoyagePf2ePendingCheck,
+  validateVoyagePf2eAdapterDependencies
+} from "../../../scripts/voyage/pf2e/resolution-check-adapter.js";
+import {
+  resolveVoyagePf2ePendingCheckContext
+} from "../../../scripts/voyage/pf2e/resolution-check-context.js";
 
 function check(overrides = {}) {
-  return { pendingCheckId: "check-1", sequence: 0, status: "pending", mode: "check", source: { kind: "character", uuid: "Actor.abc123" }, statisticOptions: ["athletics", "acrobatics"], dcSource: { kind: "fixed", value: 20 }, secrecy: "public", ...overrides };
+  return {
+    pendingCheckId: "check-1",
+    sequence: 0,
+    status: "pending",
+    mode: "check",
+    source: { kind: "character", uuid: "Actor.abc123" },
+    approachId: "athletics-approach",
+    statisticSlugOrAbilityId: "athletics",
+    finalDc: 20,
+    secrecy: "public",
+    ...overrides
+  };
 }
+
 function dependencies(overrides = {}) {
   const actor = { mutable: true };
-  return { resolveUuid: async () => ({ actor }), getActorFromResolvedDocument: (document) => document.actor, getStatistic: (_actor, slug) => slug === "athletics" ? { slug, mutable: true } : null, ...overrides };
+  return {
+    resolveUuid: async () => ({ actor }),
+    getActorFromResolvedDocument: (document) => document.actor,
+    getStatistic: (_actor, slug) => slug === "athletics"
+      ? { slug, mutable: true }
+      : null,
+    ...overrides
+  };
 }
-async function preflight(overrides, dependencyOverrides) { return preflightVoyagePf2ePendingCheck(check(overrides), dependencies(dependencyOverrides)); }
-function code(result) { return result.errors[0]?.code; }
 
-test("successful character UUID resolution", async () => { const result = await preflight(); assert.deepEqual(result, { ok: true, status: "ready", pendingCheckId: "check-1", sequence: 0, sourceKind: "character", sourceUuid: "Actor.abc123", statisticSlug: "athletics", dc: 20, rollMode: "public", errors: [], warnings: [] }); });
-test("Actor document source", async () => { const actor = {}; const result = await preflight({}, { resolveUuid: async () => actor, getActorFromResolvedDocument: (document) => document }); assert.equal(result.ok, true); });
-test("Token-like document actor extraction", async () => { const actor = {}; const result = await preflight({}, { resolveUuid: async () => ({ actor }), getActorFromResolvedDocument: (document) => document.actor }); assert.equal(result.ok, true); });
-test("missing UUID", async () => { const source = { kind: "character" }; assert.equal(code(await preflight({ source })), "voyage-pf2e-missing-source-uuid"); });
-test("inherited UUID ignored", async () => { const previous = Object.getOwnPropertyDescriptor(Object.prototype, "uuid"); Object.defineProperty(Object.prototype, "uuid", { configurable: true, value: "Actor.inherited" }); try { const source = { kind: "character" }; assert.equal(code(await preflight({ source })), "voyage-pf2e-missing-source-uuid"); } finally { if (previous) Object.defineProperty(Object.prototype, "uuid", previous); else delete Object.prototype.uuid; } });
-test("UUID getter read at most once", async () => { let reads = 0; const source = { kind: "character" }; Object.defineProperty(source, "uuid", { enumerable: true, get() { reads += 1; return "Actor.abc"; } }); await preflight({ source }); assert.equal(reads, 1); });
-test("resolver called once", async () => { let calls = 0; await preflight({}, { resolveUuid: async () => { calls += 1; return { actor: {} }; } }); assert.equal(calls, 1); });
-test("resolver exception converted to error", async () => { assert.equal(code(await preflight({}, { resolveUuid: async () => { throw new Error("no"); } })), "voyage-pf2e-source-resolution-failed"); });
-test("resolved document missing Actor", async () => { assert.equal(code(await preflight({}, { resolveUuid: async () => ({}) })), "voyage-pf2e-actor-unresolved"); });
-test("statistic fallback order", async () => { const calls = []; const result = await preflight({}, { getStatistic: (_actor, slug) => { calls.push(slug); return slug === "acrobatics" ? {} : null; } }); assert.deepEqual(calls, ["athletics", "acrobatics"]); assert.equal(result.statisticSlug, "acrobatics"); });
-test("first statistic succeeds", async () => { const calls = []; const result = await preflight({}, { getStatistic: (_actor, slug) => { calls.push(slug); return {}; } }); assert.deepEqual(calls, ["athletics"]); assert.equal(result.statisticSlug, "athletics"); });
-test("first fails and second succeeds", async () => { const result = await preflight({}, { getStatistic: (_actor, slug) => slug === "acrobatics" ? {} : null }); assert.equal(result.statisticSlug, "acrobatics"); });
-test("every statistic missing", async () => { assert.equal(code(await preflight({}, { getStatistic: () => null })), "voyage-pf2e-statistic-unresolved"); });
-test("statistic resolver exception converted to error", async () => { assert.equal(code(await preflight({}, { getStatistic: () => { throw new Error("no"); } })), "voyage-pf2e-statistic-resolution-failed"); });
-test("statistic getter called once per attempted slug", async () => { let reads = 0; const options = ["athletics", "acrobatics"]; Object.defineProperty(options, 0, { enumerable: true, get() { reads += 1; return "athletics"; } }); await preflight({ statisticOptions: options }, { getStatistic: () => null }); assert.equal(reads, 1); });
-test("sparse statistic option arrays", async () => { const options = []; options[2] = "acrobatics"; const result = await preflight({ statisticOptions: options }, { getStatistic: (_a, slug) => slug === "acrobatics" ? {} : null }); assert.equal(result.statisticSlug, "acrobatics"); });
-test("inherited statistic options ignored", async () => { const options = ["athletics"]; const prototype = ["inherited"]; Object.setPrototypeOf(options, prototype); try { const result = await preflight({ statisticOptions: options }); assert.equal(result.ok, true); } finally { Object.setPrototypeOf(options, Array.prototype); } });
-test("throwing inherited numeric getter never executed", async () => { const options = ["athletics"]; const prototype = Object.create(Array.prototype); Object.defineProperty(prototype, 1, { get() { throw new Error("bad"); } }); Object.setPrototypeOf(options, prototype); try { assert.equal((await preflight({ statisticOptions: options })).ok, true); } finally { Object.setPrototypeOf(options, Array.prototype); } });
-test("fixed DC success", async () => { assert.equal((await preflight({ dcSource: { kind: "fixed", value: 0 } })).dc, 0); });
-test("negative fixed DC rejected", async () => { assert.equal(code(await preflight({ dcSource: { kind: "fixed", value: -1 } })), "voyage-pf2e-invalid-fixed-dc"); });
-test("fractional fixed DC rejected", async () => { assert.equal(code(await preflight({ dcSource: { kind: "fixed", value: 1.5 } })), "voyage-pf2e-invalid-fixed-dc"); });
-test("unsafe integer fixed DC rejected", async () => { assert.equal(code(await preflight({ dcSource: { kind: "fixed", value: Number.MAX_SAFE_INTEGER + 1 } })), "voyage-pf2e-invalid-fixed-dc"); });
-test("unsupported DC kinds", async () => { assert.equal(code(await preflight({ dcSource: { kind: "stage" } })), "voyage-pf2e-unsupported-dc-source"); });
-test("unsupported source kinds", async () => { assert.equal(code(await preflight({ source: { kind: "ship", uuid: "Actor.x" } })), "voyage-pf2e-unsupported-source-kind"); });
-test("public secrecy mapping", async () => { assert.equal((await preflight({ secrecy: "public" })).rollMode, "public"); });
-test("secret secrecy mapping", async () => { assert.equal((await preflight({ secrecy: "secret" })).rollMode, "blind"); });
-test("invalid secrecy", async () => { assert.equal(code(await preflight({ secrecy: "gm" })), "voyage-pf2e-invalid-secrecy"); });
-test("non-pending record blocked", async () => { assert.equal(code(await preflight({ status: "resolved" })), "voyage-pf2e-check-not-pending"); });
-test("missing dependency functions", async () => { const result = await preflightVoyagePf2ePendingCheck(check(), {}); assert.equal(code(result), "voyage-pf2e-invalid-dependencies"); assert.equal(validateVoyagePf2eAdapterDependencies({}).valid, false); });
-test("dependency functions are not included in result", async () => { const result = await preflight(); assert.equal(JSON.stringify(result).includes("resolveUuid"), false); });
-test("live Actor and Statistic doubles are not included in result", async () => { const actor = { secret: "actor" }, statistic = { secret: "stat" }; const result = await preflight({}, { resolveUuid: async () => ({ actor }), getActorFromResolvedDocument: (d) => d.actor, getStatistic: () => statistic }); assert.equal(JSON.stringify(result).includes("secret"), false); });
-test("result mutation cannot mutate input", async () => { const value = check(); const result = await preflightVoyagePf2ePendingCheck(value, dependencies()); result.pendingCheckId = "changed"; assert.equal(value.pendingCheckId, "check-1"); });
-test("input remains byte-for-byte equivalent in plain-data shape", async () => { const value = check(); const before = JSON.stringify(value); await preflightVoyagePf2ePendingCheck(value, dependencies()); assert.equal(JSON.stringify(value), before); });
-test("dependency-returned mutable objects do not leak into result", async () => { const actor = { nested: {} }, statistic = { nested: {} }; const result = await preflight({}, { resolveUuid: async () => ({ actor }), getActorFromResolvedDocument: (d) => d.actor, getStatistic: () => statistic }); assert.equal(Object.values(result).includes(actor), false); assert.equal(Object.values(result).includes(statistic), false); });
-test("first-read getter failures become structured errors", async () => { const value = check(); Object.defineProperty(value, "status", { enumerable: true, get() { throw new Error("bad"); } }); assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request"); });
-test("second-read-throwing getters succeed because fields are captured once", async () => { let reads = 0; const value = check(); Object.defineProperty(value, "status", { enumerable: true, get() { reads += 1; if (reads > 1) throw new Error("again"); return "pending"; } }); assert.equal((await preflightVoyagePf2ePendingCheck(value, dependencies())).ok, true); assert.equal(reads, 1); });
-test("prototype-sensitive keys do not pollute Object.prototype", async () => { const value = check({ source: { kind: "character", uuid: "Actor.x", __proto__: { polluted: true } } }); await preflightVoyagePf2ePendingCheck(value, dependencies()); assert.equal({}.polluted, undefined); });
-test("no chat creation dependency is requested or called", async () => { let calls = 0; const result = await preflight({}, { createChatMessage: () => { calls += 1; } }); assert.equal(result.ok, true); assert.equal(calls, 0); });
-test("no roll dependency is requested or called", async () => { let calls = 0; const result = await preflight({}, { roll: () => { calls += 1; } }); assert.equal(result.ok, true); assert.equal(calls, 0); });
-test("own mode check succeeds", async () => { assert.equal((await preflight({ mode: "check" })).ok, true); });
-test("missing mode is blocked", async () => { const value = check(); delete value.mode; assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request"); });
-test("inherited mode is ignored", async () => { const previous = Object.getOwnPropertyDescriptor(Object.prototype, "mode"); Object.defineProperty(Object.prototype, "mode", { configurable: true, value: "check" }); try { const value = check(); delete value.mode; assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request"); } finally { if (previous) Object.defineProperty(Object.prototype, "mode", previous); else delete Object.prototype.mode; } });
-test("no-roll mode is blocked", async () => { assert.equal(code(await preflight({ mode: "no-roll" })), "voyage-pf2e-invalid-check-mode"); });
-test("throwing mode getter becomes a structured error", async () => { const value = check(); Object.defineProperty(value, "mode", { enumerable: true, get() { throw new Error("mode"); } }); assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request"); });
-test("mode getter is read once", async () => { let reads = 0; const value = check(); Object.defineProperty(value, "mode", { enumerable: true, get() { reads += 1; return "check"; } }); assert.equal((await preflightVoyagePf2ePendingCheck(value, dependencies())).ok, true); assert.equal(reads, 1); });
-for (const unsafeId of ["__proto__", "constructor", "prototype"]) test(`pending-check ID ${unsafeId} is rejected`, async () => { assert.equal(code(await preflight({ pendingCheckId: unsafeId })), "voyage-pf2e-invalid-pending-check-id"); });
-test("unsafe IDs are absent from blocked results", async () => { const result = await preflight({ pendingCheckId: "__proto__" }); assert.equal(Object.hasOwn(result, "pendingCheckId"), false); });
-test("throwing pending-check getPrototypeOf Proxy does not escape", async () => { const value = new Proxy(check(), { getPrototypeOf() { throw new Error("prototype"); } }); const result = await preflightVoyagePf2ePendingCheck(value, dependencies()); assert.equal(code(result), "voyage-pf2e-invalid-request"); });
-test("throwing pending-check ownness Proxy does not escape", async () => { const value = new Proxy(check(), { getOwnPropertyDescriptor() { throw new Error("ownness"); } }); const result = await preflightVoyagePf2ePendingCheck(value, dependencies()); assert.equal(code(result), "voyage-pf2e-invalid-request"); });
-test("throwing source prototype Proxy does not escape", async () => { const source = new Proxy({}, { getPrototypeOf() { throw new Error("prototype"); } }); const result = await preflight({ source }); assert.equal(code(result), "voyage-pf2e-invalid-request"); });
-test("throwing DC-source ownness Proxy does not escape", async () => { const dcSource = new Proxy({ kind: "fixed", value: 20 }, { getOwnPropertyDescriptor() { throw new Error("ownness"); } }); const result = await preflight({ dcSource }); assert.equal(code(result), "voyage-pf2e-invalid-request"); });
-test("throwing dependency ownness Proxy returns invalid dependency validation", () => { const dependencyProxy = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("ownness"); } }); assert.equal(validateVoyagePf2eAdapterDependencies(dependencyProxy).valid, false); });
-test("dependency validation never throws for adversarial objects", () => { const dependencyProxy = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("ownness"); } }); assert.doesNotThrow(() => validateVoyagePf2eAdapterDependencies(dependencyProxy)); });
-test("resolver errors retain source-resolution code", async () => { assert.equal(code(await preflight({}, { resolveUuid: async () => { throw new Error("resolver"); } })), "voyage-pf2e-source-resolution-failed"); });
-test("Actor extractor errors retain source-resolution code", async () => { assert.equal(code(await preflight({}, { getActorFromResolvedDocument: () => { throw new Error("actor"); } })), "voyage-pf2e-source-resolution-failed"); });
-test("statistic errors retain statistic-resolution code", async () => { assert.equal(code(await preflight({}, { getStatistic: () => { throw new Error("statistic"); } })), "voyage-pf2e-statistic-resolution-failed"); });
-test("dependencies are not called after invalid mode or unsafe ID", async () => { let calls = 0; const injected = { resolveUuid: async () => { calls += 1; }, getActorFromResolvedDocument: () => { calls += 1; }, getStatistic: () => { calls += 1; } }; await preflightVoyagePf2ePendingCheck(check({ mode: "no-roll" }), injected); await preflightVoyagePf2ePendingCheck(check({ pendingCheckId: "prototype" }), injected); assert.equal(calls, 0); });
-test("revoked statistic-options Proxy returns a structured blocked result", async () => { const { proxy, revoke } = Proxy.revocable([], {}); revoke(); const result = await preflight({ statisticOptions: proxy }); assert.equal(code(result), "voyage-pf2e-invalid-statistic-options"); });
-test("statistic-options length getter is not read", async () => { const options = new Proxy(["athletics"], { get(target, key, receiver) { if (key === "length") throw new Error("length"); return Reflect.get(target, key, receiver); } }); assert.equal((await preflight({ statisticOptions: options })).ok, true); });
-test("throwing statistic-options ownKeys trap returns structured error", async () => { const options = new Proxy([], { ownKeys() { throw new Error("keys"); } }); assert.equal(code(await preflight({ statisticOptions: options })), "voyage-pf2e-invalid-statistic-options"); });
-test("throwing own numeric statistic-option getter returns structured error", async () => { const options = ["athletics"]; const proxy = new Proxy(options, { get(target, key, receiver) { if (key === "0") throw new Error("value"); return Reflect.get(target, key, receiver); } }); assert.equal(code(await preflight({ statisticOptions: proxy })), "voyage-pf2e-invalid-statistic-options"); });
-test("sparse own statistic indices are processed in ascending order", async () => { const options = []; options[5] = "acrobatics"; options[2] = "athletics"; const calls = []; const result = await preflight({ statisticOptions: options }, { getStatistic: (_actor, slug) => { calls.push(slug); return slug === "acrobatics" ? {} : null; } }); assert.deepEqual(calls, ["athletics", "acrobatics"]); assert.equal(result.statisticSlug, "acrobatics"); });
-test("non-index statistic option properties are ignored", async () => { const options = ["athletics"]; for (const key of ["01", "-1", "1.5"]) Object.defineProperty(options, key, { configurable: true, get() { throw new Error(key); } }); assert.equal((await preflight({ statisticOptions: options })).statisticSlug, "athletics"); });
-test("inherited statistic option entries remain ignored after key enumeration", async () => { const options = ["athletics"]; const prototype = Object.create(Array.prototype); Object.defineProperty(prototype, 1, { get() { throw new Error("inherited"); } }); Object.setPrototypeOf(options, prototype); try { assert.equal((await preflight({ statisticOptions: options })).ok, true); } finally { Object.setPrototypeOf(options, Array.prototype); } });
-test("dependencies are not called after statistic-option inspection failure", async () => { let calls = 0; const options = new Proxy([], { ownKeys() { throw new Error("keys"); } }); const injected = { resolveUuid: async () => { calls += 1; }, getActorFromResolvedDocument: () => { calls += 1; }, getStatistic: () => { calls += 1; } }; await preflightVoyagePf2ePendingCheck(check({ statisticOptions: options }), injected); assert.equal(calls, 0); });
+const preflight = (overrides, dependencyOverrides) => (
+  preflightVoyagePf2ePendingCheck(
+    check(overrides),
+    dependencies(dependencyOverrides)
+  )
+);
+const code = (result) => result.errors[0]?.code;
+
+test("successful exact character statistic and final-DC preflight", async () => {
+  assert.deepEqual(await preflight(), {
+    ok: true,
+    status: "ready",
+    pendingCheckId: "check-1",
+    sequence: 0,
+    sourceKind: "character",
+    sourceUuid: "Actor.abc123",
+    statisticSlug: "athletics",
+    dc: 20,
+    rollMode: "public",
+    errors: [],
+    warnings: []
+  });
+});
+
+test("internal context contains exactly one actor statistic and DC", async () => {
+  const actor = {};
+  const statistic = { slug: "athletics" };
+  const resolved = await resolveVoyagePf2ePendingCheckContext(check(), dependencies({
+    resolveUuid: async () => ({ actor }),
+    getActorFromResolvedDocument: (document) => document.actor,
+    getStatistic: () => statistic
+  }));
+  assert.deepEqual(Object.keys(resolved.context), ["actor", "statistic", "dc"]);
+  assert.equal(resolved.context.actor, actor);
+  assert.equal(resolved.context.statistic, statistic);
+  assert.equal(resolved.context.dc, 20);
+  assert.notEqual(resolved.context, check());
+});
+
+test("Actor and TokenDocument-like authoritative sources resolve", async () => {
+  const actor = {};
+  assert.equal((await preflight({}, {
+    resolveUuid: async () => actor,
+    getActorFromResolvedDocument: (document) => document,
+    getStatistic: () => ({ slug: "athletics" })
+  })).ok, true);
+  assert.equal((await preflight({}, {
+    resolveUuid: async () => ({ actor }),
+    getActorFromResolvedDocument: (document) => document.actor,
+    getStatistic: () => ({ slug: "athletics" })
+  })).ok, true);
+});
+
+test("missing and inherited source UUIDs are rejected", async () => {
+  assert.equal(code(await preflight({ source: { kind: "character" } })), "voyage-pf2e-missing-source-uuid");
+  const source = Object.create({ uuid: "Actor.inherited" });
+  source.kind = "character";
+  assert.equal(code(await preflight({ source })), "voyage-pf2e-invalid-request");
+});
+
+test("source accessors are rejected without invocation", async () => {
+  for (const field of ["kind", "uuid"]) {
+    let reads = 0;
+    const source = {
+      kind: "character",
+      uuid: "Actor.hostile"
+    };
+    Object.defineProperty(source, field, {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return field === "kind" ? "character" : "Actor.hostile";
+      }
+    });
+    assert.equal(code(await preflight({ source })), "voyage-pf2e-invalid-request");
+    assert.equal(reads, 0);
+  }
+});
+
+test("source resolver and actor extraction each run once", async () => {
+  let resolverCalls = 0;
+  let actorCalls = 0;
+  await preflight({}, {
+    resolveUuid: async () => {
+      resolverCalls += 1;
+      return { actor: {} };
+    },
+    getActorFromResolvedDocument(document) {
+      actorCalls += 1;
+      return document.actor;
+    }
+  });
+  assert.equal(resolverCalls, 1);
+  assert.equal(actorCalls, 1);
+});
+
+test("source resolver and actor extraction failures are contained", async () => {
+  assert.equal(code(await preflight({}, {
+    resolveUuid: async () => {
+      throw new Error("resolver");
+    }
+  })), "voyage-pf2e-source-resolution-failed");
+  assert.equal(code(await preflight({}, {
+    getActorFromResolvedDocument: () => {
+      throw new Error("actor");
+    }
+  })), "voyage-pf2e-source-resolution-failed");
+  assert.equal(code(await preflight({}, {
+    resolveUuid: async () => ({})
+  })), "voyage-pf2e-actor-unresolved");
+});
+
+test("unsupported source kind is rejected before dependencies run", async () => {
+  let calls = 0;
+  const result = await preflightVoyagePf2ePendingCheck(
+    check({ source: { kind: "ship", uuid: "Actor.ship" } }),
+    {
+      resolveUuid: async () => { calls += 1; },
+      getActorFromResolvedDocument: () => { calls += 1; },
+      getStatistic: () => { calls += 1; }
+    }
+  );
+  assert.equal(code(result), "voyage-pf2e-unsupported-source-kind");
+  assert.equal(calls, 0);
+});
+
+test("exact selected statistic is looked up exactly once", async () => {
+  const calls = [];
+  const result = await preflight({}, {
+    getStatistic: (_actor, slug) => {
+      calls.push(slug);
+      return { slug };
+    }
+  });
+  assert.equal(result.statisticSlug, "athletics");
+  assert.deepEqual(calls, ["athletics"]);
+});
+
+test("unresolved selected statistic has no fallback lookup", async () => {
+  const calls = [];
+  const result = await preflight(
+    { statisticSlugOrAbilityId: "missing-statistic" },
+    {
+      getStatistic: (_actor, slug) => {
+        calls.push(slug);
+        return slug === "perception" ? { slug } : null;
+      }
+    }
+  );
+  assert.equal(code(result), "voyage-pf2e-statistic-unresolved");
+  assert.deepEqual(calls, ["missing-statistic"]);
+});
+
+for (const [name, selected, available] of [
+  ["whitespace variants", " athletics ", "athletics"],
+  ["case variants", "Athletics", "athletics"],
+  ["aliases", "acro", "acrobatics"],
+  ["Perception fallback", "missing", "perception"]
+]) {
+  test(`${name} are not substituted`, async () => {
+    const calls = [];
+    const result = await preflight(
+      { statisticSlugOrAbilityId: selected },
+      {
+        getStatistic: (_actor, slug) => {
+          calls.push(slug);
+          return slug === available ? { slug } : null;
+        }
+      }
+    );
+    assert.equal(code(result), "voyage-pf2e-statistic-unresolved");
+    assert.deepEqual(calls, [selected]);
+  });
+}
+
+test("statistic lookup exceptions are contained after one attempt", async () => {
+  let calls = 0;
+  const result = await preflight({}, {
+    getStatistic() {
+      calls += 1;
+      throw new Error("lookup");
+    }
+  });
+  assert.equal(code(result), "voyage-pf2e-statistic-resolution-failed");
+  assert.equal(calls, 1);
+});
+
+test("contradictory resolved statistic identity is rejected", async () => {
+  const result = await preflight({}, {
+    getStatistic: () => ({ slug: "perception" })
+  });
+  assert.equal(code(result), "voyage-pf2e-statistic-identity-mismatch");
+});
+
+test("hostile resolved statistic identity is contained", async () => {
+  const statistic = {};
+  Object.defineProperty(statistic, "slug", {
+    get() {
+      throw new Error("slug");
+    }
+  });
+  assert.equal(code(await preflight({}, {
+    getStatistic: () => statistic
+  })), "voyage-pf2e-statistic-resolution-failed");
+});
+
+test("non-object statistic results are rejected as unresolved", async () => {
+  for (const statistic of [true, 1, "athletics", Symbol("athletics")]) {
+    assert.equal(code(await preflight({}, {
+      getStatistic: () => statistic
+    })), "voyage-pf2e-statistic-unresolved");
+  }
+});
+
+test("finalDc is the sole numeric DC authority", async () => {
+  assert.equal((await preflight({ finalDc: 0 })).dc, 0);
+  assert.equal((await preflight({ finalDc: 28 })).dc, 28);
+});
+
+for (const [name, finalDc] of [
+  ["negative", -1],
+  ["fractional", 1.5],
+  ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ["non-numeric", "20"],
+  ["NaN", Number.NaN],
+  ["positive infinity", Number.POSITIVE_INFINITY],
+  ["negative infinity", Number.NEGATIVE_INFINITY],
+  ["boxed number", new Number(20)]
+]) {
+  test(`${name} finalDc is rejected`, async () => {
+    assert.equal(code(await preflight({ finalDc })), "voyage-pf2e-invalid-final-dc");
+  });
+}
+
+test("public and secret secrecy map to current PF2e modes", async () => {
+  assert.equal((await preflight({ secrecy: "public" })).rollMode, "public");
+  assert.equal((await preflight({ secrecy: "secret" })).rollMode, "blind");
+  assert.equal(code(await preflight({ secrecy: "gm" })), "voyage-pf2e-invalid-secrecy");
+});
+
+test("non-pending and no-roll records are blocked before lookup", async () => {
+  let calls = 0;
+  const deps = dependencies({
+    getStatistic() {
+      calls += 1;
+      return {};
+    }
+  });
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(check({ status: "resolved" }), deps)), "voyage-pf2e-check-not-pending");
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(check({ mode: "no-roll" }), deps)), "voyage-pf2e-invalid-check-mode");
+  assert.equal(calls, 0);
+});
+
+test("missing dependency functions are rejected", async () => {
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(check(), {})), "voyage-pf2e-invalid-dependencies");
+  assert.equal(validateVoyagePf2eAdapterDependencies({}).valid, false);
+});
+
+test("inherited and non-function dependencies are rejected", () => {
+  assert.equal(validateVoyagePf2eAdapterDependencies(Object.create(dependencies())).valid, false);
+  assert.equal(validateVoyagePf2eAdapterDependencies({
+    resolveUuid: true,
+    getActorFromResolvedDocument: {},
+    getStatistic: "athletics"
+  }).valid, false);
+});
+
+test("dependency accessors are each read exactly once", async () => {
+  const values = dependencies();
+  const reads = {
+    resolveUuid: 0,
+    getActorFromResolvedDocument: 0,
+    getStatistic: 0
+  };
+  const hostile = {};
+  for (const key of Object.keys(reads)) {
+    Object.defineProperty(hostile, key, {
+      enumerable: true,
+      get() {
+        reads[key] += 1;
+        if (reads[key] > 1) throw new Error("second read");
+        return values[key];
+      }
+    });
+  }
+  assert.equal((await preflightVoyagePf2ePendingCheck(check(), hostile)).ok, true);
+  assert.deepEqual(reads, {
+    resolveUuid: 1,
+    getActorFromResolvedDocument: 1,
+    getStatistic: 1
+  });
+});
+
+test("throwing dependency accessors are contained", () => {
+  const hostile = dependencies();
+  Object.defineProperty(hostile, "getStatistic", {
+    get() {
+      throw new Error("dependency");
+    }
+  });
+  assert.doesNotThrow(() => validateVoyagePf2eAdapterDependencies(hostile));
+  assert.equal(validateVoyagePf2eAdapterDependencies(hostile).valid, false);
+});
+
+test("dependency functions and live runtime objects do not leak", async () => {
+  const actor = { privateActor: true };
+  const statistic = { privateStatistic: true };
+  const result = await preflight({}, {
+    resolveUuid: async () => ({ actor }),
+    getActorFromResolvedDocument: (document) => document.actor,
+    getStatistic: () => statistic
+  });
+  assert.equal(JSON.stringify(result).includes("resolveUuid"), false);
+  assert.equal(JSON.stringify(result).includes("privateActor"), false);
+  assert.equal(JSON.stringify(result).includes("privateStatistic"), false);
+});
+
+test("result mutation and dependency objects cannot mutate pending input", async () => {
+  const value = check();
+  const before = structuredClone(value);
+  const result = await preflightVoyagePf2ePendingCheck(value, dependencies());
+  result.pendingCheckId = "changed";
+  assert.deepEqual(value, before);
+});
+
+test("canonical pending accessors are rejected without invocation", async () => {
+  for (const field of [
+    "pendingCheckId",
+    "sequence",
+    "status",
+    "mode",
+    "source",
+    "approachId",
+    "statisticSlugOrAbilityId",
+    "finalDc",
+    "secrecy"
+  ]) {
+    let reads = 0;
+    const value = check();
+    Object.defineProperty(value, field, {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return check()[field];
+      }
+    });
+    assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request");
+    assert.equal(reads, 0);
+  }
+});
+
+test("inherited canonical fields do not satisfy the request", async () => {
+  const value = check();
+  delete value.mode;
+  Object.setPrototypeOf(value, { mode: "check" });
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request");
+});
+
+test("exact identity fields reject blank unsafe and boxed values before runtime calls", async () => {
+  let calls = 0;
+  const deps = dependencies({
+    resolveUuid: async () => {
+      calls += 1;
+      return {};
+    }
+  });
+  for (const [field, invalid, expected] of [
+    ["pendingCheckId", " ", "voyage-pf2e-invalid-pending-check-id"],
+    ["pendingCheckId", new String("check-1"), "voyage-pf2e-invalid-pending-check-id"],
+    ["approachId", "__proto__", "voyage-pf2e-invalid-approach-id"],
+    ["approachId", new String("athletics-approach"), "voyage-pf2e-invalid-approach-id"],
+    ["statisticSlugOrAbilityId", " ", "voyage-pf2e-invalid-statistic-id"],
+    ["statisticSlugOrAbilityId", "constructor", "voyage-pf2e-invalid-statistic-id"]
+  ]) {
+    assert.equal(code(await preflightVoyagePf2ePendingCheck(check({ [field]: invalid }), deps)), expected);
+  }
+  assert.equal(calls, 0);
+});
+
+test("non-plain pending and source objects are rejected", async () => {
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(new Date(), dependencies())), "voyage-pf2e-invalid-request");
+  assert.equal(code(await preflight({ source: new String("Actor.hostile") })), "voyage-pf2e-invalid-request");
+});
+
+test("source prototype-like data keys do not pollute prototypes", async () => {
+  const source = {
+    kind: "character",
+    uuid: "Actor.abc123"
+  };
+  Object.defineProperty(source, "__proto__", {
+    enumerable: true,
+    value: { polluted: true }
+  });
+  assert.equal((await preflight({ source })).ok, true);
+  assert.equal(Object.prototype.polluted, undefined);
+});
+
+test("symbol-bearing and unsafe-key requests fail safely", async () => {
+  const symbol = check();
+  symbol[Symbol("hostile")] = true;
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(symbol, dependencies())), "voyage-pf2e-invalid-request");
+
+  const unsafe = check();
+  Object.defineProperty(unsafe, "constructor", {
+    enumerable: true,
+    value: "hostile"
+  });
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(unsafe, dependencies())), "voyage-pf2e-invalid-request");
+});
+
+for (const unsafeId of ["__proto__", "constructor", "prototype"]) {
+  test(`pending-check ID ${unsafeId} is rejected`, async () => {
+    const result = await preflight({ pendingCheckId: unsafeId });
+    assert.equal(code(result), "voyage-pf2e-invalid-pending-check-id");
+    assert.equal(Object.hasOwn(result, "pendingCheckId"), false);
+  });
+}
+
+test("hostile pending and source Proxies do not escape", async () => {
+  const pendingProxy = new Proxy(check(), {
+    getOwnPropertyDescriptor() {
+      throw new Error("descriptor");
+    }
+  });
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(pendingProxy, dependencies())), "voyage-pf2e-invalid-request");
+
+  const source = new Proxy({}, {
+    getPrototypeOf() {
+      throw new Error("prototype");
+    }
+  });
+  assert.equal(code(await preflight({ source })), "voyage-pf2e-invalid-request");
+});
+
+test("hostile dependency objects remain controlled", () => {
+  const proxy = new Proxy({}, {
+    getOwnPropertyDescriptor() {
+      throw new Error("ownness");
+    }
+  });
+  assert.doesNotThrow(() => validateVoyagePf2eAdapterDependencies(proxy));
+  assert.equal(validateVoyagePf2eAdapterDependencies(proxy).valid, false);
+});
+
+test("preflight never requests roll or chat dependencies", async () => {
+  let forbidden = 0;
+  const result = await preflight({}, {
+    roll: () => { forbidden += 1; },
+    createChatMessage: () => { forbidden += 1; }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(forbidden, 0);
+});

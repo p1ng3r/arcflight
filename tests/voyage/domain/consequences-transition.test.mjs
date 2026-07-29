@@ -45,9 +45,22 @@ function noRollState() {
     currentStage: { stageId: "stage" },
     roundNumber: 1,
     phase: "resolution",
-    availableStations: [{ stationId: "captain", actions: [{ actionId: "observe" }] }],
+    availableStations: [{
+      stationId: "captain",
+      actions: [{
+        actionId: "observe",
+        approaches: [{ approachId: "observe", noRoll: true }]
+      }]
+    }],
     stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }],
-    selections: { captain: { stationId: "captain", actionId: "observe" } },
+    selections: {
+      captain: {
+        stationId: "captain",
+        actionId: "observe",
+        approachId: "observe",
+        noRoll: true
+      }
+    },
     committedStationOrder: ["captain"]
   });
   return state;
@@ -109,7 +122,7 @@ function resolvedCheckState() {
     sourceKind: "character",
     sourceUuid: "Actor.captain",
     statisticSlug: "diplomacy",
-    dc: 20,
+    dc: prepared.nextState.pendingChecks[0].finalDc,
     rollMode: "public",
     result: { total: 20, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" },
     errors: [],
@@ -198,7 +211,7 @@ test("transitions an all-resolved plan while preserving the complete Resolution 
     degreeOfSuccess: 2,
     degreeOfSuccessSlug: "success",
     statisticSlug: "diplomacy",
-    dc: 20,
+    dc: 22,
     rollMode: "public"
   });
   result.nextState.snapshots.at(-1).temporaryState.riskBids.captain.riskBidId = "snapshot-only";

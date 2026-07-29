@@ -61,6 +61,10 @@ function encounter({ checks = 1, phase = "resolution", secret = false, riskBidAd
       stationId,
       actions: [{
         actionId,
+        approaches: [{
+          approachId: "diplomacy",
+          statisticSlugOrAbilityId: "diplomacy"
+        }],
         check: {
           source: { kind: "character", uuid: `Actor.${index}` },
           statisticOptions: ["diplomacy"],
@@ -73,19 +77,13 @@ function encounter({ checks = 1, phase = "resolution", secret = false, riskBidAd
       stationId,
       operator: { kind: "actor", uuid: `Actor.operator-${index}` }
     });
-    selections[stationId] = riskBidAdjustment !== null && index === 0
-      ? {
-        stationId,
-        actionId,
-        approachId: "diplomacy",
-        statisticSlugOrAbilityId: "diplomacy"
-      }
-      : { stationId, actionId };
+    selections[stationId] = {
+      stationId,
+      actionId,
+      approachId: "diplomacy",
+      statisticSlugOrAbilityId: "diplomacy"
+    };
     if (riskBidAdjustment !== null && index === 0) {
-      availableStations[index].actions[0].approaches = [{
-        approachId: "diplomacy",
-        statisticSlugOrAbilityId: "diplomacy"
-      }];
       availableStations[index].actions[0].riskBidOptions = [
         riskBidOption(`bid-${riskBidAdjustment}`, riskBidAdjustment)
       ];
@@ -180,7 +178,7 @@ test("persists public and secret results with exactly six isolated fields", () =
 test("result persistence leaves canonical Risk Bid metadata unchanged", () => {
   const state = encounter({ riskBidAdjustment: 8 });
   const beforeBid = structuredClone(state.pendingChecks[0]);
-  const input = executionResult();
+  const input = executionResult(0, { dc: 28 });
   const result = applyVoyageEncounterPendingCheckResult(state, input);
 
   assert.equal(result.ok, true);
@@ -340,4 +338,66 @@ test("does not mutate state or execution input on success", () => {
   assert.deepEqual(request, requestBefore);
   assert.equal(result.nextState.phase, "resolution");
   assert.equal(result.nextState.revision, state.revision + 1);
+});
+
+test("result statistic and DC match only canonical pending authority", () => {
+  const state = encounter({ riskBidAdjustment: 8 });
+  assert.equal(state.pendingChecks[0].finalDc, 28);
+  assert.equal(Object.hasOwn(state.pendingChecks[0], "statisticOptions"), false);
+  assert.equal(Object.hasOwn(state.pendingChecks[0], "dcSource"), false);
+
+  for (const [field, value] of [
+    ["statisticSlug", "athletics"],
+    ["dc", 20],
+    ["dc", 36]
+  ]) {
+    const request = executionResult(0, { dc: 28 });
+    request[field] = value;
+    const result = assertAtomicFailure(state, request);
+    assert.ok(result.errors.some(
+      (entry) => entry.code === "pending-check-result-mismatch"
+    ));
+  }
+
+  const accepted = applyVoyageEncounterPendingCheckResult(
+    state,
+    executionResult(0, { dc: 28 })
+  );
+  assert.equal(accepted.ok, true);
+  assert.deepEqual(Object.keys(accepted.nextState.pendingChecks[0].result), RESULT_KEYS);
+  assert.equal(accepted.nextState.pendingChecks[0].result.dc, 28);
+  assert.equal(Object.hasOwn(accepted.nextState.pendingChecks[0].result, "finalDc"), false);
+  assert.equal(Object.hasOwn(accepted.nextState.pendingChecks[0].result, "approachId"), false);
+});
+
+test("duplicate pending-check matches fail deterministically and atomically", () => {
+  const state = encounter();
+  state.pendingChecks.push(structuredClone(state.pendingChecks[0]));
+  const request = executionResult();
+  const first = assertAtomicFailure(state, request);
+  const second = assertAtomicFailure(state, request);
+  assert.deepEqual(first.errors, second.errors);
+  assert.ok(first.errors.some(
+    (entry) => entry.code === "duplicate-pending-check-id"
+      || entry.code === "duplicate-pending-check-sequence"
+  ));
+});
+
+test("accepted sibling results and source inputs remain isolated", () => {
+  const source = encounter({ checks: 2 });
+  const first = applyVoyageEncounterPendingCheckResult(
+    source,
+    executionResult(0)
+  );
+  const second = applyVoyageEncounterPendingCheckResult(
+    first.nextState,
+    executionResult(1)
+  );
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  first.nextState.pendingChecks[0].result.total = 999;
+  assert.equal(second.nextState.pendingChecks[0].result.total, 20);
+  assert.equal(second.nextState.pendingChecks[1].result.total, 21);
+  assert.equal(source.pendingChecks[0].result, null);
+  assert.equal(source.pendingChecks[1].result, null);
 });

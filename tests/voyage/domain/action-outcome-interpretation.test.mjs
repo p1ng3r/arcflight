@@ -31,6 +31,33 @@ function state({
   targets = {},
   committedStationOrder = null
 } = {}) {
+  for (const station of availableStations) {
+    for (const action of station.actions) {
+      if (!Object.hasOwn(action, "approaches")) {
+        action.approaches = Object.hasOwn(action, "check")
+          ? [{
+              approachId: `approach-${action.actionId}`,
+              statisticSlugOrAbilityId: action.check?.statisticOptions?.[0]
+            }]
+          : [{
+              approachId: `approach-${action.actionId}`,
+              noRoll: true
+            }];
+      }
+    }
+  }
+  for (const [stationId, selection] of Object.entries(selections)) {
+    if (Object.hasOwn(selection, "approachId")) continue;
+    const action = availableStations
+      .find((station) => station.stationId === stationId)
+      ?.actions.find((candidate) => candidate.actionId === selection.actionId);
+    const approach = action?.approaches?.[0];
+    if (!approach) continue;
+    selection.approachId = approach.approachId;
+    if (approach.noRoll === true) selection.noRoll = true;
+    else selection.statisticSlugOrAbilityId = approach.statisticSlugOrAbilityId;
+  }
+
   const result = createVoyageEncounterState({
     encounterId,
     definitionId: "definition",
@@ -108,7 +135,7 @@ function riskBidOption(riskBidId, dcAdjustment, overrides = {}) {
   };
 }
 
-function executionResult(sequence, degreeOfSuccessSlug) {
+function executionResult(sequence, degreeOfSuccessSlug, overrides = {}) {
   return {
     ok: true,
     status: "rolled",
@@ -125,7 +152,8 @@ function executionResult(sequence, degreeOfSuccessSlug) {
       degreeOfSuccessSlug
     },
     errors: [],
-    warnings: []
+    warnings: [],
+    ...overrides
   };
 }
 
@@ -142,7 +170,9 @@ function resolveChecks(source, branches) {
   for (let sequence = 0; sequence < branches.length; sequence += 1) {
     const applied = applyVoyageEncounterPendingCheckResult(
       nextState,
-      executionResult(sequence, branches[sequence])
+      executionResult(sequence, branches[sequence], {
+        dc: nextState.pendingChecks[sequence].finalDc
+      })
     );
     assert.equal(applied.ok, true);
     nextState = applied.nextState;
@@ -425,13 +455,29 @@ test("one canonical Risk Bid survives the complete lock-to-Consequences pipeline
   assert.equal(execution.executionRequests.length, 1);
   assert.equal(execution.executionRequests[0].riskBidId, "bid-5");
   assert.equal(execution.executionRequests[0].dcAdjustment, 5);
-  assert.deepEqual(
-    execution.executionRequests[0].dcSource,
-    { kind: "fixed", value: 20 }
+  assert.equal(
+    Object.hasOwn(execution.executionRequests[0], "dcSource"),
+    false
   );
   assert.equal(
-    Object.hasOwn(execution.executionRequests[0], "finalDc"),
+    Object.hasOwn(execution.executionRequests[0], "statisticOptions"),
     false
+  );
+  assert.deepEqual(
+    {
+      baseDc: execution.executionRequests[0].baseDc,
+      actionDcAdjustment: execution.executionRequests[0].actionDcAdjustment,
+      upgradeDcReduction: execution.executionRequests[0].upgradeDcReduction,
+      riskBidDcAdjustment: execution.executionRequests[0].riskBidDcAdjustment,
+      finalDc: execution.executionRequests[0].finalDc
+    },
+    {
+      baseDc: 20,
+      actionDcAdjustment: 0,
+      upgradeDcReduction: 0,
+      riskBidDcAdjustment: 5,
+      finalDc: 25
+    }
   );
   execution.executionRequests[0].riskBidId = "report-only";
 
@@ -448,16 +494,21 @@ test("one canonical Risk Bid survives the complete lock-to-Consequences pipeline
   assert.equal(prepared.nextState.pendingChecks.length, 1);
   assert.equal(prepared.nextState.pendingChecks[0].riskBidId, "bid-5");
   assert.equal(prepared.nextState.pendingChecks[0].dcAdjustment, 5);
+  assert.equal(prepared.nextState.pendingChecks[0].approachId, "diplomacy");
   assert.equal(
-    Object.hasOwn(prepared.nextState.pendingChecks[0], "finalDc"),
-    false
+    prepared.nextState.pendingChecks[0].statisticSlugOrAbilityId,
+    "diplomacy"
   );
+  assert.equal(prepared.nextState.pendingChecks[0].finalDc, 25);
+  assert.equal(Object.hasOwn(prepared.nextState.pendingChecks[0], "dcSource"), false);
+  assert.equal(Object.hasOwn(prepared.nextState.pendingChecks[0], "statisticOptions"), false);
 
   const resolved = applyVoyageEncounterPendingCheckResult(
     prepared.nextState,
     {
       ...executionResult(0, "success"),
-      pendingCheckId: "integration-pending"
+      pendingCheckId: "integration-pending",
+      dc: 25
     }
   );
   assert.equal(resolved.ok, true);
@@ -647,8 +698,9 @@ test("an unresolved sparse pending check reports its original index path atomica
     target: { id: "target" },
     mode: "check",
     source: { kind: "character", uuid: "Actor.0" },
-    statisticOptions: ["diplomacy"],
-    dcSource: { kind: "fixed", value: 20 },
+    approachId: "approach-repair",
+    statisticSlugOrAbilityId: "diplomacy",
+    finalDc: 20,
     secrecy: "public",
     metadata: {},
     status: "pending",
