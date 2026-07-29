@@ -55,6 +55,12 @@ export const VOYAGE_ACTION_BRANCH_UNIT_CONTRIBUTIONS = Object.freeze({
   failure: Object.freeze({ successUnits: 0, failureUnits: 1 }),
   "critical-failure": Object.freeze({ successUnits: 0, failureUnits: 2 })
 });
+export const VOYAGE_ROUND_RESULTS = Object.freeze({
+  CRITICAL_SUCCESS: "critical-round-success",
+  SUCCESS: "round-success",
+  FAILURE: "round-failure",
+  CRITICAL_FAILURE: "critical-round-failure"
+});
 export const VOYAGE_CONTROLLED_EFFECT_INTENT_TYPES = Object.freeze({ DC_CHANGE: "dc-change", ROLL_MODIFIER: "roll-modifier", RESULT_DEGREE_SHIFT: "result-degree-shift", REROLL: "reroll", ROLL_TWICE: "roll-twice", FOCUS_RESTORATION: "focus-restoration", PRESSURE_CHANGE: "pressure-change", HAZARD_CREATE: "hazard-create", HAZARD_REMOVE: "hazard-remove", HAZARD_PREVENT: "hazard-prevent", HAZARD_SUPPRESS: "hazard-suppress", STATION_ORDER_CHANGE: "station-order-change", SYSTEM_REPAIR: "system-repair", SYSTEM_PROTECTION: "system-protection" });
 export const VOYAGE_EFFECT_INTENT_TYPES = Object.freeze({ TRACK_CHANGE: "track-change", TEMPORARY_CONSEQUENCE: "temporary-consequence", PERMANENT_CONSEQUENCE_PROPOSAL: "permanent-consequence-proposal", DISCOVERY: "discovery", SETBACK: "setback", TEMPORARY_MODIFIER: "temporary-modifier", STAGE_OUTCOME: "stage-outcome", ENCOUNTER_OUTCOME: "encounter-outcome", ...VOYAGE_CONTROLLED_EFFECT_INTENT_TYPES });
 export const VOYAGE_EFFECT_INTENT_TIMING = Object.freeze({ CONSEQUENCES: "consequences", GM_CONFIRMED: "gm-confirmed", END_OF_ROUND: "end-of-round" });
