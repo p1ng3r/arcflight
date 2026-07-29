@@ -38,6 +38,27 @@ test("returns a clean ready result for a fully configured encounter without muta
   assert.equal(Object.hasOwn(report, "readyCandidate"), false);
 });
 
+test("contains hostile station-order array reads", () => {
+  const encounter = configuredEncounter();
+  encounter.proposedStationOrder = new Proxy([], {
+    get(target, key, receiver) {
+      if (key === "length") throw new Error("hostile length");
+      return Reflect.get(target, key, receiver);
+    }
+  });
+
+  assert.deepEqual(validateVoyageEncounterActivationReadiness(encounter), {
+    ready: false,
+    errors: [{
+      code: "activation-readiness-data-read-failed",
+      path: "$",
+      message: "Activation readiness data could not be read safely.",
+      severity: "error"
+    }],
+    warnings: []
+  });
+});
+
 test("accepts valid empty and partial fixed assignment sets", () => {
   const empty = configuredEncounter();
   const partial = configuredEncounter();
@@ -147,7 +168,7 @@ test("requires every round-planning collection to be empty", () => {
     const issue = validateVoyageEncounterActivationReadiness(encounter).errors.find((entry) => entry.path === fieldName);
     assert.equal(issue?.code, "activation-planning-state-not-empty");
   }
-  for (const fieldName of ["assistance", "reservations", "pendingChecks", "pendingThresholdQueue", "pendingConsequences"]) {
+  for (const fieldName of ["assistance", "reservations", "proposedStationOrder", "committedStationOrder", "pendingChecks", "pendingThresholdQueue", "pendingConsequences"]) {
     const encounter = configuredEncounter();
     encounter[fieldName] = [{ id: fieldName }];
     const issue = validateVoyageEncounterActivationReadiness(encounter).errors.find((entry) => entry.path === fieldName);

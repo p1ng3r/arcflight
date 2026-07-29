@@ -9,6 +9,8 @@ function lockedState() {
   state.availableStations = [{ stationId: "engineer", actions: [{ actionId: "brace", resolutionPriority: -1 }] }, { stationId: "navigator", actions: [{ actionId: "thread" }] }];
   state.stationAssignments = [{ stationId: "engineer", operator: { kind: "actor", uuid: "Actor.engineer", name: "Engineer" } }, { stationId: "navigator", operator: { kind: "actor", uuid: "Actor.navigator", name: "Navigator" } }];
   state.selections = { engineer: { stationId: "engineer", actionId: "brace" }, navigator: { stationId: "navigator", actionId: "thread" } };
+  state.proposedStationOrder = [];
+  state.committedStationOrder = ["navigator", "engineer"];
   return state;
 }
 function assertAtomicFailure(state, request) {
@@ -25,14 +27,23 @@ test("starts Resolution atomically with an isolated phase-start snapshot and eve
   const result = applyVoyageEncounterResolutionTransition(state, request);
   assert.equal(result.ok, true); assert.equal(state.phase, "lock-readiness"); assert.equal(result.nextState.phase, "resolution"); assert.equal(result.nextState.revision, before.revision + 1); assert.equal(result.nextState.snapshots.length, 1);
   const snapshot = result.nextState.snapshots[0]; assert.equal(snapshot.boundaryType, "phase-start"); assert.equal(snapshot.phase, "resolution");
+  assert.deepEqual(result.nextState.proposedStationOrder, []);
+  assert.deepEqual(result.nextState.committedStationOrder, ["navigator", "engineer"]);
+  assert.deepEqual(snapshot.temporaryState.proposedStationOrder, []);
+  assert.deepEqual(snapshot.temporaryState.committedStationOrder, ["navigator", "engineer"]);
+  assert.notEqual(snapshot.temporaryState.proposedStationOrder, result.nextState.proposedStationOrder);
+  assert.notEqual(snapshot.temporaryState.committedStationOrder, result.nextState.committedStationOrder);
   assert.deepEqual(result.nextState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.stationAssignments[0].operator, state.stationAssignments[0].operator); assert.deepEqual(snapshot.temporaryState.stationAssignments, before.stationAssignments); assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, result.nextState.stationAssignments[0].operator);
   assert.deepEqual(snapshot.temporaryState.selections, state.selections); assert.deepEqual(snapshot.temporaryState.targets, state.targets); assert.deepEqual(snapshot.temporaryState.riskBids, state.riskBids); assert.deepEqual(snapshot.temporaryState.assistance, state.assistance); assert.deepEqual(snapshot.temporaryState.reservations, state.reservations); assert.deepEqual(result.nextState.pendingChecks, []);
   assert.deepEqual(state, before); assert.deepEqual(request, { phaseStartSnapshotId: "resolution-start" }); assert.equal(result.events.length, 1);
-  assert.deepEqual(result.events[0], { type: "voyage.resolution-started", encounterId: "encounter", lifecycleState: "active", roundNumber: 1, previousPhase: "lock-readiness", phase: "resolution", orderedActions: [{ sequence: 0, stationId: "engineer", actionId: "brace", resolutionPriority: -1, riskBidId: null }, { sequence: 1, stationId: "navigator", actionId: "thread", resolutionPriority: 0, riskBidId: null }], actionCount: 2, previousRevision: 0, revision: 1, phaseStartSnapshotId: "resolution-start" });
-  result.events[0].orderedActions[0].stationId = "changed"; assert.equal(result.nextState.selections.engineer.stationId, "engineer");
+  assert.deepEqual(result.events[0], { type: "voyage.resolution-started", encounterId: "encounter", lifecycleState: "active", roundNumber: 1, previousPhase: "lock-readiness", phase: "resolution", orderedActions: [{ sequence: 0, stationId: "navigator", actionId: "thread", resolutionPriority: 0, riskBidId: null }, { sequence: 1, stationId: "engineer", actionId: "brace", resolutionPriority: -1, riskBidId: null }], actionCount: 2, previousRevision: 0, revision: 1, phaseStartSnapshotId: "resolution-start" });
+  result.events[0].orderedActions[0].stationId = "changed"; assert.equal(result.nextState.selections.navigator.stationId, "navigator");
+  result.nextState.committedStationOrder[0] = "changed-next";
+  assert.equal(snapshot.temporaryState.committedStationOrder[0], "navigator");
+  assert.equal(state.committedStationOrder[0], "navigator");
 });
 
-test("permits a valid empty locked plan when no stations are occupied", () => { const state = lockedState(); state.availableStations = []; state.stationAssignments = []; state.selections = {}; const result = applyVoyageEncounterResolutionTransition(state, { phaseStartSnapshotId: "empty" }); assert.equal(result.ok, true); assert.deepEqual(result.events[0].orderedActions, []); });
+test("permits a valid empty locked plan when no stations are occupied", () => { const state = lockedState(); state.availableStations = []; state.stationAssignments = []; state.selections = {}; state.committedStationOrder = []; const result = applyVoyageEncounterResolutionTransition(state, { phaseStartSnapshotId: "empty" }); assert.equal(result.ok, true); assert.deepEqual(result.events[0].orderedActions, []); });
 
 test("rejects every ordinary invalid boundary atomically", () => {
   const cases = [
@@ -46,4 +57,20 @@ test("rejects every ordinary invalid boundary atomically", () => {
 test("rejects malformed requests and exact snapshot collisions atomically", () => {
   for (const request of [null, {}, { phaseStartSnapshotId: "" }]) assertAtomicFailure(lockedState(), request);
   const state = lockedState(); state.snapshots.push({ snapshotId: "taken", temporaryState: {} }); assertAtomicFailure(state, { phaseStartSnapshotId: "taken" });
+});
+
+test("rejects incomplete commitment and stale proposal atomically", () => {
+  const incomplete = lockedState();
+  incomplete.committedStationOrder = ["navigator"];
+  const incompleteResult = assertAtomicFailure(incomplete, { phaseStartSnapshotId: "incomplete" });
+  assert.ok(incompleteResult.errors.some(
+    (entry) => entry.code === "missing-occupied-station-order-station-id"
+  ));
+
+  const staleProposal = lockedState();
+  staleProposal.proposedStationOrder = ["engineer", "navigator"];
+  const proposalResult = assertAtomicFailure(staleProposal, { phaseStartSnapshotId: "proposal" });
+  assert.ok(proposalResult.errors.some(
+    (entry) => entry.code === "resolution-order-requires-empty-proposed-station-order"
+  ));
 });

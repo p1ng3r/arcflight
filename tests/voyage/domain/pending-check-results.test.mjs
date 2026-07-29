@@ -70,7 +70,8 @@ function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
     phase,
     availableStations,
     stationAssignments,
-    selections
+    selections,
+    committedStationOrder: STATION_IDS.slice(0, checks)
   });
 
   const prepared = applyVoyageEncounterPendingCheckPreparation(

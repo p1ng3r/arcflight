@@ -2,6 +2,7 @@ import { createVoyageEncounterBoundarySnapshot } from "./boundary-snapshots.js";
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES, VOYAGE_ROUND_PHASES } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyagePhaseTransition } from "./phase.js";
+import { analyzeVoyageEncounterStationOrder } from "./station-order.js";
 import { validateVoyageEncounterState } from "./validation.js";
 
 function failure(errors, warnings) {
@@ -83,13 +84,26 @@ export function applyVoyageEncounterCrewPlanningTransition(encounterState, trans
     encounterState.phase,
     VOYAGE_ROUND_PHASES.CREW_PLANNING
   );
-  const initialWarnings = [...suppliedValidation.warnings, ...phaseValidation.warnings];
+  const stationOrder = analyzeVoyageEncounterStationOrder(encounterState);
+  const initialWarnings = [
+    ...suppliedValidation.warnings,
+    ...phaseValidation.warnings,
+    ...stationOrder.warnings
+  ];
   if (!phaseValidation.valid) return failure(phaseValidation.errors, initialWarnings);
 
   const errors = [
+    ...stationOrder.errors,
     ...validateRequest(transitionRequest, encounterState.snapshots),
     ...validateCleanPlanningInput(encounterState)
   ];
+  if (stationOrder.proposedOrderValid && stationOrder.proposedStationOrder.length > 0) {
+    errors.unshift(error(
+      "crew-planning-transition-requires-empty-proposed-station-order",
+      "proposedStationOrder",
+      "Entering Crew Planning requires proposedStationOrder to be empty."
+    ));
+  }
   if (errors.length > 0) return failure(errors, initialWarnings);
 
   let candidate;
@@ -102,6 +116,8 @@ export function applyVoyageEncounterCrewPlanningTransition(encounterState, trans
       "Crew Planning transition could not clone encounter state."
     )], initialWarnings);
   }
+  candidate.proposedStationOrder = [];
+  candidate.committedStationOrder = [];
   candidate.phase = VOYAGE_ROUND_PHASES.CREW_PLANNING;
 
   let phaseStart;
@@ -124,8 +140,14 @@ export function applyVoyageEncounterCrewPlanningTransition(encounterState, trans
   candidate.revision = encounterState.revision + 1;
 
   const candidateValidation = validateVoyageEncounterState(candidate);
-  const warnings = [...snapshotWarnings, ...candidateValidation.warnings];
+  const candidateStationOrder = analyzeVoyageEncounterStationOrder(candidate);
+  const warnings = [
+    ...snapshotWarnings,
+    ...candidateValidation.warnings,
+    ...candidateStationOrder.warnings
+  ];
   if (!candidateValidation.valid) return failure(candidateValidation.errors, warnings);
+  if (!candidateStationOrder.valid) return failure(candidateStationOrder.errors, warnings);
 
   return {
     ok: true,

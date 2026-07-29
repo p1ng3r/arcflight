@@ -11,6 +11,8 @@ const PLANNING_OBJECT_FIELDS = ["selections", "targets", "riskBids"];
 const PLANNING_ARRAY_FIELDS = [
   "assistance",
   "reservations",
+  "proposedStationOrder",
+  "committedStationOrder",
   "pendingChecks",
   "pendingThresholdQueue",
   "pendingConsequences"
@@ -24,7 +26,7 @@ function error(code, path, message) {
  * Read-only validation for beginning the specialized Ready-to-Active operation.
  * The internal Active candidate is never returned or applied.
  */
-export function validateVoyageEncounterActivationStart(encounterState) {
+function validateActivationStartSafely(encounterState) {
   const initialValidation = validateVoyageEncounterState(encounterState);
   if (!initialValidation.valid) {
     return {
@@ -98,4 +100,20 @@ export function validateVoyageEncounterActivationStart(encounterState) {
     errors,
     warnings: [...initialValidation.warnings, ...lifecycleValidation.warnings, ...candidateValidation.warnings]
   };
+}
+
+export function validateVoyageEncounterActivationStart(encounterState) {
+  try {
+    return validateActivationStartSafely(encounterState);
+  } catch (_error) {
+    return {
+      ready: false,
+      errors: [error(
+        "activation-start-data-read-failed",
+        "$",
+        "Activation-start data could not be read safely."
+      )],
+      warnings: []
+    };
+  }
 }

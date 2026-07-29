@@ -23,7 +23,8 @@ function state({
   phase = "consequences",
   availableStations = [],
   selections = {},
-  targets = {}
+  targets = {},
+  committedStationOrder = null
 } = {}) {
   const result = createVoyageEncounterState({
     encounterId,
@@ -44,6 +45,7 @@ function state({
   }));
   result.selections = selections;
   result.targets = targets;
+  result.committedStationOrder = committedStationOrder ?? Object.keys(selections);
   return result;
 }
 
@@ -420,7 +422,7 @@ test("an unresolved sparse pending check reports its original index path atomica
   assertAtomic(report);
 });
 
-test("two selected actions emit in deterministic resolution-priority order", () => {
+test("two selected actions and consequences retain exact committed order", () => {
   const source = state({
     availableStations: [
       {
@@ -435,7 +437,8 @@ test("two selected actions emit in deterministic resolution-priority order", () 
     selections: {
       captain: { stationId: "captain", actionId: "later" },
       engineer: { stationId: "engineer", actionId: "earlier" }
-    }
+    },
+    committedStationOrder: ["engineer", "captain"]
   });
 
   const report = analyzeVoyageEncounterActionOutcomes(source);

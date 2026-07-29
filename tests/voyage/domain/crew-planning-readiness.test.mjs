@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { prepareVoyageEncounterCrewPlanningCompleteness } from "../../../scripts/voyage/domain/crew-planning-completeness.js";
 import { prepareVoyageEncounterCrewPlanningReadiness } from "../../../scripts/voyage/domain/crew-planning-readiness.js";
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as STATES, VOYAGE_ROUND_PHASES } from "../../../scripts/voyage/domain/constants.js";
 import { clonePlainData, createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
@@ -93,6 +94,7 @@ function planOccupiedStations(source) {
     captain: statisticSelection("captain", "rally", "diplomacy"),
     navigator: noRollSelection("navigator", "course", "careful-course")
   };
+  source.proposedStationOrder = ["captain", "navigator"];
 }
 
 function errorCodes(result) {
@@ -114,6 +116,8 @@ test("zero occupied stations are complete and ready with all station arrays empt
     missingOccupiedStationIds: [],
     approachSelectedStationIds: [],
     missingApproachStationIds: [],
+    proposedStationOrder: [],
+    proposedOrderComplete: true,
     complete: true,
     readyToLock: true,
     errors: [],
@@ -140,6 +144,7 @@ test("an action-only station is selected, missing its approach, and not ready", 
   const source = encounter();
   source.stationAssignments = [source.stationAssignments[0]];
   source.selections.captain = { stationId: "captain", actionId: "rally" };
+  source.proposedStationOrder = ["captain"];
 
   const result = prepareVoyageEncounterCrewPlanningReadiness(source);
 
@@ -156,10 +161,12 @@ test("valid statistic and explicit no-roll plans are ready", () => {
   const statistic = encounter();
   statistic.stationAssignments = [statistic.stationAssignments[0]];
   statistic.selections.captain = statisticSelection("captain", "rally", "diplomacy");
+  statistic.proposedStationOrder = ["captain"];
 
   const noRoll = encounter();
   noRoll.stationAssignments = [noRoll.stationAssignments[0]];
   noRoll.selections.captain = noRollSelection("captain", "rally", "steady-command");
+  noRoll.proposedStationOrder = ["captain"];
 
   for (const source of [statistic, noRoll]) {
     const result = prepareVoyageEncounterCrewPlanningReadiness(source);
@@ -185,6 +192,121 @@ test("every occupied station fully planned is ready", () => {
   assert.deepEqual(result.missingOccupiedStationIds, []);
   assert.deepEqual(result.missingApproachStationIds, []);
   assert.deepEqual(result.errors, []);
+});
+
+test("complete actions and approaches without a proposal are not ready", () => {
+  const source = encounter();
+  planOccupiedStations(source);
+  source.proposedStationOrder = [];
+
+  const result = prepareVoyageEncounterCrewPlanningReadiness(source);
+
+  assert.equal(result.complete, false);
+  assert.equal(result.readyToLock, false);
+  assert.deepEqual(result.proposedStationOrder, []);
+  assert.equal(result.proposedOrderComplete, false);
+  assert.deepEqual(result.errors, []);
+});
+
+test("a complete proposal cannot compensate for missing actions or approaches", () => {
+  const missingAction = encounter();
+  missingAction.proposedStationOrder = ["captain", "navigator"];
+  missingAction.selections.captain = statisticSelection("captain", "rally", "diplomacy");
+
+  const missingApproach = encounter();
+  missingApproach.proposedStationOrder = ["captain", "navigator"];
+  missingApproach.selections = {
+    captain: statisticSelection("captain", "rally", "diplomacy"),
+    navigator: { stationId: "navigator", actionId: "course" }
+  };
+
+  for (const source of [missingAction, missingApproach]) {
+    const result = prepareVoyageEncounterCrewPlanningReadiness(source);
+    assert.equal(result.proposedOrderComplete, true);
+    assert.equal(result.complete, false);
+    assert.equal(result.readyToLock, false);
+  }
+});
+
+test("readiness preserves exact unsorted proposals and precise malformed-order errors", () => {
+  const valid = encounter();
+  planOccupiedStations(valid);
+  valid.proposedStationOrder = ["navigator", "captain"];
+  const validResult = prepareVoyageEncounterCrewPlanningReadiness(valid);
+  assert.deepEqual(validResult.proposedStationOrder, ["navigator", "captain"]);
+  assert.equal(validResult.readyToLock, true);
+
+  const malformed = encounter();
+  planOccupiedStations(malformed);
+  malformed.proposedStationOrder = ["captain", "captain"];
+  const malformedResult = prepareVoyageEncounterCrewPlanningReadiness(malformed);
+  assert.deepEqual(malformedResult.proposedStationOrder, []);
+  assert.equal(malformedResult.proposedOrderComplete, false);
+  assert.equal(malformedResult.readyToLock, false);
+  assert.deepEqual(errorCodes(malformedResult), [
+    "duplicate-station-order-station-id",
+    "missing-occupied-station-order-station-id"
+  ]);
+});
+
+test("premature committed order blocks readiness with a readiness-owned exact-path error", () => {
+  const source = encounter();
+  planOccupiedStations(source);
+  source.committedStationOrder = ["navigator", "captain"];
+
+  const result = prepareVoyageEncounterCrewPlanningReadiness(source);
+
+  assert.equal(result.complete, true);
+  assert.equal(result.readyToLock, false);
+  assert.deepEqual(result.errors.at(-1), {
+    code: "crew-planning-committed-station-order-already-present",
+    path: "committedStationOrder",
+    message: "Crew Planning requires committedStationOrder to remain empty until the plan is locked.",
+    severity: "error"
+  });
+});
+
+test("readiness and completeness reports do not alias arrays or issues", () => {
+  const source = encounter();
+  planOccupiedStations(source);
+
+  const completeness = prepareVoyageEncounterCrewPlanningCompleteness(source);
+  const readiness = prepareVoyageEncounterCrewPlanningReadiness(source);
+
+  for (const field of [
+    "occupiedStationIds",
+    "selectedStationIds",
+    "missingOccupiedStationIds",
+    "approachSelectedStationIds",
+    "missingApproachStationIds",
+    "proposedStationOrder",
+    "errors",
+    "warnings"
+  ]) assert.notEqual(completeness[field], readiness[field]);
+
+  completeness.proposedStationOrder.length = 0;
+  completeness.errors.push({ code: "changed" });
+  assert.deepEqual(readiness.proposedStationOrder, ["captain", "navigator"]);
+  assert.deepEqual(readiness.errors, []);
+});
+
+test("station-order and readiness-owned issues compose deterministically without duplicates", () => {
+  const source = encounter();
+  planOccupiedStations(source);
+  source.proposedStationOrder = ["captain", "captain"];
+  source.lifecycleState = STATES.PAUSED;
+
+  const first = prepareVoyageEncounterCrewPlanningReadiness(source);
+  const second = prepareVoyageEncounterCrewPlanningReadiness(source);
+
+  assert.deepEqual(errorCodes(first), [
+    "duplicate-station-order-station-id",
+    "missing-occupied-station-order-station-id",
+    "crew-planning-completeness-requires-active",
+    "crew-planning-readiness-requires-active"
+  ]);
+  assert.equal(new Set(first.errors.map((entry) => JSON.stringify(entry))).size, first.errors.length);
+  assert.deepEqual(first.errors, second.errors);
 });
 
 test("mixed missing-action and missing-approach states remain distinct and not ready", () => {
@@ -366,6 +488,7 @@ test("all arrays and issues are fresh, isolated, and leave source state unchange
     "missingOccupiedStationIds",
     "approachSelectedStationIds",
     "missingApproachStationIds",
+    "proposedStationOrder",
     "errors",
     "warnings"
   ]) assert.notEqual(first[field], second[field]);
@@ -375,6 +498,7 @@ test("all arrays and issues are fresh, isolated, and leave source state unchange
   first.missingOccupiedStationIds.push("captain");
   first.approachSelectedStationIds.length = 0;
   first.missingApproachStationIds.push("navigator");
+  first.proposedStationOrder.length = 0;
   first.errors.push({ code: "changed" });
   first.warnings.push({ code: "changed" });
 
@@ -383,6 +507,7 @@ test("all arrays and issues are fresh, isolated, and leave source state unchange
   assert.deepEqual(second.missingOccupiedStationIds, []);
   assert.deepEqual(second.approachSelectedStationIds, ["captain", "navigator"]);
   assert.deepEqual(second.missingApproachStationIds, []);
+  assert.deepEqual(second.proposedStationOrder, ["captain", "navigator"]);
   assert.deepEqual(second.errors, []);
   assert.deepEqual(second.warnings, []);
   assert.deepEqual(source, before);
@@ -400,6 +525,8 @@ test("the report shape adds approach fields without restoring legacy array names
     "missingOccupiedStationIds",
     "approachSelectedStationIds",
     "missingApproachStationIds",
+    "proposedStationOrder",
+    "proposedOrderComplete",
     "complete",
     "readyToLock",
     "errors",

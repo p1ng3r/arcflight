@@ -8,7 +8,8 @@ const TEMPORARY_STATE_FIELDS = [
   "currentSituation", "objective", "participants", "availableStations", "stationAssignments",
   "currentStage", "roundNumber", "phase", "playerVisibleInformation", "gmSecretInformation",
   "temporaryConsequences", "tracks", "thresholdHistory", "pendingThresholdQueue", "selections",
-  "targets", "riskBids", "assistance", "reservations", "pendingChecks", "pendingConsequences"
+  "proposedStationOrder", "committedStationOrder", "targets", "riskBids", "assistance",
+  "reservations", "pendingChecks", "pendingConsequences"
 ];
 
 function activeEncounter() {
@@ -31,7 +32,8 @@ function activeEncounter() {
     roundNumber: 2, phase: "crew-planning", playerVisibleInformation: { clues: [{ id: "hazard" }] },
     gmSecretInformation: {}, temporaryConsequences: [],
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [], details: { current: 1 } }],
-    thresholdHistory: [], pendingThresholdQueue: [], selections: { captain: { action: "command" } }, targets: {},
+    thresholdHistory: [], pendingThresholdQueue: [], selections: { captain: { action: "command" } },
+    proposedStationOrder: ["captain"], committedStationOrder: [], targets: {},
     riskBids: {}, assistance: [], reservations: [], pendingChecks: [], pendingConsequences: [{ id: "pending", details: { lane: "veil" } }],
     successConditions: [{ conditionId: "reach-wreck" }], failureConditions: [{ conditionId: "ship-lost" }],
     permanentConsequences: [], processedRequestIds: ["request-1"], snapshots: [], recovery: {}, metadata: { retained: true },
@@ -64,7 +66,7 @@ test("constructs round-start snapshots with the exact allowed shape without muta
   assert.deepEqual(Object.keys(result.snapshot.temporaryState), TEMPORARY_STATE_FIELDS);
   assert.equal(result.snapshot.temporaryState.roundNumber, encounter.roundNumber);
   assert.equal(result.snapshot.temporaryState.phase, encounter.phase);
-  for (const fieldName of ["objective", "stationAssignments", "gmSecretInformation", "temporaryConsequences"]) assert.ok(Object.hasOwn(result.snapshot.temporaryState, fieldName));
+  for (const fieldName of ["objective", "stationAssignments", "gmSecretInformation", "temporaryConsequences", "proposedStationOrder", "committedStationOrder"]) assert.ok(Object.hasOwn(result.snapshot.temporaryState, fieldName));
   assert.equal(Object.hasOwn(result.snapshot.temporaryState, "temporaryStationAssignments"), false);
   for (const fieldName of ["schemaVersion", "snapshots", "permanentConsequences", "processedRequestIds", "recovery", "metadata", "extensionData"]) assert.equal(Object.hasOwn(result.snapshot.temporaryState, fieldName), false);
   assert.deepEqual(encounter, encounterBefore);
@@ -74,6 +76,34 @@ test("constructs round-start snapshots with the exact allowed shape without muta
   assert.equal(encounter.roundNumber, 2);
   assert.equal(encounter.phase, "crew-planning");
   assert.deepEqual(encounter.snapshots, []);
+});
+
+test("contains hostile station-order array reads", () => {
+  const encounter = activeEncounter();
+  encounter.committedStationOrder = new Proxy([], {
+    get(target, key, receiver) {
+      if (key === "length") throw new Error("hostile length");
+      return Reflect.get(target, key, receiver);
+    }
+  });
+
+  assert.deepEqual(
+    createVoyageEncounterBoundarySnapshot(encounter, {
+      snapshotId: "hostile-order",
+      boundaryType: "phase-start"
+    }),
+    {
+      ok: false,
+      snapshot: null,
+      errors: [{
+        code: "boundary-snapshot-data-read-failed",
+        path: "committedStationOrder",
+        message: "Boundary snapshot station-order data could not be read safely.",
+        severity: "error"
+      }],
+      warnings: []
+    }
+  );
 });
 
 test("constructs phase-start snapshots using the supplied recognized phase", () => {
@@ -90,7 +120,7 @@ test("recursively isolates captured temporary plain data in both directions", ()
   const encounter = activeEncounter();
   const result = createVoyageEncounterBoundarySnapshot(encounter, { snapshotId: "isolated", boundaryType: "round-start" });
   const snapshot = result.snapshot;
-  for (const fieldName of ["currentStage", "participants", "availableStations", "stationAssignments", "playerVisibleInformation", "tracks", "selections", "pendingConsequences"]) assert.notEqual(snapshot.temporaryState[fieldName], encounter[fieldName]);
+  for (const fieldName of ["currentStage", "participants", "availableStations", "stationAssignments", "playerVisibleInformation", "tracks", "selections", "proposedStationOrder", "committedStationOrder", "pendingConsequences"]) assert.notEqual(snapshot.temporaryState[fieldName], encounter[fieldName]);
   assert.notEqual(snapshot.temporaryState.stationAssignments[0], encounter.stationAssignments[0]);
   assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   snapshot.temporaryState.currentStage.details.tags.push("snapshot-only");
@@ -100,6 +130,8 @@ test("recursively isolates captured temporary plain data in both directions", ()
   snapshot.temporaryState.playerVisibleInformation.clues[0].id = "snapshot-clue";
   snapshot.temporaryState.tracks[0].details.current = 9;
   snapshot.temporaryState.selections.captain.action = "snapshot-selection";
+  snapshot.temporaryState.proposedStationOrder[0] = "snapshot-order";
+  snapshot.temporaryState.committedStationOrder.push("snapshot-commitment");
   snapshot.temporaryState.pendingConsequences[0].details.lane = "snapshot-lane";
   assert.equal(encounter.currentStage.details.tags.includes("snapshot-only"), false);
   assert.equal(encounter.participants[0].details.operatorId, "player-1");
@@ -108,6 +140,8 @@ test("recursively isolates captured temporary plain data in both directions", ()
   assert.equal(encounter.playerVisibleInformation.clues[0].id, "hazard");
   assert.equal(encounter.tracks[0].details.current, 1);
   assert.equal(encounter.selections.captain.action, "command");
+  assert.deepEqual(encounter.proposedStationOrder, ["captain"]);
+  assert.deepEqual(encounter.committedStationOrder, []);
   assert.equal(encounter.pendingConsequences[0].details.lane, "veil");
   encounter.currentStage.details.tags.push("encounter-only");
   encounter.stationAssignments[0].operator.name = "Encounter Captain";

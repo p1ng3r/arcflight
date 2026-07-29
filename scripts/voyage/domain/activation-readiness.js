@@ -9,6 +9,8 @@ const PLANNING_OBJECT_FIELDS = ["selections", "targets", "riskBids"];
 const PLANNING_ARRAY_FIELDS = [
   "assistance",
   "reservations",
+  "proposedStationOrder",
+  "committedStationOrder",
   "pendingChecks",
   "pendingThresholdQueue",
   "pendingConsequences"
@@ -22,7 +24,7 @@ function error(code, path, message) {
  * Read-only validation for a Configuration encounter's transition readiness.
  * This does not apply a lifecycle change; the Ready candidate is internal.
  */
-export function validateVoyageEncounterActivationReadiness(encounterState) {
+function validateActivationReadinessSafely(encounterState) {
   const initialValidation = validateVoyageEncounterState(encounterState);
   if (!initialValidation.valid) {
     return {
@@ -83,4 +85,20 @@ export function validateVoyageEncounterActivationReadiness(encounterState) {
   }
 
   return { ready: errors.length === 0, errors, warnings: candidateValidation.warnings };
+}
+
+export function validateVoyageEncounterActivationReadiness(encounterState) {
+  try {
+    return validateActivationReadinessSafely(encounterState);
+  } catch (_error) {
+    return {
+      ready: false,
+      errors: [error(
+        "activation-readiness-data-read-failed",
+        "$",
+        "Activation readiness data could not be read safely."
+      )],
+      warnings: []
+    };
+  }
 }

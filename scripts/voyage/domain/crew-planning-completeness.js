@@ -4,12 +4,31 @@ import {
 } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
 import { deriveOccupiedVoyageStationIds } from "./station-assignments.js";
+import { analyzeVoyageEncounterStationOrder } from "./station-order.js";
 import { validateVoyageEncounterStationSelections } from "./station-selection.js";
 
 const UNSAFE_STATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function issue(errors, code, path, message) {
   errors.push({ code, path, message, severity: "error" });
+}
+
+function issueIdentity(entry) {
+  return `${entry.code}\u0000${entry.path}\u0000${entry.message}\u0000${entry.severity}`;
+}
+
+function deduplicateIssues(issues) {
+  const seen = new Set();
+  return issues.filter((entry) => {
+    const identity = issueIdentity(entry);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
+function cloneIssues(issues) {
+  return issues.map((entry) => ({ ...entry }));
 }
 
 function hasNonEmptyId(value) {
@@ -51,22 +70,33 @@ function hasValidatedCommittedApproach(selections, stationId) {
  */
 export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
   const selectionValidation = validateVoyageEncounterStationSelections(encounterState);
-  const errors = [...selectionValidation.errors];
-  const warnings = [...selectionValidation.warnings];
+  const stationOrder = analyzeVoyageEncounterStationOrder(encounterState);
+  const errors = deduplicateIssues([
+    ...cloneIssues(selectionValidation.errors),
+    ...cloneIssues(stationOrder.errors)
+  ]);
+  const warnings = deduplicateIssues([
+    ...cloneIssues(selectionValidation.warnings),
+    ...cloneIssues(stationOrder.warnings)
+  ]);
   const occupiedStationIds = deriveOccupiedVoyageStationIds(encounterState?.stationAssignments);
   const selectedStationIds = [];
   const approachSelectedStationIds = [];
+  const proposedStationOrder = [...stationOrder.proposedStationOrder];
+  const proposedOrderComplete = stationOrder.proposedOrderComplete;
 
   if (!selectionValidation.valid) {
     return {
-      occupiedStationIds,
+      occupiedStationIds: [...occupiedStationIds],
       selectedStationIds,
       missingOccupiedStationIds: [...occupiedStationIds],
       approachSelectedStationIds,
       missingApproachStationIds: [],
+      proposedStationOrder,
+      proposedOrderComplete,
       complete: false,
-      errors,
-      warnings
+      errors: cloneIssues(errors),
+      warnings: cloneIssues(warnings)
     };
   }
 
@@ -125,10 +155,15 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
     missingOccupiedStationIds,
     approachSelectedStationIds,
     missingApproachStationIds,
-    complete: errors.length === 0
+    proposedStationOrder,
+    proposedOrderComplete,
+    complete: selectionValidation.valid
+      && stationOrder.valid
+      && errors.length === 0
       && missingOccupiedStationIds.length === 0
-      && missingApproachStationIds.length === 0,
-    errors,
-    warnings
+      && missingApproachStationIds.length === 0
+      && proposedOrderComplete,
+    errors: cloneIssues(errors),
+    warnings: cloneIssues(warnings)
   };
 }
