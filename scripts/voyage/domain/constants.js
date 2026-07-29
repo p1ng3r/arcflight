@@ -52,7 +52,7 @@ export const VOYAGE_ACTION_OUTCOME_BRANCHES = Object.freeze({ CRITICAL_FAILURE: 
 export const VOYAGE_EFFECT_INTENT_TYPES = Object.freeze({ TRACK_CHANGE: "track-change", TEMPORARY_CONSEQUENCE: "temporary-consequence", PERMANENT_CONSEQUENCE_PROPOSAL: "permanent-consequence-proposal", DISCOVERY: "discovery", SETBACK: "setback", TEMPORARY_MODIFIER: "temporary-modifier", STAGE_OUTCOME: "stage-outcome", ENCOUNTER_OUTCOME: "encounter-outcome" });
 export const VOYAGE_EFFECT_INTENT_TIMING = Object.freeze({ CONSEQUENCES: "consequences", GM_CONFIRMED: "gm-confirmed", END_OF_ROUND: "end-of-round" });
 export const VOYAGE_EFFECT_INTENT_VISIBILITY = Object.freeze({ PUBLIC: "public", GM_SECRET: "gm-secret" });
-export const VOYAGE_EFFECT_TARGET_KINDS = Object.freeze({ ENCOUNTER: "encounter", CURRENT_STAGE: "current-stage", PRIMARY_SHIP: "primary-ship", SOURCE_STATION: "source-station", SELECTED_TARGET: "selected-target", TRACK: "track", PARTICIPANT: "participant", STATION: "station" });
+export const VOYAGE_EFFECT_TARGET_KINDS = Object.freeze({ ENCOUNTER: "encounter", CURRENT_STAGE: "current-stage", PRIMARY_SHIP: "primary-ship", SOURCE_STATION: "source-station", SELECTED_TARGET: "selected-target", TRACK: "track", PARTICIPANT: "participant", STATION: "station", PRESSURE_SYSTEM: "pressure-system", HAZARD: "hazard" });
 
 export const VOYAGE_TRACK_VISIBILITY = Object.freeze({
   EXACT: "exact",
