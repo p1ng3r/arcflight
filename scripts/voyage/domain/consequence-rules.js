@@ -3,6 +3,7 @@ import { isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterActionExecutionDefinitions } from "./resolution-execution-requests.js";
 import { analyzeAuthoredVoyageRiskBidOptions } from "./risk-bids.js";
+import { isVoyageControlledEffectIntentType, validateVoyageControlledEffectIntent } from "./controlled-intent-contracts.js";
 
 const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
 const CHECK_BRANCHES = [BRANCHES.CRITICAL_FAILURE, BRANCHES.FAILURE, BRANCHES.SUCCESS, BRANCHES.CRITICAL_SUCCESS];
@@ -160,7 +161,20 @@ function analyzeEffectRule(value, path, errors, effectIds, effectPaths) {
   if (!Object.values(INTENTS).includes(rule.intentType)) issue(errors, "invalid-effect-intent-type", `${path}.intentType`, "Effect intent type is not recognized.");
   if (!Object.values(TIMINGS).includes(rule.timing)) issue(errors, "invalid-effect-intent-timing", `${path}.timing`, "Effect timing is not recognized.");
   if (!Object.values(VISIBILITIES).includes(rule.visibility)) issue(errors, "invalid-effect-intent-visibility", `${path}.visibility`, "Effect visibility is not recognized.");
-  const target = analyzeTarget(rule.target, `${path}.target`, errors); const payload = captureSafePlainData(rule.payload, `${path}.payload`, errors);
+  const target = analyzeTarget(rule.target, `${path}.target`, errors);
+  if (isVoyageControlledEffectIntentType(rule.intentType)) {
+    const controlled = validateVoyageControlledEffectIntent({
+      intentType: rule.intentType,
+      timing: rule.timing,
+      target,
+      payload: rule.payload,
+      path,
+      errors
+    });
+    if (!controlled.valid) return null;
+    return { effectId: rule.effectId, intentType: rule.intentType, timing: rule.timing, visibility: rule.visibility, target, payload: controlled.payload };
+  }
+  const payload = captureSafePlainData(rule.payload, `${path}.payload`, errors);
   return { effectId: rule.effectId, intentType: rule.intentType, timing: rule.timing, visibility: rule.visibility, target, payload: payload.value };
 }
 function analyzeRiskBidOptions(action, path, mode, errors, references) {
