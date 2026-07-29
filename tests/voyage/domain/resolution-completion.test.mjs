@@ -48,13 +48,21 @@ function state({ checks = 0, prepare = false, riskBidAdjustment = null } = {}) {
   if (checks === 0) {
     availableStations.push({
       stationId: "captain",
-      actions: [{ actionId: "observe" }]
+      actions: [{
+        actionId: "observe",
+        approaches: [{ approachId: "observe", noRoll: true }]
+      }]
     });
     stationAssignments.push({
       stationId: "captain",
       operator: { kind: "actor", uuid: "Actor.captain" }
     });
-    selections.captain = { stationId: "captain", actionId: "observe" };
+    selections.captain = {
+      stationId: "captain",
+      actionId: "observe",
+      approachId: "observe",
+      noRoll: true
+    };
   } else {
     for (let index = 0; index < checks; index += 1) {
       const stationId = STATION_IDS[index];
@@ -63,6 +71,10 @@ function state({ checks = 0, prepare = false, riskBidAdjustment = null } = {}) {
         stationId,
         actions: [{
           actionId,
+          approaches: [{
+            approachId: "diplomacy",
+            statisticSlugOrAbilityId: "diplomacy"
+          }],
           check: {
             source: { kind: "character", uuid: `Actor.${index}` },
             statisticOptions: ["diplomacy"],
@@ -75,19 +87,13 @@ function state({ checks = 0, prepare = false, riskBidAdjustment = null } = {}) {
         stationId,
         operator: { kind: "actor", uuid: `Actor.operator-${index}` }
       });
-      selections[stationId] = riskBidAdjustment !== null && index === 0
-        ? {
-          stationId,
-          actionId,
-          approachId: "diplomacy",
-          statisticSlugOrAbilityId: "diplomacy"
-        }
-        : { stationId, actionId };
+      selections[stationId] = {
+        stationId,
+        actionId,
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      };
       if (riskBidAdjustment !== null && index === 0) {
-        availableStations[index].actions[0].approaches = [{
-          approachId: "diplomacy",
-          statisticSlugOrAbilityId: "diplomacy"
-        }];
         availableStations[index].actions[0].riskBidOptions = [
           riskBidOption(`bid-${riskBidAdjustment}`, riskBidAdjustment)
         ];
@@ -131,7 +137,7 @@ function state({ checks = 0, prepare = false, riskBidAdjustment = null } = {}) {
   return prepared.nextState;
 }
 
-function execution(sequence) {
+function execution(sequence, dc = 20) {
   return {
     ok: true,
     status: "rolled",
@@ -140,7 +146,7 @@ function execution(sequence) {
     sourceKind: "character",
     sourceUuid: `Actor.${sequence}`,
     statisticSlug: "diplomacy",
-    dc: 20,
+    dc,
     rollMode: "public",
     result: { total: 20, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" },
     errors: [],
@@ -149,7 +155,10 @@ function execution(sequence) {
 }
 
 function resolve(stateValue, sequence) {
-  const result = applyVoyageEncounterPendingCheckResult(stateValue, execution(sequence));
+  const result = applyVoyageEncounterPendingCheckResult(
+    stateValue,
+    execution(sequence, stateValue.pendingChecks[sequence].finalDc)
+  );
   assert.equal(result.ok, true);
   return result.nextState;
 }
@@ -222,7 +231,7 @@ test("completion analysis preserves resolved canonical Risk Bid metadata", () =>
   });
   const resolved = applyVoyageEncounterPendingCheckResult(
     prepared,
-    execution(0)
+    execution(0, prepared.pendingChecks[0].finalDc)
   );
   assert.equal(resolved.ok, true);
   const before = structuredClone(resolved.nextState);

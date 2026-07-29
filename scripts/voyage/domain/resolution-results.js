@@ -109,18 +109,6 @@ function ownValue(object, key) {
   }
 }
 
-function hasOwnStatisticOption(record, statisticSlug) {
-  const optionsRead = ownValue(record, "statisticOptions");
-  if (!optionsRead.ok || !Array.isArray(optionsRead.value)) return false;
-
-  const options = optionsRead.value;
-  for (let index = 0; index < options.length; index += 1) {
-    const optionRead = ownValue(options, index);
-    if (optionRead.ok && optionRead.present && optionRead.value === statisticSlug) return true;
-  }
-  return false;
-}
-
 function ownPendingCheckEntries(pendingChecks) {
   const entries = [];
   if (!Array.isArray(pendingChecks)) return entries;
@@ -167,22 +155,22 @@ export function applyVoyageEncounterPendingCheckResult(state, executionResult) {
       const pendingCheckId = ownValue(record, "pendingCheckId");
       const sequence = ownValue(record, "sequence");
       const source = ownValue(record, "source");
-      const dcSource = ownValue(record, "dcSource");
+      const statisticSlugOrAbilityId = ownValue(record, "statisticSlugOrAbilityId");
+      const finalDc = ownValue(record, "finalDc");
       const secrecy = ownValue(record, "secrecy");
       const status = ownValue(record, "status");
       const result = ownValue(record, "result");
 
-      if (![pendingCheckId, sequence, source, dcSource, secrecy, status, result].every((read) => read.ok)) continue;
+      if (![pendingCheckId, sequence, source, statisticSlugOrAbilityId, finalDc, secrecy, status, result].every((read) => read.ok)) continue;
 
       const sourceValue = source.value;
-      const dcSourceValue = dcSource.value;
       const expectedRollMode = secrecy.value === "secret" ? "blind" : "public";
       const matches = pendingCheckId.value === executionResult.pendingCheckId
         && sequence.value === executionResult.sequence
         && sourceValue?.kind === executionResult.sourceKind
         && sourceValue?.uuid === executionResult.sourceUuid
-        && hasOwnStatisticOption(record, executionResult.statisticSlug)
-        && dcSourceValue?.value === executionResult.dc
+        && statisticSlugOrAbilityId.value === executionResult.statisticSlug
+        && finalDc.value === executionResult.dc
         && expectedRollMode === executionResult.rollMode;
 
       if (matches) {

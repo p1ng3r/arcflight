@@ -7,8 +7,8 @@ import {
 
 const check = (overrides = {}) => ({
   pendingCheckId: "runtime-check-1", sequence: 4, status: "pending", mode: "check",
-  source: { kind: "character", uuid: "Actor.runtime" }, statisticOptions: ["athletics"],
-  dcSource: { kind: "fixed", value: 20 }, secrecy: "public", ...overrides
+  source: { kind: "character", uuid: "Actor.runtime" }, approachId: "athletics-approach",
+  statisticSlugOrAbilityId: "athletics", finalDc: 20, secrecy: "public", ...overrides
 });
 
 function runtime({ document = { documentName: "Actor", getStatistic: () => ({}) }, fromUuid } = {}) {
@@ -82,7 +82,7 @@ test("hostile document actor getter becomes adapter source-resolution failure an
 test("statistic lookup uses actor receiver and exact authored slug, with missing and hostile methods controlled", async () => {
   let receiver; let slug; const statistic = { private: "stat" };
   const actor = { documentName: "Actor", getStatistic(value) { receiver = this; slug = value; return statistic; } };
-  const result = await preflightVoyagePf2ePendingCheckInFoundry(check({ statisticOptions: ["Custom Lore"] }), runtime({ document: actor }));
+  const result = await preflightVoyagePf2ePendingCheckInFoundry(check({ statisticSlugOrAbilityId: "Custom Lore" }), runtime({ document: actor }));
   assert.equal(result.ok, true); assert.equal(receiver, actor); assert.equal(slug, "Custom Lore"); assert.equal(JSON.stringify(result).includes("private"), false);
   assert.equal(errorCode(await preflightVoyagePf2ePendingCheckInFoundry(check(), runtime({ document: { documentName: "Actor" } }))), "voyage-pf2e-statistic-unresolved");
   const hostile = Object.defineProperty({ documentName: "Actor" }, "getStatistic", { get() { throw new Error("stat"); } });
