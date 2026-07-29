@@ -21,6 +21,19 @@ const EVENT_KEYS = [
   "phaseStartSnapshotId"
 ];
 
+function riskBidOption(riskBidId, dcAdjustment = 2) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
 function noRollState() {
   const state = createVoyageEncounterState({
     encounterId: "consequences",
@@ -55,23 +68,27 @@ function resolvedCheckState() {
       stationId: "captain",
       actions: [{
         actionId: "check",
+        approaches: [{
+          approachId: "diplomacy",
+          statisticSlugOrAbilityId: "diplomacy"
+        }],
         check: {
           source: { kind: "character", uuid: "Actor.captain" },
           statisticOptions: ["diplomacy"],
           dcSource: { kind: "fixed", value: 20 },
           secrecy: "public"
         },
-        riskBidOptions: [{ riskBidId: "risk" }]
+        riskBidOptions: [riskBidOption("risk")]
       }]
     }],
     stationAssignments: [{
       stationId: "captain",
       operator: { kind: "actor", uuid: "Actor.captain" }
     }],
-    selections: { captain: { stationId: "captain", actionId: "check" } },
+    selections: { captain: { stationId: "captain", actionId: "check", approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy" } },
     committedStationOrder: ["captain"],
     targets: { captain: { targetId: "target" } },
-    riskBids: { captain: { riskBidId: "risk", stationId: "captain", actionId: "check" } },
+    riskBids: { captain: { riskBidId: "risk", stationId: "captain", actionId: "check", dcAdjustment: 2 } },
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [] }],
     pendingConsequences: [{ consequenceId: "pending-consequence" }],
     assistance: [{ assistanceId: "help" }],
@@ -174,6 +191,8 @@ test("transitions an all-resolved plan while preserving the complete Resolution 
     assert.deepEqual(result.nextState.snapshots.at(-1).temporaryState[field], value, `snapshot ${field}`);
   }
   assert.equal(result.nextState.pendingChecks[0].status, "resolved");
+  assert.equal(result.nextState.pendingChecks[0].riskBidId, "risk");
+  assert.equal(result.nextState.pendingChecks[0].dcAdjustment, 2);
   assert.deepEqual(result.nextState.pendingChecks[0].result, {
     total: 20,
     degreeOfSuccess: 2,
@@ -182,7 +201,32 @@ test("transitions an all-resolved plan while preserving the complete Resolution 
     dc: 20,
     rollMode: "public"
   });
+  result.nextState.snapshots.at(-1).temporaryState.riskBids.captain.riskBidId = "snapshot-only";
+  result.nextState.snapshots.at(-1).temporaryState.pendingChecks[0].dcAdjustment = 8;
+  assert.equal(result.nextState.riskBids.captain.riskBidId, "risk");
+  assert.equal(result.nextState.pendingChecks[0].dcAdjustment, 2);
   assert.deepEqual(state, before);
+});
+
+test("contradictory Risk Bid state or pending metadata blocks Consequences atomically", () => {
+  const forgedState = resolvedCheckState();
+  forgedState.riskBids.captain.dcAdjustment = 5;
+  let result = assertFailure(forgedState, {
+    phaseStartSnapshotId: "forged-state-risk"
+  });
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "risk-bid-dc-adjustment-mismatch"
+  ));
+
+  const forgedPending = resolvedCheckState();
+  forgedPending.pendingChecks[0].dcAdjustment = 5;
+  result = assertFailure(forgedPending, {
+    phaseStartSnapshotId: "forged-pending-risk"
+  });
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "pending-check-request-mismatch"
+      && entry.path === "pendingChecks[0].dcAdjustment"
+  ));
 });
 
 test("rejects incomplete transitions atomically", () => {

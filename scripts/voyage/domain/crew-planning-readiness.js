@@ -98,6 +98,8 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
   const readyToLock = finalErrors.length === 0
     && active
     && crewPlanning
+    && riskBids.valid
+    && !riskBids.overRiskBidLimit
     && completeness.complete
     && completeness.missingOccupiedStationIds.length === 0
     && completeness.missingApproachStationIds.length === 0
@@ -114,6 +116,12 @@ export function prepareVoyageEncounterCrewPlanningReadiness(encounterState) {
     missingApproachStationIds: [...completeness.missingApproachStationIds],
     proposedStationOrder: [...completeness.proposedStationOrder],
     proposedOrderComplete: completeness.proposedOrderComplete,
+    riskBidsValid: riskBids.valid,
+    selectedRiskBidCount: riskBids.selectedRiskBidCount,
+    selectedRiskBidStationIds: [...riskBids.selectedRiskBidStationIds],
+    baseActionStationIds: [...riskBids.baseActionStationIds],
+    riskBidLimit: riskBids.riskBidLimit,
+    overRiskBidLimit: riskBids.overRiskBidLimit,
     complete: completeness.complete,
     readyToLock,
     errors: cloneIssues(finalErrors),

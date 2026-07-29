@@ -88,15 +88,14 @@ function analyzeEffectRule(value, path, errors, effectIds, effectPaths) {
   return { effectId: rule.effectId, intentType: rule.intentType, timing: rule.timing, visibility: rule.visibility, target, payload: payload.value };
 }
 function analyzeRiskBidOptions(action, path, mode, errors, references) {
-  const analysis = analyzeAuthoredVoyageRiskBidOptions(action, `${path}.riskBidOptions`, errors);
+  const analysis = analyzeAuthoredVoyageRiskBidOptions(
+    action,
+    `${path}.riskBidOptions`,
+    errors,
+    { noRoll: mode === "no-roll" }
+  );
   if (!analysis) return [];
   references.push(...analysis.referenceRecords);
-  for (const record of analysis.optionRecords) {
-    const option = record.option;
-    if (mode === "no-roll" && (option.rewardEffectIds.some(Boolean) || option.dangerEffectIds.some(Boolean))) {
-      issue(errors, "no-roll-risk-bid-result-reference", record.optionPath, "No-roll actions cannot reference result effects.");
-    }
-  }
   return analysis.options;
 }
 function analyzeAction(action, stationId, stationIndex, actionIndex, errors, warnings) {

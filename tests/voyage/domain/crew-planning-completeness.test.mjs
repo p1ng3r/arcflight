@@ -85,6 +85,66 @@ function planOccupiedStations(source) {
   source.proposedStationOrder = ["captain", "navigator"];
 }
 
+const RISK_PLANNING_ORDER = [
+  "navigator",
+  "captain",
+  "veilwarden",
+  "engineer",
+  "watchmaster"
+];
+
+function riskBidOption(riskBidId, dcAdjustment) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
+function riskPlanningEncounter(selectedRiskBidStationIds = []) {
+  const source = encounter();
+  source.availableStations = RISK_PLANNING_ORDER.map((stationId, index) => ({
+    stationId,
+    actions: [{
+      actionId: `action-${stationId}`,
+      approaches: [statisticApproach(`approach-${stationId}`)],
+      riskBidOptions: [
+        riskBidOption(`bid-${stationId}`, [2, 5, 8][index % 3])
+      ]
+    }]
+  }));
+  source.stationAssignments = RISK_PLANNING_ORDER.map((stationId) => ({
+    stationId,
+    operator: { kind: "actor", uuid: `Actor.${stationId}` }
+  }));
+  source.selections = Object.fromEntries(RISK_PLANNING_ORDER.map(
+    (stationId) => [stationId, {
+      stationId,
+      actionId: `action-${stationId}`,
+      approachId: `approach-${stationId}`,
+      statisticSlugOrAbilityId: `approach-${stationId}`
+    }]
+  ));
+  source.proposedStationOrder = [...RISK_PLANNING_ORDER];
+  source.riskBids = Object.fromEntries(selectedRiskBidStationIds.map(
+    (stationId) => {
+      const index = RISK_PLANNING_ORDER.indexOf(stationId);
+      return [stationId, {
+        stationId,
+        actionId: `action-${stationId}`,
+        riskBidId: `bid-${stationId}`,
+        dcAdjustment: [2, 5, 8][index % 3]
+      }];
+    }
+  ));
+  return source;
+}
+
 function codes(result) {
   return result.errors.map(({ code }) => code);
 }
@@ -103,6 +163,12 @@ test("zero occupied stations are fully complete with all canonical arrays empty"
     missingApproachStationIds: [],
     proposedStationOrder: [],
     proposedOrderComplete: true,
+    riskBidsValid: true,
+    selectedRiskBidCount: 0,
+    selectedRiskBidStationIds: [],
+    baseActionStationIds: [],
+    riskBidLimit: 3,
+    overRiskBidLimit: false,
     complete: true,
     errors: [],
     warnings: []
@@ -156,6 +222,65 @@ test("valid statistic and no-roll approaches are action-selected and approach-se
   assert.equal(result.proposedOrderComplete, true);
   assert.equal(result.complete, true);
   assert.deepEqual(result.errors, []);
+});
+
+test("optional Risk Bids report zero through three selections in occupied order", () => {
+  for (let count = 0; count <= 3; count += 1) {
+    const selected = RISK_PLANNING_ORDER.slice(0, count);
+    const result = prepareVoyageEncounterCrewPlanningCompleteness(
+      riskPlanningEncounter(selected)
+    );
+
+    assert.equal(result.riskBidsValid, true);
+    assert.equal(result.selectedRiskBidCount, count);
+    assert.deepEqual(result.selectedRiskBidStationIds, selected);
+    assert.deepEqual(
+      result.baseActionStationIds,
+      RISK_PLANNING_ORDER.slice(count)
+    );
+    assert.equal(result.riskBidLimit, 3);
+    assert.equal(result.overRiskBidLimit, false);
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.errors, []);
+  }
+});
+
+test("a fourth valid Risk Bid is reported precisely and blocks completeness", () => {
+  const source = riskPlanningEncounter(RISK_PLANNING_ORDER.slice(0, 4));
+  const before = clonePlainData(source);
+  const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
+
+  assert.equal(result.riskBidsValid, true);
+  assert.equal(result.selectedRiskBidCount, 4);
+  assert.deepEqual(
+    result.selectedRiskBidStationIds,
+    RISK_PLANNING_ORDER.slice(0, 4)
+  );
+  assert.deepEqual(result.baseActionStationIds, ["watchmaster"]);
+  assert.equal(result.overRiskBidLimit, true);
+  assert.equal(result.complete, false);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "risk-bid-round-limit-exceeded"
+      && entry.path === "riskBids"
+  ));
+  assert.deepEqual(source, before);
+});
+
+test("malformed Risk Bids block completeness without inflating the valid count", () => {
+  const source = riskPlanningEncounter(["navigator", "captain"]);
+  source.riskBids.captain.dcAdjustment = 8;
+  const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
+
+  assert.equal(result.riskBidsValid, false);
+  assert.equal(result.selectedRiskBidCount, 1);
+  assert.deepEqual(result.selectedRiskBidStationIds, ["navigator"]);
+  assert.deepEqual(
+    result.baseActionStationIds,
+    ["veilwarden", "engineer", "watchmaster"]
+  );
+  assert.equal(result.overRiskBidLimit, false);
+  assert.equal(result.complete, false);
+  assert.ok(codes(result).includes("risk-bid-dc-adjustment-mismatch"));
 });
 
 test("mixed action and approach completion is reported in separate arrays", () => {
@@ -474,6 +599,8 @@ test("report arrays are fresh and isolated and source inputs remain unchanged", 
     "approachSelectedStationIds",
     "missingApproachStationIds",
     "proposedStationOrder",
+    "selectedRiskBidStationIds",
+    "baseActionStationIds",
     "errors",
     "warnings"
   ]) assert.notEqual(first[field], second[field]);
@@ -484,6 +611,8 @@ test("report arrays are fresh and isolated and source inputs remain unchanged", 
   first.approachSelectedStationIds.length = 0;
   first.missingApproachStationIds.push("navigator");
   first.proposedStationOrder.length = 0;
+  first.selectedRiskBidStationIds.push("navigator");
+  first.baseActionStationIds.length = 0;
   first.errors.push({ code: "changed" });
   first.warnings.push({ code: "changed" });
   assert.deepEqual(second.occupiedStationIds, ["captain", "navigator"]);
@@ -492,6 +621,8 @@ test("report arrays are fresh and isolated and source inputs remain unchanged", 
   assert.deepEqual(second.approachSelectedStationIds, ["captain", "navigator"]);
   assert.deepEqual(second.missingApproachStationIds, []);
   assert.deepEqual(second.proposedStationOrder, ["captain", "navigator"]);
+  assert.deepEqual(second.selectedRiskBidStationIds, []);
+  assert.deepEqual(second.baseActionStationIds, ["captain", "navigator"]);
   assert.deepEqual(second.errors, []);
   assert.deepEqual(second.warnings, []);
   assert.deepEqual(source, before);

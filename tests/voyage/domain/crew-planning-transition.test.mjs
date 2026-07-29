@@ -38,6 +38,7 @@ test("atomically enters Crew Planning with one appended phase-start snapshot and
   assert.equal(result.nextState.lifecycleState, STATES.ACTIVE); assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(result.nextState.roundNumber, 2); assert.equal(result.nextState.revision, 5);
   assert.deepEqual(result.nextState.proposedStationOrder, []);
   assert.deepEqual(result.nextState.committedStationOrder, []);
+  assert.deepEqual(result.nextState.riskBids, {});
   assert.deepEqual(result.nextState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.stationAssignments, encounter.stationAssignments); assert.notEqual(result.nextState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   assert.deepEqual(result.nextState.snapshots.slice(0, -1), before.snapshots);
   const snapshot = result.nextState.snapshots.at(-1);
@@ -62,6 +63,37 @@ test("atomically enters Crew Planning with one appended phase-start snapshot and
   encounter.currentStage.details.tags.push("source-only"); encounter.currentSituation.details.threat = "source"; encounter.participants[0].details.userId = "source"; encounter.tracks[0].trackId = "source";
   assert.equal(result.nextState.currentStage.details.tags.includes("source-only"), false); assert.equal(result.nextState.currentSituation.details.threat, "next"); assert.equal(result.nextState.participants[0].details.userId, "next"); assert.equal(result.nextState.tracks[0].trackId, "next");
   assert.deepEqual(result.nextState.pendingThresholdQueue, before.pendingThresholdQueue); assert.deepEqual(result.nextState.pendingConsequences, before.pendingConsequences); assert.deepEqual(result.nextState.temporaryConsequences, before.temporaryConsequences);
+});
+
+test("fresh Crew Planning never inherits prior-round selected Risk Bids", () => {
+  const clean = activeSituationEncounter();
+  const cleanResult = applyVoyageEncounterCrewPlanningTransition(clean, {
+    phaseStartSnapshotId: "fresh-risk-bids"
+  });
+  assert.equal(cleanResult.ok, true);
+  assert.deepEqual(cleanResult.nextState.riskBids, {});
+  assert.deepEqual(
+    cleanResult.nextState.snapshots.at(-1).temporaryState.riskBids,
+    {}
+  );
+
+  const stale = activeSituationEncounter();
+  stale.riskBids.captain = {
+    stationId: "captain",
+    actionId: "command",
+    riskBidId: "prior-round",
+    dcAdjustment: 2
+  };
+  const before = clonePlainData(stale);
+  const result = applyVoyageEncounterCrewPlanningTransition(stale, {
+    phaseStartSnapshotId: "reject-prior-risk-bids"
+  });
+  assertFailure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "crew-planning-input-not-empty"
+      && entry.path === "riskBids"
+  ));
+  assert.deepEqual(stale, before);
 });
 
 test("clears a complete previous-round commitment without mutating or aliasing the source", () => {
@@ -231,7 +263,7 @@ test("propagates a snapshot helper returned failure atomically", () => {
   assertInputsUnchanged(encounter, before, request, requestBefore); assert.equal(encounter.snapshots.length, before.snapshots.length);
 });
 
-test("returns an atomic snapshot construction exception after candidate cloning", () => {
+test("propagates an atomic snapshot data-read failure after candidate cloning", () => {
   const encounter = activeSituationEncounter(); const request = { phaseStartSnapshotId: "snapshot-throw" }; const requestBefore = clonePlainData(request);
   let metadataReads = 0; let prototypeReads = 0;
   const deferredFailure = new Proxy({}, { getPrototypeOf() { prototypeReads += 1; if (prototypeReads > 1) throw new Error("snapshot failure"); return Date.prototype; } });
@@ -240,7 +272,7 @@ test("returns an atomic snapshot construction exception after candidate cloning"
   Object.defineProperty(encounter, "metadata", { enumerable: true, configurable: true, get() { metadataReads += 1; return metadata; } });
   const sourceSnapshotIds = encounter.snapshots.map((snapshot) => snapshot.snapshotId);
   const result = applyVoyageEncounterCrewPlanningTransition(encounter, request);
-  assertFailure(result); assert.equal(result.errors[0].code, "crew-planning-phase-start-snapshot-construction-failed"); assert.equal(encounter.lifecycleState, STATES.ACTIVE); assert.equal(encounter.phase, VOYAGE_ROUND_PHASES.SITUATION); assert.equal(encounter.revision, 4); assert.deepEqual(encounter.snapshots.map((snapshot) => snapshot.snapshotId), sourceSnapshotIds); assert.deepEqual(request, requestBefore);
+  assertFailure(result); assert.equal(result.errors[0].code, "boundary-snapshot-data-read-failed"); assert.equal(result.errors[0].path, "currentSituation"); assert.equal(encounter.lifecycleState, STATES.ACTIVE); assert.equal(encounter.phase, VOYAGE_ROUND_PHASES.SITUATION); assert.equal(encounter.revision, 4); assert.deepEqual(encounter.snapshots.map((snapshot) => snapshot.snapshotId), sourceSnapshotIds); assert.deepEqual(request, requestBefore);
 });
 
 test("the Crew Planning domain module imports without Foundry globals", () => {

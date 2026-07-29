@@ -13,6 +13,19 @@ function noRollApproach(approachId) {
   return { approachId, noRoll: true };
 }
 
+function riskBidOption(riskBidId, dcAdjustment = 2) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
 function action(actionId, approaches, riskBidOptions) {
   return {
     actionId,
@@ -43,7 +56,7 @@ function encounter() {
             statisticApproach("diplomacy"),
             noRollApproach("steady-command")
           ],
-          [{ riskBidId: "close" }]
+          [riskBidOption("close")]
         )],
         selectionRequired: false
       },
@@ -97,6 +110,53 @@ function planOccupiedStations(source) {
   source.proposedStationOrder = ["captain", "navigator"];
 }
 
+const RISK_PLANNING_ORDER = [
+  "navigator",
+  "captain",
+  "veilwarden",
+  "engineer",
+  "watchmaster"
+];
+
+function riskPlanningEncounter(selectedRiskBidStationIds = []) {
+  const source = encounter();
+  source.availableStations = RISK_PLANNING_ORDER.map((stationId, index) => ({
+    stationId,
+    actions: [action(
+      `action-${stationId}`,
+      [
+        statisticApproach(`approach-${stationId}`),
+        noRollApproach(`no-roll-${stationId}`)
+      ],
+      [riskBidOption(`bid-${stationId}`, [2, 5, 8][index % 3])]
+    )]
+  }));
+  source.stationAssignments = RISK_PLANNING_ORDER.map((stationId) => ({
+    stationId,
+    operator: { kind: "actor", uuid: `Actor.${stationId}` }
+  }));
+  source.selections = Object.fromEntries(RISK_PLANNING_ORDER.map(
+    (stationId) => [stationId, statisticSelection(
+      stationId,
+      `action-${stationId}`,
+      `approach-${stationId}`
+    )]
+  ));
+  source.proposedStationOrder = [...RISK_PLANNING_ORDER];
+  source.riskBids = Object.fromEntries(selectedRiskBidStationIds.map(
+    (stationId) => {
+      const index = RISK_PLANNING_ORDER.indexOf(stationId);
+      return [stationId, {
+        stationId,
+        actionId: `action-${stationId}`,
+        riskBidId: `bid-${stationId}`,
+        dcAdjustment: [2, 5, 8][index % 3]
+      }];
+    }
+  ));
+  return source;
+}
+
 function errorCodes(result) {
   return result.errors.map(({ code }) => code);
 }
@@ -118,6 +178,12 @@ test("zero occupied stations are complete and ready with all station arrays empt
     missingApproachStationIds: [],
     proposedStationOrder: [],
     proposedOrderComplete: true,
+    riskBidsValid: true,
+    selectedRiskBidCount: 0,
+    selectedRiskBidStationIds: [],
+    baseActionStationIds: [],
+    riskBidLimit: 3,
+    overRiskBidLimit: false,
     complete: true,
     readyToLock: true,
     errors: [],
@@ -374,10 +440,11 @@ test("invalid persisted selections and Risk Bids remain not ready", () => {
   invalidBid.riskBids.captain = {
     stationId: "captain",
     actionId: "rally",
-    riskBidId: "missing"
+    riskBidId: "missing",
+    dcAdjustment: 2
   };
   const bidResult = prepareVoyageEncounterCrewPlanningReadiness(invalidBid);
-  assert.equal(bidResult.complete, true);
+  assert.equal(bidResult.complete, false);
   assert.equal(bidResult.readyToLock, false);
   assert.ok(errorCodes(bidResult).includes("risk-bid-not-available"));
 });
@@ -449,6 +516,89 @@ test("unoccupied stations create no readiness requirements", () => {
   assert.equal(result.readyToLock, true);
 });
 
+test("readiness accepts zero through three optional Risk Bids across five stations", () => {
+  for (let count = 0; count <= 3; count += 1) {
+    const selected = RISK_PLANNING_ORDER.slice(0, count);
+    const result = prepareVoyageEncounterCrewPlanningReadiness(
+      riskPlanningEncounter(selected)
+    );
+
+    assert.equal(result.riskBidsValid, true);
+    assert.equal(result.selectedRiskBidCount, count);
+    assert.deepEqual(result.selectedRiskBidStationIds, selected);
+    assert.deepEqual(
+      result.baseActionStationIds,
+      RISK_PLANNING_ORDER.slice(count)
+    );
+    assert.equal(result.riskBidLimit, 3);
+    assert.equal(result.overRiskBidLimit, false);
+    assert.equal(result.complete, true);
+    assert.equal(result.readyToLock, true);
+    assert.deepEqual(result.errors, []);
+  }
+});
+
+test("readiness rejects a fourth valid bid with the exact cap diagnostic", () => {
+  const source = riskPlanningEncounter(RISK_PLANNING_ORDER.slice(0, 4));
+  const before = clonePlainData(source);
+  const result = prepareVoyageEncounterCrewPlanningReadiness(source);
+
+  assert.equal(result.riskBidsValid, true);
+  assert.equal(result.selectedRiskBidCount, 4);
+  assert.equal(result.riskBidLimit, 3);
+  assert.equal(result.overRiskBidLimit, true);
+  assert.equal(result.complete, false);
+  assert.equal(result.readyToLock, false);
+  assert.equal(result.errors.filter(
+    (entry) => entry.code === "risk-bid-round-limit-exceeded"
+      && entry.path === "riskBids"
+  ).length, 1);
+  assert.deepEqual(source, before);
+});
+
+test("invalid bids block readiness and do not contribute to the valid count", () => {
+  const cases = [
+    [
+      (source) => { source.riskBids.navigator.dcAdjustment = 8; },
+      "risk-bid-dc-adjustment-mismatch"
+    ],
+    [
+      (source) => { source.riskBids.navigator.actionId = "stale-action"; },
+      "risk-bid-action-mismatch"
+    ],
+    [
+      (source) => {
+        source.selections.navigator = noRollSelection(
+          "navigator",
+          "action-navigator",
+          "no-roll-navigator"
+        );
+      },
+      "risk-bid-requires-rolled-approach"
+    ],
+    [
+      (source) => {
+        source.stationAssignments = source.stationAssignments.slice(1);
+        source.proposedStationOrder = source.proposedStationOrder.slice(1);
+      },
+      "risk-bid-station-not-occupied"
+    ]
+  ];
+
+  for (const [mutate, code] of cases) {
+    const source = riskPlanningEncounter(["navigator"]);
+    mutate(source);
+    const result = prepareVoyageEncounterCrewPlanningReadiness(source);
+    assert.equal(result.riskBidsValid, false, code);
+    assert.equal(result.selectedRiskBidCount, 0, code);
+    assert.deepEqual(result.selectedRiskBidStationIds, [], code);
+    assert.equal(result.overRiskBidLimit, false, code);
+    assert.equal(result.complete, false, code);
+    assert.equal(result.readyToLock, false, code);
+    assert.ok(errorCodes(result).includes(code), code);
+  }
+});
+
 test("station arrays follow deterministic occupied order without duplicates", () => {
   const source = encounter();
   planOccupiedStations(source);
@@ -489,6 +639,8 @@ test("all arrays and issues are fresh, isolated, and leave source state unchange
     "approachSelectedStationIds",
     "missingApproachStationIds",
     "proposedStationOrder",
+    "selectedRiskBidStationIds",
+    "baseActionStationIds",
     "errors",
     "warnings"
   ]) assert.notEqual(first[field], second[field]);
@@ -499,6 +651,8 @@ test("all arrays and issues are fresh, isolated, and leave source state unchange
   first.approachSelectedStationIds.length = 0;
   first.missingApproachStationIds.push("navigator");
   first.proposedStationOrder.length = 0;
+  first.selectedRiskBidStationIds.push("navigator");
+  first.baseActionStationIds.length = 0;
   first.errors.push({ code: "changed" });
   first.warnings.push({ code: "changed" });
 
@@ -508,6 +662,8 @@ test("all arrays and issues are fresh, isolated, and leave source state unchange
   assert.deepEqual(second.approachSelectedStationIds, ["captain", "navigator"]);
   assert.deepEqual(second.missingApproachStationIds, []);
   assert.deepEqual(second.proposedStationOrder, ["captain", "navigator"]);
+  assert.deepEqual(second.selectedRiskBidStationIds, []);
+  assert.deepEqual(second.baseActionStationIds, ["captain", "navigator"]);
   assert.deepEqual(second.errors, []);
   assert.deepEqual(second.warnings, []);
   assert.deepEqual(source, before);
@@ -527,6 +683,12 @@ test("the report shape adds approach fields without restoring legacy array names
     "missingApproachStationIds",
     "proposedStationOrder",
     "proposedOrderComplete",
+    "riskBidsValid",
+    "selectedRiskBidCount",
+    "selectedRiskBidStationIds",
+    "baseActionStationIds",
+    "riskBidLimit",
+    "overRiskBidLimit",
     "complete",
     "readyToLock",
     "errors",

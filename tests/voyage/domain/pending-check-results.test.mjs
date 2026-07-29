@@ -31,7 +31,20 @@ const EVENT_KEYS = [
 ];
 const STATION_IDS = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
 
-function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
+function riskBidOption(riskBidId, dcAdjustment) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
+function encounter({ checks = 1, phase = "resolution", secret = false, riskBidAdjustment = null } = {}) {
   const state = createVoyageEncounterState({
     encounterId: "result-application",
     definitionId: "definition",
@@ -60,7 +73,23 @@ function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
       stationId,
       operator: { kind: "actor", uuid: `Actor.operator-${index}` }
     });
-    selections[stationId] = { stationId, actionId };
+    selections[stationId] = riskBidAdjustment !== null && index === 0
+      ? {
+        stationId,
+        actionId,
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      }
+      : { stationId, actionId };
+    if (riskBidAdjustment !== null && index === 0) {
+      availableStations[index].actions[0].approaches = [{
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      }];
+      availableStations[index].actions[0].riskBidOptions = [
+        riskBidOption(`bid-${riskBidAdjustment}`, riskBidAdjustment)
+      ];
+    }
   }
 
   Object.assign(state, {
@@ -71,6 +100,16 @@ function encounter({ checks = 1, phase = "resolution", secret = false } = {}) {
     availableStations,
     stationAssignments,
     selections,
+    riskBids: riskBidAdjustment === null
+      ? {}
+      : {
+        captain: {
+          stationId: "captain",
+          actionId: "action-0",
+          riskBidId: `bid-${riskBidAdjustment}`,
+          dcAdjustment: riskBidAdjustment
+        }
+      },
     committedStationOrder: STATION_IDS.slice(0, checks)
   });
 
@@ -136,6 +175,42 @@ test("persists public and secret results with exactly six isolated fields", () =
   const secretState = encounter({ secret: true });
   const secretInput = executionResult(0, { rollMode: "blind" });
   assert.equal(applyVoyageEncounterPendingCheckResult(secretState, secretInput).ok, true);
+});
+
+test("result persistence leaves canonical Risk Bid metadata unchanged", () => {
+  const state = encounter({ riskBidAdjustment: 8 });
+  const beforeBid = structuredClone(state.pendingChecks[0]);
+  const input = executionResult();
+  const result = applyVoyageEncounterPendingCheckResult(state, input);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nextState.pendingChecks.length, 1);
+  assert.equal(result.nextState.pendingChecks[0].riskBidId, "bid-8");
+  assert.equal(result.nextState.pendingChecks[0].dcAdjustment, 8);
+  for (const field of Object.keys(beforeBid)) {
+    if (field === "status" || field === "result") continue;
+    assert.deepEqual(
+      result.nextState.pendingChecks[0][field],
+      beforeBid[field],
+      field
+    );
+  }
+  assert.deepEqual(Object.keys(input), [
+    "ok",
+    "status",
+    "pendingCheckId",
+    "sequence",
+    "sourceKind",
+    "sourceUuid",
+    "statisticSlug",
+    "dc",
+    "rollMode",
+    "result",
+    "errors",
+    "warnings"
+  ]);
+  assert.equal(Object.hasOwn(input, "riskBidId"), false);
+  assert.equal(Object.hasOwn(input, "dcAdjustment"), false);
 });
 
 test("accepts every degree/slug pair and reports an exact success event", () => {

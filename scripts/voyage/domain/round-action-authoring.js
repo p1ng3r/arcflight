@@ -1,5 +1,6 @@
 import { VOYAGE_EVENT_RUNNER_STATION_IDS } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
+import { analyzeAuthoredVoyageRiskBidOptions } from "./risk-bids.js";
 
 const ALLOWED_ROUND_COUNTS = new Set([3, 5, 7, 9, 11]);
 const ALLOWED_THIRD_APPROACH_DISTINCTIONS = new Set([
@@ -801,12 +802,27 @@ function analyzeActions(actions, stationPath, errors) {
       errors
     );
     if (!exceptionAnalysis.structurallyValid) structurallyValid = false;
+    const riskBidErrorCount = errors.length;
+    const riskBidAnalysis = analyzeAuthoredVoyageRiskBidOptions(
+      actionRead.value,
+      `${actionPath}.riskBidOptions`,
+      errors,
+      {
+        noRoll: approachAnalysis.approachCount > 0
+          && approachAnalysis.approaches.length === approachAnalysis.approachCount
+          && approachAnalysis.approaches.every(
+            (approach) => approach.executionKind === "no-roll"
+          )
+      }
+    );
+    if (!riskBidAnalysis || errors.length !== riskBidErrorCount) structurallyValid = false;
     normalizedActions.push({
       actionIndex,
       actionId,
       approachCount: approachAnalysis.approachCount,
       approaches: approachAnalysis.approaches,
-      thirdApproachException: exceptionAnalysis.thirdApproachException
+      thirdApproachException: exceptionAnalysis.thirdApproachException,
+      riskBidOptions: riskBidAnalysis?.options ?? []
     });
   }
 

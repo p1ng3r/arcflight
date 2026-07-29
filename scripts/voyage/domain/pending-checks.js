@@ -19,6 +19,7 @@ const REQUIRED = Object.freeze([
   "actionId",
   "resolutionPriority",
   "riskBidId",
+  "dcAdjustment",
   "target",
   "mode",
   "source",
@@ -49,6 +50,33 @@ function readOwnValue(object, key, path, errors, code = "pending-check-data-read
     return { present: true, ok: true, value: object[key] };
   } catch {
     issue(errors, code, path, "Pending check data could not be read safely.");
+    return { present: true, ok: false, value: undefined };
+  }
+}
+
+function readOwnDataValue(object, key, path, errors) {
+  if (
+    object === null
+    || (typeof object !== "object" && typeof object !== "function")
+  ) {
+    return { present: false, ok: false, value: undefined };
+  }
+
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(object, key);
+    if (!descriptor) return { present: false, ok: true, value: undefined };
+    if (!Object.hasOwn(descriptor, "value")) {
+      issue(
+        errors,
+        "pending-check-data-read-failed",
+        path,
+        "Pending check Risk Bid metadata must use own data properties."
+      );
+      return { present: true, ok: false, value: undefined };
+    }
+    return { present: true, ok: true, value: descriptor.value };
+  } catch {
+    issue(errors, "pending-check-data-read-failed", path, "Pending check data could not be read safely.");
     return { present: true, ok: false, value: undefined };
   }
 }
@@ -150,7 +178,9 @@ function captureRecord(record, path, errors) {
   for (let fieldIndex = 0; fieldIndex < REQUIRED.length; fieldIndex += 1) {
     const field = REQUIRED[fieldIndex];
     const fieldPath = `${path}.${field}`;
-    const read = readOwnValue(record, field, fieldPath, errors);
+    const read = field === "riskBidId" || field === "dcAdjustment"
+      ? readOwnDataValue(record, field, fieldPath, errors)
+      : readOwnValue(record, field, fieldPath, errors);
     if (!read.present) {
       issue(errors, "missing-pending-check-field", fieldPath, `Pending check requires ${field}.`);
       continue;
@@ -323,7 +353,7 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (!request) {
         issue(errors, "unexpected-pending-check", path, "Pending check does not correspond to a selected check action.");
       } else {
-        const fields = ["stationId", "actionId", "resolutionPriority", "riskBidId", "target", "source", "statisticOptions", "dcSource", "secrecy", "metadata"];
+        const fields = ["stationId", "actionId", "resolutionPriority", "riskBidId", "dcAdjustment", "target", "source", "statisticOptions", "dcSource", "secrecy", "metadata"];
         for (let fieldIndex = 0; fieldIndex < fields.length; fieldIndex += 1) {
           const field = fields[fieldIndex];
           if (!equal(capturedRecord[field], request[field])) issue(errors, "pending-check-request-mismatch", `${path}.${field}`, `Pending check ${field} must match its execution request.`);
@@ -361,6 +391,7 @@ function normalizePendingCheck({ pendingCheckIndex, record }) {
     actionId: record.actionId,
     resolutionPriority: record.resolutionPriority,
     riskBidId: record.riskBidId,
+    dcAdjustment: record.dcAdjustment,
     target: record.target,
     mode: record.mode,
     source: record.source,

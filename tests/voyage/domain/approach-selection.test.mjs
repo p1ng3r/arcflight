@@ -25,6 +25,19 @@ function noRollApproach(approachId) {
   return { approachId, noRoll: true };
 }
 
+function riskBidOption(riskBidId, dcAdjustment = 2) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: [],
+    },
+  };
+}
+
 function action(actionId, approaches, authored = {}) {
   return {
     actionId,
@@ -56,7 +69,7 @@ function encounter() {
               statisticApproach("commanding-presence", "cha"),
               noRollApproach("steady-the-deck"),
             ],
-            { riskBidOptions: [{ riskBidId: "press" }] },
+            { riskBidOptions: [riskBidOption("press")] },
           ),
           action("coordinate-orders", [
             statisticApproach("warfare-lore"),
@@ -97,13 +110,7 @@ function encounter() {
       captain: { stationId: "captain", actionId: "rally-crew" },
       engineer: { stationId: "engineer", actionId: "stabilize-strain" },
     },
-    riskBids: {
-      captain: {
-        stationId: "captain",
-        actionId: "rally-crew",
-        riskBidId: "press",
-      },
-    },
+    riskBids: {},
     successConditions: [{ conditionId: "success" }],
     failureConditions: [{ conditionId: "failure" }],
     metadata: { retained: { value: true } },
@@ -116,6 +123,20 @@ function committedEncounter(approach) {
     stationId: "captain",
     actionId: "rally-crew",
     ...approach,
+  };
+  return source;
+}
+
+function committedEncounterWithRiskBid() {
+  const source = committedEncounter({
+    approachId: "diplomacy",
+    statisticSlugOrAbilityId: "diplomacy",
+  });
+  source.riskBids.captain = {
+    stationId: "captain",
+    actionId: "rally-crew",
+    riskBidId: "press",
+    dcAdjustment: 2,
   };
   return source;
 }
@@ -634,8 +655,16 @@ test("requires plain requests with own data fields and never invokes accessors",
 });
 
 test("fails atomically when source or candidate validation fails", () => {
-  const invalidSource = encounter();
-  invalidSource.riskBids.captain.riskBidId = "missing";
+  const invalidSource = committedEncounter({
+    approachId: "diplomacy",
+    statisticSlugOrAbilityId: "diplomacy",
+  });
+  invalidSource.riskBids.captain = {
+    stationId: "captain",
+    actionId: "rally-crew",
+    riskBidId: "missing",
+    dcAdjustment: 2,
+  };
   const invalidBefore = clonePlainData(invalidSource);
   const invalidResult = applyVoyageEncounterStationApproachSelection(
     invalidSource,
@@ -726,11 +755,11 @@ test("isolates next state and event data from source, request, and each other", 
   result.events[0].actionId = "changed-event";
   result.nextState.selections.captain.actionId = "changed-state";
   result.nextState.metadata.retained.value = false;
-  result.nextState.riskBids.captain.riskBidId = "changed-bid";
+  result.nextState.riskBids.captain = { changed: true };
 
   assert.equal(source.selections.captain.actionId, "rally-crew");
   assert.equal(source.metadata.retained.value, true);
-  assert.equal(source.riskBids.captain.riskBidId, "press");
+  assert.deepEqual(source.riskBids, {});
   assert.equal(request.approachId, "diplomacy");
   assert.equal(result.events[0].stationId, "captain");
 });
@@ -838,6 +867,85 @@ test("changes between statistic and no-roll shapes without retaining old identit
     Object.hasOwn(toStatistic.nextState.selections.captain, "noRoll"),
     false,
   );
+});
+
+test("rolled-to-no-roll approach change clears the selected Risk Bid atomically", () => {
+  const source = committedEncounterWithRiskBid();
+  const before = clonePlainData(source);
+  const result = applyVoyageEncounterStationApproachSelectionChange(
+    source,
+    { stationId: "captain", approachId: "steady-the-deck" },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.selections.captain, {
+    stationId: "captain",
+    actionId: "rally-crew",
+    approachId: "steady-the-deck",
+    noRoll: true,
+  });
+  assert.equal(Object.hasOwn(result.nextState.riskBids, "captain"), false);
+  assert.equal(result.nextState.revision, 12);
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].clearedRiskBidId, "press");
+  assert.equal(result.events[0].clearedRiskBidDcAdjustment, 2);
+  assert.deepEqual(source, before);
+});
+
+test("rolled-to-rolled approach change preserves the exact selected Risk Bid", () => {
+  const source = committedEncounterWithRiskBid();
+  const before = clonePlainData(source);
+  const result = applyVoyageEncounterStationApproachSelectionChange(
+    source,
+    { stationId: "captain", approachId: "commanding-presence" },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.riskBids.captain, before.riskBids.captain);
+  assert.notEqual(result.nextState.riskBids.captain, source.riskBids.captain);
+  assert.equal(Object.hasOwn(result.events[0], "clearedRiskBidId"), false);
+  assert.equal(
+    Object.hasOwn(result.events[0], "clearedRiskBidDcAdjustment"),
+    false,
+  );
+  assert.deepEqual(source, before);
+});
+
+test("approach clear removes the selected Risk Bid and reports its adjustment", () => {
+  const source = committedEncounterWithRiskBid();
+  const before = clonePlainData(source);
+  const result = applyVoyageEncounterStationApproachSelectionClear(
+    source,
+    { stationId: "captain" },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.selections.captain, {
+    stationId: "captain",
+    actionId: "rally-crew",
+  });
+  assert.equal(Object.hasOwn(result.nextState.riskBids, "captain"), false);
+  assert.equal(result.events[0].clearedRiskBidId, "press");
+  assert.equal(result.events[0].clearedRiskBidDcAdjustment, 2);
+  assert.equal(result.nextState.revision, 12);
+  assert.deepEqual(source, before);
+});
+
+test("failed approach edits preserve the coupled Risk Bid and revision", () => {
+  const source = committedEncounterWithRiskBid();
+  const request = { stationId: "captain", approachId: "missing" };
+  const before = clonePlainData(source);
+  const requestBefore = clonePlainData(request);
+  const result = applyVoyageEncounterStationApproachSelectionChange(
+    source,
+    request,
+  );
+
+  failure(result);
+  assert.deepEqual(codes(result), ["approach-not-available"]);
+  assert.deepEqual(source, before);
+  assert.deepEqual(request, requestBefore);
+  assert.equal(source.revision, 11);
 });
 
 test("changes between two authored no-roll approaches", () => {
@@ -1174,10 +1282,10 @@ test("change output and event are isolated from source, request, and each other"
     "commanding-presence",
   );
   result.nextState.selections.captain.approachId = "changed-state";
-  result.nextState.riskBids.captain.riskBidId = "changed-bid";
+  result.nextState.riskBids.captain = { changed: true };
 
   assert.equal(source.selections.captain.approachId, "diplomacy");
-  assert.equal(source.riskBids.captain.riskBidId, "press");
+  assert.deepEqual(source.riskBids, {});
   assert.equal(request.approachId, "commanding-presence");
   assert.equal(result.events[0].previousApproachId, "diplomacy");
 });
@@ -1278,7 +1386,6 @@ test("clear retains the exact current action and ignores all caller approach aut
   const exactActionId = " rally-crew ";
   source.selections.captain.actionId = exactActionId;
   source.availableStations[0].actions[0].actionId = exactActionId;
-  source.riskBids.captain.actionId = exactActionId;
   let ignoredReads = 0;
   const request = {
     stationId: "captain",
@@ -1566,11 +1673,11 @@ test("clear output and event are isolated from source, request, and each other",
   result.events[0].actionId = "changed-event";
   assert.equal(result.nextState.selections.captain.actionId, "rally-crew");
   result.nextState.selections.captain.actionId = "changed-state";
-  result.nextState.riskBids.captain.riskBidId = "changed-bid";
+  result.nextState.riskBids.captain = { changed: true };
 
   assert.equal(source.selections.captain.actionId, "rally-crew");
   assert.equal(source.selections.captain.approachId, "diplomacy");
-  assert.equal(source.riskBids.captain.riskBidId, "press");
+  assert.deepEqual(source.riskBids, {});
   assert.equal(request.stationId, "captain");
   assert.equal(result.events[0].approachId, "diplomacy");
 });

@@ -623,7 +623,11 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
     actionId: selectionRequest.actionId
   };
   const clearedApproachId = Object.hasOwn(previousSelection, "approachId") ? previousSelection.approachId : null;
-  const clearedRiskBidId = Object.hasOwn(candidate.riskBids, selectionRequest.stationId) ? candidate.riskBids[selectionRequest.stationId].riskBidId : null;
+  const clearedRiskBid = Object.hasOwn(candidate.riskBids, selectionRequest.stationId)
+    ? candidate.riskBids[selectionRequest.stationId]
+    : null;
+  const clearedRiskBidId = clearedRiskBid?.riskBidId ?? null;
+  const clearedRiskBidDcAdjustment = clearedRiskBid?.dcAdjustment ?? null;
   if (clearedRiskBidId !== null) delete candidate.riskBids[selectionRequest.stationId];
   candidate.revision = encounterState.revision + 1;
 
@@ -648,6 +652,7 @@ export function applyVoyageEncounterStationActionSelectionChange(encounterState,
       actionId: selectionRequest.actionId,
       ...(clearedApproachId !== null ? { clearedApproachId } : {}),
       ...(clearedRiskBidId !== null ? { clearedRiskBidId } : {}),
+      ...(clearedRiskBidDcAdjustment !== null ? { clearedRiskBidDcAdjustment } : {}),
       previousRevision: encounterState.revision,
       revision: candidate.revision
     }],
@@ -690,7 +695,11 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
   if (!candidate) return { ok: false, nextState: null, events: [], errors, warnings };
 
   const clearedApproachId = Object.hasOwn(previousSelection, "approachId") ? previousSelection.approachId : null;
-  const clearedRiskBidId = Object.hasOwn(candidate.riskBids, clearRequest.stationId) ? candidate.riskBids[clearRequest.stationId].riskBidId : null;
+  const clearedRiskBid = Object.hasOwn(candidate.riskBids, clearRequest.stationId)
+    ? candidate.riskBids[clearRequest.stationId]
+    : null;
+  const clearedRiskBidId = clearedRiskBid?.riskBidId ?? null;
+  const clearedRiskBidDcAdjustment = clearedRiskBid?.dcAdjustment ?? null;
   delete candidate.selections[clearRequest.stationId];
   if (clearedRiskBidId !== null) delete candidate.riskBids[clearRequest.stationId];
   candidate.revision = encounterState.revision + 1;
@@ -715,6 +724,7 @@ export function applyVoyageEncounterStationActionSelectionClear(encounterState, 
       actionId: previousSelection.actionId,
       ...(clearedApproachId !== null ? { clearedApproachId } : {}),
       ...(clearedRiskBidId !== null ? { clearedRiskBidId } : {}),
+      ...(clearedRiskBidDcAdjustment !== null ? { clearedRiskBidDcAdjustment } : {}),
       previousRevision: encounterState.revision,
       revision: candidate.revision
     }],

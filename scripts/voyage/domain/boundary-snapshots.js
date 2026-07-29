@@ -1,5 +1,6 @@
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
+import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 import { validateVoyageEncounterState } from "./validation.js";
 
 const SUPPORTED_BOUNDARY_TYPES = new Set(["round-start", "phase-start"]);
@@ -33,12 +34,7 @@ function error(code, path, message) {
   return { code, path, message, severity: "error" };
 }
 
-/**
- * Construct a read-only, caller-identified snapshot of temporary Active
- * Voyage Encounter state. Appending, restoration, and persistence remain the
- * responsibility of specialized future operations.
- */
-export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRequest) {
+function createBoundarySnapshot(encounterState, snapshotRequest) {
   const initialValidation = validateVoyageEncounterState(encounterState);
   if (!initialValidation.valid) {
     return {
@@ -46,6 +42,49 @@ export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRe
       snapshot: null,
       errors: initialValidation.errors,
       warnings: initialValidation.warnings
+    };
+  }
+
+  let riskBidKeys;
+  try {
+    riskBidKeys = Reflect.ownKeys(encounterState.riskBids);
+  } catch (_error) {
+    return {
+      ok: false,
+      snapshot: null,
+      errors: [error(
+        "boundary-snapshot-data-read-failed",
+        "riskBids",
+        "Boundary snapshot Risk Bid data could not be read safely."
+      )],
+      warnings: [...initialValidation.warnings]
+    };
+  }
+  const riskBidValidation = riskBidKeys.length > 0
+    ? validateVoyageEncounterRiskBids(encounterState)
+    : null;
+  const validationWarnings = [
+    ...initialValidation.warnings,
+    ...(riskBidValidation?.warnings ?? [])
+  ];
+  if (riskBidValidation && !riskBidValidation.valid) {
+    return {
+      ok: false,
+      snapshot: null,
+      errors: [...riskBidValidation.errors],
+      warnings: validationWarnings
+    };
+  }
+  if (riskBidValidation?.overRiskBidLimit) {
+    return {
+      ok: false,
+      snapshot: null,
+      errors: [error(
+        "risk-bid-round-limit-exceeded",
+        "riskBids",
+        `Boundary snapshots allow at most ${riskBidValidation.riskBidLimit} selected Risk Bids.`
+      )],
+      warnings: validationWarnings
     };
   }
 
@@ -91,7 +130,7 @@ export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRe
   }
 
   if (errors.length > 0) {
-    return { ok: false, snapshot: null, errors, warnings: [...initialValidation.warnings] };
+    return { ok: false, snapshot: null, errors, warnings: validationWarnings };
   }
 
   const temporaryState = {};
@@ -99,16 +138,18 @@ export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRe
     try {
       temporaryState[fieldName] = clonePlainData(encounterState[fieldName]);
     } catch (_error) {
-      if (fieldName !== "proposedStationOrder" && fieldName !== "committedStationOrder") throw _error;
       return {
         ok: false,
         snapshot: null,
         errors: [error(
           "boundary-snapshot-data-read-failed",
           fieldName,
-          "Boundary snapshot station-order data could not be read safely."
+          fieldName === "proposedStationOrder"
+            || fieldName === "committedStationOrder"
+            ? "Boundary snapshot station-order data could not be read safely."
+            : "Boundary snapshot temporary state could not be read safely."
         )],
-        warnings: [...initialValidation.warnings]
+        warnings: validationWarnings
       };
     }
   }
@@ -125,6 +166,28 @@ export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRe
       temporaryState
     },
     errors: [],
-    warnings: [...initialValidation.warnings]
+    warnings: validationWarnings
   };
+}
+
+/**
+ * Construct a read-only, caller-identified snapshot of temporary Active
+ * Voyage Encounter state. Appending, restoration, and persistence remain the
+ * responsibility of specialized future operations.
+ */
+export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRequest) {
+  try {
+    return createBoundarySnapshot(encounterState, snapshotRequest);
+  } catch (_error) {
+    return {
+      ok: false,
+      snapshot: null,
+      errors: [error(
+        "boundary-snapshot-data-read-failed",
+        "$",
+        "Boundary snapshot inputs could not be read safely."
+      )],
+      warnings: []
+    };
+  }
 }

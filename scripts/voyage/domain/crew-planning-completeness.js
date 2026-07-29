@@ -6,6 +6,7 @@ import { isPlainObject } from "./defaults.js";
 import { deriveOccupiedVoyageStationIds } from "./station-assignments.js";
 import { analyzeVoyageEncounterStationOrder } from "./station-order.js";
 import { validateVoyageEncounterStationSelections } from "./station-selection.js";
+import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 
 const UNSAFE_STATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -71,14 +72,25 @@ function hasValidatedCommittedApproach(selections, stationId) {
 export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
   const selectionValidation = validateVoyageEncounterStationSelections(encounterState);
   const stationOrder = analyzeVoyageEncounterStationOrder(encounterState);
+  const riskBids = validateVoyageEncounterRiskBids(encounterState);
   const errors = deduplicateIssues([
     ...cloneIssues(selectionValidation.errors),
-    ...cloneIssues(stationOrder.errors)
+    ...cloneIssues(stationOrder.errors),
+    ...cloneIssues(riskBids.errors)
   ]);
   const warnings = deduplicateIssues([
     ...cloneIssues(selectionValidation.warnings),
-    ...cloneIssues(stationOrder.warnings)
+    ...cloneIssues(stationOrder.warnings),
+    ...cloneIssues(riskBids.warnings)
   ]);
+  if (riskBids.overRiskBidLimit) {
+    issue(
+      errors,
+      "risk-bid-round-limit-exceeded",
+      "riskBids",
+      `Crew Planning allows at most ${riskBids.riskBidLimit} selected Risk Bids.`
+    );
+  }
   const occupiedStationIds = deriveOccupiedVoyageStationIds(encounterState?.stationAssignments);
   const selectedStationIds = [];
   const approachSelectedStationIds = [];
@@ -94,6 +106,12 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
       missingApproachStationIds: [],
       proposedStationOrder,
       proposedOrderComplete,
+      riskBidsValid: riskBids.valid,
+      selectedRiskBidCount: riskBids.selectedRiskBidCount,
+      selectedRiskBidStationIds: [...riskBids.selectedRiskBidStationIds],
+      baseActionStationIds: [...riskBids.baseActionStationIds],
+      riskBidLimit: riskBids.riskBidLimit,
+      overRiskBidLimit: riskBids.overRiskBidLimit,
       complete: false,
       errors: cloneIssues(errors),
       warnings: cloneIssues(warnings)
@@ -157,8 +175,16 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
     missingApproachStationIds,
     proposedStationOrder,
     proposedOrderComplete,
+    riskBidsValid: riskBids.valid,
+    selectedRiskBidCount: riskBids.selectedRiskBidCount,
+    selectedRiskBidStationIds: [...riskBids.selectedRiskBidStationIds],
+    baseActionStationIds: [...riskBids.baseActionStationIds],
+    riskBidLimit: riskBids.riskBidLimit,
+    overRiskBidLimit: riskBids.overRiskBidLimit,
     complete: selectionValidation.valid
       && stationOrder.valid
+      && riskBids.valid
+      && !riskBids.overRiskBidLimit
       && errors.length === 0
       && missingOccupiedStationIds.length === 0
       && missingApproachStationIds.length === 0

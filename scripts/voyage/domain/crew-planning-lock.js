@@ -89,10 +89,22 @@ function applyCrewPlanningLock(encounterState, lockRequest) {
       "Crew Planning lock requires a complete committed station order."
     )], warnings);
   }
+  const lockedRiskBids = readiness.selectedRiskBidStationIds.map(
+    (stationId) => {
+      const bid = candidate.riskBids[stationId];
+      return {
+        stationId: bid.stationId,
+        actionId: bid.actionId,
+        riskBidId: bid.riskBidId,
+        dcAdjustment: bid.dcAdjustment
+      };
+    }
+  );
   return { ok: true, nextState: candidate, events: [{
     type: "voyage.crew-planning-locked", encounterId: candidate.encounterId,
     lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber,
     previousPhase: encounterState.phase, phase: candidate.phase,
+    riskBids: lockedRiskBids.map((bid) => ({ ...bid })),
     committedStationOrder: [...candidate.committedStationOrder],
     previousRevision: encounterState.revision, revision: candidate.revision,
     phaseStartSnapshotId: lockRequest.phaseStartSnapshotId

@@ -494,6 +494,13 @@ function applySelection(
         };
   defineSelection(nextState.selections, stationId, committedSelection);
 
+  const clearsRiskBid = clear || authoredApproach.executionKind === "no-roll";
+  const clearedRiskBid = clearsRiskBid
+    && Object.hasOwn(nextState.riskBids, stationId)
+    ? nextState.riskBids[stationId]
+    : null;
+  if (clearedRiskBid) delete nextState.riskBids[stationId];
+
   const previousRevision = encounterState.revision;
   nextState.revision = previousRevision + 1;
 
@@ -538,6 +545,10 @@ function applySelection(
         ...(change ? { previousApproachId } : {}),
         approachId: clear ? previousApproachId : approachId,
         ...executionIdentity,
+        ...(clearedRiskBid ? {
+          clearedRiskBidId: clearedRiskBid.riskBidId,
+          clearedRiskBidDcAdjustment: clearedRiskBid.dcAdjustment,
+        } : {}),
         previousRevision,
         revision: nextState.revision,
       },

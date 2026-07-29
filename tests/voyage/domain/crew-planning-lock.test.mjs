@@ -10,15 +10,66 @@ function statisticApproach(approachId, statisticSlugOrAbilityId = approachId) {
   return { approachId, statisticSlugOrAbilityId };
 }
 function noRollApproach(approachId) { return { approachId, noRoll: true }; }
+function riskBidOption(riskBidId, dcAdjustment = 2) {
+  return { riskBidId, dcAdjustment, outcomes: { criticalSuccess: [], success: [], failure: [], criticalFailure: [] } };
+}
 
 function encounter() {
   return { ...createDraftVoyageEncounterDefaults(), encounterId: "lock", definitionId: "glassback", lifecycleState: STATES.ACTIVE, revision: 4,
     primaryShip: { actorId: "ship" }, currentStage: { stageId: "opening" }, currentSituation: { threatId: "debris" }, objective: { objectiveId: "survive" }, roundNumber: 1,
-    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally", approaches: [statisticApproach("diplomacy"), noRollApproach("steady-command")], riskBidOptions: [{ riskBidId: "close" }] }, { actionId: "command", approaches: [statisticApproach("intimidation")] }] }, { stationId: "navigator", actions: [{ actionId: "course", approaches: [statisticApproach("survival"), noRollApproach("careful-course")] }] }],
+    phase: VOYAGE_ROUND_PHASES.CREW_PLANNING, availableStations: [{ stationId: "captain", actions: [{ actionId: "rally", approaches: [statisticApproach("diplomacy"), noRollApproach("steady-command")], riskBidOptions: [riskBidOption("close")] }, { actionId: "command", approaches: [statisticApproach("intimidation")] }] }, { stationId: "navigator", actions: [{ actionId: "course", approaches: [statisticApproach("survival"), noRollApproach("careful-course")] }] }],
     stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }, { stationId: "navigator", operator: { kind: "actor", uuid: "Actor.navigator", name: "Navigator" } }],
-    selections: { captain: { stationId: "captain", actionId: "rally", approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy" }, navigator: { stationId: "navigator", actionId: "course", approachId: "survival", statisticSlugOrAbilityId: "survival" } }, proposedStationOrder: ["navigator", "captain"], targets: { retained: true }, riskBids: { captain: { stationId: "captain", actionId: "rally", riskBidId: "close" } }, assistance: [{ retained: true }], reservations: [{ retained: true }],
+    selections: { captain: { stationId: "captain", actionId: "rally", approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy" }, navigator: { stationId: "navigator", actionId: "course", approachId: "survival", statisticSlugOrAbilityId: "survival" } }, proposedStationOrder: ["navigator", "captain"], targets: { retained: true }, riskBids: { captain: { stationId: "captain", actionId: "rally", riskBidId: "close", dcAdjustment: 2 } }, assistance: [{ retained: true }], reservations: [{ retained: true }],
     successConditions: [{ conditionId: "success" }], failureConditions: [{ conditionId: "failure" }], snapshots: [], recovery: {}, metadata: { retained: true } };
 }
+
+const RISK_PLANNING_ORDER = [
+  "navigator",
+  "captain",
+  "veilwarden",
+  "engineer",
+  "watchmaster"
+];
+
+function riskPlanningEncounter(selectedRiskBidCount) {
+  const source = encounter();
+  source.availableStations = RISK_PLANNING_ORDER.map((stationId, index) => ({
+    stationId,
+    actions: [{
+      actionId: `action-${stationId}`,
+      approaches: [statisticApproach(`approach-${stationId}`)],
+      riskBidOptions: [
+        riskBidOption(`bid-${stationId}`, [2, 5, 8][index % 3])
+      ]
+    }]
+  }));
+  source.stationAssignments = RISK_PLANNING_ORDER.map((stationId) => ({
+    stationId,
+    operator: { kind: "actor", uuid: `Actor.${stationId}` }
+  }));
+  source.selections = Object.fromEntries(RISK_PLANNING_ORDER.map(
+    (stationId) => [stationId, {
+      stationId,
+      actionId: `action-${stationId}`,
+      approachId: `approach-${stationId}`,
+      statisticSlugOrAbilityId: `approach-${stationId}`
+    }]
+  ));
+  source.proposedStationOrder = [...RISK_PLANNING_ORDER];
+  source.riskBids = Object.fromEntries(
+    RISK_PLANNING_ORDER.slice(0, selectedRiskBidCount).map((stationId) => {
+      const index = RISK_PLANNING_ORDER.indexOf(stationId);
+      return [stationId, {
+        stationId,
+        actionId: `action-${stationId}`,
+        riskBidId: `bid-${stationId}`,
+        dcAdjustment: [2, 5, 8][index % 3]
+      }];
+    })
+  );
+  return source;
+}
+
 function failure(result) { assert.equal(result.ok, false); assert.equal(result.nextState, null); assert.deepEqual(result.events, []); }
 
 test("locks a complete plan atomically and creates the established phase-start snapshot", () => {
@@ -30,7 +81,7 @@ test("locks a complete plan atomically and creates the established phase-start s
   assert.deepEqual(result.nextState.snapshots[0].temporaryState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.snapshots[0].temporaryState.stationAssignments[0].operator, result.nextState.stationAssignments[0].operator);
   assert.deepEqual(result.nextState.snapshots[0].temporaryState.proposedStationOrder, []);
   assert.deepEqual(result.nextState.snapshots[0].temporaryState.committedStationOrder, ["navigator", "captain"]);
-  assert.deepEqual(result.events, [{ type: "voyage.crew-planning-locked", encounterId: "lock", lifecycleState: STATES.ACTIVE, roundNumber: 1, previousPhase: VOYAGE_ROUND_PHASES.CREW_PLANNING, phase: VOYAGE_ROUND_PHASES.LOCK_READINESS, committedStationOrder: ["navigator", "captain"], previousRevision: 4, revision: 5, phaseStartSnapshotId: "lock-readiness-start" }]);
+  assert.deepEqual(result.events, [{ type: "voyage.crew-planning-locked", encounterId: "lock", lifecycleState: STATES.ACTIVE, roundNumber: 1, previousPhase: VOYAGE_ROUND_PHASES.CREW_PLANNING, phase: VOYAGE_ROUND_PHASES.LOCK_READINESS, riskBids: [{ stationId: "captain", actionId: "rally", riskBidId: "close", dcAdjustment: 2 }], committedStationOrder: ["navigator", "captain"], previousRevision: 4, revision: 5, phaseStartSnapshotId: "lock-readiness-start" }]);
   assert.equal(Object.hasOwn(result.events[0], "proposedStationOrder"), false);
   assert.deepEqual(source, before);
   assert.deepEqual(request, { phaseStartSnapshotId: "lock-readiness-start" });
@@ -40,6 +91,7 @@ test("locks an explicit no-roll-approach-complete plan", () => {
   const source = encounter();
   source.selections.captain = { stationId: "captain", actionId: "rally", approachId: "steady-command", noRoll: true };
   source.selections.navigator = { stationId: "navigator", actionId: "course", approachId: "careful-course", noRoll: true };
+  source.riskBids = {};
   const before = clonePlainData(source);
 
   const result = applyVoyageEncounterCrewPlanningLock(source, { phaseStartSnapshotId: "no-roll-lock" });
@@ -50,6 +102,32 @@ test("locks an explicit no-roll-approach-complete plan", () => {
   assert.deepEqual(result.nextState.selections, before.selections);
   assert.deepEqual(result.nextState.proposedStationOrder, []);
   assert.deepEqual(result.nextState.committedStationOrder, ["navigator", "captain"]);
+  assert.deepEqual(source, before);
+});
+
+test("exclusively no-roll actions cannot carry unselected authored Risk Bids into lock", () => {
+  const source = encounter();
+  source.availableStations[0].actions[0].approaches = [
+    noRollApproach("steady-command")
+  ];
+  source.selections.captain = {
+    stationId: "captain",
+    actionId: "rally",
+    approachId: "steady-command",
+    noRoll: true
+  };
+  source.riskBids = {};
+  const before = clonePlainData(source);
+
+  const result = applyVoyageEncounterCrewPlanningLock(source, {
+    phaseStartSnapshotId: "invalid-no-roll-risk-options"
+  });
+
+  failure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "no-roll-risk-bid-options"
+      && entry.path === "availableStations[0].actions[0].riskBidOptions"
+  ));
   assert.deepEqual(source, before);
 });
 
@@ -70,6 +148,130 @@ test("locks a one-station proposal without generating or sorting order", () => {
   assert.deepEqual(result.nextState.committedStationOrder, ["captain"]);
   assert.deepEqual(result.events[0].committedStationOrder, ["captain"]);
   assert.deepEqual(result.nextState.snapshots[0].temporaryState.committedStationOrder, ["captain"]);
+  assert.deepEqual(source, before);
+});
+
+test("locks plans with zero through three Risk Bids without rewriting them", () => {
+  for (let count = 0; count <= 3; count += 1) {
+    const source = riskPlanningEncounter(count);
+    if (count === 3) {
+      source.riskBids = Object.fromEntries(
+        Object.entries(source.riskBids).reverse()
+      );
+    }
+    const before = clonePlainData(source);
+    const request = { phaseStartSnapshotId: `risk-count-${count}` };
+    const result = applyVoyageEncounterCrewPlanningLock(source, request);
+
+    assert.equal(result.ok, true, `count ${count}`);
+    assert.equal(result.nextState.revision, before.revision + 1);
+    assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.LOCK_READINESS);
+    assert.deepEqual(result.nextState.riskBids, before.riskBids);
+    assert.deepEqual(
+      result.nextState.snapshots.at(-1).temporaryState.riskBids,
+      before.riskBids
+    );
+    assert.notEqual(
+      result.nextState.snapshots.at(-1).temporaryState.riskBids,
+      result.nextState.riskBids
+    );
+    const expectedRiskBids = RISK_PLANNING_ORDER.slice(0, count).map(
+      (stationId) => {
+        const bid = before.riskBids[stationId];
+        return {
+          stationId: bid.stationId,
+          actionId: bid.actionId,
+          riskBidId: bid.riskBidId,
+          dcAdjustment: bid.dcAdjustment
+        };
+      }
+    );
+    assert.deepEqual(result.events[0].riskBids, expectedRiskBids);
+    assert.deepEqual(Object.keys(result.events[0]), [
+      "type",
+      "encounterId",
+      "lifecycleState",
+      "roundNumber",
+      "previousPhase",
+      "phase",
+      "riskBids",
+      "committedStationOrder",
+      "previousRevision",
+      "revision",
+      "phaseStartSnapshotId"
+    ]);
+    assert.deepEqual(
+      result.nextState.committedStationOrder,
+      RISK_PLANNING_ORDER
+    );
+    assert.deepEqual(result.nextState.proposedStationOrder, []);
+    assert.equal(result.events.length, 1);
+    for (const bidRecord of Object.values(result.nextState.riskBids)) {
+      assert.deepEqual(Object.keys(bidRecord), [
+        "stationId",
+        "actionId",
+        "riskBidId",
+        "dcAdjustment"
+      ]);
+      assert.equal(Object.hasOwn(bidRecord, "finalDc"), false);
+      assert.equal(Object.hasOwn(bidRecord, "outcomes"), false);
+    }
+    assert.deepEqual(source, before);
+    assert.deepEqual(request, { phaseStartSnapshotId: `risk-count-${count}` });
+
+    if (count > 0) {
+      result.events[0].riskBids[0].riskBidId = "event-only";
+      assert.equal(
+        result.nextState.riskBids[expectedRiskBids[0].stationId].riskBidId,
+        expectedRiskBids[0].riskBidId
+      );
+      result.nextState.snapshots.at(-1).temporaryState.riskBids[
+        expectedRiskBids[0].stationId
+      ].riskBidId = "snapshot-only";
+      assert.equal(
+        result.nextState.riskBids[expectedRiskBids[0].stationId].riskBidId,
+        expectedRiskBids[0].riskBidId
+      );
+    }
+  }
+});
+
+test("a fourth valid Risk Bid blocks lock without any partial state change", () => {
+  const source = riskPlanningEncounter(4);
+  const request = { phaseStartSnapshotId: "over-risk-limit" };
+  const before = clonePlainData(source);
+  const requestBefore = clonePlainData(request);
+  const result = applyVoyageEncounterCrewPlanningLock(source, request);
+
+  failure(result);
+  assert.equal(result.errors.filter(
+    (entry) => entry.code === "risk-bid-round-limit-exceeded"
+      && entry.path === "riskBids"
+  ).length, 1);
+  assert.equal(source.revision, before.revision);
+  assert.equal(source.phase, before.phase);
+  assert.deepEqual(source.proposedStationOrder, before.proposedStationOrder);
+  assert.deepEqual(source.committedStationOrder, before.committedStationOrder);
+  assert.deepEqual(source.selections, before.selections);
+  assert.deepEqual(source.riskBids, before.riskBids);
+  assert.deepEqual(source.snapshots, before.snapshots);
+  assert.deepEqual(source, before);
+  assert.deepEqual(request, requestBefore);
+});
+
+test("malformed Risk Bid state blocks lock atomically", () => {
+  const source = riskPlanningEncounter(1);
+  source.riskBids.navigator.dcAdjustment = 8;
+  const before = clonePlainData(source);
+  const result = applyVoyageEncounterCrewPlanningLock(source, {
+    phaseStartSnapshotId: "malformed-risk-bid"
+  });
+
+  failure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "risk-bid-dc-adjustment-mismatch"
+      && entry.path === "riskBids.navigator.dcAdjustment"
+  ));
   assert.deepEqual(source, before);
 });
 
@@ -145,8 +347,10 @@ test("action-only and one-missing-approach plans cannot lock and remain atomic",
     captain: { stationId: "captain", actionId: "rally" },
     navigator: { stationId: "navigator", actionId: "course" }
   };
+  actionOnly.riskBids = {};
   const oneMissing = encounter();
   oneMissing.selections.navigator = { stationId: "navigator", actionId: "course" };
+  oneMissing.riskBids = {};
 
   for (const [source, snapshotId] of [
     [actionOnly, "action-only"],

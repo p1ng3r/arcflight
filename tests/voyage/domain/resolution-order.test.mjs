@@ -13,6 +13,19 @@ function assignment(stationId) {
   };
 }
 
+function riskBidOption(riskBidId, dcAdjustment = 2) {
+  return {
+    riskBidId,
+    dcAdjustment,
+    outcomes: {
+      criticalSuccess: [],
+      success: [],
+      failure: [],
+      criticalFailure: []
+    }
+  };
+}
+
 function state() {
   const source = createVoyageEncounterState({
     encounterId: "e",
@@ -33,7 +46,11 @@ function state() {
       actions: [{
         actionId: "two",
         resolutionPriority: -9007199254740991,
-        riskBidOptions: [{ riskBidId: "danger" }]
+        approaches: [{
+          approachId: "engineering",
+          statisticSlugOrAbilityId: "crafting"
+        }],
+        riskBidOptions: [riskBidOption("danger")]
       }]
     },
     {
@@ -46,7 +63,7 @@ function state() {
     assignment("captain")
   ];
   source.selections = {
-    engineer: { stationId: "engineer", actionId: "two" },
+    engineer: { stationId: "engineer", actionId: "two", approachId: "engineering", statisticSlugOrAbilityId: "crafting" },
     captain: { stationId: "captain", actionId: "one" }
   };
   source.proposedStationOrder = [];
@@ -55,7 +72,8 @@ function state() {
     engineer: {
       stationId: "engineer",
       actionId: "two",
-      riskBidId: "danger"
+      riskBidId: "danger",
+      dcAdjustment: 2
     }
   };
   return source;
@@ -72,19 +90,60 @@ test("uses exact committed order while retaining informational priority and Risk
       stationId: "captain",
       actionId: "one",
       resolutionPriority: 9007199254740991,
-      riskBidId: null
+      riskBidId: null,
+      dcAdjustment: null
     },
     {
       sequence: 1,
       stationId: "engineer",
       actionId: "two",
       resolutionPriority: -9007199254740991,
-      riskBidId: "danger"
+      riskBidId: "danger",
+      dcAdjustment: 2
     }
   ]);
   assert.deepEqual(source, before);
   result.orderedActions[0].stationId = "changed";
   assert.deepEqual(source.committedStationOrder, ["captain", "engineer"]);
+  const second = prepareVoyageEncounterResolutionOrder(source);
+  assert.equal(second.orderedActions[0].stationId, "captain");
+  assert.equal(second.orderedActions[1].riskBidId, "danger");
+  assert.equal(second.orderedActions[1].dcAdjustment, 2);
+});
+
+test("forged, stale, and accessor-backed Risk Bids block ordered action analysis", () => {
+  const cases = [
+    [
+      (source) => { source.riskBids.engineer.dcAdjustment = 5; },
+      "risk-bid-dc-adjustment-mismatch"
+    ],
+    [
+      (source) => { source.riskBids.engineer.actionId = "stale"; },
+      "risk-bid-action-mismatch"
+    ]
+  ];
+  for (const [mutate, code] of cases) {
+    const source = state();
+    mutate(source);
+    const result = prepareVoyageEncounterResolutionOrder(source);
+    assert.equal(result.readyForResolution, false);
+    assert.deepEqual(result.orderedActions, []);
+    assert.ok(result.errors.some((entry) => entry.code === code), code);
+  }
+
+  const accessor = state();
+  let reads = 0;
+  Object.defineProperty(accessor.riskBids.engineer, "dcAdjustment", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      throw new Error("must not execute");
+    }
+  });
+  const result = prepareVoyageEncounterResolutionOrder(accessor);
+  assert.equal(result.readyForResolution, false);
+  assert.deepEqual(result.orderedActions, []);
+  assert.equal(reads, 0);
 });
 
 test("rejects invalid supplied priority even when unselected", () => {
@@ -220,7 +279,7 @@ test("inherited actions and Risk Bid options in real holes are unavailable", () 
   Object.defineProperty(actionPrototype, "0", {
     value: {
       actionId: "ghost",
-      riskBidOptions: [{ riskBidId: "bid" }]
+      riskBidOptions: [riskBidOption("bid")]
     },
     configurable: true
   });

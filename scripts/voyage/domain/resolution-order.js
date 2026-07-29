@@ -56,6 +56,14 @@ export function analyzeVoyageEncounterResolutionOrder(state) {
   const bidValidation = validateVoyageEncounterRiskBids(state);
   errors.push(...selectionValidation.errors, ...bidValidation.errors);
   warnings.push(...selectionValidation.warnings, ...bidValidation.warnings);
+  if (bidValidation.overRiskBidLimit) {
+    issue(
+      errors,
+      "risk-bid-round-limit-exceeded",
+      "riskBids",
+      `Resolution allows at most ${bidValidation.riskBidLimit} selected Risk Bids.`
+    );
+  }
 
   const stations = new Map();
   for (let stationIndex = 0; stationIndex < state.availableStations.length; stationIndex += 1) {
@@ -95,6 +103,11 @@ export function analyzeVoyageEncounterResolutionOrder(state) {
     if (!station || !isPlainObject(selection) || selection.stationId !== stationId) continue;
     const action = station.actions.get(selection.actionId);
     if (!action) continue;
+    const selectedRiskBid = bidValidation.valid
+      && !bidValidation.overRiskBidLimit
+      && Object.hasOwn(state.riskBids, stationId)
+      ? state.riskBids[stationId]
+      : null;
     orderedActions.push({
       sequence,
       stationId,
@@ -102,9 +115,8 @@ export function analyzeVoyageEncounterResolutionOrder(state) {
       resolutionPriority: Object.hasOwn(action.action, "resolutionPriority")
         ? action.action.resolutionPriority
         : 0,
-      riskBidId: Object.hasOwn(state.riskBids, stationId)
-        ? state.riskBids[stationId].riskBidId
-        : null
+      riskBidId: selectedRiskBid?.riskBidId ?? null,
+      dcAdjustment: selectedRiskBid?.dcAdjustment ?? null
     });
   }
   const finalErrors = deduplicateVoyageResolutionIssues(errors);
