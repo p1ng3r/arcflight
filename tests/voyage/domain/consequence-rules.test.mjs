@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 import { analyzeVoyageEncounterActionOutcomeDefinitions, validateVoyageEncounterActionOutcomeDefinitions } from "../../../scripts/voyage/domain/consequence-rules.js";
-import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "../../../scripts/voyage/domain/constants.js";
+import { VOYAGE_CONTROLLED_EFFECT_INTENT_TYPES as CONTROLLED, VOYAGE_EFFECT_INTENT_TYPES as INTENTS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "../../../scripts/voyage/domain/constants.js";
+import { VOYAGE_CONTROLLED_EFFECT_INTENT_CONTRACTS as CONTROLLED_CONTRACTS } from "../../../scripts/voyage/domain/controlled-intent-contracts.js";
 function state(action = { actionId: "wait" }) { return { ...createDraftVoyageEncounterDefaults(), encounterId:"e", definitionId:"d", lifecycleState:LIFE.ACTIVE, revision:0, primaryShip:{actorId:"s"}, currentStage:{stageId:"s"}, roundNumber:1, phase:PHASES.CONSEQUENCES, availableStations:[{stationId:"captain",actions:[action]}], successConditions:[{conditionId:"x"}], failureConditions:[{conditionId:"y"}] }; }
 function check() { return { source:{kind:"character",uuid:"Actor.captain"},statisticOptions:["diplomacy"],dcSource:{kind:"fixed",value:20},secrecy:"public" }; }
 function checkBranches(overrides={}) { return {"critical-failure":[],failure:[],success:[],"critical-success":[],...overrides}; }
@@ -191,4 +192,153 @@ test("target inspection contains accessors, symbols, inherited fields, and proxy
     assert.equal(report.valid, false);
     assert.ok(report.errors.some((entry) => entry.code === "outcome-data-read-failed"));
   }
+});
+
+function controlledAction({
+  intentType,
+  timing = "consequences",
+  target = { kind: "station", targetId: "captain" },
+  payload
+}) {
+  return {
+    actionId: "controlled",
+    outcomeDefinition: {
+      effectRules: [{
+        effectId: "controlled-effect",
+        intentType,
+        timing,
+        visibility: "public",
+        target,
+        payload
+      }],
+      branches: { "no-roll": ["controlled-effect"] }
+    }
+  };
+}
+
+test("exports the exact unique controlled intent vocabulary and preserves legacy intent IDs", () => {
+  const expected = [
+    "dc-change", "roll-modifier", "result-degree-shift", "reroll", "roll-twice",
+    "focus-restoration", "pressure-change", "hazard-create", "hazard-remove",
+    "hazard-prevent", "hazard-suppress", "station-order-change", "system-repair",
+    "system-protection"
+  ];
+  assert.deepEqual(Object.values(CONTROLLED), expected);
+  assert.equal(new Set(Object.values(CONTROLLED)).size, expected.length);
+  assert.deepEqual(Object.keys(CONTROLLED_CONTRACTS), expected);
+  assert.equal(INTENTS.TEMPORARY_MODIFIER, "temporary-modifier");
+  assert.equal(INTENTS.DISCOVERY, "discovery");
+  for (const intentType of expected) assert.equal(INTENTS[Object.keys(CONTROLLED).find((key) => CONTROLLED[key] === intentType)], intentType);
+  assert.ok(Object.isFrozen(CONTROLLED));
+  assert.ok(Object.isFrozen(CONTROLLED_CONTRACTS));
+});
+
+test("representative controlled contracts validate and isolate numeric enum and ID payloads", () => {
+  const cases = [
+    [CONTROLLED.DC_CHANGE, { kind: "station", targetId: "navigator" }, "consequences", { delta: -2 }],
+    [CONTROLLED.ROLL_TWICE, { kind: "source-station" }, "consequences", { keep: "better" }],
+    [CONTROLLED.HAZARD_CREATE, { kind: "pressure-system", targetId: "arkengine" }, "end-of-round", { hazardId: "arkengine-surge" }]
+  ];
+  for (const [intentType, target, timing, payload] of cases) {
+    const source = state(controlledAction({ intentType, target, timing, payload }));
+    const report = analyzeVoyageEncounterActionOutcomeDefinitions(source);
+    assert.equal(report.definitionsValid, true, intentType);
+    assert.deepEqual(report.actions[0].effectRules[0].payload, payload);
+    report.actions[0].effectRules[0].payload[Object.keys(payload)[0]] = "changed";
+    assert.notEqual(payload[Object.keys(payload)[0]], "changed");
+  }
+});
+
+test("controlled contracts reject malformed payloads and incompatible target or timing exactly", () => {
+  const cases = [
+    [CONTROLLED.DC_CHANGE, { delta: undefined }, "controlled-intent-payload-invalid-type"],
+    [CONTROLLED.DC_CHANGE, {}, "controlled-intent-payload-missing-field"],
+    [CONTROLLED.DC_CHANGE, { delta: 1, extra: true }, "controlled-intent-payload-unexpected-field"],
+    [CONTROLLED.DC_CHANGE, { delta: Number.POSITIVE_INFINITY }, "controlled-intent-payload-invalid-type"],
+    [CONTROLLED.ROLL_TWICE, { keep: "worst" }, "controlled-intent-payload-invalid-enum"],
+    [CONTROLLED.HAZARD_CREATE, { hazardId: "__proto__" }, "controlled-intent-payload-unsafe-id"]
+  ];
+  for (const [intentType, payload, code] of cases) {
+    const report = validateVoyageEncounterActionOutcomeDefinitions(state(controlledAction({
+      intentType,
+      target: intentType === CONTROLLED.HAZARD_CREATE ? { kind: "pressure-system", targetId: "arkengine" } : { kind: "station", targetId: "captain" },
+      payload
+    })));
+    assert.equal(report.valid, false, code);
+    assert.ok(report.errors.some((entry) => entry.code === code), code);
+  }
+
+  const target = validateVoyageEncounterActionOutcomeDefinitions(state(controlledAction({
+    intentType: CONTROLLED.HAZARD_CREATE,
+    target: { kind: "hazard", targetId: "already-there" },
+    payload: { hazardId: "new-hazard" }
+  })));
+  assert.ok(target.errors.some((entry) => entry.code === "controlled-intent-target-incompatible"));
+
+  const timing = validateVoyageEncounterActionOutcomeDefinitions(state(controlledAction({
+    intentType: CONTROLLED.ROLL_TWICE,
+    timing: "end-of-round",
+    payload: { keep: "better" }
+  })));
+  assert.ok(timing.errors.some((entry) => entry.code === "controlled-intent-timing-incompatible"));
+});
+
+test("controlled payloads reject accessors symbols inherited fields and proxy failures without mutation", () => {
+  const accessor = { delta: -1 };
+  let reads = 0;
+  Object.defineProperty(accessor, "delta", { get() { reads += 1; return -1; } });
+  const symbol = { delta: -1 };
+  symbol[Symbol("hidden")] = true;
+  const inherited = Object.create({ delta: -1 });
+  const proxy = new Proxy({ delta: -1 }, { ownKeys() { throw new Error("hostile"); } });
+  for (const payload of [accessor, symbol, inherited, proxy]) {
+    const before = payload === proxy ? null : payload;
+    const report = validateVoyageEncounterActionOutcomeDefinitions(state(controlledAction({ intentType: CONTROLLED.DC_CHANGE, payload })));
+    assert.equal(report.valid, false);
+    assert.ok(report.errors.some((entry) => entry.code.startsWith("controlled-intent-payload-")));
+    assert.equal(before === null || payload === before, true);
+  }
+  assert.equal(reads, 0);
+});
+
+test("all canonical controlled contracts are implemented without changing legacy payload behavior", () => {
+  assert.equal(Object.values(CONTROLLED_CONTRACTS).some(({ implemented }) => !implemented), false);
+  for (const [intentType, contract] of Object.entries(CONTROLLED_CONTRACTS)) {
+    if (contract.implemented) continue;
+    const report = analyzeVoyageEncounterActionOutcomeDefinitions(state(controlledAction({
+      intentType,
+      payload: { arbitrary: "not-yet-accepted" }
+    })));
+    assert.equal(report.definitionsValid, false, intentType);
+    assert.ok(report.errors.some((entry) => entry.code === "controlled-intent-contract-not-implemented"), intentType);
+    assert.equal(report.actions[0].effectRules.length, 0, intentType);
+  }
+
+  const legacy = { nested: { arbitrary: true } };
+  const report = analyzeVoyageEncounterActionOutcomeDefinitions(state(controlledAction({
+    intentType: INTENTS.TEMPORARY_MODIFIER,
+    payload: legacy
+  })));
+  assert.equal(report.definitionsValid, true);
+  assert.deepEqual(report.actions[0].effectRules[0].payload, legacy);
+});
+
+test("controlled-intent diagnostics and normalized output are deterministic", () => {
+  const source = state(controlledAction({
+    intentType: CONTROLLED.HAZARD_CREATE,
+    target: { kind: "station", targetId: "captain" },
+    timing: "gm-confirmed",
+    payload: { unexpected: true }
+  }));
+  const before = structuredClone(source);
+  const first = analyzeVoyageEncounterActionOutcomeDefinitions(source);
+  const second = analyzeVoyageEncounterActionOutcomeDefinitions(source);
+  assert.deepEqual(first, second);
+  assert.deepEqual(source, before);
+  assert.deepEqual(first.errors.map((entry) => entry.code), [
+    "controlled-intent-target-incompatible",
+    "controlled-intent-timing-incompatible",
+    "controlled-intent-payload-unexpected-field",
+    "controlled-intent-payload-missing-field"
+  ]);
 });

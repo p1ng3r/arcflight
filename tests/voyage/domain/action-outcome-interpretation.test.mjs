@@ -2378,3 +2378,133 @@ test("safe failure preserves constructed report facts, upstream diagnostics, and
   assert.equal(report.warnings.some(({ code }) => code === "unreferenced-effect-rule"), true);
   assertAtomic(report);
 });
+
+test("Task 02 controlled payloads survive normal and selected Risk Bid intent emission", () => {
+  const normalPayload = { delta: -2 };
+  const riskPayload = { delta: 1 };
+  const action = checkAction("command", 0, "success", "normal-effect");
+  action.approaches = [{ approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy" }];
+  action.outcomeDefinition.effectRules[0] = {
+    ...effectRule("normal-effect", {
+      target: { kind: "source-station" },
+      payload: normalPayload
+    }),
+    intentType: "dc-change"
+  };
+  action.riskBidOptions = [riskBidOption("bid-2", 2, { success: ["risk-effect"] })];
+  action.outcomeDefinition.effectRules.push({
+    ...effectRule("risk-effect", {
+      target: { kind: "station", targetId: "navigator" },
+      payload: riskPayload
+    }),
+    intentType: "roll-modifier",
+    visibility: "gm-secret"
+  });
+
+  const source = state({
+    phase: "resolution",
+    availableStations: [{ stationId: "captain", actions: [action] }],
+    selections: {
+      captain: {
+        stationId: "captain",
+        actionId: "command",
+        approachId: "diplomacy",
+        statisticSlugOrAbilityId: "diplomacy"
+      }
+    }
+  });
+  source.riskBids.captain = {
+    stationId: "captain",
+    actionId: "command",
+    riskBidId: "bid-2",
+    dcAdjustment: 2
+  };
+
+  const report = analyzeVoyageEncounterActionOutcomes(resolveChecks(source, ["success"]));
+  assert.equal(report.readyForInterpretation, true);
+  assert.deepEqual(report.intents.map(({ activationSource, intentType, timing, visibility, target, payload }) => ({
+    activationSource,
+    intentType,
+    timing,
+    visibility,
+    target,
+    payload
+  })), [
+    {
+      activationSource: "branch",
+      intentType: "dc-change",
+      timing: "consequences",
+      visibility: "public",
+      target: { kind: "source-station" },
+      payload: { delta: -2 }
+    },
+    {
+      activationSource: "risk-bid",
+      intentType: "roll-modifier",
+      timing: "consequences",
+      visibility: "gm-secret",
+      target: { kind: "station", targetId: "navigator" },
+      payload: { delta: 1 }
+    }
+  ]);
+  const firstIds = report.intents.map(({ intentId }) => intentId);
+  report.intents[0].payload.delta = 99;
+  assert.equal(normalPayload.delta, -2);
+  assert.equal(riskPayload.delta, 1);
+  assert.deepEqual(firstIds, analyzeVoyageEncounterActionOutcomes(resolveChecks(source, ["success"])).intents.map(({ intentId }) => intentId));
+});
+
+test("Task 03 controlled intents survive normal and selected Risk Bid emission without application", () => {
+  const controlledRule = (effectId, intentType, payload, target, overrides = {}) => ({
+    ...effectRule(effectId, { payload, target }),
+    intentType,
+    ...overrides
+  });
+  const normalRules = [
+    controlledRule("focus", "focus-restoration", { amount: 1 }, { kind: "source-station" }),
+    controlledRule("pressure", "pressure-change", { delta: -1 }, { kind: "pressure-system", targetId: "arkengine" }),
+    controlledRule("create", "hazard-create", { hazardId: "storm" }, { kind: "encounter" }),
+    controlledRule("remove", "hazard-remove", {}, { kind: "hazard", targetId: "storm" }),
+    controlledRule("order", "station-order-change", { position: "first" }, { kind: "station", targetId: "captain" }),
+    controlledRule("repair", "system-repair", { scope: "temporary" }, { kind: "source-station" }),
+    controlledRule("protect", "system-protection", { scope: "next-consequence" }, { kind: "pressure-system", targetId: "arkengine" })
+  ];
+  const normalAction = noRollAction("command", normalRules.map(({ effectId }) => effectId), normalRules);
+  const normal = analyzeVoyageEncounterActionOutcomes(state({
+    availableStations: [{ stationId: "captain", actions: [normalAction] }],
+    selections: { captain: { stationId: "captain", actionId: "command" } }
+  }));
+  assert.equal(normal.readyForInterpretation, true);
+  assert.deepEqual(normal.intents.map(({ activationSource, intentType, timing, visibility, target, payload }) => ({
+    activationSource, intentType, timing, visibility, target, payload
+  })), normalRules.map(({ intentType, timing, visibility, target, payload }) => ({
+    activationSource: "branch", intentType, timing, visibility, target, payload
+  })));
+
+  const riskAction = checkAction("ward", 0, "success", "prevent");
+  riskAction.outcomeDefinition.effectRules[0] = controlledRule("prevent", "hazard-prevent", {}, { kind: "hazard", targetId: "storm" });
+  riskAction.outcomeDefinition.effectRules.push(controlledRule("suppress", "hazard-suppress", {}, { kind: "selected-target" }, { visibility: "gm-secret" }));
+  riskAction.riskBidOptions = [riskBidOption("bid-2", 2, { success: ["prevent", "suppress"] })];
+  const riskSource = state({
+    phase: "resolution",
+    availableStations: [{ stationId: "captain", actions: [riskAction] }],
+    selections: { captain: { stationId: "captain", actionId: "ward" } },
+    targets: { captain: { targetId: "storm" } }
+  });
+  riskSource.riskBids.captain = { stationId: "captain", actionId: "ward", riskBidId: "bid-2", dcAdjustment: 2 };
+  const risk = analyzeVoyageEncounterActionOutcomes(resolveChecks(riskSource, ["success"]));
+  assert.equal(risk.readyForInterpretation, true);
+  assert.deepEqual(risk.intents.map(({ activationSource, intentType, timing, visibility, target, payload }) => ({
+    activationSource, intentType, timing, visibility, target, payload
+  })), [
+    { activationSource: "branch", intentType: "hazard-prevent", timing: "consequences", visibility: "public", target: { kind: "hazard", targetId: "storm" }, payload: {} },
+    { activationSource: "risk-bid", intentType: "hazard-prevent", timing: "consequences", visibility: "public", target: { kind: "hazard", targetId: "storm" }, payload: {} },
+    { activationSource: "risk-bid", intentType: "hazard-suppress", timing: "consequences", visibility: "gm-secret", target: { kind: "selected-target" }, payload: {} }
+  ]);
+  assert.deepEqual(risk.intents.map(({ intentId }) => intentId), [
+    'arcflight-intent:["encounter","stage",1,0,"branch",0,"prevent"]',
+    'arcflight-intent:["encounter","stage",1,0,"risk-bid",0,"prevent"]',
+    'arcflight-intent:["encounter","stage",1,0,"risk-bid",1,"suppress"]'
+  ]);
+  assert.equal(Object.hasOwn(risk.intents[0], "application"), false);
+});
