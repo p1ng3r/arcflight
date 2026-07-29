@@ -2,9 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
 import { prepareVoyageEncounterActionExecutionRequests, validateVoyageEncounterActionExecutionDefinitions } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
-function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "automatic", resolutionPriority: 1 }, { actionId: "check", resolutionPriority: -1, check: { source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } } }] }]; value.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; value.targets = { captain: { id: "target" } }; return value; }
+function state() { const value = createVoyageEncounterState({ encounterId: "event", definitionId: "definition", primaryShip: { id: "ship" } }); value.lifecycleState = "active"; value.currentStage = { stageId: "stage" }; value.roundNumber = 1; value.phase = "resolution"; value.availableStations = [{ stationId: "captain", actions: [{ actionId: "automatic", resolutionPriority: 1 }, { actionId: "check", resolutionPriority: -1, check: { source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } } }] }]; value.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain" } }]; value.selections = { captain: { stationId: "captain", actionId: "check" } }; value.targets = { captain: { id: "target" } }; value.committedStationOrder = ["captain"]; return value; }
 function withCustomArrayPrototype(array, prototype, callback) { const previous = Object.getPrototypeOf(array); Object.setPrototypeOf(array, prototype); try { return callback(); } finally { Object.setPrototypeOf(array, previous); } }
 test("validates authored checks and prepares isolated deterministic check requests", () => { const value = state(), before = structuredClone(value); assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, true); const report = prepareVoyageEncounterActionExecutionRequests(value); assert.equal(report.readyForExecution, true); assert.equal(report.checkCount, 1); assert.deepEqual(report.executionRequests[0], { sequence: 0, stationId: "captain", actionId: "check", resolutionPriority: -1, riskBidId: null, target: { id: "target" }, mode: "check", source: { kind: "character", nested: { id: "x" } }, statisticOptions: [" Sailing "], dcSource: { kind: "fixed", value: 20 }, secrecy: "secret", metadata: { hidden: true } }); report.executionRequests[0].source.nested.id = "changed"; assert.equal(value.availableStations[0].actions[1].check.source.nested.id, "x"); assert.deepEqual(value, before); });
+
+test("execution requests preserve committed order when authored priorities conflict", () => {
+  const value = state();
+  value.availableStations[0].actions[1].resolutionPriority = -100;
+  value.availableStations.push({
+    stationId: "engineer",
+    actions: [{ actionId: "repair", resolutionPriority: 100 }]
+  });
+  value.stationAssignments.push({
+    stationId: "engineer",
+    operator: { kind: "actor", uuid: "Actor.engineer" }
+  });
+  value.selections.engineer = { stationId: "engineer", actionId: "repair" };
+  value.committedStationOrder = ["engineer", "captain"];
+
+  const report = prepareVoyageEncounterActionExecutionRequests(value);
+
+  assert.equal(report.readyForExecution, true);
+  assert.deepEqual(
+    report.executionRequests.map(({ sequence, stationId }) => ({ sequence, stationId })),
+    [
+      { sequence: 0, stationId: "engineer" },
+      { sequence: 1, stationId: "captain" }
+    ]
+  );
+});
 test("omitted check is valid no-roll while malformed own checks are rejected", () => { const value = state(); value.selections.captain.actionId = "automatic"; assert.equal(prepareVoyageEncounterActionExecutionRequests(value).executionRequests[0].mode, "no-roll"); value.availableStations[0].actions[0].check = null; assert.equal(validateVoyageEncounterActionExecutionDefinitions(value).valid, false); });
 
 test("getter failures retain Resolution facts and return structured errors", () => {

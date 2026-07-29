@@ -3,6 +3,7 @@ import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES, VOYAGE_ROUND_PHASES } from "./consta
 import { clonePlainData, isPlainObject } from "./defaults.js";
 import { validateVoyagePhaseTransition } from "./phase.js";
 import { prepareVoyageEncounterCrewPlanningReadiness } from "./crew-planning-readiness.js";
+import { analyzeVoyageEncounterStationOrder } from "./station-order.js";
 import { validateVoyageEncounterStationSelections } from "./station-selection.js";
 import { validateVoyageEncounterState } from "./validation.js";
 
@@ -32,7 +33,7 @@ function validateRequest(request, snapshots) {
 }
 
 /** Atomically transition a complete Crew Plan into the Lock Readiness boundary. */
-export function applyVoyageEncounterCrewPlanningLock(encounterState, lockRequest) {
+function applyCrewPlanningLock(encounterState, lockRequest) {
   const structural = validateVoyageEncounterState(encounterState);
   if (!structural.valid) return failure(structural.errors, [...structural.warnings]);
   const selections = validateVoyageEncounterStationSelections(encounterState);
@@ -53,6 +54,17 @@ export function applyVoyageEncounterCrewPlanningLock(encounterState, lockRequest
   try { candidate = clonePlainData(encounterState); } catch (_error) {
     return failure([error("crew-planning-lock-candidate-construction-failed", "encounterState", "Crew Planning lock could not clone encounter state.")], readinessWarnings);
   }
+  try {
+    const committedStationOrder = [...candidate.proposedStationOrder];
+    candidate.proposedStationOrder = [];
+    candidate.committedStationOrder = committedStationOrder;
+  } catch (_error) {
+    return failure([error(
+      "crew-planning-lock-station-order-commitment-failed",
+      "proposedStationOrder",
+      "Crew Planning lock could not commit the proposed station order."
+    )], readinessWarnings);
+  }
   candidate.phase = VOYAGE_ROUND_PHASES.LOCK_READINESS;
   let phaseStart;
   try {
@@ -67,11 +79,34 @@ export function applyVoyageEncounterCrewPlanningLock(encounterState, lockRequest
   const validation = validateVoyageEncounterState(candidate);
   warnings.push(...validation.warnings);
   if (!validation.valid) return failure(validation.errors, warnings);
+  const stationOrder = analyzeVoyageEncounterStationOrder(candidate);
+  warnings.push(...stationOrder.warnings);
+  if (!stationOrder.valid) return failure(stationOrder.errors, warnings);
+  if (!stationOrder.committedOrderComplete) {
+    return failure([error(
+      "crew-planning-lock-committed-station-order-incomplete",
+      "committedStationOrder",
+      "Crew Planning lock requires a complete committed station order."
+    )], warnings);
+  }
   return { ok: true, nextState: candidate, events: [{
     type: "voyage.crew-planning-locked", encounterId: candidate.encounterId,
     lifecycleState: candidate.lifecycleState, roundNumber: candidate.roundNumber,
     previousPhase: encounterState.phase, phase: candidate.phase,
+    committedStationOrder: [...candidate.committedStationOrder],
     previousRevision: encounterState.revision, revision: candidate.revision,
     phaseStartSnapshotId: lockRequest.phaseStartSnapshotId
   }], errors: [], warnings: deduplicateIssues(warnings) };
+}
+
+export function applyVoyageEncounterCrewPlanningLock(encounterState, lockRequest) {
+  try {
+    return applyCrewPlanningLock(encounterState, lockRequest);
+  } catch (_error) {
+    return failure([error(
+      "crew-planning-lock-data-read-failed",
+      "$",
+      "Crew Planning lock data could not be read safely."
+    )], []);
+  }
 }

@@ -36,10 +36,16 @@ test("atomically enters Crew Planning with one appended phase-start snapshot and
   const result = applyVoyageEncounterCrewPlanningTransition(encounter, request);
   assert.equal(result.ok, true); assert.deepEqual(result.errors, []); assert.ok(Array.isArray(result.warnings)); assert.equal(result.events.length, 1);
   assert.equal(result.nextState.lifecycleState, STATES.ACTIVE); assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(result.nextState.roundNumber, 2); assert.equal(result.nextState.revision, 5);
+  assert.deepEqual(result.nextState.proposedStationOrder, []);
+  assert.deepEqual(result.nextState.committedStationOrder, []);
   assert.deepEqual(result.nextState.stationAssignments, before.stationAssignments); assert.notEqual(result.nextState.stationAssignments, encounter.stationAssignments); assert.notEqual(result.nextState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   assert.deepEqual(result.nextState.snapshots.slice(0, -1), before.snapshots);
   const snapshot = result.nextState.snapshots.at(-1);
   assert.equal(snapshot.snapshotId, "  planning-start  "); assert.equal(snapshot.boundaryType, "phase-start"); assert.equal(snapshot.lifecycleState, STATES.ACTIVE); assert.equal(snapshot.roundNumber, 2); assert.equal(snapshot.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(snapshot.temporaryState.phase, VOYAGE_ROUND_PHASES.CREW_PLANNING); assert.equal(snapshot.temporaryState.roundNumber, 2);
+  assert.deepEqual(snapshot.temporaryState.proposedStationOrder, []);
+  assert.deepEqual(snapshot.temporaryState.committedStationOrder, []);
+  assert.notEqual(snapshot.temporaryState.proposedStationOrder, result.nextState.proposedStationOrder);
+  assert.notEqual(snapshot.temporaryState.committedStationOrder, result.nextState.committedStationOrder);
   assert.deepEqual(snapshot.temporaryState.stationAssignments, before.stationAssignments); assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, result.nextState.stationAssignments[0].operator);
   assert.deepEqual(result.events[0], { type: "voyage.phase-transitioned", encounterId: "crew-planning", lifecycleState: STATES.ACTIVE, roundNumber: 2, fromPhase: VOYAGE_ROUND_PHASES.SITUATION, toPhase: VOYAGE_ROUND_PHASES.CREW_PLANNING, previousRevision: 4, revision: 5, phaseStartSnapshotId: "  planning-start  " });
   assert.deepEqual(encounter, before); assert.deepEqual(request, requestBefore); assert.equal(validateVoyageEncounterState(result.nextState).valid, true);
@@ -56,6 +62,104 @@ test("atomically enters Crew Planning with one appended phase-start snapshot and
   encounter.currentStage.details.tags.push("source-only"); encounter.currentSituation.details.threat = "source"; encounter.participants[0].details.userId = "source"; encounter.tracks[0].trackId = "source";
   assert.equal(result.nextState.currentStage.details.tags.includes("source-only"), false); assert.equal(result.nextState.currentSituation.details.threat, "next"); assert.equal(result.nextState.participants[0].details.userId, "next"); assert.equal(result.nextState.tracks[0].trackId, "next");
   assert.deepEqual(result.nextState.pendingThresholdQueue, before.pendingThresholdQueue); assert.deepEqual(result.nextState.pendingConsequences, before.pendingConsequences); assert.deepEqual(result.nextState.temporaryConsequences, before.temporaryConsequences);
+});
+
+test("clears a complete previous-round commitment without mutating or aliasing the source", () => {
+  const encounter = activeSituationEncounter();
+  encounter.committedStationOrder = ["captain"];
+  const request = { phaseStartSnapshotId: "next-round-planning" };
+  const before = clonePlainData(encounter);
+
+  const result = applyVoyageEncounterCrewPlanningTransition(encounter, request);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nextState.revision, before.revision + 1);
+  assert.equal(result.events.length, 1);
+  assert.equal(result.nextState.snapshots.length, before.snapshots.length + 1);
+  assert.deepEqual(result.nextState.proposedStationOrder, []);
+  assert.deepEqual(result.nextState.committedStationOrder, []);
+  const snapshot = result.nextState.snapshots.at(-1);
+  assert.deepEqual(snapshot.temporaryState.proposedStationOrder, []);
+  assert.deepEqual(snapshot.temporaryState.committedStationOrder, []);
+  assert.notEqual(snapshot.temporaryState.proposedStationOrder, result.nextState.proposedStationOrder);
+  assert.notEqual(snapshot.temporaryState.committedStationOrder, result.nextState.committedStationOrder);
+  assert.deepEqual(encounter.proposedStationOrder, []);
+  assert.deepEqual(encounter.committedStationOrder, ["captain"]);
+  result.nextState.committedStationOrder.push("next-only");
+  assert.deepEqual(snapshot.temporaryState.committedStationOrder, []);
+  assert.deepEqual(encounter.committedStationOrder, ["captain"]);
+});
+
+test("rejects stale, malformed, incomplete, and unreadable source order state atomically", () => {
+  const stale = activeSituationEncounter();
+  stale.proposedStationOrder = ["captain"];
+  let result = applyVoyageEncounterCrewPlanningTransition(stale, {
+    phaseStartSnapshotId: "stale-proposal"
+  });
+  assertFailure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "crew-planning-transition-requires-empty-proposed-station-order"
+      && entry.path === "proposedStationOrder"
+  ));
+
+  const malformedProposal = activeSituationEncounter();
+  malformedProposal.proposedStationOrder = {};
+  result = applyVoyageEncounterCrewPlanningTransition(malformedProposal, {
+    phaseStartSnapshotId: "malformed-proposal"
+  });
+  assertFailure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "invalid-collection-type"
+      && entry.path === "proposedStationOrder"
+  ));
+
+  const malformedCommitment = activeSituationEncounter();
+  malformedCommitment.committedStationOrder = {};
+  result = applyVoyageEncounterCrewPlanningTransition(malformedCommitment, {
+    phaseStartSnapshotId: "malformed-commitment"
+  });
+  assertFailure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "invalid-collection-type"
+      && entry.path === "committedStationOrder"
+  ));
+
+  const incomplete = activeSituationEncounter();
+  incomplete.availableStations.push({
+    stationId: "engineer",
+    actions: [{ actionId: "repair" }]
+  });
+  incomplete.stationAssignments.push({
+    stationId: "engineer",
+    operator: { kind: "actor", uuid: "Actor.engineer", name: "Engineer" }
+  });
+  incomplete.committedStationOrder = ["captain"];
+  const incompleteBefore = clonePlainData(incomplete);
+  result = applyVoyageEncounterCrewPlanningTransition(incomplete, {
+    phaseStartSnapshotId: "incomplete-commitment"
+  });
+  assertFailure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "missing-occupied-station-order-station-id"
+      && entry.path === "committedStationOrder"
+  ));
+  assert.deepEqual(incomplete, incompleteBefore);
+
+  const unreadable = activeSituationEncounter();
+  Object.defineProperty(unreadable, "committedStationOrder", {
+    enumerable: true,
+    get() {
+      return [];
+    }
+  });
+  result = applyVoyageEncounterCrewPlanningTransition(unreadable, {
+    phaseStartSnapshotId: "unreadable-commitment"
+  });
+  assertFailure(result);
+  assert.ok(result.errors.some(
+    (entry) => entry.code === "invalid-collection-type"
+      && entry.path === "committedStationOrder"
+  ));
 });
 
 test("propagates structural, lifecycle, and phase-policy failures before request inspection", () => {
@@ -112,7 +216,7 @@ test("rejects an exact snapshot collision without replacing or appending source 
 test("returns an atomic clone failure for an adversarial enumerable plain-data getter", () => {
   const encounter = activeSituationEncounter(); const request = { phaseStartSnapshotId: "clone-failure" }; const requestBefore = clonePlainData(request);
   const metadata = encounter.metadata; let reads = 0;
-  Object.defineProperty(encounter, "metadata", { enumerable: true, configurable: true, get() { reads += 1; if (reads >= 2) throw new Error("clone failure"); return metadata; } });
+  Object.defineProperty(encounter, "metadata", { enumerable: true, configurable: true, get() { reads += 1; if (reads >= 3) throw new Error("clone failure"); return metadata; } });
   const sourceSnapshotIds = encounter.snapshots.map((snapshot) => snapshot.snapshotId);
   const result = applyVoyageEncounterCrewPlanningTransition(encounter, request);
   assertFailure(result); assert.equal(result.errors[0].code, "crew-planning-candidate-construction-failed"); assert.equal(encounter.lifecycleState, STATES.ACTIVE); assert.equal(encounter.phase, VOYAGE_ROUND_PHASES.SITUATION); assert.equal(encounter.revision, 4); assert.deepEqual(encounter.snapshots.map((snapshot) => snapshot.snapshotId), sourceSnapshotIds); assert.deepEqual(request, requestBefore);

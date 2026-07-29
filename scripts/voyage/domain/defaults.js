@@ -47,6 +47,8 @@ export function createDefaultVoyageEncounterCollections() {
     thresholdHistory: [],
     pendingThresholdQueue: [],
     selections: {},
+    proposedStationOrder: [],
+    committedStationOrder: [],
     targets: {},
     riskBids: {},
     assistance: [],

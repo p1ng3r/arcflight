@@ -34,7 +34,8 @@ function noRollState() {
     phase: "resolution",
     availableStations: [{ stationId: "captain", actions: [{ actionId: "observe" }] }],
     stationAssignments: [{ stationId: "captain", operator: { kind: "actor", uuid: "Actor.captain", name: "Captain" } }],
-    selections: { captain: { stationId: "captain", actionId: "observe" } }
+    selections: { captain: { stationId: "captain", actionId: "observe" } },
+    committedStationOrder: ["captain"]
   });
   return state;
 }
@@ -68,6 +69,7 @@ function resolvedCheckState() {
       operator: { kind: "actor", uuid: "Actor.captain" }
     }],
     selections: { captain: { stationId: "captain", actionId: "check" } },
+    committedStationOrder: ["captain"],
     targets: { captain: { targetId: "target" } },
     riskBids: { captain: { riskBidId: "risk", stationId: "captain", actionId: "check" } },
     tracks: [{ trackId: "pressure", visibility: "exact", limitBehavior: "clamp", thresholds: [] }],

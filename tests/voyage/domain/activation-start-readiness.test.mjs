@@ -41,6 +41,27 @@ test("returns a clean report for a valid Ready encounter without exposing or mut
   assert.equal(Object.hasOwn(report, "nextState"), false);
 });
 
+test("contains hostile station-order array reads", () => {
+  const encounter = readyEncounter();
+  encounter.committedStationOrder = new Proxy([], {
+    get(target, key, receiver) {
+      if (key === "length") throw new Error("hostile length");
+      return Reflect.get(target, key, receiver);
+    }
+  });
+
+  assert.deepEqual(validateVoyageEncounterActivationStart(encounter), {
+    ready: false,
+    errors: [{
+      code: "activation-start-data-read-failed",
+      path: "$",
+      message: "Activation-start data could not be read safely.",
+      severity: "error"
+    }],
+    warnings: []
+  });
+});
+
 test("rejects malformed fixed assignments through canonical state validation", () => {
   const encounter = readyEncounter();
   encounter.stationAssignments = [
@@ -160,7 +181,7 @@ test("requires every pre-round planning field to be empty and collects multiple 
     const issue = validateVoyageEncounterActivationStart(encounter).errors.find((entry) => entry.path === fieldName);
     assert.equal(issue?.code, "activation-planning-state-not-empty");
   }
-  for (const fieldName of ["assistance", "reservations", "pendingChecks", "pendingThresholdQueue", "pendingConsequences"]) {
+  for (const fieldName of ["assistance", "reservations", "proposedStationOrder", "committedStationOrder", "pendingChecks", "pendingThresholdQueue", "pendingConsequences"]) {
     const encounter = readyEncounter();
     encounter[fieldName] = [{ id: fieldName }];
     const issue = validateVoyageEncounterActivationStart(encounter).errors.find((entry) => entry.path === fieldName);

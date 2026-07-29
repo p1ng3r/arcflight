@@ -19,6 +19,8 @@ const TEMPORARY_STATE_FIELDS = [
   "thresholdHistory",
   "pendingThresholdQueue",
   "selections",
+  "proposedStationOrder",
+  "committedStationOrder",
   "targets",
   "riskBids",
   "assistance",
@@ -94,7 +96,21 @@ export function createVoyageEncounterBoundarySnapshot(encounterState, snapshotRe
 
   const temporaryState = {};
   for (const fieldName of TEMPORARY_STATE_FIELDS) {
-    temporaryState[fieldName] = clonePlainData(encounterState[fieldName]);
+    try {
+      temporaryState[fieldName] = clonePlainData(encounterState[fieldName]);
+    } catch (_error) {
+      if (fieldName !== "proposedStationOrder" && fieldName !== "committedStationOrder") throw _error;
+      return {
+        ok: false,
+        snapshot: null,
+        errors: [error(
+          "boundary-snapshot-data-read-failed",
+          fieldName,
+          "Boundary snapshot station-order data could not be read safely."
+        )],
+        warnings: [...initialValidation.warnings]
+      };
+    }
   }
 
   return {

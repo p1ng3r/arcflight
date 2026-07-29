@@ -46,6 +46,8 @@ test("activates a Ready encounter atomically with ordered caller-identified snap
   assert.equal(result.nextState.lifecycleState, STATES.ACTIVE);
   assert.equal(result.nextState.roundNumber, 1);
   assert.equal(result.nextState.phase, VOYAGE_ROUND_PHASES.SITUATION);
+  assert.deepEqual(result.nextState.proposedStationOrder, []);
+  assert.deepEqual(result.nextState.committedStationOrder, []);
   assert.equal(result.nextState.revision, encounterBefore.revision + 1);
   assert.equal(encounter.revision, encounterBefore.revision);
   assert.deepEqual(result.nextState.snapshots.slice(0, 1), encounterBefore.snapshots);
@@ -61,10 +63,16 @@ test("activates a Ready encounter atomically with ordered caller-identified snap
     assert.equal(snapshot.phase, VOYAGE_ROUND_PHASES.SITUATION);
     assert.equal(snapshot.temporaryState.roundNumber, 1);
     assert.equal(snapshot.temporaryState.phase, VOYAGE_ROUND_PHASES.SITUATION);
+    assert.deepEqual(snapshot.temporaryState.proposedStationOrder, []);
+    assert.deepEqual(snapshot.temporaryState.committedStationOrder, []);
     assert.deepEqual(snapshot.temporaryState.stationAssignments, encounterBefore.stationAssignments);
     assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   }
   assert.notEqual(roundStart.temporaryState, phaseStart.temporaryState);
+  assert.notEqual(roundStart.temporaryState.proposedStationOrder, phaseStart.temporaryState.proposedStationOrder);
+  assert.notEqual(roundStart.temporaryState.committedStationOrder, phaseStart.temporaryState.committedStationOrder);
+  assert.notEqual(roundStart.temporaryState.proposedStationOrder, result.nextState.proposedStationOrder);
+  assert.notEqual(roundStart.temporaryState.committedStationOrder, result.nextState.committedStationOrder);
   assert.notEqual(result.nextState.currentStage, encounter.currentStage);
   assert.notEqual(result.nextState.participants, encounter.participants);
   assert.notEqual(result.nextState.availableStations, encounter.availableStations);

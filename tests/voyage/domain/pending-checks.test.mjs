@@ -44,7 +44,8 @@ function encounter({ phase = "resolution", secret = false, statisticOptions = ["
       stationId: "captain",
       operator: { kind: "actor", uuid: "Actor.captain" }
     }],
-    selections: { captain: { stationId: "captain", actionId: "check" } }
+    selections: { captain: { stationId: "captain", actionId: "check" } },
+    committedStationOrder: ["captain"]
   });
 
   return state;
@@ -85,6 +86,48 @@ function customPrototypeArray(array, prototype, callback) {
     Object.setPrototypeOf(array, previous);
   }
 }
+
+test("pending-check preparation preserves committed station sequence", () => {
+  const state = encounter();
+  state.availableStations[0].actions[0].resolutionPriority = -100;
+  state.availableStations.push({
+    stationId: "engineer",
+    actions: [{
+      actionId: "repair",
+      resolutionPriority: 100,
+      check: {
+        source: { kind: "character", uuid: "Actor.engineer" },
+        statisticOptions: ["crafting"],
+        dcSource: { kind: "fixed", value: 22 },
+        secrecy: "public"
+      }
+    }]
+  });
+  state.stationAssignments.push({
+    stationId: "engineer",
+    operator: { kind: "actor", uuid: "Actor.engineer" }
+  });
+  state.selections.engineer = { stationId: "engineer", actionId: "repair" };
+  state.committedStationOrder = ["engineer", "captain"];
+
+  const result = applyVoyageEncounterPendingCheckPreparation(state, {
+    pendingCheckIds: [
+      { sequence: 0, pendingCheckId: "pending-engineer" },
+      { sequence: 1, pendingCheckId: "pending-captain" }
+    ]
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    result.nextState.pendingChecks.map(
+      ({ sequence, stationId }) => ({ sequence, stationId })
+    ),
+    [
+      { sequence: 0, stationId: "engineer" },
+      { sequence: 1, stationId: "captain" }
+    ]
+  );
+});
 
 test("accepts pending checks with a null result and resolved checks with all degree/slug pairs", () => {
   assert.equal(validateVoyageEncounterPendingChecks(preparedEncounter()).valid, true);

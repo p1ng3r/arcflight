@@ -1,6 +1,7 @@
 import { VOYAGE_ENCOUNTER_LIFECYCLE_STATES, VOYAGE_ROUND_PHASES } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
 import { deriveOccupiedVoyageStationIds } from "./station-assignments.js";
+import { analyzeVoyageEncounterStationOrder } from "./station-order.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterStationSelections } from "./station-selection.js";
 import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
@@ -8,22 +9,48 @@ import { validateVoyageEncounterRiskBids } from "./risk-bids.js";
 const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
 const issue = (errors, code, path, message) => errors.push({ code, path, message, severity: "error" });
 const nonEmptyId = (value) => typeof value === "string" && value.trim().length > 0;
-const compareExact = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 export function deduplicateVoyageResolutionIssues(issues) {
   const seen = new Set();
-  return issues.filter((entry) => {
+  const deduplicated = [];
+  for (const entry of issues) {
     const key = `${entry.code}\0${entry.path}\0${entry.message}\0${entry.severity}`;
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduplicated.push({ ...entry });
+  }
+  return deduplicated;
 }
 
 /** Analyze a locked plan without the public Active/Lock Readiness phase gate. */
 export function analyzeVoyageEncounterResolutionOrder(state) {
-  const structural = validateVoyageEncounterState(state);
-  const errors = [...structural.errors];
-  const warnings = [...structural.warnings];
-  if (!structural.valid) return { valid: false, orderedActions: [], errors: deduplicateVoyageResolutionIssues(errors), warnings: deduplicateVoyageResolutionIssues(warnings) };
+  const stationOrder = analyzeVoyageEncounterStationOrder(state);
+  const errors = [...stationOrder.errors];
+  const warnings = [...stationOrder.warnings];
+  if (!stationOrder.valid) {
+    return {
+      valid: false,
+      orderedActions: [],
+      errors: deduplicateVoyageResolutionIssues(errors),
+      warnings: deduplicateVoyageResolutionIssues(warnings)
+    };
+  }
+
+  if (stationOrder.proposedStationOrder.length > 0) {
+    issue(
+      errors,
+      "resolution-order-requires-empty-proposed-station-order",
+      "proposedStationOrder",
+      "Resolution ordering requires proposedStationOrder to be empty after locking."
+    );
+  }
+  if (!stationOrder.committedOrderComplete) {
+    issue(
+      errors,
+      "resolution-order-requires-complete-committed-station-order",
+      "committedStationOrder",
+      "Resolution ordering requires a complete committed station order for every occupied station."
+    );
+  }
 
   const selectionValidation = validateVoyageEncounterStationSelections(state);
   const bidValidation = validateVoyageEncounterRiskBids(state);
@@ -60,18 +87,35 @@ export function analyzeVoyageEncounterResolutionOrder(state) {
     }
   }
 
-  const rows = [];
-  for (const stationId of Object.keys(state.selections)) {
+  const orderedActions = [];
+  for (let sequence = 0; sequence < stationOrder.committedStationOrder.length; sequence += 1) {
+    const stationId = stationOrder.committedStationOrder[sequence];
     const selection = state.selections[stationId];
     const station = stations.get(stationId);
     if (!station || !isPlainObject(selection) || selection.stationId !== stationId) continue;
     const action = station.actions.get(selection.actionId);
     if (!action) continue;
-    rows.push({ stationId, actionId: selection.actionId, resolutionPriority: Object.hasOwn(action.action, "resolutionPriority") ? action.action.resolutionPriority : 0, riskBidId: Object.hasOwn(state.riskBids, stationId) ? state.riskBids[stationId].riskBidId : null, stationIndex: station.stationIndex, actionIndex: action.actionIndex });
+    orderedActions.push({
+      sequence,
+      stationId,
+      actionId: selection.actionId,
+      resolutionPriority: Object.hasOwn(action.action, "resolutionPriority")
+        ? action.action.resolutionPriority
+        : 0,
+      riskBidId: Object.hasOwn(state.riskBids, stationId)
+        ? state.riskBids[stationId].riskBidId
+        : null
+    });
   }
-  rows.sort((a, b) => a.resolutionPriority - b.resolutionPriority || a.stationIndex - b.stationIndex || a.actionIndex - b.actionIndex || compareExact(a.stationId, b.stationId) || compareExact(a.actionId, b.actionId));
   const finalErrors = deduplicateVoyageResolutionIssues(errors);
-  return { valid: finalErrors.length === 0, orderedActions: finalErrors.length ? [] : rows.map((row, sequence) => ({ sequence, stationId: row.stationId, actionId: row.actionId, resolutionPriority: row.resolutionPriority, riskBidId: row.riskBidId })), errors: finalErrors, warnings: deduplicateVoyageResolutionIssues(warnings) };
+  return {
+    valid: finalErrors.length === 0,
+    orderedActions: finalErrors.length
+      ? []
+      : orderedActions.map((action) => ({ ...action })),
+    errors: finalErrors,
+    warnings: deduplicateVoyageResolutionIssues(warnings)
+  };
 }
 
 export function prepareVoyageEncounterResolutionOrder(state) {

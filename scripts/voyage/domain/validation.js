@@ -23,6 +23,10 @@ const DEFINITION_REQUIRED_STATES = new Set([
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES.ABANDONED
 ]);
 const SHIP_REQUIRED_STATES = new Set([...DEFINITION_REQUIRED_STATES]);
+const SAFE_REQUIRED_DATA_COLLECTIONS = new Set([
+  "proposedStationOrder",
+  "committedStationOrder"
+]);
 
 function issue(list, severity, code, path, message) {
   list.push({ code, path, message, severity });
@@ -46,6 +50,22 @@ function validateDistinctIds(value, path, idKey, errors) {
   });
 }
 
+function readRequiredDataCollection(state, key, errors) {
+  let descriptor;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(state, key);
+  } catch {
+    issue(errors, "error", "voyage-state-data-read-failed", key, `${key} could not be read safely.`);
+    return { ok: false, value: undefined };
+  }
+
+  if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+    issue(errors, "error", "invalid-collection-type", key, `${key} must be an own data-property array.`);
+    return { ok: false, value: undefined };
+  }
+  return { ok: true, value: descriptor.value };
+}
+
 export function validateVoyageEncounterState(value) {
   const errors = [];
   const warnings = [];
@@ -61,7 +81,12 @@ export function validateVoyageEncounterState(value) {
   if (!Number.isInteger(state.revision) || state.revision < 0) issue(errors, "error", "invalid-revision", "revision", "Revision must be a non-negative integer.");
 
   for (const [key, defaultValue] of Object.entries(COLLECTION_DEFAULTS)) {
-    if (Array.isArray(defaultValue) && !Array.isArray(state[key])) issue(errors, "error", "invalid-collection-type", key, `${key} must be an array.`);
+    if (Array.isArray(defaultValue)) {
+      const safeRead = SAFE_REQUIRED_DATA_COLLECTIONS.has(key)
+        ? readRequiredDataCollection(state, key, errors)
+        : { ok: true, value: state[key] };
+      if (safeRead.ok && !Array.isArray(safeRead.value)) issue(errors, "error", "invalid-collection-type", key, `${key} must be an array.`);
+    }
     if (isPlainObject(defaultValue) && !isPlainObject(state[key])) issue(errors, "error", "invalid-collection-type", key, `${key} must be a plain object.`);
   }
 

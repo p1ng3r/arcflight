@@ -30,11 +30,15 @@ function state() {
   source.availableStations = [
     {
       stationId: "engineer",
-      actions: [{ actionId: "two", resolutionPriority: 3 }]
+      actions: [{
+        actionId: "two",
+        resolutionPriority: -9007199254740991,
+        riskBidOptions: [{ riskBidId: "danger" }]
+      }]
     },
     {
       stationId: "captain",
-      actions: [{ actionId: "one", resolutionPriority: -1 }]
+      actions: [{ actionId: "one", resolutionPriority: 9007199254740991 }]
     }
   ];
   source.stationAssignments = [
@@ -45,17 +49,42 @@ function state() {
     engineer: { stationId: "engineer", actionId: "two" },
     captain: { stationId: "captain", actionId: "one" }
   };
+  source.proposedStationOrder = [];
+  source.committedStationOrder = ["captain", "engineer"];
+  source.riskBids = {
+    engineer: {
+      stationId: "engineer",
+      actionId: "two",
+      riskBidId: "danger"
+    }
+  };
   return source;
 }
 
-test("orders selected locked actions by authored priority", () => {
-  const result = prepareVoyageEncounterResolutionOrder(state());
+test("uses exact committed order while retaining informational priority and Risk Bid fields", () => {
+  const source = state();
+  const before = structuredClone(source);
+  const result = prepareVoyageEncounterResolutionOrder(source);
   assert.equal(result.readyForResolution, true);
-  assert.deepEqual(
-    result.orderedActions.map((entry) => entry.actionId),
-    ["one", "two"]
-  );
-  assert.equal(result.orderedActions[0].riskBidId, null);
+  assert.deepEqual(result.orderedActions, [
+    {
+      sequence: 0,
+      stationId: "captain",
+      actionId: "one",
+      resolutionPriority: 9007199254740991,
+      riskBidId: null
+    },
+    {
+      sequence: 1,
+      stationId: "engineer",
+      actionId: "two",
+      resolutionPriority: -9007199254740991,
+      riskBidId: "danger"
+    }
+  ]);
+  assert.deepEqual(source, before);
+  result.orderedActions[0].stationId = "changed";
+  assert.deepEqual(source.committedStationOrder, ["captain", "engineer"]);
 });
 
 test("rejects invalid supplied priority even when unselected", () => {
@@ -77,8 +106,13 @@ test("selectionRequired does not require an unoccupied available station", () =>
     }];
     source.stationAssignments = [];
     source.selections = {};
+    source.riskBids = {};
+    source.committedStationOrder = [];
 
-    assert.equal(prepareVoyageEncounterResolutionOrder(source).readyForResolution, true);
+    const report = prepareVoyageEncounterResolutionOrder(source);
+    assert.equal(report.readyForResolution, true);
+    assert.equal(report.actionCount, 0);
+    assert.deepEqual(report.orderedActions, []);
   }
 });
 
@@ -91,6 +125,8 @@ test("selectionRequired false does not excuse an occupied station", () => {
   }];
   source.stationAssignments = [assignment("captain")];
   source.selections = {};
+  source.riskBids = {};
+  source.committedStationOrder = ["captain"];
 
   const result = prepareVoyageEncounterResolutionOrder(source);
   assert.equal(result.readyForResolution, false);
@@ -110,6 +146,8 @@ test("ignores inherited numeric station and action entries", () => {
   );
   source.stationAssignments = [];
   source.selections = {};
+  source.riskBids = {};
+  source.committedStationOrder = [];
   assert.equal(prepareVoyageEncounterResolutionOrder(source).readyForResolution, true);
 
   const actions = [];
@@ -120,6 +158,7 @@ test("ignores inherited numeric station and action entries", () => {
     })
   );
   source.availableStations = [{ stationId: "captain", actions }];
+  source.committedStationOrder = [];
   assert.equal(prepareVoyageEncounterResolutionOrder(source).readyForResolution, true);
 });
 
@@ -159,6 +198,8 @@ test("inherited entries in real array holes are unavailable and cannot satisfy p
   source.selections = {
     captain: { stationId: "captain", actionId: "ghost-action" }
   };
+  source.riskBids = {};
+  source.committedStationOrder = ["captain"];
 
   try {
     const report = prepareVoyageEncounterResolutionOrder(source);
@@ -189,6 +230,8 @@ test("inherited actions and Risk Bid options in real holes are unavailable", () 
   source.selections = {
     captain: { stationId: "captain", actionId: "ghost" }
   };
+  source.riskBids = {};
+  source.committedStationOrder = ["captain"];
 
   try {
     assert.ok(
@@ -198,4 +241,67 @@ test("inherited actions and Risk Bid options in real holes are unavailable", () 
   } finally {
     Object.setPrototypeOf(actions, Array.prototype);
   }
+});
+
+test("requires a complete committed order and an empty post-lock proposal", () => {
+  const emptyCommitment = state();
+  emptyCommitment.committedStationOrder = [];
+  assert.deepEqual(
+    prepareVoyageEncounterResolutionOrder(emptyCommitment).errors.find(
+      (entry) => entry.code === "resolution-order-requires-complete-committed-station-order"
+    ),
+    {
+      code: "resolution-order-requires-complete-committed-station-order",
+      path: "committedStationOrder",
+      message: "Resolution ordering requires a complete committed station order for every occupied station.",
+      severity: "error"
+    }
+  );
+
+  const partial = state();
+  partial.committedStationOrder = ["captain"];
+  const partialReport = prepareVoyageEncounterResolutionOrder(partial);
+  assert.equal(partialReport.readyForResolution, false);
+  assert.ok(partialReport.errors.some(
+    (entry) => entry.code === "missing-occupied-station-order-station-id"
+      && entry.path === "committedStationOrder"
+  ));
+
+  const staleProposal = state();
+  staleProposal.proposedStationOrder = ["engineer", "captain"];
+  const staleReport = prepareVoyageEncounterResolutionOrder(staleProposal);
+  assert.equal(staleReport.readyForResolution, false);
+  assert.ok(staleReport.errors.some(
+    (entry) => entry.code === "resolution-order-requires-empty-proposed-station-order"
+      && entry.path === "proposedStationOrder"
+  ));
+});
+
+test("retains precise diagnostics for duplicate, unoccupied, malformed, and unreadable commitment data", () => {
+  const cases = [
+    [["captain", "captain"], "duplicate-station-order-station-id"],
+    [["captain", "watchmaster"], "unoccupied-station-order-station-id"],
+    [{ captain: true }, "invalid-collection-type"]
+  ];
+  for (const [committedStationOrder, code] of cases) {
+    const source = state();
+    source.committedStationOrder = committedStationOrder;
+    const report = prepareVoyageEncounterResolutionOrder(source);
+    assert.equal(report.readyForResolution, false);
+    assert.ok(report.errors.some((entry) => entry.code === code));
+  }
+
+  const unreadable = state();
+  Object.defineProperty(unreadable, "committedStationOrder", {
+    enumerable: true,
+    get() {
+      throw new Error("unreadable");
+    }
+  });
+  const report = prepareVoyageEncounterResolutionOrder(unreadable);
+  assert.equal(report.readyForResolution, false);
+  assert.ok(report.errors.some(
+    (entry) => entry.code === "invalid-collection-type"
+      && entry.path === "committedStationOrder"
+  ));
 });

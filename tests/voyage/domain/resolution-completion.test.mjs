@@ -73,7 +73,8 @@ function state({ checks = 0, prepare = false } = {}) {
     phase: "resolution",
     availableStations,
     stationAssignments,
-    selections
+    selections,
+    committedStationOrder: stationAssignments.map(({ stationId }) => stationId)
   });
 
   if (!prepare || checks === 0) return encounter;
