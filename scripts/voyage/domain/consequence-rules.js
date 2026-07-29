@@ -1,4 +1,4 @@
-import { VOYAGE_ACTION_OUTCOME_BRANCHES as BRANCHES, VOYAGE_EFFECT_INTENT_TYPES as INTENTS, VOYAGE_EFFECT_INTENT_TIMING as TIMINGS, VOYAGE_EFFECT_INTENT_VISIBILITY as VISIBILITIES, VOYAGE_EFFECT_TARGET_KINDS as TARGETS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES } from "./constants.js";
+import { VOYAGE_ACTION_OUTCOME_BRANCHES as BRANCHES, VOYAGE_EFFECT_INTENT_TYPES as INTENTS, VOYAGE_EFFECT_INTENT_TIMING as TIMINGS, VOYAGE_EFFECT_INTENT_VISIBILITY as VISIBILITIES, VOYAGE_EFFECT_TARGET_KINDS as TARGETS, VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE, VOYAGE_ROUND_PHASES as PHASES, VOYAGE_EVENT_RUNNER_STATION_IDS, VOYAGE_EVENT_RUNNER_PRESSURE_SYSTEM_BY_STATION_ID } from "./constants.js";
 import { isPlainObject } from "./defaults.js";
 import { validateVoyageEncounterState } from "./validation.js";
 import { validateVoyageEncounterActionExecutionDefinitions } from "./resolution-execution-requests.js";
@@ -6,7 +6,9 @@ import { analyzeAuthoredVoyageRiskBidOptions } from "./risk-bids.js";
 
 const UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
 const CHECK_BRANCHES = [BRANCHES.CRITICAL_FAILURE, BRANCHES.FAILURE, BRANCHES.SUCCESS, BRANCHES.CRITICAL_SUCCESS];
-const ID_TARGETS = new Set([TARGETS.TRACK, TARGETS.PARTICIPANT, TARGETS.STATION]);
+const ID_TARGETS = new Set([TARGETS.TRACK, TARGETS.PARTICIPANT, TARGETS.STATION, TARGETS.PRESSURE_SYSTEM, TARGETS.HAZARD]);
+const CANONICAL_STATION_IDS = new Set(VOYAGE_EVENT_RUNNER_STATION_IDS);
+const CANONICAL_PRESSURE_SYSTEM_IDS = new Set(Object.values(VOYAGE_EVENT_RUNNER_PRESSURE_SYSTEM_BY_STATION_ID));
 const issue = (list, code, path, message, severity = "error") => list.push({ code, path, message, severity });
 const safeId = (value) => typeof value === "string" && value.trim().length > 0 && !UNSAFE.has(value);
 const numericIndices = (value) => Array.isArray(value) ? Array.from({ length: value.length }, (_, index) => index).filter((index) => Object.hasOwn(value, index)) : [];
@@ -58,7 +60,7 @@ function validateReferenceList(value, path, errors, references) {
   }
   return result;
 }
-function analyzeTarget(value, path, errors) {
+function analyzeTargetLegacy(value, path, errors) {
   if (!isPlainObject(value)) { issue(errors, "invalid-effect-target", path, "Effect target must be a plain object."); return null; }
   const kindDescriptor = Object.getOwnPropertyDescriptor(value, "kind");
   const kind = kindDescriptor && "value" in kindDescriptor ? kindDescriptor.value : undefined;
@@ -74,6 +76,80 @@ function analyzeTarget(value, path, errors) {
   if (idBearing && Object.hasOwn(target, "targetId") && !safeId(target.targetId)) issue(errors, "invalid-effect-target-id", `${path}.targetId`, "Target ID must be a non-blank safe exact string.");
   const result = { kind }; if (idBearing && safeId(target.targetId)) result.targetId = target.targetId; return result;
 }
+function analyzeTarget(value, path, errors) {
+  let plain = false;
+  try { plain = isPlainObject(value); } catch { issue(errors, "outcome-data-read-failed", path, "Effect target could not be inspected safely."); return null; }
+  if (!plain) { issue(errors, "invalid-effect-target", path, "Effect target must be a plain object."); return null; }
+
+  let keys;
+  try { keys = Reflect.ownKeys(value); } catch { issue(errors, "outcome-data-read-failed", path, "Effect target could not be inspected safely."); return null; }
+
+  const target = Object.create(null);
+  let readable = true;
+  for (const key of keys) {
+    const keyPath = `${path}.${typeof key === "symbol" ? "[symbol]" : key}`;
+    if (typeof key !== "string") {
+      issue(errors, "unexpected-effect-target-field", keyPath, "Unexpected effect target field.");
+      readable = false;
+      continue;
+    }
+    let descriptor;
+    try { descriptor = Object.getOwnPropertyDescriptor(value, key); } catch { issue(errors, "outcome-data-read-failed", keyPath, "Effect target could not be inspected safely."); readable = false; continue; }
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+      issue(errors, "outcome-data-read-failed", keyPath, "Effect target fields must be own data properties.");
+      readable = false;
+      continue;
+    }
+    Object.defineProperty(target, key, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  }
+
+  const kind = target.kind;
+  const known = Object.values(TARGETS).includes(kind);
+  const idBearing = known && ID_TARGETS.has(kind);
+  const allowedFields = idBearing ? ["kind", "targetId"] : ["kind"];
+  for (const key of Object.keys(target)) {
+    if (!allowedFields.includes(key)) issue(errors, "unexpected-effect-target-field", `${path}.${key}`, "Unexpected effect target field.");
+  }
+  if (!Object.hasOwn(target, "kind")) issue(errors, "invalid-effect-target", `${path}.kind`, "Effect target requires kind.");
+  if (!known) issue(errors, "invalid-effect-target-kind", `${path}.kind`, "Target kind is not recognized.");
+  if (!idBearing && Object.hasOwn(target, "targetId")) issue(errors, "unexpected-effect-target-id", `${path}.targetId`, "Target ID is not allowed for this target kind.");
+
+  if (idBearing && !Object.hasOwn(target, "targetId")) {
+    issue(errors, "missing-effect-target-id", `${path}.targetId`, "Target requires targetId.");
+  }
+  if (idBearing && Object.hasOwn(target, "targetId")) {
+    const targetId = target.targetId;
+    const invalidCode = kind === TARGETS.STATION
+      ? "invalid-station-target-id"
+      : kind === TARGETS.PRESSURE_SYSTEM
+        ? "invalid-pressure-system-target-id"
+        : kind === TARGETS.HAZARD
+          ? "invalid-hazard-target-id"
+          : "invalid-effect-target-id";
+    if (typeof targetId !== "string" || targetId.trim().length === 0) {
+      issue(errors, invalidCode, `${path}.targetId`, "Target ID must be a non-blank safe exact string.");
+    } else if (UNSAFE.has(targetId)) {
+      issue(errors, kind === TARGETS.STATION || kind === TARGETS.PRESSURE_SYSTEM || kind === TARGETS.HAZARD
+        ? "unsafe-effect-target-id"
+        : invalidCode, `${path}.targetId`, "Target ID must not use an unsafe identifier.");
+    } else if (kind === TARGETS.STATION && !CANONICAL_STATION_IDS.has(targetId)) {
+      issue(errors, invalidCode, `${path}.targetId`, "Station target ID must be canonical.");
+    } else if (kind === TARGETS.PRESSURE_SYSTEM && !CANONICAL_PRESSURE_SYSTEM_IDS.has(targetId)) {
+      issue(errors, invalidCode, `${path}.targetId`, "Pressure-system target ID must be canonical.");
+    }
+  }
+
+  if (!readable || !known || !Object.hasOwn(target, "kind")) return null;
+  const result = { kind };
+  if (idBearing && Object.hasOwn(target, "targetId")) result.targetId = target.targetId;
+  return result;
+}
+
 function analyzeEffectRule(value, path, errors, effectIds, effectPaths) {
   const rule = exactPlainObject(value, ["effectId", "intentType", "timing", "visibility", "target", "payload"], path, errors, "invalid-effect-rule", "unexpected-effect-rule-field");
   if (!rule) return null;

@@ -5,6 +5,14 @@ import { analyzeVoyageEncounterPendingChecks } from "./pending-checks.js";
 import { analyzeVoyageEncounterActionOutcomeDefinitions } from "./consequence-rules.js";
 
 const CHECK_BRANCHES = new Set(["critical-failure", "failure", "success", "critical-success"]);
+const UNSAFE_IDS = new Set(["__proto__", "constructor", "prototype"]);
+const RISK_BID_OUTCOME_FIELDS = Object.freeze({
+  "critical-failure": "criticalFailure",
+  failure: "failure",
+  success: "success",
+  "critical-success": "criticalSuccess"
+});
+const NORMAL_ACTION_BID_BRANCHES = new Set(["success", "critical-success"]);
 
 function issue(code, path, message) {
   return { code, path, message, severity: "error" };
@@ -73,11 +81,31 @@ function readOwnDataValue(value, key) {
 function ownArrayEntries(value) {
   if (!Array.isArray(value)) return [];
 
-  const entries = [];
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index)) continue;
-    entries.push({ index, value: readOwnDataValue(value, index) });
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+  if (
+    !lengthDescriptor
+    || !Object.hasOwn(lengthDescriptor, "value")
+    || !Number.isSafeInteger(lengthDescriptor.value)
+    || lengthDescriptor.value < 0
+  ) {
+    throw new TypeError("Array length must be an own non-negative safe integer.");
   }
+
+  const entries = [];
+  for (const key of Reflect.ownKeys(value)) {
+    if (key === "length") continue;
+    const numeric = typeof key === "string" && /^(0|[1-9]\d*)$/.test(key);
+    const index = numeric ? Number(key) : -1;
+    if (
+      !numeric
+      || !Number.isSafeInteger(index)
+      || index >= lengthDescriptor.value
+    ) {
+      throw new TypeError("Arrays may contain only own canonical index keys.");
+    }
+    entries.push({ index, value: readOwnDataValue(value, key) });
+  }
+  entries.sort((left, right) => left.index - right.index);
   return entries;
 }
 
@@ -87,11 +115,15 @@ function clonePlainDataSafely(value, ancestors = new Set()) {
   if (typeof value !== "object" || ancestors.has(value)) throw new TypeError("Expected finite acyclic plain data.");
 
   const array = Array.isArray(value);
-  const clone = array ? new Array(value.length) : {};
+  const arrayEntries = array ? ownArrayEntries(value) : null;
+  const arrayLength = array
+    ? Object.getOwnPropertyDescriptor(value, "length")?.value
+    : null;
+  const clone = array ? new Array(arrayLength) : {};
   ancestors.add(value);
 
   const keys = array
-    ? ownArrayEntries(value).map(({ index }) => String(index))
+    ? arrayEntries.map(({ index }) => String(index))
     : Reflect.ownKeys(value);
 
   for (const key of keys) {
@@ -116,6 +148,203 @@ function findMatches(records, predicate) {
     if (predicate(entry.value)) matches.push(entry);
   }
   return matches;
+}
+
+function exactRiskBidMetadata(value) {
+  return {
+    riskBidId: readOwnDataValue(value, "riskBidId"),
+    dcAdjustment: readOwnDataValue(value, "dcAdjustment")
+  };
+}
+
+function riskBidMetadataMatches(left, right) {
+  return left.riskBidId === right.riskBidId
+    && left.dcAdjustment === right.dcAdjustment;
+}
+
+function validRiskBidMetadata(metadata) {
+  return typeof metadata.riskBidId === "string"
+    && metadata.riskBidId.trim().length > 0
+    && !UNSAFE_IDS.has(metadata.riskBidId)
+    && [2, 5, 8].includes(metadata.dcAdjustment);
+}
+
+function resolveRiskBidBranchPreflight({
+  state,
+  row,
+  request,
+  pendingCheck,
+  definition,
+  branch,
+  orderedPath,
+  requestPath,
+  pendingPath,
+  errors
+}) {
+  const ordered = exactRiskBidMetadata(row);
+  const requestMetadata = exactRiskBidMetadata(request);
+  const pendingMetadata = pendingCheck
+    ? exactRiskBidMetadata(pendingCheck)
+    : { riskBidId: null, dcAdjustment: null };
+  const selected = ordered.riskBidId !== null || ordered.dcAdjustment !== null;
+  const riskBids = readOwnDataValue(state, "riskBids");
+  const storedRead = readOwnDataValue(riskBids, row.stationId);
+  const stored = storedRead === undefined ? null : exactRiskBidMetadata(storedRead);
+
+  if (!selected) {
+    const noBid = { riskBidId: null, dcAdjustment: null };
+    if (!riskBidMetadataMatches(ordered, noBid)) {
+      errors.push(issue(
+        "outcome-interpretation-risk-bid-ordered-action-invalid",
+        orderedPath,
+        "Ordered action must contain either one complete selected Risk Bid or exact null Risk Bid metadata."
+      ));
+    }
+    if (!riskBidMetadataMatches(requestMetadata, noBid)) {
+      errors.push(issue(
+        "outcome-interpretation-risk-bid-execution-request-mismatch",
+        requestPath,
+        "Execution request Risk Bid metadata must match the ordered action exactly."
+      ));
+    }
+    if (pendingCheck && !riskBidMetadataMatches(pendingMetadata, noBid)) {
+      errors.push(issue(
+        "outcome-interpretation-risk-bid-pending-check-mismatch",
+        pendingPath,
+        "Pending-check Risk Bid metadata must match the ordered action exactly."
+      ));
+    }
+    if (stored !== null) {
+      errors.push(issue(
+        "outcome-interpretation-risk-bid-state-mismatch",
+        `riskBids.${row.stationId}`,
+        "Base action metadata contradicts a stored selected Risk Bid."
+      ));
+    }
+    return {
+      selected: false,
+      branch,
+      outcomeField: null,
+      branchEffectIds: [],
+      effectRecords: []
+    };
+  }
+
+  if (!validRiskBidMetadata(ordered)) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-ordered-action-invalid",
+      orderedPath,
+      "Ordered action selected Risk Bid metadata must contain one safe canonical ID and tier."
+    ));
+  }
+  if (!riskBidMetadataMatches(requestMetadata, ordered)) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-execution-request-mismatch",
+      requestPath,
+      "Execution request Risk Bid metadata must match the ordered action exactly."
+    ));
+  }
+  if (!pendingCheck || !riskBidMetadataMatches(pendingMetadata, ordered)) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-pending-check-mismatch",
+      pendingPath ?? orderedPath,
+      "Pending-check Risk Bid metadata must match the ordered action exactly."
+    ));
+  }
+  if (stored === null || !riskBidMetadataMatches(stored, ordered)) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-state-mismatch",
+      `riskBids.${row.stationId}`,
+      "Stored Risk Bid metadata must match the ordered action exactly."
+    ));
+  }
+  if (request.mode !== "check" || definition.mode !== "check") {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-requires-check",
+      orderedPath,
+      "A selected Risk Bid requires one rolled action and pending check."
+    ));
+  }
+
+  const optionRecords = findMatches(
+    definition.riskBidOptions,
+    (option) => readOwnDataValue(option, "riskBidId") === ordered.riskBidId
+  );
+  const exactMatches = optionRecords.filter(
+    ({ value: option }) => readOwnDataValue(option, "dcAdjustment") === ordered.dcAdjustment
+  );
+  if (optionRecords.length === 0) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-option-missing",
+      `${orderedPath}.riskBidId`,
+      "Selected Risk Bid ID does not match an authored option."
+    ));
+    return null;
+  }
+  if (optionRecords.length > 1 || exactMatches.length > 1) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-option-ambiguous",
+      `${orderedPath}.riskBidId`,
+      "Selected Risk Bid must match exactly one authored option."
+    ));
+    return null;
+  }
+  if (exactMatches.length === 0) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-adjustment-mismatch",
+      `${orderedPath}.dcAdjustment`,
+      "Selected Risk Bid tier does not match its authored option."
+    ));
+    return null;
+  }
+
+  const optionRecord = exactMatches[0];
+  const outcomes = readOwnDataValue(optionRecord.value, "outcomes");
+  const outcomeField = RISK_BID_OUTCOME_FIELDS[branch];
+  const branchEffectIds = readOwnDataValue(outcomes, outcomeField);
+  if (!outcomeField || !Array.isArray(branchEffectIds)) {
+    errors.push(issue(
+      "outcome-interpretation-risk-bid-branch-invalid",
+      `${orderedPath}.riskBidOutcome.${outcomeField ?? branch}`,
+      "Selected Risk Bid requires one valid outcome array for the resolved degree."
+    ));
+    return null;
+  }
+
+  const effectRecords = [];
+  for (const referenceRecord of ownArrayEntries(branchEffectIds)) {
+    const effectId = referenceRecord.value;
+    const effectRuleMatches = findMatches(
+      definition.effectRules,
+      (effectRule) => effectRule?.effectId === effectId
+    );
+    if (effectRuleMatches.length !== 1) {
+      errors.push(issue(
+        effectRuleMatches.length === 0
+          ? "outcome-interpretation-risk-bid-effect-rule-missing"
+          : "outcome-interpretation-risk-bid-effect-rule-ambiguous",
+        `${orderedPath}.riskBidOutcome.${outcomeField}[${referenceRecord.index}]`,
+        "Selected Risk Bid outcome reference must match exactly one action-local effect rule."
+      ));
+      continue;
+    }
+    effectRecords.push({
+      referenceIndex: referenceRecord.index,
+      effectId,
+      effectRuleRecord: effectRuleMatches[0]
+    });
+  }
+
+  return {
+    selected: true,
+    riskBidId: ordered.riskBidId,
+    dcAdjustment: ordered.dcAdjustment,
+    optionRecord,
+    branch,
+    outcomeField,
+    branchEffectIds,
+    effectRecords
+  };
 }
 
 function finalizeReport(report) {
@@ -292,6 +521,7 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
       }
 
       let pendingCheckRecord = null;
+      let pendingPath = null;
       let branch = "no-roll";
       if (definition.mode === "check") {
         const pendingMatches = findMatches(
@@ -323,7 +553,7 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
         if (pendingMatches.length !== 1) continue;
         pendingCheckRecord = pendingMatches[0];
         const pendingCheck = pendingCheckRecord.value;
-        const pendingPath = `pendingChecks[${pendingCheck.pendingCheckIndex}]`;
+        pendingPath = `pendingChecks[${pendingCheck.pendingCheckIndex}]`;
 
         if (pendingCheck.status !== "resolved") {
           report.errors.push(
@@ -359,8 +589,29 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
         }
       }
 
+      const riskBidBranchRecord = resolveRiskBidBranchPreflight({
+        state,
+        row,
+        request,
+        pendingCheck: pendingCheckRecord?.value ?? null,
+        definition,
+        branch,
+        orderedPath,
+        requestPath: `executionRequests[${requestRecord.index}]`,
+        pendingPath,
+        errors: report.errors
+      });
+      if (!riskBidBranchRecord) {
+        recordComplete = false;
+      }
+
       const branches = definition.branches;
-      const branchEffectIds = readOwnDataValue(branches, branch);
+      const normalActionBranchActive = !riskBidBranchRecord?.selected
+        || branch === "no-roll"
+        || NORMAL_ACTION_BID_BRANCHES.has(branch);
+      const branchEffectIds = normalActionBranchActive
+        ? readOwnDataValue(branches, branch)
+        : [];
       if (!Array.isArray(branchEffectIds)) {
         if (definitions.definitionsValid) {
           throw new TypeError("Normalized outcome branch must be an array.");
@@ -406,7 +657,8 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
             branch,
             branchEffectIds,
             effectRecords
-          }
+          },
+          riskBidBranchRecord
         });
       }
     }
@@ -423,42 +675,53 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
       const row = preflight.orderedActionRecord.value;
       const request = preflight.executionRequestRecord.value;
       const { branch, branchEffectIds, effectRecords } = preflight.branchRecord;
+      const riskBidBranchRecord = preflight.riskBidBranchRecord;
+      const riskBidEffectIds = riskBidBranchRecord.selected
+        ? riskBidBranchRecord.branchEffectIds
+        : [];
       const intentIds = [];
 
-      for (const effectRecord of effectRecords) {
-        const effectRule = effectRecord.effectRuleRecord.value;
-        const intentId = `arcflight-intent:${JSON.stringify([
-          encounterId,
-          stageId,
-          roundNumber,
-          row.sequence,
-          "branch",
-          effectRecord.referenceIndex,
-          effectRecord.effectId
-        ])}`;
-        intents.push({
-          intentId,
-          encounterId,
-          stageId,
-          roundNumber,
-          sequence: row.sequence,
-          stationId: row.stationId,
-          actionId: row.actionId,
-          mode: request.mode,
-          branch,
-          riskBidId: row.riskBidId ?? null,
-          dcAdjustment: row.dcAdjustment ?? null,
-          activationSource: "branch",
-          referenceIndex: effectRecord.referenceIndex,
-          effectId: effectRecord.effectId,
-          intentType: effectRule.intentType,
-          timing: effectRule.timing,
-          visibility: effectRule.visibility,
-          target: clonePlainDataSafely(effectRule.target),
-          selectedTarget: clonePlainDataSafely(request.target ?? null),
-          payload: clonePlainDataSafely(effectRule.payload)
-        });
-        intentIds.push(intentId);
+      const emitIntents = (records, activationSource) => {
+        for (const effectRecord of records) {
+          const effectRule = effectRecord.effectRuleRecord.value;
+          const intentId = `arcflight-intent:${JSON.stringify([
+            encounterId,
+            stageId,
+            roundNumber,
+            row.sequence,
+            activationSource,
+            effectRecord.referenceIndex,
+            effectRecord.effectId
+          ])}`;
+          intents.push({
+            intentId,
+            encounterId,
+            stageId,
+            roundNumber,
+            sequence: row.sequence,
+            stationId: row.stationId,
+            actionId: row.actionId,
+            mode: request.mode,
+            branch,
+            riskBidId: row.riskBidId ?? null,
+            dcAdjustment: row.dcAdjustment ?? null,
+            activationSource,
+            referenceIndex: effectRecord.referenceIndex,
+            effectId: effectRecord.effectId,
+            intentType: effectRule.intentType,
+            timing: effectRule.timing,
+            visibility: effectRule.visibility,
+            target: clonePlainDataSafely(effectRule.target),
+            selectedTarget: clonePlainDataSafely(request.target ?? null),
+            payload: clonePlainDataSafely(effectRule.payload)
+          });
+          intentIds.push(intentId);
+        }
+      };
+
+      emitIntents(effectRecords, "branch");
+      if (riskBidBranchRecord.selected) {
+        emitIntents(riskBidBranchRecord.effectRecords, "risk-bid");
       }
 
       actions.push({
@@ -470,7 +733,7 @@ export function analyzeVoyageEncounterActionOutcomes(state) {
         riskBidId: row.riskBidId ?? null,
         dcAdjustment: row.dcAdjustment ?? null,
         branchEffectIds: clonePlainDataSafely(branchEffectIds),
-        riskBidEffectIds: [],
+        riskBidEffectIds: clonePlainDataSafely(riskBidEffectIds),
         intentIds
       });
     }
