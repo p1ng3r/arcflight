@@ -2068,6 +2068,7 @@ test("an unresolved sparse pending check reports its original index path atomica
     approachId: "approach-repair",
     statisticSlugOrAbilityId: "diplomacy",
     finalDc: 20,
+    momentumRollBonus: 0,
     secrecy: "public",
     metadata: {},
     status: "pending",

@@ -8,7 +8,7 @@ import {
 const check = (overrides = {}) => ({
   pendingCheckId: "runtime-check-1", sequence: 4, status: "pending", mode: "check",
   source: { kind: "character", uuid: "Actor.runtime" }, approachId: "athletics-approach",
-  statisticSlugOrAbilityId: "athletics", finalDc: 20, secrecy: "public", ...overrides
+  statisticSlugOrAbilityId: "athletics", finalDc: 20, momentumRollBonus: 0, secrecy: "public", ...overrides
 });
 
 function runtime({ document = { documentName: "Actor", getStatistic: () => ({}) }, fromUuid } = {}) {
