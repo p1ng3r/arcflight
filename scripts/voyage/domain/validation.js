@@ -1,5 +1,7 @@
 import {
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES,
+  VOYAGE_MOMENTUM_MAX,
+  VOYAGE_MOMENTUM_MIN,
   VOYAGE_ENCOUNTER_SCHEMA_VERSION,
   VOYAGE_PERMANENT_CONSEQUENCE_COMMITMENT_TIMING,
   VOYAGE_PERMANENT_CONSEQUENCE_STATUSES,
@@ -66,15 +68,43 @@ function readRequiredDataCollection(state, key, errors) {
   return { ok: true, value: descriptor.value };
 }
 
+function readMomentum(state) {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(state, "momentum");
+    if (!descriptor) {
+      if ("momentum" in state) return { ok: false, present: true, inherited: true, value: undefined };
+      return { ok: true, present: false, inherited: false, value: undefined };
+    }
+    if (!Object.hasOwn(descriptor, "value")) return { ok: false, present: true, inherited: false, value: undefined };
+    return { ok: true, present: true, inherited: false, value: descriptor.value };
+  } catch {
+    return { ok: false, present: true, inherited: false, value: undefined };
+  }
+}
+
 export function validateVoyageEncounterState(value) {
   const errors = [];
   const warnings = [];
-  if (!isPlainObject(value)) {
+  let plainState = false;
+  try {
+    plainState = isPlainObject(value);
+  } catch {
+    issue(errors, "error", "voyage-state-data-read-failed", "$", "Voyage Encounter state could not be read safely.");
+  }
+  if (!plainState) {
     issue(errors, "error", "invalid-state", "$", "Voyage Encounter state must be a plain object.");
     return { valid: false, errors, warnings };
   }
 
   const state = value;
+  const momentum = readMomentum(state);
+  if (!momentum.ok) {
+    issue(errors, "error", momentum.inherited ? "inherited-momentum" : "invalid-momentum-data-property", "momentum", "Momentum must be an own data property.");
+  } else if (!momentum.present) {
+    issue(errors, "error", "missing-momentum", "momentum", "Voyage Encounter state requires Momentum.");
+  } else if (!Number.isSafeInteger(momentum.value) || momentum.value < VOYAGE_MOMENTUM_MIN || momentum.value > VOYAGE_MOMENTUM_MAX) {
+    issue(errors, "error", "invalid-momentum", "momentum", "Momentum must be a safe integer from 0 through 3.");
+  }
   if (state.schemaVersion !== VOYAGE_ENCOUNTER_SCHEMA_VERSION) issue(errors, "error", "unsupported-schema-version", "schemaVersion", "Unsupported Voyage Encounter schema version.");
   if (!nonEmptyId(state.encounterId)) issue(errors, "error", "invalid-encounter-id", "encounterId", "Encounter ID must be a non-empty string.");
   if (!isEnumValue(state.lifecycleState, VOYAGE_ENCOUNTER_LIFECYCLE_STATES)) issue(errors, "error", "invalid-lifecycle-state", "lifecycleState", "Lifecycle state is not recognized.");

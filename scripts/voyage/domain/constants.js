@@ -4,6 +4,9 @@
  * This module intentionally has no Foundry dependencies.
  */
 export const VOYAGE_ENCOUNTER_SCHEMA_VERSION = 1;
+export const VOYAGE_MOMENTUM_START = 0;
+export const VOYAGE_MOMENTUM_MIN = 0;
+export const VOYAGE_MOMENTUM_MAX = 3;
 
 export const VOYAGE_ENCOUNTER_LIFECYCLE_STATES = Object.freeze({
   DRAFT: "draft",
