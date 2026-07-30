@@ -2,6 +2,8 @@ import {
   VOYAGE_ACTION_EXECUTION_MODES as MODES,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES as LIFE,
   VOYAGE_ROUND_PHASES as PHASES,
+  VOYAGE_MOMENTUM_MAX,
+  VOYAGE_MOMENTUM_MIN,
   VOYAGE_PENDING_CHECK_STATUSES as STATUSES
 } from "./constants.js";
 import { clonePlainData, isPlainObject } from "./defaults.js";
@@ -26,6 +28,7 @@ const REQUIRED = Object.freeze([
   "approachId",
   "statisticSlugOrAbilityId",
   "finalDc",
+  "momentumRollBonus",
   "secrecy",
   "metadata",
   "status",
@@ -71,7 +74,7 @@ function readOwnDataValue(object, key, path, errors) {
         errors,
         "pending-check-data-read-failed",
         path,
-        "Pending check Risk Bid metadata must use own data properties."
+        "Pending check data must use own data properties."
       );
       return { present: true, ok: false, value: undefined };
     }
@@ -174,7 +177,8 @@ function captureRecord(record, path, errors) {
       "dcAdjustment",
       "approachId",
       "statisticSlugOrAbilityId",
-      "finalDc"
+      "finalDc",
+      "momentumRollBonus"
     ].includes(field)
       ? readOwnDataValue(record, field, fieldPath, errors)
       : readOwnValue(record, field, fieldPath, errors);
@@ -323,6 +327,28 @@ function validatePendingChecksAgainstReport(state, report, structural) {
       if (!validId(capturedRecord.approachId)) issue(errors, "invalid-pending-check-approach-id", `${path}.approachId`, "Pending check approachId must be a safe non-blank exact string.");
       if (!validId(capturedRecord.statisticSlugOrAbilityId)) issue(errors, "invalid-pending-check-statistic-id", `${path}.statisticSlugOrAbilityId`, "Pending check statisticSlugOrAbilityId must be a safe non-blank exact string.");
       if (!Number.isSafeInteger(capturedRecord.finalDc) || capturedRecord.finalDc < 0) issue(errors, "invalid-pending-check-final-dc", `${path}.finalDc`, "Pending check finalDc must be a non-negative safe integer.");
+      if (
+        !Number.isSafeInteger(capturedRecord.momentumRollBonus)
+        || capturedRecord.momentumRollBonus < VOYAGE_MOMENTUM_MIN
+        || capturedRecord.momentumRollBonus > VOYAGE_MOMENTUM_MAX
+      ) {
+        issue(
+          errors,
+          "invalid-pending-check-momentum-roll-bonus",
+          `${path}.momentumRollBonus`,
+          "Pending check Momentum roll bonus must be a safe integer from 0 through 3."
+        );
+      } else if (
+        state.phase === PHASES.RESOLUTION
+        && capturedRecord.momentumRollBonus !== state.momentum
+      ) {
+        issue(
+          errors,
+          "pending-check-momentum-mismatch",
+          `${path}.momentumRollBonus`,
+          "Pending check Momentum must match the locked Resolution Momentum."
+        );
+      }
       if (![STATUSES.PENDING, STATUSES.RESOLVED].includes(capturedRecord.status)) issue(errors, "invalid-pending-check-status", `${path}.status`, "Pending check status must be pending or resolved.");
       if (capturedRecord.status === STATUSES.PENDING && capturedRecord.result !== null) issue(errors, "invalid-pending-check-result", `${path}.result`, "Pending check result must be null.");
       if (capturedRecord.status === STATUSES.RESOLVED) {
@@ -388,6 +414,7 @@ function normalizePendingCheck({ pendingCheckIndex, record }) {
     approachId: record.approachId,
     statisticSlugOrAbilityId: record.statisticSlugOrAbilityId,
     finalDc: record.finalDc,
+    momentumRollBonus: record.momentumRollBonus,
     secrecy: record.secrecy,
     metadata: record.metadata,
     status: record.status,
@@ -578,6 +605,7 @@ export function applyVoyageEncounterPendingCheckPreparation(state, preparationRe
         stageId: candidate.currentStage.stageId,
         roundNumber: candidate.roundNumber,
         ...pendingRequest,
+        momentumRollBonus: state.momentum,
         status: "pending",
         result: null
       });

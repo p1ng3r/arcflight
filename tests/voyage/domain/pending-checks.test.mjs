@@ -250,6 +250,83 @@ test("pending-check preparation persists canonical identity and final DC once", 
   assert.equal(base.pendingChecks[0].dcAdjustment, null);
 });
 
+test("pending-check preparation locks Momentum separately from final DC", () => {
+  const source = encounter({ riskBidAdjustment: 5 });
+  source.momentum = 2;
+  const result = applyVoyageEncounterPendingCheckPreparation(source, {
+    pendingCheckIds: [{ sequence: 0, pendingCheckId: "locked-momentum" }]
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nextState.pendingChecks[0].momentumRollBonus, 2);
+  assert.equal(result.nextState.pendingChecks[0].finalDc, 25);
+  assert.equal(result.nextState.pendingChecks[0].momentumRollBonus, source.momentum);
+
+  source.momentum = 3;
+  assert.equal(result.nextState.pendingChecks[0].momentumRollBonus, 2);
+  assert.equal(result.nextState.pendingChecks[0].finalDc, 25);
+});
+
+test("pending-check preparation does not mutate its nested request data", () => {
+  const source = encounter({ riskBidAdjustment: 5 });
+  source.momentum = 2;
+  const preparationRequest = {
+    pendingCheckIds: [{
+      sequence: 0,
+      pendingCheckId: "request-isolated",
+      metadata: {
+        nested: {
+          values: ["unchanged", { flag: true }]
+        }
+      }
+    }],
+    metadata: {
+      nested: {
+        reason: "caller-owned"
+      }
+    }
+  };
+  const before = structuredClone(preparationRequest);
+
+  const result = applyVoyageEncounterPendingCheckPreparation(
+    source,
+    preparationRequest
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(preparationRequest, before);
+});
+
+test("pending-check validation rejects malformed Momentum lock values", () => {
+  for (const value of [null, -1, 1.5, 4, Number.NaN, Number.POSITIVE_INFINITY, "2", true, {}, []]) {
+    const state = preparedEncounter();
+    state.pendingChecks[0].momentumRollBonus = value;
+    const report = analyzeVoyageEncounterPendingChecks(state);
+    assert.equal(report.pendingChecksValid, false, String(value));
+    assert.ok(report.errors.some((entry) => entry.code === "invalid-pending-check-momentum-roll-bonus"));
+  }
+
+  const missing = preparedEncounter();
+  delete missing.pendingChecks[0].momentumRollBonus;
+  const missingReport = analyzeVoyageEncounterPendingChecks(missing);
+  assert.equal(missingReport.pendingChecksValid, false);
+  assert.ok(missingReport.errors.some((entry) => entry.code === "missing-pending-check-field" && entry.path.endsWith(".momentumRollBonus")));
+
+  const accessor = preparedEncounter();
+  let reads = 0;
+  Object.defineProperty(accessor.pendingChecks[0], "momentumRollBonus", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      reads += 1;
+      throw new Error("hostile Momentum lock");
+    }
+  });
+  const accessorReport = analyzeVoyageEncounterPendingChecks(accessor);
+  assert.equal(accessorReport.pendingChecksValid, false);
+  assert.equal(reads, 0);
+});
+
 test("pending-check validation rejects missing, forged, unexpected, and accessor-backed Risk Bid metadata", () => {
   const missing = preparedEncounter({ riskBidAdjustment: 2 });
   delete missing.pendingChecks[0].dcAdjustment;
@@ -459,6 +536,7 @@ test("analyzes an exact isolated pending-check report contract", () => {
     "pendingCheckIndex", "pendingCheckId", "preparedRevision", "stageId", "roundNumber",
     "sequence", "stationId", "actionId", "resolutionPriority", "riskBidId", "dcAdjustment", "target", "mode",
     "source", "approachId", "statisticSlugOrAbilityId", "finalDc",
+    "momentumRollBonus",
     "secrecy", "metadata", "status", "result"
   ]);
   assert.equal(report.pendingChecks[0].pendingCheckIndex, 0);

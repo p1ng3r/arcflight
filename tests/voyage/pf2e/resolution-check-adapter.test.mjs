@@ -18,6 +18,7 @@ function check(overrides = {}) {
     approachId: "athletics-approach",
     statisticSlugOrAbilityId: "athletics",
     finalDc: 20,
+    momentumRollBonus: 0,
     secrecy: "public",
     ...overrides
   };
@@ -59,7 +60,7 @@ test("successful exact character statistic and final-DC preflight", async () => 
   });
 });
 
-test("internal context contains exactly one actor statistic and DC", async () => {
+test("internal context propagates exactly one actor statistic, locked Momentum, and final DC", async () => {
   const actor = {};
   const statistic = { slug: "athletics" };
   const resolved = await resolveVoyagePf2ePendingCheckContext(check(), dependencies({
@@ -67,10 +68,11 @@ test("internal context contains exactly one actor statistic and DC", async () =>
     getActorFromResolvedDocument: (document) => document.actor,
     getStatistic: () => statistic
   }));
-  assert.deepEqual(Object.keys(resolved.context), ["actor", "statistic", "dc"]);
+  assert.deepEqual(Object.keys(resolved.context), ["actor", "statistic", "dc", "momentumRollBonus"]);
   assert.equal(resolved.context.actor, actor);
   assert.equal(resolved.context.statistic, statistic);
   assert.equal(resolved.context.dc, 20);
+  assert.equal(resolved.context.momentumRollBonus, 0);
   assert.notEqual(resolved.context, check());
 });
 
@@ -254,6 +256,29 @@ test("finalDc is the sole numeric DC authority", async () => {
   assert.equal((await preflight({ finalDc: 28 })).dc, 28);
 });
 
+test("PF2e context carries the locked Momentum value without changing finalDc", async () => {
+  const resolved = await resolveVoyagePf2ePendingCheckContext(
+    check({ finalDc: 28, momentumRollBonus: 3 }),
+    dependencies()
+  );
+  assert.equal(resolved.result.dc, 28);
+  assert.equal(resolved.context.dc, 28);
+  assert.equal(resolved.context.momentumRollBonus, 3);
+});
+
+for (const value of [null, -1, 1.5, 4, Number.NaN, Number.POSITIVE_INFINITY, "2", true, {}, []]) {
+  test(`malformed PF2e Momentum value ${String(value)} is rejected`, async () => {
+    const result = await preflight({ momentumRollBonus: value });
+    assert.equal(code(result), "voyage-pf2e-invalid-momentum-roll-bonus");
+  });
+}
+
+test("missing PF2e Momentum lock is rejected", async () => {
+  const value = check();
+  delete value.momentumRollBonus;
+  assert.equal(code(await preflightVoyagePf2ePendingCheck(value, dependencies())), "voyage-pf2e-invalid-request");
+});
+
 for (const [name, finalDc] of [
   ["negative", -1],
   ["fractional", 1.5],
@@ -370,6 +395,7 @@ test("canonical pending accessors are rejected without invocation", async () => 
     "approachId",
     "statisticSlugOrAbilityId",
     "finalDc",
+    "momentumRollBonus",
     "secrecy"
   ]) {
     let reads = 0;

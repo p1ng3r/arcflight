@@ -1,3 +1,8 @@
+import {
+  VOYAGE_MOMENTUM_MAX,
+  VOYAGE_MOMENTUM_MIN
+} from "../domain/constants.js";
+
 /**
  * PF2e-facing preflight boundary for persisted Voyage pending checks.
  * This module intentionally knows no Foundry or PF2e runtime globals: callers
@@ -93,12 +98,13 @@ function capturePendingCheck(value) {
       issue(errors, "voyage-pf2e-invalid-request", typeof key === "symbol" ? "pendingCheck.[symbol]" : `pendingCheck.${key}`, "Pending check contains an unsafe own key.");
     }
   }
-  for (const key of ["pendingCheckId", "sequence", "status", "mode", "source", "approachId", "statisticSlugOrAbilityId", "finalDc", "secrecy"]) {
+  for (const key of ["pendingCheckId", "sequence", "status", "mode", "source", "approachId", "statisticSlugOrAbilityId", "finalDc", "momentumRollBonus", "secrecy"]) {
     const read = readOwnData(value, key, key, errors);
     if (!read.ok) continue;
     if (!read.present) issue(errors, "voyage-pf2e-invalid-request", key, `Pending check requires ${key}.`);
     else captured[key] = read.value;
   }
+
   return { captured, errors };
 }
 
@@ -177,6 +183,19 @@ export async function resolveVoyagePf2ePendingCheckContext(pendingCheck, depende
   if (!Number.isSafeInteger(captured.finalDc) || captured.finalDc < 0) {
     issue(errors, "voyage-pf2e-invalid-final-dc", "finalDc", "Final DC must be a non-negative safe integer.");
   }
+  if (
+    !Number.isSafeInteger(captured.momentumRollBonus)
+    || captured.momentumRollBonus < VOYAGE_MOMENTUM_MIN
+    || captured.momentumRollBonus > VOYAGE_MOMENTUM_MAX
+  ) {
+    issue(
+      errors,
+      "voyage-pf2e-invalid-momentum-roll-bonus",
+      "momentumRollBonus",
+      "Momentum roll bonus must be a safe integer from 0 through 3."
+    );
+  }
+
   let rollMode;
   if (captured.secrecy === "public") rollMode = "public";
   else if (captured.secrecy === "secret") rollMode = "blind";
@@ -249,7 +268,8 @@ export async function resolveVoyagePf2ePendingCheckContext(pendingCheck, depende
     context: {
       actor,
       statistic: selectedStatistic,
-      dc: captured.finalDc
+      dc: captured.finalDc,
+      momentumRollBonus: captured.momentumRollBonus
     }
   };
 }
