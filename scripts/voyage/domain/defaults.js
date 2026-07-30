@@ -1,7 +1,8 @@
 import {
   INACTIVE_VOYAGE_ROUND_VALUE,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES,
-  VOYAGE_ENCOUNTER_SCHEMA_VERSION
+  VOYAGE_ENCOUNTER_SCHEMA_VERSION,
+  VOYAGE_MOMENTUM_START
 } from "./constants.js";
 
 export function isPlainObject(value) {
@@ -72,6 +73,7 @@ export function createDraftVoyageEncounterDefaults() {
     description: "",
     lifecycleState: VOYAGE_ENCOUNTER_LIFECYCLE_STATES.DRAFT,
     revision: 0,
+    momentum: VOYAGE_MOMENTUM_START,
     currentStage: INACTIVE_VOYAGE_ROUND_VALUE,
     roundNumber: INACTIVE_VOYAGE_ROUND_VALUE,
     phase: INACTIVE_VOYAGE_ROUND_VALUE,
