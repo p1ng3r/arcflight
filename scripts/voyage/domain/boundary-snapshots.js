@@ -17,6 +17,7 @@ const TEMPORARY_STATE_FIELDS = [
   "gmSecretInformation",
   "temporaryConsequences",
   "tracks",
+  "pressureSystems",
   "thresholdHistory",
   "pendingThresholdQueue",
   "selections",

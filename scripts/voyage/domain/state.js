@@ -49,7 +49,7 @@ export function normalizeVoyageEncounterState(value) {
     if (Array.isArray(defaultValue)) {
       normalized[key] = Array.isArray(source[key]) ? clonePlainData(source[key]) : [];
     } else if (isPlainObject(defaultValue)) {
-      normalized[key] = isPlainObject(source[key]) ? clonePlainData(source[key]) : {};
+      normalized[key] = isPlainObject(source[key]) ? clonePlainData(source[key]) : clonePlainData(defaultValue);
     } else if (!(key in source)) {
       normalized[key] = defaultValue;
     }

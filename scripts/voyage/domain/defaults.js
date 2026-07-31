@@ -2,7 +2,10 @@ import {
   INACTIVE_VOYAGE_ROUND_VALUE,
   VOYAGE_ENCOUNTER_LIFECYCLE_STATES,
   VOYAGE_ENCOUNTER_SCHEMA_VERSION,
-  VOYAGE_MOMENTUM_START
+  VOYAGE_MOMENTUM_START,
+  VOYAGE_PRESSURE_DEFAULT_CAPACITY,
+  VOYAGE_PRESSURE_DEFAULT_VALUE,
+  VOYAGE_PRESSURE_SYSTEM_IDS
 } from "./constants.js";
 
 export function isPlainObject(value) {
@@ -30,6 +33,21 @@ export function clonePlainData(value) {
   return value;
 }
 
+function createDefaultVoyagePressureSystemRecord(pressureSystemId) {
+  return {
+    pressureSystemId,
+    value: VOYAGE_PRESSURE_DEFAULT_VALUE,
+    capacity: VOYAGE_PRESSURE_DEFAULT_CAPACITY
+  };
+}
+
+function createDefaultVoyagePressureSystems() {
+  return Object.fromEntries(VOYAGE_PRESSURE_SYSTEM_IDS.map((pressureSystemId) => [
+    pressureSystemId,
+    createDefaultVoyagePressureSystemRecord(pressureSystemId)
+  ]));
+}
+
 export function createDefaultVoyageEncounterCollections() {
   return {
     primaryShip: null,
@@ -45,6 +63,7 @@ export function createDefaultVoyageEncounterCollections() {
     permanentConsequences: [],
     temporaryConsequences: [],
     tracks: [],
+    pressureSystems: createDefaultVoyagePressureSystems(),
     thresholdHistory: [],
     pendingThresholdQueue: [],
     selections: {},
