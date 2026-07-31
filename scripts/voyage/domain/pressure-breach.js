@@ -441,3 +441,349 @@ export function analyzeVoyageEncounterPressureBreachPlan(state) {
     });
   }
 }
+
+function breachApplicationFailure(errors = [], warnings = []) {
+  return {
+    ok: false,
+    nextState: null,
+    events: [],
+    errors: deduplicateVoyageResolutionIssues(errors),
+    warnings: deduplicateVoyageResolutionIssues(warnings)
+  };
+}
+
+function breachApplicationIssue(code, path, message) {
+  return issue(code, path, message);
+}
+
+function clonePressureBreach(breach) {
+  return { ...breach };
+}
+
+function pressureBreachMatchesAuthoritativeEffect(breach, effect, effectIndex, system) {
+  if (!breach || !effect || !system) return false;
+  if (breach.effectIndex !== effectIndex) return false;
+
+  for (const key of [
+    "encounterId",
+    "stageId",
+    "roundNumber",
+    "sequence",
+    "stationId",
+    "actionId",
+    "pressureSystemId",
+    "pressureEffectId",
+    "sourceKind",
+    "sourceIntentId",
+    "activationSource",
+    "branch",
+    "timing",
+    "visibility"
+  ]) {
+    if (breach[key] !== effect[key]) return false;
+  }
+
+  const remainingCapacity = system.capacity - system.value;
+  const overflowDelta = effect.delta - remainingCapacity;
+  return breach.pressureBreachId === createPressureBreachId(effect, effectIndex)
+    && breach.previousValue === system.value
+    && breach.capacity === system.capacity
+    && breach.remainingCapacity === remainingCapacity
+    && breach.attemptedDelta === effect.delta
+    && breach.overflowDelta === overflowDelta
+    && Number.isSafeInteger(remainingCapacity)
+    && remainingCapacity >= 0
+    && Number.isSafeInteger(overflowDelta)
+    && overflowDelta > 0;
+}
+
+function simulateNonBreachPressureEffect(system, effect) {
+  if (!system || !Number.isSafeInteger(effect?.delta) || effect.delta === 0) {
+    return { ok: false, overflow: false };
+  }
+
+  const proposedValue = system.value + effect.delta;
+  if (!Number.isSafeInteger(proposedValue)) {
+    return { ok: false, overflow: false };
+  }
+
+  if (effect.delta > 0) {
+    if (proposedValue > system.capacity) {
+      return { ok: true, overflow: true };
+    }
+    system.value = proposedValue;
+    return { ok: true, overflow: false };
+  }
+
+  system.value = Math.max(0, proposedValue);
+  return { ok: true, overflow: false };
+}
+
+/**
+ * Apply one authoritative first-breach Pressure transaction.
+ *
+ * This Task 02 foundation applies every safe Pressure effect in authoritative
+ * order, resets the first breached Pressure system to zero, increments the
+ * encounter revision once, and emits one isolated audit event. A second breach
+ * in the same plan fails atomically until multi-breach orchestration is added.
+ *
+ * Hazard creation, Void Scar proposals, ship persistence, closeout behavior,
+ * lifecycle advancement, and public API registration remain outside this
+ * operation.
+ */
+export function applyVoyageEncounterPressureBreachPlan(state) {
+  try {
+    const captured = capturePressureBreachData(state);
+    if (!captured.ok) {
+      return breachApplicationFailure([
+        breachApplicationIssue(
+          "pressure-breach-application-data-read-failed",
+          captured.issue.path,
+          "Pressure breach application state could not be read safely."
+        )
+      ]);
+    }
+
+    const isolatedState = captured.value;
+    const breachPlan = analyzeVoyageEncounterPressureBreachPlan(isolatedState);
+    const warnings = [...breachPlan.warnings];
+    if (!breachPlan.readyForPressureBreachPlanning) {
+      return breachApplicationFailure(
+        [
+          ...breachPlan.errors,
+          breachApplicationIssue(
+            "pressure-breach-application-plan-not-ready",
+            "pressureBreachPlan",
+            "Pressure breach application requires a ready authoritative breach plan."
+          )
+        ],
+        warnings
+      );
+    }
+
+    if (!breachPlan.breachRequired || !breachPlan.breach) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-not-required",
+          "pressureBreachPlan",
+          "Pressure breach application requires one authoritative Pressure breach."
+        )],
+        warnings
+      );
+    }
+
+    const pressurePlan = analyzeVoyageEncounterPressurePlan(isolatedState);
+    warnings.push(...pressurePlan.warnings);
+    if (!pressurePlan.readyForPressurePlanning) {
+      return breachApplicationFailure(
+        [
+          ...pressurePlan.errors,
+          breachApplicationIssue(
+            "pressure-breach-application-plan-mismatch",
+            "pressurePlan",
+            "Pressure breach application could not reproduce the authoritative Pressure plan."
+          )
+        ],
+        warnings
+      );
+    }
+
+    if (
+      pressurePlan.pressureEffectCount !== breachPlan.pressureEffectCount
+      || pressurePlan.effects.length !== breachPlan.pressureEffectCount
+    ) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-plan-mismatch",
+          "pressurePlan",
+          "Pressure breach application Pressure and breach plan counts do not match."
+        )],
+        warnings
+      );
+    }
+
+    const previousPressureSystems = readPressureSystemSnapshot(isolatedState);
+    if (!previousPressureSystems) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-state-invalid",
+          "pressureSystems",
+          "Pressure breach application requires five readable canonical Pressure systems."
+        )],
+        warnings
+      );
+    }
+
+    const simulatedPressureSystems = clonePressureSystemSnapshot(previousPressureSystems);
+    const breach = breachPlan.breach;
+    let breachApplied = false;
+
+    for (let effectIndex = 0; effectIndex < pressurePlan.effects.length; effectIndex += 1) {
+      const effect = pressurePlan.effects[effectIndex];
+      const system = simulatedPressureSystems[effect.pressureSystemId];
+      if (!system) {
+        return breachApplicationFailure(
+          [breachApplicationIssue(
+            "pressure-breach-application-plan-mismatch",
+            `pressurePlan.effects[${effectIndex}].pressureSystemId`,
+            "Pressure breach application effect does not target a canonical Pressure system."
+          )],
+          warnings
+        );
+      }
+
+      if (effectIndex === breach.effectIndex) {
+        if (
+          effect.delta <= 0
+          || !pressureBreachMatchesAuthoritativeEffect(breach, effect, effectIndex, system)
+        ) {
+          return breachApplicationFailure(
+            [breachApplicationIssue(
+              "pressure-breach-application-plan-mismatch",
+              `pressurePlan.effects[${effectIndex}]`,
+              "Pressure breach application could not match the authoritative breach effect."
+            )],
+            warnings
+          );
+        }
+
+        system.value = 0;
+        breachApplied = true;
+        continue;
+      }
+
+      const simulated = simulateNonBreachPressureEffect(system, effect);
+      if (!simulated.ok) {
+        return breachApplicationFailure(
+          [breachApplicationIssue(
+            "pressure-breach-application-arithmetic-invalid",
+            `pressurePlan.effects[${effectIndex}]`,
+            "Pressure breach application could not represent Pressure arithmetic safely."
+          )],
+          warnings
+        );
+      }
+      if (simulated.overflow) {
+        return breachApplicationFailure(
+          [breachApplicationIssue(
+            effectIndex < breach.effectIndex
+              ? "pressure-breach-application-plan-mismatch"
+              : "pressure-breach-application-multiple-breaches-deferred",
+            `pressurePlan.effects[${effectIndex}]`,
+            effectIndex < breach.effectIndex
+              ? "Pressure breach application encountered an overflow before the planned breach."
+              : "Pressure breach application currently supports one breach per atomic transaction."
+          )],
+          warnings
+        );
+      }
+    }
+
+    if (!breachApplied) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-plan-mismatch",
+          "pressureBreachPlan.breach.effectIndex",
+          "Pressure breach application did not encounter the planned breach effect."
+        )],
+        warnings
+      );
+    }
+
+    const candidateCapture = capturePressureBreachData(isolatedState);
+    if (!candidateCapture.ok) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-candidate-invalid",
+          candidateCapture.issue.path,
+          "Pressure breach application could not construct an isolated candidate state."
+        )],
+        warnings
+      );
+    }
+
+    const candidate = candidateCapture.value;
+    candidate.pressureSystems = simulatedPressureSystems;
+    const previousRevision = isolatedState.revision;
+    const nextRevision = previousRevision + 1;
+    if (!Number.isSafeInteger(nextRevision)) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-candidate-invalid",
+          "nextState.revision",
+          "Pressure breach application could not represent the next revision safely."
+        )],
+        warnings
+      );
+    }
+    candidate.revision = nextRevision;
+
+    let finalValidation;
+    try {
+      finalValidation = validateVoyageEncounterState(candidate);
+    } catch {
+      finalValidation = {
+        valid: false,
+        errors: [breachApplicationIssue(
+          "pressure-breach-application-candidate-invalid",
+          "nextState",
+          "Pressure breach application candidate could not be validated safely."
+        )],
+        warnings: []
+      };
+    }
+    warnings.push(...finalValidation.warnings);
+    if (!finalValidation.valid) {
+      return breachApplicationFailure(
+        [
+          ...finalValidation.errors,
+          breachApplicationIssue(
+            "pressure-breach-application-candidate-invalid",
+            "nextState",
+            "Pressure breach application candidate failed final state validation."
+          )
+        ],
+        warnings
+      );
+    }
+
+    const event = {
+      type: "voyage.pressure-breach-applied",
+      encounterId: candidate.encounterId,
+      lifecycleState: candidate.lifecycleState,
+      stageId: breach.stageId,
+      roundNumber: candidate.roundNumber,
+      phase: candidate.phase,
+      pressureEffectCount: pressurePlan.pressureEffectCount,
+      appliedEffectCount: pressurePlan.pressureEffectCount,
+      breach: clonePressureBreach(breach),
+      pressureReset: {
+        pressureBreachId: breach.pressureBreachId,
+        pressureSystemId: breach.pressureSystemId,
+        previousValue: breach.previousValue,
+        resetValue: 0
+      },
+      effects: pressurePlan.effects.map((effect) => ({ ...effect })),
+      previousPressureSystems: clonePressureSystemSnapshot(previousPressureSystems),
+      pressureSystems: clonePressureSystemSnapshot(simulatedPressureSystems),
+      previousRevision,
+      revision: candidate.revision
+    };
+
+    return {
+      ok: true,
+      nextState: candidate,
+      events: [event],
+      errors: [],
+      warnings: deduplicateVoyageResolutionIssues(warnings)
+    };
+  } catch {
+    return breachApplicationFailure([
+      breachApplicationIssue(
+        "pressure-breach-application-failed",
+        "encounterState",
+        "Pressure breach application could not be completed safely."
+      )
+    ]);
+  }
+}
