@@ -7,7 +7,7 @@ import { validateVoyageEncounterState } from "../../../scripts/voyage/domain/val
 const TEMPORARY_STATE_FIELDS = [
   "currentSituation", "objective", "participants", "availableStations", "stationAssignments",
   "currentStage", "roundNumber", "phase", "playerVisibleInformation", "gmSecretInformation",
-  "temporaryConsequences", "tracks", "thresholdHistory", "pendingThresholdQueue", "selections",
+  "temporaryConsequences", "tracks", "pressureSystems", "thresholdHistory", "pendingThresholdQueue", "selections",
   "proposedStationOrder", "committedStationOrder", "targets", "riskBids", "assistance",
   "reservations", "pendingChecks", "pendingConsequences"
 ];
@@ -121,7 +121,7 @@ test("constructs round-start snapshots with the exact allowed shape without muta
   assert.deepEqual(Object.keys(result.snapshot.temporaryState), TEMPORARY_STATE_FIELDS);
   assert.equal(result.snapshot.temporaryState.roundNumber, encounter.roundNumber);
   assert.equal(result.snapshot.temporaryState.phase, encounter.phase);
-  for (const fieldName of ["objective", "stationAssignments", "gmSecretInformation", "temporaryConsequences", "proposedStationOrder", "committedStationOrder"]) assert.ok(Object.hasOwn(result.snapshot.temporaryState, fieldName));
+  for (const fieldName of ["objective", "stationAssignments", "gmSecretInformation", "temporaryConsequences", "pressureSystems", "proposedStationOrder", "committedStationOrder"]) assert.ok(Object.hasOwn(result.snapshot.temporaryState, fieldName));
   assert.equal(Object.hasOwn(result.snapshot.temporaryState, "temporaryStationAssignments"), false);
   for (const fieldName of ["schemaVersion", "snapshots", "permanentConsequences", "processedRequestIds", "recovery", "metadata", "extensionData"]) assert.equal(Object.hasOwn(result.snapshot.temporaryState, fieldName), false);
   assert.deepEqual(encounter, encounterBefore);
@@ -248,7 +248,7 @@ test("recursively isolates captured temporary plain data in both directions", ()
   const encounter = activeEncounter();
   const result = createVoyageEncounterBoundarySnapshot(encounter, { snapshotId: "isolated", boundaryType: "round-start" });
   const snapshot = result.snapshot;
-  for (const fieldName of ["currentStage", "participants", "availableStations", "stationAssignments", "playerVisibleInformation", "tracks", "selections", "proposedStationOrder", "committedStationOrder", "pendingConsequences"]) assert.notEqual(snapshot.temporaryState[fieldName], encounter[fieldName]);
+  for (const fieldName of ["currentStage", "participants", "availableStations", "stationAssignments", "playerVisibleInformation", "tracks", "pressureSystems", "selections", "proposedStationOrder", "committedStationOrder", "pendingConsequences"]) assert.notEqual(snapshot.temporaryState[fieldName], encounter[fieldName]);
   assert.notEqual(snapshot.temporaryState.stationAssignments[0], encounter.stationAssignments[0]);
   assert.notEqual(snapshot.temporaryState.stationAssignments[0].operator, encounter.stationAssignments[0].operator);
   snapshot.temporaryState.currentStage.details.tags.push("snapshot-only");
@@ -257,6 +257,7 @@ test("recursively isolates captured temporary plain data in both directions", ()
   snapshot.temporaryState.stationAssignments[0].operator.name = "Snapshot Captain";
   snapshot.temporaryState.playerVisibleInformation.clues[0].id = "snapshot-clue";
   snapshot.temporaryState.tracks[0].details.current = 9;
+  snapshot.temporaryState.pressureSystems["crew-morale"].value = 2;
   snapshot.temporaryState.selections.captain.action = "snapshot-selection";
   snapshot.temporaryState.proposedStationOrder[0] = "snapshot-order";
   snapshot.temporaryState.committedStationOrder.push("snapshot-commitment");
@@ -267,6 +268,7 @@ test("recursively isolates captured temporary plain data in both directions", ()
   assert.equal(encounter.stationAssignments[0].operator.name, "Captain");
   assert.equal(encounter.playerVisibleInformation.clues[0].id, "hazard");
   assert.equal(encounter.tracks[0].details.current, 1);
+  assert.equal(encounter.pressureSystems["crew-morale"].value, 0);
   assert.equal(encounter.selections.captain.action, "command");
   assert.deepEqual(encounter.proposedStationOrder, ["captain"]);
   assert.deepEqual(encounter.committedStationOrder, []);
@@ -275,6 +277,23 @@ test("recursively isolates captured temporary plain data in both directions", ()
   encounter.stationAssignments[0].operator.name = "Encounter Captain";
   assert.equal(snapshot.temporaryState.currentStage.details.tags.includes("encounter-only"), false);
   assert.equal(snapshot.temporaryState.stationAssignments[0].operator.name, "Snapshot Captain");
+});
+
+test("snapshots preserve pressureSystems as isolated temporary state", () => {
+  const encounter = activeEncounter();
+  encounter.pressureSystems["crew-morale"].value = 1;
+  encounter.pressureSystems["arkengine"].capacity = 4;
+
+  const result = createVoyageEncounterBoundarySnapshot(encounter, {
+    snapshotId: "pressure-snapshot",
+    boundaryType: "round-start"
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.snapshot.temporaryState.pressureSystems, encounter.pressureSystems);
+  assert.notStrictEqual(result.snapshot.temporaryState.pressureSystems, encounter.pressureSystems);
+  result.snapshot.temporaryState.pressureSystems["crew-morale"].value = 2;
+  assert.equal(encounter.pressureSystems["crew-morale"].value, 1);
 });
 
 test("hostile non-order temporary data returns a contained atomic failure", () => {

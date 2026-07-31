@@ -46,6 +46,12 @@ export const VOYAGE_EVENT_RUNNER_PRESSURE_SYSTEM_BY_STATION_ID = Object.freeze({
   veilwarden: "lifeveil"
 });
 
+export const VOYAGE_PRESSURE_SYSTEM_BY_STATION_ID = VOYAGE_EVENT_RUNNER_PRESSURE_SYSTEM_BY_STATION_ID;
+export const VOYAGE_PRESSURE_SYSTEM_IDS = Object.freeze(Object.values(VOYAGE_PRESSURE_SYSTEM_BY_STATION_ID));
+export const VOYAGE_PRESSURE_DEFAULT_VALUE = 0;
+export const VOYAGE_PRESSURE_DEFAULT_CAPACITY = 2;
+export const VOYAGE_PRESSURE_MAX_CAPACITY = 5;
+
 export const VOYAGE_ACTION_EXECUTION_MODES = Object.freeze({ CHECK: "check", NO_ROLL: "no-roll" });
 export const VOYAGE_CHECK_SOURCE_KINDS = Object.freeze({ CHARACTER: "character", SHIP: "ship", STATION: "station", CREW: "crew", CUSTOM: "custom", NO_ROLL: "no-roll" });
 export const VOYAGE_DC_SOURCE_KINDS = Object.freeze({ FIXED: "fixed", LEVEL_BASED: "level-based", ENCOUNTER: "encounter", STAGE: "stage", HAZARD: "hazard", OPPOSED: "opposed", TRACK: "track", GM_ENTERED: "gm-entered" });

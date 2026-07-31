@@ -3,6 +3,8 @@ import {
   VOYAGE_MOMENTUM_MAX,
   VOYAGE_MOMENTUM_MIN,
   VOYAGE_ENCOUNTER_SCHEMA_VERSION,
+  VOYAGE_PRESSURE_MAX_CAPACITY,
+  VOYAGE_PRESSURE_SYSTEM_IDS,
   VOYAGE_PERMANENT_CONSEQUENCE_COMMITMENT_TIMING,
   VOYAGE_PERMANENT_CONSEQUENCE_STATUSES,
   VOYAGE_ROUND_PHASES,
@@ -29,6 +31,21 @@ const SAFE_REQUIRED_DATA_COLLECTIONS = new Set([
   "proposedStationOrder",
   "committedStationOrder"
 ]);
+const SAFE_REQUIRED_DATA_OBJECTS = new Set([
+  "pressureSystems"
+]);
+const UNSAFE = new Set([
+  "__proto__",
+  "constructor",
+  "prototype"
+]);
+const PRESSURE_SYSTEM_RECORD_FIELDS = Object.freeze([
+  "pressureSystemId",
+  "value",
+  "capacity"
+]);
+const PRESSURE_SYSTEM_RECORD_FIELD_SET = new Set(PRESSURE_SYSTEM_RECORD_FIELDS);
+const CANONICAL_PRESSURE_SYSTEM_IDS = new Set(VOYAGE_PRESSURE_SYSTEM_IDS);
 
 function issue(list, severity, code, path, message) {
   list.push({ code, path, message, severity });
@@ -68,6 +85,64 @@ function readRequiredDataCollection(state, key, errors) {
   return { ok: true, value: descriptor.value };
 }
 
+function readRequiredDataObject(state, key, errors, path = key, dataReadCode = "voyage-state-data-read-failed") {
+  let hasOwn = false;
+  try {
+    hasOwn = Object.hasOwn(state, key);
+  } catch {
+    issue(errors, "error", dataReadCode, path, `${key} could not be read safely.`);
+    return { ok: false, present: false, inherited: false, value: undefined };
+  }
+
+  if (!hasOwn) {
+    let inherited = false;
+    try {
+      inherited = key in state;
+    } catch {
+      issue(errors, "error", dataReadCode, path, `${key} could not be read safely.`);
+      return { ok: false, present: false, inherited: false, value: undefined };
+    }
+
+    issue(
+      errors,
+      "error",
+      inherited ? "inherited-pressure-systems" : "missing-pressure-systems",
+      path,
+      inherited
+        ? "Pressure systems must be own data, not inherited data."
+        : "Voyage Encounter state requires pressureSystems."
+    );
+    return { ok: false, present: false, inherited, value: undefined };
+  }
+
+  let descriptor;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(state, key);
+  } catch {
+    issue(errors, "error", dataReadCode, path, `${key} could not be read safely.`);
+    return { ok: false, present: true, inherited: false, value: undefined };
+  }
+
+  if (!descriptor) {
+    issue(errors, "error", dataReadCode, path, `${key} could not be read safely.`);
+    return { ok: false, present: true, inherited: false, value: undefined };
+  }
+  if (!Object.hasOwn(descriptor, "value") || !descriptor.enumerable) {
+    issue(errors, "error", "invalid-pressure-systems-data-property", path, "pressureSystems must be an own enumerable data property.");
+    return { ok: false, present: true, inherited: false, value: undefined };
+  }
+  return { ok: true, present: true, inherited: false, value: descriptor.value };
+}
+
+function inspectPlainObject(value, path, errors, code, message) {
+  try {
+    return { ok: true, plain: isPlainObject(value) };
+  } catch {
+    issue(errors, "error", code, path, message);
+    return { ok: false, plain: false };
+  }
+}
+
 function readMomentum(state) {
   try {
     const descriptor = Object.getOwnPropertyDescriptor(state, "momentum");
@@ -79,6 +154,173 @@ function readMomentum(state) {
     return { ok: true, present: true, inherited: false, value: descriptor.value };
   } catch {
     return { ok: false, present: true, inherited: false, value: undefined };
+  }
+}
+
+function validatePressureSystemRecord(record, pressureSystemId, path, errors) {
+  let keys;
+  try {
+    keys = Reflect.ownKeys(record);
+  } catch {
+    issue(errors, "error", "pressure-system-record-data-read-failed", path, "Pressure system record could not be read safely.");
+    return;
+  }
+
+  const presentFields = new Set();
+  for (const key of keys) {
+    const keyPath = `${path}.${typeof key === "symbol" ? "[symbol]" : key}`;
+    if (typeof key !== "string") {
+      issue(errors, "error", "unexpected-pressure-system-field", keyPath, "Pressure system record has an unexpected own field.");
+      continue;
+    }
+    if (UNSAFE.has(key)) {
+      issue(errors, "error", "unsafe-pressure-system-field", keyPath, "Pressure system record has an unexpected own field.");
+      continue;
+    }
+    if (!PRESSURE_SYSTEM_RECORD_FIELD_SET.has(key)) {
+      issue(errors, "error", "unexpected-pressure-system-field", keyPath, "Pressure system record has an unexpected own field.");
+      continue;
+    }
+    presentFields.add(key);
+  }
+
+  for (const field of PRESSURE_SYSTEM_RECORD_FIELDS) {
+    if (!presentFields.has(field)) {
+      issue(errors, "error", "missing-pressure-system-field", `${path}.${field}`, `Pressure system record requires ${field}.`);
+    }
+  }
+
+  const fieldValues = {};
+  for (const field of PRESSURE_SYSTEM_RECORD_FIELDS) {
+    if (!presentFields.has(field)) continue;
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(record, field);
+    } catch {
+      issue(errors, "error", "pressure-system-record-data-read-failed", `${path}.${field}`, "Pressure system record could not be read safely.");
+      continue;
+    }
+    if (!descriptor) {
+      issue(errors, "error", "missing-pressure-system-field", `${path}.${field}`, `Pressure system record requires ${field}.`);
+      continue;
+    }
+    if (!Object.hasOwn(descriptor, "value") || !descriptor.enumerable) {
+      issue(errors, "error", "invalid-pressure-system-data-property", `${path}.${field}`, "Pressure system record fields must be own enumerable data properties.");
+      continue;
+    }
+    fieldValues[field] = descriptor.value;
+  }
+
+  if (Object.hasOwn(fieldValues, "pressureSystemId")) {
+    const recordId = fieldValues.pressureSystemId;
+    if (typeof recordId !== "string" || !recordId.trim()) {
+      issue(errors, "error", "invalid-pressure-system-id", `${path}.pressureSystemId`, "Pressure system ID must be a non-blank exact string.");
+    } else if (recordId !== pressureSystemId) {
+      issue(errors, "error", "pressure-system-id-mismatch", `${path}.pressureSystemId`, "Pressure system ID must exactly match its map key.");
+    }
+  }
+
+  if (Object.hasOwn(fieldValues, "value")) {
+    const value = fieldValues.value;
+    if (!Number.isSafeInteger(value) || value < 0) {
+      issue(errors, "error", "invalid-pressure-system-value", `${path}.value`, "Pressure system value must be a non-negative safe integer.");
+    }
+  }
+
+  if (Object.hasOwn(fieldValues, "capacity")) {
+    const capacity = fieldValues.capacity;
+    if (!Number.isSafeInteger(capacity) || capacity < 0) {
+      issue(errors, "error", "invalid-pressure-system-capacity", `${path}.capacity`, "Pressure system capacity must be a non-negative safe integer.");
+    } else if (capacity > VOYAGE_PRESSURE_MAX_CAPACITY) {
+      issue(errors, "error", "pressure-system-capacity-too-high", `${path}.capacity`, "Pressure system capacity must not exceed 5.");
+    }
+  }
+
+  if (
+    Object.hasOwn(fieldValues, "value")
+    && Object.hasOwn(fieldValues, "capacity")
+    && Number.isSafeInteger(fieldValues.value)
+    && fieldValues.value >= 0
+    && Number.isSafeInteger(fieldValues.capacity)
+    && fieldValues.capacity >= 0
+    && fieldValues.capacity <= VOYAGE_PRESSURE_MAX_CAPACITY
+    && fieldValues.value > fieldValues.capacity
+  ) {
+    issue(errors, "error", "pressure-system-value-exceeds-capacity", `${path}.value`, "Pressure system value must not exceed its capacity.");
+  }
+}
+
+function validatePressureSystems(state, errors) {
+  const read = readRequiredDataObject(state, "pressureSystems", errors);
+  if (!read.ok) return;
+  const pressureSystems = read.value;
+  const pressureSystemsPlain = inspectPlainObject(
+    pressureSystems,
+    "pressureSystems",
+    errors,
+    "pressure-systems-data-read-failed",
+    "pressureSystems could not be read safely."
+  );
+  if (!pressureSystemsPlain.ok) return;
+  if (!pressureSystemsPlain.plain) {
+    issue(errors, "error", "invalid-pressure-systems", "pressureSystems", "pressureSystems must be a plain object.");
+    return;
+  }
+
+  let keys;
+  try {
+    keys = Reflect.ownKeys(pressureSystems);
+  } catch {
+    issue(errors, "error", "pressure-systems-data-read-failed", "pressureSystems", "pressureSystems could not be read safely.");
+    return;
+  }
+
+  for (const key of keys) {
+    const keyPath = `pressureSystems.${typeof key === "symbol" ? "[symbol]" : key}`;
+    if (typeof key !== "string") {
+      issue(errors, "error", "unexpected-pressure-system-key", keyPath, "Pressure systems has an unexpected own field.");
+      continue;
+    }
+    if (UNSAFE.has(key)) {
+      issue(errors, "error", "unsafe-pressure-system-key", keyPath, "Pressure systems must not use unsafe keys.");
+      continue;
+    }
+    if (!CANONICAL_PRESSURE_SYSTEM_IDS.has(key)) {
+      issue(errors, "error", "unexpected-pressure-system-key", keyPath, "Pressure systems has an unexpected own field.");
+      continue;
+    }
+  }
+
+  for (const pressureSystemId of VOYAGE_PRESSURE_SYSTEM_IDS) {
+    const path = `pressureSystems.${pressureSystemId}`;
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(pressureSystems, pressureSystemId);
+    } catch {
+      issue(errors, "error", "pressure-systems-data-read-failed", path, "Pressure systems could not be read safely.");
+      continue;
+    }
+    if (!descriptor) {
+      issue(errors, "error", "missing-pressure-system", path, `Pressure systems require ${pressureSystemId}.`);
+      continue;
+    }
+    if (!Object.hasOwn(descriptor, "value") || !descriptor.enumerable) {
+      issue(errors, "error", "invalid-pressure-systems-data-property", path, "Pressure system records must be own enumerable data properties.");
+      continue;
+    }
+    const recordPlain = inspectPlainObject(
+      descriptor.value,
+      path,
+      errors,
+      "pressure-system-record-data-read-failed",
+      "Pressure system record could not be read safely."
+    );
+    if (!recordPlain.ok) continue;
+    if (!recordPlain.plain) {
+      issue(errors, "error", "invalid-pressure-system-record", path, "Pressure system records must be plain objects.");
+      continue;
+    }
+    validatePressureSystemRecord(descriptor.value, pressureSystemId, path, errors);
   }
 }
 
@@ -109,6 +351,7 @@ export function validateVoyageEncounterState(value) {
   if (!nonEmptyId(state.encounterId)) issue(errors, "error", "invalid-encounter-id", "encounterId", "Encounter ID must be a non-empty string.");
   if (!isEnumValue(state.lifecycleState, VOYAGE_ENCOUNTER_LIFECYCLE_STATES)) issue(errors, "error", "invalid-lifecycle-state", "lifecycleState", "Lifecycle state is not recognized.");
   if (!Number.isInteger(state.revision) || state.revision < 0) issue(errors, "error", "invalid-revision", "revision", "Revision must be a non-negative integer.");
+  validatePressureSystems(state, errors);
 
   for (const [key, defaultValue] of Object.entries(COLLECTION_DEFAULTS)) {
     if (Array.isArray(defaultValue)) {
@@ -116,7 +359,9 @@ export function validateVoyageEncounterState(value) {
         ? readRequiredDataCollection(state, key, errors)
         : { ok: true, value: state[key] };
       if (safeRead.ok && !Array.isArray(safeRead.value)) issue(errors, "error", "invalid-collection-type", key, `${key} must be an array.`);
+      continue;
     }
+    if (SAFE_REQUIRED_DATA_OBJECTS.has(key)) continue;
     if (isPlainObject(defaultValue) && !isPlainObject(state[key])) issue(errors, "error", "invalid-collection-type", key, `${key} must be a plain object.`);
   }
 
