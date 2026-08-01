@@ -6,6 +6,16 @@ import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
 import { validateVoyageEncounterState } from "./validation.js";
 
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const PRESSURE_BREACH_HAZARD_CATEGORY = "system";
+const PRESSURE_BREACH_HAZARD_STATUS = "active";
+const PRESSURE_BREACH_HAZARD_SOURCE_KIND = "pressure-breach";
+const PRESSURE_BREACH_HAZARD_NAME_BY_SYSTEM_ID = Object.freeze({
+  "crew-morale": "Crew Morale Breach",
+  arkengine: "Arkengine Breach",
+  "levstone-array": "Levstone Array Breach",
+  "solar-sail-rig": "Solar Sail Rig Breach",
+  lifeveil: "Lifeveil Breach"
+});
 
 function issue(code, path, message) {
   return { code, path, message, severity: "error" };
@@ -248,6 +258,63 @@ function buildPressureBreach(effect, effectIndex, system) {
   };
 }
 
+function pressureBreachHazardReport({
+  structurallyValid = false,
+  breachPlanReady = false,
+  readyForPressureBreachHazardPlanning = false,
+  hazardRequired = false,
+  hazardCount = 0,
+  hazard = null,
+  errors = [],
+  warnings = []
+} = {}) {
+  return {
+    structurallyValid,
+    breachPlanReady,
+    readyForPressureBreachHazardPlanning,
+    hazardRequired,
+    hazardCount,
+    hazard,
+    errors: deduplicateVoyageResolutionIssues(errors),
+    warnings: deduplicateVoyageResolutionIssues(warnings)
+  };
+}
+
+function createPressureBreachHazardId(breach) {
+  return `arcflight-hazard:${JSON.stringify([
+    PRESSURE_BREACH_HAZARD_SOURCE_KIND,
+    breach.pressureBreachId
+  ])}`;
+}
+
+function buildPressureBreachHazard(breach) {
+  const name = PRESSURE_BREACH_HAZARD_NAME_BY_SYSTEM_ID[breach?.pressureSystemId];
+  if (!name) return null;
+
+  return {
+    hazardId: createPressureBreachHazardId(breach),
+    pressureBreachId: breach.pressureBreachId,
+    encounterId: breach.encounterId,
+    stageId: breach.stageId,
+    roundNumber: breach.roundNumber,
+    effectIndex: breach.effectIndex,
+    sequence: breach.sequence,
+    stationId: breach.stationId,
+    actionId: breach.actionId,
+    pressureSystemId: breach.pressureSystemId,
+    category: PRESSURE_BREACH_HAZARD_CATEGORY,
+    status: PRESSURE_BREACH_HAZARD_STATUS,
+    sourceKind: PRESSURE_BREACH_HAZARD_SOURCE_KIND,
+    pressureEffectId: breach.pressureEffectId,
+    sourceIntentId: breach.sourceIntentId,
+    activationSource: breach.activationSource,
+    branch: breach.branch,
+    timing: breach.timing,
+    visibility: breach.visibility,
+    name
+  };
+}
+
 function validationFailure(validation) {
   return breachReport({
     structurallyValid: false,
@@ -442,6 +509,100 @@ export function analyzeVoyageEncounterPressureBreachPlan(state) {
   }
 }
 
+/**
+ * Build the deterministic active system Hazard creation record for the first
+ * authoritative Pressure breach.
+ *
+ * This Task 03 operation is pure. It does not persist an active Hazard, apply
+ * collision or escalation policy, propose a Void Scar, mutate Pressure, emit
+ * events, or advance lifecycle state.
+ */
+export function analyzeVoyageEncounterPressureBreachHazardPlan(state) {
+  try {
+    const captured = capturePressureBreachData(state);
+    if (!captured.ok) {
+      return pressureBreachHazardReport({
+        errors: [issue(
+          "pressure-breach-hazard-plan-data-read-failed",
+          captured.issue.path,
+          "Pressure breach Hazard planning data could not be read safely."
+        )]
+      });
+    }
+
+    const breachPlan = analyzeVoyageEncounterPressureBreachPlan(captured.value);
+    if (!breachPlan.readyForPressureBreachPlanning) {
+      return pressureBreachHazardReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: false,
+        readyForPressureBreachHazardPlanning: false,
+        hazardRequired: false,
+        hazardCount: 0,
+        hazard: null,
+        errors: [
+          ...breachPlan.errors,
+          issue(
+            "pressure-breach-hazard-plan-breach-not-ready",
+            "pressureBreachPlan",
+            "Pressure breach Hazard planning requires a ready authoritative breach plan."
+          )
+        ],
+        warnings: breachPlan.warnings
+      });
+    }
+
+    if (!breachPlan.breachRequired || !breachPlan.breach) {
+      return pressureBreachHazardReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: true,
+        readyForPressureBreachHazardPlanning: true,
+        hazardRequired: false,
+        hazardCount: 0,
+        hazard: null,
+        errors: [],
+        warnings: breachPlan.warnings
+      });
+    }
+
+    const hazard = buildPressureBreachHazard(breachPlan.breach);
+    if (!hazard) {
+      return pressureBreachHazardReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: true,
+        readyForPressureBreachHazardPlanning: false,
+        hazardRequired: false,
+        hazardCount: 0,
+        hazard: null,
+        errors: [issue(
+          "pressure-breach-hazard-plan-system-invalid",
+          "pressureBreachPlan.breach.pressureSystemId",
+          "Pressure breach Hazard planning requires one canonical Pressure system."
+        )],
+        warnings: breachPlan.warnings
+      });
+    }
+
+    return pressureBreachHazardReport({
+      structurallyValid: Boolean(breachPlan.structurallyValid),
+      breachPlanReady: true,
+      readyForPressureBreachHazardPlanning: true,
+      hazardRequired: true,
+      hazardCount: 1,
+      hazard,
+      errors: [],
+      warnings: breachPlan.warnings
+    });
+  } catch {
+    return pressureBreachHazardReport({
+      errors: [issue(
+        "pressure-breach-hazard-plan-failed",
+        "encounterState",
+        "Pressure breach Hazard planning could not be completed safely."
+      )]
+    });
+  }
+}
+
 function breachApplicationFailure(errors = [], warnings = []) {
   return {
     ok: false,
@@ -458,6 +619,40 @@ function breachApplicationIssue(code, path, message) {
 
 function clonePressureBreach(breach) {
   return { ...breach };
+}
+
+function clonePressureBreachHazard(hazard) {
+  return { ...hazard };
+}
+
+function pressureBreachHazardMatchesBreach(hazard, breach) {
+  if (!hazard || !breach) return false;
+
+  for (const key of [
+    "pressureBreachId",
+    "encounterId",
+    "stageId",
+    "roundNumber",
+    "effectIndex",
+    "sequence",
+    "stationId",
+    "actionId",
+    "pressureSystemId",
+    "pressureEffectId",
+    "sourceIntentId",
+    "activationSource",
+    "branch",
+    "timing",
+    "visibility"
+  ]) {
+    if (hazard[key] !== breach[key]) return false;
+  }
+
+  return hazard.hazardId === createPressureBreachHazardId(breach)
+    && hazard.category === PRESSURE_BREACH_HAZARD_CATEGORY
+    && hazard.status === PRESSURE_BREACH_HAZARD_STATUS
+    && hazard.sourceKind === PRESSURE_BREACH_HAZARD_SOURCE_KIND
+    && hazard.name === PRESSURE_BREACH_HAZARD_NAME_BY_SYSTEM_ID[breach.pressureSystemId];
 }
 
 function pressureBreachMatchesAuthoritativeEffect(breach, effect, effectIndex, system) {
@@ -522,14 +717,15 @@ function simulateNonBreachPressureEffect(system, effect) {
 /**
  * Apply one authoritative first-breach Pressure transaction.
  *
- * This Task 02 foundation applies every safe Pressure effect in authoritative
- * order, resets the first breached Pressure system to zero, increments the
- * encounter revision once, and emits one isolated audit event. A second breach
- * in the same plan fails atomically until multi-breach orchestration is added.
+ * This Task 03 foundation applies every safe Pressure effect in authoritative
+ * order, creates one deterministic active system Hazard record for the first
+ * breach, resets that Pressure system to zero, increments the encounter
+ * revision once, and emits one isolated audit event. A second breach in the
+ * same plan fails atomically until multi-breach orchestration is added.
  *
- * Hazard creation, Void Scar proposals, ship persistence, closeout behavior,
- * lifecycle advancement, and public API registration remain outside this
- * operation.
+ * Hazard-engine persistence and collision policy, Void Scar proposals, ship
+ * persistence, closeout behavior, lifecycle advancement, and public API
+ * registration remain outside this operation.
  */
 export function applyVoyageEncounterPressureBreachPlan(state) {
   try {
@@ -567,6 +763,39 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
           "pressure-breach-application-not-required",
           "pressureBreachPlan",
           "Pressure breach application requires one authoritative Pressure breach."
+        )],
+        warnings
+      );
+    }
+
+    const hazardPlan = analyzeVoyageEncounterPressureBreachHazardPlan(isolatedState);
+    warnings.push(...hazardPlan.warnings);
+    if (
+      !hazardPlan.readyForPressureBreachHazardPlanning
+      || !hazardPlan.hazardRequired
+      || hazardPlan.hazardCount !== 1
+      || !hazardPlan.hazard
+    ) {
+      return breachApplicationFailure(
+        [
+          ...hazardPlan.errors,
+          breachApplicationIssue(
+            "pressure-breach-application-hazard-not-ready",
+            "pressureBreachHazardPlan",
+            "Pressure breach application requires one deterministic matching Hazard creation record."
+          )
+        ],
+        warnings
+      );
+    }
+
+    const hazard = hazardPlan.hazard;
+    if (!pressureBreachHazardMatchesBreach(hazard, breachPlan.breach)) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-hazard-mismatch",
+          "pressureBreachHazardPlan.hazard",
+          "Pressure breach application Hazard does not match the authoritative Pressure breach."
         )],
         warnings
       );
@@ -757,6 +986,7 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       pressureEffectCount: pressurePlan.pressureEffectCount,
       appliedEffectCount: pressurePlan.pressureEffectCount,
       breach: clonePressureBreach(breach),
+      hazard: clonePressureBreachHazard(hazard),
       pressureReset: {
         pressureBreachId: breach.pressureBreachId,
         pressureSystemId: breach.pressureSystemId,
