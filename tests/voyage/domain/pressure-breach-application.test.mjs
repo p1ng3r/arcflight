@@ -284,6 +284,7 @@ test("applies one standard Pressure breach atomically with the exact event contr
     "appliedEffectCount",
     "breach",
     "hazard",
+    "voidScarProposal",
     "pressureReset",
     "effects",
     "previousPressureSystems",
@@ -306,6 +307,14 @@ test("applies one standard Pressure breach atomically with the exact event contr
   assert.equal(event.hazard.status, "active");
   assert.equal(event.hazard.sourceKind, "pressure-breach");
   assert.equal(event.hazard.name, "Crew Morale Breach");
+  assert.equal(event.voidScarProposal.pressureBreachId, planned.breach.pressureBreachId);
+  assert.equal(event.voidScarProposal.hazardId, event.hazard.hazardId);
+  assert.equal(event.voidScarProposal.pressureSystemId, planned.breach.pressureSystemId);
+  assert.equal(event.voidScarProposal.consequenceKind, "void-scar");
+  assert.equal(event.voidScarProposal.status, "proposed");
+  assert.equal(event.voidScarProposal.persistence, "lasting");
+  assert.equal(event.voidScarProposal.sourceKind, "pressure-breach");
+  assert.equal(event.voidScarProposal.name, "Crew Morale Void Scar");
   assert.deepEqual(event.pressureReset, {
     pressureBreachId: planned.breach.pressureBreachId,
     pressureSystemId: "crew-morale",
@@ -320,6 +329,7 @@ test("applies one standard Pressure breach atomically with the exact event contr
   assert.notEqual(event.pressureSystems, result.nextState.pressureSystems);
   assert.notEqual(event.breach, planned.breach);
   assert.notEqual(event.hazard, planned.breach);
+  assert.notEqual(event.voidScarProposal, event.hazard);
 });
 
 test("applies safe Pressure effects before and after the first breach in exact order", () => {
@@ -483,7 +493,7 @@ test("revision overflow fails atomically without a breach event", () => {
   assert.deepEqual(source, before);
 });
 
-test("successful breach outputs are deterministic, isolated, and contain no deferred systems", () => {
+test("successful breach outputs are deterministic, isolated, and contain no deferred active systems", () => {
   const source = setPressure(oneNoRollConsequences([
     pressureRule("breach", { kind: "source-station" }, 1)
   ]), "crew-morale", 2);
@@ -499,10 +509,13 @@ test("successful breach outputs are deterministic, isolated, and contain no defe
   assert.notEqual(first.events[0], second.events[0]);
   assert.notEqual(first.events[0].breach, second.events[0].breach);
   assert.notEqual(first.events[0].hazard, second.events[0].hazard);
+  assert.notEqual(first.events[0].voidScarProposal, second.events[0].voidScarProposal);
   assert.notEqual(first.events[0].effects, second.events[0].effects);
 
   assert.equal(Object.hasOwn(first, "hazard"), false);
+  assert.equal(Object.hasOwn(first, "voidScarProposal"), false);
   assert.equal(Object.hasOwn(first.events[0], "hazard"), true);
+  assert.equal(Object.hasOwn(first.events[0], "voidScarProposal"), true);
 
   for (const key of [
     "hazards",
@@ -520,6 +533,7 @@ test("successful breach outputs are deterministic, isolated, and contain no defe
   first.events[0].pressureSystems["crew-morale"].value = 2;
   first.events[0].breach.previousValue = 0;
   first.events[0].hazard.name = "Mutated";
+  first.events[0].voidScarProposal.name = "Mutated";
   first.events[0].effects[0].delta = 99;
 
   assert.equal(source.pressureSystems["crew-morale"].value, 2);
@@ -527,5 +541,6 @@ test("successful breach outputs are deterministic, isolated, and contain no defe
   assert.equal(second.events[0].pressureSystems["crew-morale"].value, 0);
   assert.equal(second.events[0].breach.previousValue, 2);
   assert.equal(second.events[0].hazard.name, "Crew Morale Breach");
+  assert.equal(second.events[0].voidScarProposal.name, "Crew Morale Void Scar");
   assert.equal(second.events[0].effects[0].delta, 1);
 });

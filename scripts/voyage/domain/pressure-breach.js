@@ -1,4 +1,5 @@
 import {
+  VOYAGE_PERMANENT_CONSEQUENCE_STATUSES,
   VOYAGE_PRESSURE_SYSTEM_IDS
 } from "./constants.js";
 import { analyzeVoyageEncounterPressurePlan } from "./pressure.js";
@@ -15,6 +16,17 @@ const PRESSURE_BREACH_HAZARD_NAME_BY_SYSTEM_ID = Object.freeze({
   "levstone-array": "Levstone Array Breach",
   "solar-sail-rig": "Solar Sail Rig Breach",
   lifeveil: "Lifeveil Breach"
+});
+const PRESSURE_BREACH_VOID_SCAR_CONSEQUENCE_KIND = "void-scar";
+const PRESSURE_BREACH_VOID_SCAR_STATUS = VOYAGE_PERMANENT_CONSEQUENCE_STATUSES.PROPOSED;
+const PRESSURE_BREACH_VOID_SCAR_PERSISTENCE = "lasting";
+const PRESSURE_BREACH_VOID_SCAR_SOURCE_KIND = "pressure-breach";
+const PRESSURE_BREACH_VOID_SCAR_NAME_BY_SYSTEM_ID = Object.freeze({
+  "crew-morale": "Crew Morale Void Scar",
+  arkengine: "Arkengine Void Scar",
+  "levstone-array": "Levstone Array Void Scar",
+  "solar-sail-rig": "Solar Sail Rig Void Scar",
+  lifeveil: "Lifeveil Void Scar"
 });
 
 function issue(code, path, message) {
@@ -315,6 +327,75 @@ function buildPressureBreachHazard(breach) {
   };
 }
 
+function pressureBreachVoidScarProposalReport({
+  structurallyValid = false,
+  breachPlanReady = false,
+  hazardPlanReady = false,
+  readyForPressureBreachVoidScarProposalPlanning = false,
+  voidScarProposalRequired = false,
+  voidScarProposalCount = 0,
+  voidScarProposal = null,
+  errors = [],
+  warnings = []
+} = {}) {
+  return {
+    structurallyValid,
+    breachPlanReady,
+    hazardPlanReady,
+    readyForPressureBreachVoidScarProposalPlanning,
+    voidScarProposalRequired,
+    voidScarProposalCount,
+    voidScarProposal,
+    errors: deduplicateVoyageResolutionIssues(errors),
+    warnings: deduplicateVoyageResolutionIssues(warnings)
+  };
+}
+
+function createPressureBreachVoidScarId(breach) {
+  return `arcflight-void-scar:${JSON.stringify([
+    PRESSURE_BREACH_VOID_SCAR_SOURCE_KIND,
+    breach.pressureBreachId
+  ])}`;
+}
+
+function createPressureBreachVoidScarProposalId(breach) {
+  return `arcflight-void-scar-proposal:${JSON.stringify([
+    PRESSURE_BREACH_VOID_SCAR_SOURCE_KIND,
+    breach.pressureBreachId
+  ])}`;
+}
+
+function buildPressureBreachVoidScarProposal(breach, hazard) {
+  const name = PRESSURE_BREACH_VOID_SCAR_NAME_BY_SYSTEM_ID[breach?.pressureSystemId];
+  if (!name || !hazard) return null;
+
+  return {
+    voidScarProposalId: createPressureBreachVoidScarProposalId(breach),
+    voidScarId: createPressureBreachVoidScarId(breach),
+    pressureBreachId: breach.pressureBreachId,
+    hazardId: hazard.hazardId,
+    encounterId: breach.encounterId,
+    stageId: breach.stageId,
+    roundNumber: breach.roundNumber,
+    effectIndex: breach.effectIndex,
+    sequence: breach.sequence,
+    stationId: breach.stationId,
+    actionId: breach.actionId,
+    pressureSystemId: breach.pressureSystemId,
+    consequenceKind: PRESSURE_BREACH_VOID_SCAR_CONSEQUENCE_KIND,
+    status: PRESSURE_BREACH_VOID_SCAR_STATUS,
+    persistence: PRESSURE_BREACH_VOID_SCAR_PERSISTENCE,
+    sourceKind: PRESSURE_BREACH_VOID_SCAR_SOURCE_KIND,
+    pressureEffectId: breach.pressureEffectId,
+    sourceIntentId: breach.sourceIntentId,
+    activationSource: breach.activationSource,
+    branch: breach.branch,
+    timing: breach.timing,
+    visibility: breach.visibility,
+    name
+  };
+}
+
 function validationFailure(validation) {
   return breachReport({
     structurallyValid: false,
@@ -603,6 +684,175 @@ export function analyzeVoyageEncounterPressureBreachHazardPlan(state) {
   }
 }
 
+/**
+ * Build one deterministic lasting Void Scar proposal for the first
+ * authoritative Pressure breach and its matching Hazard.
+ *
+ * This Task 04 operation is pure. It does not persist a Void Scar, consume hull
+ * capacity, apply operational or repair rules, mutate Pressure, emit events, or
+ * advance lifecycle state.
+ */
+export function analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(state) {
+  try {
+    const captured = capturePressureBreachData(state);
+    if (!captured.ok) {
+      return pressureBreachVoidScarProposalReport({
+        errors: [issue(
+          "pressure-breach-void-scar-plan-data-read-failed",
+          captured.issue.path,
+          "Pressure breach Void Scar proposal planning data could not be read safely."
+        )]
+      });
+    }
+
+    const isolatedState = captured.value;
+    const breachPlan = analyzeVoyageEncounterPressureBreachPlan(isolatedState);
+    if (!breachPlan.readyForPressureBreachPlanning) {
+      return pressureBreachVoidScarProposalReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: false,
+        hazardPlanReady: false,
+        readyForPressureBreachVoidScarProposalPlanning: false,
+        voidScarProposalRequired: false,
+        voidScarProposalCount: 0,
+        voidScarProposal: null,
+        errors: [
+          ...breachPlan.errors,
+          issue(
+            "pressure-breach-void-scar-plan-breach-not-ready",
+            "pressureBreachPlan",
+            "Pressure breach Void Scar proposal planning requires a ready authoritative breach plan."
+          )
+        ],
+        warnings: breachPlan.warnings
+      });
+    }
+
+    const hazardPlan = analyzeVoyageEncounterPressureBreachHazardPlan(isolatedState);
+    if (!hazardPlan.readyForPressureBreachHazardPlanning) {
+      return pressureBreachVoidScarProposalReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: true,
+        hazardPlanReady: false,
+        readyForPressureBreachVoidScarProposalPlanning: false,
+        voidScarProposalRequired: false,
+        voidScarProposalCount: 0,
+        voidScarProposal: null,
+        errors: [
+          ...hazardPlan.errors,
+          issue(
+            "pressure-breach-void-scar-plan-hazard-not-ready",
+            "pressureBreachHazardPlan",
+            "Pressure breach Void Scar proposal planning requires a ready matching Hazard plan."
+          )
+        ],
+        warnings: [...breachPlan.warnings, ...hazardPlan.warnings]
+      });
+    }
+
+    if (!breachPlan.breachRequired || !breachPlan.breach) {
+      if (
+        hazardPlan.hazardRequired
+        || hazardPlan.hazardCount !== 0
+        || hazardPlan.hazard !== null
+      ) {
+        return pressureBreachVoidScarProposalReport({
+          structurallyValid: Boolean(breachPlan.structurallyValid),
+          breachPlanReady: true,
+          hazardPlanReady: false,
+          readyForPressureBreachVoidScarProposalPlanning: false,
+          voidScarProposalRequired: false,
+          voidScarProposalCount: 0,
+          voidScarProposal: null,
+          errors: [issue(
+            "pressure-breach-void-scar-plan-hazard-mismatch",
+            "pressureBreachHazardPlan",
+            "Pressure breach Void Scar proposal planning received a Hazard without a breach."
+          )],
+          warnings: [...breachPlan.warnings, ...hazardPlan.warnings]
+        });
+      }
+
+      return pressureBreachVoidScarProposalReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: true,
+        hazardPlanReady: true,
+        readyForPressureBreachVoidScarProposalPlanning: true,
+        voidScarProposalRequired: false,
+        voidScarProposalCount: 0,
+        voidScarProposal: null,
+        errors: [],
+        warnings: [...breachPlan.warnings, ...hazardPlan.warnings]
+      });
+    }
+
+    if (
+      !hazardPlan.hazardRequired
+      || hazardPlan.hazardCount !== 1
+      || !hazardPlan.hazard
+      || !pressureBreachHazardMatchesBreach(hazardPlan.hazard, breachPlan.breach)
+    ) {
+      return pressureBreachVoidScarProposalReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: true,
+        hazardPlanReady: false,
+        readyForPressureBreachVoidScarProposalPlanning: false,
+        voidScarProposalRequired: false,
+        voidScarProposalCount: 0,
+        voidScarProposal: null,
+        errors: [issue(
+          "pressure-breach-void-scar-plan-hazard-mismatch",
+          "pressureBreachHazardPlan.hazard",
+          "Pressure breach Void Scar proposal planning requires one Hazard matching the authoritative breach."
+        )],
+        warnings: [...breachPlan.warnings, ...hazardPlan.warnings]
+      });
+    }
+
+    const voidScarProposal = buildPressureBreachVoidScarProposal(
+      breachPlan.breach,
+      hazardPlan.hazard
+    );
+    if (!voidScarProposal) {
+      return pressureBreachVoidScarProposalReport({
+        structurallyValid: Boolean(breachPlan.structurallyValid),
+        breachPlanReady: true,
+        hazardPlanReady: true,
+        readyForPressureBreachVoidScarProposalPlanning: false,
+        voidScarProposalRequired: false,
+        voidScarProposalCount: 0,
+        voidScarProposal: null,
+        errors: [issue(
+          "pressure-breach-void-scar-plan-system-invalid",
+          "pressureBreachPlan.breach.pressureSystemId",
+          "Pressure breach Void Scar proposal planning requires one canonical Pressure system."
+        )],
+        warnings: [...breachPlan.warnings, ...hazardPlan.warnings]
+      });
+    }
+
+    return pressureBreachVoidScarProposalReport({
+      structurallyValid: Boolean(breachPlan.structurallyValid),
+      breachPlanReady: true,
+      hazardPlanReady: true,
+      readyForPressureBreachVoidScarProposalPlanning: true,
+      voidScarProposalRequired: true,
+      voidScarProposalCount: 1,
+      voidScarProposal,
+      errors: [],
+      warnings: [...breachPlan.warnings, ...hazardPlan.warnings]
+    });
+  } catch {
+    return pressureBreachVoidScarProposalReport({
+      errors: [issue(
+        "pressure-breach-void-scar-plan-failed",
+        "encounterState",
+        "Pressure breach Void Scar proposal planning could not be completed safely."
+      )]
+    });
+  }
+}
+
 function breachApplicationFailure(errors = [], warnings = []) {
   return {
     ok: false,
@@ -623,6 +873,10 @@ function clonePressureBreach(breach) {
 
 function clonePressureBreachHazard(hazard) {
   return { ...hazard };
+}
+
+function clonePressureBreachVoidScarProposal(voidScarProposal) {
+  return { ...voidScarProposal };
 }
 
 function pressureBreachHazardMatchesBreach(hazard, breach) {
@@ -653,6 +907,43 @@ function pressureBreachHazardMatchesBreach(hazard, breach) {
     && hazard.status === PRESSURE_BREACH_HAZARD_STATUS
     && hazard.sourceKind === PRESSURE_BREACH_HAZARD_SOURCE_KIND
     && hazard.name === PRESSURE_BREACH_HAZARD_NAME_BY_SYSTEM_ID[breach.pressureSystemId];
+}
+
+function pressureBreachVoidScarProposalMatches(
+  voidScarProposal,
+  breach,
+  hazard
+) {
+  if (!voidScarProposal || !breach || !hazard) return false;
+
+  for (const key of [
+    "pressureBreachId",
+    "encounterId",
+    "stageId",
+    "roundNumber",
+    "effectIndex",
+    "sequence",
+    "stationId",
+    "actionId",
+    "pressureSystemId",
+    "pressureEffectId",
+    "sourceIntentId",
+    "activationSource",
+    "branch",
+    "timing",
+    "visibility"
+  ]) {
+    if (voidScarProposal[key] !== breach[key]) return false;
+  }
+
+  return voidScarProposal.voidScarProposalId === createPressureBreachVoidScarProposalId(breach)
+    && voidScarProposal.voidScarId === createPressureBreachVoidScarId(breach)
+    && voidScarProposal.hazardId === hazard.hazardId
+    && voidScarProposal.consequenceKind === PRESSURE_BREACH_VOID_SCAR_CONSEQUENCE_KIND
+    && voidScarProposal.status === PRESSURE_BREACH_VOID_SCAR_STATUS
+    && voidScarProposal.persistence === PRESSURE_BREACH_VOID_SCAR_PERSISTENCE
+    && voidScarProposal.sourceKind === PRESSURE_BREACH_VOID_SCAR_SOURCE_KIND
+    && voidScarProposal.name === PRESSURE_BREACH_VOID_SCAR_NAME_BY_SYSTEM_ID[breach.pressureSystemId];
 }
 
 function pressureBreachMatchesAuthoritativeEffect(breach, effect, effectIndex, system) {
@@ -717,15 +1008,17 @@ function simulateNonBreachPressureEffect(system, effect) {
 /**
  * Apply one authoritative first-breach Pressure transaction.
  *
- * This Task 03 foundation applies every safe Pressure effect in authoritative
- * order, creates one deterministic active system Hazard record for the first
- * breach, resets that Pressure system to zero, increments the encounter
- * revision once, and emits one isolated audit event. A second breach in the
- * same plan fails atomically until multi-breach orchestration is added.
+ * This Task 04 foundation applies every safe Pressure effect in authoritative
+ * order, creates one deterministic active system Hazard record, proposes one
+ * deterministic lasting Void Scar, resets that Pressure system to zero,
+ * increments the encounter revision once, and emits one isolated audit event.
+ * A second breach in the same plan fails atomically until multi-breach
+ * orchestration is added.
  *
- * Hazard-engine persistence and collision policy, Void Scar proposals, ship
- * persistence, closeout behavior, lifecycle advancement, and public API
- * registration remain outside this operation.
+ * Hazard-engine persistence and collision policy, active Void Scar storage,
+ * hull capacity, operational and repair rules, ship persistence, closeout
+ * behavior, lifecycle advancement, and public API registration remain outside
+ * this operation.
  */
 export function applyVoyageEncounterPressureBreachPlan(state) {
   try {
@@ -796,6 +1089,44 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
           "pressure-breach-application-hazard-mismatch",
           "pressureBreachHazardPlan.hazard",
           "Pressure breach application Hazard does not match the authoritative Pressure breach."
+        )],
+        warnings
+      );
+    }
+
+    const voidScarProposalPlan =
+      analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(isolatedState);
+    warnings.push(...voidScarProposalPlan.warnings);
+    if (
+      !voidScarProposalPlan.readyForPressureBreachVoidScarProposalPlanning
+      || !voidScarProposalPlan.voidScarProposalRequired
+      || voidScarProposalPlan.voidScarProposalCount !== 1
+      || !voidScarProposalPlan.voidScarProposal
+    ) {
+      return breachApplicationFailure(
+        [
+          ...voidScarProposalPlan.errors,
+          breachApplicationIssue(
+            "pressure-breach-application-void-scar-proposal-not-ready",
+            "pressureBreachVoidScarProposalPlan",
+            "Pressure breach application requires one deterministic matching Void Scar proposal."
+          )
+        ],
+        warnings
+      );
+    }
+
+    const voidScarProposal = voidScarProposalPlan.voidScarProposal;
+    if (!pressureBreachVoidScarProposalMatches(
+      voidScarProposal,
+      breachPlan.breach,
+      hazard
+    )) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-void-scar-proposal-mismatch",
+          "pressureBreachVoidScarProposalPlan.voidScarProposal",
+          "Pressure breach application Void Scar proposal does not match the authoritative breach and Hazard."
         )],
         warnings
       );
@@ -987,6 +1318,7 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       appliedEffectCount: pressurePlan.pressureEffectCount,
       breach: clonePressureBreach(breach),
       hazard: clonePressureBreachHazard(hazard),
+      voidScarProposal: clonePressureBreachVoidScarProposal(voidScarProposal),
       pressureReset: {
         pressureBreachId: breach.pressureBreachId,
         pressureSystemId: breach.pressureSystemId,

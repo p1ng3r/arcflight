@@ -12,6 +12,7 @@ import { applyVoyageEncounterConsequencesTransition } from "../../../scripts/voy
 import {
   analyzeVoyageEncounterPressureBreachPlan,
   analyzeVoyageEncounterPressureBreachHazardPlan,
+  analyzeVoyageEncounterPressureBreachVoidScarProposalPlan,
   applyVoyageEncounterPressureBreachPlan
 } from "../../../scripts/voyage/domain/pressure-breach.js";
 
@@ -284,61 +285,121 @@ const HAZARD_KEYS = [
   "name"
 ];
 
-test("builds one exact deterministic active system Hazard for a standard Pressure breach", () => {
+
+function voidScarId(breach) {
+  return `arcflight-void-scar:${JSON.stringify([
+    "pressure-breach",
+    breach.pressureBreachId
+  ])}`;
+}
+
+function voidScarProposalId(breach) {
+  return `arcflight-void-scar-proposal:${JSON.stringify([
+    "pressure-breach",
+    breach.pressureBreachId
+  ])}`;
+}
+
+const VOID_SCAR_REPORT_KEYS = [
+  "structurallyValid",
+  "breachPlanReady",
+  "hazardPlanReady",
+  "readyForPressureBreachVoidScarProposalPlanning",
+  "voidScarProposalRequired",
+  "voidScarProposalCount",
+  "voidScarProposal",
+  "errors",
+  "warnings"
+];
+
+const VOID_SCAR_PROPOSAL_KEYS = [
+  "voidScarProposalId",
+  "voidScarId",
+  "pressureBreachId",
+  "hazardId",
+  "encounterId",
+  "stageId",
+  "roundNumber",
+  "effectIndex",
+  "sequence",
+  "stationId",
+  "actionId",
+  "pressureSystemId",
+  "consequenceKind",
+  "status",
+  "persistence",
+  "sourceKind",
+  "pressureEffectId",
+  "sourceIntentId",
+  "activationSource",
+  "branch",
+  "timing",
+  "visibility",
+  "name"
+];
+
+test("builds one exact deterministic lasting Void Scar proposal for a standard Pressure breach", () => {
   const source = setPressure(oneCheckConsequences("failure"), "crew-morale", 2);
   const before = structuredClone(source);
   const breachPlan = analyzeVoyageEncounterPressureBreachPlan(source);
+  const hazardPlan = analyzeVoyageEncounterPressureBreachHazardPlan(source);
 
-  const first = analyzeVoyageEncounterPressureBreachHazardPlan(source);
-  const second = analyzeVoyageEncounterPressureBreachHazardPlan(source);
+  const first = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(source);
+  const second = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(source);
 
   assert.deepEqual(first, second);
   assert.deepEqual(source, before);
-  assertExactKeys(first, HAZARD_REPORT_KEYS);
+  assertExactKeys(first, VOID_SCAR_REPORT_KEYS);
   assert.equal(first.structurallyValid, true);
   assert.equal(first.breachPlanReady, true);
-  assert.equal(first.readyForPressureBreachHazardPlanning, true);
-  assert.equal(first.hazardRequired, true);
-  assert.equal(first.hazardCount, 1);
+  assert.equal(first.hazardPlanReady, true);
+  assert.equal(first.readyForPressureBreachVoidScarProposalPlanning, true);
+  assert.equal(first.voidScarProposalRequired, true);
+  assert.equal(first.voidScarProposalCount, 1);
   assert.deepEqual(first.errors, []);
-  assertExactKeys(first.hazard, HAZARD_KEYS);
-  assert.equal(first.hazard.hazardId, pressureBreachHazardId(breachPlan.breach));
-  assert.equal(first.hazard.pressureBreachId, breachPlan.breach.pressureBreachId);
-  assert.equal(first.hazard.encounterId, breachPlan.breach.encounterId);
-  assert.equal(first.hazard.stageId, breachPlan.breach.stageId);
-  assert.equal(first.hazard.roundNumber, breachPlan.breach.roundNumber);
-  assert.equal(first.hazard.effectIndex, breachPlan.breach.effectIndex);
-  assert.equal(first.hazard.sequence, breachPlan.breach.sequence);
-  assert.equal(first.hazard.stationId, "captain");
-  assert.equal(first.hazard.actionId, breachPlan.breach.actionId);
-  assert.equal(first.hazard.pressureSystemId, "crew-morale");
-  assert.equal(first.hazard.category, "system");
-  assert.equal(first.hazard.status, "active");
-  assert.equal(first.hazard.sourceKind, "pressure-breach");
-  assert.equal(first.hazard.pressureEffectId, breachPlan.breach.pressureEffectId);
-  assert.equal(first.hazard.sourceIntentId, null);
-  assert.equal(first.hazard.activationSource, null);
-  assert.equal(first.hazard.branch, "failure");
-  assert.equal(first.hazard.timing, "consequences");
-  assert.equal(first.hazard.visibility, "public");
-  assert.equal(first.hazard.name, "Crew Morale Breach");
-  assert.notEqual(first.hazard, second.hazard);
+  assertExactKeys(first.voidScarProposal, VOID_SCAR_PROPOSAL_KEYS);
+  assert.equal(first.voidScarProposal.voidScarProposalId, voidScarProposalId(breachPlan.breach));
+  assert.equal(first.voidScarProposal.voidScarId, voidScarId(breachPlan.breach));
+  assert.equal(first.voidScarProposal.pressureBreachId, breachPlan.breach.pressureBreachId);
+  assert.equal(first.voidScarProposal.hazardId, hazardPlan.hazard.hazardId);
+  assert.equal(first.voidScarProposal.encounterId, breachPlan.breach.encounterId);
+  assert.equal(first.voidScarProposal.stageId, breachPlan.breach.stageId);
+  assert.equal(first.voidScarProposal.roundNumber, breachPlan.breach.roundNumber);
+  assert.equal(first.voidScarProposal.effectIndex, breachPlan.breach.effectIndex);
+  assert.equal(first.voidScarProposal.sequence, breachPlan.breach.sequence);
+  assert.equal(first.voidScarProposal.stationId, "captain");
+  assert.equal(first.voidScarProposal.actionId, breachPlan.breach.actionId);
+  assert.equal(first.voidScarProposal.pressureSystemId, "crew-morale");
+  assert.equal(first.voidScarProposal.consequenceKind, "void-scar");
+  assert.equal(first.voidScarProposal.status, "proposed");
+  assert.equal(first.voidScarProposal.persistence, "lasting");
+  assert.equal(first.voidScarProposal.sourceKind, "pressure-breach");
+  assert.equal(first.voidScarProposal.pressureEffectId, breachPlan.breach.pressureEffectId);
+  assert.equal(first.voidScarProposal.sourceIntentId, null);
+  assert.equal(first.voidScarProposal.activationSource, null);
+  assert.equal(first.voidScarProposal.branch, "failure");
+  assert.equal(first.voidScarProposal.timing, "consequences");
+  assert.equal(first.voidScarProposal.visibility, "public");
+  assert.equal(first.voidScarProposal.name, "Crew Morale Void Scar");
+  assert.notEqual(first.voidScarProposal, second.voidScarProposal);
 });
 
-test("authored cross-system breaches preserve source metadata and use the matching system Hazard name", () => {
+test("authored cross-system breaches preserve source metadata and match the Hazard identity", () => {
   const source = oneNoRollConsequences([
     pressureRule("lifeveil-breach", { kind: "pressure-system", targetId: "lifeveil" }, 1)
   ]);
   setPressure(source, "lifeveil", 2);
   const breachPlan = analyzeVoyageEncounterPressureBreachPlan(source);
+  const hazardPlan = analyzeVoyageEncounterPressureBreachHazardPlan(source);
 
-  const report = analyzeVoyageEncounterPressureBreachHazardPlan(source);
+  const report = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(source);
 
-  assert.equal(report.readyForPressureBreachHazardPlanning, true);
-  assert.equal(report.hazardRequired, true);
-  assert.equal(report.hazardCount, 1);
-  assert.equal(report.hazard.pressureSystemId, "lifeveil");
-  assert.equal(report.hazard.name, "Lifeveil Breach");
+  assert.equal(report.readyForPressureBreachVoidScarProposalPlanning, true);
+  assert.equal(report.voidScarProposalRequired, true);
+  assert.equal(report.voidScarProposalCount, 1);
+  assert.equal(report.voidScarProposal.pressureSystemId, "lifeveil");
+  assert.equal(report.voidScarProposal.name, "Lifeveil Void Scar");
+  assert.equal(report.voidScarProposal.hazardId, hazardPlan.hazard.hazardId);
   for (const key of [
     "pressureBreachId",
     "encounterId",
@@ -356,17 +417,17 @@ test("authored cross-system breaches preserve source metadata and use the matchi
     "timing",
     "visibility"
   ]) {
-    assert.equal(report.hazard[key], breachPlan.breach[key], key);
+    assert.equal(report.voidScarProposal[key], breachPlan.breach[key], key);
   }
 });
 
-test("all five canonical Pressure systems create stable matching Hazard identities", () => {
+test("all five canonical Pressure systems create stable matching Void Scar proposal identities", () => {
   const cases = [
-    ["captain", "crew-morale", "Crew Morale Breach"],
-    ["engineer", "arkengine", "Arkengine Breach"],
-    ["navigator", "levstone-array", "Levstone Array Breach"],
-    ["watchmaster", "solar-sail-rig", "Solar Sail Rig Breach"],
-    ["veilwarden", "lifeveil", "Lifeveil Breach"]
+    ["captain", "crew-morale", "Crew Morale Void Scar"],
+    ["engineer", "arkengine", "Arkengine Void Scar"],
+    ["navigator", "levstone-array", "Levstone Array Void Scar"],
+    ["watchmaster", "solar-sail-rig", "Solar Sail Rig Void Scar"],
+    ["veilwarden", "lifeveil", "Lifeveil Void Scar"]
   ];
 
   for (const [stationId, pressureSystemId, name] of cases) {
@@ -375,28 +436,30 @@ test("all five canonical Pressure systems create stable matching Hazard identiti
     ], stationId);
     setPressure(source, pressureSystemId, 2);
 
-    const report = analyzeVoyageEncounterPressureBreachHazardPlan(source);
+    const report = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(source);
 
-    assert.equal(report.hazardRequired, true, pressureSystemId);
-    assert.equal(report.hazard.pressureSystemId, pressureSystemId);
-    assert.equal(report.hazard.name, name);
-    assert.equal(report.hazard.category, "system");
-    assert.equal(report.hazard.status, "active");
+    assert.equal(report.voidScarProposalRequired, true, pressureSystemId);
+    assert.equal(report.voidScarProposal.pressureSystemId, pressureSystemId);
+    assert.equal(report.voidScarProposal.name, name);
+    assert.equal(report.voidScarProposal.consequenceKind, "void-scar");
+    assert.equal(report.voidScarProposal.status, "proposed");
+    assert.equal(report.voidScarProposal.persistence, "lasting");
   }
 });
 
-test("no-breach, not-ready, and invalid states fail closed without partial Hazard records", () => {
+test("no-breach, not-ready, and invalid states fail closed without partial Void Scar proposals", () => {
   const safe = setPressure(oneNoRollConsequences([
     pressureRule("safe-pressure", { kind: "source-station" }, 1)
   ]), "crew-morale", 0);
-  const safeReport = analyzeVoyageEncounterPressureBreachHazardPlan(safe);
-  assertExactKeys(safeReport, HAZARD_REPORT_KEYS);
+  const safeReport = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(safe);
+  assertExactKeys(safeReport, VOID_SCAR_REPORT_KEYS);
   assert.equal(safeReport.structurallyValid, true);
   assert.equal(safeReport.breachPlanReady, true);
-  assert.equal(safeReport.readyForPressureBreachHazardPlanning, true);
-  assert.equal(safeReport.hazardRequired, false);
-  assert.equal(safeReport.hazardCount, 0);
-  assert.equal(safeReport.hazard, null);
+  assert.equal(safeReport.hazardPlanReady, true);
+  assert.equal(safeReport.readyForPressureBreachVoidScarProposalPlanning, true);
+  assert.equal(safeReport.voidScarProposalRequired, false);
+  assert.equal(safeReport.voidScarProposalCount, 0);
+  assert.equal(safeReport.voidScarProposal, null);
   assert.deepEqual(safeReport.errors, []);
 
   const notReady = encounterState({
@@ -408,23 +471,26 @@ test("no-breach, not-ready, and invalid states fail closed without partial Hazar
       captain: { stationId: "captain", actionId: "not-ready" }
     }
   });
-  const notReadyReport = analyzeVoyageEncounterPressureBreachHazardPlan(notReady);
+  const notReadyReport = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(notReady);
   assert.equal(notReadyReport.breachPlanReady, false);
-  assert.equal(notReadyReport.readyForPressureBreachHazardPlanning, false);
-  assert.equal(notReadyReport.hazardRequired, false);
-  assert.equal(notReadyReport.hazardCount, 0);
-  assert.equal(notReadyReport.hazard, null);
-  assert.ok(notReadyReport.errors.some(({ code }) => code === "pressure-breach-hazard-plan-breach-not-ready"));
+  assert.equal(notReadyReport.hazardPlanReady, false);
+  assert.equal(notReadyReport.readyForPressureBreachVoidScarProposalPlanning, false);
+  assert.equal(notReadyReport.voidScarProposalRequired, false);
+  assert.equal(notReadyReport.voidScarProposalCount, 0);
+  assert.equal(notReadyReport.voidScarProposal, null);
+  assert.ok(notReadyReport.errors.some(({ code }) => (
+    code === "pressure-breach-void-scar-plan-breach-not-ready"
+  )));
 
   const invalid = oneNoRollConsequences([]);
   invalid.pressureSystems["crew-morale"].value = 99;
-  const invalidReport = analyzeVoyageEncounterPressureBreachHazardPlan(invalid);
+  const invalidReport = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(invalid);
   assert.equal(invalidReport.breachPlanReady, false);
-  assert.equal(invalidReport.hazard, null);
+  assert.equal(invalidReport.voidScarProposal, null);
   assert.ok(invalidReport.errors.some(({ code }) => code === "pressure-breach-plan-state-invalid"));
 });
 
-test("Hazard planning rejects hostile caller data without executing getters or Proxy get traps", () => {
+test("Void Scar proposal planning rejects hostile caller data without executing getters or Proxy get traps", () => {
   const base = setPressure(oneNoRollConsequences([
     pressureRule("breach", { kind: "source-station" }, 1)
   ]), "crew-morale", 2);
@@ -440,10 +506,12 @@ test("Hazard planning rejects hostile caller data without executing getters or P
       return { stageId: "hostile" };
     }
   });
-  const accessorReport = analyzeVoyageEncounterPressureBreachHazardPlan(accessor);
-  assert.equal(accessorReport.readyForPressureBreachHazardPlanning, false);
-  assert.equal(accessorReport.hazard, null);
-  assert.ok(accessorReport.errors.some(({ code }) => code === "pressure-breach-hazard-plan-data-read-failed"));
+  const accessorReport = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(accessor);
+  assert.equal(accessorReport.readyForPressureBreachVoidScarProposalPlanning, false);
+  assert.equal(accessorReport.voidScarProposal, null);
+  assert.ok(accessorReport.errors.some(({ code }) => (
+    code === "pressure-breach-void-scar-plan-data-read-failed"
+  )));
   assert.equal(getterReads, 0);
 
   let proxyReads = 0;
@@ -453,27 +521,29 @@ test("Hazard planning rejects hostile caller data without executing getters or P
       return Reflect.get(target, key, receiver);
     }
   });
-  const proxyReport = analyzeVoyageEncounterPressureBreachHazardPlan(proxy);
-  assert.equal(proxyReport.readyForPressureBreachHazardPlanning, true);
-  assert.equal(proxyReport.hazardRequired, true);
+  const proxyReport = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(proxy);
+  assert.equal(proxyReport.readyForPressureBreachVoidScarProposalPlanning, true);
+  assert.equal(proxyReport.voidScarProposalRequired, true);
   assert.equal(proxyReads, 0);
 
   const cyclic = structuredClone(base);
   cyclic.metadata.cycle = cyclic.metadata;
-  const first = analyzeVoyageEncounterPressureBreachHazardPlan(cyclic);
-  const second = analyzeVoyageEncounterPressureBreachHazardPlan(cyclic);
+  const first = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(cyclic);
+  const second = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(cyclic);
   assert.deepEqual(first, second);
-  assert.equal(first.hazard, null);
-  assert.ok(first.errors.some(({ code }) => code === "pressure-breach-hazard-plan-data-read-failed"));
+  assert.equal(first.voidScarProposal, null);
+  assert.ok(first.errors.some(({ code }) => (
+    code === "pressure-breach-void-scar-plan-data-read-failed"
+  )));
   assert.deepEqual(base, before);
 });
 
-test("successful breach application emits one exact isolated matching Hazard while active storage remains deferred", () => {
+test("successful breach application emits one isolated matching proposal without active Scar persistence", () => {
   const source = setPressure(oneNoRollConsequences([
     pressureRule("breach", { kind: "source-station" }, 1)
   ]), "crew-morale", 2);
   const before = structuredClone(source);
-  const hazardPlan = analyzeVoyageEncounterPressureBreachHazardPlan(source);
+  const proposalPlan = analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(source);
 
   const first = applyVoyageEncounterPressureBreachPlan(source);
   const second = applyVoyageEncounterPressureBreachPlan(source);
@@ -482,20 +552,26 @@ test("successful breach application emits one exact isolated matching Hazard whi
   assert.deepEqual(first, second);
   assert.deepEqual(source, before);
   assert.equal(first.events.length, 1);
-  assert.deepEqual(first.events[0].hazard, hazardPlan.hazard);
-  assert.notEqual(first.events[0].hazard, hazardPlan.hazard);
-  assert.notEqual(first.events[0].hazard, second.events[0].hazard);
-  assert.equal(first.events[0].hazard.pressureBreachId, first.events[0].breach.pressureBreachId);
-  assert.equal(first.events[0].hazard.pressureSystemId, first.events[0].breach.pressureSystemId);
-  assert.equal(first.events[0].voidScarProposal.hazardId, first.events[0].hazard.hazardId);
-  assert.equal(Object.hasOwn(first.nextState, "hazards"), false);
-  assert.equal(Object.hasOwn(first, "hazard"), false);
-  assert.equal(Object.hasOwn(first, "hazards"), false);
+  assert.deepEqual(first.events[0].voidScarProposal, proposalPlan.voidScarProposal);
+  assert.notEqual(first.events[0].voidScarProposal, proposalPlan.voidScarProposal);
+  assert.notEqual(first.events[0].voidScarProposal, second.events[0].voidScarProposal);
+  assert.equal(
+    first.events[0].voidScarProposal.pressureBreachId,
+    first.events[0].breach.pressureBreachId
+  );
+  assert.equal(
+    first.events[0].voidScarProposal.hazardId,
+    first.events[0].hazard.hazardId
+  );
+  assert.equal(Object.hasOwn(first, "voidScarProposal"), false);
+  assert.equal(Object.hasOwn(first.nextState, "voidScars"), false);
+  assert.deepEqual(first.nextState.permanentConsequences, source.permanentConsequences);
 
   for (const key of [
     "voidScar",
     "voidScars",
-    "permanentConsequenceProposal",
+    "hullCapacity",
+    "repair",
     "closeout",
     "persistence"
   ]) {
@@ -503,11 +579,11 @@ test("successful breach application emits one exact isolated matching Hazard whi
     assert.equal(Object.hasOwn(first.events[0], key), false, `event.${key}`);
   }
 
-  first.events[0].hazard.name = "Mutated";
-  assert.equal(second.events[0].hazard.name, "Crew Morale Breach");
+  first.events[0].voidScarProposal.name = "Mutated";
+  assert.equal(second.events[0].voidScarProposal.name, "Crew Morale Void Scar");
 });
 
-test("a deferred second breach produces no Hazard creation event or partial state", () => {
+test("a deferred second breach produces no Void Scar proposal event or partial state", () => {
   const source = oneNoRollConsequences([
     pressureRule("first-breach", { kind: "source-station" }, 1),
     pressureRule("second-breach", { kind: "pressure-system", targetId: "lifeveil" }, 1)
@@ -521,6 +597,8 @@ test("a deferred second breach produces no Hazard creation event or partial stat
   assert.equal(result.ok, false);
   assert.equal(result.nextState, null);
   assert.deepEqual(result.events, []);
-  assert.ok(result.errors.some(({ code }) => code === "pressure-breach-application-multiple-breaches-deferred"));
+  assert.ok(result.errors.some(({ code }) => (
+    code === "pressure-breach-application-multiple-breaches-deferred"
+  )));
   assert.deepEqual(source, before);
 });
