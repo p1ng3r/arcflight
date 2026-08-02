@@ -17,6 +17,25 @@ import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state
 import { validateVoyageHazardRecord } from "../../../scripts/voyage/domain/hazard-schema.js";
 
 const [SYSTEM_A, SYSTEM_B] = VOYAGE_PRESSURE_SYSTEM_IDS;
+const ESCALATION_PLAN_KEYS = [
+  "collisionPolicy",
+  "encounterId",
+  "escalationConsequence",
+  "existingHazardId",
+  "existingHazardIndex",
+  "expectedRevision",
+  "incomingHazardId",
+  "kind",
+  "pressureSystemId",
+  "previousExistingHazard",
+  "previousStageId",
+  "prospectiveHazard",
+  "requestKind",
+  "requestedOperationId",
+  "requestedTargetStageId",
+  "skippedStages",
+  "targetStageId"
+];
 
 function timing() {
   return {
@@ -174,6 +193,8 @@ function assertReady(result) {
   assert.equal(result.errors.length, 0);
   assert.equal(result.warnings.length, 0);
   assert.equal(result.plan.kind, "escalation-ready");
+  assert.deepEqual(Object.keys(result.plan).sort(), ESCALATION_PLAN_KEYS);
+  assert.equal(result.plan.collisionPolicy, VOYAGE_HAZARD_COLLISION_POLICIES.ESCALATE_EXISTING);
 }
 
 test("valid targetStageId advances to a later authored stage", () => {
@@ -183,6 +204,18 @@ test("valid targetStageId advances to a later authored stage", () => {
   assert.equal(result.plan.requestKind, "target-stage");
   assert.equal(result.plan.targetStageId, "stage-20");
   assert.equal(result.plan.prospectiveHazard.escalation.currentStageId, "stage-20");
+});
+
+test("successful plans copy collisionPolicy from the validated Task 4A plan", () => {
+  const existing = stagedHazard();
+  const incoming = incomingForPayload({ targetStageId: "stage-20" });
+  const task4A = analyzeVoyageHazardCollisionPlan(stateWithHazard(existing), incoming);
+
+  assert.equal(task4A.plan.collisionPolicy, VOYAGE_HAZARD_COLLISION_POLICIES.ESCALATE_EXISTING);
+  const result = analyzeVoyageHazardStageEscalation(task4A.plan);
+
+  assertReady(result);
+  assert.equal(result.plan.collisionPolicy, task4A.plan.collisionPolicy);
 });
 
 test("explicit targetStageId may skip forward", () => {
@@ -288,6 +321,8 @@ test("advance-one-stage at the final stage returns maximum-escalation", () => {
   assert.equal(result.readyForHazardStageEscalation, true);
   assert.equal(result.outcome, "maximum-escalation");
   assert.equal(result.plan.kind, "maximum-escalation");
+  assert.deepEqual(Object.keys(result.plan).sort(), ESCALATION_PLAN_KEYS);
+  assert.equal(result.plan.collisionPolicy, VOYAGE_HAZARD_COLLISION_POLICIES.ESCALATE_EXISTING);
 });
 
 test("maximum outcome returns no prospective changed Hazard", () => {
