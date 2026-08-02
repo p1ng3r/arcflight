@@ -626,6 +626,26 @@ maximum-escalation outcome. Unknown operation IDs fail closed. Task 4B1 does
 not add advance-to-final-stage, arbitrary offsets, decrement, reset, custom
 script, or macro operations.
 
+#### Task 4B2 declarative plan provenance
+
+Every successful Task 4B2 declarative plan, including both `escalation-ready`
+and `maximum-escalation` plans, contains the exact plain-data field:
+
+~~~
+collisionPolicy: "escalate-existing"
+~~~
+
+Task 4B2 copies this field from the safely captured and validated Task 4A
+collision plan after confirming both `collisionPolicy` and
+`recommendedOperation` are `escalate-existing`. The field is independent
+plain-data evidence of the originating collision policy at later safe-data
+boundaries. It is not inferred from the existing Hazard's own
+`collisionPolicy`, does not authorize another collision operation, and is not
+added to the outer analysis result or invalid results.
+
+Manually authored Task 4B2-shaped data must still pass exact plan validation;
+the field is not a caller-supplied proof token.
+
 #### Successful stage transformation
 
 A successful stage transformation returns an isolated prospective active
@@ -716,6 +736,333 @@ application to encounter state, revision and event behavior,
 escalation-consequence execution, countdown collision semantics, and Pressure
 Breach same-slot integration. Executable consequence architecture remains
 deferred to Task 4E.
+
+### 11D. Task 4B3 stage-escalation state application
+
+Milestone 6 Task 4B3 defines the standalone, atomic application of a valid
+Task 4B2 `escalation-ready` result to an authoritative Voyage Encounter state.
+It validates the live state and declarative plan, applies one approved stage
+transformation at the plan's authored collection index, increments revision
+once, and emits one `voyage.hazard-escalated` event.
+
+Task 4B3 does not perform collision analysis, select a stage, handle a
+maximum-escalation consequence, execute any consequence, process countdown
+escalation, integrate Pressure Breach collisions, process timing, perform
+Address Hazard, close out, resolve, expire, replace, or extend a Hazard, add
+Pressure, persist a Void Scar, or define UI, sockets, authority, persistence
+adapters, or Foundry registration.
+
+#### Accepted result and application boundary
+
+The standalone application boundary is conceptually equivalent to:
+
+~~~
+applyVoyageHazardStageEscalationPlan(encounterState, escalationResult)
+~~~
+
+The JavaScript name remains subject to repository implementation convention;
+this contract fixes the behavior and result shape rather than adding a public
+API during Task 4B3 contract work.
+
+The application accepts only a Task 4B2 result with:
+
+- `structurallyValid: true`;
+- `readyForHazardStageEscalation: true`;
+- `outcome: "escalation-ready"`;
+- an isolated declarative `plan`; and
+- no errors.
+
+The actual committed Task 4B2 plan field for the expected pre-application
+snapshot is `previousExistingHazard`. Task 4B3 uses that exact field name; it
+does not introduce a `previousHazard` plan alias. The plan must retain the
+Task 4B2 shape and values, including `existingHazardIndex`, request details,
+`previousExistingHazard`, and `prospectiveHazard`.
+
+The exact accepted plan shape is:
+
+~~~
+{
+  kind: "escalation-ready",
+  encounterId,
+  expectedRevision,
+  incomingHazardId,
+  existingHazardId,
+  existingHazardIndex,
+  pressureSystemId,
+  collisionPolicy: "escalate-existing",
+  requestKind,
+  requestedTargetStageId,
+  requestedOperationId,
+  previousStageId,
+  targetStageId,
+  skippedStages,
+  previousExistingHazard,
+  prospectiveHazard,
+  escalationConsequence: null
+}
+~~~
+
+`requestKind` is exactly `target-stage` or `operation`. The non-applicable
+request field is null, as defined by Task 4B2. The application requires
+`collisionPolicy === "escalate-existing"` as an exact plan field. A missing
+or different value, or an extra replacement field intended to substitute for
+it, fails exact plan validation. The field is copied from the validated Task
+4A collision plan; it is not inferred from the existing Hazard's own
+`collisionPolicy`.
+
+The application rejects `maximum-escalation`,
+`invalid-or-not-applicable`, null results, missing plans, malformed plans,
+wrong collision policies, and plans without a prospective Hazard. A
+maximum-escalation result is declarative only: it causes no state mutation, no
+revision change, no event, and no incoming-Hazard persistence.
+
+#### Safe application boundary
+
+Before semantic reads, the application safely captures and isolates the
+encounter state, application result, Task 4B2 plan, previous snapshot,
+prospective snapshot, identifiers, and request details using the existing
+Milestone 6 safe plain-data boundary and validators.
+
+It rejects accessors, unsafe keys, inherited or non-enumerable required data,
+cycles, sparse arrays, symbols, unsupported objects, hostile Proxy reflection
+failures, coercion hooks, and other unsafe data. Hostile input is rejected
+before normalization or application. No raw JavaScript or Proxy exception
+text is exposed, and no partial state or event is returned.
+
+#### State preconditions and stale plans
+
+Application succeeds only when:
+
+1. The encounter state is structurally valid.
+2. The state `encounterId` equals the plan `encounterId`.
+3. The state `revision` equals `expectedRevision` exactly.
+4. The state revision is a non-negative safe integer and
+   `revision + 1` remains a safe integer.
+5. `existingHazardIndex` is a non-negative safe integer that identifies a
+   current entry of `activeHazards`.
+6. The indexed live Hazard is active, has category `system`, has
+   `hazardId === existingHazardId`, has the plan encounter ID, and has the
+   plan `pressureSystemId`.
+7. The indexed live Hazard is semantically equal to the isolated
+   `previousExistingHazard` snapshot. Semantic safe-data equality means:
+   complete recursive equality of safely captured plain-data values;
+   identical own enumerable string-key sets at every object level; identical
+   array lengths, occupied indexes, and element ordering; primitive equality
+   without caller coercion; and no object-identity requirement. Unsupported
+   prototype identity is irrelevant after the safe plain-object boundary has
+   rejected unsupported prototypes. No Hazard field is ignored: current
+   effects, ignored consequences, escalation, duration, metadata, provenance,
+   creation fields, category-specific fields, terminal fields, and every other
+   Hazard field are included. Symbols, accessors, inherited or non-enumerable
+   properties, sparse arrays, unsafe keys, and unsupported values are rejected
+   at safe capture and are not equality inputs. Equality must not call
+   `toString`, `valueOf`, `Symbol.toPrimitive`, iterators, or user functions;
+   it is deterministic and fails closed if either value cannot be safely
+   captured or compared.
+8. The prospective Hazard is active, has category `system`, has the same
+   `hazardId`, encounter ID, and Pressure-system ID as the live Hazard, and
+   passes active Hazard validation.
+9. The prospective Hazard may differ from `previousExistingHazard` only at
+   these four authorized paths:
+   `escalation.currentStageId`, `currentEffect`, `ignoredConsequence`, and
+   `escalation.maximumEscalationReached`. Values outside these paths must
+   remain semantically equal. One or more authorized paths may retain an equal
+   value; all four values are not required to differ, and stages may reuse
+   semantically identical effect or ignored-consequence descriptors.
+10. `incomingHazardId` remains distinct from the active existing Hazard ID.
+
+Any revision mismatch, changed encounter ID, invalid index, moved or missing
+Hazard, changed Hazard ID, changed Pressure-system slot, changed live snapshot,
+invalid prospective Hazard, unauthorized prospective change, or failed final
+state validation is a stale or invalid application. The application must not
+search for the Hazard at another index and must not silently reapply a stale
+plan. The plan must be recalculated through Task 4A and Task 4B2.
+
+Every failed precondition returns no next state, no event, no revision change,
+and no collection mutation.
+
+#### Atomic state transformation
+
+After all preconditions pass, the application constructs an isolated candidate
+state and replaces exactly:
+
+~~~
+nextState.activeHazards[existingHazardIndex]
+~~~
+
+with an isolated copy of `prospectiveHazard`. The incoming Hazard is never
+appended or persisted.
+
+The candidate preserves the active-Hazard collection length and order, every
+other Hazard, Pressure, Momentum, encounter phase, round and stage context,
+and all unrelated encounter fields. The escalated Hazard remains the same
+logical active Hazard in the same Pressure-system slot and collection index.
+
+The candidate then sets:
+
+~~~
+nextState.revision = previousRevision + 1
+~~~
+
+The candidate must pass complete Voyage Encounter state validation. If that
+validation fails, the operation returns no candidate state or event. The
+caller state, plan, snapshots, collection, Hazards, and nested descriptors are
+never mutated.
+
+#### Result shape
+
+The application follows the existing Voyage transition/application result
+convention:
+
+~~~
+{
+  ok: true,
+  nextState: isolatedNextState,
+  events: [isolatedHazardEscalatedEvent],
+  errors: [],
+  warnings: []
+}
+~~~
+
+Failed application:
+
+~~~
+{
+  ok: false,
+  nextState: null,
+  events: [],
+  errors: isolatedDeterministicErrors,
+  warnings: []
+}
+~~~
+
+No partial candidate, event, or revision output is exposed on failure.
+
+#### `voyage.hazard-escalated` event
+
+A successful standalone Task 4B3 application emits exactly one event of the
+existing committed type `voyage.hazard-escalated`. It emits no Hazard-created,
+consequence-triggered, Pressure-Breach, generic-collision, or revision-only
+event.
+
+The event has exactly this shape for both request forms:
+
+~~~
+{
+  type: "voyage.hazard-escalated",
+  encounterId,
+  hazardId,
+  pressureSystemId,
+  incomingHazardId,
+  collisionPolicy: "escalate-existing",
+  previousRevision,
+  revision,
+  previousStageId,
+  targetStageId,
+  requestKind,
+  requestedTargetStageId,
+  operationId,
+  skippedStages,
+  previousHazard,
+  hazard
+}
+~~~
+
+`encounterId` comes from the validated live state and matching plan.
+`hazardId` is the existing and prospective Hazard ID.
+`pressureSystemId` is the occupied system slot. `incomingHazardId` identifies
+the collision source that was not persisted. `previousRevision` is the input
+revision and `revision` is exactly one greater.
+
+The event `collisionPolicy` is copied from the validated Task 4B2 plan and is
+therefore exactly `"escalate-existing"`; it is not an unsupported hardcoded
+inference.
+
+`previousStageId`, `targetStageId`, `requestKind`,
+`requestedTargetStageId`, `operationId`, and `skippedStages` come from the
+validated Task 4B2 plan. `requestKind` is exactly `target-stage` or
+`operation`; `requestedTargetStageId` is null for operation requests;
+`operationId` is `advance-one-stage` for operation requests and null for
+target-stage requests.
+
+`previousHazard` is an isolated pre-application active snapshot derived from
+`previousExistingHazard`. `hazard` is an isolated post-application active
+snapshot derived from the candidate state. Both snapshots contain the exact
+validated Hazard shape.
+
+The event, next state, plan snapshots, caller state, and separate application
+results must not share mutable references. Mutating `event.previousHazard`,
+`event.hazard`, or `nextState.activeHazards` must not mutate any other returned
+or caller-owned structure.
+
+#### Application diagnostics
+
+Failures use isolated deterministic issues of the form
+`{ severity, code, path, message }`. The canonical proposed codes are:
+
+- `hazard-stage-escalation-application-data-read-failed` for hostile or
+  unreadable application input;
+- `hazard-stage-escalation-application-state-invalid` for invalid encounter
+  state;
+- `hazard-stage-escalation-application-plan-invalid` for malformed or
+  inconsistent Task 4B2 plans;
+- `hazard-stage-escalation-application-not-ready` for non-
+  `escalation-ready` results;
+- `hazard-stage-escalation-application-encounter-mismatch` for differing
+  encounter IDs;
+- `hazard-stage-escalation-application-revision-mismatch` for stale revision;
+- `hazard-stage-escalation-application-index-invalid` for an invalid or
+  unusable `existingHazardIndex`;
+- `hazard-stage-escalation-application-live-hazard-mismatch` for a missing or
+  mismatched live Hazard;
+- `hazard-stage-escalation-application-snapshot-mismatch` when the live
+  snapshot differs from `previousExistingHazard`;
+- `hazard-stage-escalation-application-prospective-invalid` for an invalid
+  prospective active Hazard;
+- `hazard-stage-escalation-application-change-set-invalid` for unauthorized
+  prospective changes;
+- `hazard-stage-escalation-application-revision-overflow` when the single
+  revision increment is not safe; and
+- `hazard-stage-escalation-application-result-state-invalid` when the complete
+  candidate state fails final validation.
+
+No failure event is emitted. Paths identify the state, result, plan, indexed
+Hazard, snapshot, prospective Hazard, revision, or candidate state that caused
+the failure.
+
+#### Standalone and embedded transaction boundaries
+
+Standalone Task 4B3 application owns exactly one revision increment and one
+`voyage.hazard-escalated` event. A later Pressure Breach integration must not
+call this standalone wrapper if doing so would create a second revision or
+second event. It must reuse the pure validated transformation boundary inside
+its existing atomic transaction.
+
+The existing exact `voyage.pressure-breach-applied` event remains protected.
+Task 4B3 does not change Pressure Breach behavior and does not add flags such
+as `suppressEvent`, `suppressRevision`, `embeddedMode`, or
+`pressureBreachMode`.
+
+#### Collection, lifecycle, and deferred ownership
+
+After successful application:
+
+- `activeHazards` length and order are unchanged;
+- the escalated Hazard remains active at the same index and system slot;
+- no terminal snapshot is produced;
+- no Hazard is resolved, expired, or replaced;
+- no incoming Hazard is persisted; and
+- one-active-system-Hazard-per-slot validation continues to hold.
+
+Task 4B3 leaves later ownership of implementation and focused tests,
+maximum-escalation consequence processing, countdown semantics, replacement,
+duration extension, trigger-existing-consequence execution, add-pressure and
+deferred Breaches, Pressure Breach same-slot integration, timing, Address
+Hazard, closeout, and lifecycle transitions unchanged.
+
+The operation is deterministic, fail-closed, isolated, atomic, one-revision,
+and one-event. Repeated equivalent valid inputs produce deeply equivalent
+results, and separate calls do not alias.
 
 ## 12. Validation contract
 
