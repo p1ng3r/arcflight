@@ -76,6 +76,64 @@ export const VOYAGE_EFFECT_INTENT_TIMING = Object.freeze({ CONSEQUENCES: "conseq
 export const VOYAGE_EFFECT_INTENT_VISIBILITY = Object.freeze({ PUBLIC: "public", GM_SECRET: "gm-secret" });
 export const VOYAGE_EFFECT_TARGET_KINDS = Object.freeze({ ENCOUNTER: "encounter", CURRENT_STAGE: "current-stage", PRIMARY_SHIP: "primary-ship", SOURCE_STATION: "source-station", SELECTED_TARGET: "selected-target", TRACK: "track", PARTICIPANT: "participant", STATION: "station", PRESSURE_SYSTEM: "pressure-system", HAZARD: "hazard" });
 
+export const VOYAGE_HAZARD_CATEGORIES = Object.freeze({
+  SYSTEM: "system",
+  EVENT: "event"
+});
+
+export const VOYAGE_HAZARD_STATUSES = Object.freeze({
+  ACTIVE: "active",
+  RESOLVED: "resolved",
+  EXPIRED: "expired",
+  REPLACED: "replaced"
+});
+
+export const VOYAGE_HAZARD_VISIBILITY = Object.freeze({
+  PUBLIC: "public",
+  GM_SECRET: "gm-secret"
+});
+
+export const VOYAGE_HAZARD_TIMING_KINDS = Object.freeze({
+  IMMEDIATE: "immediate",
+  BEFORE_NEXT_STATION: "before-next-station",
+  START_OF_NEXT_ROUND: "start-of-next-round",
+  END_OF_ROUND: "end-of-round",
+  NAMED_STATION_ACTIVATION: "named-station-activation",
+  SPECIFIED_RESULT: "specified-result",
+  EVENT_CLOSEOUT: "event-closeout"
+});
+
+export const VOYAGE_HAZARD_COLLISION_POLICIES = Object.freeze({
+  ESCALATE_EXISTING: "escalate-existing",
+  REPLACE_EXISTING: "replace-existing",
+  TRIGGER_EXISTING_CONSEQUENCE: "trigger-existing-consequence",
+  EXTEND_DURATION: "extend-duration",
+  ADD_PRESSURE: "add-pressure"
+});
+
+export const VOYAGE_HAZARD_ESCALATION_MODES = Object.freeze({
+  NONE: "none",
+  STAGES: "stages",
+  COUNTDOWN: "countdown"
+});
+
+export const VOYAGE_HAZARD_DURATION_MODES = Object.freeze({
+  NONE: "none",
+  ROUNDS: "rounds",
+  ACTIVATIONS: "activations"
+});
+
+export const VOYAGE_HAZARD_EVENT_TYPES = Object.freeze({
+  CREATED: "voyage.hazard-created",
+  ESCALATED: "voyage.hazard-escalated",
+  REPLACED: "voyage.hazard-replaced",
+  CONSEQUENCE_TRIGGERED: "voyage.hazard-consequence-triggered",
+  DURATION_EXTENDED: "voyage.hazard-duration-extended",
+  RESOLVED: "voyage.hazard-resolved",
+  EXPIRED: "voyage.hazard-expired",
+  CLOSEOUT_CONSEQUENCE_APPLIED: "voyage.hazard-closeout-consequence-applied"
+});
+
 export const VOYAGE_TRACK_VISIBILITY = Object.freeze({
   EXACT: "exact",
   DESCRIPTIVE: "descriptive",
