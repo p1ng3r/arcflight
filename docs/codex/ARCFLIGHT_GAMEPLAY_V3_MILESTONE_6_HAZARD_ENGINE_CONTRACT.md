@@ -517,6 +517,50 @@ no timing, collision, removal, Address Hazard, or closeout behavior. Collision
 execution remains Task 4, timing execution remains Task 5, Address Hazard
 execution remains Task 6, and ignored-consequence closeout remains Task 7.
 
+### 11B. Task 4A pure Hazard collision analysis
+
+Milestone 6 Task 4A owns only pure, deterministic analysis of an incoming
+Hazard against the authoritative active Hazard collection. It identifies a
+collision and returns an isolated declarative plan for a later operation. It
+does not execute the plan or make any unresolved gameplay decision.
+
+The incoming Hazard owns the `collisionPolicy`, `metadata.collision`, and the
+requested collision operation. The existing Hazard supplies its current active
+record, escalation state, duration state, current effect, and authored
+consequences. Task 4A does not decide which existing consequence is executable.
+
+When no occupied system slot exists, analysis returns a `no-collision` plan
+whose recommended later action is `persist-incoming`. Task 4A does not persist
+the incoming Hazard; the committed Task 3 path remains responsible for
+ordinary persistence.
+
+When a valid incoming system Hazard targets a Pressure-system slot already
+occupied by an active system Hazard, analysis returns a `collision` plan with:
+
+- `encounterId`;
+- the expected `revision`;
+- the incoming Hazard ID;
+- the existing Hazard ID and its exact `activeHazards` collection index;
+- `pressureSystemId`;
+- the incoming `collisionPolicy`;
+- an isolated incoming collision payload;
+- isolated incoming and existing Hazard snapshots; and
+- one recommended operation matching exactly the incoming policy:
+  `escalate-existing`, `replace-existing`,
+  `trigger-existing-consequence`, `extend-duration`, or `add-pressure`.
+
+Event Hazards never occupy system slots. An event Hazard whose
+`failurePressureSystemId` matches a system Hazard therefore does not create a
+system collision, and Task 4A does not invent an event-area collision rule.
+
+The analysis plan is declarative only. It does not mutate state, persist or
+remove Hazards, execute consequences, change escalation, extend duration, add
+Pressure, reset Pressure, increment revision, emit an event, or create a Void
+Scar proposal. Later Task 4 phases own escalation execution, replacement
+resolution, consequence representation and execution, duration arithmetic,
+add-pressure and deferred-Breach handling, and Pressure Breach same-slot
+integration.
+
 ## 12. Validation contract
 
 Hazard validation is exact and fail-closed. It must:
