@@ -695,6 +695,16 @@ not-applicable conditions are errors. Paths identify the existing escalation
 field or incoming collision payload field that caused the outcome. No raw
 JavaScript or Proxy exception text is exposed.
 
+Prospective-validation clarification: the canonical diagnostic code for a
+prospective active-Hazard validation failure is
+`hazard-stage-escalation-result-invalid`. This is a defensive postcondition
+diagnostic. Under the current Task 1 descriptor schema, a fully valid source
+Hazard and target stage may make this branch unreachable through the public
+API. The branch remains implemented so future schema refinements fail closed.
+Direct behavioral coverage is required only when an accepted canonical input
+can naturally reach the branch. Tests must not weaken schema validation or
+introduce an artificial public test seam merely to force this diagnostic.
+
 Task 4B1 is a pure transformation or declarative-outcome boundary. It does
 not mutate encounter state or caller Hazard data, persist the incoming Hazard,
 update `activeHazards`, change Pressure or Momentum, reset Pressure, increment
