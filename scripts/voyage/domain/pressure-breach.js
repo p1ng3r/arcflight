@@ -2,6 +2,8 @@ import {
   VOYAGE_PERMANENT_CONSEQUENCE_STATUSES,
   VOYAGE_PRESSURE_SYSTEM_IDS
 } from "./constants.js";
+import { captureVoyageHazardRecord } from "./hazard-schema.js";
+import { getVoyagePressureBreachHazardDefinition } from "./pressure-breach-hazard-definitions.js";
 import { analyzeVoyageEncounterPressurePlan } from "./pressure.js";
 import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
 import { validateVoyageEncounterState } from "./validation.js";
@@ -17,6 +19,29 @@ const PRESSURE_BREACH_HAZARD_NAME_BY_SYSTEM_ID = Object.freeze({
   "solar-sail-rig": "Solar Sail Rig Breach",
   lifeveil: "Lifeveil Breach"
 });
+const PRESSURE_BREACH_SPARSE_HAZARD_FIELDS = Object.freeze([
+  "hazardId",
+  "pressureBreachId",
+  "encounterId",
+  "stageId",
+  "roundNumber",
+  "effectIndex",
+  "sequence",
+  "stationId",
+  "actionId",
+  "pressureSystemId",
+  "category",
+  "status",
+  "sourceKind",
+  "pressureEffectId",
+  "sourceIntentId",
+  "activationSource",
+  "branch",
+  "timing",
+  "visibility",
+  "name"
+]);
+const PRESSURE_BREACH_SPARSE_HAZARD_FIELD_SET = new Set(PRESSURE_BREACH_SPARSE_HAZARD_FIELDS);
 const PRESSURE_BREACH_VOID_SCAR_CONSEQUENCE_KIND = "void-scar";
 const PRESSURE_BREACH_VOID_SCAR_STATUS = VOYAGE_PERMANENT_CONSEQUENCE_STATUSES.PROPOSED;
 const PRESSURE_BREACH_VOID_SCAR_PERSISTENCE = "lasting";
@@ -325,6 +350,131 @@ function buildPressureBreachHazard(breach) {
     visibility: breach.visibility,
     name
   };
+}
+
+function capturePressureBreachHazardInput(input) {
+  const captured = capturePressureBreachData(input);
+  if (!captured.ok) {
+    return {
+      ok: false,
+      value: null,
+      issue: issue(
+        "pressure-breach-application-hazard-invalid",
+        captured.issue.path,
+        "Pressure breach Hazard input could not be captured safely."
+      )
+    };
+  }
+
+  const value = captured.value;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      ok: false,
+      value: null,
+      issue: issue(
+        "pressure-breach-application-hazard-invalid",
+        "$",
+        "Pressure breach Hazard input must be a plain sparse Hazard object."
+      )
+    };
+  }
+
+  const keys = Object.keys(value);
+  for (const key of keys) {
+    if (!PRESSURE_BREACH_SPARSE_HAZARD_FIELD_SET.has(key)) {
+      return {
+        ok: false,
+        value: null,
+        issue: issue(
+          "pressure-breach-application-hazard-invalid",
+          `$.${key}`,
+          "Pressure breach Hazard input contains an unexpected field."
+        )
+      };
+    }
+  }
+  for (const key of PRESSURE_BREACH_SPARSE_HAZARD_FIELDS) {
+    if (!Object.hasOwn(value, key)) {
+      return {
+        ok: false,
+        value: null,
+        issue: issue(
+          "pressure-breach-application-hazard-invalid",
+          `$.${key}`,
+          "Pressure breach Hazard input requires this own field."
+        )
+      };
+    }
+  }
+
+  return { ok: true, value, issue: null };
+}
+
+export function buildVoyagePressureBreachActiveHazard(hazard) {
+  const sparseHazardCapture = capturePressureBreachHazardInput(hazard);
+  if (!sparseHazardCapture.ok) {
+    return {
+      ok: false,
+      hazard: null,
+      errors: [sparseHazardCapture.issue],
+      warnings: []
+    };
+  }
+
+  const sparseHazard = sparseHazardCapture.value;
+  const hazardDefinition = getVoyagePressureBreachHazardDefinition(sparseHazard.pressureSystemId);
+  if (!hazardDefinition.ok) {
+    return {
+      ok: false,
+      hazard: null,
+      errors: hazardDefinition.errors,
+      warnings: []
+    };
+  }
+
+  return {
+    ok: true,
+    hazard: {
+      hazardId: sparseHazard.hazardId,
+      encounterId: sparseHazard.encounterId,
+      category: sparseHazard.category,
+      status: sparseHazard.status,
+      name: sparseHazard.name,
+      ...hazardDefinition.definition,
+      visibility: sparseHazard.visibility,
+      sourceKind: sparseHazard.sourceKind,
+      createdStageId: sparseHazard.stageId,
+      createdRoundNumber: sparseHazard.roundNumber,
+      createdSequence: sparseHazard.sequence,
+      failurePressureSystemId: sparseHazard.pressureSystemId,
+      resolvedStageId: null,
+      resolvedRoundNumber: null,
+      terminalReason: null,
+      replacedByHazardId: null,
+      pressureSystemId: sparseHazard.pressureSystemId,
+      eventAreaId: null,
+      pressureBreachId: sparseHazard.pressureBreachId,
+      stationId: sparseHazard.stationId,
+      actionId: sparseHazard.actionId,
+      pressureEffectId: sparseHazard.pressureEffectId,
+      sourceIntentId: sparseHazard.sourceIntentId,
+      activationSource: sparseHazard.activationSource,
+      branch: sparseHazard.branch,
+      sourceTiming: sparseHazard.timing,
+      sourceVisibility: sparseHazard.visibility
+    },
+    errors: [],
+    warnings: []
+  };
+}
+
+function rebaseHazardCaptureIssue(error, basePath) {
+  const suffix = error.path === "$"
+    ? ""
+    : error.path.startsWith("$")
+      ? error.path.slice(1)
+      : `.${error.path}`;
+  return { ...error, path: `${basePath}${suffix}` };
 }
 
 function pressureBreachVoidScarProposalReport({
@@ -1094,6 +1244,71 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       );
     }
 
+    const activeHazardBuild = buildVoyagePressureBreachActiveHazard(hazard);
+    if (!activeHazardBuild.ok) {
+      return breachApplicationFailure(
+        activeHazardBuild.errors.map((error) => rebaseHazardCaptureIssue(
+          error,
+          "pressureBreachHazardPlan.hazard"
+        )),
+        warnings
+      );
+    }
+
+    const activeHazardCapture = captureVoyageHazardRecord(
+      activeHazardBuild.hazard,
+      {
+        mode: "active",
+        expectedEncounterId: isolatedState.encounterId
+      }
+    );
+    if (!activeHazardCapture.ok) {
+      return breachApplicationFailure(
+        [
+          ...activeHazardCapture.errors.map((error) => rebaseHazardCaptureIssue(
+            error,
+            "pressureBreachHazardPlan.hazard"
+          )),
+          breachApplicationIssue(
+            "pressure-breach-application-hazard-invalid",
+            "pressureBreachHazardPlan.hazard",
+            "Pressure breach application Hazard could not be captured as active state."
+          )
+        ],
+        warnings
+      );
+    }
+
+    const activeHazardIndex = isolatedState.activeHazards.length;
+    const activeHazardPath = `activeHazards[${activeHazardIndex}]`;
+    for (let index = 0; index < isolatedState.activeHazards.length; index += 1) {
+      const existingHazard = isolatedState.activeHazards[index];
+      if (existingHazard.hazardId === activeHazardCapture.record.hazardId) {
+        return breachApplicationFailure(
+          [breachApplicationIssue(
+            "duplicate-hazard-id",
+            `${activeHazardPath}.hazardId`,
+            `Duplicate hazardId "${activeHazardCapture.record.hazardId}".`
+          )],
+          warnings
+        );
+      }
+      if (
+        existingHazard.category === "system"
+        && existingHazard.status === "active"
+        && existingHazard.pressureSystemId === activeHazardCapture.record.pressureSystemId
+      ) {
+        return breachApplicationFailure(
+          [breachApplicationIssue(
+            "duplicate-active-hazard-system-slot",
+            `${activeHazardPath}.pressureSystemId`,
+            `Pressure system ${activeHazardCapture.record.pressureSystemId} already has an active system Hazard.`
+          )],
+          warnings
+        );
+      }
+    }
+
     const voidScarProposalPlan =
       analyzeVoyageEncounterPressureBreachVoidScarProposalPlan(isolatedState);
     warnings.push(...voidScarProposalPlan.warnings);
@@ -1250,20 +1465,6 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       );
     }
 
-    const candidateCapture = capturePressureBreachData(isolatedState);
-    if (!candidateCapture.ok) {
-      return breachApplicationFailure(
-        [breachApplicationIssue(
-          "pressure-breach-application-candidate-invalid",
-          candidateCapture.issue.path,
-          "Pressure breach application could not construct an isolated candidate state."
-        )],
-        warnings
-      );
-    }
-
-    const candidate = candidateCapture.value;
-    candidate.pressureSystems = simulatedPressureSystems;
     const previousRevision = isolatedState.revision;
     const nextRevision = previousRevision + 1;
     if (!Number.isSafeInteger(nextRevision)) {
@@ -1276,11 +1477,29 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
         warnings
       );
     }
-    candidate.revision = nextRevision;
+    const candidateCapture = capturePressureBreachData(isolatedState);
+    if (!candidateCapture.ok) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-candidate-invalid",
+          candidateCapture.issue.path,
+          "Pressure breach application could not construct an isolated candidate state."
+        )],
+        warnings
+      );
+    }
+
+    const previewState = candidateCapture.value;
+    previewState.pressureSystems = simulatedPressureSystems;
+    previewState.revision = nextRevision;
+    previewState.activeHazards = [
+      ...previewState.activeHazards,
+      activeHazardCapture.record
+    ];
 
     let finalValidation;
     try {
-      finalValidation = validateVoyageEncounterState(candidate);
+      finalValidation = validateVoyageEncounterState(previewState);
     } catch {
       finalValidation = {
         valid: false,
@@ -1307,13 +1526,56 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       );
     }
 
+    const returnedStateCapture = capturePressureBreachData(isolatedState);
+    if (!returnedStateCapture.ok) {
+      return breachApplicationFailure(
+        [breachApplicationIssue(
+          "pressure-breach-application-candidate-invalid",
+          returnedStateCapture.issue.path,
+          "Pressure breach application could not construct the returned state."
+        )],
+        warnings
+      );
+    }
+
+    const nextState = returnedStateCapture.value;
+    nextState.pressureSystems = clonePressureSystemSnapshot(simulatedPressureSystems);
+    nextState.revision = nextRevision;
+    const returnedHazardCapture = captureVoyageHazardRecord(
+      activeHazardCapture.record,
+      {
+        mode: "active",
+        expectedEncounterId: isolatedState.encounterId
+      }
+    );
+    if (!returnedHazardCapture.ok) {
+      return breachApplicationFailure(
+        [
+          ...returnedHazardCapture.errors.map((error) => rebaseHazardCaptureIssue(
+            error,
+            "pressureBreachHazardPlan.hazard"
+          )),
+          breachApplicationIssue(
+            "pressure-breach-application-hazard-invalid",
+            "pressureBreachHazardPlan.hazard",
+            "Pressure breach application returned Hazard could not be captured safely."
+          )
+        ],
+        warnings
+      );
+    }
+    nextState.activeHazards = [
+      ...nextState.activeHazards,
+      returnedHazardCapture.record
+    ];
+
     const event = {
       type: "voyage.pressure-breach-applied",
-      encounterId: candidate.encounterId,
-      lifecycleState: candidate.lifecycleState,
+      encounterId: nextState.encounterId,
+      lifecycleState: nextState.lifecycleState,
       stageId: breach.stageId,
-      roundNumber: candidate.roundNumber,
-      phase: candidate.phase,
+      roundNumber: nextState.roundNumber,
+      phase: nextState.phase,
       pressureEffectCount: pressurePlan.pressureEffectCount,
       appliedEffectCount: pressurePlan.pressureEffectCount,
       breach: clonePressureBreach(breach),
@@ -1329,12 +1591,12 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       previousPressureSystems: clonePressureSystemSnapshot(previousPressureSystems),
       pressureSystems: clonePressureSystemSnapshot(simulatedPressureSystems),
       previousRevision,
-      revision: candidate.revision
+      revision: nextState.revision
     };
 
     return {
       ok: true,
-      nextState: candidate,
+      nextState,
       events: [event],
       errors: [],
       warnings: deduplicateVoyageResolutionIssues(warnings)
