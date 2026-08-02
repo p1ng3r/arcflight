@@ -235,11 +235,20 @@ required as follows:
 
 | Policy | Required `metadata.collision` data |
 | --- | --- |
-| `escalate-existing` | The authored escalation operation or target stage. |
+| `escalate-existing` | Exactly one of `{ targetStageId: NonBlankString }` or `{ escalation: { operationId: NonBlankString } }`. |
 | `replace-existing` | The incoming Hazard definition to persist. |
 | `trigger-existing-consequence` | The existing Hazard's authored collision consequence. |
 | `extend-duration` | A positive safe-integer extension amount. |
 | `add-pressure` | A canonical `pressureSystemId` and positive safe-integer `amount`. |
+
+For `escalate-existing`, `metadata.collision` must contain exactly one outer
+field: `targetStageId` or `escalation`. The two forms are mutually exclusive.
+The `targetStageId` form requires a nonblank exact string. The `escalation`
+form requires an own enumerable plain-data object containing exactly one field,
+`operationId`, whose value is a nonblank exact string. No extra fields are
+allowed at either level. `operationId` is only a stable authored reference in
+Milestone 6 Task 1; Task 1 does not resolve, look up, or execute it. Actual
+escalation execution belongs to Task 4.
 
 Collision results are:
 
