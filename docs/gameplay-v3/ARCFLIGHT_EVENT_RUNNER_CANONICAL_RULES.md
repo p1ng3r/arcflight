@@ -551,6 +551,38 @@ Critical Failure → +2 Pressure to the action’s associated system
 
 Focus, Risk Bids, Hazards, upgrades, and event rules may add, reduce, redirect, or prevent Pressure when explicitly authored.
 
+### 12.2.1 Domain-authored Pressure effects
+
+Domain systems that need to apply an authored Pressure consequence use a
+separate narrow Pressure planner and application boundary. They do not inject
+synthetic actions and they do not receive a general-purpose external Pressure
+mutation API.
+
+The only authorized domain source in this slice is
+`hazard-address-failure`. Its Address Hazard outcome maps deterministically to
+`+1` Pressure for `failure` and `+2` Pressure for `critical-failure`. The
+caller supplies the encounter, expected revision, canonical Pressure-system
+ID, delta, and a live-bound Hazard source containing the exact active Hazard
+index and isolated previous snapshot; it does not supply a Pressure-effect ID
+or effect plan. The pure planner constructs the canonical Pressure effect,
+including its stable identity and the exact `hazardId` and `addressOutcome`
+provenance. The public application accepts the same request and regenerates
+the plan internally; returned plans are inspectable analysis data, not
+authorization tokens.
+
+Domain-authored effects use the same validated Pressure transition and the same
+`voyage.pressure-applied` event contract as action-derived effects. A valid
+application changes only Pressure, increments revision once, and emits exactly
+one event. Pressure Breach remains a later separate transaction. Existing
+action-derived Pressure planner and application APIs, effect records, event
+shape, and externally visible behavior remain unchanged. The live Hazard must
+remain active at the requested index, be a system Hazard whose Pressure system
+matches the request, permit Address Hazard, and remain semantically equal to
+the supplied previous snapshot; moved or changed Hazards are stale. A valid
+domain plan contains exactly one effect, and its identity includes system,
+outcome, and expected revision in addition to encounter, stage, round, source,
+and Hazard identity.
+
 ### 12.3 Pressure Breach
 
 When a system would rise above its current capacity:

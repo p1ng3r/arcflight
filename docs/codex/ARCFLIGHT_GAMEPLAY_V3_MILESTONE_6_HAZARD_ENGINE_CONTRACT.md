@@ -1231,6 +1231,108 @@ Authored rules may replace or extend these outcomes only through the normal
 validated authored-effect mechanisms. There is no universal Focus, upgrade,
 or Risk Bid bypass outside those mechanisms.
 
+### 15.1 Domain-authored Pressure failure boundary
+
+Address Hazard failure Pressure is planned through a separate, narrow domain
+Pressure boundary. The domain systems do not inject synthetic actions, and
+the Pressure API does not become a general-purpose external mutation API.
+
+The authorized request is the exact plain-data record:
+
+```js
+{
+  kind: "domain-pressure-effect",
+  encounterId,
+  expectedRevision,
+  pressureSystemId,
+  delta,
+  source: {
+    kind: "hazard-address-failure",
+    hazardId,
+    existingHazardIndex,
+    previousHazard,
+    addressOutcome
+  }
+}
+```
+
+`addressOutcome: "failure"` requires `delta: 1`; `addressOutcome:
+"critical-failure"` requires `delta: 2`. Other source kinds, outcomes,
+deltas, fields, and caller-supplied effect IDs are invalid. The indexed live
+Hazard must remain active, be a system Hazard, belong to the encounter, target
+the request Pressure system, permit Address Hazard through
+`removalMethod.methodId`, and remain semantically equal to `previousHazard`.
+A moved or changed Hazard is stale; the engine does not search for it at
+another index. The planner constructs the existing canonical Pressure-effect
+schema and deterministic identity. Its domain effect uses
+`sourceKind: "hazard-address-failure"`, `activationSource: "hazard"`, the
+Hazard ID as `sourceIntentId`, and the Address Hazard outcome as `branch`; no
+Hazard provenance is added to unrelated event fields.
+
+The public boundary is separate from the unchanged action-derived APIs:
+
+- `analyzeVoyageDomainPressureEffectPlan(state, request)`;
+- `applyVoyageDomainPressureEffect(state, request)`.
+
+The returned plan is inspectable analysis data, not an authorization token or
+capability. The application API accepts the request, regenerates the plan in
+the same call, and passes only that internal plan to the private shared
+transition. No public domain-plan application API exists.
+
+The generated domain plan has exactly these keys, in this order:
+
+```text
+structurallyValid,
+readyForDomainPressurePlanning,
+kind,
+encounterId,
+expectedRevision,
+pressureSystemId,
+delta,
+source,
+pressureEffectCount,
+standardPressureEffectCount,
+authoredPressureEffectCount,
+effects,
+errors,
+warnings
+```
+
+Its single canonical effect preserves the existing ordered effect schema:
+
+```text
+pressureEffectId,
+encounterId,
+stageId,
+roundNumber,
+sequence,
+stationId,
+actionId,
+pressureSystemId,
+delta,
+timing,
+sourceKind,
+sourceIntentId,
+activationSource,
+branch,
+visibility
+```
+
+The domain `pressureEffectId` includes encounter, stage, round, expected
+revision, sequence, Pressure system, source kind, Hazard ID, and Address
+Hazard outcome, so distinct authorized requests cannot collide. A valid domain
+plan always contains exactly one effect. The caller cannot supply the effect
+array, effect ID, sequence, stage or round identity, timing, visibility, source
+kind, or provenance fields.
+
+Both paths share one validated Pressure transition. It safely captures and
+validates state, plans, and effects; checks encounter and revision; applies
+effects in deterministic order; changes only Pressure; validates the final
+state; increments revision exactly once; and emits exactly one unchanged
+`voyage.pressure-applied` event. Pressure Breach remains a later separate
+transaction. This boundary does not implement Address Hazard execution,
+Hazard removal, timing, closeout, or any unrestricted Pressure mutation.
+
 ## 16. Closeout behavior
 
 Resolved Hazards produce no further effect.
