@@ -561,6 +561,152 @@ resolution, consequence representation and execution, duration arithmetic,
 add-pressure and deferred-Breach handling, and Pressure Breach same-slot
 integration.
 
+### 11C. Task 4B1 stage-based Hazard escalation
+
+Milestone 6 Task 4B1 defines only the pure transformation semantics for an
+existing active Hazard whose `escalation.mode` is `stages` when an incoming
+Hazard requests the `escalate-existing` collision policy. The incoming Hazard
+is not persisted during a successful escalation collision.
+
+The existing Hazard owns:
+
+- `escalation.mode`;
+- `escalation.currentStageId`;
+- the authored-order `escalation.stages` array;
+- `escalation.escalationConsequence`;
+- `currentEffect` and `ignoredConsequence`; and
+- all identity, provenance, duration, and active-record data.
+
+The incoming Hazard owns:
+
+- `collisionPolicy`;
+- `metadata.collision`; and
+- either the explicit `targetStageId` or the stable `escalation.operationId`
+  requested by that collision payload.
+
+#### Authored stage order and explicit targets
+
+When `escalation.mode` is `stages`, the array order of
+`escalation.stages` is the authoritative progression order. Every `stageId`
+remains unique, and `currentStageId` must identify exactly one authored stage.
+The final array entry is the maximum stage. No alphabetical, numeric, or
+otherwise inferred ordering is permitted.
+
+For the canonical collision payload:
+
+~~~
+{
+  targetStageId: NonBlankString
+}
+~~~
+
+`targetStageId` must identify an authored stage in the existing Hazard and
+must occur strictly after the current stage in authored array order. Same-stage
+and backward movement are invalid. Forward skipping is permitted only because
+the incoming authored payload explicitly names the later target stage; skipped
+intermediate stage effects and consequences are not applied automatically.
+An unknown target fails closed.
+
+#### Canonical stage operation
+
+For the canonical collision payload:
+
+~~~
+{
+  escalation: {
+    operationId: NonBlankString
+  }
+}
+~~~
+
+Task 4B1 recognizes exactly one operation ID: `advance-one-stage`. It selects
+the stage immediately following `currentStageId` in authored array order and
+never skips a stage. If no later stage exists, it returns the declarative
+maximum-escalation outcome. Unknown operation IDs fail closed. Task 4B1 does
+not add advance-to-final-stage, arbitrary offsets, decrement, reset, custom
+script, or macro operations.
+
+#### Successful stage transformation
+
+A successful stage transformation returns an isolated prospective active
+Hazard record. It preserves the same `hazardId`, `encounterId`, category,
+active status, name, visibility, source and provenance fields, duration,
+collision policy and metadata, Pressure-system or event-area field, and
+terminal-null fields.
+
+It updates exactly these top-level fields:
+
+1. `escalation.currentStageId` becomes the selected target stage ID;
+2. `currentEffect` becomes an isolated copy of the target stage's `effect`;
+3. `ignoredConsequence` becomes an isolated copy of the target stage's
+   `ignoredConsequence`; and
+4. `escalation.maximumEscalationReached` becomes `true` only when the target
+   is the final authored stage, and `false` otherwise.
+
+The transformation does not alter `escalation.stages`,
+`escalation.countdown`, `escalation.escalationConsequence`, `activationTiming`,
+`removalMethod`, duration, provenance, creation stage/round/sequence,
+collision metadata, or Hazard identity. The prospective record must pass the
+existing active Hazard schema.
+
+#### Maximum-stage outcome
+
+When the existing Hazard is already at its final authored stage, no Hazard
+mutation occurs and the incoming Hazard is not persisted. The result is a
+declarative `maximum-escalation` outcome. When
+`escalation.escalationConsequence` is present, the outcome carries an isolated
+copy of that authored descriptor; when it is `null`, the outcome carries no
+consequence descriptor. No consequence is executed, no status transition
+occurs, and the existing Hazard remains active. No consequence is invented.
+
+An operation attempted at maximum stage may carry the deterministic
+`hazard-stage-escalation-at-maximum` diagnostic as a non-fatal warning; the
+maximum outcome is not itself an applied mutation.
+
+#### Invalid escalation modes and diagnostics
+
+If `escalate-existing` targets an existing Hazard whose escalation mode is
+`none`, stage transformation is not applicable. It fails closed with the
+deterministic `hazard-stage-escalation-mode-unsupported` diagnostic and does
+not execute `escalationConsequence`. If the mode is `countdown`, it fails
+closed with `hazard-stage-escalation-not-applicable`; countdown collision
+semantics remain deferred and no decrement is inferred.
+
+The canonical diagnostic concepts use isolated deterministic issue objects of
+the form `{ severity, code, path, message }`:
+
+- `hazard-stage-escalation-mode-unsupported` for a non-stage mode that cannot
+  use stage transformation;
+- `hazard-stage-escalation-not-applicable` for countdown escalation;
+- `hazard-stage-escalation-current-stage-unknown` when the current stage is
+  not authored;
+- `hazard-stage-escalation-target-stage-unknown` when an explicit target is
+  not authored;
+- `hazard-stage-escalation-same-stage` for an explicit same-stage target;
+- `hazard-stage-escalation-backward` for an explicit backward target;
+- `hazard-stage-escalation-operation-unknown` for an unrecognized operation ID;
+- `hazard-stage-escalation-at-maximum` for an operation attempted at the
+  maximum stage; and
+- `hazard-stage-escalation-result-invalid` when the prospective transformed
+  record fails active Hazard schema validation.
+
+The maximum-stage diagnostic is a non-fatal warning; invalid and
+not-applicable conditions are errors. Paths identify the existing escalation
+field or incoming collision payload field that caused the outcome. No raw
+JavaScript or Proxy exception text is exposed.
+
+Task 4B1 is a pure transformation or declarative-outcome boundary. It does
+not mutate encounter state or caller Hazard data, persist the incoming Hazard,
+update `activeHazards`, change Pressure or Momentum, reset Pressure, increment
+revision, emit events, produce a Void Scar proposal, process activation timing,
+perform Address Hazard, process closeout, replace a Hazard, or extend duration.
+
+Later work still owns stage transformation implementation and tests,
+application to encounter state, revision and event behavior,
+escalation-consequence execution, countdown collision semantics, and Pressure
+Breach same-slot integration. Executable consequence architecture remains
+deferred to Task 4E.
+
 ## 12. Validation contract
 
 Hazard validation is exact and fail-closed. It must:
