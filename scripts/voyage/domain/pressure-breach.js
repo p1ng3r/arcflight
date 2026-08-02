@@ -2,7 +2,9 @@ import {
   VOYAGE_PERMANENT_CONSEQUENCE_STATUSES,
   VOYAGE_PRESSURE_SYSTEM_IDS
 } from "./constants.js";
+import { analyzeVoyageHazardCollisionPlan } from "./hazard-collision.js";
 import { captureVoyageHazardRecord } from "./hazard-schema.js";
+import { applyVoyageHazardTriggerExistingConsequence } from "./hazard-trigger-existing-consequence.js";
 import { getVoyagePressureBreachHazardDefinition } from "./pressure-breach-hazard-definitions.js";
 import { analyzeVoyageEncounterPressurePlan } from "./pressure.js";
 import { deduplicateVoyageResolutionIssues } from "./resolution-order.js";
@@ -1156,19 +1158,20 @@ function simulateNonBreachPressureEffect(system, effect) {
 }
 
 /**
- * Apply one authoritative first-breach Pressure transaction.
+ * Apply one authoritative Pressure Breach transaction.
  *
- * This Task 04 foundation applies every safe Pressure effect in authoritative
- * order, creates one deterministic active system Hazard record, proposes one
- * deterministic lasting Void Scar, resets that Pressure system to zero,
- * increments the encounter revision once, and emits one isolated audit event.
- * A second breach in the same plan fails atomically until multi-breach
- * orchestration is added.
+ * This operation applies every safe Pressure effect in authoritative order,
+ * persists one deterministic active system Hazard record when its slot is
+ * empty, proposes one deterministic lasting Void Scar, resets that Pressure
+ * system to zero, increments the encounter revision once, and emits one
+ * isolated audit event.
+ * A repeated same-system trigger-existing-consequence collision selects the
+ * existing authored consequence without persisting the incoming Hazard or
+ * executing that consequence.
  *
- * Hazard-engine persistence and collision policy, active Void Scar storage,
- * hull capacity, operational and repair rules, ship persistence, closeout
- * behavior, lifecycle advancement, and public API registration remain outside
- * this operation.
+ * Active Void Scar storage, hull capacity, operational and repair rules, ship
+ * persistence, other collision policies, closeout behavior, lifecycle
+ * advancement, and public API registration remain outside this operation.
  */
 export function applyVoyageEncounterPressureBreachPlan(state) {
   try {
@@ -1279,33 +1282,49 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       );
     }
 
+    const collisionAnalysis = analyzeVoyageHazardCollisionPlan(
+      isolatedState,
+      activeHazardCapture.record
+    );
+    const triggerCollision = applyVoyageHazardTriggerExistingConsequence(
+      isolatedState,
+      activeHazardCapture.record,
+      collisionAnalysis
+    );
+    if (!triggerCollision.ok) {
+      return breachApplicationFailure(triggerCollision.errors, warnings);
+    }
+
+    const repeatedBreach = triggerCollision.collision;
     const activeHazardIndex = isolatedState.activeHazards.length;
     const activeHazardPath = `activeHazards[${activeHazardIndex}]`;
-    for (let index = 0; index < isolatedState.activeHazards.length; index += 1) {
-      const existingHazard = isolatedState.activeHazards[index];
-      if (existingHazard.hazardId === activeHazardCapture.record.hazardId) {
-        return breachApplicationFailure(
-          [breachApplicationIssue(
-            "duplicate-hazard-id",
-            `${activeHazardPath}.hazardId`,
-            `Duplicate hazardId "${activeHazardCapture.record.hazardId}".`
-          )],
-          warnings
-        );
-      }
-      if (
-        existingHazard.category === "system"
-        && existingHazard.status === "active"
-        && existingHazard.pressureSystemId === activeHazardCapture.record.pressureSystemId
-      ) {
-        return breachApplicationFailure(
-          [breachApplicationIssue(
-            "duplicate-active-hazard-system-slot",
-            `${activeHazardPath}.pressureSystemId`,
-            `Pressure system ${activeHazardCapture.record.pressureSystemId} already has an active system Hazard.`
-          )],
-          warnings
-        );
+    if (!repeatedBreach) {
+      for (let index = 0; index < isolatedState.activeHazards.length; index += 1) {
+        const existingHazard = isolatedState.activeHazards[index];
+        if (existingHazard.hazardId === activeHazardCapture.record.hazardId) {
+          return breachApplicationFailure(
+            [breachApplicationIssue(
+              "duplicate-hazard-id",
+              `${activeHazardPath}.hazardId`,
+              `Duplicate hazardId "${activeHazardCapture.record.hazardId}".`
+            )],
+            warnings
+          );
+        }
+        if (
+          existingHazard.category === "system"
+          && existingHazard.status === "active"
+          && existingHazard.pressureSystemId === activeHazardCapture.record.pressureSystemId
+        ) {
+          return breachApplicationFailure(
+            [breachApplicationIssue(
+              "duplicate-active-hazard-system-slot",
+              `${activeHazardPath}.pressureSystemId`,
+              `Pressure system ${activeHazardCapture.record.pressureSystemId} already has an active system Hazard.`
+            )],
+            warnings
+          );
+        }
       }
     }
 
@@ -1492,10 +1511,12 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
     const previewState = candidateCapture.value;
     previewState.pressureSystems = simulatedPressureSystems;
     previewState.revision = nextRevision;
-    previewState.activeHazards = [
-      ...previewState.activeHazards,
-      activeHazardCapture.record
-    ];
+    previewState.activeHazards = repeatedBreach
+      ? triggerCollision.activeHazards
+      : [
+        ...previewState.activeHazards,
+        activeHazardCapture.record
+      ];
 
     let finalValidation;
     try {
@@ -1564,10 +1585,17 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
         warnings
       );
     }
-    nextState.activeHazards = [
-      ...nextState.activeHazards,
-      returnedHazardCapture.record
-    ];
+    nextState.activeHazards = repeatedBreach
+      ? triggerCollision.activeHazards
+      : [
+        ...nextState.activeHazards,
+        returnedHazardCapture.record
+      ];
+
+    const eventHazard = clonePressureBreachHazard(hazard);
+    const collisionOutcome = repeatedBreach
+      ? triggerCollision.collisionOutcome
+      : null;
 
     const event = {
       type: "voyage.pressure-breach-applied",
@@ -1579,7 +1607,8 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       pressureEffectCount: pressurePlan.pressureEffectCount,
       appliedEffectCount: pressurePlan.pressureEffectCount,
       breach: clonePressureBreach(breach),
-      hazard: clonePressureBreachHazard(hazard),
+      hazard: eventHazard,
+      collisionOutcome,
       voidScarProposal: clonePressureBreachVoidScarProposal(voidScarProposal),
       pressureReset: {
         pressureBreachId: breach.pressureBreachId,

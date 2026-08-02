@@ -16,6 +16,27 @@ import {
 
 const BRANCHES = ["critical-failure", "failure", "success", "critical-success"];
 
+const PRESSURE_BREACH_EVENT_KEYS = [
+  "type",
+  "encounterId",
+  "lifecycleState",
+  "stageId",
+  "roundNumber",
+  "phase",
+  "pressureEffectCount",
+  "appliedEffectCount",
+  "breach",
+  "hazard",
+  "collisionOutcome",
+  "voidScarProposal",
+  "pressureReset",
+  "effects",
+  "previousPressureSystems",
+  "pressureSystems",
+  "previousRevision",
+  "revision"
+];
+
 function encounterState({
   encounterId = "pressure-breach-encounter",
   stageId = "pressure-breach-stage",
@@ -273,6 +294,7 @@ test("applies one standard Pressure breach atomically with the exact event contr
   assert.equal(result.nextState.pressureSystems["crew-morale"].capacity, 2);
 
   const event = result.events[0];
+  assert.deepEqual(Object.keys(event), PRESSURE_BREACH_EVENT_KEYS);
   assertExactKeys(event, [
     "type",
     "encounterId",
@@ -284,6 +306,7 @@ test("applies one standard Pressure breach atomically with the exact event contr
     "appliedEffectCount",
     "breach",
     "hazard",
+    "collisionOutcome",
     "voidScarProposal",
     "pressureReset",
     "effects",
@@ -300,6 +323,10 @@ test("applies one standard Pressure breach atomically with the exact event contr
   assert.equal(event.phase, source.phase);
   assert.equal(event.pressureEffectCount, 1);
   assert.equal(event.appliedEffectCount, 1);
+  assert.equal(event.collisionOutcome, null);
+  for (const key of ["metadata", "collision", "consequence", "collisionOutcome"]) {
+    assert.equal(Object.hasOwn(event.hazard, key), false, `event.hazard.${key}`);
+  }
   assert.deepEqual(event.breach, planned.breach);
   assert.equal(event.hazard.pressureBreachId, planned.breach.pressureBreachId);
   assert.equal(event.hazard.pressureSystemId, planned.breach.pressureSystemId);
@@ -368,7 +395,7 @@ test("applies safe Pressure effects before and after the first breach in exact o
   assert.deepEqual(source, before);
 });
 
-test("a second breach in one Pressure plan fails atomically until orchestration is added", () => {
+test("a Pressure plan with two breach effects remains unsupported and fails atomically", () => {
   const source = oneNoRollConsequences([
     pressureRule("first-breach", { kind: "source-station" }, 1),
     pressureRule("second-breach", { kind: "pressure-system", targetId: "lifeveil" }, 1)

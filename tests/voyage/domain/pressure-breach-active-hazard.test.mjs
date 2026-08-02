@@ -29,6 +29,27 @@ import {
   buildVoyagePressureBreachActiveHazard
 } from "../../../scripts/voyage/domain/pressure-breach.js";
 
+const PRESSURE_BREACH_EVENT_KEYS = [
+  "type",
+  "encounterId",
+  "lifecycleState",
+  "stageId",
+  "roundNumber",
+  "phase",
+  "pressureEffectCount",
+  "appliedEffectCount",
+  "breach",
+  "hazard",
+  "collisionOutcome",
+  "voidScarProposal",
+  "pressureReset",
+  "effects",
+  "previousPressureSystems",
+  "pressureSystems",
+  "previousRevision",
+  "revision"
+];
+
 function encounterState({ pressureSystemId = "crew-morale" } = {}) {
   const result = createVoyageEncounterState({
     encounterId: "pressure-breach-active-hazard-encounter",
@@ -148,6 +169,25 @@ function hazard(overrides = {}) {
     sourceVisibility: "public",
     ...overrides
   };
+}
+
+function repeatedHazard(pressureSystemId, overrides = {}) {
+  return hazard({
+    hazardId: `existing-${pressureSystemId}`,
+    pressureSystemId,
+    failurePressureSystemId: pressureSystemId,
+    collisionPolicy: VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE,
+    metadata: {
+      collision: {
+        consequence: {
+          consequenceId: `${pressureSystemId}-authored-repeat`,
+          name: `${pressureSystemId} Authored Repeat`,
+          description: `The authored ${pressureSystemId} consequence applies.`
+        }
+      }
+    },
+    ...overrides
+  });
 }
 
 function applyWithHazards(activeHazards) {
@@ -564,25 +604,8 @@ test("keeps the exact single Pressure Breach event, Void Scar proposal, and one 
   assert.equal(result.events[0].revision, before.revision + 1);
   assert.equal(result.events[0].voidScarProposal.status, "proposed");
   assert.equal(result.events[0].voidScarProposal.hazardId, result.nextState.activeHazards[0].hazardId);
-  assert.deepEqual(Object.keys(result.events[0]).sort(), [
-    "appliedEffectCount",
-    "breach",
-    "effects",
-    "encounterId",
-    "hazard",
-    "lifecycleState",
-    "phase",
-    "pressureEffectCount",
-    "pressureReset",
-    "pressureSystems",
-    "previousPressureSystems",
-    "previousRevision",
-    "revision",
-    "roundNumber",
-    "stageId",
-    "type",
-    "voidScarProposal"
-  ]);
+  assert.deepEqual(Object.keys(result.events[0]), PRESSURE_BREACH_EVENT_KEYS);
+  assert.equal(result.events[0].collisionOutcome, null);
 });
 
 test("isolates input, prior Hazards, the new Hazard, and nested authored data", () => {
@@ -628,7 +651,7 @@ test("rejects a duplicate deterministic hazardId atomically", () => {
   assert.deepEqual(source, before);
 });
 
-test("rejects an occupied system slot without collision behavior or partial application", () => {
+test("rejects an occupied system slot without an authored repeated-breach consequence", () => {
   const source = breachState();
   source.activeHazards = [hazard({
     hazardId: "same-system-hazard",
@@ -642,10 +665,193 @@ test("rejects an occupied system slot without collision behavior or partial appl
   assert.equal(result.ok, false);
   assert.equal(result.nextState, null);
   assert.deepEqual(result.events, []);
-  assert.ok(issueCodes(result).includes("duplicate-active-hazard-system-slot"));
+  assert.ok(issueCodes(result).includes("pressure-breach-application-consequence-invalid"));
   assert.equal(source.pressureSystems["crew-morale"].value, before.pressureSystems["crew-morale"].value);
   assert.equal(source.revision, before.revision);
   assert.deepEqual(source, before);
+});
+
+for (const pressureSystemId of [
+  "crew-morale",
+  "arkengine",
+  "levstone-array",
+  "solar-sail-rig",
+  "lifeveil"
+]) {
+  test(`repeated ${pressureSystemId} breach triggers the existing consequence without persisting the incoming Hazard`, () => {
+    const existing = repeatedHazard(pressureSystemId);
+    const prefix = hazard({
+      hazardId: "unrelated-prefix",
+      pressureSystemId: pressureSystemId === "crew-morale" ? "arkengine" : "crew-morale",
+      failurePressureSystemId: pressureSystemId === "crew-morale" ? "arkengine" : "crew-morale"
+    });
+    const source = breachState({ pressureSystemId });
+    source.activeHazards = [prefix, existing];
+    const before = structuredClone(source);
+    const result = applyVoyageEncounterPressureBreachPlan(source);
+    const ordinary = applyVoyageEncounterPressureBreachPlan(
+      breachState({ pressureSystemId })
+    );
+    const incomingHazardId = result.events[0]?.hazard.hazardId;
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(ordinary.ok, true, JSON.stringify(ordinary));
+    assert.equal(result.events.length, 1);
+    assert.equal(result.events[0].type, "voyage.pressure-breach-applied");
+    assert.deepEqual(Object.keys(result.events[0]), PRESSURE_BREACH_EVENT_KEYS);
+    assert.deepEqual(Object.keys(result.events[0].collisionOutcome), [
+      "kind",
+      "hazardId",
+      "incomingHazardId",
+      "pressureSystemId",
+      "collisionPolicy",
+      "consequence"
+    ]);
+    assert.deepEqual(result.events[0].collisionOutcome, {
+      kind: "hazard-consequence-triggered",
+      hazardId: existing.hazardId,
+      incomingHazardId,
+      pressureSystemId,
+      collisionPolicy: VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE,
+      consequence: existing.metadata.collision.consequence
+    });
+    assert.deepEqual(
+      Object.keys(result.events[0].hazard),
+      Object.keys(ordinary.events[0].hazard)
+    );
+    assert.deepEqual(
+      result.events[0].voidScarProposal,
+      ordinary.events[0].voidScarProposal
+    );
+    assert.notStrictEqual(
+      result.events[0].voidScarProposal,
+      ordinary.events[0].voidScarProposal
+    );
+    assert.deepEqual(result.events[0].effects, ordinary.events[0].effects);
+    assert.equal(
+      result.events[0].pressureEffectCount,
+      ordinary.events[0].pressureEffectCount
+    );
+    assert.equal(
+      result.events[0].appliedEffectCount,
+      ordinary.events[0].appliedEffectCount
+    );
+    assert.equal(result.events.some(({ type }) => type === "voyage.hazard-created"), false);
+    assert.equal(result.events.some(({ type }) => type.includes("consequence")), false);
+    assert.deepEqual(result.nextState.activeHazards.map(({ hazardId }) => hazardId), [
+      prefix.hazardId,
+      existing.hazardId
+    ]);
+    assert.equal(result.nextState.activeHazards.length, before.activeHazards.length);
+    assert.deepEqual(result.nextState.activeHazards[1], existing);
+    assert.equal(result.nextState.activeHazards.some(({ hazardId }) => hazardId === incomingHazardId), false);
+    assert.deepEqual(Object.keys(result.events[0].hazard), [
+      "hazardId",
+      "pressureBreachId",
+      "encounterId",
+      "stageId",
+      "roundNumber",
+      "effectIndex",
+      "sequence",
+      "stationId",
+      "actionId",
+      "pressureSystemId",
+      "category",
+      "status",
+      "sourceKind",
+      "pressureEffectId",
+      "sourceIntentId",
+      "activationSource",
+      "branch",
+      "timing",
+      "visibility",
+      "name"
+    ]);
+    assert.equal(Object.hasOwn(result.events[0].hazard, "metadata"), false);
+    assert.equal(Object.hasOwn(result.events[0].hazard, "collision"), false);
+    assert.equal(Object.hasOwn(result.events[0].hazard, "consequence"), false);
+    assert.equal(Object.hasOwn(result.events[0].hazard, "collisionOutcome"), false);
+    assert.equal(result.nextState.revision, before.revision + 1);
+    assert.equal(result.events[0].previousRevision, before.revision);
+    assert.equal(result.events[0].revision, before.revision + 1);
+    // All inputs and the only permitted mutations are validated: the
+    // existing active-Hazard collection is preserved, the breached Pressure
+    // value is bounded, and revision increments within the safe-integer
+    // range. The final canonical state validator must therefore accept every
+    // generated repeated candidate across all five Pressure systems.
+    assert.equal(validateVoyageEncounterState(result.nextState).valid, true);
+    assert.equal(result.events[0].voidScarProposal.status, "proposed");
+    assert.equal(result.events[0].voidScarProposal.hazardId, incomingHazardId);
+
+    for (const [systemId, pressure] of Object.entries(before.pressureSystems)) {
+      const expected = systemId === pressureSystemId ? 0 : pressure.value;
+      assert.equal(result.nextState.pressureSystems[systemId].value, expected, systemId);
+    }
+
+    result.events[0].collisionOutcome.consequence.name = "changed-event";
+    result.events[0].voidScarProposal.name = "changed-event";
+    assert.equal(result.nextState.activeHazards[1].metadata.collision.consequence.name, existing.metadata.collision.consequence.name);
+    assert.equal(result.events[0].collisionOutcome.consequence.name, "changed-event");
+    assert.deepEqual(source, before);
+  });
+}
+
+test("another-system active Hazards do not collide with a Pressure breach", () => {
+  const source = breachState({ pressureSystemId: "crew-morale" });
+  const existing = repeatedHazard("arkengine");
+  source.activeHazards = [existing];
+
+  const result = applyVoyageEncounterPressureBreachPlan(source);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nextState.activeHazards.map(({ hazardId }) => hazardId), [
+    existing.hazardId,
+    result.events[0].hazard.hazardId
+  ]);
+  assert.equal(result.events[0].collisionOutcome, null);
+  for (const key of ["metadata", "collision", "consequence", "collisionOutcome"]) {
+    assert.equal(Object.hasOwn(result.events[0].hazard, key), false, `event.hazard.${key}`);
+  }
+});
+
+test("repeated breach revision overflow fails atomically", () => {
+  const source = breachState();
+  source.activeHazards = [repeatedHazard("crew-morale")];
+  source.revision = Number.MAX_SAFE_INTEGER;
+  const before = structuredClone(source);
+
+  const result = applyVoyageEncounterPressureBreachPlan(source);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.nextState, null);
+  assert.deepEqual(result.events, []);
+  assert.equal(Object.hasOwn(result, "collisionOutcome"), false);
+  assert.ok(issueCodes(result).includes("pressure-breach-application-candidate-invalid"));
+  assert.deepEqual(source, before);
+});
+
+test("equivalent repeated breaches are deterministic and separately isolated", () => {
+  const apply = () => {
+    const source = breachState({ pressureSystemId: "crew-morale" });
+    source.activeHazards = [repeatedHazard("crew-morale")];
+    return applyVoyageEncounterPressureBreachPlan(source);
+  };
+
+  const first = apply();
+  const second = apply();
+
+  assert.deepEqual(first, second);
+  assert.notStrictEqual(first.nextState, second.nextState);
+  assert.notStrictEqual(first.nextState.activeHazards, second.nextState.activeHazards);
+  assert.notStrictEqual(first.events[0], second.events[0]);
+  assert.notStrictEqual(first.events[0].hazard, second.events[0].hazard);
+  assert.notStrictEqual(first.events[0].collisionOutcome, second.events[0].collisionOutcome);
+  assert.notStrictEqual(
+    first.events[0].collisionOutcome.consequence,
+    second.events[0].collisionOutcome.consequence
+  );
+  first.events[0].collisionOutcome.consequence.name = "changed-first";
+  assert.equal(second.events[0].collisionOutcome.consequence.name, "crew-morale Authored Repeat");
 });
 
 test("event Hazards sharing failurePressureSystemId do not occupy the system slot", () => {

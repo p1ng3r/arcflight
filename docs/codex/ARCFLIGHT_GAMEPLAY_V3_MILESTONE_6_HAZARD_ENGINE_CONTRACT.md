@@ -371,16 +371,19 @@ Milestone 6 converts that record into one `activeHazards` entry by:
 5. adding the converted record to `nextState.activeHazards` as part of the
    existing transaction.
 
-The conversion must not persist the 5B Void Scar proposal. Pressure reset,
-the existing revision behavior, and the exact
-`voyage.pressure-breach-applied` event shape remain unchanged.
+The conversion must not persist the 5B Void Scar proposal. Pressure reset and
+the existing revision behavior remain unchanged. The revised exact
+`voyage.pressure-breach-applied` event shape is defined below; its sparse
+`event.hazard` payload remains unchanged.
 
 This is the explicit Milestone 5B atomic integration exception: Hazard
 persistence occurs inside `applyVoyageEncounterPressureBreachPlan`. It does
 not increment revision a second time, emit `voyage.hazard-created`, emit a
-second event, change the exact Pressure Breach event shape, or perform a
-follow-up state mutation. The existing single revision and single event cover
-Hazard persistence, Void Scar proposal emission, and Pressure reset.
+second event, change any protected Pressure Breach field other than the
+explicit `collisionOutcome` revision below, or perform a follow-up state
+mutation. The existing single revision and single event cover Hazard
+persistence, Void Scar proposal emission, Pressure reset, and any selected
+same-system collision outcome.
 
 ### 11A. Pressure-system Hazard definition registry
 
@@ -560,6 +563,75 @@ Scar proposal. Later Task 4 phases own escalation execution, replacement
 resolution, consequence representation and execution, duration arithmetic,
 add-pressure and deferred-Breach handling, and Pressure Breach same-slot
 integration.
+
+#### 11B.1. Revised Pressure Breach collision outcome
+
+The Gameplay V3 rebuild revises the exact `voyage.pressure-breach-applied`
+event contract by adding one required top-level field, `collisionOutcome`.
+The field is present on every event and is inserted between `hazard` and
+`voidScarProposal` in this exact top-level order:
+
+~~~
+{
+  type,
+  encounterId,
+  lifecycleState,
+  stageId,
+  roundNumber,
+  phase,
+  pressureEffectCount,
+  appliedEffectCount,
+  breach,
+  hazard,
+  collisionOutcome,
+  voidScarProposal,
+  pressureReset,
+  effects,
+  previousPressureSystems,
+  pressureSystems,
+  previousRevision,
+  revision
+}
+~~~
+
+An ordinary first breach uses:
+
+~~~
+collisionOutcome: null
+~~~
+
+A repeated same-system breach is supported only for the validated
+`trigger-existing-consequence` policy and uses this exact six-key record:
+
+~~~
+collisionOutcome: {
+  kind: "hazard-consequence-triggered",
+  hazardId: NonBlankString,
+  incomingHazardId: NonBlankString,
+  pressureSystemId: CanonicalPressureSystemId,
+  collisionPolicy: "trigger-existing-consequence",
+  consequence: IsolatedAuthoredConsequenceDescriptor
+}
+~~~
+
+`hazardId` identifies the existing active Hazard that supplied the authored
+descriptor. `incomingHazardId` identifies the deterministic incoming
+Pressure-breach Hazard candidate that was not persisted. `pressureSystemId`
+must match the collision plan and the existing system slot. `collisionPolicy`
+is copied from the validated incoming Hazard; it is not inferred from the
+existing Hazard. The consequence is selected and reported from the existing
+Hazard, but is not mechanically executed in this slice.
+
+`event.hazard` retains the exact sparse Milestone 5B creation/provenance shape.
+It must not contain `metadata`, `collision`, `consequence`, or
+`collisionOutcome`; no collision data is nested below `event.hazard`.
+`event.effects` remains the Pressure-effect collection only.
+`pressureEffectCount` and `appliedEffectCount` retain their existing
+Pressure-effect meanings, and selecting a Hazard consequence changes neither
+count. Exactly one `voyage.pressure-breach-applied` event and exactly one
+revision increment are emitted. No separate Hazard-consequence event is
+emitted. This revision authorizes only `trigger-existing-consequence`; it does
+not authorize any other collision policy or a mechanical consequence executor.
 
 ### 11C. Task 4B1 stage-based Hazard escalation
 
@@ -1038,10 +1110,10 @@ call this standalone wrapper if doing so would create a second revision or
 second event. It must reuse the pure validated transformation boundary inside
 its existing atomic transaction.
 
-The existing exact `voyage.pressure-breach-applied` event remains protected.
-Task 4B3 does not change Pressure Breach behavior and does not add flags such
-as `suppressEvent`, `suppressRevision`, `embeddedMode`, or
-`pressureBreachMode`.
+The revised exact `voyage.pressure-breach-applied` event, including its
+required `collisionOutcome` field, remains protected. Task 4B3 does not
+change Pressure Breach behavior and does not add flags such as
+`suppressEvent`, `suppressRevision`, `embeddedMode`, or `pressureBreachMode`.
 
 #### Collection, lifecycle, and deferred ownership
 
@@ -1121,8 +1193,9 @@ Each event includes the existing common audit envelope:
 ~~~
 
 The operation-specific payload must be isolated and must not expand existing
-Milestone 5B public return contracts. Failed operations return no candidate
-state and no partial events.
+Milestone 5B public return contracts except for the explicit
+`collisionOutcome` revision in Section 11B.1. Failed operations return no
+candidate state and no partial events.
 
 ## 14. Timing planner
 
@@ -1260,9 +1333,10 @@ Focused tests:
 
 Convert `event.hazard` into `nextState.activeHazards` inside
 `applyVoyageEncounterPressureBreachPlan`. Preserve identity and provenance,
-retain the exact 5B event shape, and prove one revision, one event, no follow-up
-mutation, no Void Scar persistence, and no second `voyage.hazard-created`
-event.
+retain the exact sparse `event.hazard` shape, populate the required
+`collisionOutcome` field according to Section 11B.1, and prove one revision,
+one event, no follow-up mutation, no Void Scar persistence, and no second
+`voyage.hazard-created` event.
 
 ### Task 4  -  Collision and escalation operations
 
@@ -1369,7 +1443,8 @@ needed.
 
 The following contracts are protected:
 
-- exact `voyage.pressure-breach-applied` event shape;
+- revised exact `voyage.pressure-breach-applied` event shape, including
+  `collisionOutcome`;
 - deterministic 5B `hazardId` values;
 - Pressure reset behavior;
 - no Void Scar persistence;
