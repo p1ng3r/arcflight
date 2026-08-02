@@ -74,6 +74,7 @@ export function createDefaultVoyageEncounterCollections() {
     assistance: [],
     reservations: [],
     pendingChecks: [],
+    activeHazards: [],
     pendingConsequences: [],
     processedRequestIds: [],
     snapshots: [],
