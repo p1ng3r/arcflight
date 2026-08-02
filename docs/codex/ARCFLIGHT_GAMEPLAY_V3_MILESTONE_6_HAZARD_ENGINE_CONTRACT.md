@@ -382,6 +382,141 @@ second event, change the exact Pressure Breach event shape, or perform a
 follow-up state mutation. The existing single revision and single event cover
 Hazard persistence, Void Scar proposal emission, and Pressure reset.
 
+### 11A. Pressure-system Hazard definition registry
+
+Milestone 6 Task 3 owns the pure authored definition registry for Pressure-
+system Hazards. The registry is keyed by the canonical `pressureSystemId` and
+contains exactly one definition for each of:
+
+- `crew-morale`;
+- `arkengine`;
+- `levstone-array`;
+- `solar-sail-rig`; and
+- `lifeveil`.
+
+There is no fallback or generic unknown-system definition. A missing, blank, or
+unknown `pressureSystemId` fails closed with the deterministic diagnostic
+`pressure-breach-hazard-definition-missing`, rooted at the sparse Hazard's
+`pressureSystemId` path. The authoritative registry data is deeply frozen and
+lookups return isolated mutable plain data. The registry performs no Hazard
+behavior, state mutation, event emission, or revision change.
+
+The registry is implemented in
+`scripts/voyage/domain/pressure-breach-hazard-definitions.js` with these
+internal domain exports:
+
+- `VOYAGE_PRESSURE_BREACH_HAZARD_DEFINITIONS`: the deeply frozen five-entry
+  authoritative registry;
+- `getVoyagePressureBreachHazardDefinition(pressureSystemId)`: returns
+  `{ ok: true, definition, errors: [], warnings: [] }` with an isolated plain
+  definition, or `{ ok: false, definition: null, errors, warnings: [] }` with
+  the deterministic missing-definition diagnostic.
+
+The sparse Milestone 5B `event.hazard` shape remains unchanged. It continues to
+supply deterministic identity, Pressure Breach identity, encounter, stage,
+round, effect index, sequence, station and action provenance,
+`pressureSystemId`, category, status, source kind, source/provenance fields,
+source timing, visibility, and deterministic Hazard name. The registry
+supplies only the missing authored gameplay definition fields:
+`currentEffect`, `activationTiming`, `removalMethod`, `ignoredConsequence`,
+`escalation`, `collisionPolicy`, `metadata.collision`, and `duration`.
+
+Every Pressure-system definition uses this common initial policy:
+
+1. The Hazard activates at the start of the next round.
+2. The Hazard remains active until successfully addressed or until encounter
+   closeout handles it.
+3. The removal method is Address Hazard.
+4. An unresolved Hazard applies its authored ignored consequence at encounter
+   closeout.
+5. A repeated breach of the same Pressure system uses
+   `trigger-existing-consequence` against the existing Hazard.
+6. Task 3 does not execute that collision. Until Task 4 exists, the occupied
+   system-slot check fails closed atomically.
+7. The Hazard has no escalation stages or countdown.
+8. The Hazard has no automatic duration expiration.
+9. No Pressure-system definition uses immediate activation.
+10. The sparse source timing value `consequences` remains provenance in
+    `sourceTiming`; it does not imply immediate Hazard activation.
+
+The registry descriptor shapes are exact and authored. They do not add numeric
+penalties, checks, damage, Momentum changes, station restrictions, or
+executable effects:
+
+~~~
+currentEffect: {
+  effectId: NonBlankString,
+  name: NonBlankString,
+  description: NonBlankString
+}
+
+activationTiming: {
+  kind: "start-of-next-round",
+  stationId: null,
+  resultId: null
+}
+
+removalMethod: {
+  methodId: "address-hazard",
+  name: "Address Hazard"
+}
+
+ignoredConsequence: {
+  consequenceId: NonBlankString,
+  name: NonBlankString,
+  description: NonBlankString
+}
+
+collisionPolicy: "trigger-existing-consequence"
+
+metadata: {
+  collision: {
+    consequence: {
+      consequenceId: NonBlankString,
+      name: NonBlankString,
+      description: NonBlankString
+    }
+  }
+}
+~~~
+
+The escalation and duration values use the complete normalized `none` forms
+from this contract:
+
+~~~
+escalation: {
+  mode: "none",
+  currentStageId: null,
+  stages: [],
+  countdown: null,
+  maximumEscalationReached: false,
+  escalationConsequence: null
+}
+
+duration: {
+  mode: "none",
+  remaining: null,
+  initial: null,
+  decrementTiming: null
+}
+~~~
+
+The five canonical definitions are:
+
+| `pressureSystemId` | Current effect | Ignored consequence | Repeated-breach consequence |
+| --- | --- | --- | --- |
+| `crew-morale` | `crew-morale-fracture`; **Crew Morale Fracture** — “The crew remains shaken and under mounting morale strain until the Hazard is addressed.” | `crew-morale-fracture-ignored`; **Crew Morale Fracture Ignored** — “The unresolved morale fracture applies its authored closeout consequence.” | `crew-morale-repeat-breach`; **Crew Morale Repeated Breach** — “A repeated Crew Morale breach triggers the existing Hazard's authored consequence.” |
+| `arkengine` | `arkengine-instability`; **Arkengine Instability** — “The Arkengine remains dangerously unstable until the Hazard is addressed.” | `arkengine-instability-ignored`; **Arkengine Instability Ignored** — “The unresolved Arkengine instability applies its authored closeout consequence.” | `arkengine-repeat-breach`; **Arkengine Repeated Breach** — “A repeated Arkengine breach triggers the existing Hazard's authored consequence.” |
+| `levstone-array` | `levstone-gravity-shear`; **Levstone Gravity Shear** — “The levstone array remains trapped in dangerous gravitational shear until the Hazard is addressed.” | `levstone-gravity-shear-ignored`; **Levstone Gravity Shear Ignored** — “The unresolved gravity shear applies its authored closeout consequence.” | `levstone-array-repeat-breach`; **Levstone Array Repeated Breach** — “A repeated Levstone Array breach triggers the existing Hazard's authored consequence.” |
+| `solar-sail-rig` | `solar-sail-desynchronization`; **Solar-Sail Desynchronization** — “The solar-sail rig remains dangerously desynchronized until the Hazard is addressed.” | `solar-sail-desynchronization-ignored`; **Solar-Sail Desynchronization Ignored** — “The unresolved sail desynchronization applies its authored closeout consequence.” | `solar-sail-rig-repeat-breach`; **Solar-Sail Rig Repeated Breach** — “A repeated Solar-Sail Rig breach triggers the existing Hazard's authored consequence.” |
+| `lifeveil` | `lifeveil-collapse`; **Lifeveil Collapse** — “The Lifeveil remains critically unstable until the Hazard is addressed.” | `lifeveil-collapse-ignored`; **Lifeveil Collapse Ignored** — “The unresolved Lifeveil collapse applies its authored closeout consequence.” | `lifeveil-repeat-breach`; **Lifeveil Repeated Breach** — “A repeated Lifeveil breach triggers the existing Hazard's authored consequence.” |
+
+Task 3 resolves the definition and combines it with the sparse creation record,
+then captures the complete active record through the Task 1 schema. It executes
+no timing, collision, removal, Address Hazard, or closeout behavior. Collision
+execution remains Task 4, timing execution remains Task 5, Address Hazard
+execution remains Task 6, and ignored-consequence closeout remains Task 7.
+
 ## 12. Validation contract
 
 Hazard validation is exact and fail-closed. It must:
