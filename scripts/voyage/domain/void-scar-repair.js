@@ -1,4 +1,4 @@
-import { captureVoyageShipState } from "./ship-state.js";
+import { captureVoyageShipState, validateVoyageShipState } from "./ship-state.js";
 import { captureVoyageVoidScarPlainData } from "./void-scar-schema.js";
 
 const REQUEST_FIELDS = Object.freeze([
@@ -23,6 +23,7 @@ const DOCK_OUTCOMES = new Map([
   ["failure", { costPercent: 125, timePercent: 125 }],
   ["critical-failure", { costPercent: 150, timePercent: 150 }]
 ]);
+const REPAIR_EVENT_TYPE = "voyage.void-scar-repaired";
 
 function issue(code, path, message) {
   return { code, path, message, severity: "error" };
@@ -93,6 +94,16 @@ function repairResult(values = {}) {
     removesScar: values.removesScar ?? null,
     errors: (values.errors ?? []).map((error) => ({ ...error })),
     warnings: (values.warnings ?? []).map((warning) => ({ ...warning }))
+  };
+}
+
+function applicationFailure(errors = [], warnings = []) {
+  return {
+    ok: false,
+    nextState: null,
+    events: [],
+    errors: errors.map((error) => ({ ...error })),
+    warnings: warnings.map((warning) => ({ ...warning }))
   };
 }
 
@@ -198,4 +209,70 @@ export function analyzeVoyageVoidScarRepair(shipState, request) {
     timePercent: null,
     removesScar: true
   });
+}
+
+export function applyVoyageVoidScarRepair(shipState, request) {
+  const analysis = analyzeVoyageVoidScarRepair(shipState, request);
+  if (!analysis.readyForVoidScarRepair || analysis.removesScar !== true) {
+    return applicationFailure(analysis.errors, analysis.warnings);
+  }
+
+  const shipCapture = captureVoyageShipState(shipState);
+  const parsedRequest = captureRequest(request);
+  if (!shipCapture.ok) return applicationFailure(shipCapture.errors, shipCapture.warnings);
+  if (!parsedRequest.ok) return applicationFailure(parsedRequest.errors);
+
+  const ship = shipCapture.state;
+  const value = parsedRequest.value;
+  const index = value.existingVoidScarIndex;
+  if (index >= ship.voidScars.length) {
+    return applicationFailure([issue("stale-void-scar-repair-index", "request.existingVoidScarIndex", "existingVoidScarIndex does not identify a live Scar.")], analysis.warnings);
+  }
+  const liveScar = ship.voidScars[index];
+  if (liveScar.voidScarId !== value.voidScarId) {
+    return applicationFailure([issue("stale-void-scar-repair-void-scar-id", "request.voidScarId", "voidScarId does not match the live Scar at the requested index.")], analysis.warnings);
+  }
+  if (!sameSnapshot(value.previousVoidScar, liveScar)) {
+    return applicationFailure([issue("stale-void-scar-repair-previous-void-scar", "request.previousVoidScar", "previousVoidScar does not match the live Scar snapshot.")], analysis.warnings);
+  }
+  const previousVoidScar = structuredClone(liveScar);
+  const nextStateCandidate = {
+    shipId: ship.shipId,
+    revision: ship.revision + 1,
+    installed: { ...ship.installed },
+    hull: { ...ship.hull },
+    voidScars: ship.voidScars.slice(0, index).concat(ship.voidScars.slice(index + 1))
+  };
+
+  const finalValidation = validateVoyageShipState(nextStateCandidate);
+  if (!finalValidation.valid) return applicationFailure(finalValidation.errors, analysis.warnings);
+  const nextCapture = captureVoyageShipState(nextStateCandidate);
+  if (!nextCapture.ok) return applicationFailure(nextCapture.errors, analysis.warnings);
+
+  const event = {
+    type: REPAIR_EVENT_TYPE,
+    shipId: nextCapture.state.shipId,
+    voidScarId: liveScar.voidScarId,
+    pressureSystemId: liveScar.pressureSystemId,
+    repairMethod: analysis.repairMethod,
+    outcome: analysis.outcome,
+    costPercent: analysis.costPercent,
+    timePercent: analysis.timePercent,
+    fieldRepairResourceId: analysis.repairMethod === "field-repair-resource" ? value.fieldRepairResourceId : null,
+    previousShipRevision: ship.revision,
+    revision: nextCapture.state.revision,
+    previousVoidScar,
+    previousVoidScarCount: ship.voidScars.length,
+    voidScarCount: nextCapture.state.voidScars.length
+  };
+  const eventCapture = captureVoyageVoidScarPlainData(event, "events[0]");
+  if (!eventCapture.ok) return applicationFailure(eventCapture.errors, analysis.warnings);
+
+  return {
+    ok: true,
+    nextState: nextCapture.state,
+    events: [eventCapture.value],
+    errors: [],
+    warnings: analysis.warnings.map((warning) => ({ ...warning }))
+  };
 }
