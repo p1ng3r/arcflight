@@ -1,9 +1,9 @@
 # Arcflight Gameplay V3 - Milestone 7: Void Scars, Hull Capacity, and Repair
 
-**Status:** Accepted documentation-only contract after the canonical decision
-pass and the exact capacity-analysis and repair-approval clarifications. Tasks
-1 through 3 are implemented in committed pure-domain slices; Task 4 remains
-implementation work.
+**Status:** Accepted completed contract for Milestone 7 Tasks 0 through 5.
+The canonical decision pass and the exact capacity-analysis, repair-approval,
+and atomic-repair clarifications are implemented in committed pure-domain
+slices.
 
 **Canonical authority:** The canonical Event Runner rules, the Gameplay V3 Canonical Audit and Milestone Map, and the accepted Milestone 6 Hazard Engine Contract remain authoritative. This document records the smallest pure-domain contract that can be implemented without changing those sources.
 
@@ -14,10 +14,9 @@ implementation work.
 Milestone 6 intentionally leaves a Pressure Breach Void Scar as a proposal. Its existing transaction persists the active Hazard in temporary activeHazards, resets the breached Pressure system, increments the encounter revision once, emits one voyage.pressure-breach-applied event, and includes one lasting voidScarProposal. It does not mutate a ship or consume hull capacity.
 
 The five canonical Pressure systems and the existing proposal are the
-available source boundary for this milestone. Durable Void Scar and hull
-capacity schemas and capacity-analysis runtime now exist in the preceding
-committed slices; repair runtime remains separate milestone work as mapped
-below.
+available source boundary for this milestone. Durable Void Scar state, hull
+capacity, approved creation, repair analysis, and atomic repair application
+are implemented in the committed Tasks 1 through 5 pure-domain slices.
 
 Existing ship code already uses Arcflight-owned flags.arcflight.system data, including installed.hullPlatform, base.hull, derived.hullIntegrity, and current.hull. Existing Voyage state uses temporary primaryShip, revision, Pressure, Hazards, snapshots, and consequence collections. Those ownership boundaries are preserved.
 
@@ -286,8 +285,8 @@ unreadable values, class instances, and extra fields are invalid. The analyzer
 captures it into isolated data and never returns the approval object.
 
 Milestone 7 receives a precomputed outcome and never rolls. All four valid
-normal outcomes complete the repair; they differ only in authored cost/time
-percentages, rounded upward by the implementation's chosen unit:
+normal outcomes complete the repair; they use fixed percentage-point values
+in the pure-domain analysis and repair-event contract:
 
 | Outcome | Cost | Time |
 |---|---:|---:|
@@ -737,7 +736,8 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 ### Repair
 
 - normal eligibility, facility/context validation, and field-repair tags;
-- all four normal outcomes and exact 50/75/125/150% upward rounding;
+- all four normal outcomes and exact fixed 50/75/125/150 percentage-point
+  terms;
 - successful one-Scar removal for all four normal outcomes, exact outcome percentages, capacity release, and no Hull Integrity mutation;
 - field repair without docking, gold, or PF2e checks, with exact fieldRepairResourceId compatibility and null outcome/percentages;
 - stale snapshots, duplicate requests, safe-integer overflow, hostile input, deterministic results, and exact success event shape.
@@ -865,30 +865,45 @@ At capacity + another proposal
   -> no Scar mutation; deferred Catastrophic Breakdown analysis
 ~~~
 
-## 19. Remaining implementation choices (not canonical gameplay decisions)
+## 19. Fixed Milestone 7 decisions and deferred integration
 
-The canonical capacity API and result contract are now resolved. No blocking
-canonical ambiguity remains for the pure Milestone 7 slice. These are non-gameplay
-implementation choices to record in code review:
+The following pure-domain decisions are fixed and implemented by Tasks 1
+through 5:
 
-- internal file/module split and the concrete safe-schema helper, while
-  preserving the exact public APIs;
-- JSON/schema library versus manual validation, while preserving plain data and
-  hostile-input defenses;
-- the rounding unit for cost and time; canonical behavior is upward rounding,
-  and the implementation must document its chosen unit;
-- the exact source-snapshot transport shape between Milestones 10 and 7, while
-  retaining the required request keys and provenance bindings; and
-- Foundry adapter/persistence paths, socket envelopes, UI, and projections,
-  which remain deferred to Milestones 10-12.
+- the canonical creation source transport is exactly
+  `voyage.pressure-breach-applied`;
+- the Milestone 6 `voidScarProposal` remains proposal-only until explicit
+  approved creation evidence is supplied, after which the canonical Scar is
+  regenerated internally and caller-authored Scars or application plans have
+  no authority;
+- capacity is the authored installed-hull `voidScarCapacity`, exhaustion is
+  exactly zero available slots, exactly-at-capacity is valid, and duplicate
+  creation is rejected atomically;
+- Dock Repair uses fixed `costPercent`/`timePercent` percentage-point terms of
+  50/50, 75/75, 125/125, and 150/150 for critical-success, success, failure,
+  and critical-failure;
+- all four Dock outcomes complete repair and remove the active Scar; Field
+  Repair Resource uses `outcome: null`, `costPercent: null`, and
+  `timePercent: null` and also removes the active Scar;
+- durable ship state stores active Scars only, while the repair event retains
+  the isolated `previousVoidScar` snapshot;
+- each successful creation or repair consumes exactly one revision and emits
+  exactly one event, while failed applications produce no mutation, revision,
+  or event.
 
-No implementation choice may add mechanics or change event fields,
-cardinality, or ownership defined above.
+The remaining work is explicitly deferred integration ownership, not an
+unresolved Milestone 7 choice:
+
+- Milestone 9 owns Catastrophic Breakdown, Catastrophic Hazard, Emergency
+  Response, and stabilization;
+- Milestone 10 owns Foundry persistence, document mutation, sockets, GM
+  authority, approval UI, inventory and resource integration, spending,
+  durable idempotency, closeout, orchestration, and player projection/privacy.
 
 ## 20. Contract acceptance criteria
 
-This contract clarification is accepted before Task 4 implementation. It adds
-no production JavaScript or tests and does not alter the accepted Task 0-3
-mechanics. Every implementation slice must preserve the canonical Event Runner
-rules, the Milestone 6 Hazard contract, and the explicit Milestone 8-13
-deferrals above.
+This contract records the accepted and completed Milestone 7 Tasks 0 through
+5. It preserves the canonical Event Runner rules, the Milestone 6 Hazard
+contract, and the explicit Milestone 8 through 13 deferrals above. No
+implemented Task 1 through 5 boundary remains a placeholder or unresolved
+gameplay decision.
