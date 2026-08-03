@@ -1,7 +1,9 @@
 # Arcflight Gameplay V3 - Milestone 7: Void Scars, Hull Capacity, and Repair
 
 **Status:** Accepted documentation-only contract after the canonical decision
-pass. No Milestone 7 production or test implementation exists yet.
+pass and the exact capacity-analysis clarification. Tasks 1 and 2 are
+implemented in committed pure-domain slices; Task 3 remains implementation
+work.
 
 **Canonical authority:** The canonical Event Runner rules, the Gameplay V3 Canonical Audit and Milestone Map, and the accepted Milestone 6 Hazard Engine Contract remain authoritative. This document records the smallest pure-domain contract that can be implemented without changing those sources.
 
@@ -11,7 +13,11 @@ pass. No Milestone 7 production or test implementation exists yet.
 
 Milestone 6 intentionally leaves a Pressure Breach Void Scar as a proposal. Its existing transaction persists the active Hazard in temporary activeHazards, resets the breached Pressure system, increments the encounter revision once, emits one voyage.pressure-breach-applied event, and includes one lasting voidScarProposal. It does not mutate a ship or consume hull capacity.
 
-The current repository has no durable Void Scar collection, Void Scar schema, hull-capacity field, repair analyzer, repair application, or Scar event producer. The five canonical Pressure systems and the existing proposal are the available source boundary for this milestone.
+The five canonical Pressure systems and the existing proposal are the
+available source boundary for this milestone. Durable Void Scar and hull
+capacity schemas now exist in the preceding committed slices; repair and
+capacity-analysis runtime behavior remain separate milestone work as mapped
+below.
 
 Existing ship code already uses Arcflight-owned flags.arcflight.system data, including installed.hullPlatform, base.hull, derived.hullIntegrity, and current.hull. Existing Voyage state uses temporary primaryShip, revision, Pressure, Hazards, snapshots, and consequence collections. Those ownership boundaries are preserved.
 
@@ -188,6 +194,24 @@ Upgrade modification is deferred to Milestone 13.
 
 Void Scar Capacity is not Hull Integrity. Creating, repairing, stabilizing, or removing a Scar does not change current.hull or derived.hullIntegrity unless a later authored rule says so.
 
+### Capacity-analysis boundary
+
+The exact pure public capacity analyzer is:
+
+~~~js
+analyzeVoyageVoidScarCapacity(shipState)
+~~~
+
+It accepts only a candidate durable Voyage ship-state snapshot. It accepts no
+options, capacity override, upgrade or temporary modifier, caller-authored
+plan, caller-authored active-Scar count, caller-authored platform definition,
+expected revision request, or mutation request. It safely captures and
+validates the complete ship state before deriving any metric.
+
+The effective capacity in this milestone is exactly the captured
+`shipState.hull.voidScarCapacity`; no second effective-capacity field is
+returned. The active count is exactly `shipState.voidScars.length`.
+
 ## 8. Pressure Breach Scar creation
 
 The existing Pressure Breach transaction remains unchanged. It creates one active Hazard, resets the breached system, and emits one event containing one lasting proposal. It does not create a durable Scar.
@@ -278,6 +302,7 @@ validateVoyageVoidScarRecord(record, options)
 captureVoyageVoidScarRecord(record, options)
 validateVoyageShipState(state)
 captureVoyageShipState(state)
+analyzeVoyageVoidScarCapacity(shipState)
 
 analyzeVoyagePressureBreachVoidScarCreation(
   shipState,
@@ -388,9 +413,115 @@ The exact result envelopes are:
 }
 ~~~
 
+### Capacity-analysis result
+
+The capacity analyzer has one exact result envelope and key order:
+
+~~~js
+{
+  ok,
+  shipId,
+  hullPlatform,
+  voidScarCapacity,
+  activeVoidScarCount,
+  availableSlots,
+  capacityExhausted,
+  canAcceptVoidScar,
+  errors,
+  warnings
+}
+~~~
+
+For a valid state, the exact successful shape is:
+
+~~~js
+{
+  ok: true,
+  shipId,
+  hullPlatform,
+  voidScarCapacity,
+  activeVoidScarCount,
+  availableSlots,
+  capacityExhausted,
+  canAcceptVoidScar,
+  errors: [],
+  warnings: []
+}
+~~~
+
+The fields mean:
+
+- `shipId` is the captured `shipState.shipId`.
+- `hullPlatform` is the captured `shipState.installed.hullPlatform`.
+- `voidScarCapacity` is the captured authored/effective capacity.
+- `activeVoidScarCount` is the captured `shipState.voidScars.length`.
+- `availableSlots` is `voidScarCapacity - activeVoidScarCount`.
+- `capacityExhausted` is exactly `availableSlots === 0`.
+- `canAcceptVoidScar` is exactly `availableSlots > 0`.
+
+No aliases such as `freeSlots`, `remainingCapacity`, `maximumScars`,
+`effectiveCapacity`, `hasCapacity`, `canCreate`, or `isFull` are part of this
+result.
+
+For an invalid state, the exact failed shape and key order are:
+
+~~~js
+{
+  ok: false,
+  shipId: null,
+  hullPlatform: null,
+  voidScarCapacity: null,
+  activeVoidScarCount: null,
+  availableSlots: null,
+  capacityExhausted: null,
+  canAcceptVoidScar: null,
+  errors,
+  warnings
+}
+~~~
+
+The failure result has no partial metric, state, event, or caller reference.
+The analyzer uses `captureVoyageShipState(shipState)`, preserves its exact
+diagnostic ordering and codes in `errors` and `warnings`, and adds no generic
+malformed-state diagnostic. No raw JavaScript exception text is exposed.
+
+Exactly-at-capacity is valid, not an error, warning, exception, or mutation:
+
+~~~js
+{
+  ok: true,
+  availableSlots: 0,
+  capacityExhausted: true,
+  canAcceptVoidScar: false,
+  errors: [],
+  warnings: []
+}
+~~~
+
+Below capacity, `availableSlots` is positive, `capacityExhausted` is false,
+and `canAcceptVoidScar` is true. One remaining slot therefore reports
+`availableSlots: 1`, `capacityExhausted: false`, and
+`canAcceptVoidScar: true`.
+
+The analyzer is pure and deterministic. It never changes revision, returns a
+next state, emits an event, creates a Scar, changes Hull Integrity, or invokes
+Catastrophic Breakdown or Emergency Response. Invalid input—including unknown
+platforms, capacity mismatch, malformed or duplicate Scars, over-capacity
+state, invalid or unsafe revision, and hostile data—returns the exact failed
+envelope with no capacity metrics. Returned diagnostics and values are
+isolated; equivalent canonical or hostile inputs produce deeply equal
+results.
+
 Neither boundary performs PF2e rolls, Actor lookups, ownership checks, Foundry
 updates, generic resource spending, or UI/socket work. Returned analyses are
 inspection data and never authorization tokens.
+
+The capacity analyzer is informational only and consumes no ship revision and
+emits no event. Task 2 creation analysis may reuse this analyzer or a narrow
+internal metric helper, but it must not accept or trust a caller-authored
+capacity result. Task 2 preserves its existing request, analysis, application,
+duplicate-precedence, stale-identity/revision precedence, creation-event, and
+atomicity contracts.
 
 ## 12. Concurrency, authority, and atomicity
 
@@ -427,6 +558,7 @@ The repository currently emits no Void Scar or hull-capacity events. The existin
 | voyage.void-scar-created | Required for pure successful creation | Exact keys, in order: type, shipId, encounterId, pressureSystemId, sourceEventType, sourceEncounterRevision, sourceProposal, previousShipRevision, revision, previousVoidScarCount, voidScarCount, voidScar; one ship revision and one event |
 | voyage.void-scar-repaired | Required for every valid removal | Exact keys, in order: type, shipId, voidScarId, pressureSystemId, repairMethod, outcome, costPercent, timePercent, fieldRepairResourceId, previousShipRevision, revision, previousVoidScar, previousVoidScarCount, voidScarCount; one ship revision and one event |
 | failed repair event | Not emitted | Invalid or stale applications return no state, revision, or event; valid failure and critical-failure outcomes still remove the Scar and emit the repair event |
+| capacity analysis | Required pure informational result | `analyzeVoyageVoidScarCapacity(shipState)` returns the exact metric envelope; no revision, state mutation, Scar, or event |
 | Hull-capacity change | Deferred | No Milestone 7 producer; upgrade-derived capacity changes belong to authored upgrade work |
 | Scar stabilization | Milestone 9 | No Milestone 7 producer; stabilization is not repair |
 | Capacity exhaustion / Catastrophic Breakdown | Milestone 9 | No Scar-created event; return a fail-closed deferred Breakdown analysis |
@@ -470,6 +602,12 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 - no tier/room-slot inference;
 - zero, below-maximum, exactly-maximum, duplicate, overflow, and arithmetic overflow cases;
 - no mutation of current.hull, derived.hullIntegrity, Pressure, or encounter activeHazards.
+- exact capacity-analysis success and failure key order;
+- exact `shipId`, `hullPlatform`, `voidScarCapacity`, `activeVoidScarCount`,
+  `availableSlots`, `capacityExhausted`, and `canAcceptVoidScar` values;
+- one remaining slot, exact exhaustion, invalid-state diagnostic preservation,
+  caller/result/cross-call isolation, deterministic hostile failures, and no
+  revision or event.
 
 ### Creation
 
@@ -526,8 +664,11 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 
 - **Capability:** Calculate active count, base/effective capacity, available slots, and a fail-closed capacity-exhaustion result.
 - **Expected production files:** new scripts/voyage/domain/void-scar-capacity.js and selected ship-state helper.
-- **Expected tests:** capacity analyzer tests for every hull and boundary.
-- **Public API:** analyzeVoyageVoidScarCapacity.
+- **Expected tests:** tests/voyage/domain/void-scar-capacity.test.mjs for every hull, boundary, invalid state, hostile input, exact keys, diagnostics, isolation, and determinism.
+- **Public API:** `analyzeVoyageVoidScarCapacity(shipState)`.
+- **Successful result key order:** `ok`, `shipId`, `hullPlatform`, `voidScarCapacity`, `activeVoidScarCount`, `availableSlots`, `capacityExhausted`, `canAcceptVoidScar`, `errors`, `warnings`.
+- **Failed result key order:** the same order, with `ok: false`, all seven metric/identity fields null, and captured ship-state `errors`/`warnings`.
+- **Production capability:** pure canonical metrics and valid exhaustion reporting; no mutation, revision, event, Scar creation, Catastrophic Breakdown, Emergency Response, or Hull damage.
 - **Non-goals:** No Catastrophic Hazard, Emergency Response, or Hull damage.
 - **Atomicity:** Exact maximum is valid; one additional Scar is rejected without mutation, revision, or event.
 - **Non-goals:** No Catastrophic Breakdown or Emergency Response execution.
@@ -581,6 +722,10 @@ Approved proposal (Milestone 7 pure ship-domain boundary)
   -> one active VoidScarRecord, if capacity permits
   -> one ship revision + voyage.void-scar-created
 
+Capacity analysis (Milestone 7 pure informational boundary)
+  -> exact count, capacity, slots, exhaustion, and acceptance metrics
+  -> no ship revision + no event
+
 Repair outcome (Milestone 7 pure ship-domain boundary)
   -> remove one active Scar for every valid normal outcome or field resource
   -> one ship revision + voyage.void-scar-repaired
@@ -591,8 +736,8 @@ At capacity + another proposal
 
 ## 19. Remaining implementation choices (not canonical gameplay decisions)
 
-The seven canonical decisions above are resolved. No blocking canonical
-ambiguity remains for the pure Milestone 7 slice. These are non-gameplay
+The canonical capacity API and result contract are now resolved. No blocking
+canonical ambiguity remains for the pure Milestone 7 slice. These are non-gameplay
 implementation choices to record in code review:
 
 - internal file/module split and the concrete safe-schema helper, while
@@ -611,8 +756,8 @@ cardinality, or ownership defined above.
 
 ## 20. Contract acceptance criteria
 
-This contract is accepted for implementation beginning with Task 1. No
-Milestone 7 production JavaScript or tests were added by this documentation
-pass. Every implementation slice must preserve the canonical Event Runner
+This contract clarification is accepted before Task 3 implementation. It adds
+no production JavaScript or tests and does not alter the accepted Task 0-2
+mechanics. Every implementation slice must preserve the canonical Event Runner
 rules, the Milestone 6 Hazard contract, and the explicit Milestone 8-13
 deferrals above.
