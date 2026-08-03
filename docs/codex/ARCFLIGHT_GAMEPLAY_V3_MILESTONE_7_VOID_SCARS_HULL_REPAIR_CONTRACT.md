@@ -1,9 +1,9 @@
 # Arcflight Gameplay V3 - Milestone 7: Void Scars, Hull Capacity, and Repair
 
 **Status:** Accepted documentation-only contract after the canonical decision
-pass and the exact capacity-analysis clarification. Tasks 1 and 2 are
-implemented in committed pure-domain slices; Task 3 remains implementation
-work.
+pass and the exact capacity-analysis and repair-approval clarifications. Tasks
+1 through 3 are implemented in committed pure-domain slices; Task 4 remains
+implementation work.
 
 **Canonical authority:** The canonical Event Runner rules, the Gameplay V3 Canonical Audit and Milestone Map, and the accepted Milestone 6 Hazard Engine Contract remain authoritative. This document records the smallest pure-domain contract that can be implemented without changing those sources.
 
@@ -15,8 +15,8 @@ Milestone 6 intentionally leaves a Pressure Breach Void Scar as a proposal. Its 
 
 The five canonical Pressure systems and the existing proposal are the
 available source boundary for this milestone. Durable Void Scar and hull
-capacity schemas now exist in the preceding committed slices; repair and
-capacity-analysis runtime behavior remain separate milestone work as mapped
+capacity schemas and capacity-analysis runtime now exist in the preceding
+committed slices; repair runtime remains separate milestone work as mapped
 below.
 
 Existing ship code already uses Arcflight-owned flags.arcflight.system data, including installed.hullPlatform, base.hull, derived.hullIntegrity, and current.hull. Existing Voyage state uses temporary primaryShip, revision, Pressure, Hazards, snapshots, and consequence collections. Those ownership boundaries are preserved.
@@ -260,6 +260,31 @@ Dock repair removes one compatible active Scar only when all canonical requireme
 4. repair time; and
 5. one Very Hard authored Crafting, Engineering Lore, or other eligible repair check.
 
+The pure Task 4 request carries an already approved facility choice as
+`facilityApproval`. Its exact shape and key order are:
+
+~~~js
+{
+  approved,
+  facilityId,
+  facilityTag
+}
+~~~
+
+`approved` must be the literal boolean `true`. `facilityId` and `facilityTag`
+must be non-blank exact strings. `facilityTag` must be exactly equal, using
+JavaScript string equality with no trimming, case folding, Unicode
+normalization, coercion, substring, prefix, or fuzzy matching, to one entry in
+the live Scar's `requiredFacilities` array. An empty `requiredFacilities` array
+has no compatible facility tag. `facilityId` is binding evidence only; Task 4
+does not query or persist a facility registry, prove existence, ownership,
+location, availability, payment, scheduling, or GM authority.
+
+`facilityApproval` is a plain, exact-keyed object containing only own
+enumerable data properties. Symbols, unsafe keys, accessors, hostile or
+unreadable values, class instances, and extra fields are invalid. The analyzer
+captures it into isolated data and never returns the approval object.
+
 Milestone 7 receives a precomputed outcome and never rolls. All four valid
 normal outcomes complete the repair; they differ only in authored cost/time
 percentages, rounded upward by the implementation's chosen unit:
@@ -282,11 +307,38 @@ transition.
 ### Field Repair Resource
 
 A field-repair-resource operation requires an exact authored
-fieldRepairResourceId and compatibility with the targeted Scar. It does not
+fieldRepairResourceId and an already approved `fieldRepairResourceApproval`
+with compatibility with the targeted Scar. It does not
 require docking, normal gold, or the Very Hard check. It removes the exact
 active Scar on successful validated application. Its result uses outcome: null,
 costPercent: null, and timePercent: null; the normal multiplier table does not
 apply. This does not claim all in-world repair time is zero.
+
+The exact `fieldRepairResourceApproval` shape and key order are:
+
+~~~js
+{
+  approved,
+  fieldRepairResourceId,
+  compatibilityTag
+}
+~~~
+
+`approved` must be the literal boolean `true`. The nested
+`fieldRepairResourceId` must be a non-blank exact string equal to the
+top-level request `fieldRepairResourceId`. `compatibilityTag` must be a
+non-blank exact string and must be exactly equal, using JavaScript string
+equality with no trimming, case folding, Unicode normalization, coercion,
+substring, prefix, or fuzzy matching, to one entry in the live Scar's
+`compatibleFieldRepairTags` array. An empty tag array has no compatible
+resource. The approval object is binding evidence only; Task 4 does not prove
+inventory ownership, Item UUID, quantity, rarity, price, availability,
+consumption, persistence, or GM authority.
+
+`fieldRepairResourceApproval` is a plain, exact-keyed object containing only
+own enumerable data properties. Symbols, unsafe keys, accessors, hostile or
+unreadable values, class instances, and extra fields are invalid. The analyzer
+captures it into isolated data and never returns the approval object.
 
 Milestone 7 binds an already approved resource use and does not implement
 inventory consumption or resource persistence.
@@ -352,14 +404,20 @@ Repair request key order is:
   repairMethod,
   outcome,
   facilityApproval,
-  fieldRepairResourceId
+  fieldRepairResourceId,
+  fieldRepairResourceApproval
 }
 ~~~
 
+All ten fields are required own enumerable data properties. Omitted and
+`undefined` fields are invalid; method-forbidden fields must be exactly `null`.
+
 repairMethod is exactly dock-repair or field-repair-resource. For dock-repair,
-outcome is one of the four normal outcomes, facilityApproval is required, and
-fieldRepairResourceId is null. For field-repair-resource, outcome and
-facilityApproval are null and fieldRepairResourceId is required.
+outcome is one of the four normal outcomes, facilityApproval has the exact
+shape above, fieldRepairResourceId is null, and
+fieldRepairResourceApproval is null. For field-repair-resource, outcome and
+facilityApproval are null, fieldRepairResourceId is a non-blank exact string,
+and fieldRepairResourceApproval has the exact shape above.
 
 The exact result envelopes are:
 
@@ -572,6 +630,64 @@ costPercent, and timePercent are null and fieldRepairResourceId is required.
 No generic effects, resource transactions, PF2e rolls, Foundry objects, or
 callbacks belong in either event.
 
+### Repair diagnostic ownership and precedence
+
+After ship-state capture and validation, request capture, ship identity,
+expected revision, live Scar index, live Scar identity, and exact
+`previousVoidScar` snapshot binding succeed, repair validation uses this exact
+precedence:
+
+1. validate `repairMethod`;
+2. for Dock Repair, require `fieldRepairResourceId` to be null;
+3. for Dock Repair, require `fieldRepairResourceApproval` to be null;
+4. validate `facilityApproval` shape;
+5. validate facility approval ID/tag values;
+6. require exact `facilityTag` membership in live `requiredFacilities`;
+7. validate the exact Dock outcome;
+8. for Field Repair Resource, require `outcome` to be null;
+9. for Field Repair Resource, require `facilityApproval` to be null;
+10. validate the resource ID;
+11. validate `fieldRepairResourceApproval` shape;
+12. require nested and top-level resource IDs to match exactly;
+13. require exact `compatibilityTag` membership in live
+    `compatibleFieldRepairTags`.
+
+Specific concurrency and live-snapshot diagnostics always precede these
+method-specific diagnostics. No generic repair-analysis wrapper diagnostic is
+added when a specific diagnostic applies.
+
+The exact method-specific diagnostic codes and paths are:
+
+| Code | Path | Meaning |
+|---|---|---|
+| `missing-repair-facility-approval` | `request.facilityApproval` | Required Dock approval is absent when root exact-key capture has not already reported the missing field. |
+| `invalid-repair-facility-approval` | `request.facilityApproval` or exact nested path | Dock approval is non-plain, malformed, unreadable, unsafe, extra-keyed, not literally approved, or has a blank ID/tag. |
+| `unsuitable-repair-facility` | `request.facilityApproval.facilityTag` | Valid tag is not an exact member of live `requiredFacilities`. |
+| `unexpected-repair-facility-approval` | `request.facilityApproval` | Field Repair Resource supplied non-null facility approval. |
+| `missing-field-repair-resource-id` | `request.fieldRepairResourceId` | Required Field Repair Resource ID is absent. |
+| `invalid-field-repair-resource-id` | `request.fieldRepairResourceId` | Resource ID is blank or not an exact string. |
+| `missing-field-repair-resource-approval` | `request.fieldRepairResourceApproval` | Required Field Repair approval is absent. |
+| `invalid-field-repair-resource-approval` | `request.fieldRepairResourceApproval` or exact nested path | Resource approval is non-plain, malformed, unreadable, unsafe, extra-keyed, not literally approved, or has a blank ID/tag. |
+| `field-repair-resource-approval-mismatch` | `request.fieldRepairResourceApproval.fieldRepairResourceId` | Nested resource ID differs from the top-level ID. |
+| `incompatible-field-repair-resource` | `request.fieldRepairResourceApproval.compatibilityTag` | Valid tag is not an exact member of live `compatibleFieldRepairTags`. |
+| `unexpected-field-repair-resource-id` | `request.fieldRepairResourceId` | Dock Repair supplied a non-null resource ID. |
+| `unexpected-field-repair-resource-approval` | `request.fieldRepairResourceApproval` | Dock Repair supplied non-null resource approval. |
+
+Generic request-capture diagnostics remain authoritative for missing root
+fields, unknown root keys, symbols, unsafe keys, and unreadable request roots.
+"Fabricated" evidence means false/non-boolean approval, mismatched nested
+resource ID, absent facility/resource tag, unknown approval fields, or
+malformed, unsafe, unreadable, or hostile approval data. The analyzer does not
+judge whether a well-formed upstream approval was honestly issued.
+
+Both approval shapes must fail closed for revoked root or nested Proxies,
+throwing `ownKeys` and `getOwnPropertyDescriptor` traps, accessors, symbols,
+unsafe keys, cycles, arrays, sparse or extra-keyed arrays, non-finite values,
+unsupported primitives and objects, and missing fields. Diagnostics must not
+expose raw exception, Proxy, revocation, trap, stack, or engine-specific text;
+no hostile approval reference may be retained or returned. Equivalent fresh
+hostile inputs produce deeply equal failed results.
+
 ## 14. All-five-system behavior
 
 Pressure Breach creation must be exercised for every canonical system:
@@ -625,6 +741,19 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 - successful one-Scar removal for all four normal outcomes, exact outcome percentages, capacity release, and no Hull Integrity mutation;
 - field repair without docking, gold, or PF2e checks, with exact fieldRepairResourceId compatibility and null outcome/percentages;
 - stale snapshots, duplicate requests, safe-integer overflow, hostile input, deterministic results, and exact success event shape.
+- exact ten-field repair-request key order and required own data properties;
+- exact three-field `facilityApproval` shape, literal approval, non-blank ID,
+  required-facility tag membership, unsuitable-tag rejection, null resource
+  fields, and exact diagnostics/precedence;
+- exact three-field `fieldRepairResourceApproval` shape, literal approval,
+  top-level/nested resource-ID equality, compatibility-tag membership, null
+  Dock fields, and exact diagnostics/precedence;
+- no trimming, case folding, Unicode normalization, coercion, substring,
+  prefix, fuzzy matching, registry lookup, inventory lookup, or approval
+  reference in returned analysis;
+- hostile and revoked approval objects, accessors, reflection traps, unsafe
+  keys, cycles, sparse/extra-key arrays, deterministic failures, and
+  cross-call isolation.
 
 ### Boundary regressions
 
@@ -677,8 +806,9 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 
 - **Capability:** Validate dock-repair and field-repair-resource requests, eligibility, compatibility, exact outcomes, and rounded cost/time without mutation.
 - **Expected production files:** scripts/voyage/domain/void-scar-repair.js.
-- **Expected tests:** repair planning tests for normal/field repair, outcomes, contexts, tags, and hostile data.
-- **Public API:** analyzeVoyageVoidScarRepair.
+- **Expected tests:** tests/voyage/domain/void-scar-repair.test.mjs for exact ten-field request capture, live Scar binding, normal/field repair, outcomes, facility approval, compatibility evidence, diagnostics, isolation, and hostile data.
+- **Public API:** analyzeVoyageVoidScarRepair(shipState, request).
+- **Production capability:** exact ten-field request capture; exact `facilityApproval` and `fieldRepairResourceApproval` capture; live Scar binding; Dock Repair terms; Field Repair compatibility; pure analysis only.
 - **Non-goals:** No PF2e roll, inventory consumption, resource persistence, or ship mutation.
 - **Atomicity:** Valid failure and critical-failure outcomes are repair successes that remove the Scar; invalid requests do not mutate.
 
@@ -687,7 +817,8 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 - **Capability:** Remove one compatible Scar for every valid normal outcome or field-repair-resource request, release one slot, validate final state, and emit the exact repair event.
 - **Expected production files:** scripts/voyage/domain/void-scar-repair.js and selected event constants.
 - **Expected tests:** repair application/event tests, revision cardinality, active-only preservation, exact dock/field payloads, and isolation.
-- **Public API:** applyVoyageVoidScarRepair.
+- **Public API:** applyVoyageVoidScarRepair(shipState, request).
+- **Authority:** Application accepts the original exact ten-field request and regenerates Task 4 analysis internally. It does not accept caller-authored analysis, approval replacement, compatibility replacement, percentages, event, or next state; approval evidence is not persisted into durable ship state.
 - **Non-goals:** No failed-repair event, resource spending, closeout, persistence, UI, or authority.
 - **Atomicity:** Every valid removal is one revision and one event; invalid/stale/capacity failures are zero revision and zero events.
 
@@ -756,8 +887,8 @@ cardinality, or ownership defined above.
 
 ## 20. Contract acceptance criteria
 
-This contract clarification is accepted before Task 3 implementation. It adds
-no production JavaScript or tests and does not alter the accepted Task 0-2
+This contract clarification is accepted before Task 4 implementation. It adds
+no production JavaScript or tests and does not alter the accepted Task 0-3
 mechanics. Every implementation slice must preserve the canonical Event Runner
 rules, the Milestone 6 Hazard contract, and the explicit Milestone 8-13
 deferrals above.
