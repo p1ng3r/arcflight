@@ -461,7 +461,12 @@ activationTiming: {
 
 removalMethod: {
   methodId: "address-hazard",
-  name: "Address Hazard"
+  name: "Address Hazard",
+  criticalSuccessBenefit: {
+    benefitId: NonBlankString,
+    name: NonBlankString,
+    description: NonBlankString
+  }
 }
 
 ignoredConsequence: {
@@ -482,6 +487,12 @@ metadata: {
   }
 }
 ~~~
+
+`criticalSuccessBenefit` is required for each canonical system Hazard because
+its Address Hazard critical-success result reports the authored descriptor. It
+is inert plain data with no executable behavior. Only a critical-success
+Address result selects and isolates it; normal success reports `benefit: null`.
+Missing or malformed required benefit data fails atomically.
 
 The escalation and duration values use the complete normalized `none` forms
 from this contract:
@@ -518,7 +529,8 @@ Task 3 resolves the definition and combines it with the sparse creation record,
 then captures the complete active record through the Task 1 schema. It executes
 no timing, collision, removal, Address Hazard, or closeout behavior. Collision
 execution remains Task 4, timing execution remains Task 5, Address Hazard
-execution remains Task 6, and ignored-consequence closeout remains Task 7.
+execution remains Task 6, and unresolved-Hazard closeout remains a Milestone 10
+responsibility.
 
 ### 11B. Task 4A pure Hazard collision analysis
 
@@ -1330,34 +1342,139 @@ validates state, plans, and effects; checks encounter and revision; applies
 effects in deterministic order; changes only Pressure; validates the final
 state; increments revision exactly once; and emits exactly one unchanged
 `voyage.pressure-applied` event. Pressure Breach remains a later separate
-transaction. This boundary does not implement Address Hazard execution,
-Hazard removal, timing, closeout, or any unrestricted Pressure mutation.
+transaction. This Pressure boundary does not itself implement Hazard removal,
+timing, closeout, or any unrestricted Pressure mutation.
+
+### 15.2 Active-Hazard response lifecycle
+
+`start-of-next-round` is pure operational eligibility. A Hazard with that
+timing is persisted immediately with `status: "active"`; it has no pending or
+activated state, no activation mutation, revision, or event. Its authored
+`currentEffect` becomes operational exactly when:
+
+```text
+state.roundNumber >= hazard.createdRoundNumber + 1
+```
+
+`analyzeVoyageHazardOperationalTiming(encounterState, hazard)` is the pure
+analyzer for this boundary. Its exact result keys are:
+
+```text
+structurallyValid,
+readyForHazardOperationalTiming,
+encounterId,
+hazardId,
+roundNumber,
+createdRoundNumber,
+operationalRoundNumber,
+operational,
+errors,
+warnings
+```
+
+It accepts only a valid encounter and an active Hazard belonging to that
+encounter. It supports `start-of-next-round`; other valid timing kinds return
+a deterministic not-applicable analysis. It never executes `currentEffect`,
+changes state or the Hazard, increments revision, or emits an event.
+
+`applyVoyageAddressHazard(encounterState, request)` accepts a precomputed
+Address Hazard outcome. It performs no PF2e roll, skill/DC/Actor selection,
+ownership check, or station-eligibility decision, and no public API accepts an
+Address Hazard plan. The exact request keys and order are:
+
+```js
+{
+  kind: "address-hazard",
+  encounterId,
+  expectedRevision,
+  hazardId,
+  existingHazardIndex,
+  previousHazard,
+  outcome
+}
+```
+
+The exact indexed `activeHazards` entry must be an active system Hazard owned
+by `encounterId`, have the request `hazardId`, retain its canonical Pressure
+system slot, permit `removalMethod.methodId: "address-hazard"`, and be
+semantically equal to `previousHazard`. The API never searches another index:
+a moved or changed Hazard is stale. Authorized outcomes are exactly
+`critical-success`, `success`, `failure`, and `critical-failure`.
+
+`success` and `critical-success` remove the one indexed Hazard atomically,
+preserve all remaining order and unrelated state, leave Pressure unchanged,
+and increment revision once. They emit exactly one `voyage.hazard-resolved`
+event with these exact keys and order:
+
+```text
+type,
+encounterId,
+lifecycleState,
+stageId,
+roundNumber,
+phase,
+hazardId,
+pressureSystemId,
+outcome,
+previousRevision,
+revision,
+previousHazard,
+hazard,
+benefit
+```
+
+`previousHazard` is an isolated active snapshot. `hazard` is an isolated
+terminal snapshot using the existing Hazard schema: `status: "resolved"`,
+`resolvedStageId` and `resolvedRoundNumber` from the encounter, terminal
+reason `"addressed"`, and `replacedByHazardId: null`. The terminal revision is
+the event `revision`; the canonical Hazard schema has no separate terminal
+revision field. Terminal snapshots remain outside `activeHazards`.
+
+Success reports `benefit: null`. Critical success reports the exact isolated
+plain descriptor at `removalMethod.criticalSuccessBenefit`; every authored
+Pressure-breach Hazard definition supplies that descriptor. Benefits are audit
+data only and are never mechanically executed. Neither success path executes
+`currentEffect` or `ignoredConsequence`, creates a replacement or duplicate,
+or emits a Pressure, Breach, closeout, or second event.
+
+`failure` and `critical-failure` leave the active Hazard and its collection
+order unchanged. The API builds the narrow committed domain Pressure request
+and calls `applyVoyageDomainPressureEffect(encounterState, pressureRequest)`:
+
+```js
+{
+  kind: "domain-pressure-effect",
+  encounterId,
+  expectedRevision,
+  pressureSystemId,
+  delta,
+  source: {
+    kind: "hazard-address-failure",
+    hazardId,
+    existingHazardIndex,
+    previousHazard,
+    addressOutcome
+  }
+}
+```
+
+Failure maps to `delta: 1`; critical failure maps to `delta: 2`. The canonical
+domain Pressure result is returned unchanged: one Pressure system changes,
+one revision occurs, and exactly one existing `voyage.pressure-applied` event
+is emitted. No resolved event, terminal snapshot, benefit, ignored
+consequence, or same-transaction Pressure Breach is produced; a
+breach-required state remains for the existing later Breach transaction.
 
 ## 16. Closeout behavior
 
 Resolved Hazards produce no further effect.
 
-Unresolved active Hazards apply their authored `ignoredConsequence` at event
-closeout. After successful application, the operation emits exactly one
-`voyage.hazard-closeout-consequence-applied` event containing an isolated
-snapshot of:
-
-- the Hazard before removal;
-- `hazardId` and `encounterId`;
-- closeout `stageId` and `roundNumber` context;
-- `terminalReason: "event-closeout"`;
-- the applied `ignoredConsequence`;
-- `previousRevision`; and
-- `revision`.
-
-The operation then removes the Hazard record from `nextState.activeHazards`,
-increments revision exactly once for the complete closeout operation, and
-returns the new state. The removed Hazard cannot be processed again because it
-is no longer present in authoritative active state.
-
-Full closeout preview, GM approval, and persistent ship application remain
-Milestone 10 responsibilities. Active Void Scar persistence remains Milestone
-7 responsibility.
+Unresolved-Hazard closeout is deliberately not applied by this slice. It does
+not execute `ignoredConsequence`, remove unresolved Hazards, add a closeout
+phase or lifecycle value, or emit a closeout application event. Milestone 10
+owns closeout calculation and application, including any isolated terminal
+audit snapshot and subsequent removal. Active Void Scar persistence remains a
+Milestone 7 responsibility.
 
 ## 17. Explicit exclusions
 
@@ -1475,48 +1592,38 @@ Focused tests:
 - new `tests/voyage/domain/hazard-timing.test.mjs`;
 - new `tests/voyage/domain/hazard-projection.test.mjs`.
 
-Implement pure timing planning using the exact discriminated object and public/
-GM projections. No UI, socket, or public API work is included.
+Implement pure operational eligibility for persisted active Hazards. The
+start-of-next-round boundary is analysis only: no activation record, mutation,
+revision, event, or effect execution. No UI, socket, or public API work is
+included.
 
-### Task 6  -  Address Hazard action
+### Task 6  -  Address Hazard response
 
 Anticipated production files, limited to the integration points proven
 necessary by the focused tests:
 
-- `scripts/voyage/domain/action-outcome-interpretation.js`;
-- `scripts/voyage/domain/resolution-execution-requests.js`;
-- `scripts/voyage/domain/pressure.js`;
 - `scripts/voyage/domain/hazard-application.js`.
 
 Focused tests:
 
 - new `tests/voyage/domain/address-hazard.test.mjs`;
-- relevant action-outcome and resolution-execution-request regressions.
+- `tests/voyage/domain/domain-pressure.test.mjs`.
 
-Implement action replacement, four default outcomes, success/failure units,
-system-Hazard targeting, event-Hazard `failurePressureSystemId` eligibility,
-and authored-effect extension only. Prove that `eventAreaId` is never used as
-a Pressure target.
+Apply one precomputed Address Hazard outcome through an exact live-bound
+request. Success and critical success remove the exact system Hazard and emit
+one resolved audit event; failures delegate once to the committed domain
+Pressure API. This task performs no roll, skill/DC/Actor selection, ownership,
+or station-eligibility work.
 
-### Task 7  -  Hazard closeout-local behavior
+### Task 7  -  Milestone 10 closeout boundary
 
-Anticipated production files:
-
-- new `scripts/voyage/domain/hazard-closeout.js`;
-- `scripts/voyage/domain/hazard-application.js`.
-
-Focused tests:
-
-- new `tests/voyage/domain/hazard-closeout.test.mjs`.
-
-Apply unresolved Hazard consequences once, emit one isolated terminal snapshot,
-remove the Hazard record from `activeHazards`, increment revision once, prove a
-removed Hazard cannot trigger twice, and preserve Milestone 10's closeout
-orchestration boundary.
-
-The focused tests must assert one closeout event, removal of the unresolved
-Hazard, terminal snapshot isolation, the exact `terminalReason`, and that a
-second closeout attempt cannot process the removed Hazard.
+Milestone 6 does not implement a Task 7 closeout module, closeout application
+tests, or unresolved-Hazard closeout behavior. Unresolved active Hazards remain
+active through Milestone 6; their `ignoredConsequence` remains authored data for
+Milestone 10. Milestone 10 owns unresolved-Hazard closeout calculation and
+application, including any terminal audit event and subsequent removal. No
+`voyage.hazard-closeout-consequence-applied` application is implemented in
+Milestone 6.
 
 ### Task 8  -  Cumulative Milestone 6 integration review
 

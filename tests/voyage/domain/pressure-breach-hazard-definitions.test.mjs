@@ -17,26 +17,51 @@ const PRESSURE_SYSTEM_IDS = [
 const EXPECTED_IDS = {
   "crew-morale": {
     effectId: "crew-morale-fracture",
+    criticalSuccessBenefit: {
+      benefitId: "crew-morale-fracture-addressed-critical",
+      name: "Crew Morale Restored",
+      description: "A critical Address Hazard success produces this authored narrative benefit."
+    },
     ignoredConsequenceId: "crew-morale-fracture-ignored",
     collisionConsequenceId: "crew-morale-repeat-breach"
   },
   arkengine: {
     effectId: "arkengine-instability",
+    criticalSuccessBenefit: {
+      benefitId: "arkengine-instability-addressed-critical",
+      name: "Arkengine Stabilized",
+      description: "A critical Address Hazard success produces this authored narrative benefit."
+    },
     ignoredConsequenceId: "arkengine-instability-ignored",
     collisionConsequenceId: "arkengine-repeat-breach"
   },
   "levstone-array": {
     effectId: "levstone-gravity-shear",
+    criticalSuccessBenefit: {
+      benefitId: "levstone-gravity-shear-addressed-critical",
+      name: "Levstone Array Stabilized",
+      description: "A critical Address Hazard success produces this authored narrative benefit."
+    },
     ignoredConsequenceId: "levstone-gravity-shear-ignored",
     collisionConsequenceId: "levstone-array-repeat-breach"
   },
   "solar-sail-rig": {
     effectId: "solar-sail-desynchronization",
+    criticalSuccessBenefit: {
+      benefitId: "solar-sail-desynchronization-addressed-critical",
+      name: "Solar-Sail Rig Resynchronized",
+      description: "A critical Address Hazard success produces this authored narrative benefit."
+    },
     ignoredConsequenceId: "solar-sail-desynchronization-ignored",
     collisionConsequenceId: "solar-sail-rig-repeat-breach"
   },
   lifeveil: {
     effectId: "lifeveil-collapse",
+    criticalSuccessBenefit: {
+      benefitId: "lifeveil-collapse-addressed-critical",
+      name: "Lifeveil Restored",
+      description: "A critical Address Hazard success produces this authored narrative benefit."
+    },
     ignoredConsequenceId: "lifeveil-collapse-ignored",
     collisionConsequenceId: "lifeveil-repeat-breach"
   }
@@ -60,6 +85,11 @@ test("contains exactly the five canonical Pressure-system definitions", () => {
 });
 
 test("resolves each canonical definition with exact authored structure", () => {
+  const registryBenefits = Object.fromEntries(PRESSURE_SYSTEM_IDS.map((pressureSystemId) => [
+    pressureSystemId,
+    structuredClone(VOYAGE_PRESSURE_BREACH_HAZARD_DEFINITIONS[pressureSystemId].removalMethod.criticalSuccessBenefit)
+  ]));
+
   for (const pressureSystemId of PRESSURE_SYSTEM_IDS) {
     const result = getVoyagePressureBreachHazardDefinition(pressureSystemId);
     const expected = EXPECTED_IDS[pressureSystemId];
@@ -84,7 +114,8 @@ test("resolves each canonical definition with exact authored structure", () => {
     });
     assert.deepEqual(result.definition.removalMethod, {
       methodId: "address-hazard",
-      name: "Address Hazard"
+      name: "Address Hazard",
+      criticalSuccessBenefit: expected.criticalSuccessBenefit
     });
     assert.equal(result.definition.collisionPolicy, "trigger-existing-consequence");
     assert.deepEqual(result.definition.escalation, {
@@ -102,6 +133,19 @@ test("resolves each canonical definition with exact authored structure", () => {
       decrementTiming: null
     });
     assert.equal(result.definition.currentEffect.effectId, expected.effectId);
+    assert.deepEqual(result.definition.removalMethod.criticalSuccessBenefit, expected.criticalSuccessBenefit);
+    result.definition.removalMethod.criticalSuccessBenefit.benefitId = "changed-benefit-id";
+    result.definition.removalMethod.criticalSuccessBenefit.name = "Changed benefit";
+    result.definition.removalMethod.criticalSuccessBenefit.description = "Changed description";
+    const reread = getVoyagePressureBreachHazardDefinition(pressureSystemId);
+    assert.deepEqual(reread.definition.removalMethod.criticalSuccessBenefit, registryBenefits[pressureSystemId], pressureSystemId);
+    for (const otherPressureSystemId of PRESSURE_SYSTEM_IDS) {
+      assert.deepEqual(
+        VOYAGE_PRESSURE_BREACH_HAZARD_DEFINITIONS[otherPressureSystemId].removalMethod.criticalSuccessBenefit,
+        registryBenefits[otherPressureSystemId],
+        `${pressureSystemId}:${otherPressureSystemId}`
+      );
+    }
     assert.equal(result.definition.ignoredConsequence.consequenceId, expected.ignoredConsequenceId);
     assert.equal(result.definition.metadata.collision.consequence.consequenceId, expected.collisionConsequenceId);
     assert.deepEqual(Object.keys(result.definition.currentEffect).sort(), ["description", "effectId", "name"]);

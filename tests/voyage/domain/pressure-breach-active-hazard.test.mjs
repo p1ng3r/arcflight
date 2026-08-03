@@ -303,10 +303,11 @@ test("persists the authored complete Hazard definition for every Pressure system
       stationId: null,
       resultId: null
     }, pressureSystemId);
-    assert.deepEqual(persisted.removalMethod, {
-      methodId: "address-hazard",
-      name: "Address Hazard"
-    }, pressureSystemId);
+    assert.deepEqual(
+      persisted.removalMethod,
+      VOYAGE_PRESSURE_BREACH_HAZARD_DEFINITIONS[pressureSystemId].removalMethod,
+      pressureSystemId
+    );
     assert.deepEqual(persisted.ignoredConsequence, definition.ignored, pressureSystemId);
     assert.equal(persisted.collisionPolicy, "trigger-existing-consequence", pressureSystemId);
     assert.deepEqual(persisted.metadata, { collision: { consequence: definition.collision } }, pressureSystemId);
