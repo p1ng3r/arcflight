@@ -468,7 +468,7 @@ test("Hazard planning rejects hostile caller data without executing getters or P
   assert.deepEqual(base, before);
 });
 
-test("successful breach application emits one exact isolated matching Hazard while active storage remains deferred", () => {
+test("successful breach application emits one exact isolated matching Hazard and persists active storage", () => {
   const source = setPressure(oneNoRollConsequences([
     pressureRule("breach", { kind: "source-station" }, 1)
   ]), "crew-morale", 2);
@@ -487,6 +487,8 @@ test("successful breach application emits one exact isolated matching Hazard whi
   assert.notEqual(first.events[0].hazard, second.events[0].hazard);
   assert.equal(first.events[0].hazard.pressureBreachId, first.events[0].breach.pressureBreachId);
   assert.equal(first.events[0].hazard.pressureSystemId, first.events[0].breach.pressureSystemId);
+  assert.equal(first.nextState.activeHazards.length, 1);
+  assert.equal(first.nextState.activeHazards[0].hazardId, first.events[0].hazard.hazardId);
   assert.equal(first.events[0].voidScarProposal.hazardId, first.events[0].hazard.hazardId);
   assert.equal(Object.hasOwn(first.nextState, "hazards"), false);
   assert.equal(Object.hasOwn(first, "hazard"), false);

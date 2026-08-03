@@ -14,6 +14,7 @@ import {
   VOYAGE_TRACK_VISIBILITY
 } from "./constants.js";
 import { createDraftVoyageEncounterDefaults, isPlainObject } from "./defaults.js";
+import { validateVoyageHazardRecord } from "./hazard-schema.js";
 import { validateVoyageStationAssignments } from "./station-assignments.js";
 
 const COLLECTION_DEFAULTS = createDraftVoyageEncounterDefaults();
@@ -324,6 +325,153 @@ function validatePressureSystems(state, errors) {
   }
 }
 
+function readActiveHazardsCollection(state, errors) {
+  let descriptor;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(state, "activeHazards");
+  } catch {
+    issue(errors, "error", "active-hazards-data-read-failed", "activeHazards", "activeHazards could not be read safely.");
+    return { ok: false, value: undefined };
+  }
+
+  if (!descriptor) {
+    let inherited = false;
+    try {
+      inherited = "activeHazards" in state;
+    } catch {
+      issue(errors, "error", "active-hazards-data-read-failed", "activeHazards", "activeHazards could not be read safely.");
+      return { ok: false, value: undefined };
+    }
+    issue(
+      errors,
+      "error",
+      inherited ? "inherited-active-hazards" : "missing-active-hazards",
+      "activeHazards",
+      inherited
+        ? "activeHazards must be an own data property, not inherited data."
+        : "Voyage Encounter state requires activeHazards."
+    );
+    return { ok: false, value: undefined };
+  }
+
+  if (!Object.hasOwn(descriptor, "value") || !descriptor.enumerable) {
+    issue(errors, "error", "invalid-active-hazards-collection-property", "activeHazards", "activeHazards must be an own enumerable data-property array.");
+    return { ok: false, value: undefined };
+  }
+  return { ok: true, value: descriptor.value };
+}
+
+function readActiveHazardField(record, field, path, errors) {
+  let descriptor;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(record, field);
+  } catch {
+    issue(errors, "error", "active-hazards-data-read-failed", path, "Hazard data could not be read safely.");
+    return { ok: false, value: undefined };
+  }
+  if (!descriptor || !Object.hasOwn(descriptor, "value") || !descriptor.enumerable) return { ok: false, value: undefined };
+  return { ok: true, value: descriptor.value };
+}
+
+function rebaseHazardIssue(error, entryPath) {
+  const suffix = error.path === "$" ? "" : error.path.startsWith("$") ? error.path.slice(1) : `.${error.path}`;
+  return { ...error, path: `${entryPath}${suffix}` };
+}
+
+function validateActiveHazards(state, errors) {
+  const read = readActiveHazardsCollection(state, errors);
+  if (!read.ok) return;
+
+  let isArray = false;
+  try {
+    isArray = Array.isArray(read.value);
+  } catch {
+    issue(errors, "error", "active-hazards-data-read-failed", "activeHazards", "activeHazards could not be read safely.");
+    return;
+  }
+  if (!isArray) {
+    issue(errors, "error", "invalid-active-hazards-collection", "activeHazards", "activeHazards must be an array.");
+    return;
+  }
+
+  let keys;
+  let lengthDescriptor;
+  try {
+    keys = Reflect.ownKeys(read.value);
+    lengthDescriptor = Object.getOwnPropertyDescriptor(read.value, "length");
+  } catch {
+    issue(errors, "error", "active-hazards-data-read-failed", "activeHazards", "activeHazards could not be read safely.");
+    return;
+  }
+  if (!lengthDescriptor || !Object.hasOwn(lengthDescriptor, "value") || !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) {
+    issue(errors, "error", "invalid-active-hazards-collection-property", "activeHazards.length", "activeHazards must have an intrinsic safe array length.");
+    return;
+  }
+
+  const length = lengthDescriptor.value;
+  for (const key of keys) {
+    if (key === "length") continue;
+    const validIndex = typeof key === "string"
+      && /^0$|^[1-9]\d*$/.test(key)
+      && Number(key) < length
+      && String(Number(key)) === key;
+    if (!validIndex) issue(errors, "error", "unexpected-active-hazards-array-key", `activeHazards.${typeof key === "symbol" ? "[symbol]" : key}`, "activeHazards must contain only dense numeric entries.");
+  }
+
+  const expectedEncounterId = (() => {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(state, "encounterId");
+      return descriptor && Object.hasOwn(descriptor, "value") ? descriptor.value : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const hazardIds = new Map();
+  const systemSlots = new Map();
+
+  for (let index = 0; index < length; index += 1) {
+    const entryPath = `activeHazards[${index}]`;
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(read.value, String(index));
+    } catch {
+      issue(errors, "error", "active-hazards-data-read-failed", entryPath, "Hazard entry could not be read safely.");
+      continue;
+    }
+    if (!descriptor) {
+      issue(errors, "error", "sparse-active-hazards", entryPath, "activeHazards must be dense.");
+      continue;
+    }
+    if (!Object.hasOwn(descriptor, "value") || !descriptor.enumerable) {
+      issue(errors, "error", "invalid-active-hazards-entry", entryPath, "Hazard entries must be own enumerable data properties.");
+      continue;
+    }
+
+    const validation = validateVoyageHazardRecord(descriptor.value, {
+      mode: "active",
+      expectedEncounterId
+    });
+    if (!validation.valid) {
+      issue(errors, "error", "invalid-active-hazard-record", entryPath, "activeHazards entry is not a valid active Hazard record.");
+      errors.push(...validation.errors.map((error) => rebaseHazardIssue(error, entryPath)));
+      continue;
+    }
+
+    const hazardId = readActiveHazardField(descriptor.value, "hazardId", `${entryPath}.hazardId`, errors);
+    if (hazardId.ok) {
+      if (hazardIds.has(hazardId.value)) issue(errors, "error", "duplicate-hazard-id", `${entryPath}.hazardId`, `Duplicate hazardId "${hazardId.value}".`);
+      else hazardIds.set(hazardId.value, index);
+    }
+
+    const category = readActiveHazardField(descriptor.value, "category", `${entryPath}.category`, errors);
+    const pressureSystemId = readActiveHazardField(descriptor.value, "pressureSystemId", `${entryPath}.pressureSystemId`, errors);
+    if (category.ok && pressureSystemId.ok && category.value === "system") {
+      if (systemSlots.has(pressureSystemId.value)) issue(errors, "error", "duplicate-active-hazard-system-slot", `${entryPath}.pressureSystemId`, `Pressure system ${pressureSystemId.value} already has an active system Hazard.`);
+      else systemSlots.set(pressureSystemId.value, index);
+    }
+  }
+}
+
 export function validateVoyageEncounterState(value) {
   const errors = [];
   const warnings = [];
@@ -352,8 +500,10 @@ export function validateVoyageEncounterState(value) {
   if (!isEnumValue(state.lifecycleState, VOYAGE_ENCOUNTER_LIFECYCLE_STATES)) issue(errors, "error", "invalid-lifecycle-state", "lifecycleState", "Lifecycle state is not recognized.");
   if (!Number.isInteger(state.revision) || state.revision < 0) issue(errors, "error", "invalid-revision", "revision", "Revision must be a non-negative integer.");
   validatePressureSystems(state, errors);
+  validateActiveHazards(state, errors);
 
   for (const [key, defaultValue] of Object.entries(COLLECTION_DEFAULTS)) {
+    if (key === "activeHazards") continue;
     if (Array.isArray(defaultValue)) {
       const safeRead = SAFE_REQUIRED_DATA_COLLECTIONS.has(key)
         ? readRequiredDataCollection(state, key, errors)
