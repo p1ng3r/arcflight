@@ -59,6 +59,10 @@ function captureState(state) {
 }
 
 function validateStateValues(state, errors) {
+  if (state === null || typeof state === "undefined") {
+    errors.push(issue("invalid-ship-state", "$", "Ship state must be a plain object."));
+    return;
+  }
   exactKeys(state, SHIP_STATE_FIELDS, "$", errors, "unexpected-ship-state-field");
   validateString(state.shipId, "$.shipId", errors, "invalid-ship-id");
   validateSafeInteger(state.revision, "$.revision", errors, "invalid-ship-revision");
@@ -83,6 +87,10 @@ function validateStateValues(state, errors) {
     const ids = new Set();
     for (let index = 0; index < state.voidScars.length; index += 1) {
       const scar = state.voidScars[index];
+      if (scar === null || typeof scar === "undefined") {
+        errors.push(issue("invalid-ship-void-scar", `$.voidScars[${index}]`, "Each active Void Scar must be a plain object."));
+        continue;
+      }
       const validation = validateVoyageVoidScarRecord(scar);
       for (const error of validation.errors) errors.push({ ...error, path: `$.voidScars[${index}]${error.path === "$" ? "" : error.path.slice(1)}` });
       if (validation.valid && ids.has(scar.voidScarId)) errors.push(issue("duplicate-void-scar-id", `$.voidScars[${index}].voidScarId`, "voidScarId values must be unique within ship state."));

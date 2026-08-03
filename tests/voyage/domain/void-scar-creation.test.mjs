@@ -10,6 +10,7 @@ import {
   analyzeVoyagePressureBreachVoidScarCreation,
   applyVoyagePressureBreachVoidScarCreation
 } from "../../../scripts/voyage/domain/void-scar-creation.js";
+import { analyzeVoyageVoidScarCapacity } from "../../../scripts/voyage/domain/void-scar-capacity.js";
 import { validateVoyageVoidScarRecord } from "../../../scripts/voyage/domain/void-scar-schema.js";
 
 const SYSTEMS = ["crew-morale", "arkengine", "levstone-array", "solar-sail-rig", "lifeveil"];
@@ -414,4 +415,25 @@ test("hostile roots, nested proxies, malformed values, and diagnostics fail dete
   assertFailure(analyzeVoyagePressureBreachVoidScarCreation(ship, accessor, request));
   const throwingOwnKeys = new Proxy(clone(event), { ownKeys() { throw new Error("hostile ownKeys"); } });
   assertFailure(analyzeVoyagePressureBreachVoidScarCreation(ship, throwingOwnKeys, request));
+});
+
+test("Task 2 creation reuses authoritative capacity metrics without changing its public shapes", () => {
+  const source = canonicalPair();
+  const { event, ship, request } = source;
+  const capacityBefore = analyzeVoyageVoidScarCapacity(ship);
+  const capacitySnapshot = structuredClone(capacityBefore);
+  const result = applyVoyagePressureBreachVoidScarCreation(ship, event, request);
+  assert.equal(result.ok, true);
+  assert.deepEqual(capacityBefore, capacitySnapshot);
+  assert.equal(result.nextState.revision, ship.revision + 1);
+  assert.equal(result.events.length, 1);
+  const unrelated = canonicalPair("arkengine", "capacity-reuse-unrelated");
+  const unrelatedScar = analyzeVoyagePressureBreachVoidScarCreation(unrelated.ship, unrelated.event, unrelated.request).voidScar;
+  const full = makeShip({ voidScars: [result.nextState.voidScars[0], unrelatedScar] });
+  const fullRequest = makeRequest(event, full);
+  const fullResult = applyVoyagePressureBreachVoidScarCreation(full, event, fullRequest, { canAcceptVoidScar: true, availableSlots: 99 });
+  assert.equal(fullResult.ok, false);
+  assert.equal(fullResult.nextState, null);
+  assert.deepEqual(fullResult.events, []);
+  assert.ok(fullResult.errors.some(({ code }) => code === "void-scar-capacity-exhausted"));
 });

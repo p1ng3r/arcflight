@@ -5,6 +5,7 @@ import {
   VOYAGE_VOID_SCAR_NAME_BY_PRESSURE_SYSTEM_ID
 } from "./void-scar-schema.js";
 import { captureVoyageShipState, validateVoyageShipState } from "./ship-state.js";
+import { analyzeVoyageVoidScarCapacity } from "./void-scar-capacity.js";
 
 const EVENT_TYPE = "voyage.pressure-breach-applied";
 const CREATION_EVENT_TYPE = "voyage.void-scar-created";
@@ -220,15 +221,17 @@ export function analyzeVoyagePressureBreachVoidScarCreation(shipState, sourceEnc
     const source = readSource(sourceEncounterStateOrEvent);
     const parsedRequest = readRequest(request);
     if (!shipCapture.ok) return analysisResult({ errors: shipCapture.errors.map((error) => ({ ...error, path: `shipState${error.path === "$" ? "" : error.path.slice(1)}` })) });
+    const capacityAnalysis = analyzeVoyageVoidScarCapacity(shipCapture.state);
+    if (!capacityAnalysis.ok) return analysisResult({ errors: capacityAnalysis.errors, warnings: capacityAnalysis.warnings });
     const common = {
       shipId: parsedRequest.value?.shipId ?? shipCapture.state.shipId,
       expectedShipRevision: parsedRequest.value?.expectedShipRevision ?? null,
       sourceEventType: parsedRequest.value?.sourceEventType ?? null,
       sourceEncounterRevision: parsedRequest.value?.sourceEncounterRevision ?? null,
       sourceProposal: null,
-      activeVoidScarCount: shipCapture.state.voidScars.length,
-      voidScarCapacity: shipCapture.state.hull.voidScarCapacity,
-      availableSlots: shipCapture.state.hull.voidScarCapacity - shipCapture.state.voidScars.length
+      activeVoidScarCount: capacityAnalysis.activeVoidScarCount,
+      voidScarCapacity: capacityAnalysis.voidScarCapacity,
+      availableSlots: capacityAnalysis.availableSlots
     };
     const errors = [...(source.errors ?? []), ...(parsedRequest.errors ?? [])];
     if (!source.ok || !parsedRequest.ok) return analysisResult({ ...common, errors });
@@ -247,7 +250,7 @@ export function analyzeVoyagePressureBreachVoidScarCreation(shipState, sourceEnc
     if (!scarValidation.valid) errors.push(...scarValidation.errors);
     const duplicate = ship.voidScars.some((existing) => existing.voidScarId === scar.voidScarId && existing.pressureBreachId === scar.pressureBreachId && existing.encounterId === scar.encounterId && existing.pressureSystemId === scar.pressureSystemId && existing.effectIndex === scar.effectIndex && existing.sequence === scar.sequence);
     if (duplicate) errors.push(issue("duplicate-void-scar-proposal", "shipState.voidScars", "This approved Pressure Breach proposal has already been applied."));
-    if (common.availableSlots < 1) errors.push(issue("void-scar-capacity-exhausted", "shipState.voidScars", "Void Scar capacity is exhausted."));
+    if (!capacityAnalysis.canAcceptVoidScar) errors.push(issue("void-scar-capacity-exhausted", "shipState.voidScars", "Void Scar capacity is exhausted."));
     if (!isSafeInteger(ship.revision + 1)) errors.push(issue("void-scar-creation-revision-overflow", "shipState.revision", "Ship revision cannot be incremented safely."));
     return analysisResult({ ...common, sourceProposal: errors.length === 0 ? proposal : null, voidScar: errors.length === 0 ? scar : null, readyForVoidScarCreation: errors.length === 0, errors });
   } catch {
