@@ -1,80 +1,76 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
+import {
+  applyVoyageEncounterPressureBreachPlan,
+  buildVoyagePressureBreachActiveHazard
+} from "../../../scripts/voyage/domain/pressure-breach.js";
 import { applyVoyageHazardTriggerExistingConsequence } from "../../../scripts/voyage/domain/hazard-trigger-existing-consequence.js";
 
 const POLICY = "trigger-existing-consequence";
 
-function hazard(overrides = {}) {
-  return {
-    hazardId: "existing-hazard",
-    encounterId: "encounter",
+function activeHazard({
+  hazardId,
+  pressureSystemId = "crew-morale",
+  encounterId = "encounter"
+} = {}) {
+  const result = buildVoyagePressureBreachActiveHazard({
+    hazardId,
+    pressureBreachId: `${hazardId}-breach`,
+    encounterId,
+    stageId: "stage",
+    roundNumber: 1,
+    effectIndex: 0,
+    sequence: 0,
+    stationId: "captain",
+    actionId: "action",
+    pressureSystemId,
     category: "system",
     status: "active",
-    pressureSystemId: "crew-morale",
-    collisionPolicy: POLICY,
-    metadata: {
-      collision: {
-        consequence: {
-          consequenceId: "existing-repeat",
-          name: "Existing Repeat",
-          description: "The existing consequence applies.",
-          narrative: { kind: "authored", tags: ["repeat"] }
-        }
-      }
-    },
-    ...overrides
-  };
+    sourceKind: "pressure-breach",
+    pressureEffectId: `${hazardId}-effect`,
+    sourceIntentId: null,
+    activationSource: "action-outcome",
+    branch: "failure",
+    timing: "consequences",
+    visibility: "public",
+    name: `${pressureSystemId} Breach`
+  });
+  assert.equal(result.ok, true);
+  return result.hazard;
 }
 
-function analysis(state, incoming, overrides = {}) {
-  const existing = state.activeHazards[0] ?? null;
+function stateWith(activeHazards = []) {
+  const state = createVoyageEncounterState({
+    encounterId: "encounter",
+    definitionId: "definition",
+    primaryShip: { id: "ship" }
+  });
+  state.activeHazards = activeHazards;
+  return state;
+}
+
+function fabricatedNoCollision() {
   return {
     structurallyValid: true,
     readyForHazardCollisionPlanning: true,
-    collision: existing !== null,
-    plan: {
-      kind: existing ? "collision" : "no-collision",
-      encounterId: state.encounterId,
-      expectedRevision: state.revision,
-      incomingHazardId: incoming.hazardId,
-      existingHazardId: existing?.hazardId ?? null,
-      existingHazardIndex: existing ? 0 : null,
-      pressureSystemId: incoming.pressureSystemId,
-      collisionPolicy: existing ? incoming.collisionPolicy : null,
-      incomingHazard: structuredClone(incoming),
-      existingHazard: existing ? structuredClone(existing) : null,
-      collisionPayload: existing ? structuredClone(incoming.metadata.collision) : null,
-      recommendedOperation: existing ? incoming.collisionPolicy : "persist-incoming",
-      ...overrides
-    },
+    collision: false,
+    plan: { kind: "no-collision", fabricated: true },
     errors: [],
     warnings: []
   };
 }
 
-function stateWith(existingHazards) {
+function fabricatedTriggerCollision() {
   return {
-    encounterId: "encounter",
-    revision: 3,
-    activeHazards: existingHazards
+    structurallyValid: true,
+    readyForHazardCollisionPlanning: true,
+    collision: true,
+    plan: { kind: "collision", existingHazardIndex: 99, fabricated: true },
+    errors: [],
+    warnings: []
   };
-}
-
-function incoming(overrides = {}) {
-  return hazard({
-    hazardId: "incoming-hazard",
-    metadata: {
-      collision: {
-        consequence: {
-          consequenceId: "incoming-repeat",
-          name: "Incoming Repeat",
-          description: "The incoming descriptor is not selected."
-        }
-      }
-    },
-    ...overrides
-  });
 }
 
 function assertFailure(result, code) {
@@ -82,42 +78,41 @@ function assertFailure(result, code) {
   assert.equal(result.collision, false);
   assert.equal(result.activeHazards, null);
   assert.equal(result.consequence, null);
-  assert.equal(Object.hasOwn(result, "collisionOutcome"), false);
+  assert.equal(result.collisionOutcome, null);
   assert.deepEqual(result.warnings, []);
   assert.equal(result.errors[0].code, code);
 }
 
-test("no collision returns isolated active Hazards without applying a consequence", () => {
-  const state = stateWith([]);
-  const candidate = incoming();
+test("noncanonical request rejects a fabricated no-collision analysis without mutation", () => {
+  const state = { encounterId: "encounter", activeHazards: [] };
+  const incoming = { hazardId: "incoming-hazard", encounterId: "encounter" };
+  const before = structuredClone({ state, incoming });
+
   const result = applyVoyageHazardTriggerExistingConsequence(
     state,
-    candidate,
-    analysis(state, candidate)
+    incoming,
+    fabricatedNoCollision()
   );
 
-  assert.equal(result.ok, true);
-  assert.equal(result.collision, false);
-  assert.equal(result.consequence, null);
-  assert.equal(result.collisionOutcome, null);
-  assert.deepEqual(result.activeHazards, []);
-  assert.notStrictEqual(result.activeHazards, state.activeHazards);
-  assert.deepEqual(state, stateWith([]));
+  assertFailure(result, "pressure-breach-application-state-invalid");
+  assert.deepEqual({ state, incoming }, before);
 });
 
-test("trigger collision selects only the existing authored descriptor and preserves its slot", () => {
-  const existing = hazard();
+test("canonical collision regenerates analysis and ignores a fabricated no-collision result", () => {
+  const existing = activeHazard({ hazardId: "existing-hazard" });
   const state = stateWith([existing]);
-  const candidate = incoming();
-  const before = structuredClone(state);
+  const incoming = activeHazard({ hazardId: "incoming-hazard" });
+  const before = structuredClone({ state, incoming });
+
   const result = applyVoyageHazardTriggerExistingConsequence(
     state,
-    candidate,
-    analysis(state, candidate)
+    incoming,
+    fabricatedNoCollision()
   );
 
   assert.equal(result.ok, true);
   assert.equal(result.collision, true);
+  assert.deepEqual(result.activeHazards, [existing]);
   assert.deepEqual(result.consequence, existing.metadata.collision.consequence);
   assert.deepEqual(Object.keys(result.collisionOutcome), [
     "kind",
@@ -130,120 +125,104 @@ test("trigger collision selects only the existing authored descriptor and preser
   assert.deepEqual(result.collisionOutcome, {
     kind: "hazard-consequence-triggered",
     hazardId: existing.hazardId,
-    incomingHazardId: candidate.hazardId,
+    incomingHazardId: incoming.hazardId,
     pressureSystemId: existing.pressureSystemId,
     collisionPolicy: POLICY,
     consequence: existing.metadata.collision.consequence
   });
-  assert.deepEqual(result.activeHazards, [existing]);
   assert.notStrictEqual(result.activeHazards, state.activeHazards);
   assert.notStrictEqual(result.activeHazards[0], existing);
   assert.notStrictEqual(result.consequence, existing.metadata.collision.consequence);
-  assert.notStrictEqual(
-    result.collisionOutcome.consequence,
-    existing.metadata.collision.consequence
-  );
-
-  result.activeHazards[0].metadata.collision.consequence.name = "changed-state";
-  result.consequence.description = "changed-result";
-  result.collisionOutcome.consequence.description = "changed-outcome";
-  assert.deepEqual(state, before);
-  assert.deepEqual(candidate, incoming());
+  assert.equal(result.activeHazards.some(({ hazardId }) => hazardId === incoming.hazardId), false);
+  result.activeHazards[0].name = "changed";
+  result.consequence.description = "changed";
+  result.collisionOutcome.consequence.name = "changed";
+  assert.deepEqual({ state, incoming }, before);
 });
 
-test("malformed, stale, moved, mismatched, and policy-invalid plans fail atomically", () => {
-  const existing = hazard();
-  const candidate = incoming();
+test("canonical no-collision regenerates analysis and ignores a fabricated collision result", () => {
+  const existing = activeHazard({ hazardId: "existing-hazard", pressureSystemId: "crew-morale" });
+  const state = stateWith([existing]);
+  const incoming = activeHazard({ hazardId: "incoming-hazard", pressureSystemId: "arkengine" });
+  const before = structuredClone({ state, incoming });
+
+  const result = applyVoyageHazardTriggerExistingConsequence(
+    state,
+    incoming,
+    fabricatedTriggerCollision()
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.collision, false);
+  assert.deepEqual(result.activeHazards, [existing]);
+  assert.equal(result.consequence, null);
+  assert.equal(result.collisionOutcome, null);
+  assert.equal(result.activeHazards.some(({ hazardId }) => hazardId === incoming.hazardId), false);
+  assert.deepEqual({ state, incoming }, before);
+});
+
+test("invalid canonical requests fail closed and repeated outcomes are isolated", () => {
+  const existing = activeHazard({ hazardId: "existing-hazard" });
+  const incoming = activeHazard({ hazardId: "incoming-hazard" });
   const cases = [
     {
-      name: "malformed result",
-      result: null,
-      code: "pressure-breach-application-collision-invalid"
+      name: "encounter mismatch",
+      state: stateWith([existing]),
+      incoming: activeHazard({ hazardId: "mismatched-hazard", encounterId: "other-encounter" }),
+      code: "pressure-breach-application-hazard-invalid"
     },
     {
-      name: "wrong collision policy",
-      mutate: (plan) => { plan.collisionPolicy = "replace-existing"; },
+      name: "unsupported collision policy",
+      state: stateWith([existing]),
+      incoming: { ...incoming, collisionPolicy: "replace-existing" },
+      code: "pressure-breach-application-hazard-invalid"
+    },
+    {
+      name: "canonical unsupported policy without a collision",
+      state: stateWith([existing]),
+      incoming: {
+        ...activeHazard({ hazardId: "replacement-hazard", pressureSystemId: "arkengine" }),
+        collisionPolicy: "replace-existing",
+        metadata: { collision: { hazardId: "replacement-target" } }
+      },
       code: "pressure-breach-application-collision-policy-invalid"
     },
     {
-      name: "stale revision",
-      mutate: (plan) => { plan.expectedRevision = 2; },
-      code: "pressure-breach-application-revision-mismatch"
-    },
-    {
-      name: "out-of-range existing Hazard index",
-      mutate: (plan) => { plan.existingHazardIndex = 2; },
-      code: "pressure-breach-application-index-invalid"
-    },
-    {
-      name: "pressure-system mismatch",
-      mutate: (plan) => { plan.pressureSystemId = "arkengine"; },
-      code: "pressure-breach-application-collision-invalid"
-    },
-    {
-      name: "incoming identity mismatch",
-      mutate: (plan) => { plan.incomingHazardId = "different-incoming"; },
-      code: "pressure-breach-application-collision-invalid"
-    },
-    {
-      name: "changed snapshot",
-      mutate: (plan) => { plan.existingHazard.name = "changed"; },
-      code: "pressure-breach-application-snapshot-mismatch"
-    },
-    {
-      name: "missing consequence",
-      stateMutate: (state) => { delete state.activeHazards[0].metadata.collision.consequence; },
-      code: "pressure-breach-application-consequence-invalid"
-    },
-    {
-      name: "malformed consequence",
-      stateMutate: (state) => { state.activeHazards[0].metadata.collision.consequence = {}; },
-      code: "pressure-breach-application-consequence-invalid"
+      name: "missing existing consequence",
+      state: (() => {
+        const state = stateWith([structuredClone(existing)]);
+        delete state.activeHazards[0].metadata.collision.consequence;
+        return state;
+      })(),
+      incoming,
+      code: "pressure-breach-application-state-invalid"
     }
   ];
 
   for (const entry of cases) {
-    const state = stateWith([structuredClone(existing)]);
-    if (entry.stateMutate) entry.stateMutate(state);
-    const stateBefore = structuredClone(state);
-    const plan = analysis(state, candidate);
-    if (entry.mutate) entry.mutate(plan.plan);
-    const result = applyVoyageHazardTriggerExistingConsequence(
-      state,
-      candidate,
-      entry.result === undefined ? plan : entry.result
-    );
-
-    assert.equal(result.ok, false, entry.name);
+    const before = structuredClone({ state: entry.state, incoming: entry.incoming });
+    const result = applyVoyageHazardTriggerExistingConsequence(entry.state, entry.incoming, fabricatedNoCollision());
     assertFailure(result, entry.code);
-    assert.deepEqual(state, stateBefore, entry.name);
+    assert.deepEqual({ state: entry.state, incoming: entry.incoming }, before, entry.name);
   }
 
-  const movedState = stateWith([hazard({ hazardId: "other-hazard" }), existing]);
-  const movedPlan = analysis(stateWith([existing]), candidate);
-  const movedResult = applyVoyageHazardTriggerExistingConsequence(movedState, candidate, movedPlan);
-  assertFailure(movedResult, "pressure-breach-application-live-hazard-mismatch");
-});
-
-test("separate equivalent calls do not share state, consequence, or plan data", () => {
-  const firstState = stateWith([hazard()]);
-  const secondState = stateWith([hazard()]);
-  const firstCandidate = incoming();
-  const secondCandidate = incoming();
-  const first = applyVoyageHazardTriggerExistingConsequence(
-    firstState,
-    firstCandidate,
-    analysis(firstState, firstCandidate)
-  );
-  const second = applyVoyageHazardTriggerExistingConsequence(
-    secondState,
-    secondCandidate,
-    analysis(secondState, secondCandidate)
-  );
-
+  const first = applyVoyageHazardTriggerExistingConsequence(stateWith([existing]), incoming, fabricatedNoCollision());
+  const second = applyVoyageHazardTriggerExistingConsequence(stateWith([existing]), incoming, fabricatedTriggerCollision());
+  assert.equal(first.ok, true);
   assert.deepEqual(first, second);
   assert.notStrictEqual(first.activeHazards, second.activeHazards);
   assert.notStrictEqual(first.consequence, second.consequence);
-  first.consequence.name = "changed";
-  assert.equal(second.consequence.name, "Existing Repeat");
+});
+
+test("Pressure Breach keeps its public transaction contract while using the request-only helper", () => {
+  const source = stateWith([activeHazard({ hazardId: "existing-hazard" })]);
+  source.lifecycleState = "active";
+  source.currentStage = { stageId: "stage" };
+  source.roundNumber = 1;
+  source.phase = "consequences";
+  const result = applyVoyageEncounterPressureBreachPlan(source);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.nextState, null);
+  assert.deepEqual(result.events, []);
 });

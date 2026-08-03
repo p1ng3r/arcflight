@@ -2,7 +2,6 @@ import {
   VOYAGE_PERMANENT_CONSEQUENCE_STATUSES,
   VOYAGE_PRESSURE_SYSTEM_IDS
 } from "./constants.js";
-import { analyzeVoyageHazardCollisionPlan } from "./hazard-collision.js";
 import { captureVoyageHazardRecord } from "./hazard-schema.js";
 import { applyVoyageHazardTriggerExistingConsequence } from "./hazard-trigger-existing-consequence.js";
 import { getVoyagePressureBreachHazardDefinition } from "./pressure-breach-hazard-definitions.js";
@@ -1282,14 +1281,9 @@ export function applyVoyageEncounterPressureBreachPlan(state) {
       );
     }
 
-    const collisionAnalysis = analyzeVoyageHazardCollisionPlan(
-      isolatedState,
-      activeHazardCapture.record
-    );
     const triggerCollision = applyVoyageHazardTriggerExistingConsequence(
       isolatedState,
-      activeHazardCapture.record,
-      collisionAnalysis
+      activeHazardCapture.record
     );
     if (!triggerCollision.ok) {
       return breachApplicationFailure(triggerCollision.errors, warnings);

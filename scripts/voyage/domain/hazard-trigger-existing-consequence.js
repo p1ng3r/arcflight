@@ -1,5 +1,12 @@
-import { VOYAGE_HAZARD_CATEGORIES, VOYAGE_HAZARD_COLLISION_POLICIES, VOYAGE_HAZARD_STATUSES } from "./constants.js";
+import { VOYAGE_HAZARD_COLLISION_POLICIES } from "./constants.js";
+import { analyzeVoyageHazardCollisionPlan } from "./hazard-collision.js";
+import {
+  captureVoyageHazardRecord,
+  validateVoyageHazardRecord
+} from "./hazard-schema.js";
+import { validateVoyageEncounterState } from "./validation.js";
 
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const RESULT_FIELDS = Object.freeze([
   "structurallyValid",
   "readyForHazardCollisionPlanning",
@@ -8,7 +15,6 @@ const RESULT_FIELDS = Object.freeze([
   "errors",
   "warnings"
 ]);
-
 const PLAN_FIELDS = Object.freeze([
   "kind",
   "encounterId",
@@ -34,6 +40,7 @@ function failure(code, path, message) {
     collision: false,
     activeHazards: null,
     consequence: null,
+    collisionOutcome: null,
     errors: [issue(code, path, message)],
     warnings: []
   };
@@ -57,6 +64,75 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
+function captureFailure(path) {
+  return { ok: false, path };
+}
+
+function capturePlainData(value, path = "$", ancestors = new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return { ok: true, value };
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { ok: true, value } : captureFailure(path);
+  }
+  if (typeof value !== "object" || ancestors.has(value)) return captureFailure(path);
+
+  let prototype;
+  let array;
+  let ownKeys;
+  try {
+    prototype = Object.getPrototypeOf(value);
+    array = Array.isArray(value);
+    ownKeys = Reflect.ownKeys(value);
+  } catch {
+    return captureFailure(path);
+  }
+  if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) {
+    return captureFailure(path);
+  }
+
+  ancestors.add(value);
+  try {
+    if (array) {
+      const length = Object.getOwnPropertyDescriptor(value, "length");
+      if (!length || !Object.hasOwn(length, "value") || !Number.isSafeInteger(length.value) || length.value < 0 || ownKeys.length !== length.value + 1) {
+        return captureFailure(path);
+      }
+      const clone = new Array(length.value);
+      for (let index = 0; index < length.value; index += 1) {
+        const key = String(index);
+        if (!ownKeys.includes(key)) return captureFailure(`${path}[${index}]`);
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) return captureFailure(`${path}[${index}]`);
+        const nested = capturePlainData(descriptor.value, `${path}[${index}]`, ancestors);
+        if (!nested.ok) return nested;
+        clone[index] = nested.value;
+      }
+      for (const key of ownKeys) {
+        if (key !== "length" && (typeof key !== "string" || !/^0$|^[1-9]\d*$/.test(key) || Number(key) >= length.value)) {
+          return captureFailure(`${path}.${typeof key === "symbol" ? "[symbol]" : key}`);
+        }
+      }
+      return { ok: true, value: clone };
+    }
+
+    const clone = {};
+    for (const key of ownKeys) {
+      if (typeof key !== "string" || UNSAFE_KEYS.has(key)) return captureFailure(`${path}.${typeof key === "symbol" ? "[symbol]" : key}`);
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) return captureFailure(`${path}.${key}`);
+      const nested = capturePlainData(descriptor.value, `${path}.${key}`, ancestors);
+      if (!nested.ok) return nested;
+      clone[key] = nested.value;
+    }
+    return { ok: true, value: clone };
+  } catch {
+    return captureFailure(path);
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 function clonePlainData(value) {
   if (Array.isArray(value)) return value.map((entry) => clonePlainData(entry));
   if (value && typeof value === "object") {
@@ -67,226 +143,131 @@ function clonePlainData(value) {
 
 function samePlainData(left, right) {
   if (Object.is(left, right)) return true;
-  if (typeof left !== typeof right || left === null || right === null) return false;
-  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  if (typeof left !== typeof right || left === null || right === null || Array.isArray(left) !== Array.isArray(right)) return false;
   if (Array.isArray(left)) {
-    if (left.length !== right.length) return false;
-    for (let index = 0; index < left.length; index += 1) {
-      if (Object.hasOwn(left, index) !== Object.hasOwn(right, index)) return false;
-      if (!Object.hasOwn(left, index) || !samePlainData(left[index], right[index])) return false;
-    }
-    return Object.keys(left).sort().join("\u0000") === Object.keys(right).sort().join("\u0000");
+    if (left.length !== right.length || Object.keys(left).length !== Object.keys(right).length) return false;
+    return left.every((entry, index) => Object.hasOwn(right, index) && samePlainData(entry, right[index]));
   }
   if (typeof left !== "object") return false;
   const leftKeys = Object.keys(left).sort();
   const rightKeys = Object.keys(right).sort();
-  if (leftKeys.length !== rightKeys.length) return false;
-  for (let index = 0; index < leftKeys.length; index += 1) {
-    if (leftKeys[index] !== rightKeys[index]) return false;
-    if (!samePlainData(left[leftKeys[index]], right[rightKeys[index]])) return false;
-  }
-  return true;
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && samePlainData(left[key], right[key]));
 }
 
 function exactKeys(value, expected) {
+  if (!isPlainObject(value)) return false;
   const actual = Object.keys(value).sort();
-  return actual.length === expected.length
-    && actual.every((key, index) => key === [...expected].sort()[index]);
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]);
+}
+
+function validInternallyGeneratedAnalysis(analysis) {
+  return isPlainObject(analysis)
+    && exactKeys(analysis, RESULT_FIELDS)
+    && analysis.structurallyValid === true
+    && analysis.readyForHazardCollisionPlanning === true
+    && Array.isArray(analysis.errors)
+    && analysis.errors.length === 0
+    && Array.isArray(analysis.warnings)
+    && exactKeys(analysis.plan, PLAN_FIELDS);
 }
 
 function validConsequence(value) {
   return isPlainObject(value) && Object.keys(value).length > 0;
 }
 
-function validResultShape(collisionAnalysis) {
-  return isPlainObject(collisionAnalysis)
-    && exactKeys(collisionAnalysis, RESULT_FIELDS)
-    && collisionAnalysis.structurallyValid === true
-    && collisionAnalysis.readyForHazardCollisionPlanning === true
-    && Array.isArray(collisionAnalysis.errors)
-    && collisionAnalysis.errors.length === 0
-    && Array.isArray(collisionAnalysis.warnings)
-    && isPlainObject(collisionAnalysis.plan);
+function captureCanonicalState(state) {
+  const captured = capturePlainData(state, "encounterState");
+  if (!captured.ok) return { ok: false, failure: failure("pressure-breach-application-data-read-failed", captured.path, "Repeated Pressure Breach encounter state could not be read safely.") };
+  const validation = validateVoyageEncounterState(captured.value);
+  if (!validation.valid) return { ok: false, failure: failure("pressure-breach-application-state-invalid", "encounterState", "Repeated Pressure Breach application requires a valid encounter state.") };
+  return { ok: true, state: captured.value };
 }
 
-function validPlanShape(plan) {
-  return exactKeys(plan, PLAN_FIELDS)
-    && typeof plan.encounterId === "string"
-    && plan.encounterId.trim().length > 0
-    && Number.isSafeInteger(plan.expectedRevision)
-    && plan.expectedRevision >= 0
-    && typeof plan.incomingHazardId === "string"
-    && plan.incomingHazardId.trim().length > 0
-    && isPlainObject(plan.incomingHazard)
-    && (plan.existingHazard === null || isPlainObject(plan.existingHazard));
-}
-
-function validNoCollisionPlan(plan, incomingHazard) {
-  return plan.kind === "no-collision"
-    && plan.incomingHazardId === incomingHazard.hazardId
-    && plan.existingHazardId === null
-    && plan.existingHazardIndex === null
-    && plan.existingHazard === null
-    && plan.pressureSystemId === incomingHazard.pressureSystemId
-    && plan.collisionPolicy === null
-    && plan.collisionPayload === null
-    && plan.recommendedOperation === "persist-incoming"
-    && samePlainData(plan.incomingHazard, incomingHazard);
-}
-
-function validTriggerPlan(plan, state, incomingHazard) {
-  if (
-    plan.kind !== "collision"
-    || plan.incomingHazardId !== incomingHazard.hazardId
-    || plan.existingHazardId !== state.activeHazards[plan.existingHazardIndex]?.hazardId
-    || plan.existingHazardIndex < 0
-    || plan.existingHazardIndex >= state.activeHazards.length
-    || plan.pressureSystemId !== incomingHazard.pressureSystemId
-    || plan.collisionPolicy !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE
-    || plan.recommendedOperation !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE
-    || incomingHazard.collisionPolicy !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE
-    || !samePlainData(plan.incomingHazard, incomingHazard)
-    || !samePlainData(plan.collisionPayload, incomingHazard.metadata.collision)
-    || !samePlainData(plan.existingHazard, state.activeHazards[plan.existingHazardIndex])
-  ) return false;
-
-  const live = state.activeHazards[plan.existingHazardIndex];
-  return Number.isSafeInteger(plan.existingHazardIndex)
-    && live.category === VOYAGE_HAZARD_CATEGORIES.SYSTEM
-    && live.status === VOYAGE_HAZARD_STATUSES.ACTIVE
-    && live.encounterId === state.encounterId
-    && live.pressureSystemId === plan.pressureSystemId;
+function captureCanonicalIncomingHazard(incomingHazard, encounterId) {
+  const captured = captureVoyageHazardRecord(incomingHazard, { mode: "active", expectedEncounterId: encounterId });
+  if (!captured.ok) return { ok: false, failure: failure("pressure-breach-application-hazard-invalid", "incomingHazard", "Repeated Pressure Breach application requires a valid active incoming Hazard.") };
+  const validation = validateVoyageHazardRecord(captured.record, { mode: "active", expectedEncounterId: encounterId });
+  if (!validation.valid) return { ok: false, failure: failure("pressure-breach-application-hazard-invalid", "incomingHazard", "Repeated Pressure Breach application requires a valid active incoming Hazard.") };
+  return { ok: true, hazard: captured.record };
 }
 
 /**
- * Validate and apply only the Hazard-side portion of a repeated Pressure
- * Breach collision. Pressure reset, Void Scar proposal, revision, and the
- * protected Pressure Breach event remain owned by the enclosing transaction.
+ * Apply only the Hazard-side interpretation of a repeated Pressure Breach.
+ * Collision analysis is regenerated from the canonical request inside this
+ * boundary; callers cannot authorize an outcome with a supplied plan.
  */
-export function applyVoyageHazardTriggerExistingConsequence(state, incomingHazard, collisionAnalysis) {
+export function applyVoyageHazardTriggerExistingConsequence(encounterState, incomingHazard) {
+  const stateCapture = captureCanonicalState(encounterState);
+  if (!stateCapture.ok) return stateCapture.failure;
+  const incomingCapture = captureCanonicalIncomingHazard(incomingHazard, stateCapture.state.encounterId);
+  if (!incomingCapture.ok) return incomingCapture.failure;
+
   try {
-    if (!isPlainObject(state) || !Array.isArray(state.activeHazards)) {
-      return failure(
-        "pressure-breach-application-state-invalid",
-        "encounterState",
-        "Repeated Pressure Breach application requires a valid encounter state."
-      );
+    const state = stateCapture.state;
+    const incoming = incomingCapture.hazard;
+    if (incoming.collisionPolicy !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE) {
+      return failure("pressure-breach-application-collision-policy-invalid", "incomingHazard.collisionPolicy", "Repeated Pressure Breach application requires trigger-existing-consequence.");
     }
-    if (!isPlainObject(incomingHazard)) {
-      return failure(
-        "pressure-breach-application-hazard-invalid",
-        "incomingHazard",
-        "Repeated Pressure Breach application requires a plain incoming Hazard."
-      );
+    const collisionAnalysis = analyzeVoyageHazardCollisionPlan(state, incoming);
+    if (!validInternallyGeneratedAnalysis(collisionAnalysis)) {
+      return failure("pressure-breach-application-collision-invalid", "collisionAnalysis", "Repeated Pressure Breach collision analysis could not be validated safely.");
     }
-    if (!validResultShape(collisionAnalysis) || !validPlanShape(collisionAnalysis.plan)) {
-      return failure(
-        "pressure-breach-application-collision-invalid",
-        "collisionPlan",
-        "Repeated Pressure Breach application requires an exact collision analysis result."
-      );
-    }
-
     const plan = collisionAnalysis.plan;
-    if (plan.encounterId !== state.encounterId) {
-      return failure(
-        "pressure-breach-application-encounter-mismatch",
-        "collisionPlan.encounterId",
-        "Collision plan and encounter state encounterId values must match."
-      );
-    }
-    if (plan.expectedRevision !== state.revision) {
-      return failure(
-        "pressure-breach-application-revision-mismatch",
-        "collisionPlan.expectedRevision",
-        "Collision plan and encounter state revisions must match."
-      );
+    if (
+      plan.encounterId !== state.encounterId
+      || plan.expectedRevision !== state.revision
+      || plan.incomingHazardId !== incoming.hazardId
+      || !samePlainData(plan.incomingHazard, incoming)
+    ) {
+      return failure("pressure-breach-application-collision-invalid", "collisionAnalysis.plan", "Internally generated collision analysis does not match the canonical request.");
     }
 
-    if (plan.kind === "no-collision") {
-      if (collisionAnalysis.collision !== false || !validNoCollisionPlan(plan, incomingHazard)) {
-        return failure(
-          "pressure-breach-application-collision-invalid",
-          "collisionPlan",
-          "No-collision analysis does not match the incoming Hazard."
-        );
-      }
+    if (plan.kind === "no-collision" && collisionAnalysis.collision === false) {
+      if (
+        plan.existingHazardId !== null
+        || plan.existingHazardIndex !== null
+        || plan.existingHazard !== null
+        || plan.pressureSystemId !== incoming.pressureSystemId
+        || plan.collisionPolicy !== null
+        || plan.collisionPayload !== null
+        || plan.recommendedOperation !== "persist-incoming"
+      ) return failure("pressure-breach-application-collision-invalid", "collisionAnalysis.plan", "Internally generated no-collision analysis is invalid.");
       return success(false, clonePlainData(state.activeHazards));
     }
 
-    if (collisionAnalysis.collision !== true || !Number.isSafeInteger(plan.existingHazardIndex)) {
-      return failure(
-        "pressure-breach-application-collision-invalid",
-        "collisionPlan",
-        "Collision analysis must identify one existing Hazard index."
-      );
-    }
-    if (plan.existingHazardIndex < 0 || plan.existingHazardIndex >= state.activeHazards.length) {
-      return failure(
-        "pressure-breach-application-index-invalid",
-        "collisionPlan.existingHazardIndex",
-        "Collision plan Hazard index is not present in activeHazards."
-      );
-    }
-    if (plan.collisionPolicy !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE) {
-      return failure(
-        "pressure-breach-application-collision-policy-invalid",
-        "collisionPlan.collisionPolicy",
-        "Repeated Pressure Breach application requires trigger-existing-consequence."
-      );
-    }
-    if (state.activeHazards[plan.existingHazardIndex].hazardId !== plan.existingHazardId) {
-      return failure(
-        "pressure-breach-application-live-hazard-mismatch",
-        `state.activeHazards[${plan.existingHazardIndex}]`,
-        "The collision plan Hazard is no longer at its planned index."
-      );
-    }
-    if (!samePlainData(state.activeHazards[plan.existingHazardIndex], plan.existingHazard)) {
-      return failure(
-        "pressure-breach-application-snapshot-mismatch",
-        `state.activeHazards[${plan.existingHazardIndex}]`,
-        "The live Hazard no longer matches the collision plan snapshot."
-      );
-    }
-    if (!validTriggerPlan(plan, state, incomingHazard)) {
-      return failure(
-        "pressure-breach-application-collision-invalid",
-        "collisionPlan",
-        "Collision plan identity, slot, policy, or snapshot fields are invalid."
-      );
-    }
+    const index = plan.existingHazardIndex;
+    if (
+      plan.kind !== "collision"
+      || collisionAnalysis.collision !== true
+      || !Number.isSafeInteger(index)
+      || index < 0
+      || index >= state.activeHazards.length
+      || plan.existingHazardId !== state.activeHazards[index].hazardId
+      || plan.pressureSystemId !== incoming.pressureSystemId
+      || plan.collisionPolicy !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE
+      || plan.recommendedOperation !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE
+      || incoming.collisionPolicy !== VOYAGE_HAZARD_COLLISION_POLICIES.TRIGGER_EXISTING_CONSEQUENCE
+      || !samePlainData(plan.existingHazard, state.activeHazards[index])
+      || !samePlainData(plan.collisionPayload, incoming.metadata.collision)
+    ) return failure("pressure-breach-application-collision-invalid", "collisionAnalysis.plan", "Internally generated collision analysis is invalid.");
 
-    const existingHazard = state.activeHazards[plan.existingHazardIndex];
-    const consequence = existingHazard.metadata?.collision?.consequence;
+    const existingHazard = state.activeHazards[index];
+    const consequence = existingHazard.metadata.collision.consequence;
     if (!validConsequence(consequence)) {
-      return failure(
-        "pressure-breach-application-consequence-invalid",
-        `state.activeHazards[${plan.existingHazardIndex}].metadata.collision.consequence`,
-        "The existing Hazard requires one exact authored collision consequence descriptor."
-      );
+      return failure("pressure-breach-application-consequence-invalid", `encounterState.activeHazards[${index}].metadata.collision.consequence`, "The existing Hazard requires one exact authored collision consequence descriptor.");
     }
 
-    const activeHazards = clonePlainData(state.activeHazards);
-    activeHazards[plan.existingHazardIndex].metadata.collision.consequence = clonePlainData(consequence);
-    return success(
-      true,
-      activeHazards,
-      clonePlainData(consequence),
-      {
-        kind: "hazard-consequence-triggered",
-        hazardId: plan.existingHazardId,
-        incomingHazardId: incomingHazard.hazardId,
-        pressureSystemId: incomingHazard.pressureSystemId,
-        collisionPolicy: incomingHazard.collisionPolicy,
-        consequence: clonePlainData(consequence)
-      }
-    );
+    return success(true, clonePlainData(state.activeHazards), clonePlainData(consequence), {
+      kind: "hazard-consequence-triggered",
+      hazardId: existingHazard.hazardId,
+      incomingHazardId: incoming.hazardId,
+      pressureSystemId: incoming.pressureSystemId,
+      collisionPolicy: incoming.collisionPolicy,
+      consequence: clonePlainData(consequence)
+    });
   } catch {
-    return failure(
-      "pressure-breach-application-collision-invalid",
-      "collisionPlan",
-      "Repeated Pressure Breach collision application could not be completed safely."
-    );
+    return failure("pressure-breach-application-collision-invalid", "collisionAnalysis", "Repeated Pressure Breach collision application could not be completed safely.");
   }
 }
