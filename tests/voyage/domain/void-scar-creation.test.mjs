@@ -12,6 +12,7 @@ import {
 } from "../../../scripts/voyage/domain/void-scar-creation.js";
 import { analyzeVoyageVoidScarCapacity } from "../../../scripts/voyage/domain/void-scar-capacity.js";
 import { validateVoyageVoidScarRecord } from "../../../scripts/voyage/domain/void-scar-schema.js";
+import { validateVoyageShipState } from "../../../scripts/voyage/domain/ship-state.js";
 
 const SYSTEMS = ["crew-morale", "arkengine", "levstone-array", "solar-sail-rig", "lifeveil"];
 const SCAR_FIELDS = [
@@ -125,6 +126,22 @@ function canonicalPair(system = "crew-morale", encounterId = "creation-encounter
   return { event, ship, request: makeRequest(event, ship) };
 }
 
+function switchingProxy(first, second, { throwOnSecondCapture = false } = {}) {
+  let captures = 0;
+  const proxy = new Proxy({}, {
+    ownKeys() {
+      captures += 1;
+      if (captures > 1 && throwOnSecondCapture) throw new Error("second raw capture");
+      return Reflect.ownKeys(captures === 1 ? first : second);
+    },
+    getOwnPropertyDescriptor(_target, key) {
+      const descriptor = Object.getOwnPropertyDescriptor(captures === 1 ? first : second, key);
+      return descriptor ? { ...descriptor } : undefined;
+    }
+  });
+  return { proxy, get captures() { return captures; } };
+}
+
 function assertFailure(result) {
   assert.equal(result.readyForVoidScarCreation, false);
   assert.equal(result.voidScar, null);
@@ -229,6 +246,75 @@ test("populated states preserve existing Scars, enforce duplicate identity and c
   const distinctReport = analyzeVoyagePressureBreachVoidScarCreation(distinctState, distinct.event, makeRequest(distinct.event, distinctState));
   assert.equal(distinctReport.readyForVoidScarCreation, true);
   assert.notEqual(distinctReport.voidScar.voidScarId, report.voidScar.voidScarId);
+});
+
+test("creation application uses one stable capture for toggling source and request Proxies", () => {
+  const first = canonicalPair("crew-morale", "creation-a");
+  const second = canonicalPair("arkengine", "creation-b");
+  const source = switchingProxy(first.event, second.event);
+  const request = switchingProxy(first.request, second.request);
+  const stateBefore = clone(first.ship);
+
+  const result = applyVoyagePressureBreachVoidScarCreation(first.ship, source.proxy, request.proxy);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(source.captures, 1);
+  assert.equal(request.captures, 1);
+  assert.deepEqual(first.ship, stateBefore);
+  assert.equal(result.nextState.voidScars[0].voidScarId, first.request.sourceProposal.voidScarId);
+  assert.equal(result.nextState.voidScars[0].encounterId, first.event.encounterId);
+  assert.equal(result.events[0].encounterId, first.event.encounterId);
+  assert.equal(result.events[0].pressureSystemId, first.event.voidScarProposal.pressureSystemId);
+  assert.equal(result.events[0].sourceProposal.voidScarId, first.event.voidScarProposal.voidScarId);
+  assert.notEqual(result.nextState.voidScars[0].voidScarId, second.request.sourceProposal.voidScarId);
+  assert.notEqual(result.events[0].encounterId, second.event.encounterId);
+  assertNoHostileText(result);
+
+  const freshFirst = canonicalPair("crew-morale", "creation-a");
+  const freshSecond = canonicalPair("arkengine", "creation-b");
+  const freshResult = applyVoyagePressureBreachVoidScarCreation(
+    freshFirst.ship,
+    switchingProxy(freshFirst.event, freshSecond.event).proxy,
+    switchingProxy(freshFirst.request, freshSecond.request).proxy
+  );
+  assert.deepEqual(result, freshResult);
+});
+
+test("creation application never performs a second raw capture", () => {
+  const pair = canonicalPair();
+  const source = switchingProxy(pair.event, pair.event, { throwOnSecondCapture: true });
+  const request = switchingProxy(pair.request, pair.request, { throwOnSecondCapture: true });
+
+  const result = applyVoyagePressureBreachVoidScarCreation(pair.ship, source.proxy, request.proxy);
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(source.captures, 1);
+  assert.equal(request.captures, 1);
+  assertNoHostileText(result);
+});
+
+test("creation rejects a duplicate stable Void Scar ID despite differing provenance", () => {
+  const source = canonicalPair();
+  const proposed = analyzeVoyagePressureBreachVoidScarCreation(source.ship, source.event, source.request).voidScar;
+  const existing = clone(proposed);
+  existing.encounterId = "different-encounter";
+  existing.effectIndex += 1;
+  existing.sequence += 1;
+  assert.equal(validateVoyageVoidScarRecord(existing).valid, true);
+
+  const state = makeShip({ voidScars: [existing] });
+  assert.equal(validateVoyageShipState(state).valid, true);
+  const request = makeRequest(source.event, state);
+  const analysis = analyzeVoyagePressureBreachVoidScarCreation(state, source.event, request);
+  assertFailure(analysis);
+  assert.ok(analysis.errors.some(({ code, path }) => code === "duplicate-void-scar-proposal" && path === "shipState.voidScars"));
+  assert.equal(analysis.errors.some(({ code }) => code === "duplicate-void-scar-id"), false);
+  assert.equal(analysis.errors.some(({ code }) => code === "void-scar-capacity-exhausted"), false);
+
+  const before = clone(state);
+  const result = applyVoyagePressureBreachVoidScarCreation(state, source.event, request);
+  assertApplicationFailure(result);
+  assert.deepEqual(state, before);
 });
 
 test("identity, concurrency, proposal, and source-provenance mutations fail closed", () => {

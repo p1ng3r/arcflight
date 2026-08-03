@@ -215,44 +215,53 @@ function analysisResult(values = {}) {
   };
 }
 
+function captureCreationInputs(shipState, sourceEncounterStateOrEvent, request) {
+  return {
+    shipCapture: captureVoyageShipState(shipState),
+    source: readSource(sourceEncounterStateOrEvent),
+    parsedRequest: readRequest(request)
+  };
+}
+
+function analyzeCapturedCreation({ shipCapture, source, parsedRequest }) {
+  if (!shipCapture.ok) return analysisResult({ errors: shipCapture.errors.map((error) => ({ ...error, path: `shipState${error.path === "$" ? "" : error.path.slice(1)}` })) });
+  const capacityAnalysis = analyzeVoyageVoidScarCapacity(shipCapture.state);
+  if (!capacityAnalysis.ok) return analysisResult({ errors: capacityAnalysis.errors, warnings: capacityAnalysis.warnings });
+  const common = {
+    shipId: parsedRequest.value?.shipId ?? shipCapture.state.shipId,
+    expectedShipRevision: parsedRequest.value?.expectedShipRevision ?? null,
+    sourceEventType: parsedRequest.value?.sourceEventType ?? null,
+    sourceEncounterRevision: parsedRequest.value?.sourceEncounterRevision ?? null,
+    sourceProposal: null,
+    activeVoidScarCount: capacityAnalysis.activeVoidScarCount,
+    voidScarCapacity: capacityAnalysis.voidScarCapacity,
+    availableSlots: capacityAnalysis.availableSlots
+  };
+  const errors = [...(source.errors ?? []), ...(parsedRequest.errors ?? [])];
+  if (!source.ok || !parsedRequest.ok) return analysisResult({ ...common, errors });
+  const ship = shipCapture.state;
+  const { event, proposal } = source;
+  const req = parsedRequest.value;
+  if (req.shipId !== ship.shipId) errors.push(issue("stale-void-scar-creation-ship", "request.shipId", "Request shipId does not match the live ship."));
+  if (req.expectedShipRevision !== ship.revision) errors.push(issue("stale-void-scar-creation-ship-revision", "request.expectedShipRevision", "Ship revision is stale."));
+  if (req.encounterId !== event.encounterId || req.encounterId !== proposal.encounterId) errors.push(issue("void-scar-creation-encounter-mismatch", "request.encounterId", "Request encounterId does not match the source."));
+  if (req.expectedEncounterRevision !== event.revision || req.sourceEncounterRevision !== event.revision) errors.push(issue("stale-void-scar-creation-encounter-revision", "request.expectedEncounterRevision", "Encounter revision is stale or unbound."));
+  if (req.sourceEventType !== event.type) errors.push(issue("void-scar-creation-source-event-mismatch", "request.sourceEventType", "Request source event type does not match the source."));
+  if (req.pressureSystemId !== proposal.pressureSystemId) errors.push(issue("void-scar-creation-pressure-system-mismatch", "request.pressureSystemId", "Request Pressure system does not match the approved proposal."));
+  if (JSON.stringify(req.sourceProposal) !== JSON.stringify(proposal)) errors.push(issue("void-scar-creation-proposal-mismatch", "request.sourceProposal", "Request proposal snapshot does not match the approved source."));
+  const scar = regenerateScar(proposal);
+  const scarValidation = validateVoyageVoidScarRecord(scar, { expectedEncounterId: req.encounterId, expectedPressureSystemId: req.pressureSystemId, expectedPressureBreachId: proposal.pressureBreachId });
+  if (!scarValidation.valid) errors.push(...scarValidation.errors);
+  const duplicate = ship.voidScars.some((existing) => existing.voidScarId === scar.voidScarId);
+  if (duplicate) errors.push(issue("duplicate-void-scar-proposal", "shipState.voidScars", "This approved Pressure Breach proposal has already been applied."));
+  if (!capacityAnalysis.canAcceptVoidScar) errors.push(issue("void-scar-capacity-exhausted", "shipState.voidScars", "Void Scar capacity is exhausted."));
+  if (!isSafeInteger(ship.revision + 1)) errors.push(issue("void-scar-creation-revision-overflow", "shipState.revision", "Ship revision cannot be incremented safely."));
+  return analysisResult({ ...common, sourceProposal: errors.length === 0 ? proposal : null, voidScar: errors.length === 0 ? scar : null, readyForVoidScarCreation: errors.length === 0, errors });
+}
+
 export function analyzeVoyagePressureBreachVoidScarCreation(shipState, sourceEncounterStateOrEvent, request) {
   try {
-    const shipCapture = captureVoyageShipState(shipState);
-    const source = readSource(sourceEncounterStateOrEvent);
-    const parsedRequest = readRequest(request);
-    if (!shipCapture.ok) return analysisResult({ errors: shipCapture.errors.map((error) => ({ ...error, path: `shipState${error.path === "$" ? "" : error.path.slice(1)}` })) });
-    const capacityAnalysis = analyzeVoyageVoidScarCapacity(shipCapture.state);
-    if (!capacityAnalysis.ok) return analysisResult({ errors: capacityAnalysis.errors, warnings: capacityAnalysis.warnings });
-    const common = {
-      shipId: parsedRequest.value?.shipId ?? shipCapture.state.shipId,
-      expectedShipRevision: parsedRequest.value?.expectedShipRevision ?? null,
-      sourceEventType: parsedRequest.value?.sourceEventType ?? null,
-      sourceEncounterRevision: parsedRequest.value?.sourceEncounterRevision ?? null,
-      sourceProposal: null,
-      activeVoidScarCount: capacityAnalysis.activeVoidScarCount,
-      voidScarCapacity: capacityAnalysis.voidScarCapacity,
-      availableSlots: capacityAnalysis.availableSlots
-    };
-    const errors = [...(source.errors ?? []), ...(parsedRequest.errors ?? [])];
-    if (!source.ok || !parsedRequest.ok) return analysisResult({ ...common, errors });
-    const ship = shipCapture.state;
-    const { event, proposal } = source;
-    const req = parsedRequest.value;
-    if (req.shipId !== ship.shipId) errors.push(issue("stale-void-scar-creation-ship", "request.shipId", "Request shipId does not match the live ship."));
-    if (req.expectedShipRevision !== ship.revision) errors.push(issue("stale-void-scar-creation-ship-revision", "request.expectedShipRevision", "Ship revision is stale."));
-    if (req.encounterId !== event.encounterId || req.encounterId !== proposal.encounterId) errors.push(issue("void-scar-creation-encounter-mismatch", "request.encounterId", "Request encounterId does not match the source."));
-    if (req.expectedEncounterRevision !== event.revision || req.sourceEncounterRevision !== event.revision) errors.push(issue("stale-void-scar-creation-encounter-revision", "request.expectedEncounterRevision", "Encounter revision is stale or unbound."));
-    if (req.sourceEventType !== event.type) errors.push(issue("void-scar-creation-source-event-mismatch", "request.sourceEventType", "Request source event type does not match the source."));
-    if (req.pressureSystemId !== proposal.pressureSystemId) errors.push(issue("void-scar-creation-pressure-system-mismatch", "request.pressureSystemId", "Request Pressure system does not match the approved proposal."));
-    if (JSON.stringify(req.sourceProposal) !== JSON.stringify(proposal)) errors.push(issue("void-scar-creation-proposal-mismatch", "request.sourceProposal", "Request proposal snapshot does not match the approved source."));
-    const scar = regenerateScar(proposal);
-    const scarValidation = validateVoyageVoidScarRecord(scar, { expectedEncounterId: req.encounterId, expectedPressureSystemId: req.pressureSystemId, expectedPressureBreachId: proposal.pressureBreachId });
-    if (!scarValidation.valid) errors.push(...scarValidation.errors);
-    const duplicate = ship.voidScars.some((existing) => existing.voidScarId === scar.voidScarId && existing.pressureBreachId === scar.pressureBreachId && existing.encounterId === scar.encounterId && existing.pressureSystemId === scar.pressureSystemId && existing.effectIndex === scar.effectIndex && existing.sequence === scar.sequence);
-    if (duplicate) errors.push(issue("duplicate-void-scar-proposal", "shipState.voidScars", "This approved Pressure Breach proposal has already been applied."));
-    if (!capacityAnalysis.canAcceptVoidScar) errors.push(issue("void-scar-capacity-exhausted", "shipState.voidScars", "Void Scar capacity is exhausted."));
-    if (!isSafeInteger(ship.revision + 1)) errors.push(issue("void-scar-creation-revision-overflow", "shipState.revision", "Ship revision cannot be incremented safely."));
-    return analysisResult({ ...common, sourceProposal: errors.length === 0 ? proposal : null, voidScar: errors.length === 0 ? scar : null, readyForVoidScarCreation: errors.length === 0, errors });
+    return analyzeCapturedCreation(captureCreationInputs(shipState, sourceEncounterStateOrEvent, request));
   } catch {
     return analysisResult({ errors: [issue("void-scar-creation-failed", "shipState", "Void Scar creation analysis could not be completed safely.")] });
   }
@@ -260,12 +269,11 @@ export function analyzeVoyagePressureBreachVoidScarCreation(shipState, sourceEnc
 
 export function applyVoyagePressureBreachVoidScarCreation(shipState, sourceEncounterStateOrEvent, request) {
   try {
-    const analysis = analyzeVoyagePressureBreachVoidScarCreation(shipState, sourceEncounterStateOrEvent, request);
+    const inputs = captureCreationInputs(shipState, sourceEncounterStateOrEvent, request);
+    const analysis = analyzeCapturedCreation(inputs);
     if (!analysis.readyForVoidScarCreation) return failure(analysis.errors, analysis.warnings);
-    const shipCapture = captureVoyageShipState(shipState);
+    const { shipCapture, source, parsedRequest } = inputs;
     if (!shipCapture.ok) return failure(shipCapture.errors);
-    const source = readSource(sourceEncounterStateOrEvent);
-    const parsedRequest = readRequest(request);
     if (!source.ok || !parsedRequest.ok) return failure([...(source.errors ?? []), ...(parsedRequest.errors ?? [])]);
     const scarForState = regenerateScar(source.proposal);
     const candidate = {

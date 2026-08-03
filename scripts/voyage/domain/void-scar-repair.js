@@ -132,11 +132,15 @@ function validateResourceApproval(approval, resourceId, scar, errors) {
   }
 }
 
-export function analyzeVoyageVoidScarRepair(shipState, request) {
-  const shipCapture = captureVoyageShipState(shipState);
-  if (!shipCapture.ok) return repairResult({ errors: mapShipErrors(shipCapture.errors), warnings: shipCapture.warnings });
+function captureRepairInputs(shipState, request) {
+  return {
+    shipCapture: captureVoyageShipState(shipState),
+    parsedRequest: captureRequest(request)
+  };
+}
 
-  const parsedRequest = captureRequest(request);
+function analyzeCapturedRepair({ shipCapture, parsedRequest }) {
+  if (!shipCapture.ok) return repairResult({ errors: mapShipErrors(shipCapture.errors), warnings: shipCapture.warnings });
   if (!parsedRequest.ok) return repairResult({ errors: parsedRequest.errors });
 
   const ship = shipCapture.state;
@@ -211,14 +215,18 @@ export function analyzeVoyageVoidScarRepair(shipState, request) {
   });
 }
 
+export function analyzeVoyageVoidScarRepair(shipState, request) {
+  return analyzeCapturedRepair(captureRepairInputs(shipState, request));
+}
+
 export function applyVoyageVoidScarRepair(shipState, request) {
-  const analysis = analyzeVoyageVoidScarRepair(shipState, request);
+  const inputs = captureRepairInputs(shipState, request);
+  const analysis = analyzeCapturedRepair(inputs);
   if (!analysis.readyForVoidScarRepair || analysis.removesScar !== true) {
     return applicationFailure(analysis.errors, analysis.warnings);
   }
 
-  const shipCapture = captureVoyageShipState(shipState);
-  const parsedRequest = captureRequest(request);
+  const { shipCapture, parsedRequest } = inputs;
   if (!shipCapture.ok) return applicationFailure(shipCapture.errors, shipCapture.warnings);
   if (!parsedRequest.ok) return applicationFailure(parsedRequest.errors);
 

@@ -94,6 +94,22 @@ function fieldRequest(state, live, resourceId = "resource-1") {
   });
 }
 
+function switchingProxy(first, second, { throwOnSecondCapture = false } = {}) {
+  let captures = 0;
+  const proxy = new Proxy({}, {
+    ownKeys() {
+      captures += 1;
+      if (captures > 1 && throwOnSecondCapture) throw new Error("second raw capture");
+      return Reflect.ownKeys(captures === 1 ? first : second);
+    },
+    getOwnPropertyDescriptor(_target, key) {
+      const descriptor = Object.getOwnPropertyDescriptor(captures === 1 ? first : second, key);
+      return descriptor ? { ...descriptor } : undefined;
+    }
+  });
+  return { proxy, get captures() { return captures; } };
+}
+
 function assertFailure(result) {
   assert.equal(result.readyForVoidScarRepair, false);
   assert.deepEqual(Object.keys(result), REPAIR_RESULT_FIELDS);
@@ -131,6 +147,11 @@ function assertApplicationDiagnostic(result, code, path) {
 function assertNoRawText(value) {
   const text = JSON.stringify(value).toLowerCase();
   for (const forbidden of ["typeerror", "proxy", "revok", "trap", "stack", "engine"]) assert.equal(text.includes(forbidden), false, forbidden);
+}
+
+function assertNoRawExceptionText(value) {
+  const text = JSON.stringify(value).toLowerCase();
+  for (const forbidden of ["typeerror", "proxy", "revok", "trap", "stack", "second raw capture"]) assert.equal(text.includes(forbidden), false, forbidden);
 }
 
 test("all five canonical systems produce exact Dock Repair analyses and isolated descriptors", () => {
@@ -625,6 +646,49 @@ test("Field Repair Resource application removes the Scar with exact null terms",
   });
   assert.deepEqual(state, before);
   assert.deepEqual(repairRequest, requestBefore);
+});
+
+test("Field Repair application uses one stable capture for a toggling request Proxy", () => {
+  const first = pair();
+  const second = pair();
+  const firstRequest = fieldRequest(first.state, first.live, "resource-a");
+  const secondRequest = fieldRequest(second.state, second.live, "resource-b");
+  const request = switchingProxy(firstRequest, secondRequest);
+  const stateBefore = clone(first.state);
+
+  const result = applyVoyageVoidScarRepair(first.state, request.proxy);
+
+  assertApplicationSuccess(result);
+  assert.equal(request.captures, 1);
+  assert.deepEqual(first.state, stateBefore);
+  assert.equal(result.events[0].fieldRepairResourceId, "resource-a");
+  assert.equal(result.nextState.voidScars.length, 0);
+  assert.equal(result.nextState.revision, stateBefore.revision + 1);
+  assert.equal(result.events.length, 1);
+  assertNoRawExceptionText(result);
+
+  const fresh = pair();
+  const freshRequest = switchingProxy(
+    fieldRequest(fresh.state, fresh.live, "resource-a"),
+    fieldRequest(fresh.state, fresh.live, "resource-b")
+  );
+  assert.deepEqual(result, applyVoyageVoidScarRepair(fresh.state, freshRequest.proxy));
+});
+
+test("Field Repair application never performs a second raw request capture", () => {
+  const { state, live } = pair();
+  const request = switchingProxy(
+    fieldRequest(state, live, "resource-a"),
+    fieldRequest(state, live, "resource-b"),
+    { throwOnSecondCapture: true }
+  );
+
+  const result = applyVoyageVoidScarRepair(state, request.proxy);
+
+  assertApplicationSuccess(result);
+  assert.equal(request.captures, 1);
+  assert.equal(result.events[0].fieldRepairResourceId, "resource-a");
+  assertNoRawExceptionText(result);
 });
 
 test("application is isolated, deterministic, authoritative, and rejects repeated repair", () => {
