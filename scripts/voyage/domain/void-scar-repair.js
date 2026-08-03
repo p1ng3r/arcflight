@@ -182,6 +182,10 @@ function analyzeCapturedRepair({ shipCapture, parsedRequest }) {
       errors.push(issue("invalid-void-scar-repair-outcome", "request.outcome", "Dock Repair outcome is not canonical."));
       return repairResult({ errors });
     }
+    if (!Number.isSafeInteger(ship.revision + 1)) {
+      errors.push(issue("void-scar-repair-revision-overflow", "shipState.revision", "Ship revision cannot be incremented safely."));
+      return repairResult({ errors });
+    }
     const terms = DOCK_OUTCOMES.get(value.outcome);
     return repairResult({
       readyForVoidScarRepair: true,
@@ -202,6 +206,10 @@ function analyzeCapturedRepair({ shipCapture, parsedRequest }) {
   if (value.fieldRepairResourceApproval === null) errors.push(issue("missing-field-repair-resource-approval", "request.fieldRepairResourceApproval", "Field Repair Resource requires fieldRepairResourceApproval."));
   else if (isNonBlankString(value.fieldRepairResourceId)) validateResourceApproval(value.fieldRepairResourceApproval, value.fieldRepairResourceId, liveScar, errors);
   if (errors.length > 0) return repairResult({ errors });
+  if (!Number.isSafeInteger(ship.revision + 1)) {
+    errors.push(issue("void-scar-repair-revision-overflow", "shipState.revision", "Ship revision cannot be incremented safely."));
+    return repairResult({ errors });
+  }
 
   return repairResult({
     readyForVoidScarRepair: true,

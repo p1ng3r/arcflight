@@ -154,6 +154,28 @@ function assertNoRawExceptionText(value) {
   for (const forbidden of ["typeerror", "proxy", "revok", "trap", "stack", "second raw capture"]) assert.equal(text.includes(forbidden), false, forbidden);
 }
 
+function assertRevisionOverflowAnalysis(result) {
+  assertFailure(result);
+  assert.deepEqual(result.errors, [{
+    code: "void-scar-repair-revision-overflow",
+    path: "shipState.revision",
+    message: "Ship revision cannot be incremented safely.",
+    severity: "error"
+  }]);
+  assertNoRawExceptionText(result);
+}
+
+function assertRevisionOverflowApplication(result) {
+  assertApplicationFailure(result);
+  assert.deepEqual(result.errors, [{
+    code: "void-scar-repair-revision-overflow",
+    path: "shipState.revision",
+    message: "Ship revision cannot be incremented safely.",
+    severity: "error"
+  }]);
+  assertNoRawExceptionText(result);
+}
+
 test("all five canonical systems produce exact Dock Repair analyses and isolated descriptors", () => {
   for (const system of SYSTEMS) {
     const first = pair(system);
@@ -648,6 +670,58 @@ test("Field Repair Resource application removes the Scar with exact null terms",
   assert.deepEqual(repairRequest, requestBefore);
 });
 
+test("Dock Repair rejects captured ship revision overflow in analysis and application", () => {
+  const { state, live } = pair();
+  state.revision = Number.MAX_SAFE_INTEGER;
+  const repairRequest = request(state, state.voidScars[0]);
+  const stateBefore = clone(state);
+  const requestBefore = clone(repairRequest);
+
+  const analysis = analyzeVoyageVoidScarRepair(state, repairRequest);
+  assertRevisionOverflowAnalysis(analysis);
+  assert.deepEqual(state, stateBefore);
+  assert.deepEqual(repairRequest, requestBefore);
+  assert.deepEqual(analysis, analyzeVoyageVoidScarRepair(clone(stateBefore), clone(requestBefore)));
+
+  const application = applyVoyageVoidScarRepair(state, repairRequest);
+  assertRevisionOverflowApplication(application);
+  assert.deepEqual(state, stateBefore);
+  assert.deepEqual(repairRequest, requestBefore);
+});
+
+test("Field Repair Resource rejects captured ship revision overflow in analysis and application", () => {
+  const { state, live } = pair();
+  state.revision = Number.MAX_SAFE_INTEGER;
+  const repairRequest = fieldRequest(state, live, "resource-overflow");
+  const stateBefore = clone(state);
+  const requestBefore = clone(repairRequest);
+
+  const analysis = analyzeVoyageVoidScarRepair(state, repairRequest);
+  assertRevisionOverflowAnalysis(analysis);
+  assert.deepEqual(state, stateBefore);
+  assert.deepEqual(repairRequest, requestBefore);
+  assert.deepEqual(analysis, analyzeVoyageVoidScarRepair(clone(stateBefore), clone(requestBefore)));
+
+  const application = applyVoyageVoidScarRepair(state, repairRequest);
+  assertRevisionOverflowApplication(application);
+  assert.deepEqual(state, stateBefore);
+  assert.deepEqual(repairRequest, requestBefore);
+});
+
+test("repair revision overflow does not hide an earlier method-specific diagnostic", () => {
+  const { state, live } = pair();
+  state.revision = Number.MAX_SAFE_INTEGER;
+  const malformedDockRequest = request(state, state.voidScars[0], { fieldRepairResourceId: "forbidden-resource" });
+
+  const analysis = analyzeVoyageVoidScarRepair(state, malformedDockRequest);
+
+  assertFailure(analysis);
+  assert.equal(analysis.errors[0].code, "unexpected-field-repair-resource-id");
+  assert.equal(analysis.errors[0].path, "request.fieldRepairResourceId");
+  assert.equal(analysis.errors.some(({ code }) => code === "void-scar-repair-revision-overflow"), false);
+  assertNoRawExceptionText(analysis);
+});
+
 test("Field Repair application uses one stable capture for a toggling request Proxy", () => {
   const first = pair();
   const second = pair();
@@ -760,8 +834,7 @@ test("application failures are atomic for malformed, stale, overflow, and hostil
   const overflowRequest = request(overflow, overflow.voidScars[0]);
   const overflowBefore = clone(overflow);
   const overflowResult = applyVoyageVoidScarRepair(overflow, overflowRequest);
-  assertApplicationFailure(overflowResult);
-  assert.ok(overflowResult.errors.some(({ code }) => code === "invalid-ship-revision"));
+  assertRevisionOverflowApplication(overflowResult);
   assert.deepEqual(overflow, overflowBefore);
 
   const hostileFactories = [
