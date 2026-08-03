@@ -804,7 +804,7 @@ Each system uses the same schema and capacity transaction. System ID, Hazard ide
 
 ### Task 4 - Dock and Field Repair Resources repair analysis
 
-- **Capability:** Validate dock-repair and field-repair-resource requests, eligibility, compatibility, exact outcomes, and rounded cost/time without mutation.
+- **Capability:** Validate dock-repair and field-repair-resource requests, eligibility, compatibility, exact outcomes, and fixed percentage-point cost/time terms without mutation.
 - **Expected production files:** scripts/voyage/domain/void-scar-repair.js.
 - **Expected tests:** tests/voyage/domain/void-scar-repair.test.mjs for exact ten-field request capture, live Scar binding, normal/field repair, outcomes, facility approval, compatibility evidence, diagnostics, isolation, and hostile data.
 - **Public API:** analyzeVoyageVoidScarRepair(shipState, request).
