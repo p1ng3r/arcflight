@@ -760,6 +760,107 @@ test("rejects hostile, sparse, unsafe, accessor, and non-serializable data witho
   }), "invalid-hazard-data-property", "$.metadata.collision.metadata.collision.hazardId");
 });
 
+function assertNoRawReflectionText(value) {
+  const text = JSON.stringify(value);
+  assert.doesNotMatch(text, /TypeError|Proxy|revok|trap|stack|engine/i);
+}
+
+function runRevokedRecord(api) {
+  const target = validRecord();
+  const before = structuredClone(target);
+  const { proxy, revoke } = Proxy.revocable(target, {});
+  revoke();
+  let output;
+  assert.doesNotThrow(() => {
+    output = api(proxy);
+  });
+  assert.deepEqual(target, before);
+  assertNoRawReflectionText(output);
+  return output;
+}
+
+test("revoked root Hazard records fail closed deterministically for validation and capture", () => {
+  const validation = runRevokedRecord(validateVoyageHazardRecord);
+  assert.deepEqual(Object.keys(validation), ["valid", "errors", "warnings"]);
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation, runRevokedRecord(validateVoyageHazardRecord));
+
+  const capture = runRevokedRecord(captureVoyageHazardRecord);
+  assert.deepEqual(Object.keys(capture), ["ok", "record", "errors", "warnings"]);
+  assert.equal(capture.ok, false);
+  assert.equal(capture.record, null);
+  assert.deepEqual(capture, runRevokedRecord(captureVoyageHazardRecord));
+});
+
+test("revoked nested Hazard values fail closed at every array reflection path", () => {
+  const cases = [
+    ["currentEffect", (record, value) => { record.currentEffect = value; }],
+    ["activationTiming", (record, value) => { record.activationTiming = value; }],
+    ["removalMethod", (record, value) => { record.removalMethod = value; }],
+    ["ignoredConsequence", (record, value) => { record.ignoredConsequence = value; }],
+    ["escalation", (record, value) => { record.escalation = value; }],
+    ["escalation.stages", (record, value) => { record.escalation.stages = value; }],
+    ["duration", (record, value) => { record.duration = value; }],
+    ["metadata", (record, value) => { record.metadata = value; }]
+  ];
+
+  for (const [label, replace] of cases) {
+    const run = (api) => {
+      const record = validRecord();
+      const before = structuredClone(record);
+      const target = label === "escalation.stages" ? [] : {};
+      const { proxy, revoke } = Proxy.revocable(target, {});
+      replace(record, proxy);
+      revoke();
+      let output;
+      assert.doesNotThrow(() => {
+        output = api(record);
+      }, label);
+      assert.equal(record.hazardId, before.hazardId, label);
+      assert.equal(record.name, before.name, label);
+      assertNoRawReflectionText(output);
+      return output;
+    };
+
+    const firstValidation = run(validateVoyageHazardRecord);
+    const secondValidation = run(validateVoyageHazardRecord);
+    assert.equal(firstValidation.valid, false, label);
+    assert.deepEqual(firstValidation, secondValidation, label);
+
+    const firstCapture = run(captureVoyageHazardRecord);
+    const secondCapture = run(captureVoyageHazardRecord);
+    assert.equal(firstCapture.ok, false, label);
+    assert.equal(firstCapture.record, null, label);
+    assert.deepEqual(firstCapture, secondCapture, label);
+  }
+});
+
+test("revoked validation options fail closed deterministically", () => {
+  const run = (api) => {
+    const record = validRecord();
+    const before = structuredClone(record);
+    const target = {};
+    const { proxy, revoke } = Proxy.revocable(target, {});
+    revoke();
+    let output;
+    assert.doesNotThrow(() => {
+      output = api(record, proxy);
+    });
+    assert.deepEqual(record, before);
+    assertNoRawReflectionText(output);
+    return output;
+  };
+
+  const validation = run(validateVoyageHazardRecord);
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation, run(validateVoyageHazardRecord));
+
+  const capture = run(captureVoyageHazardRecord);
+  assert.equal(capture.ok, false);
+  assert.equal(capture.record, null);
+  assert.deepEqual(capture, run(captureVoyageHazardRecord));
+});
+
 test("accepted escalation and consequence descriptors remain deeply isolated", () => {
   const source = validRecord({
     collisionPolicy: VOYAGE_HAZARD_COLLISION_POLICIES.ESCALATE_EXISTING,

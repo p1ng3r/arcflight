@@ -83,8 +83,18 @@ function safeGetPrototype(value) {
   }
 }
 
+function safeIsArray(value) {
+  try {
+    return { ok: true, isArray: Array.isArray(value) };
+  } catch {
+    return { ok: false, isArray: false };
+  }
+}
+
 function isSafePlainObject(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (value === null || typeof value !== "object") return false;
+  const arrayCheck = safeIsArray(value);
+  if (!arrayCheck.ok || arrayCheck.isArray) return false;
   const result = safeGetPrototype(value);
   return result.ok && (result.prototype === Object.prototype || result.prototype === null);
 }
@@ -149,7 +159,13 @@ function cloneSafeData(value, path, errors, ancestors = new Set()) {
   ancestors.add(value);
 
   let clone;
-  if (Array.isArray(value)) {
+  const arrayCheck = safeIsArray(value);
+  if (!arrayCheck.ok) {
+    errors.push(issue("hazard-data-read-failed", path, "Hazard data could not be read safely."));
+    ancestors.delete(value);
+    return undefined;
+  }
+  if (arrayCheck.isArray) {
     const keys = ownKeys(value, path, errors);
     if (!keys) {
       ancestors.delete(value);
