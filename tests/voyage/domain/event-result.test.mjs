@@ -128,8 +128,77 @@ test("hostile getters, functions, non-plain values, cycles, symbols, unsafe keys
   for (const value of [getter, fn, nonPlain, cyclic, symbol, unsafe, sparse, revoked]) { const result = analyzeVoyageEncounterOverallResult(value); failure(result); assertDiagnostic(result.errors[0], "m8-hostile-data-capture-failed", "$", MESSAGE.hostile); assert.ok(result.errors.every((entry) => !/secret trap|TypeError|Proxy|revocation|trap|stack|engine/i.test(entry.message))); }
 });
 
-test("capture rejects malformed histories without unauthorized diagnostics", () => {
-  const def = definition(); const malformed = history(def); malformed.rounds[0].roundResult = "bad"; const result = captureVoyageEncounterCompletedRoundHistory(malformed); assert.equal(result.ok, false); assert.equal(result.value, null); assertDiagnostic(result.errors[0], "m8-invalid-round-result", "completedRoundHistory.rounds[0].roundResult", MESSAGE.result); assert.ok(result.errors.every((entry) => entry.code !== UNAUTHORIZED_HISTORY_CODE));
+function assertExactCapturedHistory(input) {
+  const result = captureVoyageEncounterCompletedRoundHistory(input);
+  assert.equal(result.ok, true); assert.deepEqual(result.errors, []); assert.deepEqual(result.warnings, []); assert.notEqual(result.value, input); assert.deepEqual(result.value, input); assert.notEqual(result.value.rounds, input.rounds);
+  result.value.rounds.forEach((round, index) => { assert.notEqual(round, input.rounds[index]); assert.deepEqual(round, input.rounds[index]); });
+  return result.value;
+}
+
+test("capture preserves every semantic value while later validation rejects each fixture exactly", () => {
+  const unsupportedSchema = definition(); const unsupportedSchemaHistory = history(unsupportedSchema); unsupportedSchemaHistory.schemaVersion = 99;
+  const capturedSchema = assertExactCapturedHistory(unsupportedSchemaHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedSchema, unsupportedSchema), { valid: false, errors: [{ code: "m8-incomplete-round-history", path: "completedRoundHistory.rounds", message: "Completed round history has invalid identity or schema fields.", severity: "error" }], warnings: [] });
+
+  const unsupportedCount = definition(); const unsupportedCountHistory = history(unsupportedCount); unsupportedCountHistory.roundCount = 4;
+  const capturedCount = assertExactCapturedHistory(unsupportedCountHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedCount, unsupportedCount), { valid: false, errors: [{ code: "m8-history-round-count-mismatch", path: "completedRoundHistory.roundCount", message: "Completed history roundCount must match Event Definition.", severity: "error" }], warnings: [] });
+
+  const whitespaceIdentity = definition(); const whitespaceIdentityHistory = history(whitespaceIdentity); whitespaceIdentityHistory.eventId = " id";
+  const capturedWhitespace = assertExactCapturedHistory(whitespaceIdentityHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedWhitespace, whitespaceIdentity), { valid: false, errors: [{ code: "m8-incomplete-round-history", path: "completedRoundHistory.rounds", message: "Completed round history has invalid identity or schema fields.", severity: "error" }, { code: "m8-event-identity-mismatch", path: "completedRoundHistory.eventId", message: "Completed history eventId must match Event Definition.", severity: "error" }], warnings: [] });
+
+  const noncanonicalNumber = definition(); const noncanonicalNumberHistory = history(noncanonicalNumber); noncanonicalNumberHistory.rounds[0].roundNumber = 9;
+  const capturedNumber = assertExactCapturedHistory(noncanonicalNumberHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedNumber, noncanonicalNumber), { valid: false, errors: [{ code: "m8-round-order-invalid", path: "completedRoundHistory.rounds[0]", message: "Round results must follow Event Definition order.", severity: "error" }], warnings: [] });
+
+  const noncanonicalResult = definition(); const noncanonicalResultHistory = history(noncanonicalResult); noncanonicalResultHistory.rounds[0].roundResult = "not-canonical";
+  const capturedResult = assertExactCapturedHistory(noncanonicalResultHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedResult, noncanonicalResult), { valid: false, errors: [{ code: "m8-invalid-round-result", path: "completedRoundHistory.rounds[0].roundResult", message: "Round result is not canonical.", severity: "error" }], warnings: [] });
+
+  const duplicateIdentity = definition(); const duplicateHistory = history(duplicateIdentity); duplicateHistory.rounds[1].roundId = duplicateHistory.rounds[0].roundId;
+  const capturedDuplicate = assertExactCapturedHistory(duplicateHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedDuplicate, duplicateIdentity), { valid: false, errors: [{ code: "m8-duplicate-round-result", path: "completedRoundHistory.rounds[1].roundId", message: "A round result is duplicated.", severity: "error" }, { code: "m8-round-order-invalid", path: "completedRoundHistory.rounds[1]", message: "Round results must follow Event Definition order.", severity: "error" }], warnings: [] });
+
+  const unknownIdentity = definition(); const unknownHistory = history(unknownIdentity); unknownHistory.rounds[1].roundId = "unknown-round";
+  const capturedUnknown = assertExactCapturedHistory(unknownHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedUnknown, unknownIdentity), { valid: false, errors: [{ code: "m8-unknown-round-id", path: "completedRoundHistory.rounds[1].roundId", message: "Round result references an unknown roundId.", severity: "error" }, { code: "m8-round-order-invalid", path: "completedRoundHistory.rounds[1]", message: "Round results must follow Event Definition order.", severity: "error" }], warnings: [] });
+
+  const mismatchedIdentities = definition(); const mismatchedHistory = history(mismatchedIdentities, undefined, { eventId: "other-event", sessionId: "other-session", definitionSnapshotId: "other-snapshot" });
+  const capturedMismatches = assertExactCapturedHistory(mismatchedHistory);
+  assert.deepEqual(validateVoyageEncounterCompletedRoundHistory(capturedMismatches, mismatchedIdentities), { valid: false, errors: [{ code: "m8-event-identity-mismatch", path: "completedRoundHistory.eventId", message: "Completed history eventId must match Event Definition.", severity: "error" }, { code: "m8-definition-snapshot-mismatch", path: "completedRoundHistory.definitionSnapshotId", message: "Completed history definitionSnapshotId must match Event Definition.", severity: "error" }], warnings: [] });
+  const mismatchAnalysis = analyzeVoyageEncounterOverallResult(request(mismatchedIdentities, capturedMismatches, { sessionId: "request-session" })); failure(mismatchAnalysis); assert.deepEqual(mismatchAnalysis.errors, [{ code: "m8-session-identity-mismatch", path: "completedRoundHistory.sessionId", message: "Request sessionId must match completed history sessionId.", severity: "error" }, { code: "m8-event-identity-mismatch", path: "completedRoundHistory.eventId", message: "Completed history eventId must match Event Definition.", severity: "error" }, { code: "m8-definition-snapshot-mismatch", path: "completedRoundHistory.definitionSnapshotId", message: "Completed history definitionSnapshotId must match Event Definition.", severity: "error" }]);
+});
+
+test("nonblank string rules reject every invalid value independently", () => {
+  const values = ["", " ", "\t", "\n", " id", "id ", "\tid", "id\n"];
+  for (const value of values) {
+    for (const field of ["eventId", "definitionSnapshotId"]) {
+      const def = definition(); def[field] = value; const hist = history(def); const result = analyzeVoyageEncounterOverallResult(request(def, hist)); failure(result); assert.deepEqual(result.errors, [{ code: "m8-invalid-event-definition", path: "eventDefinition", message: "Event Definition identity or schema is invalid.", severity: "error" }]);
+    }
+    const roundDef = definition(); roundDef.rounds[0].roundId = value; const roundResult = analyzeVoyageEncounterOverallResult(request(roundDef)); failure(roundResult); assert.deepEqual(roundResult.errors, [{ code: "m8-invalid-event-definition", path: "eventDefinition", message: "Event Definition rounds must be unique and densely ordered.", severity: "error" }]);
+    for (const field of ["nextSituationId", "title", "summary"]) {
+      const next = { nextSituationId: "next-1", title: "Next title", summary: "Next summary", transitionKind: "retreat" }; next[field] = value; const nextDef = definition(3, { nextSituations: [next] }); const result = analyzeVoyageEncounterOverallResult(request(nextDef)); failure(result); assert.deepEqual(result.errors, [{ code: "m8-invalid-next-situation", path: "eventDefinition.nextSituations", message: "Event Definition nextSituations must contain one valid descriptor.", severity: "error" }]);
+    }
+    const eventHistoryDef = definition(); const eventHistory = history(eventHistoryDef); eventHistory.eventId = value; const eventHistoryResult = validateVoyageEncounterCompletedRoundHistory(eventHistory, eventHistoryDef); assert.deepEqual(eventHistoryResult, { valid: false, errors: [{ code: "m8-incomplete-round-history", path: "completedRoundHistory.rounds", message: "Completed round history has invalid identity or schema fields.", severity: "error" }, { code: "m8-event-identity-mismatch", path: "completedRoundHistory.eventId", message: "Completed history eventId must match Event Definition.", severity: "error" }], warnings: [] });
+    const sessionDef = definition(); const sessionHistory = history(sessionDef); sessionHistory.sessionId = value; const sessionResult = analyzeVoyageEncounterOverallResult(request(sessionDef, sessionHistory, { sessionId: "request-session" })); failure(sessionResult); assert.deepEqual(sessionResult.errors, [{ code: "m8-session-identity-mismatch", path: "completedRoundHistory.sessionId", message: "Request sessionId must match completed history sessionId.", severity: "error" }, { code: "m8-incomplete-round-history", path: "completedRoundHistory.rounds", message: "Completed round history has invalid identity or schema fields.", severity: "error" }]);
+    const snapshotDef = definition(); const snapshotHistory = history(snapshotDef); snapshotHistory.definitionSnapshotId = value; const snapshotResult = validateVoyageEncounterCompletedRoundHistory(snapshotHistory, snapshotDef); assert.deepEqual(snapshotResult, { valid: false, errors: [{ code: "m8-incomplete-round-history", path: "completedRoundHistory.rounds", message: "Completed round history has invalid identity or schema fields.", severity: "error" }, { code: "m8-definition-snapshot-mismatch", path: "completedRoundHistory.definitionSnapshotId", message: "Completed history definitionSnapshotId must match Event Definition.", severity: "error" }], warnings: [] });
+    const roundHistoryDef = definition(); const roundHistory = history(roundHistoryDef); roundHistory.rounds[0].roundId = value; const roundHistoryResult = validateVoyageEncounterCompletedRoundHistory(roundHistory, roundHistoryDef); assert.deepEqual(roundHistoryResult, { valid: false, errors: [{ code: "m8-round-order-invalid", path: "completedRoundHistory.rounds[0]", message: "Round results must follow Event Definition order.", severity: "error" }], warnings: [] });
+    const requestDef = definition(); const requestHistory = history(requestDef); const requestResult = analyzeVoyageEncounterOverallResult(request(requestDef, requestHistory, { sessionId: value })); failure(requestResult); assert.deepEqual(requestResult.errors, [{ code: "m8-invalid-request-shape", path: "request", message: "Request has invalid field values.", severity: "error" }]);
+  }
+});
+
+test("valid strings with internal whitespace remain exact through capture and analysis", () => {
+  for (const value of ["id", "event-1", "Two Words"]) {
+    const def = definition(); def.eventId = value; def.definitionSnapshotId = `${value}-snapshot`; def.rounds[0].roundId = `${value}-round`; const hist = history(def); hist.sessionId = `${value}-session`; const captured = assertExactCapturedHistory(hist); assert.equal(captured.eventId, hist.eventId); assert.equal(captured.sessionId, hist.sessionId); assert.equal(captured.definitionSnapshotId, hist.definitionSnapshotId); assert.equal(captured.rounds[0].roundId, hist.rounds[0].roundId);
+    const result = analyzeVoyageEncounterOverallResult(request(def, hist)); assert.equal(result.ok, true); assert.equal(result.eventId, def.eventId); assert.equal(result.sessionId, hist.sessionId); assert.equal(result.definitionSnapshotId, def.definitionSnapshotId);
+  }
+});
+
+test("standalone validator short-circuits after invalid Event Definition capture", () => {
+  const def = definition(); const hist = history(def); for (const rounds of [{}, null]) {
+    const invalidDef = { ...def, rounds }; assert.doesNotThrow(() => validateVoyageEncounterCompletedRoundHistory(hist, invalidDef)); const result = validateVoyageEncounterCompletedRoundHistory(hist, invalidDef); assert.equal(result.valid, false); assert.deepEqual(result.errors, [{ code: "m8-invalid-event-definition", path: "eventDefinition", message: MESSAGE.eventRoundsDense, severity: "error" }]); assert.deepEqual(result.warnings, []); assert.ok(result.errors.every((entry) => !/TypeError|stack|engine/i.test(entry.message)));
+  }
 });
 
 test("determinism, input immutability, returned isolation, and cross-call isolation hold", () => {

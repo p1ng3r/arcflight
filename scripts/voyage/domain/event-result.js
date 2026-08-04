@@ -57,7 +57,7 @@ function captured(value, path = "$") {
   return errors.length ? { ok: false, value: null, errors: normalizedErrors, warnings: [] } : { ok: true, value: result, errors: [], warnings: [] };
 }
 function exactKeys(value, expected) { return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === expected.length && Object.keys(value).every((key, i) => key === expected[i]); }
-function string(value) { return typeof value === "string" && value.length > 0; }
+function string(value) { return typeof value === "string" && value.length > 0 && value.trim() === value; }
 function denseArray(value) { return Array.isArray(value) && value.every((entry, i) => Object.hasOwn(value, i)); }
 function invalidEnvelope(errors) {
   return { ok: false, readyForOverallResult: false, eventId: null, sessionId: null, definitionSnapshotId: null, roundCount: null, winningThreshold: null, successfulRoundCount: null, failedRoundCount: null, overallResult: null, errors: dedupe(errors), warnings: [] };
@@ -79,7 +79,7 @@ function validateDefinition(definition) {
   if (!denseArray(definition.nextSituations) || definition.nextSituations.length > 1) errors.push(issue("m8-invalid-next-situation", `${root}.nextSituations`, "Event Definition must contain zero or one valid next situation."));
   else if (definition.nextSituations.length === 1) {
     const next = definition.nextSituations[0];
-    if (!exactKeys(next, ["nextSituationId", "title", "summary", "transitionKind"]) || !string(next.nextSituationId) || typeof next.title !== "string" || typeof next.summary !== "string" || !TRANSITIONS.has(next.transitionKind)) errors.push(issue("m8-invalid-next-situation", `${root}.nextSituations`, "Event Definition nextSituations must contain one valid descriptor."));
+    if (!exactKeys(next, ["nextSituationId", "title", "summary", "transitionKind"]) || !string(next.nextSituationId) || !string(next.title) || !string(next.summary) || !TRANSITIONS.has(next.transitionKind)) errors.push(issue("m8-invalid-next-situation", `${root}.nextSituations`, "Event Definition nextSituations must contain one valid descriptor."));
   }
   return dedupe(errors);
 }
@@ -96,22 +96,23 @@ function validateHistory(history, definition) {
   history.rounds.forEach((round, i) => {
     const path = `${root}.rounds[${i}]`;
     if (!exactKeys(round, ["roundId", "roundNumber", "roundResult"])) { errors.push(issue("m8-incomplete-round-history", path, "Completed round entry shape is invalid.")); return; }
+    const validRoundIdentity = string(round.roundId) && Number.isSafeInteger(round.roundNumber);
+    if (!validRoundIdentity) errors.push(issue("m8-round-order-invalid", path, "Round results must follow Event Definition order."));
     if (seen.has(round.roundId)) errors.push(issue("m8-duplicate-round-result", `${path}.roundId`, "A round result is duplicated.")); seen.add(round.roundId);
     const expected = definition.rounds[i];
-    if (!expected || !definition.rounds.some((entry) => entry.roundId === round.roundId)) errors.push(issue("m8-unknown-round-id", `${path}.roundId`, "Round result references an unknown roundId."));
-    if (expected && (round.roundId !== expected.roundId || round.roundNumber !== expected.roundNumber)) errors.push(issue("m8-round-order-invalid", path, "Round results must follow Event Definition order."));
+    if (validRoundIdentity && (!expected || !definition.rounds.some((entry) => entry.roundId === round.roundId))) errors.push(issue("m8-unknown-round-id", `${path}.roundId`, "Round result references an unknown roundId."));
+    if (validRoundIdentity && expected && (round.roundId !== expected.roundId || round.roundNumber !== expected.roundNumber)) errors.push(issue("m8-round-order-invalid", path, "Round results must follow Event Definition order."));
     if (!ROUND_RESULT_SET.has(round.roundResult)) errors.push(issue("m8-invalid-round-result", `${path}.roundResult`, "Round result is not canonical."));
   });
   return dedupe(errors);
 }
 function validateCaptureOnly(value) {
   const errors = [];
-  if (!exactKeys(value, ["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "roundCount", "rounds"]) || value.schemaVersion !== 1 || !string(value.eventId) || !string(value.sessionId) || !string(value.definitionSnapshotId) || !Number.isSafeInteger(value.roundCount) || !VALID_ROUND_COUNTS.has(value.roundCount) || !denseArray(value.rounds)) {
+  if (!exactKeys(value, ["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "roundCount", "rounds"]) || !denseArray(value.rounds)) {
     errors.push(issue("m8-incomplete-round-history", "completedRoundHistory.rounds", "Completed round history must contain every authored round exactly once."));
   } else {
     value.rounds.forEach((round, index) => {
-      if (!exactKeys(round, ["roundId", "roundNumber", "roundResult"]) || !string(round.roundId) || !Number.isSafeInteger(round.roundNumber)) errors.push(issue("m8-incomplete-round-history", `completedRoundHistory.rounds[${index}]`, "Completed round entry has an invalid exact shape."));
-      else if (!ROUND_RESULT_SET.has(round.roundResult)) errors.push(issue("m8-invalid-round-result", `completedRoundHistory.rounds[${index}].roundResult`, "Round result is not canonical."));
+      if (!exactKeys(round, ["roundId", "roundNumber", "roundResult"])) errors.push(issue("m8-incomplete-round-history", `completedRoundHistory.rounds[${index}]`, "Completed round entry has an invalid exact shape."));
     });
   }
   return errors;
@@ -125,7 +126,9 @@ export function captureVoyageEncounterCompletedRoundHistory(completedRoundHistor
 export function validateVoyageEncounterCompletedRoundHistory(completedRoundHistory, eventDefinition) {
   const historyCapture = captured(completedRoundHistory); const definitionCapture = captured(eventDefinition);
   if (!historyCapture.ok || !definitionCapture.ok) return { valid: false, errors: dedupe([...(historyCapture.ok ? [] : historyCapture.errors), ...(definitionCapture.ok ? [] : definitionCapture.errors)]), warnings: [] };
-  const definitionErrors = validateDefinition(definitionCapture.value); const errors = [...definitionErrors, ...validateHistory(historyCapture.value, definitionCapture.value)];
+  const definitionErrors = validateDefinition(definitionCapture.value);
+  if (definitionErrors.length > 0) return { valid: false, errors: [...definitionErrors], warnings: [] };
+  const errors = validateHistory(historyCapture.value, definitionCapture.value);
   return { valid: errors.length === 0, errors: dedupe(errors), warnings: [] };
 }
 export function analyzeVoyageEncounterOverallResult(request) {
