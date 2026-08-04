@@ -149,6 +149,63 @@ test("analyzer precedence, authority, exact requests, sentinels, next situations
   const session = analyzeVoyageEncounterRewardSteps(request(def, { ...hist, sessionId: "other" }, { sessionId: "request-session" })); failure(session); diagnostic(session.errors[0], "m8-session-identity-mismatch", "completedRoundHistory.sessionId", "Request sessionId must match completed history sessionId.");
 });
 
+test("category five and six diagnostics precede deferred Task 1 round-count validation", () => {
+  const unresolvedWithInvalidCount = definition(4, [reward("r", "item", { enhancementIds: ["e"] })], [enhancement("e", { compatibleRewardIds: ["missing"], compatibleRewardKinds: ["item"] })]);
+  const unresolvedResult = analyzeVoyageEncounterRewardSteps(request(unresolvedWithInvalidCount));
+  assert.deepEqual(unresolvedResult, {
+    ok: false,
+    readyForRewardSteps: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    roundCount: null,
+    winningThreshold: null,
+    overallResult: null,
+    rewardPoints: null,
+    rewardSteps: null,
+    rewardDefinitions: [],
+    errors: [{ code: "m8-unresolved-compatible-reward-reference", path: "eventDefinition.enhancements[0].compatibleRewardIds[0]", message: "Reward compatibility identity does not resolve exactly once.", severity: "error" }],
+    warnings: []
+  });
+  assert.equal(unresolvedResult.errors.some(({ code }) => code === "m8-invalid-round-count"), false);
+
+  const validReferencesWithInvalidCount = definition(4, [reward("r", "item", { enhancementIds: ["e"] })], [enhancement("e", { compatibleRewardIds: ["r"], compatibleRewardKinds: ["item"] })]);
+  const invalidCountResult = analyzeVoyageEncounterRewardSteps(request(validReferencesWithInvalidCount));
+  assert.deepEqual(invalidCountResult, {
+    ok: false,
+    readyForRewardSteps: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    roundCount: null,
+    winningThreshold: null,
+    overallResult: null,
+    rewardPoints: null,
+    rewardSteps: null,
+    rewardDefinitions: [],
+    errors: [{ code: "m8-invalid-round-count", path: "eventDefinition.roundCount", message: "Event Definition roundCount must be one of 3, 5, 7, 9, or 11.", severity: "error" }],
+    warnings: []
+  });
+
+  const categoryFiveFailure = definition(3, [reward("r", "item", { enhancementIds: ["e"] })], [enhancement("e", { compatibleRewardIds: ["missing"], compatibleRewardKinds: ["item"] })], { nextSituations: [{ nextSituationId: "malformed" }] });
+  const categoryFiveResult = analyzeVoyageEncounterRewardSteps(request(categoryFiveFailure));
+  assert.deepEqual(categoryFiveResult, {
+    ok: false,
+    readyForRewardSteps: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    roundCount: null,
+    winningThreshold: null,
+    overallResult: null,
+    rewardPoints: null,
+    rewardSteps: null,
+    rewardDefinitions: [],
+    errors: [{ code: "m8-invalid-next-situation", path: "eventDefinition.nextSituations", message: "Event Definition nextSituations must contain one valid descriptor.", severity: "error" }],
+    warnings: []
+  });
+});
+
 test("sufficiency supports add and enhancement operations without returning an allocation", () => {
   const e = enhancement("e", { compatibleRewardIds: ["r1"], compatibleRewardKinds: ["item"] });
   const one = definition(5, [reward("r1", "item", { enhancementIds: ["e"] })], [e]); const result = analyzeVoyageEncounterRewardSteps(request(one)); assert.equal(result.ok, true); assert.equal(result.rewardSteps, 2); assert.deepEqual(result.rewardDefinitions.map(({ rewardId }) => rewardId), ["r1"]); assert.equal(Object.hasOwn(result, "allocation"), false); assert.equal(Object.hasOwn(result, "rewardSelections"), false);

@@ -225,7 +225,6 @@ function validateEventDefinition(definition) {
   const errors = [];
   if (!exactKeys(definition, EVENT_FIELDS)) return [issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.eventShape)];
   if (definition.schemaVersion !== 1 || !nonblank(definition.eventId) || !nonblank(definition.definitionSnapshotId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.eventIdentity));
-  if (!Number.isSafeInteger(definition.roundCount) || !ROUND_COUNTS.has(definition.roundCount)) errors.push(issue("m8-invalid-round-count", "eventDefinition.roundCount", MESSAGES.invalidRoundCount));
   if (!dense(definition.rounds)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.roundsDense));
   else {
     if (Number.isSafeInteger(definition.roundCount) && definition.rounds.length !== definition.roundCount) errors.push(issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.roundsCount));
