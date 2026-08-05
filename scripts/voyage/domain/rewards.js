@@ -261,6 +261,9 @@ function validHistory(history, definition) {
   return dedupe(errors);
 }
 
+function rewardEnhancementPairKey(rewardId, enhancementId) {
+  return JSON.stringify([rewardId, enhancementId]);
+}
 function catalogSufficient(rewards, enhancements, steps) {
   const enhancementById = new Map(enhancements.map((entry) => [entry.enhancementId, entry]));
   const rewardById = new Map(rewards.map((entry) => [entry.rewardId, entry]));
@@ -280,11 +283,12 @@ function catalogSufficient(rewards, enhancements, steps) {
       if (selected.length >= 2) continue;
       const reward = rewardById.get(rewardId);
       for (const enhancementId of reward.enhancementIds) {
-        if (selected.includes(enhancementId) || used.has(`${rewardId}\u0000${enhancementId}`)) continue;
+        const pairKey = rewardEnhancementPairKey(rewardId, enhancementId);
+        if (selected.includes(enhancementId) || used.has(pairKey)) continue;
         const enhancement = enhancementById.get(enhancementId);
         if (!enhancement || !compatible(reward, enhancement)) continue;
         const nextAdded = new Map(added); nextAdded.set(rewardId, [...selected, enhancementId]);
-        const nextUsed = new Set(used); nextUsed.add(`${rewardId}\u0000${enhancementId}`);
+        const nextUsed = new Set(used); nextUsed.add(pairKey);
         if (walk(depth + 1, nextAdded, nextUsed)) return true;
       }
     }
