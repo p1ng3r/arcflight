@@ -39,6 +39,25 @@ function history(results = ["round-failure", "round-failure", "round-success"], 
 function request(overrides = {}) {
   return { kind: "m8-negative-steps", sessionId: "session-a", eventDefinition: definition(), completedRoundHistory: history(), negativeSelection: { misfortuneId: "delay", enhancementIds: [] }, ...overrides };
 }
+function fourRoundDefinition(overrides = {}) {
+  return {
+    ...definition(),
+    roundCount: 4,
+    rounds: [{ roundId: "r1", roundNumber: 1 }, { roundId: "r2", roundNumber: 2 }, { roundId: "r3", roundNumber: 3 }, { roundId: "r4", roundNumber: 4 }],
+    ...overrides
+  };
+}
+function fourRoundHistory(overrides = {}) {
+  return {
+    ...history(),
+    roundCount: 4,
+    rounds: ["round-failure", "round-failure", "round-success", "round-success"].map((roundResult, i) => ({ roundId: `r${i + 1}`, roundNumber: i + 1, roundResult })),
+    ...overrides
+  };
+}
+function fourRoundRequest({ eventDefinition = fourRoundDefinition(), completedRoundHistory = fourRoundHistory(), sessionId = "session-a" } = {}) {
+  return { kind: "m8-negative-steps", sessionId, eventDefinition, completedRoundHistory, negativeSelection: { misfortuneId: "delay", enhancementIds: [] } };
+}
 function failed(errors) {
   return { ok: false, readyForNegativeSteps: false, eventId: null, sessionId: null, definitionSnapshotId: null, roundCount: null, winningThreshold: null, overallResult: null, failurePoints: null, negativeSteps: null, overallFailureDegree: null, negativePackage: null, errors, warnings: [] };
 }
@@ -148,6 +167,39 @@ test("ordinary non-object root requests return the complete request-shape envelo
   for (const value of [null, "invalid", 42, true, []]) {
     assert.deepEqual(analyzeVoyageEncounterNegativeSteps(value), failed([{ code: "m8-invalid-request-shape", path: "request", message: "Request has an invalid exact shape.", severity: "error" }]));
   }
+});
+test("Task 1 owns non-integer round-count diagnostics", () => {
+  const eventDefinition = { ...definition(), roundCount: "3" };
+  assert.deepEqual(analyzeVoyageEncounterNegativeSteps(request({ eventDefinition })), failed([{ code: "m8-invalid-round-count", path: "eventDefinition.roundCount", message: "Event Definition roundCount must be one of 3, 5, 7, 9, or 11.", severity: "error" }]));
+});
+test("event binding precedes invalid authored round count", () => {
+  const result = analyzeVoyageEncounterNegativeSteps(fourRoundRequest({ completedRoundHistory: fourRoundHistory({ eventId: "other-event" }) }));
+  assert.deepEqual(result, failed([{ code: "m8-event-identity-mismatch", path: "completedRoundHistory.eventId", message: "Completed history eventId must match Event Definition.", severity: "error" }]));
+  assert.equal(result.errors.some(({ code }) => code === "m8-invalid-round-count"), false);
+});
+test("session binding precedes invalid authored round count", () => {
+  const result = analyzeVoyageEncounterNegativeSteps(fourRoundRequest({ completedRoundHistory: fourRoundHistory({ sessionId: "other-session" }) }));
+  assert.deepEqual(result, failed([{ code: "m8-session-identity-mismatch", path: "completedRoundHistory.sessionId", message: "Request sessionId must match completed history sessionId.", severity: "error" }]));
+  assert.equal(result.errors.some(({ code }) => code === "m8-invalid-round-count"), false);
+});
+test("definition-snapshot binding precedes invalid authored round count", () => {
+  const result = analyzeVoyageEncounterNegativeSteps(fourRoundRequest({ completedRoundHistory: fourRoundHistory({ definitionSnapshotId: "other-snapshot" }) }));
+  assert.deepEqual(result, failed([{ code: "m8-definition-snapshot-mismatch", path: "completedRoundHistory.definitionSnapshotId", message: "Completed history definitionSnapshotId must match Event Definition.", severity: "error" }]));
+  assert.equal(result.errors.some(({ code }) => code === "m8-invalid-round-count"), false);
+});
+test("all category-seven bindings retain event, session, snapshot ordering", () => {
+  const result = analyzeVoyageEncounterNegativeSteps(fourRoundRequest({ completedRoundHistory: fourRoundHistory({ eventId: "other-event", sessionId: "other-session", definitionSnapshotId: "other-snapshot" }) }));
+  assert.deepEqual(result.errors, [
+    { code: "m8-event-identity-mismatch", path: "completedRoundHistory.eventId", message: "Completed history eventId must match Event Definition.", severity: "error" },
+    { code: "m8-session-identity-mismatch", path: "completedRoundHistory.sessionId", message: "Request sessionId must match completed history sessionId.", severity: "error" },
+    { code: "m8-definition-snapshot-mismatch", path: "completedRoundHistory.definitionSnapshotId", message: "Completed history definitionSnapshotId must match Event Definition.", severity: "error" }
+  ]);
+  assert.equal(result.errors.some(({ code }) => code === "m8-invalid-round-count"), false);
+  assert.deepEqual(result.warnings, []);
+});
+test("bound invalid integer round count remains Task 1-owned", () => {
+  const result = analyzeVoyageEncounterNegativeSteps(fourRoundRequest());
+  assert.deepEqual(result, failed([{ code: "m8-invalid-round-count", path: "eventDefinition.roundCount", message: "Event Definition roundCount must be one of 3, 5, 7, 9, or 11.", severity: "error" }]));
 });
 test("hostile root requests remain capture failures", () => {
   const revoked = Proxy.revocable({}, {}); revoked.revoke();

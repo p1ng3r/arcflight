@@ -7,6 +7,7 @@ const NEXT_FIELDS = ["nextSituationId", "title", "summary", "transitionKind"];
 const EVENT_FIELDS = ["schemaVersion", "eventId", "definitionSnapshotId", "roundCount", "rounds", "rewards", "enhancements", "misfortuneEnhancements", "misfortunes", "nextSituations"];
 const REQUEST_FIELDS = ["kind", "sessionId", "eventDefinition", "completedRoundHistory", "negativeSelection"];
 const SELECTION_FIELDS = ["misfortuneId", "enhancementIds"];
+const HISTORY_FIELDS = ["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "roundCount", "rounds"];
 const AUTHORITY_KEYS = ["overallResult", "rewardAnalysis", "negativeAnalysis", "rewardSteps", "negativeSteps", "resultPackage", "allocationPlan", "nextState"];
 const KINDS = new Set(["travel-delay", "resource-cost", "operational-restriction", "crew-consequence", "damaged-room", "authored"]);
 const PERSISTENCE = new Set(["temporary", "persistent"]);
@@ -109,11 +110,19 @@ function validateEventDefinition(definition) {
   if (!exact(definition, EVENT_FIELDS)) return [issue("m8-invalid-event-definition", "eventDefinition", M.eventShape)];
   if (definition.schemaVersion !== 1 || !nonblank(definition.eventId) || !nonblank(definition.definitionSnapshotId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.eventIdentity));
   if (!dense(definition.rounds)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsDense));
-  else { if (definition.rounds.length !== definition.roundCount) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsCount)); const ids = new Set(); definition.rounds.forEach((round, i) => { if (!exact(round, ["roundId", "roundNumber"]) || !nonblank(round.roundId) || !Number.isSafeInteger(round.roundNumber) || round.roundNumber !== i + 1 || ids.has(round.roundId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsOrder)); ids.add(round?.roundId); }); }
+  else { if (Number.isSafeInteger(definition.roundCount) && definition.rounds.length !== definition.roundCount) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsCount)); const ids = new Set(); definition.rounds.forEach((round, i) => { if (!exact(round, ["roundId", "roundNumber"]) || !nonblank(round.roundId) || !Number.isSafeInteger(round.roundNumber) || round.roundNumber !== i + 1 || ids.has(round.roundId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsOrder)); ids.add(round?.roundId); }); }
   for (const key of ["rewards", "enhancements", "misfortuneEnhancements", "misfortunes"]) if (!dense(definition[key])) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.catalogsDense));
   if (!dense(definition.nextSituations) || definition.nextSituations.length > 1) errors.push(issue("m8-invalid-next-situation", "eventDefinition.nextSituations", M.nextCardinality));
   else if (definition.nextSituations.length === 1) { const next = definition.nextSituations[0]; if (!exact(next, NEXT_FIELDS) || !nonblank(next.nextSituationId) || !nonblank(next.title) || !nonblank(next.summary) || !TRANSITIONS.has(next.transitionKind)) errors.push(issue("m8-invalid-next-situation", "eventDefinition.nextSituations", M.nextDescriptor)); }
   return dedupe(errors);
+}
+function validateHistoryBindings(history, definition, sessionId) {
+  if (!exact(history, HISTORY_FIELDS)) return [];
+  const errors = [];
+  if (nonblank(history.eventId) && nonblank(definition.eventId) && history.eventId !== definition.eventId) errors.push(issue("m8-event-identity-mismatch", "completedRoundHistory.eventId", "Completed history eventId must match Event Definition."));
+  if (nonblank(history.sessionId) && nonblank(sessionId) && history.sessionId !== sessionId) errors.push(issue("m8-session-identity-mismatch", "completedRoundHistory.sessionId", "Request sessionId must match completed history sessionId."));
+  if (nonblank(history.definitionSnapshotId) && nonblank(definition.definitionSnapshotId) && history.definitionSnapshotId !== definition.definitionSnapshotId) errors.push(issue("m8-definition-snapshot-mismatch", "completedRoundHistory.definitionSnapshotId", "Completed history definitionSnapshotId must match Event Definition."));
+  return errors;
 }
 function compatible(misfortune, enhancement) { return misfortune.enhancementIds.includes(enhancement.misfortuneEnhancementId) && (enhancement.compatibleMisfortuneIds.length === 0 || enhancement.compatibleMisfortuneIds.includes(misfortune.misfortuneId)); }
 function sufficient(misfortunes, enhancements, steps) { const byId = new Map(enhancements.map((entry) => [entry.misfortuneEnhancementId, entry])); return misfortunes.some((misfortune) => { if (steps === 1 && misfortune.scarConsequenceProposal !== null) return false; const legal = misfortune.enhancementIds.map((id) => byId.get(id)).filter((entry) => entry && compatible(misfortune, entry)); return legal.length >= steps - 1; }); }
@@ -145,6 +154,7 @@ export function analyzeVoyageEncounterNegativeSteps(request) {
   if (!nonblank(value.sessionId) || !plain(value.eventDefinition) || !plain(value.completedRoundHistory)) return invalidEnvelope([issue("m8-invalid-request-shape", "request", M.requestValues)]);
   const definitionErrors = validateEventDefinition(value.eventDefinition); if (definitionErrors.length) return invalidEnvelope(definitionErrors);
   const catalogErrors = validateMisfortuneCatalog(value.eventDefinition.misfortunes, value.eventDefinition.misfortuneEnhancements); if (catalogErrors.length) return invalidEnvelope(catalogErrors);
+  const bindingErrors = validateHistoryBindings(value.completedRoundHistory, value.eventDefinition, value.sessionId); if (bindingErrors.length) return invalidEnvelope(bindingErrors);
   const overall = analyzeVoyageEncounterOverallResult({ kind: "m8-overall-result", sessionId: value.sessionId, eventDefinition: value.eventDefinition, completedRoundHistory: value.completedRoundHistory }); if (!overall.ok) return invalidEnvelope(overall.errors);
   if (overall.overallResult !== "overall-failure") return invalidEnvelope([issue("m8-negative-analysis-on-success", "overallResult", M.onSuccess)]);
   if (value.eventDefinition.misfortunes.length === 0) return invalidEnvelope([issue("m8-no-authored-misfortunes", "eventDefinition.misfortunes", M.noMisfortunes)]);
