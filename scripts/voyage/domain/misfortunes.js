@@ -7,13 +7,10 @@ const NEXT_FIELDS = ["nextSituationId", "title", "summary", "transitionKind"];
 const EVENT_FIELDS = ["schemaVersion", "eventId", "definitionSnapshotId", "roundCount", "rounds", "rewards", "enhancements", "misfortuneEnhancements", "misfortunes", "nextSituations"];
 const REQUEST_FIELDS = ["kind", "sessionId", "eventDefinition", "completedRoundHistory", "negativeSelection"];
 const SELECTION_FIELDS = ["misfortuneId", "enhancementIds"];
-const ROUND_FIELDS = ["roundId", "roundNumber", "roundResult"];
 const AUTHORITY_KEYS = ["overallResult", "rewardAnalysis", "negativeAnalysis", "rewardSteps", "negativeSteps", "resultPackage", "allocationPlan", "nextState"];
 const KINDS = new Set(["travel-delay", "resource-cost", "operational-restriction", "crew-consequence", "damaged-room", "authored"]);
 const PERSISTENCE = new Set(["temporary", "persistent"]);
 const TRANSITIONS = new Set(["retreat", "diversion", "emergency", "capture", "delay", "repair", "authored"]);
-const ROUND_RESULTS = new Set(["critical-round-success", "round-success", "round-failure", "critical-round-failure"]);
-const ROUND_COUNTS = new Set([3, 5, 7, 9, 11]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const M = Object.freeze({
   hostile: "Input contains inaccessible or unsafe data.",
@@ -118,17 +115,6 @@ function validateEventDefinition(definition) {
   else if (definition.nextSituations.length === 1) { const next = definition.nextSituations[0]; if (!exact(next, NEXT_FIELDS) || !nonblank(next.nextSituationId) || !nonblank(next.title) || !nonblank(next.summary) || !TRANSITIONS.has(next.transitionKind)) errors.push(issue("m8-invalid-next-situation", "eventDefinition.nextSituations", M.nextDescriptor)); }
   return dedupe(errors);
 }
-function validateHistory(history, definition) {
-  const errors = [];
-  if (!exact(history, ["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "roundCount", "rounds"])) return [issue("m8-incomplete-round-history", "completedRoundHistory.rounds", "Completed round history must contain every authored round exactly once.")];
-  if (history.eventId !== definition.eventId) errors.push(issue("m8-event-identity-mismatch", "completedRoundHistory.eventId", "Completed history eventId must match Event Definition."));
-  if (history.definitionSnapshotId !== definition.definitionSnapshotId) errors.push(issue("m8-definition-snapshot-mismatch", "completedRoundHistory.definitionSnapshotId", "Completed history definitionSnapshotId must match Event Definition."));
-  if (history.roundCount !== definition.roundCount) errors.push(issue("m8-history-round-count-mismatch", "completedRoundHistory.roundCount", "Completed history roundCount must match Event Definition."));
-  if (!dense(history.rounds)) return [...errors, issue("m8-incomplete-round-history", "completedRoundHistory.rounds", "Completed round history must be dense and complete.")];
-  if (history.rounds.length !== definition.rounds.length) errors.push(issue("m8-incomplete-round-history", "completedRoundHistory.rounds", "Completed round history must contain every authored round exactly once."));
-  const seen = new Set(); history.rounds.forEach((round, i) => { const path = `completedRoundHistory.rounds[${i}]`; if (!exact(round, ROUND_FIELDS)) { errors.push(issue("m8-incomplete-round-history", path, "Completed round entry shape is invalid.")); return; } if (seen.has(round.roundId)) errors.push(issue("m8-duplicate-round-result", `${path}.roundId`, "A round result is duplicated.")); seen.add(round.roundId); const known = definition.rounds.some((entry) => entry.roundId === round.roundId); if (!known) errors.push(issue("m8-unknown-round-id", `${path}.roundId`, "Round result references an unknown roundId.")); const expected = definition.rounds[i]; if (!expected || round.roundId !== expected.roundId || round.roundNumber !== expected.roundNumber) errors.push(issue("m8-round-order-invalid", path, "Round results must follow Event Definition order.")); if (!ROUND_RESULTS.has(round.roundResult)) errors.push(issue("m8-invalid-round-result", `${path}.roundResult`, "Round result is not canonical.")); });
-  return dedupe(errors);
-}
 function compatible(misfortune, enhancement) { return misfortune.enhancementIds.includes(enhancement.misfortuneEnhancementId) && (enhancement.compatibleMisfortuneIds.length === 0 || enhancement.compatibleMisfortuneIds.includes(misfortune.misfortuneId)); }
 function sufficient(misfortunes, enhancements, steps) { const byId = new Map(enhancements.map((entry) => [entry.misfortuneEnhancementId, entry])); return misfortunes.some((misfortune) => { if (steps === 1 && misfortune.scarConsequenceProposal !== null) return false; const legal = misfortune.enhancementIds.map((id) => byId.get(id)).filter((entry) => entry && compatible(misfortune, entry)); return legal.length >= steps - 1; }); }
 function selectionErrors(selection, misfortunes, enhancements, steps) {
@@ -148,11 +134,11 @@ export function captureVoyageEncounterMisfortuneDefinition(misfortuneDefinition)
 }
 export function validateVoyageEncounterMisfortuneDefinition(misfortuneDefinition, misfortuneEnhancementDefinitions) {
   const misCapture = captureVoyageEncounterMisfortuneDefinition(misfortuneDefinition); const enhancementCapture = captureRoot(misfortuneEnhancementDefinitions); if (!misCapture.ok || !enhancementCapture.ok) return { valid: false, errors: dedupe([...(misCapture.ok ? [] : misCapture.errors), ...(enhancementCapture.ok ? [] : enhancementCapture.errors)]), warnings: [] };
-  const errors = []; if (!dense(enhancementCapture.value)) errors.push(issue("m8-invalid-misfortune-enhancement", "misfortuneEnhancementDefinitions", M.invalidEnhancement)); else { validateMisfortuneShape(misCapture.value, "misfortuneDefinition", errors); enhancementCapture.value.forEach((entry, i) => validateEnhancementShape(entry, `misfortuneEnhancementDefinitions[${i}]`, errors)); const ids = new Map(); enhancementCapture.value.forEach((entry, i) => ids.set(entry.misfortuneEnhancementId, [...(ids.get(entry.misfortuneEnhancementId) ?? []), i])); ids.forEach((indexes) => { if (indexes.length > 1) indexes.slice(1).forEach((i) => errors.push(issue("m8-duplicate-misfortune-enhancement-identity", `misfortuneEnhancementDefinitions[${i}].misfortuneEnhancementId`, M.duplicateEnhancement))); }); if (!errors.length) misCapture.value.enhancementIds.forEach((id, i) => { if ((ids.get(id) ?? []).length !== 1) errors.push(issue("m8-unresolved-misfortune-enhancement-reference", `misfortuneDefinition.enhancementIds[${i}]`, M.unresolvedEnhancement)); }); }
+  const errors = []; if (!dense(enhancementCapture.value)) errors.push(issue("m8-invalid-misfortune-enhancement", "misfortuneEnhancementDefinitions", M.invalidEnhancement)); else { validateMisfortuneShape(misCapture.value, "misfortuneDefinition", errors); enhancementCapture.value.forEach((entry, i) => validateEnhancementShape(entry, `misfortuneEnhancementDefinitions[${i}]`, errors)); const ids = new Map(); enhancementCapture.value.forEach((entry, i) => { if (plain(entry) && nonblank(entry.misfortuneEnhancementId)) ids.set(entry.misfortuneEnhancementId, [...(ids.get(entry.misfortuneEnhancementId) ?? []), i]); }); ids.forEach((indexes) => { if (indexes.length > 1) indexes.slice(1).forEach((i) => errors.push(issue("m8-duplicate-misfortune-enhancement-identity", `misfortuneEnhancementDefinitions[${i}].misfortuneEnhancementId`, M.duplicateEnhancement))); }); if (!errors.length) misCapture.value.enhancementIds.forEach((id, i) => { if ((ids.get(id) ?? []).length !== 1) errors.push(issue("m8-unresolved-misfortune-enhancement-reference", `misfortuneDefinition.enhancementIds[${i}]`, M.unresolvedEnhancement)); }); }
   return { valid: errors.length === 0, errors: dedupe(errors), warnings: [] };
 }
 export function analyzeVoyageEncounterNegativeSteps(request) {
-  const captured = captureRoot(request); if (!captured.ok) return invalidEnvelope(captured.errors); const value = captured.value;
+  const captured = captureRoot(request); if (!captured.ok) return invalidEnvelope(captured.errors); const value = captured.value; if (!plain(value)) return invalidEnvelope([issue("m8-invalid-request-shape", "request", M.requestShape)]);
   const authority = AUTHORITY_KEYS.filter((key) => Object.hasOwn(value, key)).map((key) => issue("m8-caller-authored-plan-rejected", `request.${key}`, M.authority)); if (authority.length) return invalidEnvelope(authority);
   if (value.kind !== "m8-negative-steps") return invalidEnvelope([issue("m8-invalid-mode", "request.kind", M.mode)]);
   if (!exact(value, REQUEST_FIELDS)) return invalidEnvelope([issue("m8-invalid-request-shape", "request", M.requestShape)]);

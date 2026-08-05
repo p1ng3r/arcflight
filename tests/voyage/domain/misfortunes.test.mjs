@@ -5,6 +5,10 @@ import {
   captureVoyageEncounterMisfortuneDefinition,
   analyzeVoyageEncounterNegativeSteps
 } from "../../../scripts/voyage/domain/misfortunes.js";
+import {
+  analyzeVoyagePressureBreachVoidScarCreation,
+  applyVoyagePressureBreachVoidScarCreation
+} from "../../../scripts/voyage/domain/void-scar-creation.js";
 
 const proposal = { voidScarDefinitionId: "scar-a", pressureSystemId: "pressure-a", source: "m8-critical-overall-failure" };
 const next = { nextSituationId: "next-a", title: "Retreat", summary: "Retreat to safety.", transitionKind: "retreat" };
@@ -39,6 +43,47 @@ function failed(errors) {
   return { ok: false, readyForNegativeSteps: false, eventId: null, sessionId: null, definitionSnapshotId: null, roundCount: null, winningThreshold: null, overallResult: null, failurePoints: null, negativeSteps: null, overallFailureDegree: null, negativePackage: null, errors, warnings: [] };
 }
 function reorder(value, order) { const output = {}; for (const key of order) output[key] = value[key]; return output; }
+function m7SourceWithM8Proposal() {
+  const pressureBreachId = "m8-boundary-breach";
+  const encounterId = "m8-boundary-encounter";
+  const pressureSystemId = "arkengine";
+  const stageId = "stage-1";
+  const roundNumber = 1;
+  const effectIndex = 0;
+  const sequence = 0;
+  const stationId = "captain";
+  const actionId = "pressure-action";
+  const pressureEffectId = "pressure-effect";
+  const sourceIntentId = "pressure-intent";
+  const activationSource = "voyage-event";
+  const branch = "main";
+  const timing = "consequences";
+  const visibility = "public";
+  const m8Proposal = { voidScarDefinitionId: "scar-definition-id", pressureSystemId, source: "m8-critical-overall-failure" };
+  const breach = {
+    pressureBreachId, encounterId, stageId, roundNumber, effectIndex, sequence, stationId, actionId,
+    pressureSystemId, pressureEffectId, sourceKind: "pressure-breach", sourceIntentId, activationSource,
+    branch, timing, visibility, previousValue: 1, capacity: 1, remainingCapacity: 0, attemptedDelta: 1, overflowDelta: 1
+  };
+  const hazard = {
+    hazardId: `arcflight-hazard:${JSON.stringify(["pressure-breach", pressureBreachId])}`,
+    pressureBreachId, encounterId, stageId, roundNumber, effectIndex, sequence, stationId, actionId,
+    pressureSystemId, category: "system", status: "active", sourceKind: "pressure-breach", pressureEffectId,
+    sourceIntentId, activationSource, branch, timing, visibility, name: "Arkengine Breach"
+  };
+  const event = {
+    type: "voyage.pressure-breach-applied", encounterId, lifecycleState: "active", stageId, roundNumber,
+    phase: "consequences", pressureEffectCount: 1, appliedEffectCount: 1, breach, hazard,
+    collisionOutcome: "none", voidScarProposal: m8Proposal, pressureReset: null, effects: [],
+    previousPressureSystems: {}, pressureSystems: {}, previousRevision: 0, revision: 1
+  };
+  const ship = { shipId: "ship-boundary", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 }, voidScars: [] };
+  const request = {
+    shipId: ship.shipId, expectedShipRevision: ship.revision, encounterId, expectedEncounterRevision: event.revision,
+    sourceEventType: event.type, sourceEncounterRevision: event.revision, sourceProposal: structuredClone(m8Proposal), pressureSystemId
+  };
+  return { event, ship, request, m8Proposal };
+}
 
 test("exports and capture return a stable isolated value", () => {
   const input = misfortune(); const result = captureVoyageEncounterMisfortuneDefinition(input);
@@ -55,6 +100,15 @@ test("exact descriptor keys, strings, dense arrays, and max applications are enf
   const bad = misfortune(); delete bad.tags; assert.equal(validateVoyageEncounterMisfortuneDefinition(bad, []).valid, false);
   const badEnhancement = enhancement("e"); badEnhancement.maxApplicationsPerMisfortune = 2;
   assert.equal(validateVoyageEncounterMisfortuneDefinition(misfortune("m", ["e"]), [badEnhancement]).valid, false);
+});
+test("malformed ordinary enhancement entries return validation envelopes without throwing", () => {
+  for (const entry of [null, 42, "invalid"]) {
+    assert.deepEqual(validateVoyageEncounterMisfortuneDefinition(misfortune(), [entry]), {
+      valid: false,
+      errors: [{ code: "m8-invalid-misfortune-enhancement", path: "misfortuneEnhancementDefinitions[0]", message: "Misfortune-enhancement descriptor is invalid.", severity: "error" }],
+      warnings: []
+    });
+  }
 });
 test("duplicate identities and unresolved forward/reverse references are rejected", () => {
   const d = definition({ misfortunes: [misfortune("delay"), misfortune("delay")] });
@@ -89,6 +143,20 @@ test("authority keys are rejected before mode and request-shape checks", () => {
 test("invalid mode and exact request keys are deterministic", () => {
   const wrong = analyzeVoyageEncounterNegativeSteps({ ...request(), kind: "m8-reward-steps" }); assert.equal(wrong.errors[0].code, "m8-invalid-mode");
   const extra = analyzeVoyageEncounterNegativeSteps({ ...request(), extra: true }); assert.equal(extra.errors[0].code, "m8-invalid-request-shape"); assert.deepEqual(extra.warnings, []);
+});
+test("ordinary non-object root requests return the complete request-shape envelope", () => {
+  for (const value of [null, "invalid", 42, true, []]) {
+    assert.deepEqual(analyzeVoyageEncounterNegativeSteps(value), failed([{ code: "m8-invalid-request-shape", path: "request", message: "Request has an invalid exact shape.", severity: "error" }]));
+  }
+});
+test("hostile root requests remain capture failures", () => {
+  const revoked = Proxy.revocable({}, {}); revoked.revoke();
+  const cyclic = {}; cyclic.self = cyclic;
+  const accessor = {}; Object.defineProperty(accessor, "kind", { enumerable: true, get() { throw new Error("root trap"); } });
+  for (const value of [() => {}, Symbol("hostile"), 1n, revoked.proxy, cyclic, accessor]) {
+    const result = analyzeVoyageEncounterNegativeSteps(value);
+    assert.deepEqual(result, failed([{ code: "m8-hostile-data-capture-failed", path: "$", message: "Input contains inaccessible or unsafe data.", severity: "error" }]));
+  }
 });
 test("reordered request and descriptor keys are rejected rather than normalized", () => {
   const baseRequest = request();
@@ -172,6 +240,26 @@ test("hostile, non-plain, revoked, cyclic, sparse, symbol, and accessor inputs f
   assert.equal(analyzeVoyageEncounterNegativeSteps(() => {}).errors[0].code, "m8-hostile-data-capture-failed");
   const cyclic = request(); cyclic.self = cyclic; assert.equal(analyzeVoyageEncounterNegativeSteps(cyclic).errors[0].code, "m8-hostile-data-capture-failed");
   const accessor = request(); Object.defineProperty(accessor, "sessionId", { enumerable: true, get() { throw new Error("trap"); } }); assert.equal(analyzeVoyageEncounterNegativeSteps(accessor).errors[0].code, "m8-hostile-data-capture-failed");
+});
+test("M8 Scar proposals cannot cross the Milestone 7 Pressure Breach creation boundary", () => {
+  const pair = m7SourceWithM8Proposal();
+  const eventBefore = structuredClone(pair.event);
+  const shipBefore = structuredClone(pair.ship);
+  const requestBefore = structuredClone(pair.request);
+  const proposalBefore = structuredClone(pair.m8Proposal);
+  const analysis = analyzeVoyagePressureBreachVoidScarCreation(pair.ship, pair.event, pair.request);
+  assert.equal(analysis.readyForVoidScarCreation, false);
+  assert.equal(analysis.voidScar, null);
+  assert.ok(analysis.errors.length > 0);
+  const applied = applyVoyagePressureBreachVoidScarCreation(pair.ship, pair.event, pair.request);
+  assert.equal(applied.ok, false);
+  assert.equal(applied.nextState, null);
+  assert.deepEqual(applied.events, []);
+  assert.deepEqual(pair.event, eventBefore);
+  assert.deepEqual(pair.ship, shipBefore);
+  assert.deepEqual(pair.request, requestBefore);
+  assert.deepEqual(pair.m8Proposal, proposalBefore);
+  assert.equal(JSON.stringify(pair.m8Proposal), JSON.stringify({ voidScarDefinitionId: "scar-definition-id", pressureSystemId: "arkengine", source: "m8-critical-overall-failure" }));
 });
 test("malformed and multiple next situations use the canonical diagnostic", () => {
   const malformed = definition({ nextSituations: [{ ...next, title: "" }] }); const many = definition({ nextSituations: [next, next] });
