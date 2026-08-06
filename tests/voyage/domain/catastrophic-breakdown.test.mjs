@@ -861,6 +861,92 @@ test("enforces Task2 mode, exact request shape, and precedence", () => {
   assert.deepEqual(descriptorResult.errors, [hazardIssue, responseIssue]);
 });
 
+test("returns the complete Task 2 failure envelope for an invalid mode", () => {
+  const result = analyzeVoyageCatastrophicBreakdown(breakdownRequest({ kind: "m9-emergency-response" }));
+  assert.deepEqual(Object.keys(result), [
+    "ok",
+    "readyForCatastrophicBreakdown",
+    "eventId",
+    "sessionId",
+    "definitionSnapshotId",
+    "shipId",
+    "systemId",
+    "systemKind",
+    "liveRevision",
+    "breakdownDefinitionId",
+    "breakdownPlan",
+    "requiresGmApproval",
+    "errors",
+    "warnings"
+  ]);
+  assert.deepEqual(result, {
+    ok: false,
+    readyForCatastrophicBreakdown: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    shipId: null,
+    systemId: null,
+    systemKind: null,
+    liveRevision: null,
+    breakdownDefinitionId: null,
+    breakdownPlan: null,
+    requiresGmApproval: false,
+    errors: [task2Issue(
+      "m9-invalid-mode",
+      "request.kind",
+      "Only the requested Milestone 9 analysis mode is supported."
+    )],
+    warnings: []
+  });
+});
+
+test("rejects reordered Task 2 request-root keys", () => {
+  const canonical = breakdownRequest();
+  const reordered = {
+    sessionId: canonical.sessionId,
+    kind: canonical.kind,
+    breakdownDefinition: canonical.breakdownDefinition,
+    capacityExhaustion: canonical.capacityExhaustion
+  };
+  const result = analyzeVoyageCatastrophicBreakdown(reordered);
+
+  assert.deepEqual(result.errors, [
+    task2Issue(
+      "m9-invalid-request-shape",
+      "request",
+      "Request has an invalid exact shape or field values."
+    )
+  ]);
+  assert.equal(result.breakdownPlan, null);
+  assert.equal(result.ok, false);
+  assert.equal(result.readyForCatastrophicBreakdown, false);
+});
+
+test("does not access random or wall-clock time during Task 2 analysis", () => {
+  const originalRandom = Math.random;
+  const originalNow = Date.now;
+
+  Math.random = () => {
+    throw new Error("Math.random must not be called");
+  };
+
+  Date.now = () => {
+    throw new Error("Date.now must not be called");
+  };
+
+  try {
+    const result = analyzeVoyageCatastrophicBreakdown(breakdownRequest());
+    assert.equal(result.ok, true);
+    assert.equal(result.readyForCatastrophicBreakdown, true);
+    assert.deepEqual(result.errors, []);
+    assert.ok(result.breakdownPlan);
+  } finally {
+    Math.random = originalRandom;
+    Date.now = originalNow;
+  }
+});
+
 test("validates every handoff field, arithmetic, status, applicability, and M7 vocabulary", () => {
   const unused = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
     handoff: capacityExhaustion({ scarCapacity: 3, occupiedScarCount: 2 })
