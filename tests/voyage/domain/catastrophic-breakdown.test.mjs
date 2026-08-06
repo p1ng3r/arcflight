@@ -183,6 +183,50 @@ test("rejects every M9 Hazard restriction while preserving M6 validation", () =>
   assertIssue(definition({ hazardOverrides: { createdRoundNumber: 0 } }), hazardIssue);
 });
 
+test("rejects padded strings anywhere in the Catastrophic Hazard", () => {
+  assertValid(definition());
+
+  const cases = [
+    {
+      label: "padded hazard ID",
+      mutate(value) {
+        value.catastrophicHazard.hazardId = " hazard-1 ";
+      }
+    },
+    {
+      label: "padded Hazard name",
+      mutate(value) {
+        value.catastrophicHazard.name = " Catastrophic Failure ";
+      }
+    },
+    {
+      label: "padded created-stage ID",
+      mutate(value) {
+        value.catastrophicHazard.createdStageId = " stage-1 ";
+      }
+    },
+    {
+      label: "padded provenance string",
+      mutate(value) {
+        value.catastrophicHazard.sourceIntentId = " provenance ";
+      }
+    },
+    {
+      label: "padded nested descriptive string",
+      mutate(value) {
+        value.catastrophicHazard.metadata.collision.consequence.consequenceId =
+          " consequence ";
+      }
+    }
+  ];
+
+  for (const { label, mutate } of cases) {
+    const value = definition();
+    mutate(value);
+    assertIssue(value, hazardIssue, label);
+  }
+});
+
 test("rejects reordered M6 Hazard fields", () => {
   const value = definition();
   const reordered = {};

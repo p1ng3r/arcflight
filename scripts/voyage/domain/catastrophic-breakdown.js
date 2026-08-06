@@ -83,6 +83,22 @@ function nonblank(value) {
   return typeof value === "string" && value.length > 0 && value.trim() === value;
 }
 
+function hasStrictStrings(value) {
+  if (typeof value === "string") {
+    return value.length > 0 && value.trim() === value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(hasStrictStrings);
+  }
+
+  if (isPlain(value)) {
+    return Object.values(value).every(hasStrictStrings);
+  }
+
+  return true;
+}
+
 function denseArray(value) {
   if (!Array.isArray(value)) return false;
   for (let index = 0; index < value.length; index += 1) {
@@ -190,6 +206,7 @@ function captureRoot(value) {
 function validateHazard(hazard, systemId) {
   if (!isPlain(hazard)) return false;
   if (!exactKeys(hazard, VOYAGE_HAZARD_RECORD_FIELDS)) return false;
+  if (!hasStrictStrings(hazard)) return false;
   const captured = captureVoyageHazardRecord(hazard);
   if (!captured.ok || !validateVoyageHazardRecord(hazard).valid) return false;
   if (hazard.category !== "system" || hazard.status !== "active") return false;
