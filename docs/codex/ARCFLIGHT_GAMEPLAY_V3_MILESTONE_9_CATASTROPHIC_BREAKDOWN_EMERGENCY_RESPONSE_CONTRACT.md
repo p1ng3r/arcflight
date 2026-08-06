@@ -123,8 +123,9 @@ Catastrophic Breakdown is applicable only when every condition below is true:
 4. One ordinary Scar proposal approved by M10 for inclusion in closeout
    composition would exceed that capacity.
 5. The incoming proposal has not already been applied.
-6. Event, session, definition snapshot, ship, system, and revision identities
-   bind exactly.
+6. Task 2 event, session, and system identities bind exactly; the handoff
+   definition snapshot, ship, and revision values are structurally valid
+   evidence, with their live identity revalidation owned by M10.
 
 A handoff showing unused capacity is invalid and cannot produce a Breakdown
 proposal. A handoff with occupied count above capacity is also invalid because
@@ -634,8 +635,22 @@ mode and shape diagnostics.
 `request.sessionId` is the independently supplied authoritative expected Event
 Session identity. It must equal `capacityExhaustion.sessionId`. A mismatch
 emits exactly one `m9-session-identity-mismatch` diagnostic at
-`capacityExhaustion.sessionId`. Breakdown category-9 binding order is event,
-session, definition snapshot, ship, system, and revision.
+`capacityExhaustion.sessionId`. Task 2 category-9 binding is limited to event,
+session, and system, in that order. Event binds the captured Hazard encounter
+identity to `capacityExhaustion.eventId`; session binds the request session to
+`capacityExhaustion.sessionId`; and system binds the Breakdown Definition and
+captured Hazard system to `capacityExhaustion.systemId`.
+
+Task 2 structurally validates and safely captures
+`capacityExhaustion.definitionSnapshotId`, `capacityExhaustion.shipId`, and
+`capacityExhaustion.liveRevision` as M10 handoff evidence. The exact Task 2
+request has no independently supplied snapshot, ship, or live-revision value,
+and the Breakdown Definition has none of those fields. Task 2 therefore does
+not compare those evidence values against themselves, does not treat their
+mere presence as live identity revalidation, and does not add a request field
+or other caller authority for them. M10 owns live snapshot, ship, and revision
+revalidation. Task 4 retains its separately applicable identity and complete
+supplied-plan validation rules.
 Task 2 generates and validates its BreakdownPlan internally and performs no
 supplied-plan equality. During Emergency Response analysis, Breakdown
 Definition binding is performed by complete plan equality when the supplied
@@ -975,13 +990,10 @@ Every diagnostic has exactly `{ code, path, message, severity }`, with
 | `m9-event-identity-mismatch` | `breakdownPlan.capacityExhaustion.eventId` | `Event identity does not match the M10 handoff.` | 9 |
 | `m9-session-identity-mismatch` | `capacityExhaustion.sessionId` | `Session identity does not match the M10 handoff or request.` | 9 |
 | `m9-session-identity-mismatch` | `breakdownPlan.capacityExhaustion.sessionId` | `Session identity does not match the M10 handoff or request.` | 9 |
-| `m9-definition-snapshot-mismatch` | `capacityExhaustion.definitionSnapshotId` | `Definition snapshot identity does not match the M10 handoff.` | 9 |
 | `m9-definition-snapshot-mismatch` | `breakdownPlan.capacityExhaustion.definitionSnapshotId` | `Definition snapshot identity does not match the M10 handoff.` | 9 |
-| `m9-ship-identity-mismatch` | `capacityExhaustion.shipId` | `Ship identity does not match the M10 handoff.` | 9 |
 | `m9-ship-identity-mismatch` | `breakdownPlan.capacityExhaustion.shipId` | `Ship identity does not match the M10 handoff.` | 9 |
 | `m9-system-identity-mismatch` | `capacityExhaustion.systemId` | `Affected system identity does not match the M10 handoff.` | 9 |
 | `m9-system-identity-mismatch` | `breakdownPlan.capacityExhaustion.systemId` | `Affected system identity does not match the M10 handoff.` | 9 |
-| `m9-revision-binding-mismatch` | `capacityExhaustion.liveRevision` | `Live revision binding does not match the M10 handoff.` | 9 |
 | `m9-revision-binding-mismatch` | `breakdownPlan.capacityExhaustion.liveRevision` | `Live revision binding does not match the M10 handoff.` | 9 |
 | `m9-capacity-not-exhausted` | `capacityExhaustion.occupiedScarCount` | `Capacity exhaustion is not established.` | 10 |
 | `m9-invalid-incoming-scar-proposal` | `capacityExhaustion.incomingScarProposalId` | `Incoming ordinary Scar proposal evidence is invalid.` | 10 |
@@ -1030,8 +1042,12 @@ Every diagnostic path is the first failing canonical field path selected in
 fixed schema order. Structural root failures use the canonical root path;
 For a prohibited caller-authority key named `<capturedProhibitedKey>`, the
 exact path is `request.<capturedProhibitedKey>`; the captured name is the exact
-own root-property name. Breakdown identity rows use the `capacityExhaustion.*`
-paths shown in the catalog. Emergency Response identity rows use the
+own root-property name. Task 2 identity rows use only the
+`capacityExhaustion.eventId`, `capacityExhaustion.sessionId`, and
+`capacityExhaustion.systemId` paths shown in the catalog. Task 2's
+`definitionSnapshotId`, `shipId`, and `liveRevision` are category-8 handoff
+evidence fields, not category-9 identity mismatches; their presence is not
+live identity revalidation. Emergency Response identity rows use the
 `breakdownPlan.capacityExhaustion.*` paths shown in the catalog. For Task 2,
 the internally generated plan is validated from the captured definition and
 handoff; no supplied-plan comparison or category-12 diagnostic is applicable.
@@ -1077,7 +1093,8 @@ Both analyzers use this complete precedence:
 6. M6 Hazard and Emergency Response descriptor validity;
 7. authored identity uniqueness and reference integrity;
 8. M10 capacity-exhaustion handoff structure;
-9. event, session, snapshot, ship, system, and revision binding;
+9. analyzer-applicable identity binding: Task 2 event, session, and system;
+   Emergency Response event, session, snapshot, ship, system, and revision;
 10. capacity arithmetic and exhaustion applicability;
 11. Breakdown applicability;
 12. Breakdown-plan identity revalidation (Emergency Response only);
@@ -1088,11 +1105,13 @@ Both analyzers use this complete precedence:
 `analyzeVoyageCatastrophicBreakdown` skips category 12 because it generates
 the canonical plan internally and accepts no supplied `breakdownPlan`.
 `analyzeVoyageEmergencyResponseResult` applies category 12 to the supplied
-captured plan. Within precedence category 9, every valid identity mismatch accumulates
-exactly once in fixed order: event, session, definition snapshot, ship,
-system, revision, then Emergency Response Definition when applicable.
-Breakdown uses only event through revision. Emergency Response uses event
-through revision plus `breakdownPlan.emergencyResponseDefinitionId`.
+captured plan. Within precedence category 9, every valid identity mismatch
+accumulates exactly once in fixed analyzer-specific order. Task 2 accumulates
+event, session, and system only. It structurally validates and captures the
+snapshot, ship, and live-revision evidence in category 8 and leaves their live
+revalidation to M10. Emergency Response accumulates event, session, definition
+snapshot, ship, system, and revision, then
+`breakdownPlan.emergencyResponseDefinitionId` when applicable.
 Breakdown Definition binding for Emergency Response remains category-12
 complete plan equality and is not a category-9 identity field. After the complete ordered
 category-9 diagnostic array is produced, no later category is evaluated. A
@@ -1114,10 +1133,12 @@ total and cannot produce a later invalid-next-situation diagnostic.
 
 ## 15. Revision, runtime, and persistence boundaries
 
-M10 establishes and supplies `liveRevision`. M9 binds every generated proposal
-to that captured revision but does not query live state or decide whether the
-revision is stale. M10 revalidates revision, identity, capacity, and source
-evidence immediately before application. M11 owns stale and duplicate runtime
+M10 establishes and supplies `liveRevision`. Task 2 structurally validates and
+captures that value as M10 handoff evidence and carries it into the generated
+proposal; it does not compare the value against itself, treat its presence as
+live revision revalidation, or query live state. Task 4 retains its separate
+supplied-plan and history identity rules. M10 revalidates revision, identity,
+capacity, and source evidence immediately before application. M11 owns stale and duplicate runtime
 command rejection, request IDs, transport, recovery, and control transfer.
 M9 results may be deterministically recomputed and are not durable idempotency
 records. No generated timestamp or random proposal ID is permitted.
@@ -1160,13 +1181,19 @@ that behavior is not implemented by M9.
   M10 is not implemented yet, tests construct only plain canonical handoff
   fixtures; no M10 API call is required and fixtures do not simulate, replace,
   prove, or authorize M10 live discovery, approval, or persistence.
-- Behavior: capture the exact M10 handoff, bind identities and revision,
-  validate exhaustion and unapplied incoming proposal evidence, internally
-  regenerate and validate the complete BreakdownPlan shape and components,
-  and return the exact isolated Breakdown envelope and generated plan. Task 2
-  never accepts or compares a caller-supplied BreakdownPlan.
+- Behavior: capture the exact M10 handoff, bind event, session, and system
+  identities, structurally validate and capture snapshot, ship, and
+  live-revision evidence, validate exhaustion and unapplied incoming proposal
+  evidence, internally regenerate and validate the complete BreakdownPlan
+  shape and components, and return the exact isolated Breakdown envelope and
+  generated plan. Task 2 does not compare snapshot, ship, or live-revision
+  evidence against itself, does not treat its presence as live identity
+  revalidation, and introduces no request field or caller authority for those
+  values. M10 owns their live revalidation. Task 2 never accepts or compares a
+  caller-supplied BreakdownPlan.
 - Tests: capacity boundaries, zero capacity, unused capacity, over-capacity
-  invalid state, identity/revision binding, no Scar output, exact generated
+  invalid state, event/session/system binding, malformed-identity precedence,
+  structural snapshot/ship/revision evidence, no Scar output, exact generated
   plan shape and key order, internally generated system disablement, complete
   M6 Hazard, pause plan, Emergency Response definition identity,
   `scarApplication: null`, isolated capacity-exhaustion evidence, returned
@@ -1265,7 +1292,12 @@ Tests must cover all of the following.
 - occupied count above capacity rejection;
 - zero capacity and zero occupied count;
 - missing or malformed incoming proposal evidence;
-- identity and revision mismatches;
+- Task 2 event, session, and system mismatch accumulation;
+- Task 2 malformed identity short-circuiting and malformed identity followed by
+  a valid later mismatch;
+- structural validation and isolated capture of snapshot, ship, and
+  live-revision handoff evidence, without treating those fields as live
+  identity revalidation;
 - padded identities;
 - unsafe and nonfinite numbers;
 - every prohibited authority key in both analyzer-specific closed lists,
