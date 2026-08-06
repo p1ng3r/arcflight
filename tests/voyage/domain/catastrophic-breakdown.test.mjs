@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
 import {
+  analyzeVoyageCatastrophicBreakdown,
   captureVoyageCatastrophicBreakdownDefinition,
   validateVoyageCatastrophicBreakdownDefinition
 } from "../../../scripts/voyage/domain/catastrophic-breakdown.js";
@@ -13,6 +14,8 @@ const TRANSITION_KINDS = ["retreat", "diversion", "emergency", "capture", "delay
 const ROUND_COUNTS = [3, 5, 7, 9, 11];
 const DEFINITION_FIELDS = ["schemaVersion", "breakdownDefinitionId", "systemId", "systemKind", "title", "description", "catastrophicHazard", "pausePlan", "emergencyResponseDefinition"];
 const RESPONSE_FIELDS = ["schemaVersion", "emergencyResponseDefinitionId", "breakdownDefinitionId", "systemId", "systemKind", "title", "description", "roundCount", "rounds", "stabilizationOutcome", "failureConsequences", "nextSituations"];
+const CAPACITY_FIELDS = ["kind", "eventId", "sessionId", "definitionSnapshotId", "shipId", "systemId", "systemKind", "liveRevision", "scarCapacity", "occupiedScarCount", "incomingScarProposalId", "incomingScarProposalKind", "incomingScarProposalStatus"];
+const PLAN_FIELDS = ["systemDisablement", "catastrophicHazard", "pausePlan", "emergencyResponseDefinitionId", "scarApplication", "capacityExhaustion"];
 
 function hazard(systemId = "crew-morale", overrides = {}) {
   const descriptor = { consequenceId: "descriptive-consequence" };
@@ -89,6 +92,60 @@ function definition({ systemId = "crew-morale", responseOverrides = {}, hazardOv
   };
 }
 
+function capacityExhaustion({
+  kind = "voyage.m10-capacity-exhaustion",
+  eventId = "event-1",
+  sessionId = "session-1",
+  definitionSnapshotId = "breakdown-snapshot-1",
+  shipId = "ship-1",
+  systemId = "crew-morale",
+  systemKind = "pressure-system",
+  liveRevision = 7,
+  scarCapacity = 2,
+  occupiedScarCount = 2,
+  incomingScarProposalId = "scar-proposal-1",
+  incomingScarProposalKind = "ordinary-void-scar",
+  incomingScarProposalStatus = "approved-unapplied",
+  overrides = {}
+} = {}) {
+  return {
+    kind,
+    eventId,
+    sessionId,
+    definitionSnapshotId,
+    shipId,
+    systemId,
+    systemKind,
+    liveRevision,
+    scarCapacity,
+    occupiedScarCount,
+    incomingScarProposalId,
+    incomingScarProposalKind,
+    incomingScarProposalStatus,
+    ...overrides
+  };
+}
+
+function breakdownRequest({
+  kind = "m9-catastrophic-breakdown",
+  sessionId = "session-1",
+  breakdownDefinition = definition(),
+  handoff = capacityExhaustion(),
+  extras = {}
+} = {}) {
+  return {
+    kind,
+    sessionId,
+    breakdownDefinition,
+    capacityExhaustion: handoff,
+    ...extras
+  };
+}
+
+function task2Issue(code, path, message) {
+  return { code, path, message, severity: "error" };
+}
+
 function assertValid(value) {
   const validation = validateVoyageCatastrophicBreakdownDefinition(value);
   assert.deepEqual(
@@ -130,9 +187,13 @@ const responseIssue = { code: "m9-invalid-emergency-response-definition", path: 
 const duplicateIssue = (path) => ({ code: "m9-duplicate-definition-identity", path, message: "Authored Milestone 9 definition identities must be unique.", severity: "error" });
 const unresolvedIssue = (path) => ({ code: "m9-unresolved-definition-reference", path, message: "Authored Milestone 9 definition reference is unresolved.", severity: "error" });
 
-test("exports exactly the two Task 1 APIs", async () => {
+test("exports the Task 1 APIs and the Task 2 analyzer only", async () => {
   const module = await import("../../../scripts/voyage/domain/catastrophic-breakdown.js");
-  assert.deepEqual(Object.keys(module).sort(), ["captureVoyageCatastrophicBreakdownDefinition", "validateVoyageCatastrophicBreakdownDefinition"].sort());
+  assert.deepEqual(Object.keys(module).sort(), [
+    "analyzeVoyageCatastrophicBreakdown",
+    "captureVoyageCatastrophicBreakdownDefinition",
+    "validateVoyageCatastrophicBreakdownDefinition"
+  ].sort());
 });
 
 test("accepts every canonical system and supported round count", () => {
@@ -669,9 +730,344 @@ test("is deterministic and never mutates inputs or shares results", () => {
   assert.deepEqual(validateVoyageCatastrophicBreakdownDefinition(invalid), validateVoyageCatastrophicBreakdownDefinition(invalid));
 });
 
+test("accepts every M7 system, zero capacity, and returns the exact isolated Breakdown envelope", () => {
+  for (const systemId of SYSTEM_IDS) {
+    const inputDefinition = definition({ systemId });
+    const inputHandoff = capacityExhaustion({ systemId, scarCapacity: 0, occupiedScarCount: 0 });
+    const result = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+      breakdownDefinition: inputDefinition,
+      handoff: inputHandoff
+    }));
+
+    assert.deepEqual(Object.keys(result), [
+      "ok",
+      "readyForCatastrophicBreakdown",
+      "eventId",
+      "sessionId",
+      "definitionSnapshotId",
+      "shipId",
+      "systemId",
+      "systemKind",
+      "liveRevision",
+      "breakdownDefinitionId",
+      "breakdownPlan",
+      "requiresGmApproval",
+      "errors",
+      "warnings"
+    ]);
+    assert.equal(result.ok, true);
+    assert.equal(result.readyForCatastrophicBreakdown, true);
+    assert.equal(result.requiresGmApproval, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.warnings, []);
+    assert.equal(result.systemId, systemId);
+    assert.equal(result.breakdownDefinitionId, "breakdown-1");
+
+    const plan = result.breakdownPlan;
+    assert.deepEqual(Object.keys(plan), PLAN_FIELDS);
+    assert.deepEqual(Object.keys(plan.systemDisablement), ["systemId", "systemKind", "disabled"]);
+    assert.deepEqual(plan.systemDisablement, { systemId, systemKind: "pressure-system", disabled: true });
+    assert.deepEqual(plan.pausePlan, inputDefinition.pausePlan);
+    assert.equal(plan.emergencyResponseDefinitionId, "response-1");
+    assert.equal(plan.scarApplication, null);
+    assert.deepEqual(Object.keys(plan.capacityExhaustion), CAPACITY_FIELDS);
+    assert.deepEqual(plan.capacityExhaustion, inputHandoff);
+    assert.deepEqual(plan.catastrophicHazard, inputDefinition.catastrophicHazard);
+    assert.notEqual(plan.catastrophicHazard, inputDefinition.catastrophicHazard);
+    assert.notEqual(plan.pausePlan, inputDefinition.pausePlan);
+    assert.notEqual(plan.capacityExhaustion, inputHandoff);
+    assert.equal("scarCreated" in plan, false);
+    assert.equal("systemDisabled" in plan, false);
+  }
+});
+
+test("rejects every prohibited authority key before mode and shape analysis", () => {
+  const prohibitedKeys = [
+    "approved", "gmApproved", "approval", "gmApproval", "applicationPlan", "nextState",
+    "breakdownPlan", "emergencyResponseResult", "outcomeProposal", "persistentChanges",
+    "shipUpdate", "hazardApplied", "systemDisabled", "scarCreated", "revisionAfter",
+    "requestId", "staleStatus", "duplicateStatus", "capacityAnalysis", "applicationToken"
+  ];
+  const values = [null, false, 0, "", [], {}];
+
+  for (const key of prohibitedKeys) {
+    for (const value of values) {
+      const result = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+        extras: { [key]: value }
+      }));
+      assert.deepEqual(result.errors, [task2Issue(
+        "m9-caller-authored-application-rejected",
+        `request.${key}`,
+        "Caller-authored application or runtime authority is not accepted."
+      )], `${key} with ${typeof value}`);
+      assert.equal(result.breakdownPlan, null);
+    }
+  }
+
+  const multiple = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    extras: { approved: null, breakdownPlan: {}, applicationToken: 0 }
+  }));
+  assert.deepEqual(multiple.errors, [
+    task2Issue("m9-caller-authored-application-rejected", "request.approved", "Caller-authored application or runtime authority is not accepted."),
+    task2Issue("m9-caller-authored-application-rejected", "request.breakdownPlan", "Caller-authored application or runtime authority is not accepted."),
+    task2Issue("m9-caller-authored-application-rejected", "request.applicationToken", "Caller-authored application or runtime authority is not accepted.")
+  ]);
+});
+
+test("enforces Task2 mode, exact request shape, and precedence", () => {
+  const wrongMode = analyzeVoyageCatastrophicBreakdown(breakdownRequest({ kind: "m9-emergency-response" }));
+  assert.deepEqual(wrongMode.errors, [task2Issue(
+    "m9-invalid-mode",
+    "request.kind",
+    "Only the requested Milestone 9 analysis mode is supported."
+  )]);
+
+  const extra = analyzeVoyageCatastrophicBreakdown(breakdownRequest({ extras: { extra: true } }));
+  assert.deepEqual(extra.errors, [task2Issue(
+    "m9-invalid-request-shape",
+    "request",
+    "Request has an invalid exact shape or field values."
+  )]);
+
+  const missing = breakdownRequest();
+  delete missing.sessionId;
+  const missingResult = analyzeVoyageCatastrophicBreakdown(missing);
+  assert.deepEqual(missingResult.errors, [task2Issue(
+    "m9-invalid-request-shape",
+    "request",
+    "Request has an invalid exact shape or field values."
+  )]);
+
+  for (const value of [null, "invalid", 42, [], true]) {
+    const result = analyzeVoyageCatastrophicBreakdown(value);
+    assert.deepEqual(result.errors, [task2Issue(
+      "m9-invalid-request-shape",
+      "request",
+      "Request has an invalid exact shape or field values."
+    )]);
+  }
+
+  const invalidDefinition = breakdownRequest({ breakdownDefinition: definition({ overrides: { title: " " } }) });
+  const definitionResult = analyzeVoyageCatastrophicBreakdown(invalidDefinition);
+  assert.deepEqual(definitionResult.errors, [definitionIssue]);
+
+  const invalidDescriptors = breakdownRequest({
+    breakdownDefinition: definition({
+      hazardOverrides: { category: "event" },
+      responseOverrides: { schemaVersion: 2 }
+    })
+  });
+  const descriptorResult = analyzeVoyageCatastrophicBreakdown(invalidDescriptors);
+  assert.deepEqual(descriptorResult.errors, [hazardIssue, responseIssue]);
+});
+
+test("validates every handoff field, arithmetic, status, applicability, and M7 vocabulary", () => {
+  const unused = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    handoff: capacityExhaustion({ scarCapacity: 3, occupiedScarCount: 2 })
+  }));
+  assert.deepEqual(unused.errors, [task2Issue(
+    "m9-capacity-not-exhausted",
+    "capacityExhaustion.occupiedScarCount",
+    "Capacity exhaustion is not established."
+  )]);
+
+  const overCapacity = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    handoff: capacityExhaustion({ scarCapacity: 1, occupiedScarCount: 2 })
+  }));
+  assert.deepEqual(overCapacity.errors, unused.errors);
+
+  const invalidEvidence = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    handoff: capacityExhaustion({ incomingScarProposalStatus: "applied", scarCapacity: 3, occupiedScarCount: 2 })
+  }));
+  assert.deepEqual(invalidEvidence.errors, [
+    task2Issue("m9-capacity-not-exhausted", "capacityExhaustion.occupiedScarCount", "Capacity exhaustion is not established."),
+    task2Issue("m9-invalid-incoming-scar-proposal", "capacityExhaustion.incomingScarProposalId", "Incoming ordinary Scar proposal evidence is invalid.")
+  ]);
+
+  const notOrdinary = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    handoff: capacityExhaustion({ incomingScarProposalKind: "other-proposal" })
+  }));
+  assert.deepEqual(notOrdinary.errors, [task2Issue(
+    "m9-breakdown-not-applicable",
+    "capacityExhaustion",
+    "Catastrophic Breakdown is not applicable to this handoff."
+  )]);
+
+  for (const { field, expected = [task2Issue(
+    "m9-invalid-capacity-exhaustion",
+    "capacityExhaustion",
+    "Capacity-exhaustion handoff is invalid."
+  )] } of [
+    { field: { kind: "wrong-kind" } },
+    { field: { eventId: " " } },
+    { field: { eventId: " event-1 " } },
+    { field: { sessionId: " " } },
+    { field: { sessionId: " session-1 " } },
+    { field: { definitionSnapshotId: " " } },
+    { field: { definitionSnapshotId: " breakdown-snapshot-1 " } },
+    { field: { shipId: " " } },
+    { field: { shipId: " ship-1 " } },
+    { field: { systemId: "unknown" } },
+    { field: { systemKind: "wrong" } },
+    { field: { liveRevision: -1 } },
+    { field: { scarCapacity: Number.MAX_SAFE_INTEGER + 1 } },
+    { field: { occupiedScarCount: -1 } },
+    { field: { incomingScarProposalId: " " } },
+    { field: { incomingScarProposalKind: " " } },
+    { field: { incomingScarProposalStatus: " " } },
+    { field: { liveRevision: Number.NaN }, expected: [hostileIssue] },
+    { field: { liveRevision: Number.POSITIVE_INFINITY }, expected: [hostileIssue] },
+    { field: { scarCapacity: Number.NaN }, expected: [hostileIssue] },
+    { field: { occupiedScarCount: Number.POSITIVE_INFINITY }, expected: [hostileIssue] }
+  ]) {
+    const result = analyzeVoyageCatastrophicBreakdown(breakdownRequest({ handoff: capacityExhaustion(field) }));
+    assert.deepEqual(result.errors, expected, JSON.stringify(field));
+  }
+});
+
+test("requires the exact handoff key order and short-circuits malformed identity before later mismatches", () => {
+  const malformedLaterMismatch = capacityExhaustion({
+    eventId: "handoff-event",
+    definitionSnapshotId: " ",
+    systemId: "arkengine"
+  });
+  const malformedResult = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    handoff: malformedLaterMismatch
+  }));
+  assert.deepEqual(malformedResult.errors, [task2Issue(
+    "m9-invalid-capacity-exhaustion",
+    "capacityExhaustion",
+    "Capacity-exhaustion handoff is invalid."
+  )]);
+
+  const missing = capacityExhaustion();
+  delete missing.shipId;
+  assert.deepEqual(
+    analyzeVoyageCatastrophicBreakdown(breakdownRequest({ handoff: missing })).errors,
+    [task2Issue("m9-invalid-capacity-exhaustion", "capacityExhaustion", "Capacity-exhaustion handoff is invalid.")]
+  );
+
+  const extra = { ...capacityExhaustion(), extraEvidence: true };
+  assert.deepEqual(
+    analyzeVoyageCatastrophicBreakdown(breakdownRequest({ handoff: extra })).errors,
+    [task2Issue("m9-invalid-capacity-exhaustion", "capacityExhaustion", "Capacity-exhaustion handoff is invalid.")]
+  );
+
+  const reordered = Object.fromEntries(Object.entries(capacityExhaustion()).reverse());
+  assert.deepEqual(
+    analyzeVoyageCatastrophicBreakdown(breakdownRequest({ handoff: reordered })).errors,
+    [task2Issue("m9-invalid-capacity-exhaustion", "capacityExhaustion", "Capacity-exhaustion handoff is invalid.")]
+  );
+});
+
+test("captures snapshot, ship, and live-revision evidence in isolation without Task 2 self-revalidation", () => {
+  const input = breakdownRequest({
+    handoff: capacityExhaustion({
+      definitionSnapshotId: "m10-only-snapshot-evidence",
+      shipId: "m10-only-ship-evidence",
+      liveRevision: 987654
+    })
+  });
+  assert.equal("definitionSnapshotId" in input.breakdownDefinition, false);
+  assert.equal("shipId" in input.breakdownDefinition, false);
+  assert.equal("liveRevision" in input.breakdownDefinition, false);
+
+  const result = analyzeVoyageCatastrophicBreakdown(input);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.definitionSnapshotId, "m10-only-snapshot-evidence");
+  assert.equal(result.shipId, "m10-only-ship-evidence");
+  assert.equal(result.liveRevision, 987654);
+  assert.deepEqual(result.breakdownPlan.capacityExhaustion, input.capacityExhaustion);
+  assert.notEqual(result.breakdownPlan.capacityExhaustion, input.capacityExhaustion);
+  assert.deepEqual(Object.keys(result.breakdownPlan.capacityExhaustion), CAPACITY_FIELDS);
+
+  result.breakdownPlan.capacityExhaustion.definitionSnapshotId = "returned-snapshot";
+  result.breakdownPlan.capacityExhaustion.shipId = "returned-ship";
+  result.breakdownPlan.capacityExhaustion.liveRevision = 1;
+  assert.equal(input.capacityExhaustion.definitionSnapshotId, "m10-only-snapshot-evidence");
+  assert.equal(input.capacityExhaustion.shipId, "m10-only-ship-evidence");
+  assert.equal(input.capacityExhaustion.liveRevision, 987654);
+});
+
+test("accumulates Breakdown category-9 event, session, and system mismatches in order", () => {
+  const result = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    sessionId: "request-session",
+    breakdownDefinition: definition({
+      systemId: "arkengine",
+      hazardOverrides: { encounterId: "definition-event" }
+    }),
+    handoff: capacityExhaustion({
+      eventId: "handoff-event",
+      sessionId: "handoff-session",
+      systemId: "crew-morale"
+    })
+  }));
+  assert.deepEqual(result.errors, [
+    task2Issue("m9-event-identity-mismatch", "capacityExhaustion.eventId", "Event identity does not match the M10 handoff."),
+    task2Issue("m9-session-identity-mismatch", "capacityExhaustion.sessionId", "Session identity does not match the M10 handoff or request."),
+    task2Issue("m9-system-identity-mismatch", "capacityExhaustion.systemId", "Affected system identity does not match the M10 handoff.")
+  ]);
+
+  const identityAndCapacity = analyzeVoyageCatastrophicBreakdown(breakdownRequest({
+    sessionId: "request-session",
+    handoff: capacityExhaustion({ sessionId: "handoff-session", scarCapacity: 2, occupiedScarCount: 1 })
+  }));
+  assert.deepEqual(identityAndCapacity.errors, [task2Issue(
+    "m9-session-identity-mismatch",
+    "capacityExhaustion.sessionId",
+    "Session identity does not match the M10 handoff or request."
+  )]);
+});
+
+test("accepts shared references, rejects active-ancestor cycles, and rejects undefined request data", () => {
+  const sharedDefinition = definition();
+  const sharedDescriptor = { consequenceId: "shared-task2" };
+  sharedDefinition.catastrophicHazard.currentEffect = sharedDescriptor;
+  sharedDefinition.catastrophicHazard.ignoredConsequence = sharedDescriptor;
+  sharedDefinition.catastrophicHazard.metadata.collision.consequence = sharedDescriptor;
+  const sharedInput = breakdownRequest({ breakdownDefinition: sharedDefinition });
+  const sharedResult = analyzeVoyageCatastrophicBreakdown(sharedInput);
+  assert.equal(sharedResult.ok, true);
+  assert.notEqual(sharedResult.breakdownPlan.catastrophicHazard.currentEffect, sharedResult.breakdownPlan.catastrophicHazard.ignoredConsequence);
+  assert.notEqual(sharedResult.breakdownPlan.catastrophicHazard.currentEffect, sharedDescriptor);
+
+  const direct = breakdownRequest();
+  direct.breakdownDefinition.catastrophicHazard.currentEffect.loop = direct.breakdownDefinition.catastrophicHazard.currentEffect;
+  assert.deepEqual(analyzeVoyageCatastrophicBreakdown(direct).errors, [hostileIssue]);
+
+  const indirect = breakdownRequest();
+  const first = {};
+  const second = {};
+  first.second = second;
+  second.first = first;
+  indirect.breakdownDefinition.catastrophicHazard.currentEffect = first;
+  assert.deepEqual(analyzeVoyageCatastrophicBreakdown(indirect).errors, [hostileIssue]);
+
+  const undefinedValue = breakdownRequest();
+  undefinedValue.capacityExhaustion.incomingScarProposalStatus = undefined;
+  assert.deepEqual(analyzeVoyageCatastrophicBreakdown(undefinedValue).errors, [hostileIssue]);
+});
+
+test("is deterministic, zero-mutating, and reconstructs isolated plans per request occurrence", () => {
+  const input = breakdownRequest();
+  const before = structuredClone(input);
+  const first = analyzeVoyageCatastrophicBreakdown(input);
+  const second = analyzeVoyageCatastrophicBreakdown(input);
+  assert.deepEqual(first, second);
+  assert.deepEqual(input, before);
+
+  first.breakdownPlan.pausePlan.timing = "returned-mutation";
+  first.breakdownPlan.capacityExhaustion.eventId = "returned-event";
+  assert.equal(second.breakdownPlan.pausePlan.timing, "after-current-segment");
+  assert.equal(second.breakdownPlan.capacityExhaustion.eventId, "event-1");
+  assert.equal(input.breakdownDefinition.pausePlan.timing, "after-current-segment");
+  assert.equal(input.capacityExhaustion.eventId, "event-1");
+});
+
 test("does not expose later Task APIs, runtime behavior, or forbidden markers", async () => {
   const module = await import("../../../scripts/voyage/domain/catastrophic-breakdown.js");
-  assert.equal("analyzeVoyageCatastrophicBreakdown" in module, false);
+  assert.equal("analyzeVoyageCatastrophicBreakdown" in module, true);
   assert.equal("validateVoyageEmergencyResponseCompletedRoundHistory" in module, false);
   assert.equal("captureVoyageEmergencyResponseCompletedRoundHistory" in module, false);
   assert.equal("analyzeVoyageEmergencyResponseResult" in module, false);
