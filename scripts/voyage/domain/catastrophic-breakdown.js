@@ -1,3 +1,4 @@
+import { VOYAGE_PRESSURE_SYSTEM_IDS } from "./constants.js";
 import {
   captureVoyageHazardRecord,
   validateVoyageHazardRecord,
@@ -34,7 +35,7 @@ const ROUND_FIELDS = Object.freeze(["roundId", "roundNumber"]);
 const STABILIZATION_FIELDS = Object.freeze(["outcomeId", "title", "description", "nextSituationId"]);
 const CONSEQUENCE_FIELDS = Object.freeze(["consequenceId", "kind", "title", "description", "nextSituationId"]);
 const NEXT_FIELDS = Object.freeze(["nextSituationId", "title", "summary", "transitionKind"]);
-const SYSTEM_IDS = new Set(["crew-morale", "arkengine", "levstone-array", "solar-sail-rig", "lifeveil"]);
+const SYSTEM_IDS = new Set(VOYAGE_PRESSURE_SYSTEM_IDS);
 const ROUND_COUNTS = new Set([3, 5, 7, 9, 11]);
 const CONSEQUENCE_KINDS = new Set(["strand", "diversion", "disablement", "loss"]);
 const TRANSITION_KINDS = new Set(["retreat", "diversion", "emergency", "capture", "delay", "repair", "authored"]);
