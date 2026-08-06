@@ -635,9 +635,12 @@ mode and shape diagnostics.
 Session identity. It must equal `capacityExhaustion.sessionId`. A mismatch
 emits exactly one `m9-session-identity-mismatch` diagnostic at
 `capacityExhaustion.sessionId`. Breakdown category-9 binding order is event,
-session, definition snapshot, ship, system, and revision. Breakdown Definition
-binding is performed by complete plan equality when the plan is revalidated;
-there is no separate handoff Breakdown Definition field.
+session, definition snapshot, ship, system, and revision.
+Task 2 generates and validates its BreakdownPlan internally and performs no
+supplied-plan equality. During Emergency Response analysis, Breakdown
+Definition binding is performed by complete plan equality when the supplied
+BreakdownPlan is revalidated; there is no separate handoff Breakdown
+Definition field.
 
 The exact success envelope keys are:
 
@@ -693,14 +696,17 @@ appear.
 complete captured exact-shape plain-data graph, including every nested
 system-disablement field, complete M6-compatible Hazard descriptor, pause-plan
 field, Emergency Response definition identity, `scarApplication: null`
-sentinel, and capacity-exhaustion source field. Emergency Response analysis
-must regenerate the expected BreakdownPlan from the captured Breakdown
-Definition and captured capacity-exhaustion descriptor, then compare the
-supplied BreakdownPlan to that regenerated graph using exact component-safe
-structural equality and exact canonical key order. Object identity, reference
-identity, hashes used as authority, timestamps, random identifiers, approval
-tokens, persistence tokens, application tokens, and caller-authored plan IDs
-are invalid.
+sentinel, and capacity-exhaustion source field. Task 2 regenerates this
+complete plan internally from the captured Breakdown Definition and captured
+capacity-exhaustion descriptor, validates its exact shape and components, and
+returns the isolated generated graph; Task 2 never accepts a supplied plan and
+does not perform supplied-plan comparison. Emergency Response analysis alone
+must regenerate the expected BreakdownPlan and compare the supplied captured
+BreakdownPlan to that regenerated graph using exact component-safe structural
+equality and exact canonical key order. Object identity, reference identity,
+hashes used as authority, timestamps, random identifiers, approval tokens,
+persistence tokens, application tokens, and caller-authored plan IDs are
+invalid.
 
 After hostile-safe capture, exact-shape validation, canonical key-order
 validation, descriptor validation, and component-safe identity validation, the
@@ -1012,9 +1018,10 @@ then `breakdownDefinition.emergencyResponseDefinition.failureConsequences[0].nex
 `roundResult` field.
 
 Definition, Hazard, identity, and reference diagnostics are owned by both
-definition validators and the analyzers that capture definitions. Capacity,
-applicability, and Breakdown-plan diagnostics are owned by
-`analyzeVoyageCatastrophicBreakdown`. History diagnostics are owned by both
+definition validators and the analyzers that capture definitions. Capacity and
+applicability diagnostics are owned by
+`analyzeVoyageCatastrophicBreakdown`. The Breakdown-plan diagnostic is owned
+only by `analyzeVoyageEmergencyResponseResult`. History diagnostics are owned by both
 Emergency Response history APIs and `analyzeVoyageEmergencyResponseResult`.
 Every retained row has a corresponding malformed, hostile, binding, or
 applicability witness in Section 18.
@@ -1025,11 +1032,14 @@ For a prohibited caller-authority key named `<capturedProhibitedKey>`, the
 exact path is `request.<capturedProhibitedKey>`; the captured name is the exact
 own root-property name. Breakdown identity rows use the `capacityExhaustion.*`
 paths shown in the catalog. Emergency Response identity rows use the
-`breakdownPlan.capacityExhaustion.*` paths shown in the catalog. Breakdown
-Definition binding is revalidated by complete plan equality, not a separate
-category-9 field, because the canonical six-key plan has no
-`breakdownDefinitionId` property. Emergency Response Definition binding uses
-the declared `breakdownPlan.emergencyResponseDefinitionId` property.
+`breakdownPlan.capacityExhaustion.*` paths shown in the catalog. For Task 2,
+the internally generated plan is validated from the captured definition and
+handoff; no supplied-plan comparison or category-12 diagnostic is applicable.
+For Emergency Response, Breakdown Definition binding is revalidated by
+complete plan equality, not a separate category-9 field, because the
+canonical six-key plan has no `breakdownDefinitionId` property. Emergency
+Response Definition binding uses the declared
+`breakdownPlan.emergencyResponseDefinitionId` property.
 nested descriptor failures use the exact nested descriptor property path;
 duplicate
 diagnostics identify the later duplicate element; unresolved references identify
@@ -1046,10 +1056,11 @@ zero-based authored array index `n`.
 The owning-API and witness mapping is fixed as follows: hostile, authority,
 mode, request-shape, definition, Hazard, Emergency Response definition,
 duplicate-identity, and unresolved-reference rows are owned by the applicable
-validation/capture APIs and both analyzers; capacity, exhaustion,
-applicability, and Breakdown-plan rows are owned by
-`analyzeVoyageCatastrophicBreakdown`; history rows are owned by both history
-validation/capture APIs and `analyzeVoyageEmergencyResponseResult`; and every
+validation/capture APIs and both analyzers; capacity, exhaustion, and
+applicability rows are owned by `analyzeVoyageCatastrophicBreakdown`; the
+Breakdown-plan row is owned only by `analyzeVoyageEmergencyResponseResult`;
+history rows are owned by both history validation/capture APIs and
+`analyzeVoyageEmergencyResponseResult`; and every
 identity row is owned by the analyzer that receives that captured descriptor.
 Section 18 supplies one mandatory malformed, hostile, authority, binding, or
 applicability witness for every retained row.
@@ -1069,16 +1080,18 @@ Both analyzers use this complete precedence:
 9. event, session, snapshot, ship, system, and revision binding;
 10. capacity arithmetic and exhaustion applicability;
 11. Breakdown applicability;
-12. Breakdown-plan identity revalidation;
+12. Breakdown-plan identity revalidation (Emergency Response only);
 13. Emergency Response history structure and binding;
 14. authored stabilization/failure consequence sufficiency; and
 15. final outcome proposal validation.
 
-Within precedence category 9, every valid identity mismatch accumulates exactly
-once in fixed order: event, session, definition snapshot, ship, system,
-revision, Breakdown Definition, then Emergency Response Definition when
-applicable. Breakdown uses only event through revision; its Breakdown
-Definition binding is represented by category-12 complete plan equality.
+`analyzeVoyageCatastrophicBreakdown` skips category 12 because it generates
+the canonical plan internally and accepts no supplied `breakdownPlan`.
+`analyzeVoyageEmergencyResponseResult` applies category 12 to the supplied
+captured plan. Within precedence category 9, every valid identity mismatch
+accumulates exactly once in fixed order: event, session, definition snapshot,
+ship, system, revision, Breakdown Definition, then Emergency Response
+Definition when applicable. Breakdown uses only event through revision.
 Emergency Response uses event through revision plus
 `breakdownPlan.emergencyResponseDefinitionId`. After the complete ordered
 category-9 diagnostic array is produced, no later category is evaluated. A
@@ -1147,16 +1160,18 @@ that behavior is not implemented by M9.
   fixtures; no M10 API call is required and fixtures do not simulate, replace,
   prove, or authorize M10 live discovery, approval, or persistence.
 - Behavior: capture the exact M10 handoff, bind identities and revision,
-  validate exhaustion and unapplied incoming proposal evidence, regenerate and
-  compare the complete BreakdownPlan identity, and return the exact isolated
-  Breakdown envelope and plan.
+  validate exhaustion and unapplied incoming proposal evidence, internally
+  regenerate and validate the complete BreakdownPlan shape and components,
+  and return the exact isolated Breakdown envelope and generated plan. Task 2
+  never accepts or compares a caller-supplied BreakdownPlan.
 - Tests: capacity boundaries, zero capacity, unused capacity, over-capacity
-  invalid state, identity/revision binding, no Scar output, exact hazard,
-  disablement, pause, plan isolation, one nested-field change, key reorder,
-  omitted and extra fields, wrong Hazard/response identity, wrong revision,
-  wrong ship/system, fresh equal graph success, acyclic shared-reference
-  acceptance, direct and indirect active-ancestor cycle rejection, and
-  captured-occurrence isolation,
+  invalid state, identity/revision binding, no Scar output, exact generated
+  plan shape and key order, internally generated system disablement, complete
+  M6 Hazard, pause plan, Emergency Response definition identity,
+  `scarApplication: null`, isolated capacity-exhaustion evidence, returned
+  plan isolation, deterministic generated-plan reconstruction success, request-input acyclic
+  shared-reference acceptance, request-input direct and indirect
+  active-ancestor cycle rejection, and captured request-occurrence isolation,
   complete authority-key rejection for every value type and concrete path,
   one-key and multiple-key ordered diagnostic arrays, full Breakdown category-9
   mismatch accumulation, malformed identity plus valid later mismatch,
@@ -1194,9 +1209,10 @@ that behavior is not implemented by M9.
 - API: `analyzeVoyageEmergencyResponseResult`.
 - Prerequisites: Tasks 1 and 3, the captured Breakdown plan, and the M8
   round-history vocabulary by reference.
-- Behavior: revalidate the regenerated complete plan identity, regenerate the
-  exact response result using the locked formula, select exactly one authored
-  stabilization or closed-enum failure consequence, enforce containment-only
+- Behavior: capture the supplied plan, revalidate its regenerated complete
+  plan identity, regenerate the exact response result using the locked
+  formula, select exactly one authored stabilization or closed-enum failure
+  consequence, enforce containment-only
   Hazard disposition and no automatic resume, and return the exact isolated
   outcome envelope.
 - Tests: threshold boundaries, success, failure, critical-round weighting,
@@ -1206,10 +1222,13 @@ that behavior is not implemented by M9.
   and wrong-type witnesses for every consequence field, unknown/padded/case-variant/non-string
   kind rejection, exact scalar `overallResult`, exact object
   `emergencyResponseResult` and key order, complete envelope and failure-null
-  sentinel, all Emergency Response category-9 mismatches, identity-plus-plan
-  failure, identity-plus-capacity failure, no retry loop, next situation, all
-  precedence, exact session/plan binding, authority rejection, isolation,
-  determinism, and no runtime access.
+  sentinel, all Emergency Response category-9 mismatches, supplied-plan nested
+  edits, reordered keys, omitted fields, extra fields, wrong identities,
+  wrong revision, fresh structurally equal supplied graphs, supplied-plan
+  shared-reference capture and isolation, supplied-plan active-ancestor
+  cycles, identity-plus-plan failure, identity-plus-capacity failure, no retry
+  loop, next situation, all precedence, exact session/plan binding, authority
+  rejection, isolation, determinism, and no runtime access.
 - Stop condition: no malformed result or caller-authored outcome can produce a
   proposal.
 - Prohibited: generic consequence execution, repair, Scar mutation, Hazard
@@ -1297,9 +1316,10 @@ Tests must cover all of the following.
 - true embedded-NUL delimiter-collision counterexamples;
 - distinct tuples remain distinct;
 - no cross-definition or cross-system aliasing;
-- regenerated plan equality rejects nested edits, reordered keys, omissions,
-  extra fields, wrong identities/revision, acyclic shared-reference acceptance,
-  active-ancestor cycle rejection, and captured-occurrence isolation;
+- Task 4 supplied-plan regenerated equality rejects nested edits, reordered
+  keys, omissions, extra fields, wrong identities/revision, accepts fresh
+  structurally equal graphs, and preserves supplied-plan shared-reference
+  isolation while rejecting active-ancestor cycles;
 - no Foundry, PF2e, persistence, inventory, repair, socket, transport,
   request-ID, or runtime behavior.
 
