@@ -102,6 +102,11 @@ function assertValid(value) {
 
 function assertIssue(value, expected, label = undefined) {
   const validation = validateVoyageCatastrophicBreakdownDefinition(value);
+  assert.deepEqual(
+    Object.keys(validation),
+    ["valid", "errors", "warnings"],
+    label
+  );
   assert.equal(validation.valid, false);
   assert.deepEqual(validation.errors, [expected], label);
   assert.deepEqual(validation.warnings, [], label);
@@ -214,8 +219,10 @@ test("rejects padded strings anywhere in the Catastrophic Hazard", () => {
     {
       label: "padded nested descriptive string",
       mutate(value) {
-        value.catastrophicHazard.metadata.collision.consequence.consequenceId =
-          " consequence ";
+        value.catastrophicHazard.metadata.collision.consequence = {
+          ...value.catastrophicHazard.metadata.collision.consequence,
+          consequenceId: " consequence "
+        };
       }
     }
   ];
@@ -223,6 +230,28 @@ test("rejects padded strings anywhere in the Catastrophic Hazard", () => {
   for (const { label, mutate } of cases) {
     const value = definition();
     mutate(value);
+    if (label === "padded nested descriptive string") {
+      assert.equal(
+        value.catastrophicHazard.currentEffect.consequenceId,
+        "descriptive-consequence",
+        "nested collision mutation must not alter currentEffect"
+      );
+      assert.equal(
+        value.catastrophicHazard.ignoredConsequence.consequenceId,
+        "descriptive-consequence",
+        "nested collision mutation must not alter ignoredConsequence"
+      );
+      assert.notStrictEqual(
+        value.catastrophicHazard.metadata.collision.consequence,
+        value.catastrophicHazard.currentEffect,
+        "nested collision consequence must be independently mutated"
+      );
+      assert.notStrictEqual(
+        value.catastrophicHazard.metadata.collision.consequence,
+        value.catastrophicHazard.ignoredConsequence,
+        "nested collision consequence must be independently mutated"
+      );
+    }
     assertIssue(value, hazardIssue, label);
   }
 });
