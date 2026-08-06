@@ -91,6 +91,10 @@ function definition({ systemId = "crew-morale", responseOverrides = {}, hazardOv
 
 function assertValid(value) {
   const validation = validateVoyageCatastrophicBreakdownDefinition(value);
+  assert.deepEqual(
+    Object.keys(validation),
+    ["valid", "errors", "warnings"]
+  );
   assert.deepEqual(validation, { valid: true, errors: [], warnings: [] });
   const capture = captureVoyageCatastrophicBreakdownDefinition(value);
   assert.equal(capture.ok, true, JSON.stringify(capture.errors));
