@@ -1088,12 +1088,13 @@ Both analyzers use this complete precedence:
 `analyzeVoyageCatastrophicBreakdown` skips category 12 because it generates
 the canonical plan internally and accepts no supplied `breakdownPlan`.
 `analyzeVoyageEmergencyResponseResult` applies category 12 to the supplied
-captured plan. Within precedence category 9, every valid identity mismatch
-accumulates exactly once in fixed order: event, session, definition snapshot,
-ship, system, revision, Breakdown Definition, then Emergency Response
-Definition when applicable. Breakdown uses only event through revision.
-Emergency Response uses event through revision plus
-`breakdownPlan.emergencyResponseDefinitionId`. After the complete ordered
+captured plan. Within precedence category 9, every valid identity mismatch accumulates
+exactly once in fixed order: event, session, definition snapshot, ship,
+system, revision, then Emergency Response Definition when applicable.
+Breakdown uses only event through revision. Emergency Response uses event
+through revision plus `breakdownPlan.emergencyResponseDefinitionId`.
+Breakdown Definition binding for Emergency Response remains category-12
+complete plan equality and is not a category-9 identity field. After the complete ordered
 category-9 diagnostic array is produced, no later category is evaluated. A
 structurally malformed identity belongs to an earlier structure or value
 category and does not also produce a category-9 mismatch.
