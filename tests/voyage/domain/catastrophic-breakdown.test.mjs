@@ -111,6 +111,11 @@ function assertIssue(value, expected, label = undefined) {
   assert.deepEqual(validation.errors, [expected], label);
   assert.deepEqual(validation.warnings, [], label);
   const capture = captureVoyageCatastrophicBreakdownDefinition(value);
+  assert.deepEqual(
+    Object.keys(capture),
+    ["ok", "breakdownDefinition", "errors", "warnings"],
+    label
+  );
   assert.deepEqual(capture, { ok: false, breakdownDefinition: null, errors: [expected], warnings: [] }, label);
 }
 
