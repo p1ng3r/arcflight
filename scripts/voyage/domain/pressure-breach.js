@@ -1157,6 +1157,367 @@ function simulateNonBreachPressureEffect(system, effect) {
 }
 
 /**
+ * Narrow M10-only Pressure Breach transaction kernel.
+ *
+ * M10 closes an encounter from an isolated closeout projection, rather than a
+ * complete Voyage Encounter state.  The established public M6 APIs correctly
+ * reject that projection, so this helper deliberately accepts only the
+ * already-captured M10 simulation values.  It reuses the canonical M6 Breach,
+ * Hazard, Void Scar proposal, reset, collision, and event builders above.
+ * It is not a general Pressure application API.
+ */
+export function analyzeVoyagePressureBreachCloseoutTransaction({
+  expectedEncounterRevision,
+  closeoutContext,
+  pressureSystems,
+  activeHazards,
+  pressureEffect,
+  lifecycleState = "active"
+}) {
+  try {
+    const previousPressureSystems = capturePressureBreachData(pressureSystems);
+    const previousActiveHazards = capturePressureBreachData(activeHazards);
+    const capturedEffect = capturePressureBreachData(pressureEffect);
+    if (!previousPressureSystems.ok || !previousActiveHazards.ok || !capturedEffect.ok) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-data-invalid", "closeout", "Closeout Pressure Breach data could not be captured safely.")],
+        warnings: []
+      };
+    }
+
+    const systems = previousPressureSystems.value;
+    const hazards = previousActiveHazards.value;
+    const effect = capturedEffect.value;
+    if (
+      !Number.isSafeInteger(expectedEncounterRevision)
+      || expectedEncounterRevision < 0
+      || !Array.isArray(systems)
+      || !Array.isArray(hazards)
+      || !effect
+      || typeof effect !== "object"
+      || !closeoutContext
+      || typeof closeoutContext !== "object"
+    ) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-data-invalid", "closeout", "Closeout Pressure Breach data is invalid.")],
+        warnings: []
+      };
+    }
+
+    const nextPressureSystems = systems.map((system) => ({ ...system }));
+    const systemIndex = nextPressureSystems.findIndex((system) => system?.pressureSystemId === effect.pressureSystemId);
+    const system = systemIndex >= 0 ? nextPressureSystems[systemIndex] : null;
+    if (
+      !system
+      || !Number.isSafeInteger(system.value)
+      || !Number.isSafeInteger(system.capacity)
+      || !Number.isSafeInteger(effect.delta)
+      || effect.delta <= 0
+    ) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-arithmetic-invalid", "pressureEffect", "Closeout Pressure Breach arithmetic is invalid.")],
+        warnings: []
+      };
+    }
+
+    const remainingCapacity = system.capacity - system.value;
+    if (effect.delta <= remainingCapacity) {
+      const nextValue = system.value + effect.delta;
+      if (!Number.isSafeInteger(nextValue)) {
+        return {
+          ok: false,
+          breachRequired: false,
+          previousEncounterRevision: null,
+          encounterRevision: null,
+          nextPressureSystems: [],
+          nextActiveHazards: [],
+          breach: null,
+          hazard: null,
+          ordinaryScarProposal: null,
+          pressureReset: null,
+          event: null,
+          errors: [issue("pressure-breach-closeout-arithmetic-invalid", "pressureEffect.delta", "Closeout Pressure Breach arithmetic is invalid.")],
+          warnings: []
+        };
+      }
+      system.value = nextValue;
+      return {
+        ok: true,
+        breachRequired: false,
+        previousEncounterRevision: expectedEncounterRevision,
+        encounterRevision: expectedEncounterRevision,
+        nextPressureSystems,
+        nextActiveHazards: hazards,
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [],
+        warnings: []
+      };
+    }
+
+    const breach = buildPressureBreach(effect, 0, system);
+    const sparseHazard = buildPressureBreachHazard(breach);
+    if (!sparseHazard) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-hazard-invalid", "pressureEffect.pressureSystemId", "Closeout Pressure Breach could not build its canonical Hazard.")],
+        warnings: []
+      };
+    }
+
+    const activeHazardBuild = buildVoyagePressureBreachActiveHazard(sparseHazard);
+    if (!activeHazardBuild.ok) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: activeHazardBuild.errors,
+        warnings: []
+      };
+    }
+    const activeHazardCapture = captureVoyageHazardRecord(activeHazardBuild.hazard, {
+      mode: "active",
+      expectedEncounterId: closeoutContext.eventId
+    });
+    if (!activeHazardCapture.ok) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: activeHazardCapture.errors,
+        warnings: []
+      };
+    }
+
+    const occupied = hazards
+      .map((hazard, index) => ({ hazard, index }))
+      .filter(({ hazard }) => (
+        hazard?.category === "system"
+        && hazard.status === "active"
+        && hazard.pressureSystemId === breach.pressureSystemId
+      ));
+    if (occupied.length > 1) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-collision-invalid", "activeHazards", "Closeout Pressure Breach found an ambiguous canonical Hazard slot.")],
+        warnings: []
+      };
+    }
+
+    let collisionOutcome = null;
+    let nextActiveHazards;
+    if (occupied.length === 1) {
+      const existingHazard = occupied[0].hazard;
+      const consequence = existingHazard?.metadata?.collision?.consequence;
+      if (
+        !consequence
+        || typeof consequence !== "object"
+        || Array.isArray(consequence)
+        || Object.keys(consequence).length === 0
+      ) {
+        return {
+          ok: false,
+          breachRequired: false,
+          previousEncounterRevision: null,
+          encounterRevision: null,
+          nextPressureSystems: [],
+          nextActiveHazards: [],
+          breach: null,
+          hazard: null,
+          ordinaryScarProposal: null,
+          pressureReset: null,
+          event: null,
+          errors: [issue("pressure-breach-closeout-collision-invalid", `activeHazards[${occupied[0].index}].metadata.collision.consequence`, "Closeout Pressure Breach requires the existing Hazard collision consequence.")],
+          warnings: []
+        };
+      }
+      collisionOutcome = {
+        kind: "hazard-consequence-triggered",
+        hazardId: existingHazard.hazardId,
+        incomingHazardId: sparseHazard.hazardId,
+        pressureSystemId: breach.pressureSystemId,
+        collisionPolicy: activeHazardCapture.record.collisionPolicy,
+        consequence: capturePressureBreachData(consequence).value
+      };
+      nextActiveHazards = hazards;
+    } else {
+      nextActiveHazards = [...hazards, activeHazardCapture.record];
+    }
+
+    const ordinaryScarProposal = buildPressureBreachVoidScarProposal(breach, sparseHazard);
+    if (!ordinaryScarProposal) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-scar-invalid", "pressureEffect.pressureSystemId", "Closeout Pressure Breach could not build its canonical Void Scar proposal.")],
+        warnings: []
+      };
+    }
+
+    const encounterRevision = expectedEncounterRevision + 1;
+    if (!Number.isSafeInteger(encounterRevision)) {
+      return {
+        ok: false,
+        breachRequired: false,
+        previousEncounterRevision: null,
+        encounterRevision: null,
+        nextPressureSystems: [],
+        nextActiveHazards: [],
+        breach: null,
+        hazard: null,
+        ordinaryScarProposal: null,
+        pressureReset: null,
+        event: null,
+        errors: [issue("pressure-breach-closeout-revision-invalid", "expectedEncounterRevision", "Closeout Pressure Breach cannot advance the encounter revision safely.")],
+        warnings: []
+      };
+    }
+
+    system.value = 0;
+    const pressureReset = {
+      pressureBreachId: breach.pressureBreachId,
+      pressureSystemId: breach.pressureSystemId,
+      previousValue: breach.previousValue,
+      resetValue: 0
+    };
+    const previousPressureSystemMap = Object.fromEntries(systems.map((entry) => [entry.pressureSystemId, { ...entry }]));
+    const nextPressureSystemMap = Object.fromEntries(nextPressureSystems.map((entry) => [entry.pressureSystemId, { ...entry }]));
+    const event = {
+      type: "voyage.pressure-breach-applied",
+      encounterId: closeoutContext.eventId,
+      lifecycleState,
+      stageId: closeoutContext.stageId,
+      roundNumber: closeoutContext.roundNumber,
+      phase: closeoutContext.phase,
+      pressureEffectCount: 1,
+      appliedEffectCount: 1,
+      breach: clonePressureBreach(breach),
+      hazard: clonePressureBreachHazard(sparseHazard),
+      collisionOutcome,
+      voidScarProposal: clonePressureBreachVoidScarProposal(ordinaryScarProposal),
+      pressureReset: { ...pressureReset },
+      effects: [capturedEffect.value],
+      previousPressureSystems: previousPressureSystemMap,
+      pressureSystems: nextPressureSystemMap,
+      previousRevision: expectedEncounterRevision,
+      revision: encounterRevision
+    };
+    return {
+      ok: true,
+      breachRequired: true,
+      previousEncounterRevision: expectedEncounterRevision,
+      encounterRevision,
+      nextPressureSystems,
+      nextActiveHazards,
+      breach,
+      hazard: sparseHazard,
+      ordinaryScarProposal,
+      pressureReset,
+      event,
+      errors: [],
+      warnings: []
+    };
+  } catch {
+    return {
+      ok: false,
+      breachRequired: false,
+      previousEncounterRevision: null,
+      encounterRevision: null,
+      nextPressureSystems: [],
+      nextActiveHazards: [],
+      breach: null,
+      hazard: null,
+      ordinaryScarProposal: null,
+      pressureReset: null,
+      event: null,
+      errors: [issue("pressure-breach-closeout-failed", "closeout", "Closeout Pressure Breach could not be completed safely.")],
+      warnings: []
+    };
+  }
+}
+
+/**
  * Apply one authoritative Pressure Breach transaction.
  *
  * This operation applies every safe Pressure effect in authoritative order,
