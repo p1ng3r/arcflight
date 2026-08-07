@@ -1,4 +1,5 @@
 import { VOYAGE_PRESSURE_SYSTEM_IDS, VOYAGE_ROUND_RESULTS } from "./constants.js";
+import { validateVoyageCatastrophicBreakdownDefinition } from "./catastrophic-breakdown.js";
 
 const COMPLETED_ROUND_HISTORY_FIELDS = Object.freeze([
   "schemaVersion",
@@ -37,6 +38,103 @@ const SYSTEM_IDS = new Set(VOYAGE_PRESSURE_SYSTEM_IDS);
 const CONSEQUENCE_KINDS = new Set(["strand", "diversion", "disablement", "loss"]);
 const TRANSITION_KINDS = new Set(["retreat", "diversion", "emergency", "capture", "delay", "repair", "authored"]);
 const ROUND_RESULTS = new Set(Object.values(VOYAGE_ROUND_RESULTS));
+const CAPACITY_EXHAUSTION_FIELDS = Object.freeze([
+  "kind",
+  "eventId",
+  "sessionId",
+  "definitionSnapshotId",
+  "shipId",
+  "systemId",
+  "systemKind",
+  "liveRevision",
+  "scarCapacity",
+  "occupiedScarCount",
+  "incomingScarProposalId",
+  "incomingScarProposalKind",
+  "incomingScarProposalStatus"
+]);
+const EMERGENCY_RESPONSE_REQUEST_FIELDS = Object.freeze([
+  "kind",
+  "sessionId",
+  "breakdownDefinition",
+  "breakdownPlan",
+  "completedRoundHistory"
+]);
+const BREAKDOWN_PLAN_FIELDS = Object.freeze([
+  "systemDisablement",
+  "catastrophicHazard",
+  "pausePlan",
+  "emergencyResponseDefinitionId",
+  "scarApplication",
+  "capacityExhaustion"
+]);
+const SYSTEM_DISABLEMENT_FIELDS = Object.freeze(["systemId", "systemKind", "disabled"]);
+const EMERGENCY_RESPONSE_RESULT_FIELDS = Object.freeze([
+  "overallResult",
+  "roundCount",
+  "winningThreshold",
+  "successfulRoundCount",
+  "failedRoundCount"
+]);
+const STABILIZED_PROPOSAL_FIELDS = Object.freeze([
+  "kind",
+  "eventId",
+  "sessionId",
+  "definitionSnapshotId",
+  "shipId",
+  "systemId",
+  "breakdownDefinitionId",
+  "emergencyResponseDefinitionId",
+  "catastrophicHazardId",
+  "catastropheStatus",
+  "hazardDisposition",
+  "systemStatus",
+  "repairApplied",
+  "scarAdded",
+  "scarRemoved",
+  "sourceEventStatus",
+  "nextSituation",
+  "requiresGmApproval"
+]);
+const FAILED_PROPOSAL_FIELDS = Object.freeze([
+  "kind",
+  "eventId",
+  "sessionId",
+  "definitionSnapshotId",
+  "shipId",
+  "systemId",
+  "breakdownDefinitionId",
+  "emergencyResponseDefinitionId",
+  "catastrophicHazardId",
+  "catastropheStatus",
+  "systemStatus",
+  "sourceEventStatus",
+  "retryAllowed",
+  "consequence",
+  "nextSituation",
+  "requiresGmApproval"
+]);
+const EMERGENCY_RESPONSE_PROHIBITED_KEYS = new Set([
+  "approved",
+  "gmApproved",
+  "approval",
+  "gmApproval",
+  "applicationPlan",
+  "nextState",
+  "emergencyResponseResult",
+  "outcomeProposal",
+  "persistentChanges",
+  "shipUpdate",
+  "hazardApplied",
+  "systemDisabled",
+  "scarCreated",
+  "revisionAfter",
+  "requestId",
+  "staleStatus",
+  "duplicateStatus",
+  "capacityAnalysis",
+  "applicationToken"
+]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const HOSTILE_MESSAGE = "Milestone 9 data could not be captured safely.";
 const HISTORY_MESSAGE = "Emergency Response round history is invalid.";
@@ -202,6 +300,263 @@ function captureRoot(value) {
   } catch {
     return { ok: false, value: null, errors: [hostileIssue()], warnings: [] };
   }
+}
+
+function task4Issue(code, path, message) {
+  return { code, path, message, severity: "error" };
+}
+
+function emergencyResponseFailure(errors) {
+  return {
+    ok: false,
+    readyForEmergencyResponseOutcome: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    shipId: null,
+    systemId: null,
+    breakdownDefinitionId: null,
+    emergencyResponseDefinitionId: null,
+    emergencyResponseResult: null,
+    outcomeProposal: null,
+    requiresGmApproval: false,
+    errors: dedupe(errors),
+    warnings: []
+  };
+}
+
+function emergencyResponseSuccess(capacityExhaustion, breakdownDefinition, emergencyResponseResult, outcomeProposal) {
+  const resultCapture = captureRoot(emergencyResponseResult);
+  const proposalCapture = captureRoot(outcomeProposal);
+  if (!resultCapture.ok || !proposalCapture.ok) {
+    return emergencyResponseFailure([
+      ...(!resultCapture.ok ? resultCapture.errors : []),
+      ...(!proposalCapture.ok ? proposalCapture.errors : [])
+    ]);
+  }
+  const proposalFields = emergencyResponseResult.overallResult === "emergency-stabilized"
+    ? STABILIZED_PROPOSAL_FIELDS
+    : FAILED_PROPOSAL_FIELDS;
+  if (!exactKeys(resultCapture.value, EMERGENCY_RESPONSE_RESULT_FIELDS)
+    || !exactKeys(proposalCapture.value, proposalFields)) {
+    return emergencyResponseFailure([hostileIssue()]);
+  }
+  const responseDefinition = breakdownDefinition.emergencyResponseDefinition;
+  return {
+    ok: true,
+    readyForEmergencyResponseOutcome: true,
+    eventId: capacityExhaustion.eventId,
+    sessionId: capacityExhaustion.sessionId,
+    definitionSnapshotId: capacityExhaustion.definitionSnapshotId,
+    shipId: capacityExhaustion.shipId,
+    systemId: capacityExhaustion.systemId,
+    breakdownDefinitionId: breakdownDefinition.breakdownDefinitionId,
+    emergencyResponseDefinitionId: responseDefinition.emergencyResponseDefinitionId,
+    emergencyResponseResult: resultCapture.value,
+    outcomeProposal: proposalCapture.value,
+    requiresGmApproval: true,
+    errors: [],
+    warnings: []
+  };
+}
+
+function validateCapacityExhaustion(value) {
+  return exactKeys(value, CAPACITY_EXHAUSTION_FIELDS)
+    && value.kind === "voyage.m10-capacity-exhaustion"
+    && nonblank(value.eventId)
+    && nonblank(value.sessionId)
+    && nonblank(value.definitionSnapshotId)
+    && nonblank(value.shipId)
+    && SYSTEM_IDS.has(value.systemId)
+    && value.systemKind === "pressure-system"
+    && safeRevision(value.liveRevision)
+    && Number.isSafeInteger(value.scarCapacity)
+    && value.scarCapacity >= 0
+    && Number.isSafeInteger(value.occupiedScarCount)
+    && value.occupiedScarCount >= 0
+    && nonblank(value.incomingScarProposalId)
+    && nonblank(value.incomingScarProposalKind)
+    && nonblank(value.incomingScarProposalStatus);
+}
+
+function structurallyEqual(left, right) {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== typeof right) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (!structurallyEqual(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  if (isPlain(left) || isPlain(right)) {
+    if (!isPlain(left) || !isPlain(right)) return false;
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length || !leftKeys.every((key, index) => key === rightKeys[index])) return false;
+    return leftKeys.every((key) => structurallyEqual(left[key], right[key]));
+  }
+  return false;
+}
+
+function regenerateBreakdownPlan(breakdownDefinition, capacityExhaustion) {
+  return {
+    systemDisablement: {
+      systemId: capacityExhaustion.systemId,
+      systemKind: capacityExhaustion.systemKind,
+      disabled: true
+    },
+    catastrophicHazard: breakdownDefinition.catastrophicHazard,
+    pausePlan: breakdownDefinition.pausePlan,
+    emergencyResponseDefinitionId: breakdownDefinition.emergencyResponseDefinition.emergencyResponseDefinitionId,
+    scarApplication: null,
+    capacityExhaustion
+  };
+}
+
+function validateEmergencyResponseIdentity(request, breakdownDefinition, breakdownPlan, historyValue) {
+  const capacityExhaustion = breakdownPlan.capacityExhaustion;
+  const errors = [];
+  if (breakdownDefinition.catastrophicHazard.encounterId !== capacityExhaustion.eventId
+    || historyValue.eventId !== capacityExhaustion.eventId) {
+    errors.push(task4Issue(
+      "m9-event-identity-mismatch",
+      "breakdownPlan.capacityExhaustion.eventId",
+      "Event identity does not match the M10 handoff."
+    ));
+  }
+  if (request.sessionId !== capacityExhaustion.sessionId || historyValue.sessionId !== capacityExhaustion.sessionId) {
+    errors.push(task4Issue(
+      "m9-session-identity-mismatch",
+      "breakdownPlan.capacityExhaustion.sessionId",
+      "Session identity does not match the M10 handoff or request."
+    ));
+  }
+  if (historyValue.definitionSnapshotId !== capacityExhaustion.definitionSnapshotId) {
+    errors.push(task4Issue(
+      "m9-definition-snapshot-mismatch",
+      "breakdownPlan.capacityExhaustion.definitionSnapshotId",
+      "Definition snapshot identity does not match the M10 handoff."
+    ));
+  }
+  if (historyValue.shipId !== capacityExhaustion.shipId) {
+    errors.push(task4Issue(
+      "m9-ship-identity-mismatch",
+      "breakdownPlan.capacityExhaustion.shipId",
+      "Ship identity does not match the M10 handoff."
+    ));
+  }
+  if (breakdownDefinition.systemId !== capacityExhaustion.systemId
+    || breakdownDefinition.catastrophicHazard.pressureSystemId !== capacityExhaustion.systemId
+    || historyValue.systemId !== capacityExhaustion.systemId) {
+    errors.push(task4Issue(
+      "m9-system-identity-mismatch",
+      "breakdownPlan.capacityExhaustion.systemId",
+      "Affected system identity does not match the M10 handoff."
+    ));
+  }
+  if (historyValue.liveRevision !== capacityExhaustion.liveRevision) {
+    errors.push(task4Issue(
+      "m9-revision-binding-mismatch",
+      "breakdownPlan.capacityExhaustion.liveRevision",
+      "Live revision binding does not match the M10 handoff."
+    ));
+  }
+  if (breakdownPlan.emergencyResponseDefinitionId
+    !== breakdownDefinition.emergencyResponseDefinition.emergencyResponseDefinitionId) {
+    errors.push(task4Issue(
+      "m9-invalid-breakdown-plan",
+      "breakdownPlan",
+      "Breakdown plan does not match the captured definition and handoff."
+    ));
+  }
+  return errors;
+}
+
+function validateCapacityApplicability(value) {
+  const errors = [];
+  if (value.occupiedScarCount !== value.scarCapacity) {
+    errors.push(task4Issue(
+      "m9-capacity-not-exhausted",
+      "capacityExhaustion.occupiedScarCount",
+      "Capacity exhaustion is not established."
+    ));
+  }
+  if (value.incomingScarProposalStatus !== "approved-unapplied") {
+    errors.push(task4Issue(
+      "m9-invalid-incoming-scar-proposal",
+      "capacityExhaustion.incomingScarProposalId",
+      "Incoming ordinary Scar proposal evidence is invalid."
+    ));
+  }
+  return errors;
+}
+
+function calculateEmergencyResponseResult(historyValue) {
+  const successfulRoundCount = historyValue.rounds.filter((round) => (
+    round.roundResult === VOYAGE_ROUND_RESULTS.SUCCESS
+    || round.roundResult === VOYAGE_ROUND_RESULTS.CRITICAL_SUCCESS
+  )).length;
+  const failedRoundCount = historyValue.rounds.filter((round) => (
+    round.roundResult === VOYAGE_ROUND_RESULTS.FAILURE
+    || round.roundResult === VOYAGE_ROUND_RESULTS.CRITICAL_FAILURE
+  )).length;
+  const roundCount = historyValue.rounds.length;
+  const winningThreshold = (roundCount + 1) / 2;
+  const overallResult = successfulRoundCount >= winningThreshold
+    ? "emergency-stabilized"
+    : "emergency-failed";
+  return {
+    overallResult,
+    roundCount,
+    winningThreshold,
+    successfulRoundCount,
+    failedRoundCount
+  };
+}
+
+function createOutcomeProposal(result, capacityExhaustion, breakdownDefinition) {
+  const responseDefinition = breakdownDefinition.emergencyResponseDefinition;
+  if (result.overallResult === "emergency-stabilized") {
+    return {
+      kind: "m9-emergency-response-stabilized",
+      eventId: capacityExhaustion.eventId,
+      sessionId: capacityExhaustion.sessionId,
+      definitionSnapshotId: capacityExhaustion.definitionSnapshotId,
+      shipId: capacityExhaustion.shipId,
+      systemId: capacityExhaustion.systemId,
+      breakdownDefinitionId: breakdownDefinition.breakdownDefinitionId,
+      emergencyResponseDefinitionId: responseDefinition.emergencyResponseDefinitionId,
+      catastrophicHazardId: breakdownDefinition.catastrophicHazard.hazardId,
+      catastropheStatus: "stabilized",
+      hazardDisposition: "contained",
+      systemStatus: "disabled",
+      repairApplied: false,
+      scarAdded: false,
+      scarRemoved: false,
+      sourceEventStatus: "ended",
+      nextSituation: responseDefinition.nextSituations[0],
+      requiresGmApproval: true
+    };
+  }
+  return {
+    kind: "m9-emergency-response-failed",
+    eventId: capacityExhaustion.eventId,
+    sessionId: capacityExhaustion.sessionId,
+    definitionSnapshotId: capacityExhaustion.definitionSnapshotId,
+    shipId: capacityExhaustion.shipId,
+    systemId: capacityExhaustion.systemId,
+    breakdownDefinitionId: breakdownDefinition.breakdownDefinitionId,
+    emergencyResponseDefinitionId: responseDefinition.emergencyResponseDefinitionId,
+    catastrophicHazardId: breakdownDefinition.catastrophicHazard.hazardId,
+    catastropheStatus: "failed",
+    systemStatus: "disabled",
+    sourceEventStatus: "ended",
+    retryAllowed: false,
+    consequence: responseDefinition.failureConsequences[0],
+    nextSituation: responseDefinition.nextSituations[0],
+    requiresGmApproval: true
+  };
 }
 
 function validateResponseDefinition(value) {
@@ -378,4 +733,124 @@ export function captureVoyageEmergencyResponseCompletedRoundHistory(completedRou
     errors: [],
     warnings: []
   };
+}
+
+export function analyzeVoyageEmergencyResponseResult(request) {
+  const captured = captureRoot(request);
+  if (!captured.ok) return emergencyResponseFailure(captured.errors);
+
+  try {
+    const value = captured.value;
+    if (!isPlain(value)) {
+      return emergencyResponseFailure([task4Issue(
+        "m9-invalid-request-shape",
+        "request",
+        "Request has an invalid exact shape or field values."
+      )]);
+    }
+
+    const prohibitedErrors = Object.keys(value)
+      .filter((key) => EMERGENCY_RESPONSE_PROHIBITED_KEYS.has(key))
+      .map((key) => task4Issue(
+        "m9-caller-authored-application-rejected",
+        `request.${key}`,
+        "Caller-authored application or runtime authority is not accepted."
+      ));
+    if (prohibitedErrors.length > 0) return emergencyResponseFailure(prohibitedErrors);
+
+    if (value.kind !== "m9-emergency-response") {
+      return emergencyResponseFailure([task4Issue(
+        "m9-invalid-mode",
+        "request.kind",
+        "Only the requested Milestone 9 analysis mode is supported."
+      )]);
+    }
+
+    if (!exactKeys(value, EMERGENCY_RESPONSE_REQUEST_FIELDS)
+      || !nonblank(value.sessionId)
+      || !isPlain(value.breakdownDefinition)
+      || !isPlain(value.breakdownPlan)
+      || !isPlain(value.completedRoundHistory)) {
+      return emergencyResponseFailure([task4Issue(
+        "m9-invalid-request-shape",
+        "request",
+        "Request has an invalid exact shape or field values."
+      )]);
+    }
+
+    const definitionValidation = validateVoyageCatastrophicBreakdownDefinition(value.breakdownDefinition);
+    if (!definitionValidation.valid) return emergencyResponseFailure(definitionValidation.errors);
+
+    const breakdownPlan = value.breakdownPlan;
+    if (!Object.hasOwn(breakdownPlan, "capacityExhaustion")
+      || !isPlain(breakdownPlan.capacityExhaustion)) {
+      return emergencyResponseFailure([task4Issue(
+        "m9-invalid-breakdown-plan",
+        "breakdownPlan",
+        "Breakdown plan does not match the captured definition and handoff."
+      )]);
+    }
+
+    const capacityExhaustion = breakdownPlan.capacityExhaustion;
+    if (!validateCapacityExhaustion(capacityExhaustion)) {
+      return emergencyResponseFailure([task4Issue(
+        "m9-invalid-capacity-exhaustion",
+        "breakdownPlan.capacityExhaustion",
+        "Capacity-exhaustion handoff is invalid."
+      )]);
+    }
+
+    const responseDefinition = value.breakdownDefinition.emergencyResponseDefinition;
+    const historyValidation = validateVoyageEmergencyResponseCompletedRoundHistory(
+      value.completedRoundHistory,
+      responseDefinition
+    );
+    const historyErrors = historyValidation.errors;
+    if (historyErrors.length === 0) {
+      const identityErrors = validateEmergencyResponseIdentity(
+        value,
+        value.breakdownDefinition,
+        breakdownPlan,
+        value.completedRoundHistory
+      );
+      if (identityErrors.length > 0) return emergencyResponseFailure(identityErrors);
+    }
+
+    const capacityErrors = validateCapacityApplicability(capacityExhaustion);
+    if (capacityErrors.length > 0) return emergencyResponseFailure(capacityErrors);
+
+    if (capacityExhaustion.incomingScarProposalKind !== "ordinary-void-scar") {
+      return emergencyResponseFailure([task4Issue(
+        "m9-breakdown-not-applicable",
+        "capacityExhaustion",
+        "Catastrophic Breakdown is not applicable to this handoff."
+      )]);
+    }
+
+    const expectedPlan = regenerateBreakdownPlan(value.breakdownDefinition, capacityExhaustion);
+    if (!structurallyEqual(breakdownPlan, expectedPlan)) {
+      return emergencyResponseFailure([task4Issue(
+        "m9-invalid-breakdown-plan",
+        "breakdownPlan",
+        "Breakdown plan does not match the captured definition and handoff."
+      )]);
+    }
+
+    if (historyErrors.length > 0) return emergencyResponseFailure(historyErrors);
+
+    const emergencyResponseResult = calculateEmergencyResponseResult(value.completedRoundHistory);
+    const outcomeProposal = createOutcomeProposal(
+      emergencyResponseResult,
+      capacityExhaustion,
+      value.breakdownDefinition
+    );
+    return emergencyResponseSuccess(
+      capacityExhaustion,
+      value.breakdownDefinition,
+      emergencyResponseResult,
+      outcomeProposal
+    );
+  } catch {
+    return emergencyResponseFailure([hostileIssue()]);
+  }
 }
