@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
+import {
+  VOYAGE_PRESSURE_SYSTEM_IDS
+} from "../../../scripts/voyage/domain/constants.js";
+import { VOYAGE_PRESSURE_BREACH_VOID_SCAR_DESCRIPTORS } from "../../../scripts/voyage/domain/void-scar-creation.js";
+import { VOYAGE_VOID_SCAR_NAME_BY_PRESSURE_SYSTEM_ID } from "../../../scripts/voyage/domain/void-scar-schema.js";
 import {
   analyzeVoyageEncounterCloseoutPressureBreach,
   analyzeVoyageEncounterCloseoutPreview,
@@ -9,6 +13,7 @@ import {
   captureVoyageEncounterCloseoutSnapshot,
   validateVoyageEncounterCloseoutSnapshot
 } from "../../../scripts/voyage/domain/closeout.js";
+import { analyzeVoyageEmergencyResponseResult } from "../../../scripts/voyage/domain/emergency-response.js";
 
 const ANALYSIS_KEYS = [
   "ok", "readyForHazardCloseout", "eventId", "sessionId", "definitionSnapshotId", "shipId",
@@ -82,8 +87,8 @@ function hazard({
     pressureSystemId: category === "system" ? pressureSystemId : null,
     eventAreaId: category === "event" ? "event-area-1" : null,
     pressureBreachId: null,
-    stationId: null,
-    actionId: null,
+    stationId: "captain",
+    actionId: "closeout-action",
     pressureEffectId: null,
     sourceIntentId: null,
     activationSource: null,
@@ -238,6 +243,226 @@ function previewRequest(overrides = {}) {
     emergencyResponseEvidence: [],
     ...overrides
   };
+}
+
+function validM7Scar(id, system = "crew-morale") {
+  const descriptor = VOYAGE_PRESSURE_BREACH_VOID_SCAR_DESCRIPTORS[system];
+  const pressureBreachId = `fixture-breach-${id}`;
+  return {
+    voidScarId: `arcflight-void-scar:${JSON.stringify(["pressure-breach", pressureBreachId])}`,
+    name: VOYAGE_VOID_SCAR_NAME_BY_PRESSURE_SYSTEM_ID[system],
+    pressureSystemId: system,
+    status: "active",
+    sourceKind: "pressure-breach",
+    description: descriptor.description,
+    operationalEffects: [...descriptor.operationalEffects],
+    baseRepairCost: descriptor.baseRepairCost,
+    baseRepairTime: descriptor.baseRepairTime,
+    repairDcSource: descriptor.repairDcSource,
+    eligibleRepairChecks: [...descriptor.eligibleRepairChecks],
+    requiredFacilities: [...descriptor.requiredFacilities],
+    compatibleFieldRepairTags: [...descriptor.compatibleFieldRepairTags],
+    pressureBreachId,
+    hazardId: `fixture-hazard-${id}`,
+    encounterId: "event-1",
+    stageId: "stage-final",
+    roundNumber: 3,
+    effectIndex: 0,
+    sequence: 0,
+    stationId: "captain",
+    actionId: "closeout-action",
+    pressureEffectId: `fixture-effect-${id}`,
+    sourceIntentId: null,
+    activationSource: "hazard-closeout",
+    branch: "no-roll",
+    timing: "gm-confirmed",
+    visibility: "public"
+  };
+}
+
+function assertProposalShape(proposal, kind, sourceKind, sourceId, targetKind, targetId) {
+  assert.deepEqual(Object.keys(proposal), ["proposalId", "kind", "sourceKind", "sourceId", "targetKind", "targetId", "title", "description", "payload", "required"]);
+  assert.equal(proposal.kind, kind);
+  assert.equal(proposal.sourceKind, sourceKind);
+  assert.equal(proposal.sourceId, sourceId);
+  assert.equal(proposal.targetKind, targetKind);
+  assert.equal(proposal.targetId, targetId);
+  assert.equal(proposal.required, true);
+  assert.match(proposal.proposalId, /^arcflight-closeout-proposal:/);
+}
+
+function breakdownDefinition(systemId = "crew-morale") {
+  const descriptor = { consequenceId: "descriptive-consequence" };
+  const hazardValue = {
+    hazardId: `catastrophic-${systemId}`,
+    encounterId: "event-1",
+    category: "system",
+    status: "active",
+    name: "Catastrophic system failure",
+    currentEffect: descriptor,
+    activationTiming: { kind: "immediate", stationId: null, resultId: null },
+    removalMethod: { methodId: "emergency-response" },
+    ignoredConsequence: descriptor,
+    visibility: "public",
+    sourceKind: "m9-catastrophic-breakdown",
+    createdStageId: "stage-1",
+    createdRoundNumber: 1,
+    createdSequence: 0,
+    escalation: { mode: "none", currentStageId: null, stages: [], countdown: null, maximumEscalationReached: false, escalationConsequence: null },
+    collisionPolicy: "trigger-existing-consequence",
+    duration: { mode: "none", remaining: null, initial: null, decrementTiming: null },
+    failurePressureSystemId: systemId,
+    resolvedStageId: null,
+    resolvedRoundNumber: null,
+    terminalReason: null,
+    replacedByHazardId: null,
+    metadata: { collision: { consequence: descriptor } },
+    pressureSystemId: systemId,
+    eventAreaId: null,
+    pressureBreachId: "breakdown-breach",
+    stationId: "engineer",
+    actionId: "breakdown-action",
+    pressureEffectId: "breakdown-pressure-effect",
+    sourceIntentId: "breakdown-intent",
+    activationSource: "catastrophic-breakdown",
+    branch: "failure",
+    sourceTiming: "consequences",
+    sourceVisibility: "public"
+  };
+  const response = {
+    schemaVersion: 1,
+    emergencyResponseDefinitionId: `response-${systemId}`,
+    breakdownDefinitionId: `breakdown-${systemId}`,
+    systemId,
+    systemKind: "pressure-system",
+    title: "Emergency response",
+    description: "An authored emergency response.",
+    roundCount: 3,
+    rounds: [1, 2, 3].map((roundNumber) => ({ roundId: `response-round-${systemId}-${roundNumber}`, roundNumber })),
+    stabilizationOutcome: { outcomeId: `stabilized-${systemId}`, title: "Stabilized", description: "The system is contained.", nextSituationId: `next-${systemId}` },
+    failureConsequences: [{ consequenceId: `failure-${systemId}`, kind: "strand", title: "Stranded", description: "The ship is stranded.", nextSituationId: `next-${systemId}` }],
+    nextSituations: [{ nextSituationId: `next-${systemId}`, title: "Aftermath", summary: "The voyage continues.", transitionKind: "emergency" }]
+  };
+  return {
+    schemaVersion: 1,
+    breakdownDefinitionId: `breakdown-${systemId}`,
+    systemId,
+    systemKind: "pressure-system",
+    title: "Catastrophic Breakdown",
+    description: "An authored catastrophic breakdown.",
+    catastrophicHazard: hazardValue,
+    pausePlan: { timing: "after-current-segment", resumeCondition: "emergency-response-resolved" },
+    emergencyResponseDefinition: response
+  };
+}
+
+function evidenceForBlockedPreview(blocked, definition, index = 0) {
+  const breakdownResult = blocked.preview.breakdownResults[index];
+  const plan = breakdownResult.breakdownAnalysis.breakdownPlan;
+  const history = {
+    schemaVersion: 1,
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    shipId: "ship-1",
+    systemId: definition.systemId,
+    liveRevision: breakdownResult.capacityExhaustion.liveRevision,
+    breakdownDefinitionId: definition.breakdownDefinitionId,
+    emergencyResponseDefinitionId: definition.emergencyResponseDefinition.emergencyResponseDefinitionId,
+    roundCount: definition.emergencyResponseDefinition.roundCount,
+    rounds: definition.emergencyResponseDefinition.rounds.map((round) => ({ ...round, roundResult: "round-success" }))
+  };
+  const outcome = analyzeVoyageEmergencyResponseResult({
+    kind: "m9-emergency-response",
+    sessionId: "session-1",
+    breakdownDefinition: definition,
+    breakdownPlan: plan,
+    completedRoundHistory: history
+  });
+  assert.equal(outcome.ok, true, JSON.stringify(outcome.errors));
+  return { breakdownDefinition: definition, breakdownPlan: plan, completedRoundHistory: history, suppliedOutcome: outcome };
+}
+
+function negativePreviewRequest() {
+  const value = previewRequest({
+    closeoutSnapshot: snapshot({ activeHazards: [] }),
+    eventDefinition: {
+      schemaVersion: 1,
+      eventId: "event-1",
+      definitionSnapshotId: "definition-1",
+      roundCount: 3,
+      rounds: [
+        { roundId: "round-1", roundNumber: 1 },
+        { roundId: "round-2", roundNumber: 2 },
+        { roundId: "round-3", roundNumber: 3 }
+      ],
+      rewards: [],
+      enhancements: [],
+      misfortuneEnhancements: [
+        { misfortuneEnhancementId: "enhancement-1", title: "First", description: "First enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 },
+        { misfortuneEnhancementId: "enhancement-2", title: "Second", description: "Second enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 }
+      ],
+      misfortunes: [{
+        misfortuneId: "misfortune-1",
+        kind: "travel-delay",
+        title: "A misfortune",
+        description: "A lasting misfortune.",
+        tags: ["authored"],
+        persistence: "persistent",
+        enhancementIds: ["enhancement-1", "enhancement-2"],
+        scarConsequenceProposal: {
+          voidScarDefinitionId: "scar-definition-1",
+          pressureSystemId: "crew-morale",
+          source: "m8-critical-overall-failure"
+        }
+      }],
+      nextSituations: [{ nextSituationId: "next-1", title: "Next", summary: "Continue.", transitionKind: "delay" }]
+    },
+    rewardAllocation: null,
+    negativeSelection: { misfortuneId: "misfortune-1", enhancementIds: ["enhancement-1", "enhancement-2"] },
+    closeoutScarDefinitions: [{
+      schemaVersion: 1,
+      voidScarDefinitionId: "scar-definition-1",
+      pressureSystemId: "crew-morale",
+      name: "Crew morale closeout Scar",
+      description: "A crew morale Scar.",
+      operationalEffects: ["Crew morale operations are impaired."],
+      baseRepairCost: 100,
+      baseRepairTime: 1,
+      repairDcSource: "very-hard",
+      eligibleRepairChecks: ["crafting"],
+      requiredFacilities: ["drydock"],
+      compatibleFieldRepairTags: ["crew-morale-field-repair"]
+    }]
+  });
+  value.closeoutSnapshot.completedRoundHistory.rounds = value.closeoutSnapshot.completedRoundHistory.rounds
+    .map((round) => ({ ...round, roundResult: "critical-round-failure" }));
+  return value;
+}
+
+function assertExactProposal(proposal, preview, { kind, sourceKind, sourceId, targetKind, targetId, title, description, payload }) {
+  assert.deepEqual(Object.keys(proposal), ["proposalId", "kind", "sourceKind", "sourceId", "targetKind", "targetId", "title", "description", "payload", "required"]);
+  assert.equal(proposal.proposalId, `arcflight-closeout-proposal:${JSON.stringify([preview.closeoutId, kind, sourceKind, sourceId, targetKind, targetId])}`);
+  assert.equal(proposal.kind, kind);
+  assert.equal(proposal.sourceKind, sourceKind);
+  assert.equal(proposal.sourceId, sourceId);
+  assert.equal(proposal.targetKind, targetKind);
+  assert.equal(proposal.targetId, targetId);
+  assert.equal(proposal.title, title);
+  assert.equal(proposal.description, description);
+  assert.deepEqual(proposal.payload, payload);
+  assert.equal(proposal.required, true);
+}
+
+function assertPreviewFailure(result, code, path, message) {
+  assert.deepEqual(result, {
+    ok: false,
+    readyForGmReview: false,
+    closeoutId: null,
+    preview: null,
+    errors: [{ code, path, message, severity: "error" }],
+    warnings: []
+  });
 }
 
 function assertMalformedSnapshotBoundaries(closeoutSnapshot, activeHazardsPath) {
@@ -655,6 +880,474 @@ test("binds the closeout snapshot ship revision to the captured ship state", () 
   });
   assert.equal(failure.preview, null);
   assert.deepEqual(failure.errors.map((error) => error.code), ["m10-ship-revision-mismatch"]);
+});
+
+test("composes Pressure closeout results with exact reset and continuous revision arithmetic", () => {
+  const noOverflow = analyzeVoyageEncounterCloseoutPreview(previewRequest({
+    closeoutSnapshot: snapshot({
+      activeHazards: [hazard({ consequence: ignoredPressure("preview-pressure", "crew-morale", 1) })]
+    })
+  }));
+  assert.equal(noOverflow.ok, true, JSON.stringify(noOverflow.errors));
+  assert.deepEqual(Object.keys(noOverflow.preview.pressureBreachResults[0]), [
+    "hazardId", "consequenceId", "pressureEffectId", "breachRequired", "breach", "hazard", "ordinaryScarProposal", "pressureReset"
+  ]);
+  assert.equal(noOverflow.preview.pressureBreachResults[0].breachRequired, false);
+  assert.equal(noOverflow.preview.pressureBreachResults[0].breach, null);
+  assert.equal(noOverflow.preview.pressureBreachResults[0].hazard, null);
+  assert.equal(noOverflow.preview.pressureBreachResults[0].ordinaryScarProposal, null);
+  assert.equal(noOverflow.preview.pressureBreachResults[0].pressureReset, null);
+  assert.equal(noOverflow.preview.pressureBreachResults[0].pressureEffectId, "arcflight-pressure-effect:[\"hazard-closeout\",\"event-1\",\"session-1\",\"stage-final\",3,\"hazard-1\",\"preview-pressure\",1,\"crew-morale\"]");
+  assert.equal(noOverflow.preview.persistentProposals.at(-1).payload.encounterRevision, 9);
+  assert.deepEqual(noOverflow.preview.temporaryResetPlan.pressureSystems.map((entry) => entry.nextValue), [0, 0, 0, 0, 0]);
+
+  const overflow = analyzeVoyageEncounterCloseoutPreview(previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({ "crew-morale": { value: 2, capacity: 2 } }),
+      activeHazards: [hazard({ consequence: ignoredPressure("preview-overflow", "crew-morale", 3) })]
+    })
+  }));
+  assert.equal(overflow.ok, true, JSON.stringify(overflow.errors));
+  assert.equal(overflow.preview.pressureBreachResults.length, 1);
+  const breach = overflow.preview.pressureBreachResults[0];
+  assert.equal(breach.breachRequired, true);
+  assert.equal(breach.breach.pressureSystemId, "crew-morale");
+  assert.equal(breach.pressureReset.previousValue, 2);
+  assert.equal(breach.pressureReset.resetValue, 0);
+  assert.equal(overflow.preview.ordinaryScarResults.length, 1);
+  assert.equal(overflow.preview.ordinaryScarResults[0].disposition, "void-scar");
+  const m7Proposal = overflow.preview.persistentProposals.find((proposal) => proposal.kind === "void-scar-create");
+  assertProposalShape(m7Proposal, "void-scar-create", "m7-pressure-breach", overflow.preview.ordinaryScarResults[0].incomingScarProposalId, "pressure-system", "crew-morale");
+  assert.deepEqual(Object.keys(m7Proposal.payload), ["incomingScarProposal", "voidScar"]);
+  assert.equal(m7Proposal.payload.voidScar.stationId, "hazard-closeout");
+  assert.equal(m7Proposal.payload.voidScar.actionId, "hazard-closeout");
+  assert.equal(overflow.preview.persistentProposals.at(-1).payload.encounterRevision, 10);
+  assert.equal(overflow.preview.temporaryResetPlan.pressureSystems.find((entry) => entry.pressureSystemId === "crew-morale").previousValue, 0);
+
+  const duplicateSeed = analyzeVoyageEncounterCloseoutPreview(previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({ "crew-morale": { value: 2, capacity: 2 } }),
+      activeHazards: [hazard({ consequence: ignoredPressure("duplicate-incoming", "crew-morale", 3) })]
+    })
+  }));
+  assert.equal(duplicateSeed.ok, true, JSON.stringify(duplicateSeed.errors));
+  const duplicate = analyzeVoyageEncounterCloseoutPreview(previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({ "crew-morale": { value: 2, capacity: 2 } }),
+      activeHazards: [hazard({ consequence: ignoredPressure("duplicate-incoming", "crew-morale", 3) })]
+    }),
+    shipState: {
+      shipId: "ship-1", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 },
+      voidScars: [duplicateSeed.preview.ordinaryScarResults[0].voidScar]
+    }
+  }));
+  assert.deepEqual(duplicate, {
+    ok: false,
+    readyForGmReview: false,
+    closeoutId: null,
+    preview: null,
+    errors: [{ code: "m10-duplicate-scar-identity", path: "ordinaryScarResults", message: "Generated Scar already exists or repeats.", severity: "error" }],
+    warnings: []
+  });
+});
+
+test("preserves exact Task 2 temporary reset fields and proposal common schemas", () => {
+  const result = analyzeVoyageEncounterCloseoutPreview(previewRequest({
+    closeoutSnapshot: snapshot({ activeHazards: [hazard({ consequence: ignoredPersistent("preview-persistent") })] })
+  }));
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(Object.keys(result.preview.temporaryResetPlan), [
+    "momentum", "focusPools", "pressureSystems", "pendingStationBenefitIds",
+    "unconsumedRiskBidBenefitIds", "temporaryFocusPenaltyIds", "roundOrderRestrictions",
+    "hazardSuppressions", "temporaryConsequenceIds", "activeHazards"
+  ]);
+  assert.deepEqual(result.preview.temporaryResetPlan.momentum, { previousValue: 2, nextValue: 0 });
+  assert.deepEqual(result.preview.temporaryResetPlan.focusPools, [{ operatorId: "operator-1", stationId: "captain", previousValue: 1, nextValue: 0 }]);
+  assert.deepEqual(result.preview.temporaryResetPlan.roundOrderRestrictions, [{ restrictionId: "persistent-order", persistence: "persistent" }]);
+  assert.deepEqual(result.preview.temporaryResetPlan.pendingStationBenefitIds, []);
+  assert.deepEqual(result.preview.temporaryResetPlan.unconsumedRiskBidBenefitIds, []);
+  assert.deepEqual(result.preview.temporaryResetPlan.temporaryFocusPenaltyIds, []);
+  assert.deepEqual(result.preview.temporaryResetPlan.hazardSuppressions, []);
+  assert.deepEqual(result.preview.temporaryResetPlan.temporaryConsequenceIds, []);
+  assert.deepEqual(result.preview.temporaryResetPlan.activeHazards, [{ hazardId: "hazard-1", previousStatus: "active", disposition: "removed" }]);
+  const persistent = result.preview.persistentProposals.find((proposal) => proposal.kind === "persistent-consequence");
+  assertProposalShape(persistent, "persistent-consequence", "m6-hazard-closeout", "preview-persistent", "ship", "ship-1");
+  assert.deepEqual(Object.keys(persistent.payload), ["proposalId", "kind", "title", "description", "targetKind", "targetId"]);
+  assert.equal(result.preview.persistentProposals.at(-1).kind, "event-history");
+});
+
+test("classifies ordinary Scar capacity and blocks until matching Emergency Response evidence is supplied", () => {
+  const definition = breakdownDefinition();
+  const base = previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({ "crew-morale": { value: 2, capacity: 2 } }),
+      activeHazards: [hazard({ consequence: ignoredPressure("capacity-overflow", "crew-morale", 3) })]
+    }),
+    shipState: {
+      shipId: "ship-1", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 },
+      voidScars: [validM7Scar("occupied-1"), validM7Scar("occupied-2", "arkengine")]
+    },
+    breakdownDefinitions: [definition]
+  });
+  const blocked = analyzeVoyageEncounterCloseoutPreview(base);
+  assert.equal(blocked.ok, true, JSON.stringify(blocked.errors));
+  assert.equal(blocked.preview.blockedByEmergencyResponse, true);
+  assert.deepEqual(blocked.warnings, [{
+    code: "m10-emergency-response-required",
+    path: "emergencyResponseEvidence[0]",
+    message: "Breakdown requires completed Emergency Response before application.",
+    severity: "warning"
+  }]);
+  assert.equal(blocked.preview.ordinaryScarResults.length, 1);
+  assert.equal(blocked.preview.ordinaryScarResults[0].disposition, "catastrophic-breakdown");
+  assert.equal(blocked.preview.breakdownResults[0].capacityExhaustion.occupiedScarCount, 2);
+  assert.equal(blocked.preview.breakdownResults[0].capacityExhaustion.scarCapacity, 2);
+  assert.equal(blocked.preview.breakdownResults[0].capacityExhaustion.liveRevision, 4);
+  assert.equal(blocked.preview.persistentProposals.at(-1)?.kind, "catastrophic-hazard");
+
+  const resumed = analyzeVoyageEncounterCloseoutPreview({
+    ...base,
+    emergencyResponseEvidence: [evidenceForBlockedPreview(blocked, definition)]
+  });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed.errors));
+  assert.equal(resumed.preview.blockedByEmergencyResponse, false);
+  assert.equal(resumed.preview.breakdownResults.length, 1);
+  assert.equal(resumed.preview.emergencyResponseOutcomes.length, 1);
+  assert.equal(resumed.preview.persistentProposals.at(-1).kind, "event-history");
+  assert.equal(resumed.preview.temporaryResetPlan.activeHazards.at(-1).disposition, "contained");
+
+  const extra = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [{ ...evidenceForBlockedPreview(blocked, definition) }, { ...evidenceForBlockedPreview(blocked, definition) }] });
+  assert.deepEqual(extra, {
+    ok: false,
+    readyForGmReview: false,
+    closeoutId: null,
+    preview: null,
+    errors: [{ code: "m10-emergency-response-mismatch", path: "emergencyResponseEvidence[1]", message: "Supplied M9 outcome does not match regeneration.", severity: "error" }],
+    warnings: []
+  });
+});
+
+test("processes sequential Breakdowns in source order and omits later Scar sources from a blocked prefix", () => {
+  const firstDefinition = breakdownDefinition("crew-morale");
+  const secondDefinition = breakdownDefinition("arkengine");
+  const base = previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({
+        "crew-morale": { value: 2, capacity: 2 },
+        arkengine: { value: 2, capacity: 2 }
+      }),
+      activeHazards: [
+        hazard({ hazardId: "hazard-first", consequence: ignoredPressure("overflow-first", "crew-morale", 3) }),
+        hazard({ hazardId: "hazard-second", consequence: ignoredPressure("overflow-second", "arkengine", 3), pressureSystemId: "arkengine" })
+      ]
+    }),
+    shipState: {
+      shipId: "ship-1", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 },
+      voidScars: [validM7Scar("occupied-1"), validM7Scar("occupied-2", "arkengine")]
+    },
+    breakdownDefinitions: [firstDefinition, secondDefinition]
+  });
+  const firstBlocked = analyzeVoyageEncounterCloseoutPreview(base);
+  assert.equal(firstBlocked.ok, true, JSON.stringify(firstBlocked.errors));
+  assert.equal(firstBlocked.preview.breakdownResults.length, 1);
+  assert.equal(firstBlocked.preview.breakdownResults[0].capacityExhaustion.systemId, "crew-morale");
+  assert.equal(firstBlocked.preview.ordinaryScarResults.length, 1);
+  assert.equal(firstBlocked.preview.ordinaryScarResults[0].pressureSystemId, "crew-morale");
+
+  const firstEvidence = evidenceForBlockedPreview(firstBlocked, firstDefinition);
+  const secondBlocked = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [firstEvidence] });
+  assert.equal(secondBlocked.ok, true, JSON.stringify(secondBlocked.errors));
+  assert.equal(secondBlocked.preview.blockedByEmergencyResponse, true);
+  assert.equal(secondBlocked.preview.breakdownResults.length, 2);
+  assert.equal(secondBlocked.preview.breakdownResults[1].capacityExhaustion.systemId, "arkengine");
+  assert.equal(secondBlocked.warnings[0].path, "emergencyResponseEvidence[1]");
+
+  const secondEvidence = evidenceForBlockedPreview(secondBlocked, secondDefinition, 1);
+  const complete = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [firstEvidence, secondEvidence] });
+  assert.equal(complete.ok, true, JSON.stringify(complete.errors));
+  assert.equal(complete.preview.blockedByEmergencyResponse, false);
+  assert.deepEqual(complete.preview.breakdownResults.map((entry) => entry.capacityExhaustion.systemId), ["crew-morale", "arkengine"]);
+  assert.equal(complete.preview.emergencyResponseOutcomes.length, 2);
+  assert.equal(complete.preview.persistentProposals.at(-1).kind, "event-history");
+});
+
+test("rejects reordered, mismatched, and extra Emergency Response evidence with exact envelopes", () => {
+  const firstDefinition = breakdownDefinition("crew-morale");
+  const secondDefinition = breakdownDefinition("arkengine");
+  const base = previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({
+        "crew-morale": { value: 2, capacity: 2 },
+        arkengine: { value: 2, capacity: 2 }
+      }),
+      activeHazards: [
+        hazard({ hazardId: "matrix-first", consequence: ignoredPressure("matrix-first", "crew-morale", 3) }),
+        hazard({ hazardId: "matrix-second", pressureSystemId: "arkengine", consequence: ignoredPressure("matrix-second", "arkengine", 3) })
+      ]
+    }),
+    shipState: {
+      shipId: "ship-1", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 },
+      voidScars: [validM7Scar("matrix-occupied-1"), validM7Scar("matrix-occupied-2", "arkengine")]
+    },
+    breakdownDefinitions: [firstDefinition, secondDefinition]
+  });
+  const firstBlocked = analyzeVoyageEncounterCloseoutPreview(base);
+  const firstEvidence = evidenceForBlockedPreview(firstBlocked, firstDefinition);
+  const secondBlocked = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [firstEvidence] });
+  const secondEvidence = evidenceForBlockedPreview(secondBlocked, secondDefinition, 1);
+
+  const reordered = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [secondEvidence, firstEvidence] });
+  assertPreviewFailure(reordered, "m10-breakdown-regeneration-failed", "breakdownResults", "M9 Breakdown analysis failed.");
+
+  const definitionMismatchEvidence = structuredClone(firstEvidence);
+  definitionMismatchEvidence.breakdownDefinition.breakdownDefinitionId = "wrong-definition";
+  const definitionMismatch = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [definitionMismatchEvidence] });
+  assertPreviewFailure(definitionMismatch, "m10-breakdown-regeneration-failed", "breakdownResults", "M9 Breakdown analysis failed.");
+
+  const planMismatchEvidence = structuredClone(firstEvidence);
+  planMismatchEvidence.breakdownPlan.systemDisablement.disabled = false;
+  const planMismatch = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [planMismatchEvidence] });
+  assertPreviewFailure(planMismatch, "m10-breakdown-regeneration-failed", "breakdownResults", "M9 Breakdown analysis failed.");
+
+  const outcomeMismatchEvidence = structuredClone(firstEvidence);
+  outcomeMismatchEvidence.suppliedOutcome.overallResult = "round-failure";
+  const outcomeMismatch = analyzeVoyageEncounterCloseoutPreview({ ...base, emergencyResponseEvidence: [outcomeMismatchEvidence] });
+  assertPreviewFailure(outcomeMismatch, "m10-emergency-response-mismatch", "emergencyResponseEvidence[0].suppliedOutcome", "Supplied M9 outcome does not match regeneration.");
+
+  const extraEvidence = analyzeVoyageEncounterCloseoutPreview({
+    ...previewRequest(),
+    emergencyResponseEvidence: [firstEvidence]
+  });
+  assertPreviewFailure(extraEvidence, "m10-emergency-response-mismatch", "emergencyResponseEvidence[0]", "Supplied M9 outcome does not match regeneration.");
+});
+
+test("captures hostile Task 2 preview inputs safely and deterministically", () => {
+  const hostileFailure = {
+    ok: false,
+    readyForGmReview: false,
+    closeoutId: null,
+    preview: null,
+    errors: [{ code: "m10-hostile-data-capture-failed", path: "$", message: "M10 data could not be captured safely.", severity: "error" }],
+    warnings: []
+  };
+  const factories = [
+    () => {
+      const value = previewRequest();
+      Object.defineProperty(value, "kind", { enumerable: true, get() { throw new Error("getter"); } });
+      return value;
+    },
+    () => {
+      const value = previewRequest();
+      Object.defineProperty(value.eventDefinition, "eventId", { enumerable: true, get() { throw new Error("nested getter"); } });
+      return value;
+    },
+    () => {
+      const value = previewRequest();
+      const revoked = Proxy.revocable(value.shipState, {});
+      revoked.revoke();
+      value.shipState = revoked.proxy;
+      return value;
+    },
+    () => {
+      const value = previewRequest();
+      value.eventDefinition.cycle = value.eventDefinition;
+      return value;
+    },
+    () => {
+      const value = previewRequest();
+      value.eventDefinition.cycle = { back: value.eventDefinition };
+      return value;
+    }
+  ];
+  for (const make of factories) {
+    let first;
+    let second;
+    assert.doesNotThrow(() => { first = analyzeVoyageEncounterCloseoutPreview(make()); });
+    assert.doesNotThrow(() => { second = analyzeVoyageEncounterCloseoutPreview(make()); });
+    assert.deepEqual(first, hostileFailure);
+    assert.deepEqual(second, hostileFailure);
+    assert.deepEqual(first.preview, null);
+  }
+});
+
+test("accepts shared preview references while isolating returned occurrences and preserving caller data", () => {
+  const sharedTags = ["shared", "authored"];
+  const base = previewRequest();
+  base.eventDefinition.rewards[0].tags = sharedTags;
+  base.eventDefinition.misfortunes = [{
+    misfortuneId: "shared-misfortune", kind: "travel-delay", title: "Shared misfortune", description: "A shared descriptor.",
+    tags: sharedTags, persistence: "temporary", enhancementIds: [], scarConsequenceProposal: null
+  }];
+  const requestValue = base;
+  const before = structuredClone(requestValue);
+  const result = analyzeVoyageEncounterCloseoutPreview(requestValue);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(requestValue, before);
+  const returnedReward = result.preview.persistentProposals.find((proposal) => proposal.kind === "reward-grant");
+  assert.notStrictEqual(returnedReward.payload.reward.tags, sharedTags);
+  assert.notStrictEqual(returnedReward.payload.reward.tags, result.preview.resultPackage.rewardAnalysis.rewardDefinitions[0].tags);
+  returnedReward.payload.reward.tags[0] = "returned mutation";
+  assert.deepEqual(sharedTags, ["shared", "authored"]);
+  const repeated = analyzeVoyageEncounterCloseoutPreview(requestValue);
+  assert.deepEqual(repeated, analyzeVoyageEncounterCloseoutPreview(requestValue));
+});
+
+test("emits deterministic reward proposal variants with exact common and payload schemas", () => {
+  const variants = [
+    {
+      kind: "reward-grant",
+      reward: { rewardId: "reward-item", kind: "item", title: "Item reward", description: "An item.", tags: ["authored"], enhancementIds: [], voidFortune: null, fieldRepairResource: null },
+      payloadKeys: ["reward", "enhancementIds", "enhancements"]
+    },
+    {
+      kind: "void-fortune-grant",
+      reward: { rewardId: "reward-fortune", kind: "void-fortune", title: "Fortune reward", description: "A fortune.", tags: ["authored"], enhancementIds: [], voidFortune: { voidFortuneId: "fortune-1", title: "Fortune", description: "A fortune.", tags: ["fortune"] }, fieldRepairResource: null },
+      payloadKeys: ["reward", "voidFortune", "enhancementIds", "enhancements"]
+    },
+    {
+      kind: "field-repair-resource-grant",
+      reward: { rewardId: "reward-repair", kind: "field-repair-resource", title: "Repair reward", description: "A repair resource.", tags: ["authored"], enhancementIds: [], voidFortune: null, fieldRepairResource: { fieldRepairResourceId: "repair-1", title: "Repair", description: "A repair resource.", compatibleScarTags: ["arkengine"], timing: "safe-rest", safeRestRequired: true } },
+      payloadKeys: ["reward", "fieldRepairResource", "enhancementIds", "enhancements"]
+    }
+  ];
+  for (const variant of variants) {
+    const result = analyzeVoyageEncounterCloseoutPreview(previewRequest({
+      eventDefinition: { ...previewRequest().eventDefinition, rewards: [variant.reward] },
+      rewardAllocation: { eventId: "event-1", sessionId: "session-1", rewardSelections: [{ operation: "add-reward", rewardId: variant.reward.rewardId, enhancementId: null }] }
+    }));
+    assert.equal(result.ok, true, `${variant.kind}: ${JSON.stringify(result.errors)}`);
+    const proposal = result.preview.persistentProposals.find((entry) => entry.kind === variant.kind);
+    assertProposalShape(proposal, variant.kind, "m8-reward", variant.reward.rewardId, "ship", "ship-1");
+    assert.deepEqual(Object.keys(proposal.payload), variant.payloadKeys);
+    assert.equal(result.preview.persistentProposals.at(-1).kind, "event-history");
+  }
+});
+
+test("covers the complete persistent-proposal matrix and combined proposal order", () => {
+  const definition = breakdownDefinition("arkengine");
+  const combinedBase = previewRequest({
+    closeoutSnapshot: snapshot({
+      systems: pressureSystems({
+        "crew-morale": { value: 2, capacity: 2 },
+        arkengine: { value: 2, capacity: 2 }
+      }),
+      activeHazards: [
+        hazard({ hazardId: "persistent-event-hazard", category: "event", consequence: ignoredPersistent("persistent-combined") }),
+        hazard({ hazardId: "first-overflow", consequence: ignoredPressure("first-overflow", "crew-morale", 3) }),
+        hazard({ hazardId: "second-overflow", pressureSystemId: "arkengine", consequence: ignoredPressure("second-overflow", "arkengine", 3) })
+      ]
+    }),
+    shipState: {
+      shipId: "ship-1", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 },
+      voidScars: [validM7Scar("already-occupied")]
+    },
+    breakdownDefinitions: [definition]
+  });
+  const blocked = analyzeVoyageEncounterCloseoutPreview(combinedBase);
+  assert.equal(blocked.ok, true, JSON.stringify(blocked.errors));
+  const complete = analyzeVoyageEncounterCloseoutPreview({
+    ...combinedBase,
+    emergencyResponseEvidence: [evidenceForBlockedPreview(blocked, definition)]
+  });
+  assert.equal(complete.ok, true, JSON.stringify(complete.errors));
+  const preview = complete.preview;
+  assert.deepEqual(preview.persistentProposals.map(({ kind }) => kind), [
+    "reward-grant", "persistent-consequence", "void-scar-create",
+    "catastrophic-breakdown", "system-disablement", "catastrophic-hazard",
+    "emergency-response-outcome", "event-history"
+  ]);
+
+  const reward = preview.persistentProposals[0];
+  const rewardDefinition = combinedBase.eventDefinition.rewards[0];
+  assertExactProposal(reward, preview, {
+    kind: "reward-grant", sourceKind: "m8-reward", sourceId: "reward-1", targetKind: "ship", targetId: "ship-1",
+    title: rewardDefinition.title, description: rewardDefinition.description,
+    payload: { reward: rewardDefinition, enhancementIds: [], enhancements: [] }
+  });
+
+  const persistent = preview.persistentProposals[1];
+  const persistentConsequence = ignoredPersistent("persistent-combined");
+  assertExactProposal(persistent, preview, {
+    kind: "persistent-consequence", sourceKind: "m6-hazard-closeout", sourceId: "persistent-combined",
+    targetKind: "ship", targetId: "ship-1", title: persistentConsequence.persistentProposal.title,
+    description: persistentConsequence.persistentProposal.description,
+    payload: persistentConsequence.persistentProposal
+  });
+
+  const ordinaryM7 = preview.ordinaryScarResults.find((entry) => entry.sourceKind === "m7-pressure-breach");
+  const m7 = preview.persistentProposals[2];
+  assertExactProposal(m7, preview, {
+    kind: "void-scar-create", sourceKind: "m7-pressure-breach", sourceId: ordinaryM7.incomingScarProposalId,
+    targetKind: "pressure-system", targetId: ordinaryM7.pressureSystemId,
+    title: ordinaryM7.voidScar.name, description: ordinaryM7.voidScar.description,
+    payload: { incomingScarProposal: preview.pressureBreachResults.find((entry) => entry.ordinaryScarProposal)?.ordinaryScarProposal, voidScar: ordinaryM7.voidScar }
+  });
+
+  const breakdownResult = preview.breakdownResults[0];
+  const breakdown = preview.persistentProposals[3];
+  assertExactProposal(breakdown, preview, {
+    kind: "catastrophic-breakdown", sourceKind: "m9-capacity-exhaustion", sourceId: breakdownResult.capacityExhaustion.incomingScarProposalId,
+    targetKind: "pressure-system", targetId: "arkengine", title: definition.title, description: definition.description,
+    payload: { capacityExhaustion: breakdownResult.capacityExhaustion, breakdownDefinition: definition, breakdownPlan: breakdownResult.breakdownAnalysis.breakdownPlan }
+  });
+
+  const plan = breakdownResult.breakdownAnalysis.breakdownPlan;
+  assertExactProposal(preview.persistentProposals[4], preview, {
+    kind: "system-disablement", sourceKind: "m9-breakdown", sourceId: definition.breakdownDefinitionId,
+    targetKind: "pressure-system", targetId: "arkengine", title: definition.title, description: definition.description,
+    payload: plan.systemDisablement
+  });
+  assertExactProposal(preview.persistentProposals[5], preview, {
+    kind: "catastrophic-hazard", sourceKind: "m9-breakdown", sourceId: definition.breakdownDefinitionId,
+    targetKind: "event", targetId: plan.catastrophicHazard.encounterId, title: plan.catastrophicHazard.name,
+    description: "Catastrophic Hazard.", payload: plan.catastrophicHazard
+  });
+  const outcome = preview.emergencyResponseOutcomes[0];
+  assertExactProposal(preview.persistentProposals[6], preview, {
+    kind: "emergency-response-outcome", sourceKind: "m9-emergency-response",
+    sourceId: definition.emergencyResponseDefinition.emergencyResponseDefinitionId,
+    targetKind: "pressure-system", targetId: "arkengine",
+    title: definition.emergencyResponseDefinition.title, description: definition.emergencyResponseDefinition.description,
+    payload: outcome.outcomeProposal
+  });
+  const eventHistory = preview.persistentProposals[7];
+  const eventHistoryPayload = {
+    applicationId: null,
+    closeoutId: preview.closeoutId,
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    shipId: "ship-1",
+    overallResult: preview.overallResult,
+    previousEncounterRevision: 7,
+    encounterRevision: 13,
+    previousShipRevision: 4,
+    shipRevision: 6,
+    proposalIds: preview.persistentProposals.map(({ proposalId }) => proposalId)
+  };
+  assertExactProposal(eventHistory, preview, {
+    kind: "event-history", sourceKind: "m10-closeout", sourceId: preview.closeoutId,
+    targetKind: "event", targetId: "event-1", title: "Voyage closeout", description: "Approved Voyage closeout history.",
+    payload: eventHistoryPayload
+  });
+
+  const negative = analyzeVoyageEncounterCloseoutPreview(negativePreviewRequest());
+  assert.equal(negative.ok, true, JSON.stringify(negative.errors));
+  const negativePackage = negative.preview.resultPackage.negativeAnalysis.negativePackage;
+  const misfortune = negative.preview.persistentProposals.find((proposal) => proposal.kind === "misfortune");
+  assertExactProposal(misfortune, negative.preview, {
+    kind: "misfortune", sourceKind: "m8-misfortune", sourceId: negativePackage.misfortune.misfortuneId,
+    targetKind: "ship", targetId: "ship-1", title: negativePackage.misfortune.title, description: negativePackage.misfortune.description,
+    payload: { misfortune: negativePackage.misfortune, negativePackage }
+  });
+
+  const m10Scar = negative.preview.persistentProposals.find((proposal) => proposal.kind === "void-scar-create");
+  const m10Ordinary = negative.preview.ordinaryScarResults[0];
+  assertExactProposal(m10Scar, negative.preview, {
+    kind: "void-scar-create", sourceKind: "m8-critical-overall-failure", sourceId: m10Ordinary.incomingScarProposalId,
+    targetKind: "pressure-system", targetId: "crew-morale", title: m10Ordinary.voidScar.name, description: m10Ordinary.voidScar.description,
+    payload: { incomingScarProposal: negativePackage.scarConsequenceProposals[0], voidScar: m10Ordinary.voidScar }
+  });
 });
 
 test("rejects every prohibited Task 2 authority key and value with the exact failure envelope", () => {

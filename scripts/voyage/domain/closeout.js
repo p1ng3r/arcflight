@@ -1112,8 +1112,12 @@ function makeM7CloseoutScar(proposal) {
     roundNumber: proposal.roundNumber,
     effectIndex: proposal.effectIndex,
     sequence: proposal.sequence,
-    stationId: proposal.stationId,
-    actionId: proposal.actionId,
+    // The closeout Pressure-effect variant intentionally carries null station/action
+    // fields. Durable M7 Scar records still require canonical non-blank descriptors;
+    // retain authored provenance when present and use the closeout boundary labels
+    // only for this authorized null-bearing variant.
+    stationId: proposal.stationId === null ? "hazard-closeout" : proposal.stationId,
+    actionId: proposal.actionId === null ? "hazard-closeout" : proposal.actionId,
     pressureEffectId: proposal.pressureEffectId,
     sourceIntentId: proposal.sourceIntentId,
     activationSource: proposal.activationSource,
