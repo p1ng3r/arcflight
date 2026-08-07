@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   captureVoyageVoidScarRecord,
+  captureVoyageDurableVoidScarRecord,
   validateVoyageVoidScarRecord,
+  validateVoyageDurableVoidScarRecord,
   VOYAGE_VOID_SCAR_NAME_BY_PRESSURE_SYSTEM_ID,
   VOYAGE_VOID_SCAR_RECORD_FIELDS,
   VOYAGE_VOID_SCAR_STATUSES,
@@ -45,6 +47,52 @@ function scar(overrides = {}) {
     visibility: "public",
     ...overrides,
     voidScarId: overrides.voidScarId ?? `arcflight-void-scar:${JSON.stringify(["pressure-breach", pressureBreachId])}`
+  };
+}
+
+function m10Scar(overrides = {}) {
+  const source = {
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    misfortuneId: "misfortune-1",
+    voidScarDefinitionId: "scar-definition-1"
+  };
+  const pressureSystemId = overrides.pressureSystemId ?? "crew-morale";
+  return {
+    schemaVersion: 2,
+    voidScarId: `arcflight-void-scar:${JSON.stringify([
+      "m8-critical-overall-failure",
+      source.eventId,
+      source.sessionId,
+      source.definitionSnapshotId,
+      source.misfortuneId,
+      source.voidScarDefinitionId,
+      pressureSystemId
+    ])}`,
+    name: "Authored closeout Scar",
+    pressureSystemId,
+    status: "active",
+    sourceKind: "m8-critical-overall-failure",
+    description: "A closeout Scar authored for this event.",
+    operationalEffects: ["The affected system remains impaired."],
+    baseRepairCost: 100,
+    baseRepairTime: 1,
+    repairDcSource: "very-hard",
+    eligibleRepairChecks: ["crafting"],
+    requiredFacilities: ["drydock"],
+    compatibleFieldRepairTags: ["field"],
+    source,
+    ...overrides,
+    voidScarId: overrides.voidScarId ?? `arcflight-void-scar:${JSON.stringify([
+      "m8-critical-overall-failure",
+      source.eventId,
+      source.sessionId,
+      source.definitionSnapshotId,
+      source.misfortuneId,
+      source.voidScarDefinitionId,
+      pressureSystemId
+    ])}`
   };
 }
 
@@ -170,4 +218,49 @@ test("does not mutate source input or retain hostile references on failure", () 
   assert.deepEqual(source, before);
   source.description = "changed";
   assert.equal(captured.record.description, "A persistent impairment affecting ship operation.");
+});
+
+test("preserves the v1 M7 record boundary and accepts the exact v2 M10 durable union variant", () => {
+  const v1 = scar();
+  const v1Validation = validateVoyageVoidScarRecord(v1);
+  const v1Capture = captureVoyageVoidScarRecord(v1);
+  assert.deepEqual(v1Validation, { valid: true, errors: [], warnings: [] });
+  assert.equal(v1Capture.ok, true);
+  assert.equal(Object.hasOwn(v1Capture.record, "schemaVersion"), false);
+  assert.deepEqual(validateVoyageDurableVoidScarRecord(v1), { valid: true, errors: [], warnings: [] });
+
+  const v2 = m10Scar();
+  const validation = validateVoyageDurableVoidScarRecord(v2);
+  const capture = captureVoyageDurableVoidScarRecord(v2);
+  assert.deepEqual(validation, { valid: true, errors: [], warnings: [] });
+  assert.equal(capture.ok, true, JSON.stringify(capture.errors));
+  assert.deepEqual(Object.keys(capture.record), [
+    "schemaVersion", "voidScarId", "name", "pressureSystemId", "status", "sourceKind",
+    "description", "operationalEffects", "baseRepairCost", "baseRepairTime", "repairDcSource",
+    "eligibleRepairChecks", "requiredFacilities", "compatibleFieldRepairTags", "source"
+  ]);
+  assert.deepEqual(Object.keys(capture.record.source), [
+    "eventId", "sessionId", "definitionSnapshotId", "misfortuneId", "voidScarDefinitionId"
+  ]);
+  capture.record.name = "changed";
+  assert.equal(v2.name, "Authored closeout Scar");
+  assert.equal(Object.hasOwn(v1Capture.record, "schemaVersion"), false);
+});
+
+test("rejects malformed v2 source, identity, key order, descriptors, and deterministic IDs", () => {
+  const cases = [
+    ["source shape", { source: null }],
+    ["source identity", { source: { eventId: "" } }],
+    ["source key order", { source: { sessionId: "session-1", eventId: "event-1", definitionSnapshotId: "definition-1", misfortuneId: "misfortune-1", voidScarDefinitionId: "scar-definition-1" } }],
+    ["descriptor", { operationalEffects: [""] }],
+    ["deterministic ID", { voidScarId: "not-deterministic" }]
+  ];
+  for (const [label, overrides] of cases) {
+    const result = validateVoyageDurableVoidScarRecord(m10Scar(overrides));
+    assert.equal(result.valid, false, label);
+    assert.ok(result.errors.length > 0, label);
+    const capture = captureVoyageDurableVoidScarRecord(m10Scar(overrides));
+    assert.equal(capture.ok, false, label);
+    assert.equal(capture.record, null, label);
+  }
 });

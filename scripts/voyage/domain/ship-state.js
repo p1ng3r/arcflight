@@ -1,7 +1,7 @@
 import { CORE_HULLS, CORE_HULL_PLATFORM_KEYS } from "../../../data/hulls/core-hulls.js";
 import {
   captureVoyageVoidScarPlainData,
-  validateVoyageVoidScarRecord
+  validateVoyageDurableVoidScarRecord
 } from "./void-scar-schema.js";
 
 const SHIP_STATE_FIELDS = Object.freeze(["shipId", "revision", "installed", "hull", "voidScars"]);
@@ -91,7 +91,7 @@ function validateStateValues(state, errors) {
         errors.push(issue("invalid-ship-void-scar", `$.voidScars[${index}]`, "Each active Void Scar must be a plain object."));
         continue;
       }
-      const validation = validateVoyageVoidScarRecord(scar);
+      const validation = validateVoyageDurableVoidScarRecord(scar);
       for (const error of validation.errors) errors.push({ ...error, path: `$.voidScars[${index}]${error.path === "$" ? "" : error.path.slice(1)}` });
       if (validation.valid && ids.has(scar.voidScarId)) errors.push(issue("duplicate-void-scar-id", `$.voidScars[${index}].voidScarId`, "voidScarId values must be unique within ship state."));
       if (validation.valid) ids.add(scar.voidScarId);
