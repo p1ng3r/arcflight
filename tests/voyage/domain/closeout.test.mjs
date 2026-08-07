@@ -4,6 +4,7 @@ import test from "node:test";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
 import {
   analyzeVoyageEncounterCloseoutPressureBreach,
+  analyzeVoyageEncounterCloseoutPreview,
   analyzeVoyageEncounterHazardCloseout,
   captureVoyageEncounterCloseoutSnapshot,
   validateVoyageEncounterCloseoutSnapshot
@@ -182,6 +183,60 @@ function breachRequest({ systems = pressureSystems(), activeHazards = [], effect
     pressureSystems: systems,
     activeHazards,
     pressureEffect
+  };
+}
+
+function previewRequest(overrides = {}) {
+  const closeoutSnapshot = snapshot({ activeHazards: [] });
+  const eventDefinition = {
+    schemaVersion: 1,
+    eventId: "event-1",
+    definitionSnapshotId: "definition-1",
+    roundCount: 3,
+    rounds: [
+      { roundId: "round-1", roundNumber: 1 },
+      { roundId: "round-2", roundNumber: 2 },
+      { roundId: "round-3", roundNumber: 3 }
+    ],
+    rewards: [{
+      rewardId: "reward-1",
+      kind: "item",
+      title: "Reward",
+      description: "A reward.",
+      tags: ["authored"],
+      enhancementIds: [],
+      voidFortune: null,
+      fieldRepairResource: null
+    }],
+    enhancements: [],
+    misfortuneEnhancements: [],
+    misfortunes: [],
+    nextSituations: [{ nextSituationId: "next-1", title: "Next", summary: "Continue.", transitionKind: "delay" }]
+  };
+  return {
+    kind: "m10-closeout-preview",
+    sessionId: "session-1",
+    expectedEncounterRevision: 7,
+    expectedShipRevision: 4,
+    closeoutSnapshot,
+    shipState: {
+      shipId: "ship-1",
+      revision: 4,
+      installed: { hullPlatform: "void-skiff" },
+      hull: { voidScarCapacity: 2 },
+      voidScars: []
+    },
+    eventDefinition,
+    rewardAllocation: {
+      eventId: "event-1",
+      sessionId: "session-1",
+      rewardSelections: [{ operation: "add-reward", rewardId: "reward-1", enhancementId: null }]
+    },
+    negativeSelection: null,
+    closeoutScarDefinitions: [],
+    breakdownDefinitions: [],
+    emergencyResponseEvidence: [],
+    ...overrides
   };
 }
 
@@ -555,4 +610,181 @@ test("analysis is deterministic and result structures do not alias inputs or lat
   assert.equal(source.pressureSystems[0].value, 2);
   assert.equal(analyzeVoyageEncounterHazardCloseout(request(source)).postHazardPressureSystems[0].value, 0);
   assert.notStrictEqual(first.ordinaryScarProposals, second.ordinaryScarProposals);
+});
+
+test("composes a deterministic Task 2 preview from regenerated M8 and Task 1 results", () => {
+  const result = analyzeVoyageEncounterCloseoutPreview(previewRequest());
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.readyForGmReview, true);
+  assert.deepEqual(Object.keys(result.preview), [
+    "schemaVersion", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId",
+    "expectedEncounterRevision", "expectedShipRevision", "overallResult", "successfulRoundCount",
+    "failedRoundCount", "resultPackage", "hazardCloseoutResults", "pressureBreachResults",
+    "ordinaryScarResults", "breakdownResults", "emergencyResponseOutcomes", "persistentProposals",
+    "temporaryResetPlan", "blockedByEmergencyResponse", "requiresGmApproval"
+  ]);
+  assert.equal(result.preview.overallResult, "overall-success");
+  assert.equal(result.preview.persistentProposals.at(-1).kind, "event-history");
+  assert.deepEqual(result.warnings, []);
+});
+
+test("binds the closeout snapshot ship revision to the captured ship state", () => {
+  const validRequest = previewRequest();
+  const success = analyzeVoyageEncounterCloseoutPreview(validRequest);
+  assert.equal(success.ok, true, JSON.stringify(success.errors));
+  assert.equal(success.readyForGmReview, true);
+
+  const staleRequest = previewRequest();
+  staleRequest.closeoutSnapshot.shipRevision = 3;
+  let failure;
+  assert.doesNotThrow(() => {
+    failure = analyzeVoyageEncounterCloseoutPreview(staleRequest);
+  });
+  assert.deepEqual(failure, {
+    ok: false,
+    readyForGmReview: false,
+    closeoutId: null,
+    preview: null,
+    errors: [{
+      code: "m10-ship-revision-mismatch",
+      path: "expectedShipRevision",
+      message: "Ship revision is stale.",
+      severity: "error"
+    }],
+    warnings: []
+  });
+  assert.equal(failure.preview, null);
+  assert.deepEqual(failure.errors.map((error) => error.code), ["m10-ship-revision-mismatch"]);
+});
+
+test("rejects every prohibited Task 2 authority key and value with the exact failure envelope", () => {
+  const prohibitedKeys = [
+    "overallResult", "rewardAnalysis", "negativeAnalysis", "resultPackage",
+    "hazardPlan", "pressurePlan", "breachPlan", "capacityAnalysis",
+    "capacityExhaustion", "breakdownPlan", "outcomeProposal",
+    "persistentProposals", "temporaryResetPlan", "preview", "previewId",
+    "approved", "gmApproved", "approvalToken", "applicationId",
+    "applicationPlan", "nextEncounterState", "nextCloseoutSnapshot",
+    "nextShipState", "events", "patch", "ledgerEntry", "idempotencyStatus",
+    "receipt", "sessionCommitReceipt", "requestId", "timestamp"
+  ];
+  const valueFactories = [
+    ["null", () => null],
+    ["false", () => false],
+    ["zero", () => 0],
+    ["empty-string", () => ""],
+    ["empty-array", () => []],
+    ["empty-object", () => ({})]
+  ];
+  for (const key of prohibitedKeys) {
+    for (const [label, makeValue] of valueFactories) {
+      const result = analyzeVoyageEncounterCloseoutPreview(previewRequest({ [key]: makeValue() }));
+      assert.deepEqual(result, {
+        ok: false,
+        readyForGmReview: false,
+        closeoutId: null,
+        preview: null,
+        errors: [{
+          code: "m10-caller-authority-rejected",
+          path: `request.${key}`,
+          message: "Caller supplied calculated, application, persistence, or runtime authority.",
+          severity: "error"
+        }],
+        warnings: []
+      }, `${key}=${label}`);
+    }
+  }
+});
+
+test("returns the exact Task 2 request-shape failure for non-object roots", () => {
+  for (const root of [null, false, []]) {
+    let result;
+    assert.doesNotThrow(() => {
+      result = analyzeVoyageEncounterCloseoutPreview(root);
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      readyForGmReview: false,
+      closeoutId: null,
+      preview: null,
+      errors: [{
+        code: "m10-invalid-request-shape",
+        path: "request",
+        message: "Request shape, order, or root values are invalid.",
+        severity: "error"
+      }],
+      warnings: []
+    });
+  }
+});
+
+test("regenerates a selected M8 Scar as the exact M10-v2 durable record", () => {
+  const requestValue = previewRequest({
+    closeoutSnapshot: snapshot({ activeHazards: [] }),
+    eventDefinition: {
+      schemaVersion: 1,
+      eventId: "event-1",
+      definitionSnapshotId: "definition-1",
+      roundCount: 3,
+      rounds: [
+        { roundId: "round-1", roundNumber: 1 },
+        { roundId: "round-2", roundNumber: 2 },
+        { roundId: "round-3", roundNumber: 3 }
+      ],
+      rewards: [],
+      enhancements: [],
+      misfortuneEnhancements: [
+        { misfortuneEnhancementId: "enhancement-1", title: "First", description: "First enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 },
+        { misfortuneEnhancementId: "enhancement-2", title: "Second", description: "Second enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 }
+      ],
+      misfortunes: [{
+        misfortuneId: "misfortune-1",
+        kind: "travel-delay",
+        title: "A misfortune",
+        description: "A lasting misfortune.",
+        tags: ["authored"],
+        persistence: "persistent",
+        enhancementIds: ["enhancement-1", "enhancement-2"],
+        scarConsequenceProposal: {
+          voidScarDefinitionId: "scar-definition-1",
+          pressureSystemId: "crew-morale",
+          source: "m8-critical-overall-failure"
+        }
+      }],
+      nextSituations: [{ nextSituationId: "next-1", title: "Next", summary: "Continue.", transitionKind: "delay" }]
+    },
+    rewardAllocation: null,
+    negativeSelection: { misfortuneId: "misfortune-1", enhancementIds: ["enhancement-1", "enhancement-2"] },
+    closeoutScarDefinitions: [{
+      schemaVersion: 1,
+      voidScarDefinitionId: "scar-definition-1",
+      pressureSystemId: "crew-morale",
+      name: "Crew morale closeout Scar",
+      description: "A crew morale Scar.",
+      operationalEffects: ["Crew morale operations are impaired."],
+      baseRepairCost: 100,
+      baseRepairTime: 1,
+      repairDcSource: "very-hard",
+      eligibleRepairChecks: ["crafting"],
+      requiredFacilities: ["drydock"],
+      compatibleFieldRepairTags: ["crew-morale-field-repair"]
+    }]
+  });
+  requestValue.closeoutSnapshot.completedRoundHistory.rounds = requestValue.closeoutSnapshot.completedRoundHistory.rounds.map((round) => ({ ...round, roundResult: "critical-round-failure" }));
+  const result = analyzeVoyageEncounterCloseoutPreview(requestValue);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.preview.overallResult, "overall-failure");
+  assert.equal(result.preview.ordinaryScarResults.length, 1);
+  const ordinary = result.preview.ordinaryScarResults[0];
+  assert.equal(ordinary.sourceKind, "m8-critical-overall-failure");
+  assert.equal(ordinary.disposition, "void-scar");
+  assert.deepEqual(Object.keys(ordinary.voidScar), [
+    "schemaVersion", "voidScarId", "name", "pressureSystemId", "status", "sourceKind",
+    "description", "operationalEffects", "baseRepairCost", "baseRepairTime", "repairDcSource",
+    "eligibleRepairChecks", "requiredFacilities", "compatibleFieldRepairTags", "source"
+  ]);
+  assert.equal(ordinary.voidScar.schemaVersion, 2);
+  assert.equal(ordinary.voidScar.sourceKind, "m8-critical-overall-failure");
+  assert.deepEqual(Object.keys(ordinary.voidScar.source), ["eventId", "sessionId", "definitionSnapshotId", "misfortuneId", "voidScarDefinitionId"]);
+  assert.equal(result.preview.persistentProposals.find((proposal) => proposal.kind === "void-scar-create").payload.incomingScarProposal.source, "m8-critical-overall-failure");
 });

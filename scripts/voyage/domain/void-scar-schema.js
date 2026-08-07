@@ -55,6 +55,30 @@ export const VOYAGE_VOID_SCAR_RECORD_FIELDS = Object.freeze([
   ...VOID_SCAR_PROVENANCE_FIELDS
 ]);
 export const VOYAGE_VOID_SCAR_PROVENANCE_FIELDS = VOID_SCAR_PROVENANCE_FIELDS;
+const M10_CLOSEOUT_VOID_SCAR_SOURCE_FIELDS = Object.freeze([
+  "eventId",
+  "sessionId",
+  "definitionSnapshotId",
+  "misfortuneId",
+  "voidScarDefinitionId"
+]);
+const VOYAGE_M10_CLOSEOUT_VOID_SCAR_RECORD_FIELDS = Object.freeze([
+  "schemaVersion",
+  "voidScarId",
+  "name",
+  "pressureSystemId",
+  "status",
+  "sourceKind",
+  "description",
+  "operationalEffects",
+  "baseRepairCost",
+  "baseRepairTime",
+  "repairDcSource",
+  "eligibleRepairChecks",
+  "requiredFacilities",
+  "compatibleFieldRepairTags",
+  "source"
+]);
 
 const PRESSURE_SYSTEM_SET = new Set(VOYAGE_PRESSURE_SYSTEM_IDS);
 const VOID_SCAR_BRANCHES = new Set(Object.values(VOYAGE_ACTION_OUTCOME_BRANCHES));
@@ -76,6 +100,16 @@ function pathFor(path, key) {
 
 function isNonBlankString(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    return false;
+  }
 }
 
 function safeIsArray(value) {
@@ -289,6 +323,18 @@ function canonicalVoidScarId(pressureBreachId) {
   return `arcflight-void-scar:${JSON.stringify(["pressure-breach", pressureBreachId])}`;
 }
 
+function canonicalM10CloseoutVoidScarId(source) {
+  return `arcflight-void-scar:${JSON.stringify([
+    "m8-critical-overall-failure",
+    source.eventId,
+    source.sessionId,
+    source.definitionSnapshotId,
+    source.misfortuneId,
+    source.voidScarDefinitionId,
+    source.pressureSystemId
+  ])}`;
+}
+
 function readOptions(options) {
   const captured = captureRoot(options, "$.options");
   const errors = [...captured.errors];
@@ -337,7 +383,57 @@ function validateValues(record, options, errors) {
 function inspect(record, options) {
   const captured = captureRoot(record, "$");
   const errors = [...captured.errors];
-  if (errors.length === 0) validateValues(captured.value, options, errors);
+  if (errors.length === 0) {
+    if (captured.value === null || typeof captured.value !== "object" || Array.isArray(captured.value)) {
+      errors.push(issue("invalid-void-scar-object", "$", "Void Scar data must contain only plain objects and arrays."));
+    } else {
+      validateValues(captured.value, options, errors);
+    }
+  }
+  return { value: errors.length === 0 ? captured.value : null, errors };
+}
+
+function validateM10CloseoutValues(record, errors) {
+  exactKeys(record, VOYAGE_M10_CLOSEOUT_VOID_SCAR_RECORD_FIELDS, "$", errors, "unexpected-void-scar-field");
+  if (record.schemaVersion !== 2) errors.push(issue("invalid-void-scar-schema-version", "$.schemaVersion", "Void Scar schemaVersion must be 2."));
+  validateString(record.voidScarId, "$.voidScarId", errors);
+  validateString(record.name, "$.name", errors, "invalid-void-scar-name");
+  if (!PRESSURE_SYSTEM_SET.has(record.pressureSystemId)) errors.push(issue("invalid-void-scar-pressure-system", "$.pressureSystemId", "Pressure-system identifier is not canonical."));
+  if (record.status !== VOYAGE_VOID_SCAR_STATUS) errors.push(issue("invalid-void-scar-status", "$.status", "Void Scar status must be active."));
+  if (record.sourceKind !== "m8-critical-overall-failure") errors.push(issue("invalid-void-scar-source-kind", "$.sourceKind", "Void Scar sourceKind must be m8-critical-overall-failure."));
+  validateString(record.description, "$.description", errors, "invalid-void-scar-description");
+  validateDescriptorArray(record.operationalEffects, "$.operationalEffects", errors);
+  validateDescriptor(record.baseRepairCost, "$.baseRepairCost", errors, { allowNumber: true });
+  validateDescriptor(record.baseRepairTime, "$.baseRepairTime", errors, { allowNumber: true });
+  validateDescriptor(record.repairDcSource, "$.repairDcSource", errors, { allowString: true });
+  validateDescriptorArray(record.eligibleRepairChecks, "$.eligibleRepairChecks", errors);
+  validateDescriptorArray(record.requiredFacilities, "$.requiredFacilities", errors);
+  validateDescriptorArray(record.compatibleFieldRepairTags, "$.compatibleFieldRepairTags", errors);
+  const sourceKeys = isPlainObject(record.source)
+    && Object.keys(record.source).length === M10_CLOSEOUT_VOID_SCAR_SOURCE_FIELDS.length
+    && Object.keys(record.source).every((key, index) => key === M10_CLOSEOUT_VOID_SCAR_SOURCE_FIELDS[index]);
+  if (!sourceKeys) {
+    errors.push(issue("invalid-void-scar-source", "$.source", "Closeout Void Scar source is invalid."));
+  } else {
+    for (const field of M10_CLOSEOUT_VOID_SCAR_SOURCE_FIELDS) validateString(record.source[field], `$.source.${field}`, errors, "invalid-void-scar-source");
+    if (record.voidScarId !== canonicalM10CloseoutVoidScarId({ ...record.source, pressureSystemId: record.pressureSystemId })) {
+      errors.push(issue("invalid-void-scar-id", "$.voidScarId", "Void Scar ID must be deterministic from its closeout source."));
+    }
+  }
+}
+
+function inspectDurable(record) {
+  const captured = captureRoot(record, "$");
+  const errors = [...captured.errors];
+  if (errors.length === 0) {
+    if (captured.value === null || typeof captured.value !== "object" || Array.isArray(captured.value)) {
+      errors.push(issue("invalid-void-scar-object", "$", "Void Scar data must contain only plain objects and arrays."));
+    } else if (captured.value.schemaVersion === 2) {
+      validateM10CloseoutValues(captured.value, errors);
+    } else {
+      validateValues(captured.value, {}, errors);
+    }
+  }
   return { value: errors.length === 0 ? captured.value : null, errors };
 }
 
@@ -353,6 +449,21 @@ export function captureVoyageVoidScarRecord(record, options = {}) {
   if (!parsedOptions.ok) return { ok: false, record: null, errors: parsedOptions.errors, warnings: [] };
   const result = inspect(record, parsedOptions.value);
   return { ok: result.errors.length === 0, record: result.errors.length === 0 ? result.value : null, errors: result.errors, warnings: [] };
+}
+
+export function validateVoyageDurableVoidScarRecord(record) {
+  const result = inspectDurable(record);
+  return { valid: result.errors.length === 0, errors: result.errors, warnings: [] };
+}
+
+export function captureVoyageDurableVoidScarRecord(record) {
+  const result = inspectDurable(record);
+  return {
+    ok: result.errors.length === 0,
+    record: result.errors.length === 0 ? result.value : null,
+    errors: result.errors,
+    warnings: []
+  };
 }
 
 // Used by the durable ship-state boundary so both public APIs share the same
