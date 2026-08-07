@@ -51,8 +51,9 @@ Milestone 10 owns:
   temporary-reset preview composition;
 - GM review of one regenerated complete preview;
 - one immutable approved application plan;
-- a pure atomic encounter/ship application candidate;
-- active-GM-gated Foundry persistence after confirmation;
+- a pure all-or-nothing encounter/ship application candidate;
+- active-GM-gated ship persistence after confirmation and exact reconciliation
+  of M11 Event Session reservation and commit receipts;
 - optimistic revision checks, durable idempotency, and single-Actor
   retry/reconciliation; and
 - preservation of PF2e-owned data and sibling Arcflight flags.
@@ -104,9 +105,14 @@ M10 must preserve this exact order:
 11. compose one complete mechanical preview;
 12. obtain one GM confirmation of that regenerated preview;
 13. create a recovery checkpoint and durable prepared ledger entry;
-14. revalidate active GM, identities, revisions, and duplicate state;
-15. persist the complete approved ship change and committed ledger entry;
-16. return the isolated completed encounter state and audit history record.
+14. require M11 to bind live Event Session identity/revision and reserve the
+    application;
+15. revalidate active GM, live ship identity/revision, and duplicate state;
+16. persist the complete approved ship change and mark it
+    `ship-applied-awaiting-session`;
+17. require M11 to persist and verify the reserved Event Session closeout;
+18. validate M11's exact session-commit receipt and mark the ledger committed;
+19. return the isolated completed encounter state and audit history record.
 
 No persistent ship write may occur before Step 12. Pressure resets only after
 all Hazard effects and resulting Breaches have been processed. A failed step
@@ -173,6 +179,9 @@ Foundry document. Keys are exact and ordered:
   encounterRevision,
   shipRevision,
   lifecycleState,
+  stageId,
+  roundNumber,
+  phase,
   completedRoundHistory,
   momentum,
   focusPools,
@@ -188,6 +197,13 @@ Foundry document. Keys are exact and ordered:
 ```
 
 `schemaVersion` is `1`; `lifecycleState` is exactly `"active"` or `"paused"`.
+`stageId` is the authoritative nonblank final-stage identity, `roundNumber` is
+the positive safe integer of the final completed round, and `phase` is exactly
+`"cleanup-advance"`. The completed history's `roundCount` equals
+`roundNumber`, and its final round has that round number. `stageId` is captured
+independently from the Event Session's final stage. These values are captured
+session evidence and are never synthesized from array
+positions or the current wall-clock/runtime state.
 The six identity/revision fields bind to the Event Definition, M8 history,
 M7 ship state, and any M9 plan/history. Both revisions are nonnegative safe
 integers. `completedRoundHistory` is the complete M8 history.
@@ -200,7 +216,8 @@ and station identities are unique, and only occupied operators appear.
 `pressureSystems` is an array in canonical five-system order. Each record is
 exactly `{ pressureSystemId, value, capacity }` and follows existing Pressure
 rules. `activeHazards` contains complete isolated M6 active Hazard records in
-authoritative creation/order sequence.
+authoritative creation/order sequence; every Hazard `encounterId` equals the
+snapshot `eventId`.
 
 The five `...Ids` collections are dense duplicate-free arrays of nonblank
 strings. `roundOrderRestrictions` has exact records
@@ -265,6 +282,40 @@ applied once to the simulation, then that Hazard is included in the removal
 plan. Closeout emits one proposed
 `voyage.hazard-closeout-consequence-applied` event per Hazard in that order.
 
+The exact event, created only by controlled application, is:
+
+```js
+{
+  type: "voyage.hazard-closeout-consequence-applied",
+  applicationId,
+  closeoutId,
+  encounterId,
+  eventId,
+  sessionId,
+  definitionSnapshotId,
+  shipId,
+  stageId,
+  roundNumber,
+  phase: "cleanup-advance",
+  hazardId,
+  consequenceId,
+  consequenceKind,
+  pressureSystemId,
+  pressureEffect,
+  previousHazard,
+  disposition: "removed",
+  previousEncounterRevision,
+  encounterRevision
+}
+```
+
+`encounterId` equals `eventId`. `pressureSystemId` and `pressureEffect` are
+null for a persistent consequence. Otherwise `pressureSystemId` is the exact
+target and `pressureEffect` is the exact descriptor below. `consequenceKind`
+equals the captured consequence's `kind`. `previousHazard` is
+the complete captured M6 Hazard. Each event advances encounter revision by
+exactly one before any associated Breach transaction.
+
 ## 9. Pressure and Breach closeout rules
 
 Pressure consequences are simulated sequentially. For each Hazard:
@@ -281,6 +332,110 @@ One large delta produces one Breach, not multiple Breaches. Any overflow beyond
 that Breach is represented by the canonical Breach record and is not carried
 into a second implicit Breach. A same-system Hazard collision follows the
 existing authored M6 collision policy and never invokes arbitrary data.
+
+M10 authorizes this single closeout source variant of the canonical M6
+Pressure-effect schema; no other M6 field or vocabulary is broadened:
+
+```js
+{
+  pressureEffectId,
+  encounterId,
+  stageId,
+  roundNumber,
+  sequence,
+  stationId: null,
+  actionId: null,
+  pressureSystemId,
+  delta,
+  timing: "gm-confirmed",
+  sourceKind: "hazard-closeout",
+  sourceIntentId,
+  activationSource: "event-closeout",
+  branch: "no-roll",
+  visibility
+}
+```
+
+`sourceIntentId` is the consequence ID; `visibility` is copied from the
+captured Hazard; and `sequence` is the one-based Hazard position. The ID is:
+
+```js
+`arcflight-pressure-effect:${JSON.stringify([
+  "hazard-closeout",
+  eventId,
+  sessionId,
+  stageId,
+  roundNumber,
+  hazardId,
+  consequenceId,
+  sequence,
+  pressureSystemId
+])}`
+```
+
+The existing public M6 Breach APIs continue to require a complete canonical
+encounter state and are not called with a Section 7 projection. M10 instead
+adds the narrow pure `analyzeVoyageEncounterCloseoutPressureBreach` boundary.
+It accepts exactly:
+
+```js
+{
+  kind: "m10-closeout-pressure-breach",
+  expectedEncounterRevision,
+  closeoutContext: {
+    eventId,
+    sessionId,
+    stageId,
+    roundNumber,
+    phase: "cleanup-advance"
+  },
+  pressureSystems,
+  activeHazards,
+  pressureEffect
+}
+```
+
+The nested keys are exact and ordered. `pressureSystems` is the current
+isolated simulation immediately before this effect. `activeHazards` is the
+current isolated collection immediately after the source Hazard's ordered
+closeout removal, so a resulting canonical Breach collision cannot collide
+with the Hazard just removed. The effect's `encounterId` equals
+`closeoutContext.eventId`; its stage/round values match the context; and the
+expected revision is the revision produced by that Hazard's closeout event.
+
+Its exact envelope is:
+
+```js
+{
+  ok,
+  breachRequired,
+  previousEncounterRevision,
+  encounterRevision,
+  nextPressureSystems,
+  nextActiveHazards,
+  breach,
+  hazard,
+  ordinaryScarProposal,
+  pressureReset,
+  event,
+  errors,
+  warnings
+}
+```
+
+No-Breach success leaves both revisions equal, returns complete updated
+Pressure/Hazard arrays, and uses null for the last five result fields. Breach
+success delegates to the existing M6 arithmetic and canonical record builders,
+advances encounter revision exactly once, and returns their complete isolated
+Breach, Hazard, M7 proposal, reset, and exact
+`voyage.pressure-breach-applied` event. Failure returns both revisions null,
+both next arrays empty, the five nullable result/event fields null, nonempty
+errors, and `warnings: []`. It never accepts or fabricates a full encounter
+state.
+
+When a Breach occurs, M10 preserves the exact M6 event, revision advance,
+canonical Hazard, and M7 ordinary Scar proposal. M10 never reconstructs M7
+provenance from the five-field closeout consequence.
 
 After every Hazard has been processed, all five Pressure systems reset to zero
 using the existing `analyzeVoyageEncounterPressureCloseoutReset` semantics.
@@ -344,6 +499,46 @@ the final Pressure reset, classify Scar capacity, mutate a state, or emit an
 event. `hazardRemovalPlan` has one exact
 `{ hazardId, previousStatus: "active", disposition: "removed" }` entry per
 processed ordinary Hazard.
+
+Each `hazardCloseoutResults` entry has exact keys:
+
+```js
+{
+  hazardId,
+  consequenceId,
+  consequenceKind,
+  consequence,
+  pressureEffect,
+  removal
+}
+```
+
+`consequence` is the complete Section 8 variant. `pressureEffect` is the exact
+Section 9 descriptor or null. `removal` is the exact removal-plan entry.
+
+Each pressure consequence produces one `pressureBreachResults` entry:
+
+```js
+{
+  hazardId,
+  consequenceId,
+  pressureEffectId,
+  breachRequired,
+  breach,
+  hazard,
+  ordinaryScarProposal,
+  pressureReset
+}
+```
+
+When no Breach occurs, the last four fields are null. When one occurs,
+`breach`, `hazard`, `ordinaryScarProposal`, and `pressureReset` are the exact
+isolated M6/M7 transaction outputs and `breachRequired` is true. Analyzer
+failure returns both result arrays empty and never returns a partial prefix.
+`ordinaryScarProposals` is exactly the dense ordered sequence of the non-null
+`ordinaryScarProposal` fields; each retains the complete M7 schema and key
+order. `postHazardPressureSystems` has the Section 7 Pressure-record shape and
+reflects all consequences/Breach resets before the final closeout reset.
 
 ## 10. Exact preview request
 
@@ -480,6 +675,25 @@ coerced into one. M10 generates this exact durable record variant:
 }
 ```
 
+The captured three-field M8 `scarConsequenceProposal` has no authored proposal
+ID. M10 assigns this deterministic inspection identity before capacity review:
+
+```js
+`arcflight-closeout-scar-proposal:${JSON.stringify([
+  "m8-critical-overall-failure",
+  eventId,
+  sessionId,
+  definitionSnapshotId,
+  misfortuneId,
+  voidScarDefinitionId,
+  pressureSystemId
+])}`
+```
+
+That value is the M8 source's `incomingScarProposalId` everywhere in
+Sections 14–17. An M7 source instead retains its existing exact
+`voidScarProposalId`; M10 never renames or recalculates it.
+
 The deterministic ID is:
 
 ```js
@@ -494,15 +708,29 @@ The deterministic ID is:
 ])}`
 ```
 
-M10 extends durable `shipState.voidScars` to a versioned union of unchanged M7
-Pressure-Breach records and this exact M10 variant. Both variants consume one
-capacity slot. Existing M7 creation and repair behavior remains unchanged;
-M10 implementation must add union validation before persisting the first M10
-record. No existing record is rewritten merely because the union exists. M7
-repair analysis/application must accept either union variant and apply the same
-existing repair eligibility, cost/time, removal, revision, and event rules;
-only creation provenance differs. This is a narrow schema extension, not a new
-repair mechanic.
+M10 extends durable `shipState.voidScars` to a discriminated union of unchanged
+M7 Pressure-Breach records (the exact legacy key set with no `schemaVersion`)
+and this exact M10 variant. Both variants consume one capacity slot. No
+existing record is rewritten merely because the union exists.
+
+The extension is owned explicitly by Task 2. It adds
+`validateVoyageDurableVoidScarRecord` and
+`captureVoyageDurableVoidScarRecord`; these accept exactly the union above.
+The existing `validateVoyageVoidScarRecord` and M7 creation APIs retain their
+exact v1-only behavior. M7 ship-state and capacity capture use the new durable
+union boundary, count either variant once, and otherwise preserve their public
+schemas and diagnostics.
+
+M7 repair analysis/application is narrowly extended to accept either union
+variant as `previousVoidScar`. All eligibility, cost/time, removal, revision,
+and event rules remain unchanged. The existing
+`voyage.void-scar-repaired` event retains its exact existing payload/key order
+and carries the
+complete matching union variant in `previousVoidScar`; no v2-only field is
+projected into an M7 record. Task 2 owns changes and focused witnesses in
+`void-scar-schema.js`, `ship-state.js`, `void-scar-capacity.js`, and
+`void-scar-repair.js`. This is a schema-boundary extension, not a new creation
+or repair mechanic.
 
 ## 14. Capacity classification and M9 handoff
 
@@ -588,11 +816,49 @@ has exact common keys:
 - `emergency-response-outcome`; or
 - `event-history`.
 
-`payload` is the complete captured descriptor owned by the applicable prior
-contract or the exact M10 descriptor above. It is not arbitrary executable
-data. Proposal IDs are deterministic component-safe identities and unique.
-Every proposal is required once its source result and GM selection are valid;
-M10 does not authorize selective deletion of legitimate consequences.
+`sourceKind`, `sourceId`, `targetKind`, and `targetId` are nonblank strings;
+`targetKind` is exactly `"ship"`, `"system"`, `"pressure-system"`, `"event"`,
+`"crew"`, or `"resource"`. `title` and `description` are nonblank captured
+text. The ID
+for every entry is:
+
+```js
+`arcflight-closeout-proposal:${JSON.stringify([
+  closeoutId,
+  kind,
+  sourceKind,
+  sourceId,
+  targetKind,
+  targetId
+])}`
+```
+
+Two sources resolving to the same tuple are a duplicate identity error. The
+following table fixes every common-field mapping and payload. “Exact” means
+the complete captured object governed by the named prior section/contract,
+not a subset or arbitrary wrapper.
+
+| `kind` | `sourceKind` / `sourceId` | `targetKind` / `targetId` | `title` and `description` | exact `payload` |
+| --- | --- | --- | --- | --- |
+| `reward-grant` | `"m8-reward"` / `reward.rewardId` | `"ship"` / ship ID | `reward.title` / `reward.description` | `{ reward, enhancementIds, enhancements }` using the exact M8 reward and selected complete Enhancement records |
+| `void-fortune-grant` | `"m8-reward"` / `reward.rewardId` | `"ship"` / ship ID | `reward.voidFortune.title` / `.description` | `{ reward, voidFortune, enhancementIds, enhancements }` using the exact M8 descriptors |
+| `field-repair-resource-grant` | `"m8-reward"` / `reward.rewardId` | `"ship"` / ship ID | `reward.fieldRepairResource.title` / `.description` | `{ reward, fieldRepairResource, enhancementIds, enhancements }` using the exact M8 descriptors |
+| `misfortune` | `"m8-misfortune"` / `misfortune.misfortuneId` | `"ship"` / ship ID | `misfortune.title` / `misfortune.description` | `{ misfortune, negativePackage }` using the exact selected M8 descriptors |
+| `persistent-consequence` | `"m6-hazard-closeout"` / consequence ID | descriptor `targetKind` / `targetId` | descriptor `title` / `description` | the exact Section 8 `persistentProposal` |
+| `void-scar-create` | `"m7-pressure-breach"` or `"m8-critical-overall-failure"` / incoming Scar proposal ID | `"pressure-system"` / system ID | `voidScar.name` / `voidScar.description` | `{ incomingScarProposal, voidScar }`, both complete canonical records |
+| `catastrophic-breakdown` | `"m9-capacity-exhaustion"` / incoming Scar proposal ID | `"pressure-system"` / system ID | `breakdownDefinition.title` / `.description` | `{ capacityExhaustion, breakdownDefinition, breakdownPlan }`, each complete M9 data |
+| `system-disablement` | `"m9-breakdown"` / Breakdown Definition ID | `"pressure-system"` / system ID | `breakdownDefinition.title` / `.description` | exact M9 `systemDisablement` |
+| `catastrophic-hazard` | `"m9-breakdown"` / Breakdown Definition ID | `"event"` / event ID | `catastrophicHazard.name` / `.currentEffect` | exact M9 `catastrophicHazard` |
+| `emergency-response-outcome` | `"m9-emergency-response"` / Emergency Response Definition ID | `"pressure-system"` / system ID | Emergency Response Definition `title` / `description` | exact M9 `outcomeProposal` |
+| `event-history` | `"m10-closeout"` / closeout ID | `"event"` / event ID | fixed `"Voyage closeout"` / fixed `"Approved Voyage closeout history."` | exact Section 20 event-history record |
+
+The reward payload wrappers use the listed keys in that order. Enhancement ID
+and record arrays are dense, ordered exactly as M8 allocation, and mutually
+corresponding. The Misfortune wrapper uses its listed key order. Scar and
+Breakdown wrappers use their listed key order. All other payloads retain their
+named canonical key order. Every proposal is required once its source result
+and GM selection are valid; M10 does not authorize selective deletion of
+legitimate consequences.
 
 The complete proposal order is:
 
@@ -681,6 +947,50 @@ envelopes in Breakdown order. Every nested result is regenerated and isolated.
 Preview equality is exact,
 structural, and canonical-key-order-sensitive. A preview is not an approval or
 application token.
+
+The Hazard and Breach arrays use the exact Section 9.1 entries. Each
+`ordinaryScarResults` entry has exact keys:
+
+```js
+{
+  incomingScarProposalId,
+  sourceKind,
+  pressureSystemId,
+  disposition,
+  voidScar,
+  capacityExhaustion,
+  breakdownAnalysis,
+  emergencyResponseAnalysis
+}
+```
+
+`sourceKind` is exactly `"m7-pressure-breach"` or
+`"m8-critical-overall-failure"`. `disposition` is `"void-scar"` or
+`"catastrophic-breakdown"`. For a created
+Scar, `voidScar` is the complete M7 or M10-v2 record and the last three fields
+are null. For exhaustion, `voidScar` is null and the last three fields are the
+complete M9 handoff, Task 2 envelope, and either null or the complete Task 4
+envelope. A still-required response uses null only for
+`emergencyResponseAnalysis`; no fabricated outcome is returned.
+
+Each `breakdownResults` entry has exact keys:
+
+```js
+{
+  incomingScarProposalId,
+  capacityExhaustion,
+  breakdownDefinitionId,
+  breakdownAnalysis,
+  emergencyResponseAnalysis
+}
+```
+
+All non-null values are the complete corresponding M9 records/envelopes.
+Entries appear in ordinary-Scar source order. A preview failure has
+`preview: null`, so no nested partial results escape. A valid blocked preview
+contains the complete deterministic prefix through the first unresolved
+Breakdown; later ordinary Scar sources are not represented until regeneration
+can resume.
 
 The analyzer envelope has exact keys:
 
@@ -818,8 +1128,10 @@ except its `lifecycleState` is exactly `"completed-success"` or
 - applies the Section 16 reset;
 - removes processed ordinary Hazards;
 - retains only persistent round-order restrictions;
-- increments `encounterRevision` exactly once; and
-- emits one `voyage.closeout-applied` event.
+- advances `encounterRevision` once for each Hazard consequence event, once
+  more for each canonical M6 Breach transaction, then once for final closeout;
+  and
+- emits those exact events followed by one `voyage.closeout-applied` event.
 
 The ship candidate:
 
@@ -831,13 +1143,13 @@ The ship candidate:
   persistent ship proposal is applied, regardless of that batch's size; and
 - appends the same closeout history identity.
 
-M10 may reuse M7 analyzers and record builders. It applies ordinary Scars in
+M10 must reuse M6 Breach and M7 analyzers/record builders. It applies ordinary Scars in
 proposal order to the simulated ship state, retaining each canonical M7 or
 M10-v2 Scar-created event and revision. The optional non-Scar batch emits one
 `voyage.closeout-persistent-state-applied` event. Encounter closeout emits one
 `voyage.closeout-applied` event. All candidate operations are calculated before
 Foundry persistence, which still uses one final Actor gameplay-state update.
-M10 must not collapse, duplicate, or relabel M7 events.
+M10 must not collapse, duplicate, or relabel M6 or M7 events.
 
 The M10-v2 Scar-created event has exact keys:
 
@@ -894,7 +1206,12 @@ The final closeout event has:
 ```
 
 Every proposal list preserves Section 15 order. Every nested proposal, record,
-and event is independently isolated.
+and event is independently isolated. In the final closeout event,
+`previousEncounterRevision` is the revision immediately after the last Hazard
+or Breach event (or the request revision when there were none), and
+`encounterRevision` is exactly one greater. In the Section 20 history record,
+`previousEncounterRevision` is the request's original expected revision and
+`encounterRevision` is the final candidate revision.
 
 The exact result envelope is:
 
@@ -911,9 +1228,14 @@ The exact result envelope is:
 }
 ```
 
-Success returns both isolated candidates and events in this order: zero or more
-Scar-created events, the optional non-Scar batch event, then exactly one
-closeout event. Failure returns null IDs, null candidates, `events: []`,
+Success returns both isolated candidates and events in this order: for each
+ordinary Hazard, one Section 8 closeout-consequence event followed immediately
+by its M6 Pressure-Breach event when a Breach occurred; then zero or more
+Scar-created events; the optional non-Scar batch event; and exactly one final
+closeout event. The Breach event is not duplicated when its associated M7 Scar
+is later created. Every event's previous/current revision pair forms an exact
+continuous chain within its own encounter or ship revision domain. Failure
+returns null IDs, null candidates, `events: []`,
 nonempty errors, and `warnings: []`. Neither input is mutated. M11 later owns
 mapping and persisting the completed snapshot into its recoverable Event
 Session; M10 does not write a second encounter document.
@@ -1019,7 +1341,7 @@ fails closed; silent migration is prohibited.
 Safe first initialization uses `schemaVersion: 1`, `revision: 0`, and empty
 arrays for every collection in Section 20. It occurs during preview/state
 projection before approval and is persisted only as part of the approved
-prepared/committed protocol.
+prepared/ship-applied-awaiting-session/committed protocol.
 
 ## 21. Ledger, idempotency, and reconciliation
 
@@ -1034,20 +1356,28 @@ Each `closeoutLedger` entry has exact keys:
   sessionId,
   definitionSnapshotId,
   shipId,
+  expectedEncounterRevision,
+  resultingEncounterRevision,
   expectedShipRevision,
   resultingShipRevision,
   gmUserId,
   beforeState,
   afterState,
-  events
+  completedCloseoutSnapshot,
+  events,
+  sessionReservationReceipt,
+  sessionCommitReceipt
 }
 ```
 
-`status` is `"prepared"`, `"committed"`, or `"reconciliation-required"`.
+`status` is `"prepared-awaiting-session"`,
+`"ship-applied-awaiting-session"`, `"committed"`, or
+`"reconciliation-required"`.
 No timestamp is required for identity or ordering. `beforeState` and
 `afterState` are complete captured nonrecursive gameplay snapshots from
-Section 20. `events` is the complete isolated ordered array returned by pure
-application.
+Section 20. `completedCloseoutSnapshot` and `events` are the complete isolated
+outputs returned by pure application. Both receipt fields are initially null
+and become their exact captured M11 receipts only at their named phases.
 
 `persistVoyageEncounterApprovedCloseout(request)` accepts exactly:
 
@@ -1070,15 +1400,14 @@ The adapter performs:
 1. resolve exactly one Arcflight-enabled PF2e vehicle Actor by `shipId`;
 2. verify the executing user is a GM and equals Foundry's current active GM;
 3. read and safely project live M10 ship state;
-4. reject a committed duplicate as an idempotent success with no write;
+4. return any existing exact-phase duplicate as its exact idempotent status
+   with no gameplay write;
 5. reject a conflicting application/closeout identity;
 6. re-run pure controlled application against live state;
-7. write one `prepared` ledger entry containing complete before/after data;
-8. re-read the Actor and repeat active-GM, identity, revision, and ledger
-   checks;
-9. issue one Actor update containing the complete after-state and the same
-   entry changed to `committed`; and
-10. re-read and verify exact committed state.
+7. write one `prepared-awaiting-session` ledger entry containing complete
+   before/after data; and
+8. re-read the Actor and verify the exact prepared ledger and unchanged
+   gameplay state.
 
 The adapter returns exact keys:
 
@@ -1096,18 +1425,176 @@ The adapter returns exact keys:
 }
 ```
 
-`status` is `"committed"`, `"already-committed"`, `"prepared"`,
-`"reconciliation-required"`, or `"failed"`.
+`status` is `"prepared-awaiting-session"`,
+`"already-prepared-awaiting-session"`, `"ship-applied-awaiting-session"`,
+`"already-ship-applied-awaiting-session"`, `"committed"`,
+`"already-committed"`, `"reconciliation-required"`, or `"failed"`. This
+adapter never changes ship gameplay state and never reports the whole closeout
+committed.
 
-If a retry finds `prepared` and live owned state equals `beforeState`, it may
-resume Step 8. If live state equals `afterState`, it verifies and promotes the
-entry to committed. If neither matches, it performs no gameplay write and
-marks only that ledger entry `reconciliation-required` when safely possible.
+Successful and idempotent statuses return all identities, the current ship
+revision, the complete recorded events, `errors: []`, and `warnings: []`.
+`prepared-awaiting-session` and `reconciliation-required` return the known
+identities/revision and recorded events with their exact cataloged state and no
+warnings; reconciliation-required has a nonempty error.
+All other failure returns `status: "failed"`, null IDs, `revision: null`,
+`events: []`, nonempty errors, and `warnings: []`; no partial receipt or state
+is returned.
+
+If a retry finds `prepared-awaiting-session`, live owned gameplay must equal
+`beforeState`. If it finds `ship-applied-awaiting-session`, gameplay must equal
+`afterState`. Any other combination performs no gameplay write and marks only
+that ledger entry `reconciliation-required` when safely possible.
 It never guesses, overwrites unrelated data, or rolls back PF2e/sibling flags.
 
-M11 may later wrap this adapter in command transport and recovery checkpoints.
-It must preserve the M10 application identity and ledger semantics rather than
-adding a second gameplay idempotency record.
+M10 and M11 form a recoverable three-phase protocol, not a cross-document
+atomic write. Before any ship gameplay mutation, M11 alone must independently
+read and bind the live Event Session, require its identity and revision to
+equal the prepared ledger's expected values, durably reserve this application
+without changing gameplay revision, and produce this exact receipt:
+
+```js
+{
+  kind: "voyage.m11-closeout-session-reserved",
+  reservationId,
+  activeGmUserId,
+  applicationId,
+  closeoutId,
+  eventId,
+  sessionId,
+  definitionSnapshotId,
+  shipId,
+  expectedEncounterRevision
+}
+```
+
+`reservationId` equals
+`arcflight-closeout-reservation:${JSON.stringify([applicationId])}`. Every
+identity/revision equals the prepared ledger. `activeGmUserId` is the active GM
+authenticated by M11 for this reservation and must equal Foundry's current
+active GM when M10 consumes the receipt. M11 issues no receipt unless its
+durable reservation and live-state verification succeed.
+
+`continueVoyageEncounterCloseoutReservation(request)` accepts exactly:
+
+```js
+{
+  kind: "m10-continue-closeout-reservation",
+  applicationId,
+  receipt
+}
+```
+
+This adapter-internal boundary resolves the Actor and active GM again, requires
+the exact `prepared-awaiting-session` entry and unchanged `beforeState`, safely
+captures and completely compares the reservation receipt, then performs one
+Actor update containing the complete `afterState`, the captured
+`sessionReservationReceipt`, and status `ship-applied-awaiting-session`. It
+re-reads and verifies that exact state. An exact retry returns
+`already-ship-applied-awaiting-session` without a write. A mismatched receipt or
+state never mutates gameplay.
+
+Immediately before its Event Session write, M11 must call the read-only M10
+boundary `verifyVoyageEncounterCloseoutShipCheckpoint(request)`, which accepts
+exactly:
+
+```js
+{
+  kind: "m10-verify-closeout-ship-checkpoint",
+  applicationId,
+  reservationId
+}
+```
+
+It returns exactly:
+
+```js
+{
+  ok,
+  readyForSessionCommit,
+  applicationId,
+  closeoutId,
+  shipId,
+  revision,
+  errors,
+  warnings
+}
+```
+
+Success requires the exact stored reservation identity, ledger status
+`ship-applied-awaiting-session`, and live owned gameplay structurally equal to
+recorded `afterState`; it returns the recorded resulting ship revision and
+empty diagnostics. Failure returns `ok: false`,
+`readyForSessionCommit: false`, null IDs/revision, nonempty errors, and
+`warnings: []`. It performs no write. M11 must abort session mutation and issue
+no commit receipt unless this immediately preceding check succeeds.
+
+M11 then uses its durable reservation to persist the complete
+`completedCloseoutSnapshot` and all encounter-domain events from the ledger,
+including every Hazard consequence event, every M6 Breach event, and the final
+closeout event. Only after independently verifying that Event Session write may
+M11 produce this exact commit receipt:
+
+```js
+{
+  kind: "voyage.m11-closeout-session-committed",
+  reservationId,
+  activeGmUserId,
+  applicationId,
+  closeoutId,
+  eventId,
+  sessionId,
+  definitionSnapshotId,
+  shipId,
+  previousEncounterRevision,
+  encounterRevision,
+  completedCloseoutSnapshot,
+  encounterEvents
+}
+```
+
+`reservationId` must equal the stored reservation receipt. `activeGmUserId` is
+the active GM authenticated by M11 for this commit/recovery phase and must
+equal Foundry's current active GM when M10 consumes the receipt. Every identity
+must equal the ledger entry. The two revisions equal its
+expected/resulting encounter revisions. The snapshot and event array must be
+complete structural, canonical-key-order-sensitive matches for the recorded
+pure outputs. `encounterEvents` is the dense ordered exact subsequence of the
+ledger events whose types are
+`voyage.hazard-closeout-consequence-applied`,
+`voyage.pressure-breach-applied`, or `voyage.closeout-applied`; it contains
+exactly one final closeout event. M11 returns no commit receipt before its
+independently verified session write succeeds.
+
+`finalizeVoyageEncounterCloseoutReceipt(request)` accepts exactly:
+
+```js
+{
+  kind: "m10-finalize-closeout-receipt",
+  applicationId,
+  receipt
+}
+```
+
+Both adapter-internal receipt boundaries are invoked only by M11 after its
+authenticated command/recovery boundary. On finalization M10 resolves the
+Actor and active GM again, requires
+the exact `ship-applied-awaiting-session` ledger entry and unchanged
+`afterState`, safely captures and completely compares the receipt, then writes
+only `status: "committed"` and `sessionCommitReceipt`. It returns the same
+envelope as the persistence adapter with `status: "committed"`; an exact retry
+returns `"already-committed"` without a write. Missing, malformed, mismatched,
+or conflicting receipts never mark committed and return the cataloged error.
+M10 does not invent M11 Event Session storage or accept a receipt through a
+socket/UI boundary.
+
+Until M11 exists, the terminal successful Task 4 state is
+`prepared-awaiting-session`; no ship gameplay mutation occurs. Task 4 tests
+may drive later phases only with exact mocked M11 receipts. Recovery must
+finish or reconcile any noncommitted state before another closeout for the
+ship may apply. M11 must preserve the M10
+application identity and ledger rather than adding a competing gameplay
+idempotency record.
 
 ## 22. Active-GM boundary
 
@@ -1116,11 +1603,18 @@ Immediately before each Foundry write, all must be true:
 - `game.user.isGM === true`;
 - `game.users.activeGM` exists;
 - `game.user.id === game.users.activeGM.id`;
-- the active GM ID equals the plan's captured `gmUserId`; and
+- for initial preparation, the active GM ID equals the regenerated plan's
+  approving `gmUserId`; for reservation continuation or finalization, it equals
+  the exact M11 receipt's `activeGmUserId`; and
 - the live Actor identity and revision still match.
 
 Failure produces no gameplay write. This local check does not validate a
 network sender and does not replace M11 request authority.
+The original approving `gmUserId` remains immutable ledger audit evidence; it
+is not a recovery lock. After canonical M11 control transfer, the newly
+authenticated current active GM may continue or finalize using a new exact M11
+receipt. M10 never edits the approving identity or accepts an unauthenticated
+replacement from a caller.
 
 ## 23. Diagnostic catalog
 
@@ -1165,6 +1659,10 @@ The table's final column is the exact public message.
 | `m10-ambiguous-legacy-storage` | `flags.arcflight.system.voyage` | Existing persistent data cannot be initialized safely. |
 | `m10-ledger-conflict` | `closeoutLedger` | Ledger identity or state conflicts with this application. |
 | `m10-persistence-write-failed` | `flags.arcflight.system.voyage` | Foundry write did not complete or verify. |
+| `m10-session-reservation-receipt-required` | `receipt` | A verified M11 session reservation receipt is required. |
+| `m10-invalid-session-reservation-receipt` | `receipt` | M11 session reservation receipt does not match the prepared closeout. |
+| `m10-session-commit-receipt-required` | `receipt` | A verified M11 session commit receipt is required. |
+| `m10-invalid-session-commit-receipt` | `receipt` | M11 session commit receipt does not match the prepared closeout. |
 | `m10-reconciliation-required` | `closeoutLedger` | Prepared state differs from both recorded before and after state. |
 
 `m10-emergency-response-required` is the sole planned M10 warning on a valid
@@ -1207,12 +1705,16 @@ The Foundry adapter then uses:
 3. active-GM check;
 4. owned-state and legacy-storage validation;
 5. application/closeout duplicate or conflict check;
-6. live identity and revision binding;
+6. live ship identity and revision binding;
 7. pure application regeneration;
-8. prepared write and verification;
-9. repeated active-GM and revision check;
-10. committed write and verification; and
-11. reconciliation classification.
+8. prepared-awaiting-session write and verification;
+9. M11 reservation-receipt capture and complete comparison;
+10. repeated active-GM and ship-revision check;
+11. ship-applied-awaiting-session write and verification;
+12. read-only live ship/ledger checkpoint verification;
+13. M11 commit-receipt capture and complete comparison;
+14. committed ledger-only write and verification; and
+15. reconciliation classification.
 
 One failed category prevents all later categories. Within a category, fixed
 field order and captured array order apply. Diagnostics deduplicate by the
@@ -1233,11 +1735,12 @@ that specific API:
   "approved", "gmApproved", "approvalToken", "applicationId",
   "applicationPlan", "nextEncounterState", "nextCloseoutSnapshot",
   "nextShipState", "events",
-  "patch", "ledgerEntry", "idempotencyStatus", "requestId", "timestamp"
+  "patch", "ledgerEntry", "idempotencyStatus", "receipt",
+  "sessionCommitReceipt", "requestId", "timestamp"
 ]
 ```
 
-A field explicitly required by Sections 10, 18, or 19 is removed from that
+A field explicitly required by Sections 10, 18, 19, or 21 is removed from that
 API's prohibited list exactly once. Every other key remains prohibited. Values
 `null`, `false`, `0`, `""`, `[]`, and `{}` are rejected identically.
 
@@ -1248,15 +1751,19 @@ state, or callbacks. Equivalent captured input returns byte-equivalent
 JSON-compatible output.
 
 Preview and review perform zero mutations, revision changes, and events. Pure
-controlled application returns two candidates, increments encounter revision
-once, preserves one ship revision/event per Scar creation, adds at most one
-ship revision/event for the non-Scar batch, and emits one encounter closeout
-event. Failure returns no candidate, event, or revision.
+controlled application returns two candidates. Encounter revision advances
+once per Hazard closeout-consequence event, once per actual canonical M6
+Breach event, and once for the final closeout event. Ship revision advances
+once per Scar creation and at most once for the non-Scar batch. Failure returns
+no candidate, event, or revision.
 
-Foundry persistence writes the prepared ledger once and the committed owned
-state once. An already committed retry writes nothing. Reconciliation may
-change only the affected ledger entry's status and never changes gameplay
-state.
+Foundry persistence first writes only the prepared ledger. After M11's exact
+reservation receipt, M10 writes ship gameplay state once, ending in
+`ship-applied-awaiting-session`. M11 performs the one Event Session gameplay
+write and returns its commit receipt. M10 then performs one ledger-only
+commit-status write. Exact retries at completed phases write nothing.
+Reconciliation may change only the affected ledger entry's status and never
+changes gameplay state.
 
 ## 27. Required test matrix
 
@@ -1272,10 +1779,12 @@ Every implementation task must cover:
 - all unresolved Hazards in authoritative order;
 - both closed consequence variants and unsupported generic data;
 - sequential Pressure, one large-delta Breach, multiple-system Breaches,
-  collision behavior, and final all-system reset;
+  collision behavior, authoritative stage/round/phase provenance, one Hazard
+  event per Hazard, continuous encounter revisions, and final all-system reset;
 - existing M7 Pressure-Breach Scar creation without source fabrication;
 - M8 closeout Scar Definition resolution, v2 record generation, mixed v1/v2
-  capacity counting, and no eager migration;
+  union validation/capture, capacity counting, repair-event preservation, and
+  no eager migration;
 - one remaining capacity slot, exact capacity, zero capacity, duplicates, and
   simulated revision changes across multiple proposals;
 - exact M10-to-M9 handoff and matching Breakdown Definition cardinality;
@@ -1285,13 +1794,17 @@ Every implementation task must cover:
 - complete persistent proposal order and exact reset plan;
 - preview regeneration/equality, mutation attempts, and cross-call isolation;
 - confirmation false/missing, wrong GM evidence, and altered plan rejection;
-- pure two-state atomicity, exact revision/event cardinality, and no partial
-  candidates;
+- pure two-candidate atomicity, exact nested result/proposal schemas, exact
+  revision/event cardinality, and no partial candidates;
 - Actor-path preservation of PF2e and sibling Arcflight fields;
 - active-GM loss before each write;
-- stale revision before prepare and between prepare/commit;
-- committed duplicate, prepared-before, prepared-after, conflict, failed write,
-  failed verification, and reconciliation-required behavior; and
+- stale ship revision before prepare and before the post-reservation ship
+  write;
+- committed duplicate, awaiting-session duplicate, prepared-before,
+  reservation receipt success/retry/mismatch, commit receipt
+  success/retry/mismatch, pre-session-write ship/ledger verification, active-GM
+  control transfer, conflict, failed write, failed verification, and
+  reconciliation-required behavior; and
 - no sockets, transport, UI, PF2e Item creation, rolls, random, or time access.
 
 ## 28. Implementation task sequence
@@ -1306,17 +1819,21 @@ Every implementation task must cover:
 ### Task 1 — closeout snapshot and Hazard closeout analysis
 
 - **Files:** `scripts/voyage/domain/closeout.js` and
-  `tests/voyage/domain/closeout.test.mjs`.
+  `tests/voyage/domain/closeout.test.mjs`, plus the minimum M6 Pressure-effect
+  schema/Breach files and focused tests required solely for the exact Section 9
+  `hazard-closeout` variant.
 - **APIs:** `validateVoyageEncounterCloseoutSnapshot`,
   `captureVoyageEncounterCloseoutSnapshot`, and
-  `analyzeVoyageEncounterHazardCloseout`.
+  `analyzeVoyageEncounterHazardCloseout`; plus the narrow internal
+  `analyzeVoyageEncounterCloseoutPressureBreach` boundary.
 - **Behavior:** Sections 6–9 and Section 16 only.
 - **Stop:** no M8 result package, Scar capacity, M9, approval, or persistence.
 
 ### Task 2 — complete closeout preview
 
-- **Files:** the Task 1 files, plus the minimum versioned Scar schema/state
-  files and focused tests required by Sections 12–14.
+- **Files:** the Task 1 files; `scripts/voyage/domain/void-scar-schema.js`,
+  `ship-state.js`, `void-scar-capacity.js`, and `void-scar-repair.js`; and their
+  focused tests required by Sections 12–14.
 - **API:** `analyzeVoyageEncounterCloseoutPreview`.
 - **Behavior:** regenerate M8, compose Hazards/Pressure/Breaches, classify
   ordinary Scars, create exact M9 handoffs, and return Section 17.
@@ -1337,11 +1854,16 @@ Every implementation task must cover:
 - **Files:** `scripts/voyage/foundry/closeout-persistence.js` and
   `tests/voyage/foundry/closeout-persistence.test.mjs`; minimal registration is
   permitted only after adapter review.
-- **API:** `persistVoyageEncounterApprovedCloseout`.
+- **APIs:** `persistVoyageEncounterApprovedCloseout`,
+  `continueVoyageEncounterCloseoutReservation`,
+  `verifyVoyageEncounterCloseoutShipCheckpoint`, and
+  `finalizeVoyageEncounterCloseoutReceipt`.
 - **Behavior:** Sections 20–22 using mocked document boundaries in automated
   tests and one explicit manual Foundry validation checklist.
-- **Stop:** no sockets, distributed requests, UI, embedded Item creation,
-  session runtime, or M11 behavior.
+- **Stop:** no sockets, distributed requests, UI, embedded Item creation, or
+  Event Session persistence. The continuation/finalizer consume mocked exact
+  M11 receipts and verification is read-only; producing either receipt remains
+  M11 behavior.
 
 ### Task 5 — cumulative integration review
 
@@ -1356,16 +1878,21 @@ Automated mocks do not prove Foundry behavior. Before Task 4 acceptance, in a
 Foundry v14 PF2e world:
 
 1. use an Arcflight-enabled PF2e vehicle Actor with sibling Arcflight flags;
-2. persist one approved closeout as the active GM;
-3. verify only `flags.arcflight.system.voyage` changed;
+2. persist one approved closeout as the active GM and verify the exact
+   `prepared-awaiting-session` state with unchanged gameplay;
+3. supply the test-only exact M11 reservation receipt, continue the closeout,
+   and verify `ship-applied-awaiting-session` and that only
+   `flags.arcflight.system.voyage` changed;
 4. verify PF2e Actor `system`, embedded Items, installed component flags, and
    sibling Arcflight flags are byte-equivalent to their pre-write values;
-5. repeat the same application and verify `already-committed` with no write;
-6. retry a prepared entry in before-state and after-state conditions;
+5. repeat the preparation and continuation and verify the corresponding
+   already-prepared/already-ship-applied status with no gameplay write;
+6. retry prepared and ship-applied entries in their exact recorded states;
 7. force a conflicting state and verify reconciliation-required with no
    gameplay overwrite;
 8. change or remove active-GM authority before each write and verify failure;
-9. reload and verify the committed ledger/history and ship state remain; and
+9. use the test-only M11 receipt fixture to finalize, reload, and verify the
+   committed ledger/history and ship state remain; and
 10. verify no socket, chat, UI, roll, or Item side effect occurred.
 
 ## 30. Contract acceptance criteria
@@ -1382,7 +1909,8 @@ This contract is ready for implementation only when review confirms:
 - GM confirmation precedes every persistent gameplay write;
 - pure application is all-or-nothing with exact revision/event cardinality;
 - Foundry persistence preserves PF2e and sibling Arcflight data;
-- prepared/committed recovery is deterministic and idempotent;
+- prepared/awaiting-session/committed recovery and M11 receipt reconciliation
+  are deterministic and idempotent;
 - M10's active-GM check does not duplicate M11 transport authority; and
 - M11/M12 responsibilities remain explicitly deferred.
 
