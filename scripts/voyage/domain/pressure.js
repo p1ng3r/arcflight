@@ -28,6 +28,10 @@ const DOMAIN_PRESSURE_EFFECT_KIND = "domain-pressure-effect";
 const DOMAIN_PRESSURE_SOURCE_KIND = "hazard-address-failure";
 const DOMAIN_PRESSURE_ACTIVATION_SOURCE = "hazard";
 const DOMAIN_PRESSURE_OUTCOMES = Object.freeze([BRANCHES.FAILURE, BRANCHES.CRITICAL_FAILURE]);
+// This vocabulary is consumed only by M10's narrow closeout Breach kernel.
+// It cannot be produced through the ordinary action or Domain Pressure APIs.
+const HAZARD_CLOSEOUT_PRESSURE_SOURCE_KIND = "hazard-closeout";
+const HAZARD_CLOSEOUT_PRESSURE_ACTIVATION_SOURCE = "event-closeout";
 const PRESSURE_EFFECT_KEYS = Object.freeze([
   "pressureEffectId",
   "encounterId",
@@ -1246,7 +1250,8 @@ function validateCanonicalPressureEffect(effect, path, errors, { expectedRevisio
 
   const actionMetadata = record.sourceKind === "standard-result" || record.sourceKind === "outcome-intent";
   const domainMetadata = record.sourceKind === DOMAIN_PRESSURE_SOURCE_KIND;
-  if (!actionMetadata && !domainMetadata) {
+  const closeoutMetadata = record.sourceKind === HAZARD_CLOSEOUT_PRESSURE_SOURCE_KIND;
+  if (!actionMetadata && !domainMetadata && !closeoutMetadata) {
     addIssue(errors, "pressure-application-effect-invalid", `${path}.sourceKind`, "Pressure effect source kind is not recognized.");
   }
 
@@ -1279,6 +1284,23 @@ function validateCanonicalPressureEffect(effect, path, errors, { expectedRevisio
     }
     if (!DOMAIN_PRESSURE_OUTCOMES.includes(record.branch) || STANDARD_PRESSURE_DELTAS[record.branch] !== record.delta) {
       addIssue(errors, "pressure-application-effect-invalid", `${path}.delta`, "Domain Pressure effect delta must match its Address Hazard outcome.");
+    }
+  } else if (record.sourceKind === HAZARD_CLOSEOUT_PRESSURE_SOURCE_KIND) {
+    if (record.stationId !== null || record.actionId !== null) {
+      addIssue(errors, "pressure-application-effect-invalid", path, "Hazard closeout Pressure effects cannot carry action identifiers.");
+    }
+    if (!nonBlankString(record.sourceIntentId) || record.activationSource !== HAZARD_CLOSEOUT_PRESSURE_ACTIVATION_SOURCE) {
+      addIssue(errors, "pressure-application-effect-invalid", path, "Hazard closeout Pressure effects require closeout consequence provenance.");
+    }
+    if (
+      record.timing !== TIMINGS.GM_CONFIRMED
+      || record.branch !== BRANCHES.NO_ROLL
+      || !Number.isSafeInteger(record.sequence)
+      || record.sequence <= 0
+      || !Number.isSafeInteger(record.delta)
+      || record.delta <= 0
+    ) {
+      addIssue(errors, "pressure-application-effect-invalid", path, "Hazard closeout Pressure effects require the exact no-roll closeout variant.");
     }
   }
 
@@ -1344,7 +1366,11 @@ function validatePressureTransitionPlan(plan, errors) {
       { expectedRevision: plan.expectedRevision }
     );
     if (effect?.sourceKind === "standard-result") standardCount += 1;
-    else if (effect?.sourceKind === "outcome-intent" || effect?.sourceKind === DOMAIN_PRESSURE_SOURCE_KIND) authoredCount += 1;
+    else if (
+      effect?.sourceKind === "outcome-intent"
+      || effect?.sourceKind === DOMAIN_PRESSURE_SOURCE_KIND
+      || effect?.sourceKind === HAZARD_CLOSEOUT_PRESSURE_SOURCE_KIND
+    ) authoredCount += 1;
   }
   if (plan.standardPressureEffectCount !== standardCount) {
     addIssue(errors, "pressure-application-plan-invalid", "pressurePlan.standardPressureEffectCount", "Standard Pressure effect count does not match the effect records.");
