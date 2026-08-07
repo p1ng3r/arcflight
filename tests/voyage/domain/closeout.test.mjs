@@ -351,6 +351,85 @@ test("fails closed for unsupported or duplicate closeout consequences, stale aut
   assert.deepEqual(result.hazardCloseoutResults, []);
 });
 
+test("rejects every prohibited authority key and value with the exact failure envelope", () => {
+  const prohibitedKeys = [
+    "overallResult",
+    "rewardAnalysis",
+    "negativeAnalysis",
+    "resultPackage",
+    "hazardPlan",
+    "pressurePlan",
+    "breachPlan",
+    "capacityAnalysis",
+    "capacityExhaustion",
+    "breakdownPlan",
+    "outcomeProposal",
+    "persistentProposals",
+    "temporaryResetPlan",
+    "preview",
+    "previewId",
+    "approved",
+    "gmApproved",
+    "approvalToken",
+    "applicationId",
+    "applicationPlan",
+    "nextEncounterState",
+    "nextCloseoutSnapshot",
+    "nextShipState",
+    "events",
+    "patch",
+    "ledgerEntry",
+    "idempotencyStatus",
+    "receipt",
+    "sessionCommitReceipt",
+    "requestId",
+    "timestamp"
+  ];
+  const valueFactories = [
+    ["null", () => null],
+    ["false", () => false],
+    ["zero", () => 0],
+    ["empty-string", () => ""],
+    ["empty-array", () => []],
+    ["empty-object", () => ({})]
+  ];
+
+  for (const key of prohibitedKeys) {
+    for (const [label, makeValue] of valueFactories) {
+      const result = analyzeVoyageEncounterHazardCloseout(
+        request(snapshot(), { [key]: makeValue() })
+      );
+      assert.equal(result.ok, false, `${key}=${label}`);
+      assert.equal(result.readyForHazardCloseout, false, `${key}=${label}`);
+      assert.deepEqual(
+        result,
+        {
+          ok: false,
+          readyForHazardCloseout: false,
+          eventId: null,
+          sessionId: null,
+          definitionSnapshotId: null,
+          shipId: null,
+          expectedEncounterRevision: null,
+          hazardCloseoutResults: [],
+          pressureBreachResults: [],
+          ordinaryScarProposals: [],
+          postHazardPressureSystems: [],
+          hazardRemovalPlan: [],
+          errors: [{
+            code: "m10-caller-authority-rejected",
+            path: `request.${key}`,
+            message: "Caller supplied calculated, application, persistence, or runtime authority.",
+            severity: "error"
+          }],
+          warnings: []
+        },
+        `${key}=${label}`
+      );
+    }
+  }
+});
+
 test("analysis is deterministic and result structures do not alias inputs or later calls", () => {
   const source = snapshot({
     systems: pressureSystems({ "crew-morale": { value: 2, capacity: 2 } }),

@@ -7,6 +7,7 @@ import {
   VOYAGE_MOMENTUM_MAX,
   VOYAGE_PRESSURE_MAX_CAPACITY,
   VOYAGE_PRESSURE_SYSTEM_IDS,
+  VOYAGE_ROUND_RESULTS,
   VOYAGE_ROUND_PHASES
 } from "./constants.js";
 import {
@@ -117,12 +118,7 @@ const PROHIBITED_AUTHORITY_KEYS = Object.freeze([
   "patch", "ledgerEntry", "idempotencyStatus", "receipt",
   "sessionCommitReceipt", "requestId", "timestamp"
 ]);
-const ROUND_RESULTS = new Set([
-  "critical-round-success",
-  "round-success",
-  "round-failure",
-  "critical-round-failure"
-]);
+const ROUND_RESULTS = new Set(Object.values(VOYAGE_ROUND_RESULTS));
 const LIFECYCLE_STATES = new Set(["active", "paused"]);
 const STATION_IDS = new Set(VOYAGE_EVENT_RUNNER_STATION_IDS);
 const PRESSURE_SYSTEM_IDS = new Set(VOYAGE_PRESSURE_SYSTEM_IDS);
