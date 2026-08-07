@@ -403,9 +403,13 @@ function validateTemporaryCollections(snapshot, errors) {
     snapshotError(errors, "closeoutSnapshot.hazardSuppressions");
     return;
   }
+  if (!Array.isArray(snapshot.activeHazards)) {
+    snapshotError(errors, "closeoutSnapshot.activeHazards");
+    return;
+  }
   const suppressionIds = new Set();
   const suppressedHazardIds = new Set();
-  const activeHazardIds = new Set(snapshot.activeHazards.map((hazard) => hazard.hazardId));
+  const activeHazardIds = new Set(snapshot.activeHazards.map((hazard) => hazard?.hazardId));
   for (let index = 0; index < snapshot.hazardSuppressions.length; index += 1) {
     const suppression = snapshot.hazardSuppressions[index];
     if (

@@ -185,6 +185,64 @@ function breachRequest({ systems = pressureSystems(), activeHazards = [], effect
   };
 }
 
+function assertMalformedSnapshotBoundaries(closeoutSnapshot, activeHazardsPath) {
+  const snapshotError = {
+    code: "m10-invalid-closeout-snapshot",
+    path: activeHazardsPath,
+    message: "Closeout snapshot is invalid.",
+    severity: "error"
+  };
+  let validation;
+  assert.doesNotThrow(() => {
+    validation = validateVoyageEncounterCloseoutSnapshot(closeoutSnapshot);
+  });
+  assert.deepEqual(validation, {
+    valid: false,
+    errors: [snapshotError],
+    warnings: []
+  });
+
+  let captured;
+  assert.doesNotThrow(() => {
+    captured = captureVoyageEncounterCloseoutSnapshot(closeoutSnapshot);
+  });
+  assert.deepEqual(captured, {
+    ok: false,
+    closeoutSnapshot: null,
+    errors: [snapshotError],
+    warnings: []
+  });
+
+  let analysis;
+  assert.doesNotThrow(() => {
+    analysis = analyzeVoyageEncounterHazardCloseout(request(closeoutSnapshot));
+  });
+  assert.deepEqual(analysis, {
+    ok: false,
+    readyForHazardCloseout: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    shipId: null,
+    expectedEncounterRevision: null,
+    hazardCloseoutResults: [],
+    pressureBreachResults: [],
+    ordinaryScarProposals: [],
+    postHazardPressureSystems: [],
+    hazardRemovalPlan: [],
+    errors: [
+      {
+        code: "m10-invalid-closeout-snapshot",
+        path: "closeoutSnapshot",
+        message: "Closeout snapshot is invalid.",
+        severity: "error"
+      },
+      snapshotError
+    ],
+    warnings: []
+  });
+}
+
 test("captures and validates the exact complete closeout snapshot with isolated data", () => {
   const source = snapshot();
   const validation = validateVoyageEncounterCloseoutSnapshot(source);
@@ -229,6 +287,20 @@ test("rejects malformed, hostile, cyclic, and wrong-order snapshots with determi
   const original = reordered.pressureSystems[0];
   reordered.pressureSystems[0] = { value: original.value, pressureSystemId: original.pressureSystemId, capacity: original.capacity };
   assert.equal(validateVoyageEncounterCloseoutSnapshot(reordered).valid, false);
+});
+
+test("fails safely at every public boundary for a null activeHazards collection", () => {
+  const malformed = snapshot();
+  malformed.activeHazards = null;
+  malformed.hazardSuppressions = [];
+  assertMalformedSnapshotBoundaries(malformed, "closeoutSnapshot.activeHazards");
+});
+
+test("fails safely at every public boundary for a null active Hazard entry", () => {
+  const malformed = snapshot();
+  malformed.activeHazards = [null];
+  malformed.hazardSuppressions = [];
+  assertMalformedSnapshotBoundaries(malformed, "closeoutSnapshot.activeHazards[0]");
 });
 
 test("accepts acyclic shared references while isolating each captured occurrence", () => {
