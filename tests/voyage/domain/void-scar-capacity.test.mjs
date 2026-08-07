@@ -23,6 +23,36 @@ function scar(id, system = "crew-morale") {
   };
 }
 
+function m10Scar(id, system = "crew-morale") {
+  const source = {
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    misfortuneId: `misfortune-${id}`,
+    voidScarDefinitionId: `scar-definition-${id}`
+  };
+  return {
+    schemaVersion: 2,
+    voidScarId: `arcflight-void-scar:${JSON.stringify([
+      "m8-critical-overall-failure", source.eventId, source.sessionId,
+      source.definitionSnapshotId, source.misfortuneId, source.voidScarDefinitionId, system
+    ])}`,
+    name: "Authored closeout Scar",
+    pressureSystemId: system,
+    status: "active",
+    sourceKind: "m8-critical-overall-failure",
+    description: "A closeout Scar.",
+    operationalEffects: ["The system remains impaired."],
+    baseRepairCost: 100,
+    baseRepairTime: 1,
+    repairDcSource: "very-hard",
+    eligibleRepairChecks: ["crafting"],
+    requiredFacilities: ["drydock"],
+    compatibleFieldRepairTags: ["field"],
+    source
+  };
+}
+
 function ship(platform = "void-skiff", voidScars = [], overrides = {}) {
   return {
     shipId: "capacity-ship",
@@ -98,6 +128,26 @@ test("active counts, one-slot boundary, and exact exhaustion are valid and pure"
   fullResult.errors.push({ code: "mutated" });
   const later = analyzeVoyageVoidScarCapacity(full);
   assert.deepEqual(later.errors, []);
+});
+
+test("counts the durable M7/M10 Scar union exactly once at capacity boundaries", () => {
+  const mixed = ship("void-skiff", [scar("one"), m10Scar("two", "arkengine")]);
+  const result = analyzeVoyageVoidScarCapacity(mixed);
+  assert.equal(result.ok, true);
+  assert.equal(result.voidScarCapacity, 2);
+  assert.equal(result.activeVoidScarCount, 2);
+  assert.equal(result.availableSlots, 0);
+  assert.equal(result.capacityExhausted, true);
+  assert.equal(result.canAcceptVoidScar, false);
+
+  const withOneSlot = analyzeVoyageVoidScarCapacity(ship("void-skiff", [m10Scar("one")]));
+  assert.equal(withOneSlot.activeVoidScarCount, 1);
+  assert.equal(withOneSlot.availableSlots, 1);
+  assert.equal(withOneSlot.canAcceptVoidScar, true);
+
+  const duplicate = analyzeVoyageVoidScarCapacity(ship("void-skiff", [m10Scar("one"), m10Scar("one")]));
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.errors[0].code, "duplicate-void-scar-id");
 });
 
 test("invalid ship states preserve ship-state diagnostics with null capacity metrics", () => {

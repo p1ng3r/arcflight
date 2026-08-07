@@ -51,6 +51,36 @@ function scar(id, pressureSystemId = "crew-morale", overrides = {}) {
   };
 }
 
+function m10Scar(id = "v2", pressureSystemId = "crew-morale") {
+  const source = {
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    misfortuneId: `misfortune-${id}`,
+    voidScarDefinitionId: `scar-definition-${id}`
+  };
+  return {
+    schemaVersion: 2,
+    voidScarId: `arcflight-void-scar:${JSON.stringify([
+      "m8-critical-overall-failure", source.eventId, source.sessionId,
+      source.definitionSnapshotId, source.misfortuneId, source.voidScarDefinitionId, pressureSystemId
+    ])}`,
+    name: "Authored closeout Scar",
+    pressureSystemId,
+    status: "active",
+    sourceKind: "m8-critical-overall-failure",
+    description: "A closeout Scar.",
+    operationalEffects: ["The system remains impaired."],
+    baseRepairCost: 100,
+    baseRepairTime: 1,
+    repairDcSource: "very-hard",
+    eligibleRepairChecks: ["crafting"],
+    requiredFacilities: ["drydock"],
+    compatibleFieldRepairTags: ["field"],
+    source
+  };
+}
+
 function ship(voidScars = [], overrides = {}) {
   return {
     shipId: "repair-ship",
@@ -204,6 +234,23 @@ test("all five canonical systems produce exact Dock Repair analyses and isolated
     result.voidScarId = "mutated";
     assert.equal(first.live.voidScarId, before.live.voidScarId);
   }
+});
+
+test("M7 repair analysis and application preserve a v2 durable Scar without migration", () => {
+  const live = m10Scar();
+  const state = ship([live]);
+  const before = clone(state);
+  const repairRequest = request(state, state.voidScars[0]);
+  const analysis = analyzeVoyageVoidScarRepair(state, repairRequest);
+  assert.equal(analysis.readyForVoidScarRepair, true, JSON.stringify(analysis.errors));
+  const applied = applyVoyageVoidScarRepair(state, repairRequest);
+  assertApplicationSuccess(applied);
+  assert.equal(applied.events.length, 1);
+  assert.deepEqual(applied.events[0].previousVoidScar, live);
+  assert.equal(applied.events[0].previousVoidScar.schemaVersion, 2);
+  assert.deepEqual(applied.nextState.voidScars, []);
+  assert.deepEqual(state, before);
+  assert.equal(Object.hasOwn(applied.events[0].previousVoidScar, "source"), true);
 });
 
 test("Dock Repair accepts every exact outcome with canonical percentages", () => {

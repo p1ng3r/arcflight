@@ -60,6 +60,36 @@ function scar(index = 0, pressureSystemId = "crew-morale") {
   };
 }
 
+function m10Scar(index = 0, pressureSystemId = "crew-morale") {
+  const source = {
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    misfortuneId: `misfortune-${index + 1}`,
+    voidScarDefinitionId: `scar-definition-${index + 1}`
+  };
+  return {
+    schemaVersion: 2,
+    voidScarId: `arcflight-void-scar:${JSON.stringify([
+      "m8-critical-overall-failure", source.eventId, source.sessionId,
+      source.definitionSnapshotId, source.misfortuneId, source.voidScarDefinitionId, pressureSystemId
+    ])}`,
+    name: "Authored closeout Scar",
+    pressureSystemId,
+    status: "active",
+    sourceKind: "m8-critical-overall-failure",
+    description: "A closeout Scar.",
+    operationalEffects: ["The system remains impaired."],
+    baseRepairCost: 100,
+    baseRepairTime: 1,
+    repairDcSource: "very-hard",
+    eligibleRepairChecks: ["crafting"],
+    requiredFacilities: ["drydock"],
+    compatibleFieldRepairTags: ["field"],
+    source
+  };
+}
+
 function state(platform = "void-skiff", voidScars = []) {
   return {
     shipId: "ship-1",
@@ -94,6 +124,23 @@ test("accepts one Scar and a ship exactly at capacity", () => {
   assert.equal(validateVoyageShipState(state("brigantine", [scar()])).valid, true);
   const full = Array.from({ length: CAPACITIES.frigate }, (_, index) => scar(index));
   assert.equal(validateVoyageShipState(state("frigate", full)).valid, true);
+});
+
+test("accepts the durable M7/M10 Scar union, counts both variants once, and rejects duplicate IDs or overflow", () => {
+  const v1 = scar(0, "crew-morale");
+  const v2 = m10Scar(0, "arkengine");
+  const mixed = state("cutter", [v1, v2]);
+  const mixedValidation = validateVoyageShipState(mixed);
+  assert.equal(mixedValidation.valid, true, JSON.stringify(mixedValidation.errors));
+  assert.equal(mixed.voidScars.length, 2);
+  assert.equal(Object.hasOwn(mixed.voidScars[0], "schemaVersion"), false);
+  assert.equal(mixed.voidScars[1].schemaVersion, 2);
+
+  const duplicate = state("cutter", [v2, m10Scar(0, "arkengine")]);
+  assert.ok(validateVoyageShipState(duplicate).errors.some((entry) => entry.code === "duplicate-void-scar-id"));
+
+  const overflow = state("void-skiff", [scar(0), m10Scar(0, "arkengine"), m10Scar(1, "levstone-array")]);
+  assert.ok(validateVoyageShipState(overflow).errors.some((entry) => entry.code === "void-scar-capacity-exceeded"));
 });
 
 test("captures exact state shape with deep caller and cross-call isolation", () => {
