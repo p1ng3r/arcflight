@@ -243,6 +243,34 @@ function assertMalformedSnapshotBoundaries(closeoutSnapshot, activeHazardsPath) 
   });
 }
 
+function assertInvalidAnalysisRequestRoot(root) {
+  let result;
+  assert.doesNotThrow(() => {
+    result = analyzeVoyageEncounterHazardCloseout(root);
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    readyForHazardCloseout: false,
+    eventId: null,
+    sessionId: null,
+    definitionSnapshotId: null,
+    shipId: null,
+    expectedEncounterRevision: null,
+    hazardCloseoutResults: [],
+    pressureBreachResults: [],
+    ordinaryScarProposals: [],
+    postHazardPressureSystems: [],
+    hazardRemovalPlan: [],
+    errors: [{
+      code: "m10-invalid-request-shape",
+      path: "request",
+      message: "Request shape, order, or root values are invalid.",
+      severity: "error"
+    }],
+    warnings: []
+  });
+}
+
 test("captures and validates the exact complete closeout snapshot with isolated data", () => {
   const source = snapshot();
   const validation = validateVoyageEncounterCloseoutSnapshot(source);
@@ -301,6 +329,18 @@ test("fails safely at every public boundary for a null active Hazard entry", () 
   malformed.activeHazards = [null];
   malformed.hazardSuppressions = [];
   assertMalformedSnapshotBoundaries(malformed, "closeoutSnapshot.activeHazards[0]");
+});
+
+test("rejects a null closeout analysis request root without throwing", () => {
+  assertInvalidAnalysisRequestRoot(null);
+});
+
+test("rejects a primitive closeout analysis request root without throwing", () => {
+  assertInvalidAnalysisRequestRoot(false);
+});
+
+test("rejects an array closeout analysis request root without throwing", () => {
+  assertInvalidAnalysisRequestRoot([]);
 });
 
 test("accepts acyclic shared references while isolating each captured occurrence", () => {

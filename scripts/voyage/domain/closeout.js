@@ -677,6 +677,9 @@ function analysisFailure(errors) {
 }
 
 function analyzeCapturedHazardCloseout(request) {
+  if (!isPlainObject(request)) {
+    return analysisFailure([m10Diagnostic("m10-invalid-request-shape", "request")]);
+  }
   const prohibited = PROHIBITED_AUTHORITY_KEYS.filter((key) => Object.hasOwn(request, key));
   if (prohibited.length > 0) {
     return analysisFailure(prohibited.map((key) => m10Diagnostic("m10-caller-authority-rejected", `request.${key}`)));
