@@ -937,8 +937,13 @@ function validEventRecord(event, entry) {
     return nonBlank(event.encounterId) && event.encounterId === entry.eventId && event.lifecycleState === "active"
       && nonBlank(event.stageId) && safeInteger(event.roundNumber) && event.phase === "cleanup-advance"
       && event.pressureEffectCount === 1 && event.appliedEffectCount === 1 && validM6Breach(event.breach) && validM6Hazard(event.hazard)
+      && event.breach.encounterId === event.encounterId && event.hazard.encounterId === event.encounterId
+      && event.breach.stageId === event.stageId && event.hazard.stageId === event.stageId
+      && event.breach.roundNumber === event.roundNumber && event.hazard.roundNumber === event.roundNumber
       && fieldsEqual(event.hazard, event.breach, ["pressureBreachId", "encounterId", "stageId", "roundNumber", "effectIndex", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceIntentId", "activationSource", "branch", "timing", "visibility"])
       && validArray(event.effects) && event.effects.length === 1 && validPressureEffect(event.effects[0])
+      && event.effects[0].encounterId === event.encounterId && event.effects[0].stageId === event.stageId
+      && event.effects[0].roundNumber === event.roundNumber
       && fieldsEqual(event.breach, event.effects[0], ["encounterId", "stageId", "roundNumber", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceKind", "sourceIntentId", "activationSource", "branch", "timing", "visibility"])
       && event.effects[0].delta === event.breach.attemptedDelta
       && (event.collisionOutcome === null || (exactPlainRecord(event.collisionOutcome, ["kind", "hazardId", "incomingHazardId", "pressureSystemId", "collisionPolicy", "consequence"])

@@ -1044,3 +1044,18 @@ test("stored closeout event records reject forged consequence and breach arithme
   assert.equal(failure.errors[0].code, "m10-ledger-conflict");
   assert.equal(actor.updates.length, writes);
 });
+
+test("stored M6 breach events bind nested encounter identity to the outer event", async () => {
+  const actor = actorFixture();
+  installGame(actor);
+  await persistVoyageEncounterApprovedCloseout(approvedRequest());
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const breachEvent = entry.events.find((event) => event.type === "voyage.pressure-breach-applied");
+  if (!breachEvent) return;
+  breachEvent.breach.encounterId = "foreign-event";
+  const writes = actor.updates.length;
+  const result = await persistVoyageEncounterApprovedCloseout(approvedRequest());
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m10-ledger-conflict");
+  assert.equal(actor.updates.length, writes);
+});
