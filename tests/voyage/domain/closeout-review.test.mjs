@@ -261,6 +261,98 @@ function breakdownDefinition(systemId = "crew-morale") {
   };
 }
 
+function pressureHazardVariant(hazardId, pressureSystemId, delta = 1) {
+  const value = pressureHazard();
+  value.hazardId = hazardId;
+  value.ignoredConsequence = {
+    consequenceId: `${hazardId}-consequence`,
+    kind: "pressure-change",
+    pressureSystemId,
+    delta,
+    persistentProposal: null
+  };
+  value.pressureSystemId = pressureSystemId;
+  value.failurePressureSystemId = pressureSystemId;
+  value.currentEffect.effectId = `${hazardId}-effect`;
+  value.metadata.collision.consequence.consequenceId = `${hazardId}-collision`;
+  return value;
+}
+
+function negativePreviewRequest() {
+  const value = validPreviewRequest();
+  value.eventDefinition.rewards = [];
+  value.eventDefinition.misfortuneEnhancements = [
+    { misfortuneEnhancementId: "enhancement-1", title: "First", description: "First enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 },
+    { misfortuneEnhancementId: "enhancement-2", title: "Second", description: "Second enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 }
+  ];
+  value.eventDefinition.misfortunes = [{
+    misfortuneId: "misfortune-1",
+    kind: "travel-delay",
+    title: "A misfortune",
+    description: "A lasting misfortune.",
+    tags: ["authored"],
+    persistence: "persistent",
+    enhancementIds: ["enhancement-1", "enhancement-2"],
+    scarConsequenceProposal: { voidScarDefinitionId: "scar-definition-1", pressureSystemId: "crew-morale", source: "m8-critical-overall-failure" }
+  }];
+  value.rewardAllocation = null;
+  value.negativeSelection = { misfortuneId: "misfortune-1", enhancementIds: ["enhancement-1", "enhancement-2"] };
+  value.closeoutScarDefinitions = [{
+    schemaVersion: 1,
+    voidScarDefinitionId: "scar-definition-1",
+    pressureSystemId: "crew-morale",
+    name: "Crew morale closeout Scar",
+    description: "A crew morale Scar.",
+    operationalEffects: ["Crew morale operations are impaired."],
+    baseRepairCost: 100,
+    baseRepairTime: 1,
+    repairDcSource: "very-hard",
+    eligibleRepairChecks: ["crafting"],
+    requiredFacilities: ["drydock"],
+    compatibleFieldRepairTags: ["crew-morale-field-repair"]
+  }];
+  value.closeoutSnapshot.completedRoundHistory.rounds = value.closeoutSnapshot.completedRoundHistory.rounds
+    .map((round) => ({ ...round, roundResult: "critical-round-failure" }));
+  return value;
+}
+
+function makeApprovedApplication(previewRequestFactory = validPreviewRequest) {
+  const previewRequest = previewRequestFactory();
+  const preview = analyzeVoyageEncounterCloseoutPreview(previewRequest);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  const reviewRequest = {
+    kind: "m10-closeout-review",
+    sessionId: "session-1",
+    gmUserId: "gm-1",
+    confirmed: true,
+    previewRequest,
+    suppliedPreview: preview.preview
+  };
+  const review = analyzeVoyageEncounterCloseoutReview(reviewRequest);
+  assert.equal(review.ok, true, JSON.stringify(review.errors));
+  assert.equal(review.readyForControlledApplication, true);
+  const request = {
+    kind: "m10-apply-approved-closeout",
+    previewRequest,
+    reviewRequest,
+    applicationPlan: review.applicationPlan
+  };
+  return { previewRequest, preview, reviewRequest, review, request };
+}
+
+function assertApplicationFailure(result, code, path, message) {
+  assert.deepEqual(result, {
+    ok: false,
+    applicationId: null,
+    closeoutId: null,
+    nextCloseoutSnapshot: null,
+    nextShipState: null,
+    events: [],
+    errors: [{ code, path, message, severity: "error" }],
+    warnings: []
+  });
+}
+
 function reviewFailure(result, code = "m10-invalid-request-shape", path = "request") {
   assert.deepEqual(result, {
     ok: false,
@@ -334,6 +426,26 @@ test("Task 3 application has an atomic failure sentinel", () => {
       code: "m10-invalid-request-shape",
       path: "request",
       message: "Request shape, order, or root values are invalid.",
+      severity: "error"
+    }],
+    warnings: []
+  });
+});
+
+test("Task 3 application reports the exact invalid closeout snapshot diagnostic", () => {
+  const approved = makeApprovedApplication();
+  const result = applyVoyageEncounterApprovedCloseout({}, approved.previewRequest.shipState, approved.request);
+  assert.deepEqual(result, {
+    ok: false,
+    applicationId: null,
+    closeoutId: null,
+    nextCloseoutSnapshot: null,
+    nextShipState: null,
+    events: [],
+    errors: [{
+      code: "m10-invalid-closeout-snapshot",
+      path: "closeoutSnapshot",
+      message: "Closeout snapshot is invalid.",
       severity: "error"
     }],
     warnings: []
@@ -487,6 +599,346 @@ test("Task 3 application contains hostile roots without partial candidates", () 
     assert.equal(result.nextShipState, null);
     assert.deepEqual(result.events, []);
   }
+});
+
+test("Task 3 contains the complete hostile value matrix at both public boundaries", () => {
+  const previewRequest = validPreviewRequest();
+  const preview = analyzeVoyageEncounterCloseoutPreview(previewRequest);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  const reviewBase = {
+    kind: "m10-closeout-review",
+    sessionId: "session-1",
+    gmUserId: "gm-1",
+    confirmed: true,
+    previewRequest,
+    suppliedPreview: preview.preview
+  };
+  const applyRequest = {
+    kind: "m10-apply-approved-closeout",
+    previewRequest: {},
+    reviewRequest: {},
+    applicationPlan: {}
+  };
+  class HostileClass {}
+  const directCycle = {};
+  directCycle.self = directCycle;
+  const indirectA = {};
+  const indirectB = { indirectA };
+  indirectA.indirectB = indirectB;
+  const sparse = [];
+  sparse.length = 1;
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  const reflectionFailing = new Proxy({}, { ownKeys() { throw new Error("reflection failure"); } });
+  const values = [
+    Symbol("hostile"),
+    () => {},
+    1n,
+    undefined,
+    NaN,
+    Infinity,
+    -Infinity,
+    new Date(0),
+    new Map(),
+    new Set(),
+    new HostileClass(),
+    sparse,
+    directCycle,
+    indirectA,
+    revoked.proxy,
+    reflectionFailing
+  ];
+  for (const value of values) {
+    let fingerprint = null;
+    try {
+      fingerprint = {
+        keys: Reflect.ownKeys(value),
+        length: Array.isArray(value) ? value.length : null,
+        date: value instanceof Date ? value.getTime() : null,
+        map: value instanceof Map ? [...value.entries()] : null,
+        set: value instanceof Set ? [...value.values()] : null
+      };
+    } catch {
+      fingerprint = null;
+    }
+    let reviewResult;
+    assert.doesNotThrow(() => {
+      reviewResult = analyzeVoyageEncounterCloseoutReview({ ...reviewBase, suppliedPreview: value });
+    });
+    assert.deepEqual(reviewResult, {
+      ok: false,
+      readyForEmergencyResponse: false,
+      readyForControlledApplication: false,
+      closeoutId: null,
+      emergencyResponseHandoff: null,
+      applicationPlan: null,
+      errors: [{ code: "m10-hostile-data-capture-failed", path: "$", message: "M10 data could not be captured safely.", severity: "error" }],
+      warnings: []
+    });
+
+    let applicationResult;
+    assert.doesNotThrow(() => {
+      applicationResult = applyVoyageEncounterApprovedCloseout(value, previewRequest.shipState, applyRequest);
+    });
+    assertApplicationFailure(applicationResult, "m10-hostile-data-capture-failed", "$", "M10 data could not be captured safely.");
+    const repeatedReview = analyzeVoyageEncounterCloseoutReview({ ...reviewBase, suppliedPreview: value });
+    const repeatedApplication = applyVoyageEncounterApprovedCloseout(value, previewRequest.shipState, applyRequest);
+    assert.equal(JSON.stringify(reviewResult), JSON.stringify(repeatedReview));
+    assert.equal(JSON.stringify(applicationResult), JSON.stringify(repeatedApplication));
+    if (fingerprint) {
+      assert.deepEqual(Reflect.ownKeys(value), fingerprint.keys);
+      if (Array.isArray(value)) assert.equal(value.length, fingerprint.length);
+      if (value instanceof Date) assert.equal(value.getTime(), fingerprint.date);
+      if (value instanceof Map) assert.deepEqual([...value.entries()], fingerprint.map);
+      if (value instanceof Set) assert.deepEqual([...value.values()], fingerprint.set);
+    }
+  }
+});
+
+test("Task 3 accepts acyclic shared references while isolating every occurrence", () => {
+  const previewRequest = validPreviewRequest();
+  const preview = analyzeVoyageEncounterCloseoutPreview(previewRequest);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  const sharedEmpty = [];
+  const suppliedPreview = {
+    ...preview.preview,
+    hazardCloseoutResults: sharedEmpty,
+    pressureBreachResults: sharedEmpty
+  };
+  const review = analyzeVoyageEncounterCloseoutReview({
+    kind: "m10-closeout-review",
+    sessionId: "session-1",
+    gmUserId: "gm-1",
+    confirmed: true,
+    previewRequest,
+    suppliedPreview
+  });
+  assert.equal(review.ok, true, JSON.stringify(review.errors));
+  assert.notEqual(review.applicationPlan.expectedPreview.hazardCloseoutResults, review.applicationPlan.expectedPreview.pressureBreachResults);
+  review.applicationPlan.expectedPreview.hazardCloseoutResults.push("isolated");
+  assert.deepEqual(review.applicationPlan.expectedPreview.pressureBreachResults, []);
+
+  const application = makeApprovedApplication();
+  const sharedRequest = {
+    kind: "m10-apply-approved-closeout",
+    previewRequest: application.previewRequest,
+    reviewRequest: application.reviewRequest,
+    applicationPlan: application.review.applicationPlan
+  };
+  const result = applyVoyageEncounterApprovedCloseout(
+    application.previewRequest.closeoutSnapshot,
+    application.previewRequest.shipState,
+    sharedRequest
+  );
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  result.nextCloseoutSnapshot.completedRoundHistory.rounds[0].roundResult = "mutated";
+  result.nextCloseoutSnapshot.completedRoundHistory.rounds[1].roundResult = "also-mutated";
+  assert.equal(application.previewRequest.closeoutSnapshot.completedRoundHistory.rounds[0].roundResult, "round-success");
+  assert.notEqual(result.nextCloseoutSnapshot.completedRoundHistory.rounds[0], result.nextCloseoutSnapshot.completedRoundHistory.rounds[1]);
+});
+
+test("Task 3 successful review and application are deterministic and non-mutating", () => {
+  const first = makeApprovedApplication();
+  const firstReviewInput = structuredClone(first.reviewRequest);
+  const firstApplyInput = structuredClone(first.request);
+  const firstReview = analyzeVoyageEncounterCloseoutReview(first.reviewRequest);
+  const second = makeApprovedApplication();
+  const secondReview = analyzeVoyageEncounterCloseoutReview(second.reviewRequest);
+  assert.equal(JSON.stringify(firstReview), JSON.stringify(secondReview));
+  assert.deepEqual(first.reviewRequest, firstReviewInput);
+
+  const firstApplied = applyVoyageEncounterApprovedCloseout(
+    first.previewRequest.closeoutSnapshot,
+    first.previewRequest.shipState,
+    first.request
+  );
+  const secondApplied = applyVoyageEncounterApprovedCloseout(
+    second.previewRequest.closeoutSnapshot,
+    second.previewRequest.shipState,
+    second.request
+  );
+  assert.equal(firstApplied.ok, true, JSON.stringify(firstApplied.errors));
+  assert.equal(JSON.stringify(firstApplied), JSON.stringify(secondApplied));
+  assert.deepEqual(first.request, firstApplyInput);
+  assert.deepEqual(first.previewRequest, firstReviewInput.previewRequest);
+});
+
+test("Task 3 preserves ordered Hazard/Breach/Scar revisions and exact event schemas", () => {
+  const application = makeApprovedApplication(() => {
+    const value = validPreviewRequest();
+    value.closeoutSnapshot.activeHazards = [
+      pressureHazardVariant("hazard-1", "crew-morale"),
+      pressureHazardVariant("hazard-2", "arkengine")
+    ];
+    value.closeoutSnapshot.pressureSystems.find((entry) => entry.pressureSystemId === "crew-morale").value = 2;
+    value.closeoutSnapshot.pressureSystems.find((entry) => entry.pressureSystemId === "arkengine").value = 2;
+    return value;
+  });
+  const result = applyVoyageEncounterApprovedCloseout(
+    application.previewRequest.closeoutSnapshot,
+    application.previewRequest.shipState,
+    application.request
+  );
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(result.events.map((event) => event.type), [
+    "voyage.hazard-closeout-consequence-applied",
+    "voyage.pressure-breach-applied",
+    "voyage.hazard-closeout-consequence-applied",
+    "voyage.pressure-breach-applied",
+    "voyage.void-scar-created",
+    "voyage.void-scar-created",
+    "voyage.closeout-persistent-state-applied",
+    "voyage.closeout-applied"
+  ]);
+  assert.deepEqual(result.events.map((event) => [event.previousRevision ?? event.previousEncounterRevision ?? event.previousShipRevision, event.revision ?? event.encounterRevision]), [
+    [7, 8], [8, 9], [9, 10], [10, 11], [4, 5], [5, 6], [6, 7], [11, 12]
+  ]);
+  assert.deepEqual(Object.keys(result.events[0]), [
+    "type", "applicationId", "closeoutId", "encounterId", "eventId", "sessionId", "definitionSnapshotId", "shipId",
+    "stageId", "roundNumber", "phase", "hazardId", "consequenceId", "consequenceKind", "pressureSystemId",
+    "pressureEffect", "previousHazard", "disposition", "previousEncounterRevision", "encounterRevision"
+  ]);
+  assert.deepEqual(Object.keys(result.events[1]), [
+    "type", "encounterId", "lifecycleState", "stageId", "roundNumber", "phase", "pressureEffectCount",
+    "appliedEffectCount", "breach", "hazard", "collisionOutcome", "voidScarProposal", "pressureReset",
+    "effects", "previousPressureSystems", "pressureSystems", "previousRevision", "revision"
+  ]);
+  assert.deepEqual(Object.keys(result.events[4]), [
+    "type", "shipId", "encounterId", "pressureSystemId", "sourceEventType", "sourceEncounterRevision",
+    "sourceProposal", "previousShipRevision", "revision", "previousVoidScarCount", "voidScarCount", "voidScar"
+  ]);
+  assert.deepEqual(Object.keys(result.events[5]), [
+    "type", "shipId", "encounterId", "pressureSystemId", "sourceEventType", "sourceEncounterRevision",
+    "sourceProposal", "previousShipRevision", "revision", "previousVoidScarCount", "voidScarCount", "voidScar"
+  ]);
+  assert.deepEqual(Object.keys(result.events[6]), [
+    "type", "applicationId", "closeoutId", "shipId", "proposalIds", "previousShipRevision", "revision"
+  ]);
+  assert.deepEqual(Object.keys(result.events[7]), [
+    "type", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId",
+    "overallResult", "proposalIds", "previousEncounterRevision", "encounterRevision", "shipRevision"
+  ]);
+  assert.equal(result.events.filter((event) => event.type === "voyage.pressure-breach-applied").length, 2);
+  assert.equal(result.events.filter((event) => event.type === "voyage.void-scar-created").length, 2);
+  assert.equal(result.events.filter((event) => event.type === "voyage.closeout-applied").length, 1);
+  assert.deepEqual(result.events.filter((event) => event.type === "voyage.hazard-closeout-consequence-applied").map((event) => event.hazardId), ["hazard-1", "hazard-2"]);
+  assert.deepEqual(result.events.filter((event) => event.type === "voyage.void-scar-created").map((event) => event.sourceEventType), ["voyage.pressure-breach-applied", "voyage.pressure-breach-applied"]);
+  assert.deepEqual(result.nextShipState.voidScars.map((scar) => scar.pressureSystemId), ["crew-morale", "arkengine"]);
+  assert.deepEqual(result.nextShipState.disabledSystems, []);
+  assert.deepEqual(result.nextShipState.resources, []);
+  assert.deepEqual(result.nextShipState.persistentConsequences, []);
+  assert.equal(result.nextCloseoutSnapshot.encounterRevision, 12);
+  assert.equal(result.nextShipState.revision, 7);
+});
+
+test("Task 3 preserves the exact M10-v2 Scar-created event without M7 relabeling", () => {
+  const application = makeApprovedApplication(negativePreviewRequest);
+  const result = applyVoyageEncounterApprovedCloseout(
+    application.previewRequest.closeoutSnapshot,
+    application.previewRequest.shipState,
+    application.request
+  );
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const scarEvent = result.events.find((event) => event.type === "voyage.closeout-void-scar-created");
+  assert.ok(scarEvent);
+  assert.deepEqual(Object.keys(scarEvent), [
+    "type", "applicationId", "closeoutId", "shipId", "eventId", "sessionId", "pressureSystemId",
+    "sourceProposal", "previousShipRevision", "revision", "previousVoidScarCount", "voidScarCount", "voidScar"
+  ]);
+  assert.equal(scarEvent.sourceProposal.source, "m8-critical-overall-failure");
+  assert.equal(scarEvent.previousShipRevision, 4);
+  assert.equal(scarEvent.revision, 5);
+  assert.equal(scarEvent.previousVoidScarCount, 0);
+  assert.equal(scarEvent.voidScarCount, 1);
+  assert.equal(result.events.some((event) => event.type === "voyage.void-scar-created"), false);
+  assert.equal(result.nextShipState.voidScars.length, 1);
+  assert.deepEqual(result.nextShipState.persistentConsequences.map(({ kind }) => kind), ["misfortune"]);
+  assert.equal(result.nextShipState.eventHistory.length, 1);
+});
+
+test("Task 3 returns exact completed candidates, reset values, proposal classification, and history", () => {
+  const application = makeApprovedApplication();
+  const result = applyVoyageEncounterApprovedCloseout(
+    application.previewRequest.closeoutSnapshot,
+    application.previewRequest.shipState,
+    application.request
+  );
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(Object.keys(result.nextCloseoutSnapshot), [
+    "schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "shipId", "encounterRevision", "shipRevision",
+    "lifecycleState", "stageId", "roundNumber", "phase", "completedRoundHistory", "momentum", "focusPools",
+    "pressureSystems", "activeHazards", "pendingStationBenefitIds", "unconsumedRiskBidBenefitIds",
+    "temporaryFocusPenaltyIds", "roundOrderRestrictions", "hazardSuppressions", "temporaryConsequenceIds"
+  ]);
+  assert.equal(result.nextCloseoutSnapshot.lifecycleState, "completed-success");
+  assert.equal(result.nextCloseoutSnapshot.momentum, 0);
+  assert.deepEqual(result.nextCloseoutSnapshot.focusPools.map((pool) => pool.current), [0]);
+  assert.deepEqual(result.nextCloseoutSnapshot.pressureSystems.map((system) => system.value), [0, 0, 0, 0, 0]);
+  assert.deepEqual(result.nextCloseoutSnapshot.pendingStationBenefitIds, []);
+  assert.deepEqual(result.nextCloseoutSnapshot.unconsumedRiskBidBenefitIds, []);
+  assert.deepEqual(result.nextCloseoutSnapshot.temporaryFocusPenaltyIds, []);
+  assert.deepEqual(result.nextCloseoutSnapshot.hazardSuppressions, []);
+  assert.deepEqual(result.nextCloseoutSnapshot.temporaryConsequenceIds, []);
+  assert.deepEqual(result.nextCloseoutSnapshot.roundOrderRestrictions, [{ restrictionId: "persistent-order", persistence: "persistent" }]);
+  assert.deepEqual(result.nextCloseoutSnapshot.activeHazards, []);
+
+  assert.deepEqual(Object.keys(result.nextShipState), [
+    "schemaVersion", "revision", "voidScars", "disabledSystems", "rewards", "resources", "persistentConsequences", "eventHistory"
+  ]);
+  assert.deepEqual(result.nextShipState.rewards.map(({ kind }) => kind), ["reward-grant"]);
+  assert.deepEqual(result.nextShipState.resources, []);
+  assert.deepEqual(result.nextShipState.persistentConsequences, []);
+  assert.deepEqual(result.applicationId, application.review.applicationPlan.applicationId);
+  assert.deepEqual(result.nextShipState.eventHistory, [{
+    applicationId: result.applicationId,
+    closeoutId: application.preview.preview.closeoutId,
+    eventId: "event-1",
+    sessionId: "session-1",
+    definitionSnapshotId: "definition-1",
+    shipId: "ship-1",
+    overallResult: "overall-success",
+    previousEncounterRevision: 7,
+    encounterRevision: 8,
+    previousShipRevision: 4,
+    shipRevision: 5,
+    proposalIds: application.preview.preview.persistentProposals.map(({ proposalId }) => proposalId)
+  }]);
+  assert.deepEqual(application.preview.preview.persistentProposals.map(({ kind }) => kind), ["reward-grant", "event-history"]);
+});
+
+test("Task 3 enforces identity and revision bindings with canonical precedence", () => {
+  const base = makeApprovedApplication();
+  const cases = [
+    ["event", (snapshot, ship) => { snapshot.eventId = "other-event"; snapshot.completedRoundHistory.eventId = "other-event"; }, "m10-event-identity-mismatch", "closeoutSnapshot.eventId", "Event identity is not bound."],
+    ["session", (snapshot) => { snapshot.sessionId = "other-session"; snapshot.completedRoundHistory.sessionId = "other-session"; }, "m10-session-identity-mismatch", "closeoutSnapshot.sessionId", "Session identity is not bound."],
+    ["definition", (snapshot) => { snapshot.definitionSnapshotId = "other-definition"; snapshot.completedRoundHistory.definitionSnapshotId = "other-definition"; }, "m10-definition-snapshot-mismatch", "closeoutSnapshot.definitionSnapshotId", "Definition snapshot is not bound."],
+    ["ship", (snapshot, ship) => { snapshot.shipId = "other-ship"; ship.shipId = "other-ship"; }, "m10-ship-identity-mismatch", "closeoutSnapshot.shipId", "Ship identity is not bound."],
+    ["encounter revision", (snapshot) => { snapshot.encounterRevision = 8; }, "m10-encounter-revision-mismatch", "expectedEncounterRevision", "Encounter revision is stale."],
+    ["ship revision", (snapshot, ship) => { snapshot.shipRevision = 5; ship.revision = 5; }, "m10-ship-revision-mismatch", "expectedShipRevision", "Ship revision is stale."]
+  ];
+  for (const [, mutate, code, path, message] of cases) {
+    const snapshot = structuredClone(base.previewRequest.closeoutSnapshot);
+    const ship = structuredClone(base.previewRequest.shipState);
+    mutate(snapshot, ship);
+    const result = applyVoyageEncounterApprovedCloseout(snapshot, ship, base.request);
+    assertApplicationFailure(result, code, path, message);
+  }
+
+  const combinedSnapshot = structuredClone(base.previewRequest.closeoutSnapshot);
+  const combinedShip = structuredClone(base.previewRequest.shipState);
+  combinedSnapshot.eventId = "other-event";
+  combinedSnapshot.completedRoundHistory.eventId = "other-event";
+  combinedSnapshot.sessionId = "other-session";
+  combinedSnapshot.completedRoundHistory.sessionId = "other-session";
+  combinedSnapshot.definitionSnapshotId = "other-definition";
+  combinedSnapshot.completedRoundHistory.definitionSnapshotId = "other-definition";
+  combinedSnapshot.shipId = "other-ship";
+  combinedShip.shipId = "other-ship";
+  combinedSnapshot.encounterRevision = 8;
+  combinedSnapshot.shipRevision = 5;
+  combinedShip.revision = 5;
+  const combined = applyVoyageEncounterApprovedCloseout(combinedSnapshot, combinedShip, base.request);
+  assertApplicationFailure(combined, "m10-event-identity-mismatch", "closeoutSnapshot.eventId", "Event identity is not bound.");
 });
 
 test("Task 3 review enforces confirmation and exact review envelope", () => {
