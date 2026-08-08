@@ -236,6 +236,49 @@ function approvedRequest() {
   };
 }
 
+function negativeApprovedRequest() {
+  const request = previewRequest();
+  request.eventDefinition.rewards = [];
+  request.eventDefinition.misfortuneEnhancements = [
+    { misfortuneEnhancementId: "enhancement-1", title: "First", description: "First enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 },
+    { misfortuneEnhancementId: "enhancement-2", title: "Second", description: "Second enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 }
+  ];
+  request.eventDefinition.misfortunes = [{
+    misfortuneId: "misfortune-1",
+    kind: "travel-delay",
+    title: "A misfortune",
+    description: "A lasting misfortune.",
+    tags: ["authored"],
+    persistence: "persistent",
+    enhancementIds: ["enhancement-1", "enhancement-2"],
+    scarConsequenceProposal: {
+      voidScarDefinitionId: "scar-definition-1",
+      pressureSystemId: "crew-morale",
+      source: "m8-critical-overall-failure"
+    }
+  }];
+  request.eventDefinition.nextSituations = [{ nextSituationId: "next-1", title: "Next", summary: "Continue.", transitionKind: "delay" }];
+  request.rewardAllocation = null;
+  request.negativeSelection = { misfortuneId: "misfortune-1", enhancementIds: ["enhancement-1", "enhancement-2"] };
+  request.closeoutScarDefinitions = [{
+    schemaVersion: 1,
+    voidScarDefinitionId: "scar-definition-1",
+    pressureSystemId: "crew-morale",
+    name: "Crew morale closeout Scar",
+    description: "A crew morale Scar.",
+    operationalEffects: ["Crew morale operations are impaired."],
+    baseRepairCost: 100,
+    baseRepairTime: 1,
+    repairDcSource: "very-hard",
+    eligibleRepairChecks: ["crafting"],
+    requiredFacilities: ["drydock"],
+    compatibleFieldRepairTags: ["crew-morale-field-repair"]
+  }];
+  request.closeoutSnapshot.completedRoundHistory.rounds = request.closeoutSnapshot.completedRoundHistory.rounds
+    .map((round) => ({ ...round, roundResult: "critical-round-failure" }));
+  return approvedRequestFromPreviewRequest(request);
+}
+
 function approvedRequestFromPreviewRequest(request) {
   const preview = analyzeVoyageEncounterCloseoutPreview(request);
   assert.equal(preview.ok, true, JSON.stringify(preview.errors));
@@ -327,7 +370,6 @@ function m10ScarRequest() {
   request.emergencyResponseEvidence = [];
   return request;
 }
-
 function reservationReceipt(entry, activeGmUserId = "gm-1") {
   return {
     kind: "voyage.m11-closeout-session-reserved",
@@ -1388,4 +1430,62 @@ test("canonical M10-v2 Scar path persists through finalization and rejects forge
   });
   assert.equal(forgedActor.updates.length, writes);
   assert.deepEqual(forgedActor.flags.arcflight.system.voyage, before);
+});
+
+test("stored M8 Scar provenance is bound to its Misfortune and closeout identity", async () => {
+  const misfortuneActor = actorFixture();
+  installGame(misfortuneActor);
+  await persistVoyageEncounterApprovedCloseout(negativeApprovedRequest());
+  const misfortuneEntry = misfortuneActor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const misfortune = misfortuneEntry.afterState.persistentConsequences.find((proposal) => proposal.kind === "misfortune");
+  assert.ok(misfortune);
+  misfortune.payload.negativePackage.scarConsequenceProposals[0].source = "foreign-source";
+  const misfortuneWrites = misfortuneActor.updates.length;
+  const misfortuneFailure = await persistVoyageEncounterApprovedCloseout(negativeApprovedRequest());
+  assert.equal(misfortuneFailure.ok, false);
+  assert.equal(misfortuneFailure.errors[0].code, "m10-ledger-conflict");
+  assert.equal(misfortuneActor.updates.length, misfortuneWrites);
+
+  const scarActor = actorFixture();
+  installGame(scarActor);
+  await persistVoyageEncounterApprovedCloseout(negativeApprovedRequest());
+  const scarEntry = scarActor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const scarEvent = scarEntry.events.find((event) => event.type === "voyage.closeout-void-scar-created");
+  assert.ok(scarEvent);
+  scarEvent.voidScar.source.eventId = "foreign-event";
+  const scarWrites = scarActor.updates.length;
+  const scarFailure = await persistVoyageEncounterApprovedCloseout(negativeApprovedRequest());
+  assert.equal(scarFailure.ok, false);
+  assert.equal(scarFailure.errors[0].code, "m10-ledger-conflict");
+  assert.equal(scarActor.updates.length, scarWrites);
+});
+
+test("stored closeout event records reject forged consequence and breach arithmetic", async () => {
+  const actor = actorFixture();
+  installGame(actor);
+  await persistVoyageEncounterApprovedCloseout(approvedRequest());
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const finalEvent = entry.events.find((event) => event.type === "voyage.closeout-applied");
+  assert.ok(finalEvent);
+  finalEvent.overallResult = "forged-result";
+  const writes = actor.updates.length;
+  const failure = await persistVoyageEncounterApprovedCloseout(approvedRequest());
+  assert.equal(failure.ok, false);
+  assert.equal(failure.errors[0].code, "m10-ledger-conflict");
+  assert.equal(actor.updates.length, writes);
+});
+
+test("stored M6 breach events bind nested encounter identity to the outer event", async () => {
+  const actor = actorFixture();
+  installGame(actor);
+  await persistVoyageEncounterApprovedCloseout(approvedRequest());
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const breachEvent = entry.events.find((event) => event.type === "voyage.pressure-breach-applied");
+  if (!breachEvent) return;
+  breachEvent.breach.encounterId = "foreign-event";
+  const writes = actor.updates.length;
+  const result = await persistVoyageEncounterApprovedCloseout(approvedRequest());
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m10-ledger-conflict");
+  assert.equal(actor.updates.length, writes);
 });
