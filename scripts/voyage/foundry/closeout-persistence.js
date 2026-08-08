@@ -9,6 +9,7 @@ import { applyVoyageEncounterApprovedCloseout } from "../domain/closeout-review.
 import { VOYAGE_PRESSURE_SYSTEM_IDS, VOYAGE_ROUND_RESULTS } from "../domain/constants.js";
 import { validateVoyageHazardRecord } from "../domain/hazard-schema.js";
 import { analyzeVoyageCatastrophicBreakdown, validateVoyageCatastrophicBreakdownDefinition } from "../domain/catastrophic-breakdown.js";
+import { analyzeVoyagePressureBreachCloseoutTransaction } from "../domain/pressure-breach.js";
 
 const VOYAGE_PATH = `flags.${ARCFLIGHT_MODULE_ID}.system.voyage`;
 const VOYAGE_LEDGER_PATH = `${VOYAGE_PATH}.closeoutLedger`;
@@ -294,6 +295,8 @@ const M6_SCAR_SOURCE_FIELDS = Object.freeze([
   "sourceKind", "pressureEffectId", "sourceIntentId", "activationSource", "branch", "timing", "visibility", "name"
 ]);
 const M10_SCAR_SOURCE_FIELDS = Object.freeze(["eventId", "sessionId", "definitionSnapshotId", "misfortuneId", "voidScarDefinitionId"]);
+const CLOSEOUT_CONSEQUENCE_FIELDS = Object.freeze(["consequenceId", "kind", "pressureSystemId", "delta", "persistentProposal"]);
+const PERSISTENT_CONSEQUENCE_FIELDS = Object.freeze(["proposalId", "kind", "title", "description", "targetKind", "targetId"]);
 const EVENT_FIELDS = Object.freeze({
   "voyage.hazard-closeout-consequence-applied": [
     "type", "applicationId", "closeoutId", "encounterId", "eventId", "sessionId", "definitionSnapshotId", "shipId",
@@ -404,6 +407,17 @@ function validRewardEnhancement(value) {
     && value.maxApplicationsPerReward === 1;
 }
 
+function validRewardEnhancementGraph(reward, enhancementIds, enhancements) {
+  return denseStrings(enhancementIds)
+    && equal(reward.enhancementIds, enhancementIds)
+    && validArray(enhancements)
+    && enhancements.length === enhancementIds.length
+    && enhancements.every((enhancement, index) => validRewardEnhancement(enhancement)
+      && enhancement.enhancementId === enhancementIds[index]
+      && enhancement.compatibleRewardIds.includes(reward.rewardId)
+      && enhancement.compatibleRewardKinds.includes(reward.kind));
+}
+
 function validMisfortuneRecord(value) {
   return exactPlainRecord(value, MISFORTUNE_FIELDS)
     && nonBlank(value.misfortuneId) && nonBlank(value.kind) && nonBlank(value.title) && nonBlank(value.description)
@@ -412,8 +426,7 @@ function validMisfortuneRecord(value) {
     && (value.scarConsequenceProposal === null || (exactPlainRecord(value.scarConsequenceProposal, ["voidScarDefinitionId", "pressureSystemId", "source"])
       && nonBlank(value.scarConsequenceProposal.voidScarDefinitionId)
       && VOYAGE_PRESSURE_SYSTEM_IDS.includes(value.scarConsequenceProposal.pressureSystemId)
-      && exactPlainRecord(value.scarConsequenceProposal.source, ["eventId", "sessionId", "definitionSnapshotId", "misfortuneId", "voidScarDefinitionId"])
-      && [value.scarConsequenceProposal.source.eventId, value.scarConsequenceProposal.source.sessionId, value.scarConsequenceProposal.source.definitionSnapshotId, value.scarConsequenceProposal.source.misfortuneId, value.scarConsequenceProposal.source.voidScarDefinitionId].every(nonBlank)));
+      && value.scarConsequenceProposal.source === "m8-critical-overall-failure"));
 }
 
 function validMisfortuneEnhancement(value) {
@@ -435,14 +448,14 @@ function validEmergencyConsequence(value) {
 }
 
 function validEmergencyOutcome(value) {
-  if (!isPlainObject(value) || !["emergency-stabilized", "emergency-failed"].includes(value.kind)) return false;
-  const fields = value.kind === "emergency-stabilized" ? EMERGENCY_STABILIZED_FIELDS : EMERGENCY_FAILED_FIELDS;
+  if (!isPlainObject(value) || !["m9-emergency-response-stabilized", "m9-emergency-response-failed"].includes(value.kind)) return false;
+  const fields = value.kind === "m9-emergency-response-stabilized" ? EMERGENCY_STABILIZED_FIELDS : EMERGENCY_FAILED_FIELDS;
   if (!exactKeys(value, fields)) return false;
   if (![value.eventId, value.sessionId, value.definitionSnapshotId, value.shipId, value.breakdownDefinitionId, value.emergencyResponseDefinitionId, value.catastrophicHazardId].every(nonBlank)
     || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(value.systemId)
     || value.requiresGmApproval !== true
     || !validEmergencyNextSituation(value.nextSituation)) return false;
-  if (value.kind === "emergency-stabilized") {
+  if (value.kind === "m9-emergency-response-stabilized") {
     return value.catastropheStatus === "stabilized" && value.hazardDisposition === "contained"
       && value.systemStatus === "disabled" && value.repairApplied === false && value.scarAdded === false
       && value.scarRemoved === false && value.sourceEventStatus === "ended";
@@ -458,39 +471,46 @@ function validNestedProposalPayload(proposal) {
   if (proposal.kind === "reward-grant") {
     return exactKeys(payload, ["reward", "enhancementIds", "enhancements"])
       && validRewardRecord(payload.reward)
-      && denseStrings(payload.enhancementIds) && validArray(payload.enhancements)
-      && payload.enhancementIds.length === payload.enhancements.length && payload.enhancements.every(validRewardEnhancement);
+      && validRewardEnhancementGraph(payload.reward, payload.enhancementIds, payload.enhancements);
   }
   if (proposal.kind === "void-fortune-grant") {
     return exactKeys(payload, ["reward", "voidFortune", "enhancementIds", "enhancements"])
       && validRewardRecord(payload.reward)
       && validVoidFortuneRecord(payload.voidFortune)
+      && equal(payload.reward.voidFortune, payload.voidFortune)
       && nonBlank(payload.reward.rewardId) && nonBlank(payload.voidFortune.voidFortuneId)
-      && denseStrings(payload.enhancementIds) && validArray(payload.enhancements)
-      && payload.enhancementIds.length === payload.enhancements.length && payload.enhancements.every(validRewardEnhancement);
+      && validRewardEnhancementGraph(payload.reward, payload.enhancementIds, payload.enhancements);
   }
   if (proposal.kind === "field-repair-resource-grant") {
     return exactKeys(payload, ["reward", "fieldRepairResource", "enhancementIds", "enhancements"])
       && validRewardRecord(payload.reward)
       && validFieldRepairRecord(payload.fieldRepairResource)
+      && equal(payload.reward.fieldRepairResource, payload.fieldRepairResource)
       && nonBlank(payload.reward.rewardId) && nonBlank(payload.fieldRepairResource.fieldRepairResourceId)
-      && denseStrings(payload.enhancementIds) && validArray(payload.enhancements)
-      && payload.enhancementIds.length === payload.enhancements.length && payload.enhancements.every(validRewardEnhancement);
+      && validRewardEnhancementGraph(payload.reward, payload.enhancementIds, payload.enhancements);
   }
   if (proposal.kind === "misfortune") {
     return exactKeys(payload, ["misfortune", "negativePackage"])
       && validMisfortuneRecord(payload.misfortune)
       && exactPlainRecord(payload.negativePackage, ["misfortuneId", "enhancementIds", "misfortune", "enhancements", "nextSituation", "scarConsequenceProposals"])
       && payload.negativePackage.misfortuneId === payload.misfortune.misfortuneId
-      && denseStrings(payload.negativePackage.enhancementIds)
+      && equal(payload.negativePackage.misfortune, payload.misfortune)
+      && equal(payload.negativePackage.enhancementIds, payload.misfortune.enhancementIds)
       && validMisfortuneRecord(payload.negativePackage.misfortune)
-      && validArray(payload.negativePackage.enhancements) && payload.negativePackage.enhancements.every(validMisfortuneEnhancement)
+      && validArray(payload.negativePackage.enhancements)
+      && payload.negativePackage.enhancements.length === payload.negativePackage.enhancementIds.length
+      && payload.negativePackage.enhancements.every((enhancement, index) => validMisfortuneEnhancement(enhancement)
+        && enhancement.misfortuneEnhancementId === payload.negativePackage.enhancementIds[index]
+        && enhancement.compatibleMisfortuneIds.includes(payload.misfortune.misfortuneId))
       && validEmergencyNextSituation(payload.negativePackage.nextSituation)
       && validArray(payload.negativePackage.scarConsequenceProposals)
+      && (payload.misfortune.scarConsequenceProposal === null
+        ? payload.negativePackage.scarConsequenceProposals.length === 0
+        : payload.negativePackage.scarConsequenceProposals.length === 1
+          && equal(payload.negativePackage.scarConsequenceProposals[0], payload.misfortune.scarConsequenceProposal))
       && payload.negativePackage.scarConsequenceProposals.every((scar) => exactPlainRecord(scar, ["voidScarDefinitionId", "pressureSystemId", "source"])
         && nonBlank(scar.voidScarDefinitionId) && VOYAGE_PRESSURE_SYSTEM_IDS.includes(scar.pressureSystemId)
-        && exactPlainRecord(scar.source, ["eventId", "sessionId", "definitionSnapshotId", "misfortuneId", "voidScarDefinitionId"])
-        && [scar.source.eventId, scar.source.sessionId, scar.source.definitionSnapshotId, scar.source.misfortuneId, scar.source.voidScarDefinitionId].every(nonBlank));
+        && scar.source === "m8-critical-overall-failure");
   }
   if (proposal.kind === "persistent-consequence") {
     return exactKeys(payload, ["proposalId", "kind", "title", "description", "targetKind", "targetId"])
@@ -568,7 +588,7 @@ function canonicalProposalId(closeoutId, proposal) {
   return `arcflight-closeout-proposal:${JSON.stringify([closeoutId, proposal.kind, proposal.sourceKind, proposal.sourceId, proposal.targetKind, proposal.targetId])}`;
 }
 
-function canonicalM10ScarSourceId(source) {
+function canonicalM10ScarSourceId(source, pressureSystemId = source.pressureSystemId) {
   return `arcflight-closeout-scar-proposal:${JSON.stringify([
     "m8-critical-overall-failure",
     source.eventId,
@@ -576,7 +596,7 @@ function canonicalM10ScarSourceId(source) {
     source.definitionSnapshotId,
     source.misfortuneId,
     source.voidScarDefinitionId,
-    source.pressureSystemId
+    pressureSystemId
   ])}`;
 }
 
@@ -585,7 +605,7 @@ function validEventHistory(entry) {
   if (!["overall-success", "overall-failure"].includes(entry.overallResult)) return false;
   if (![entry.applicationId, entry.closeoutId, entry.eventId, entry.sessionId, entry.definitionSnapshotId, entry.shipId].every(nonBlank)) return false;
   if (![entry.previousEncounterRevision, entry.encounterRevision, entry.previousShipRevision, entry.shipRevision].every((value) => Number.isSafeInteger(value) && value >= 0)) return false;
-  return validArray(entry.proposalIds) && entry.proposalIds.every(nonBlank);
+  return validArray(entry.proposalIds) && entry.proposalIds.every(nonBlank) && new Set(entry.proposalIds).size === entry.proposalIds.length;
 }
 
 function validProposal(proposal, closeoutId) {
@@ -687,6 +707,59 @@ function validCrossProposalBindings(proposals) {
   return true;
 }
 
+function validM9ProposalBindings(proposals, entry) {
+  const breakdowns = proposals.filter((proposal) => proposal.kind === "catastrophic-breakdown");
+  for (const proposal of breakdowns) {
+    const exhaustion = proposal.payload.capacityExhaustion;
+    const definition = proposal.payload.breakdownDefinition;
+    const plan = proposal.payload.breakdownPlan;
+    const hazard = plan.catastrophicHazard;
+    const response = definition.emergencyResponseDefinition;
+    if (exhaustion.eventId !== entry.eventId
+      || exhaustion.sessionId !== entry.sessionId
+      || exhaustion.definitionSnapshotId !== entry.definitionSnapshotId
+      || exhaustion.shipId !== entry.shipId
+      || exhaustion.systemId !== definition.systemId
+      || exhaustion.systemId !== hazard.failurePressureSystemId
+      || hazard.encounterId !== entry.eventId
+      || hazard.pressureSystemId !== exhaustion.systemId
+      || definition.systemId !== exhaustion.systemId
+      || plan.emergencyResponseDefinitionId !== response.emergencyResponseDefinitionId
+      || response.breakdownDefinitionId !== definition.breakdownDefinitionId
+      || response.systemId !== exhaustion.systemId) return false;
+  }
+  for (const proposal of proposals) {
+    if (proposal.kind === "system-disablement" || proposal.kind === "catastrophic-hazard") {
+      const breakdown = breakdowns.find((candidate) => candidate.payload.breakdownDefinition.breakdownDefinitionId === proposal.sourceId);
+      if (!breakdown) return false;
+      const exhaustion = breakdown.payload.capacityExhaustion;
+      const definition = breakdown.payload.breakdownDefinition;
+      const hazard = breakdown.payload.breakdownPlan.catastrophicHazard;
+      if (proposal.kind === "system-disablement"
+        ? proposal.targetId !== exhaustion.systemId || proposal.payload.systemId !== exhaustion.systemId
+        : proposal.targetId !== entry.eventId || proposal.payload.encounterId !== entry.eventId || proposal.payload.pressureSystemId !== exhaustion.systemId
+          || proposal.payload.hazardId !== hazard.hazardId) return false;
+      if (definition.systemId !== exhaustion.systemId) return false;
+    }
+    if (proposal.kind === "emergency-response-outcome") {
+      const breakdown = breakdowns.find((candidate) => candidate.payload.breakdownDefinition.emergencyResponseDefinition.emergencyResponseDefinitionId === proposal.sourceId);
+      if (!breakdown) return false;
+      const exhaustion = breakdown.payload.capacityExhaustion;
+      const definition = breakdown.payload.breakdownDefinition;
+      const outcome = proposal.payload;
+      if (outcome.eventId !== entry.eventId
+        || outcome.sessionId !== entry.sessionId
+        || outcome.definitionSnapshotId !== entry.definitionSnapshotId
+        || outcome.shipId !== entry.shipId
+        || outcome.breakdownDefinitionId !== definition.breakdownDefinitionId
+        || outcome.emergencyResponseDefinitionId !== proposal.sourceId
+        || outcome.catastrophicHazardId !== definition.catastrophicHazard.hazardId
+        || outcome.systemId !== exhaustion.systemId) return false;
+    }
+  }
+  return true;
+}
+
 function validCompletedSnapshot(snapshot) {
   const history = snapshot?.completedRoundHistory;
   const validHistory = isPlainObject(history) && exactKeys(history, HISTORY_FIELDS) && history.schemaVersion === 1 && [history.eventId, history.sessionId, history.definitionSnapshotId].every(nonBlank) && Number.isSafeInteger(history.roundCount) && history.roundCount >= 0 && validArray(history.rounds) && history.rounds.length === history.roundCount && history.rounds.every((round) => isPlainObject(round) && exactKeys(round, HISTORY_ROUND_FIELDS) && nonBlank(round.roundId) && Number.isSafeInteger(round.roundNumber) && round.roundNumber >= 0 && ROUND_RESULTS.has(round.roundResult));
@@ -754,6 +827,55 @@ function validPressureEffect(value) {
     && nullableNonBlank(value.stationId) && nullableNonBlank(value.actionId)
     && safeInteger(value.roundNumber) && safeInteger(value.sequence) && VOYAGE_PRESSURE_SYSTEM_IDS.includes(value.pressureSystemId)
     && Number.isSafeInteger(value.delta) && value.delta > 0;
+}
+
+function validCloseoutConsequence(value) {
+  if (!exactPlainRecord(value, CLOSEOUT_CONSEQUENCE_FIELDS) || !nonBlank(value.consequenceId)) return false;
+  if (value.kind === "pressure-change") {
+    return VOYAGE_PRESSURE_SYSTEM_IDS.includes(value.pressureSystemId)
+      && Number.isSafeInteger(value.delta) && value.delta > 0
+      && value.persistentProposal === null;
+  }
+  if (value.kind === "persistent-consequence") {
+    return value.pressureSystemId === null && value.delta === null
+      && exactPlainRecord(value.persistentProposal, PERSISTENT_CONSEQUENCE_FIELDS)
+      && nonBlank(value.persistentProposal.proposalId)
+      && M6_PERSISTENT_KINDS.has(value.persistentProposal.kind)
+      && nonBlank(value.persistentProposal.title)
+      && nonBlank(value.persistentProposal.description)
+      && TARGET_KINDS.has(value.persistentProposal.targetKind)
+      && nonBlank(value.persistentProposal.targetId);
+  }
+  return false;
+}
+
+function validHazardCloseoutBindings(event, previousHazard, entry) {
+  if (previousHazard.hazardId !== event.hazardId
+    || !validCloseoutConsequence(previousHazard.ignoredConsequence)
+    || previousHazard.ignoredConsequence.consequenceId !== event.consequenceId
+    || previousHazard.ignoredConsequence.kind !== event.consequenceKind) return false;
+  const pressureEffect = event.pressureEffect;
+  if (pressureEffect === null) return event.pressureSystemId === null && previousHazard.ignoredConsequence.kind === "persistent-consequence";
+  const consequence = previousHazard.ignoredConsequence;
+  return consequence.kind === "pressure-change"
+    && pressureEffect.encounterId === entry.eventId
+    && pressureEffect.stageId === event.stageId
+    && pressureEffect.roundNumber === event.roundNumber
+    && pressureEffect.sourceKind === "hazard-closeout"
+    && pressureEffect.sourceIntentId === event.consequenceId
+    && pressureEffect.activationSource === "event-closeout"
+    && pressureEffect.branch === "no-roll"
+    && pressureEffect.timing === "gm-confirmed"
+    && pressureEffect.stationId === null
+    && pressureEffect.actionId === null
+    && pressureEffect.pressureSystemId === event.pressureSystemId
+    && pressureEffect.pressureSystemId === consequence.pressureSystemId
+    && pressureEffect.delta === consequence.delta
+    && pressureEffect.visibility === previousHazard.visibility
+    && pressureEffect.pressureEffectId === `arcflight-pressure-effect:${JSON.stringify([
+      "hazard-closeout", entry.eventId, entry.sessionId, event.stageId, event.roundNumber,
+      event.hazardId, event.consequenceId, pressureEffect.sequence, pressureEffect.pressureSystemId
+    ])}`;
 }
 
 function validM6Breach(value) {
@@ -828,9 +950,44 @@ function validM10EventBinding(event, entry) {
   const proposal = allStoredProposals(entry).find((candidate) => candidate.kind === "void-scar-create"
     && candidate.sourceKind === "m8-critical-overall-failure"
     && equal(candidate.payload.incomingScarProposal, event.sourceProposal));
-  return Boolean(proposal)
-    && proposal.targetId === event.pressureSystemId
-    && equal(proposal.payload.voidScar, event.voidScar);
+  const incoming = event.sourceProposal;
+  if (proposal && (proposal.targetId !== event.pressureSystemId || !equal(proposal.payload.voidScar, event.voidScar))) return false;
+  if (!exactPlainRecord(incoming, ["voidScarDefinitionId", "pressureSystemId", "source"])
+    || incoming.pressureSystemId !== event.pressureSystemId
+    || incoming.source !== "m8-critical-overall-failure"
+    || !exactPlainRecord(event.voidScar.source, M10_SCAR_SOURCE_FIELDS)) return false;
+  const source = event.voidScar.source;
+  const misfortune = allStoredProposals(entry).find((candidate) => candidate.kind === "misfortune"
+    && candidate.payload.misfortune.misfortuneId === source.misfortuneId);
+  if (!misfortune) return false;
+  const m8Sources = misfortune.payload.negativePackage.scarConsequenceProposals;
+  const result = source.eventId === entry.eventId
+    && source.sessionId === entry.sessionId
+    && source.definitionSnapshotId === entry.definitionSnapshotId
+    && source.misfortuneId === misfortune.payload.misfortune.misfortuneId
+    && incoming.voidScarDefinitionId === source.voidScarDefinitionId
+    && m8Sources.some((candidate) => candidate.voidScarDefinitionId === source.voidScarDefinitionId
+      && candidate.pressureSystemId === incoming.pressureSystemId
+      && candidate.source === "m8-critical-overall-failure");
+  return result;
+}
+
+function validEventHistoryBinding(entry) {
+  if (!validArray(entry.afterState.eventHistory) || entry.afterState.eventHistory.length !== 1) return false;
+  const history = entry.afterState.eventHistory[0];
+  const finalEvent = entry.events.find((event) => event.type === "voyage.closeout-applied");
+  if (!finalEvent) return false;
+  return history.applicationId === entry.applicationId
+    && history.closeoutId === entry.closeoutId
+    && history.eventId === entry.eventId
+    && history.sessionId === entry.sessionId
+    && history.definitionSnapshotId === entry.definitionSnapshotId
+    && history.shipId === entry.shipId
+    && history.previousEncounterRevision === entry.expectedEncounterRevision
+    && history.encounterRevision === entry.resultingEncounterRevision
+    && history.previousShipRevision === entry.expectedShipRevision
+    && history.shipRevision === entry.resultingShipRevision
+    && equal(history.proposalIds, finalEvent.proposalIds);
 }
 
 function validPressureMapTransition(event) {
@@ -843,6 +1000,51 @@ function validPressureMapTransition(event) {
     || equal(event.previousPressureSystems[id], event.pressureSystems[id]));
 }
 
+function validCanonicalM6Event(event, existingHazard = null) {
+  const breach = event.breach;
+  const effect = event.effects[0];
+  const previous = event.previousPressureSystems[breach.pressureSystemId];
+  const next = event.pressureSystems[breach.pressureSystemId];
+  if (!previous || !next
+    || breach.remainingCapacity !== breach.capacity - breach.previousValue
+    || breach.attemptedDelta !== effect.delta
+    || breach.overflowDelta !== breach.attemptedDelta - breach.remainingCapacity
+    || breach.overflowDelta <= 0
+    || previous.value !== breach.previousValue
+    || next.value !== 0) return false;
+  if (event.collisionOutcome !== null) {
+    if (!existingHazard) return false;
+    const canonical = analyzeVoyagePressureBreachCloseoutTransaction({
+      expectedEncounterRevision: event.previousRevision,
+      closeoutContext: {
+        eventId: event.encounterId,
+        sessionId: event.sessionId,
+        stageId: event.stageId,
+        roundNumber: event.roundNumber,
+        phase: event.phase
+      },
+      pressureSystems: Object.values(event.previousPressureSystems),
+      activeHazards: [existingHazard],
+      pressureEffect: event.effects[0]
+    });
+    return canonical.ok && canonical.breachRequired && equal(canonical.event, event);
+  }
+  const canonical = analyzeVoyagePressureBreachCloseoutTransaction({
+    expectedEncounterRevision: event.previousRevision,
+    closeoutContext: {
+      eventId: event.encounterId,
+      sessionId: event.sessionId,
+      stageId: event.stageId,
+      roundNumber: event.roundNumber,
+      phase: event.phase
+    },
+    pressureSystems: Object.values(event.previousPressureSystems),
+    activeHazards: [],
+    pressureEffect: event.effects[0]
+  });
+  return canonical.ok && equal(canonical.event, event);
+}
+
 function validEventRecord(event, entry) {
   if (!isPlainObject(event) || !Object.hasOwn(event, "type") || !EVENT_FIELDS[event.type] || !exactKeys(event, EVENT_FIELDS[event.type])) return false;
   const type = event.type;
@@ -853,6 +1055,7 @@ function validEventRecord(event, entry) {
       && event.phase === "cleanup-advance" && event.disposition === "removed" && safeInteger(event.roundNumber)
       && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1
       && (event.pressureEffect === null || validPressureEffect(event.pressureEffect)) && validateVoyageHazardRecord(event.previousHazard, { mode: "snapshot", expectedEncounterId: entry.eventId }).valid
+      && validHazardCloseoutBindings(event, event.previousHazard, entry)
       && (event.pressureSystemId === null || VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureSystemId));
   }
   if (type === "voyage.pressure-breach-applied") {
@@ -861,9 +1064,6 @@ function validEventRecord(event, entry) {
       && event.pressureEffectCount === 1 && event.appliedEffectCount === 1 && validM6Breach(event.breach) && validM6Hazard(event.hazard)
       && fieldsEqual(event.hazard, event.breach, ["pressureBreachId", "encounterId", "stageId", "roundNumber", "effectIndex", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceIntentId", "activationSource", "branch", "timing", "visibility"])
       && fieldsEqual(event.breach, event.effects[0], ["encounterId", "stageId", "roundNumber", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceKind", "sourceIntentId", "activationSource", "branch", "timing", "visibility"])
-      && (event.collisionOutcome === null || (exactPlainRecord(event.collisionOutcome, ["kind", "hazardId", "incomingHazardId", "pressureSystemId", "collisionPolicy", "consequence"])
-        && nonBlank(event.collisionOutcome.kind) && nonBlank(event.collisionOutcome.hazardId) && nonBlank(event.collisionOutcome.incomingHazardId)
-        && VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.collisionOutcome.pressureSystemId) && nonBlank(event.collisionOutcome.collisionPolicy) && isPlainObject(event.collisionOutcome.consequence)))
       && validM6ScarSource(event.voidScarProposal)
       && fieldsEqual(event.voidScarProposal, event.breach, ["pressureBreachId", "encounterId", "stageId", "roundNumber", "effectIndex", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceIntentId", "activationSource", "branch", "timing", "visibility"])
       && event.voidScarProposal.hazardId === event.hazard.hazardId
@@ -871,7 +1071,11 @@ function validEventRecord(event, entry) {
       && VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureReset.pressureSystemId) && event.pressureReset.resetValue === 0
       && validArray(event.effects) && event.effects.length === 1 && validPressureEffect(event.effects[0]) && validPressureSystemsMap(event.previousPressureSystems) && validPressureSystemsMap(event.pressureSystems)
       && validPressureMapTransition(event)
-      && safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1;
+      && safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1
+      && validCanonicalM6Event(event, event.collisionOutcome === null
+        ? null
+        : entry.events.find((candidate) => candidate.type === "voyage.hazard-closeout-consequence-applied"
+          && candidate.previousHazard?.hazardId === event.collisionOutcome.hazardId)?.previousHazard);
   }
   if (type === "voyage.void-scar-created") {
     return nonBlank(event.shipId) && event.shipId === entry.shipId && nonBlank(event.encounterId) && event.pressureSystemId !== undefined
@@ -882,15 +1086,17 @@ function validEventRecord(event, entry) {
       && validM7EventBinding(event, entry);
   }
   if (type === "voyage.closeout-void-scar-created") {
-    return [event.applicationId, event.closeoutId, event.shipId, event.eventId, event.sessionId, event.pressureSystemId].every(nonBlank)
+    const result = [event.applicationId, event.closeoutId, event.shipId, event.eventId, event.sessionId, event.pressureSystemId].every(nonBlank)
       && event.applicationId === entry.applicationId && event.closeoutId === entry.closeoutId && event.shipId === entry.shipId && event.eventId === entry.eventId && event.sessionId === entry.sessionId
       && VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureSystemId) && exactPlainRecord(event.sourceProposal, ["voidScarDefinitionId", "pressureSystemId", "source"])
       && nonBlank(event.sourceProposal.voidScarDefinitionId) && event.sourceProposal.pressureSystemId === event.pressureSystemId
-      && exactPlainRecord(event.sourceProposal.source, M10_SCAR_SOURCE_FIELDS) && M10_SCAR_SOURCE_FIELDS.every((key) => nonBlank(event.sourceProposal.source[key]))
+      && event.sourceProposal.source === "m8-critical-overall-failure"
+      && exactPlainRecord(event.voidScar.source, M10_SCAR_SOURCE_FIELDS) && M10_SCAR_SOURCE_FIELDS.every((key) => nonBlank(event.voidScar.source[key]))
       && captureVoyageDurableVoidScarRecord(event.voidScar).ok
       && safeInteger(event.previousShipRevision) && safeInteger(event.revision) && event.revision === event.previousShipRevision + 1
       && safeInteger(event.previousVoidScarCount) && safeInteger(event.voidScarCount) && event.voidScarCount === event.previousVoidScarCount + 1
       && validM10EventBinding(event, entry);
+    return result;
   }
   if (type === "voyage.closeout-persistent-state-applied") {
     return [event.applicationId, event.closeoutId, event.shipId].every(nonBlank)
@@ -932,6 +1138,16 @@ function validEventCollection(events, entry) {
     if (event?.type === "voyage.closeout-void-scar-created") {
       const source = allStoredProposals(entry).find((proposal) => proposal.kind === "void-scar-create" && equal(proposal.payload.incomingScarProposal, event.sourceProposal));
       if (source) scarProposalIds.add(source.proposalId);
+      else if (isPlainObject(event.sourceProposal) && isPlainObject(event.voidScar?.source)) {
+        const generated = canonicalProposalId(entry.closeoutId, {
+          kind: "void-scar-create",
+          sourceKind: "m8-critical-overall-failure",
+          sourceId: canonicalM10ScarSourceId(event.voidScar.source, event.pressureSystemId),
+          targetKind: "pressure-system",
+          targetId: event.pressureSystemId
+        });
+        scarProposalIds.add(generated);
+      }
     }
   }
   const expectedBatchProposalIds = [...finalProposalIds].filter((id) => !scarProposalIds.has(id));
@@ -974,7 +1190,8 @@ function validEventCollection(events, entry) {
       finalShip = true;
     }
   }
-  return finalEncounter && encounterRevision === entry.resultingEncounterRevision && shipRevision === entry.resultingShipRevision;
+  const valid = finalEncounter && encounterRevision === entry.resultingEncounterRevision && shipRevision === entry.resultingShipRevision;
+  return valid;
 }
 
 function validLedgerEntry(entry) {
@@ -990,7 +1207,10 @@ function validLedgerEntry(entry) {
   if (entry.status === "prepared-awaiting-session" && (entry.sessionReservationReceipt !== null || entry.sessionCommitReceipt !== null)) return false;
   if (entry.status === "ship-applied-awaiting-session" && (entry.sessionReservationReceipt === null || entry.sessionCommitReceipt !== null)) return false;
   if (entry.status === "committed" && (entry.sessionReservationReceipt === null || entry.sessionCommitReceipt === null)) return false;
-  return validEventCollection(entry.events, entry)
+  const p = validM9ProposalBindings(allStoredProposals(entry), entry);
+  const h = validEventHistoryBinding(entry);
+  const e = validEventCollection(entry.events, entry);
+  return p && h && e
     && (entry.sessionReservationReceipt === null || exactReservationReceipt(entry.sessionReservationReceipt))
     && (entry.sessionCommitReceipt === null || exactCommitReceipt(entry.sessionCommitReceipt, entry));
 }
@@ -1340,7 +1560,7 @@ async function persistPrepared(actor, projection, entry, identity) {
     return { errors: [m10("m10-persistence-write-failed", VOYAGE_PATH)] };
   }
   const reread = await rereadAndProject(identity.shipId);
-    if (reread.errors || !equal(reread.voyage.closeoutLedger, captured.value) || !equal(reread.gameplay, entry.beforeState)) return { response: await classifyVerificationFailure(actor, identity.applicationId, entry.beforeState, identity.gmUserId) };
+  if (reread.errors || !equal(reread.voyage.closeoutLedger, captured.value) || !equal(reread.gameplay, entry.beforeState)) return { response: await classifyVerificationFailure(actor, identity.applicationId, entry.beforeState, identity.gmUserId) };
   return { entry, revision: reread.shipState.revision };
 }
 
@@ -1444,6 +1664,9 @@ export async function persistVoyageEncounterApprovedCloseout(request) {
         shipId: regenerated.nextCloseoutSnapshot.shipId
       };
       if (!ledgerIdentityMatches(existing, regeneratedIdentity, regenerated)) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
+      if (!equal(existing.events, regenerated.events)
+        || !equal(existing.completedCloseoutSnapshot, regenerated.nextCloseoutSnapshot)
+        || !equal(existing.afterState.voidScars, regenerated.nextShipState.voidScars)) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
       if (existing.status === "prepared-awaiting-session" && equal(projection.gameplay, existing.beforeState)) return success("already-prepared-awaiting-session", existing, projection.shipState.revision);
       if (existing.status === "ship-applied-awaiting-session" && equal(projection.gameplay, existing.afterState)) return success("already-ship-applied-awaiting-session", existing, projection.shipState.revision);
       if (existing.status === "committed") {

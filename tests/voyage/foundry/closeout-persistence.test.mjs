@@ -10,7 +10,10 @@ import {
   analyzeVoyageEncounterCloseoutPreview
 } from "../../../scripts/voyage/domain/closeout.js";
 import { analyzeVoyageEncounterCloseoutReview } from "../../../scripts/voyage/domain/closeout-review.js";
+import { analyzeVoyageEmergencyResponseResult } from "../../../scripts/voyage/domain/emergency-response.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
+import { VOYAGE_PRESSURE_BREACH_VOID_SCAR_DESCRIPTORS } from "../../../scripts/voyage/domain/void-scar-creation.js";
+import { VOYAGE_VOID_SCAR_NAME_BY_PRESSURE_SYSTEM_ID } from "../../../scripts/voyage/domain/void-scar-schema.js";
 
 const originalGame = globalThis.game;
 test.afterEach(() => {
@@ -107,6 +110,55 @@ function previewRequest() {
   };
 }
 
+function closeoutHazard({ hazardId, category = "system", pressureSystemId = "crew-morale", consequenceId = `${hazardId}-consequence`, delta = 1 } = {}) {
+  const eventHazard = category === "event";
+  return {
+    hazardId,
+    encounterId: "event-1",
+    category,
+    status: "active",
+    name: `${hazardId} Hazard`,
+    currentEffect: { effectId: `${hazardId}-effect`, description: "A Hazard effect." },
+    activationTiming: { kind: "event-closeout", stationId: null, resultId: null },
+    removalMethod: { methodId: "address-hazard" },
+    ignoredConsequence: { consequenceId, kind: "pressure-change", pressureSystemId, delta, persistentProposal: null },
+    visibility: "public",
+    sourceKind: "authored-hazard",
+    createdStageId: "stage-final",
+    createdRoundNumber: 3,
+    createdSequence: 1,
+    escalation: { mode: "none", currentStageId: null, stages: [], countdown: null, maximumEscalationReached: false, escalationConsequence: null },
+    collisionPolicy: "trigger-existing-consequence",
+    duration: { mode: "none", remaining: null, initial: null, decrementTiming: null },
+    failurePressureSystemId: eventHazard ? null : pressureSystemId,
+    resolvedStageId: null,
+    resolvedRoundNumber: null,
+    terminalReason: null,
+    replacedByHazardId: null,
+    metadata: { collision: { consequence: { consequenceId: `${hazardId}-collision`, description: "A collision consequence." } } },
+    pressureSystemId: eventHazard ? null : pressureSystemId,
+    eventAreaId: eventHazard ? "event-area-1" : null,
+    pressureBreachId: null,
+    stationId: "captain",
+    actionId: "closeout-action",
+    pressureEffectId: null,
+    sourceIntentId: null,
+    activationSource: null,
+    branch: "no-roll",
+    sourceTiming: "gm-confirmed",
+    sourceVisibility: "public"
+  };
+}
+
+function approvedRequestWithHazards(hazards, pressureValue = 0) {
+  const request = previewRequest();
+  request.closeoutSnapshot.activeHazards = hazards;
+  request.closeoutSnapshot.pressureSystems = request.closeoutSnapshot.pressureSystems.map((system) => system.pressureSystemId === "crew-morale"
+    ? { ...system, value: pressureValue }
+    : system);
+  return request;
+}
+
 function voyageState() {
   return {
     schemaVersion: 1,
@@ -182,6 +234,98 @@ function approvedRequest() {
     reviewRequest,
     applicationPlan: review.applicationPlan
   };
+}
+
+function approvedRequestFromPreviewRequest(request) {
+  const preview = analyzeVoyageEncounterCloseoutPreview(request);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  const reviewRequest = {
+    kind: "m10-closeout-review",
+    sessionId: "session-1",
+    gmUserId: "gm-1",
+    confirmed: true,
+    previewRequest: request,
+    suppliedPreview: preview.preview
+  };
+  const review = analyzeVoyageEncounterCloseoutReview(reviewRequest);
+  assert.equal(review.ok, true, JSON.stringify(review.errors));
+  return { kind: "m10-persist-approved-closeout", previewRequest: request, reviewRequest, applicationPlan: review.applicationPlan };
+}
+
+function validM7Scar(id, system = "crew-morale") {
+  const descriptor = VOYAGE_PRESSURE_BREACH_VOID_SCAR_DESCRIPTORS[system];
+  const pressureBreachId = `fixture-breach-${id}`;
+  return {
+    voidScarId: `arcflight-void-scar:${JSON.stringify(["pressure-breach", pressureBreachId])}`,
+    name: VOYAGE_VOID_SCAR_NAME_BY_PRESSURE_SYSTEM_ID[system], pressureSystemId: system, status: "active", sourceKind: "pressure-breach",
+    description: descriptor.description, operationalEffects: [...descriptor.operationalEffects], baseRepairCost: descriptor.baseRepairCost, baseRepairTime: descriptor.baseRepairTime,
+    repairDcSource: descriptor.repairDcSource, eligibleRepairChecks: [...descriptor.eligibleRepairChecks], requiredFacilities: [...descriptor.requiredFacilities], compatibleFieldRepairTags: [...descriptor.compatibleFieldRepairTags],
+    pressureBreachId, hazardId: `fixture-hazard-${id}`, encounterId: "event-1", stageId: "stage-final", roundNumber: 3, effectIndex: 0, sequence: 0,
+    stationId: "captain", actionId: "closeout-action", pressureEffectId: `fixture-effect-${id}`, sourceIntentId: null, activationSource: "hazard-closeout", branch: "no-roll", timing: "gm-confirmed", visibility: "public"
+  };
+}
+
+function breakdownDefinition(systemId = "crew-morale") {
+  const descriptor = { consequenceId: "descriptive-consequence" };
+  const hazardValue = {
+    hazardId: `catastrophic-${systemId}`, encounterId: "event-1", category: "system", status: "active", name: "Catastrophic system failure", currentEffect: descriptor,
+    activationTiming: { kind: "immediate", stationId: null, resultId: null }, removalMethod: { methodId: "emergency-response" }, ignoredConsequence: descriptor, visibility: "public",
+    sourceKind: "m9-catastrophic-breakdown", createdStageId: "stage-1", createdRoundNumber: 1, createdSequence: 0,
+    escalation: { mode: "none", currentStageId: null, stages: [], countdown: null, maximumEscalationReached: false, escalationConsequence: null }, collisionPolicy: "trigger-existing-consequence",
+    duration: { mode: "none", remaining: null, initial: null, decrementTiming: null }, failurePressureSystemId: systemId, resolvedStageId: null, resolvedRoundNumber: null, terminalReason: null, replacedByHazardId: null,
+    metadata: { collision: { consequence: descriptor } }, pressureSystemId: systemId, eventAreaId: null, pressureBreachId: "breakdown-breach", stationId: "engineer", actionId: "breakdown-action",
+    pressureEffectId: "breakdown-pressure-effect", sourceIntentId: "breakdown-intent", activationSource: "catastrophic-breakdown", branch: "failure", sourceTiming: "consequences", sourceVisibility: "public"
+  };
+  const response = {
+    schemaVersion: 1, emergencyResponseDefinitionId: `response-${systemId}`, breakdownDefinitionId: `breakdown-${systemId}`, systemId, systemKind: "pressure-system", title: "Emergency response", description: "An authored emergency response.", roundCount: 3,
+    rounds: [1, 2, 3].map((roundNumber) => ({ roundId: `response-round-${systemId}-${roundNumber}`, roundNumber })),
+    stabilizationOutcome: { outcomeId: `stabilized-${systemId}`, title: "Stabilized", description: "The system is contained.", nextSituationId: `next-${systemId}` },
+    failureConsequences: [{ consequenceId: `failure-${systemId}`, kind: "strand", title: "Stranded", description: "The ship is stranded.", nextSituationId: `next-${systemId}` }],
+    nextSituations: [{ nextSituationId: `next-${systemId}`, title: "Aftermath", summary: "The voyage continues.", transitionKind: "emergency" }]
+  };
+  return { schemaVersion: 1, breakdownDefinitionId: `breakdown-${systemId}`, systemId, systemKind: "pressure-system", title: "Catastrophic Breakdown", description: "An authored catastrophic breakdown.", catastrophicHazard: hazardValue, pausePlan: { timing: "after-current-segment", resumeCondition: "emergency-response-resolved" }, emergencyResponseDefinition: response };
+}
+
+function m9PreviewRequest() {
+  const request = previewRequest();
+  request.rewardAllocation = null;
+  request.closeoutSnapshot.completedRoundHistory.rounds = request.closeoutSnapshot.completedRoundHistory.rounds.map((round) => ({ ...round, roundResult: "critical-round-failure" }));
+  request.eventDefinition.rewards = [];
+  request.eventDefinition.misfortuneEnhancements = [
+    { misfortuneEnhancementId: "enhancement-1", title: "First", description: "First enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 },
+    { misfortuneEnhancementId: "enhancement-2", title: "Second", description: "Second enhancement.", compatibleMisfortuneIds: ["misfortune-1"], maxApplicationsPerMisfortune: 1 }
+  ];
+  request.eventDefinition.misfortunes = [{ misfortuneId: "misfortune-1", kind: "travel-delay", title: "A misfortune", description: "A lasting misfortune.", tags: ["authored"], persistence: "persistent", enhancementIds: ["enhancement-1", "enhancement-2"], scarConsequenceProposal: { voidScarDefinitionId: "scar-definition-1", pressureSystemId: "crew-morale", source: "m8-critical-overall-failure" } }];
+  request.negativeSelection = { misfortuneId: "misfortune-1", enhancementIds: ["enhancement-1", "enhancement-2"] };
+  request.shipState.voidScars = [validM7Scar("occupied-1"), validM7Scar("occupied-2", "arkengine")];
+  request.closeoutScarDefinitions = [{ schemaVersion: 1, voidScarDefinitionId: "scar-definition-1", pressureSystemId: "crew-morale", name: "Crew morale closeout Scar", description: "A crew morale Scar.", operationalEffects: ["Crew morale operations are impaired."], baseRepairCost: 100, baseRepairTime: 1, repairDcSource: "very-hard", eligibleRepairChecks: ["crafting"], requiredFacilities: ["drydock"], compatibleFieldRepairTags: ["crew-morale-field-repair"] }];
+  request.breakdownDefinitions = [breakdownDefinition()];
+  return request;
+}
+
+function completeBreakdownRequest() {
+  const request = m9PreviewRequest();
+  const blocked = analyzeVoyageEncounterCloseoutPreview(request);
+  assert.equal(blocked.ok, true, JSON.stringify(blocked.errors));
+  const result = blocked.preview.breakdownResults[0];
+  const definition = request.breakdownDefinitions[0];
+  const history = {
+    schemaVersion: 1, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", systemId: definition.systemId,
+    liveRevision: result.capacityExhaustion.liveRevision, breakdownDefinitionId: definition.breakdownDefinitionId, emergencyResponseDefinitionId: definition.emergencyResponseDefinition.emergencyResponseDefinitionId,
+    roundCount: definition.emergencyResponseDefinition.roundCount, rounds: definition.emergencyResponseDefinition.rounds.map((round) => ({ ...round, roundResult: "round-success" }))
+  };
+  const outcome = analyzeVoyageEmergencyResponseResult({ kind: "m9-emergency-response", sessionId: "session-1", breakdownDefinition: definition, breakdownPlan: result.breakdownAnalysis.breakdownPlan, completedRoundHistory: history });
+  assert.equal(outcome.ok, true, JSON.stringify(outcome.errors));
+  request.emergencyResponseEvidence = [{ breakdownDefinition: definition, breakdownPlan: result.breakdownAnalysis.breakdownPlan, completedRoundHistory: history, suppliedOutcome: outcome }];
+  return request;
+}
+
+function m10ScarRequest() {
+  const request = m9PreviewRequest();
+  request.shipState.voidScars = [];
+  request.breakdownDefinitions = [];
+  request.emergencyResponseEvidence = [];
+  return request;
 }
 
 function reservationReceipt(entry, activeGmUserId = "gm-1") {
@@ -940,4 +1084,308 @@ test("completed history identities are bound to the completed snapshot", async (
     assert.deepEqual(result.errors, [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }], field);
     assert.equal(actor.updates.length, writes, field);
   }
+});
+
+test("duplicated nested proposal graphs and event-history identities fail with zero writes", async () => {
+  const mutations = [
+    (entry) => { entry.afterState.rewards[0].payload.enhancementIds = ["forged-enhancement"]; },
+    (entry) => { entry.afterState.rewards[0].payload.enhancements = [{ forged: true }]; },
+    (entry) => { entry.afterState.eventHistory[0].sessionId = "foreign-session"; },
+    (entry) => { entry.afterState.eventHistory[0].proposalIds = [...entry.afterState.eventHistory[0].proposalIds, "forged-proposal"]; }
+  ];
+  for (const mutate of mutations) {
+    const actor = actorFixture();
+    installGame(actor);
+    await persistVoyageEncounterApprovedCloseout(approvedRequest());
+    const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+    mutate(entry);
+    const writes = actor.updates.length;
+    const result = await persistVoyageEncounterApprovedCloseout(approvedRequest());
+    assert.deepEqual(result, {
+      ok: false,
+      status: "failed",
+      applicationId: null,
+      closeoutId: null,
+      shipId: null,
+      revision: null,
+      events: [],
+      errors: [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }],
+      warnings: []
+    });
+    assert.equal(actor.updates.length, writes);
+  }
+});
+
+test("forged M6/M7/M10 event identities fail closed before a write", async () => {
+  const eventCases = [
+    (entry) => { entry.events[0] = { ...entry.events[0], type: "voyage.pressure-breach-applied", encounterId: "foreign-event" }; },
+    (entry) => { entry.events[0] = { ...entry.events[0], type: "voyage.void-scar-created", sourceProposal: { forged: true } }; },
+    (entry) => { entry.events[0] = { ...entry.events[0], type: "voyage.closeout-void-scar-created", sourceProposal: { forged: true } }; }
+  ];
+  for (const mutate of eventCases) {
+    const actor = actorFixture();
+    installGame(actor);
+    await persistVoyageEncounterApprovedCloseout(approvedRequest());
+    const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+    mutate(entry);
+    const writes = actor.updates.length;
+    const result = await persistVoyageEncounterApprovedCloseout(approvedRequest());
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.errors, [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }]);
+    assert.equal(actor.updates.length, writes);
+  }
+});
+
+test("persists a canonical non-collision Hazard closeout through continuation and finalization", async () => {
+  const actor = actorFixture();
+  installGame(actor);
+  const request = approvedRequestFromPreviewRequest(approvedRequestWithHazards([closeoutHazard({ hazardId: "hazard-noncollision" })]));
+  const prepared = await persistVoyageEncounterApprovedCloseout(request);
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  assert.deepEqual(entry.events.map(({ type }) => type), ["voyage.hazard-closeout-consequence-applied", "voyage.closeout-persistent-state-applied", "voyage.closeout-applied"]);
+  assert.equal(entry.events[0].pressureEffect.sourceKind, "hazard-closeout");
+  const reservation = reservationReceipt(entry);
+  const continued = await continueVoyageEncounterCloseoutReservation({ kind: "m10-continue-closeout-reservation", applicationId: entry.applicationId, receipt: reservation });
+  assert.equal(continued.ok, true, JSON.stringify(continued.errors));
+  const finalized = await finalizeVoyageEncounterCloseoutReceipt({ kind: "m10-finalize-closeout-receipt", applicationId: entry.applicationId, receipt: commitReceipt(actor.flags.arcflight.system.voyage.closeoutLedger[0]) });
+  assert.equal(finalized.ok, true, JSON.stringify(finalized.errors));
+  assert.equal(actor.flags.arcflight.system.voyage.closeoutLedger[0].status, "committed");
+  assert.deepEqual(actor.system, { attributes: { preserved: true } });
+  assert.deepEqual(actor.items, [{ id: "item-1", type: "equipment" }]);
+  assert.deepEqual(actor.flags.arcflight.sibling, { preserved: true });
+});
+
+test("persists a canonical collision Breach and M7 Scar, while forged collision data writes nothing", async () => {
+  const baseRequest = approvedRequestWithHazards([
+    closeoutHazard({ hazardId: "hazard-incoming", category: "event" }),
+    closeoutHazard({ hazardId: "hazard-existing", pressureSystemId: "crew-morale", consequenceId: "existing-consequence" })
+  ], 2);
+  const canonicalActor = actorFixture();
+  installGame(canonicalActor);
+  const canonicalRequest = approvedRequestFromPreviewRequest(structuredClone(baseRequest));
+  const prepared = await persistVoyageEncounterApprovedCloseout(canonicalRequest);
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+  const canonicalEntry = canonicalActor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const breach = canonicalEntry.events.find((event) => event.type === "voyage.pressure-breach-applied");
+  assert.ok(breach);
+  assert.equal(breach.collisionOutcome.kind, "hazard-consequence-triggered");
+  assert.ok(canonicalEntry.events.some((event) => event.type === "voyage.void-scar-created"));
+
+  const mutations = [
+    (event) => { event.collisionOutcome.hazardId = "foreign-existing-hazard"; },
+    (event) => { event.collisionOutcome.consequence.description = "forged consequence"; },
+    (event) => { event.breach.overflowDelta += 1; }
+  ];
+  for (const mutate of mutations) {
+    const actor = actorFixture();
+    installGame(actor);
+    const request = approvedRequestFromPreviewRequest(structuredClone(baseRequest));
+    const result = await persistVoyageEncounterApprovedCloseout(request);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    const beforeWrites = actor.updates.length;
+    const forged = structuredClone(actor.flags.arcflight.system.voyage);
+    mutate(forged.closeoutLedger[0].events.find((event) => event.type === "voyage.pressure-breach-applied"));
+    actor.flags.arcflight.system.voyage = forged;
+    const retry = await persistVoyageEncounterApprovedCloseout(request);
+    assert.equal(retry.ok, false);
+    assert.deepEqual(retry.errors, [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }]);
+    assert.equal(actor.updates.length, beforeWrites);
+  }
+});
+
+test("forged collision records fail validation before continuation or finalization writes", async () => {
+  const baseRequest = approvedRequestWithHazards([
+    closeoutHazard({ hazardId: "hazard-incoming", category: "event" }),
+    closeoutHazard({ hazardId: "hazard-existing", pressureSystemId: "crew-morale", consequenceId: "existing-consequence" })
+  ], 2);
+  const mutations = [
+    (event) => { event.collisionOutcome.hazardId = "foreign-existing-hazard"; },
+    (event) => { event.collisionOutcome.collisionPolicy = "foreign-policy"; },
+    (event) => { event.collisionOutcome.consequence.description = "forged consequence"; },
+    (event) => { event.breach.overflowDelta += 1; },
+    (event) => { event.pressureSystems["crew-morale"].value = 1; },
+    (event) => { event.effects[0].pressureEffectId = "foreign-effect"; }
+  ];
+  const failure = {
+    ok: false,
+    status: "failed",
+    applicationId: null,
+    closeoutId: null,
+    shipId: null,
+    revision: null,
+    events: [],
+    errors: [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }],
+    warnings: []
+  };
+  for (const mutate of mutations) {
+    const actor = actorFixture();
+    installGame(actor);
+    const request = approvedRequestFromPreviewRequest(structuredClone(baseRequest));
+    const prepared = await persistVoyageEncounterApprovedCloseout(request);
+    assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+    const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+    const reservation = reservationReceipt(entry);
+    mutate(entry.events.find((event) => event.type === "voyage.pressure-breach-applied"));
+    const before = structuredClone(actor.flags.arcflight.system.voyage);
+    const writes = actor.updates.length;
+    const continued = await continueVoyageEncounterCloseoutReservation({ kind: "m10-continue-closeout-reservation", applicationId: entry.applicationId, receipt: reservation });
+    assert.deepEqual(continued, failure);
+    assert.equal(actor.updates.length, writes);
+    assert.deepEqual(actor.flags.arcflight.system.voyage, before);
+  }
+  for (const mutate of mutations) {
+    const actor = actorFixture();
+    installGame(actor);
+    const request = approvedRequestFromPreviewRequest(structuredClone(baseRequest));
+    const prepared = await persistVoyageEncounterApprovedCloseout(request);
+    assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+    let entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+    const continued = await continueVoyageEncounterCloseoutReservation({ kind: "m10-continue-closeout-reservation", applicationId: entry.applicationId, receipt: reservationReceipt(entry) });
+    assert.equal(continued.ok, true, JSON.stringify(continued.errors));
+    entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+    const commit = commitReceipt(entry);
+    mutate(entry.events.find((event) => event.type === "voyage.pressure-breach-applied"));
+    const before = structuredClone(actor.flags.arcflight.system.voyage);
+    const writes = actor.updates.length;
+    const finalized = await finalizeVoyageEncounterCloseoutReceipt({ kind: "m10-finalize-closeout-receipt", applicationId: entry.applicationId, receipt: commit });
+    assert.deepEqual(finalized, failure);
+    assert.equal(actor.updates.length, writes);
+    assert.deepEqual(actor.flags.arcflight.system.voyage, before);
+  }
+});
+
+test("forged Hazard closeout provenance fails before any document write", async () => {
+  const actor = actorFixture();
+  installGame(actor);
+  const request = approvedRequestFromPreviewRequest(approvedRequestWithHazards([closeoutHazard({ hazardId: "hazard-provenance" })]));
+  const prepared = await persistVoyageEncounterApprovedCloseout(request);
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  const baselineWrites = actor.updates.length;
+  const fields = [
+    (event) => { event.pressureEffect.encounterId = "foreign-event"; },
+    (event) => { event.pressureEffect.stageId = "foreign-stage"; },
+    (event) => { event.pressureEffect.sourceKind = "foreign-source"; },
+    (event) => { event.pressureEffect.sourceIntentId = "foreign-intent"; },
+    (event) => { event.previousHazard.hazardId = "foreign-hazard"; }
+  ];
+  for (const mutate of fields) {
+    const original = structuredClone(actor.flags.arcflight.system.voyage);
+    mutate(original.closeoutLedger[0].events[0]);
+    actor.flags.arcflight.system.voyage = original;
+    const result = await persistVoyageEncounterApprovedCloseout(request);
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.errors, [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }]);
+    assert.equal(actor.updates.length, baselineWrites);
+    actor.flags.arcflight.system.voyage = structuredClone(entry.beforeState);
+    actor.flags.arcflight.system.voyage.closeoutLedger = [entry];
+  }
+});
+
+test("canonical M9 Breakdown and Emergency Response path persists through finalization", async () => {
+  const request = approvedRequestFromPreviewRequest(completeBreakdownRequest());
+  const actor = actorFixture();
+  actor.flags.arcflight.system.voyage.voidScars = structuredClone(request.previewRequest.shipState.voidScars);
+  installGame(actor);
+  const prepared = await persistVoyageEncounterApprovedCloseout(request);
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  assert.equal(entry.status, "prepared-awaiting-session");
+  assert.ok(entry.afterState.disabledSystems.length > 0);
+  assert.deepEqual(entry.afterState.persistentConsequences.map(({ kind }) => kind), ["misfortune", "catastrophic-breakdown", "catastrophic-hazard", "emergency-response-outcome"]);
+  const breakdown = entry.afterState.persistentConsequences.find((proposal) => proposal.kind === "catastrophic-breakdown");
+  const outcome = entry.afterState.persistentConsequences.find((proposal) => proposal.kind === "emergency-response-outcome");
+  assert.equal(breakdown.sourceKind, "m9-capacity-exhaustion");
+  assert.equal(breakdown.targetKind, "pressure-system");
+  assert.equal(outcome.sourceKind, "m9-emergency-response");
+  assert.equal(outcome.targetKind, "pressure-system");
+  assert.deepEqual(entry.events.map(({ type }) => type), ["voyage.closeout-persistent-state-applied", "voyage.closeout-applied"]);
+  assert.equal(entry.events[0].previousShipRevision, 4);
+  assert.equal(entry.events[0].revision, 5);
+  assert.equal(entry.events[1].previousEncounterRevision, 7);
+  assert.equal(entry.events[1].encounterRevision, 8);
+  const continued = await continueVoyageEncounterCloseoutReservation({ kind: "m10-continue-closeout-reservation", applicationId: entry.applicationId, receipt: reservationReceipt(entry) });
+  assert.equal(continued.ok, true, JSON.stringify(continued.errors));
+  const finalized = await finalizeVoyageEncounterCloseoutReceipt({ kind: "m10-finalize-closeout-receipt", applicationId: entry.applicationId, receipt: commitReceipt(actor.flags.arcflight.system.voyage.closeoutLedger[0]) });
+  assert.equal(finalized.ok, true, JSON.stringify(finalized.errors));
+  assert.equal(actor.flags.arcflight.system.voyage.closeoutLedger[0].status, "committed");
+  assert.deepEqual(actor.system, { attributes: { preserved: true } });
+  assert.deepEqual(actor.items, [{ id: "item-1", type: "equipment" }]);
+  assert.deepEqual(actor.flags.arcflight.sibling, { preserved: true });
+});
+
+test("forged M9 Breakdown and Emergency Response identities reject with zero writes", async () => {
+  const mutations = [
+    (entry) => { entry.afterState.persistentConsequences.find((proposal) => proposal.kind === "catastrophic-breakdown").payload.capacityExhaustion.systemId = "arkengine"; },
+    (entry) => { entry.afterState.persistentConsequences.find((proposal) => proposal.kind === "emergency-response-outcome").payload.emergencyResponseDefinitionId = "foreign-response"; }
+  ];
+  for (const mutate of mutations) {
+    const request = approvedRequestFromPreviewRequest(completeBreakdownRequest());
+    const actor = actorFixture();
+    actor.flags.arcflight.system.voyage.voidScars = structuredClone(request.previewRequest.shipState.voidScars);
+    installGame(actor);
+    const prepared = await persistVoyageEncounterApprovedCloseout(request);
+    assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+    const writes = actor.updates.length;
+    mutate(actor.flags.arcflight.system.voyage.closeoutLedger[0]);
+    const retry = await persistVoyageEncounterApprovedCloseout(request);
+    assert.deepEqual(retry, {
+      ok: false,
+      status: "failed",
+      applicationId: null,
+      closeoutId: null,
+      shipId: null,
+      revision: null,
+      events: [],
+      errors: [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }],
+      warnings: []
+    });
+    assert.equal(actor.updates.length, writes);
+  }
+});
+
+test("canonical M10-v2 Scar path persists through finalization and rejects forged provenance", async () => {
+  const request = approvedRequestFromPreviewRequest(m10ScarRequest());
+  const actor = actorFixture();
+  installGame(actor);
+  const prepared = await persistVoyageEncounterApprovedCloseout(request);
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+  const entry = actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  assert.equal(entry.status, "prepared-awaiting-session");
+  const scarEvent = entry.events.find((event) => event.type === "voyage.closeout-void-scar-created");
+  assert.ok(scarEvent);
+  assert.equal(scarEvent.sourceProposal.source, "m8-critical-overall-failure");
+  assert.equal(scarEvent.voidScar.sourceKind, "m8-critical-overall-failure");
+  assert.deepEqual(entry.events.map(({ type }) => type), ["voyage.closeout-void-scar-created", "voyage.closeout-persistent-state-applied", "voyage.closeout-applied"]);
+  const continued = await continueVoyageEncounterCloseoutReservation({ kind: "m10-continue-closeout-reservation", applicationId: entry.applicationId, receipt: reservationReceipt(entry) });
+  assert.equal(continued.ok, true, JSON.stringify(continued.errors));
+  const finalized = await finalizeVoyageEncounterCloseoutReceipt({ kind: "m10-finalize-closeout-receipt", applicationId: entry.applicationId, receipt: commitReceipt(actor.flags.arcflight.system.voyage.closeoutLedger[0]) });
+  assert.equal(finalized.ok, true, JSON.stringify(finalized.errors));
+  assert.equal(actor.flags.arcflight.system.voyage.closeoutLedger[0].status, "committed");
+  assert.deepEqual(actor.system, { attributes: { preserved: true } });
+  assert.deepEqual(actor.items, [{ id: "item-1", type: "equipment" }]);
+  assert.deepEqual(actor.flags.arcflight.sibling, { preserved: true });
+
+  const forgedActor = actorFixture();
+  installGame(forgedActor);
+  const forgedPrepared = await persistVoyageEncounterApprovedCloseout(approvedRequestFromPreviewRequest(m10ScarRequest()));
+  assert.equal(forgedPrepared.ok, true, JSON.stringify(forgedPrepared.errors));
+  const writes = forgedActor.updates.length;
+  forgedActor.flags.arcflight.system.voyage.closeoutLedger[0].events.find((event) => event.type === "voyage.closeout-void-scar-created").sourceProposal.voidScarDefinitionId = "foreign-definition";
+  const before = structuredClone(forgedActor.flags.arcflight.system.voyage);
+  const forgedRetry = await persistVoyageEncounterApprovedCloseout(request);
+  assert.deepEqual(forgedRetry, {
+    ok: false,
+    status: "failed",
+    applicationId: null,
+    closeoutId: null,
+    shipId: null,
+    revision: null,
+    events: [],
+    errors: [{ code: "m10-ledger-conflict", path: "closeoutLedger", message: "Ledger identity or state conflicts with this application.", severity: "error" }],
+    warnings: []
+  });
+  assert.equal(forgedActor.updates.length, writes);
+  assert.deepEqual(forgedActor.flags.arcflight.system.voyage, before);
 });
