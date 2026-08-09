@@ -333,12 +333,17 @@ const SUPPRESSION_FIELDS = Object.freeze(["suppressionId", "hazardId"]);
 const HISTORY_FIELDS = Object.freeze(["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "roundCount", "rounds"]);
 const HISTORY_ROUND_FIELDS = Object.freeze(["roundId", "roundNumber", "roundResult"]);
 const RECEIPT_RESERVATION_FIELDS = Object.freeze([
-  "kind", "reservationId", "activeGmUserId", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "expectedEncounterRevision"
+  "kind", "reservationId", "activeGmUserId", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "expectedEncounterRevision", "pressureBreachSources"
 ]);
 const RECEIPT_COMMIT_FIELDS = Object.freeze([
   "kind", "reservationId", "activeGmUserId", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId",
-  "previousEncounterRevision", "encounterRevision", "completedCloseoutSnapshot", "encounterEvents"
+  "previousEncounterRevision", "encounterRevision", "completedCloseoutSnapshot", "encounterEvents", "pressureBreachSources"
 ]);
+const PRESSURE_BREACH_SOURCE_FIELDS = Object.freeze([
+  "breachEventIndex", "sourceHazardId", "expectedEncounterRevision", "closeoutContext",
+  "pressureSystems", "activeHazards", "pressureEffect"
+]);
+const PRESSURE_BREACH_CONTEXT_FIELDS = Object.freeze(["eventId", "sessionId", "stageId", "roundNumber", "phase"]);
 
 function gameplayFromVoyage(voyage) {
   return {
@@ -1023,6 +1028,33 @@ function validM10EventBinding(event, entry) {
     && event.voidScar.pressureSystemId === event.pressureSystemId;
 }
 
+function hasSharedReference(value, seen = new Set(), ancestors = new Set()) {
+  try {
+    if (value === null || typeof value !== "object") return false;
+    if (ancestors.has(value) || seen.has(value)) return true;
+    seen.add(value);
+    ancestors.add(value);
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !Object.hasOwn(descriptor, "value") || hasSharedReference(descriptor.value, seen, ancestors)) return true;
+    }
+    ancestors.delete(value);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function hasSharedReceiptReference(request) {
+  try {
+    if (!isPlainObject(request)) return false;
+    const descriptor = Object.getOwnPropertyDescriptor(request, "receipt");
+    return Boolean(descriptor && Object.hasOwn(descriptor, "value") && hasSharedReference(descriptor.value));
+  } catch {
+    return true;
+  }
+}
+
 function validEventHistoryBinding(entry) {
   if (!validArray(entry.afterState.eventHistory) || entry.afterState.eventHistory.length !== 1) return false;
   const history = entry.afterState.eventHistory[0];
@@ -1051,7 +1083,7 @@ function validPressureMapTransition(event) {
     || equal(event.previousPressureSystems[id], event.pressureSystems[id]));
 }
 
-function validCanonicalM6Event(event, existingHazard = null) {
+function validCanonicalM6Event(event, existingHazard = null, allowPersistedCollision = false, source = null, deferCollision = false) {
   const breach = event.breach;
   const effect = event.effects[0];
   const previous = event.previousPressureSystems[breach.pressureSystemId];
@@ -1064,7 +1096,11 @@ function validCanonicalM6Event(event, existingHazard = null) {
     || previous.value !== breach.previousValue
     || next.value !== 0) return false;
   if (event.collisionOutcome !== null) {
-    if (!existingHazard) return false;
+    if (!source && deferCollision) return true;
+    if (!source && (!allowPersistedCollision || !existingHazard)) return false;
+    const sourcePressureSystems = source?.pressureSystems ?? event.previousPressureSystems;
+    const sourceActiveHazards = source?.activeHazards ?? [existingHazard];
+    const sourcePressureEffect = source?.pressureEffect ?? event.effects[0];
     const canonical = analyzeVoyagePressureBreachCloseoutTransaction({
       expectedEncounterRevision: event.previousRevision,
       closeoutContext: {
@@ -1074,9 +1110,9 @@ function validCanonicalM6Event(event, existingHazard = null) {
         roundNumber: event.roundNumber,
         phase: event.phase
       },
-      pressureSystems: Object.values(event.previousPressureSystems),
-      activeHazards: [existingHazard],
-      pressureEffect: event.effects[0]
+      pressureSystems: Object.values(sourcePressureSystems),
+      activeHazards: sourceActiveHazards,
+      pressureEffect: sourcePressureEffect
     });
     return canonical.ok && canonical.breachRequired && equal(canonical.event, event);
   }
@@ -1096,7 +1132,77 @@ function validCanonicalM6Event(event, existingHazard = null) {
   return canonical.ok && equal(canonical.event, event);
 }
 
-function validEventRecord(event, entry) {
+function validPressureBreachSourceShape(source) {
+  return exactKeys(source, PRESSURE_BREACH_SOURCE_FIELDS)
+    && Number.isSafeInteger(source.breachEventIndex) && source.breachEventIndex >= 0
+    && nonBlank(source.sourceHazardId)
+    && Number.isSafeInteger(source.expectedEncounterRevision) && source.expectedEncounterRevision >= 0
+    && exactKeys(source.closeoutContext, PRESSURE_BREACH_CONTEXT_FIELDS)
+    && nonBlank(source.closeoutContext.eventId) && nonBlank(source.closeoutContext.sessionId)
+    && nonBlank(source.closeoutContext.stageId) && Number.isSafeInteger(source.closeoutContext.roundNumber)
+    && source.closeoutContext.phase === "cleanup-advance"
+    && validPressureSystemsMap(source.pressureSystems)
+    && validArray(source.activeHazards)
+    && source.activeHazards.every((hazard) => validateVoyageHazardRecord(hazard, { mode: "snapshot", expectedEncounterId: source.closeoutContext.eventId }).valid)
+    && validPressureEffect(source.pressureEffect)
+    && source.pressureEffect.encounterId === source.closeoutContext.eventId
+    && source.pressureEffect.stageId === source.closeoutContext.stageId
+    && source.pressureEffect.roundNumber === source.closeoutContext.roundNumber
+    && source.pressureEffect.sourceKind === "hazard-closeout"
+    && source.pressureEffect.timing === "gm-confirmed"
+    && source.pressureEffect.activationSource === "event-closeout"
+    && source.pressureEffect.branch === "no-roll"
+    && source.pressureEffect.stationId === null && source.pressureEffect.actionId === null;
+}
+
+function sourceForBreachEvent(entry, event, pressureBreachSources = null) {
+  if (!validArray(pressureBreachSources)) return null;
+  const index = entry.events
+    .filter((candidate) => candidate.type === "voyage.pressure-breach-applied")
+    .findIndex((candidate) => candidate.breach?.pressureBreachId === event?.breach?.pressureBreachId);
+  return pressureBreachSources[index] ?? null;
+}
+
+function canonicalActiveHazardsAfter(entry, eventPosition) {
+  const hazards = [];
+  for (let index = eventPosition + 1; index < entry.events.length; index += 1) {
+    const event = entry.events[index];
+    if (event?.type !== "voyage.hazard-closeout-consequence-applied" || hazards.some((hazard) => hazard.hazardId === event.hazardId)) continue;
+    hazards.push(event.previousHazard);
+  }
+  return hazards;
+}
+
+function validPressureBreachSources(entry, pressureBreachSources) {
+  if (!validArray(pressureBreachSources)) return false;
+  const breachEvents = entry.events.filter((event) => event.type === "voyage.pressure-breach-applied");
+  if (pressureBreachSources.length !== breachEvents.length) return false;
+  for (let index = 0; index < breachEvents.length; index += 1) {
+    const event = breachEvents[index];
+    const source = pressureBreachSources[index];
+    const eventPosition = entry.events.indexOf(event);
+    const preceding = eventPosition > 0 ? entry.events[eventPosition - 1] : null;
+    const canonicalActiveHazards = canonicalActiveHazardsAfter(entry, eventPosition);
+    if (!validPressureBreachSourceShape(source)
+      || source.breachEventIndex !== index
+      || !preceding || preceding.type !== "voyage.hazard-closeout-consequence-applied"
+      || source.sourceHazardId !== preceding.hazardId
+      || source.expectedEncounterRevision !== event.previousRevision
+      || source.closeoutContext.eventId !== entry.eventId
+      || source.closeoutContext.sessionId !== entry.sessionId
+      || source.closeoutContext.stageId !== preceding.stageId
+      || source.closeoutContext.roundNumber !== preceding.roundNumber
+      || source.closeoutContext.phase !== preceding.phase
+      || preceding.encounterRevision !== event.previousRevision
+      || !equal(source.pressureSystems, event.previousPressureSystems)
+      || !equal(source.activeHazards, canonicalActiveHazards)
+      || !equal(source.pressureEffect, preceding.pressureEffect)
+      || !validCanonicalM6Event(event, null, false, source)) return false;
+  }
+  return true;
+}
+
+function validEventRecord(event, entry, allowPersistedCollision = false, pressureBreachSource = null, deferCollision = false) {
   if (!isPlainObject(event) || !Object.hasOwn(event, "type") || !EVENT_FIELDS[event.type] || !exactKeys(event, EVENT_FIELDS[event.type])) return false;
   const type = event.type;
   if (type === "voyage.hazard-closeout-consequence-applied") {
@@ -1131,7 +1237,7 @@ function validEventRecord(event, entry) {
       && (event.pressureSystemId === null || VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureSystemId));
   }
   if (type === "voyage.pressure-breach-applied") {
-    return nonBlank(event.encounterId) && event.encounterId === entry.eventId && event.lifecycleState === "active"
+    const m6ok = nonBlank(event.encounterId) && event.encounterId === entry.eventId && event.lifecycleState === "active"
       && nonBlank(event.stageId) && safeInteger(event.roundNumber) && event.phase === "cleanup-advance"
       && event.pressureEffectCount === 1 && event.appliedEffectCount === 1 && validM6Breach(event.breach) && validM6Hazard(event.hazard)
       && event.breach.encounterId === event.encounterId && event.hazard.encounterId === event.encounterId
@@ -1154,7 +1260,8 @@ function validEventRecord(event, entry) {
       && validCanonicalM6Event(event, event.collisionOutcome === null
         ? null
         : entry.events.find((candidate) => candidate.type === "voyage.hazard-closeout-consequence-applied"
-          && candidate.previousHazard?.hazardId === event.collisionOutcome.hazardId)?.previousHazard);
+          && candidate.previousHazard?.hazardId === event.collisionOutcome.hazardId)?.previousHazard, allowPersistedCollision, pressureBreachSource, deferCollision);
+    return m6ok;
   }
   if (type === "voyage.void-scar-created") {
     return nonBlank(event.shipId) && event.shipId === entry.shipId && nonBlank(event.encounterId) && event.pressureSystemId !== undefined
@@ -1191,7 +1298,7 @@ function validEventRecord(event, entry) {
     && event.encounterRevision === event.previousEncounterRevision + 1 && safeInteger(event.shipRevision);
 }
 
-function validEventCollection(events, entry) {
+function validEventCollection(events, entry, allowPersistedCollision = false, pressureBreachSources = null, deferCollision = false) {
   if (!validArray(events)) return false;
   let encounterRevision = entry.expectedEncounterRevision;
   let shipRevision = entry.expectedShipRevision;
@@ -1232,7 +1339,7 @@ function validEventCollection(events, entry) {
   }
   const expectedBatchProposalIds = [...finalProposalIds].filter((id) => !scarProposalIds.has(id));
   for (const event of events) {
-    if (!validEventRecord(event, entry)) return false;
+    if (!validEventRecord(event, entry, allowPersistedCollision, sourceForBreachEvent(entry, event, pressureBreachSources), deferCollision)) return false;
     if (event.type === "voyage.hazard-closeout-consequence-applied") {
       if (phase !== 0 || finalEncounter) return false;
       if (event.previousEncounterRevision !== encounterRevision) return false;
@@ -1274,7 +1381,7 @@ function validEventCollection(events, entry) {
   return valid;
 }
 
-function validLedgerEntry(entry) {
+function validLedgerEntry(entry, allowPersistedCollision = false, pressureBreachSources = null, deferCollision = false, deferCollisionApplicationId = null) {
   if (!isPlainObject(entry) || !exactKeys(entry, LEDGER_FIELDS)) return false;
   if (!["prepared-awaiting-session", "ship-applied-awaiting-session", "committed", "reconciliation-required"].includes(entry.status)) return false;
   if (![entry.applicationId, entry.closeoutId, entry.eventId, entry.sessionId, entry.definitionSnapshotId, entry.shipId, entry.gmUserId].every(nonBlank)) return false;
@@ -1289,13 +1396,15 @@ function validLedgerEntry(entry) {
   if (entry.status === "committed" && (entry.sessionReservationReceipt === null || entry.sessionCommitReceipt === null)) return false;
   const p = validM9ProposalBindings(allStoredProposals(entry), entry);
   const h = validEventHistoryBinding(entry);
-  const e = validEventCollection(entry.events, entry);
+  const storedSources = pressureBreachSources ?? entry.sessionReservationReceipt?.pressureBreachSources ?? null;
+  const entryCollisionDeferred = deferCollision || (deferCollisionApplicationId !== null && entry.applicationId === deferCollisionApplicationId);
+  const e = validEventCollection(entry.events, entry, allowPersistedCollision, storedSources, entryCollisionDeferred);
   return p && h && e
-    && (entry.sessionReservationReceipt === null || exactReservationReceipt(entry.sessionReservationReceipt))
+    && (entry.sessionReservationReceipt === null || (exactReservationReceipt(entry.sessionReservationReceipt) && validPressureBreachSources(entry, entry.sessionReservationReceipt.pressureBreachSources)))
     && (entry.sessionCommitReceipt === null || exactCommitReceipt(entry.sessionCommitReceipt, entry));
 }
 
-function validateStoredVoyage(voyage) {
+function validateStoredVoyage(voyage, allowPersistedCollision = false, pressureBreachSources = null, deferCollision = false, deferCollisionApplicationId = null) {
   const captured = capture(voyage);
   if (!captured.ok || !exactKeys(captured.value, VOYAGE_FIELDS) || captured.value.schemaVersion !== 1 || !Number.isSafeInteger(captured.value.revision) || captured.value.revision < 0) return false;
   const gameplayValid = validGameplaySnapshot({
@@ -1311,7 +1420,7 @@ function validateStoredVoyage(voyage) {
   const ledgerIds = new Set();
   const ledgerCloseouts = new Set();
   const ledgerValid = validArray(captured.value.closeoutLedger) && captured.value.closeoutLedger.every((entry) => {
-    if (!validLedgerEntry(entry) || ledgerIds.has(entry.applicationId) || ledgerCloseouts.has(entry.closeoutId)) return false;
+    if (!validLedgerEntry(entry, allowPersistedCollision, pressureBreachSources, deferCollision, deferCollisionApplicationId) || ledgerIds.has(entry.applicationId) || ledgerCloseouts.has(entry.closeoutId)) return false;
     ledgerIds.add(entry.applicationId);
     ledgerCloseouts.add(entry.closeoutId);
     return true;
@@ -1354,7 +1463,11 @@ function captureActorMetadata(actor) {
   }
 }
 
-function projectActor(actor) {
+function projectActor(actor, validationContext = false) {
+  const allowPersistedCollision = validationContext === true || validationContext?.allowPersistedCollision === true;
+  const pressureBreachSources = validationContext?.pressureBreachSources ?? null;
+  const deferCollision = validationContext?.deferCollision === true;
+  const deferCollisionApplicationId = validationContext?.deferCollisionApplicationId ?? null;
   const metadataCapture = captureActorMetadata(actor);
   if (!metadataCapture.ok) {
     return { errors: [m10(metadataCapture.hostile ? "m10-hostile-data-capture-failed" : "m10-ship-document-not-found", metadataCapture.hostile ? "$" : "shipId")] };
@@ -1374,7 +1487,7 @@ function projectActor(actor) {
     const legacyScar = (Array.isArray(system.voidScars) && system.voidScars.length > 0)
       || (Array.isArray(flags.moduleFlags.voidScars) && flags.moduleFlags.voidScars.length > 0);
     if (legacyScar) return { errors: [m10("m10-ambiguous-legacy-storage", `flags.${ARCFLIGHT_MODULE_ID}.system.voyage`)] };
-  } else if (!validateStoredVoyage(voyageValue)) {
+  } else if (!validateStoredVoyage(voyageValue, allowPersistedCollision, pressureBreachSources, deferCollision, deferCollisionApplicationId)) {
     return { errors: [m10("m10-ledger-conflict", "closeoutLedger")] };
   }
   const voyage = voyageValue === undefined || voyageValue === null ? emptyVoyage() : capture(voyageValue).value;
@@ -1590,10 +1703,10 @@ async function classifyVerificationFailure(actor, applicationId, expectedGamepla
   return markReconciliation(actor, reread, entry, expectedGmUserId);
 }
 
-async function rereadAndProject(shipId) {
+async function rereadAndProject(shipId, validationContext = false) {
   const actor = resolveActor(shipId);
   if (!actor) return { errors: [m10("m10-ship-document-not-found", "shipId")] };
-  const projection = projectActor(actor);
+  const projection = projectActor(actor, validationContext);
   return projection.errors ? projection : { ...projection, actor };
 }
 
@@ -1639,7 +1752,7 @@ async function persistPrepared(actor, projection, entry, identity) {
   } catch {
     return { errors: [m10("m10-persistence-write-failed", VOYAGE_PATH)] };
   }
-  const reread = await rereadAndProject(identity.shipId);
+  const reread = await rereadAndProject(identity.shipId, true);
   if (reread.errors || !equal(reread.voyage.closeoutLedger, captured.value) || !equal(reread.gameplay, entry.beforeState)) return { response: await classifyVerificationFailure(actor, identity.applicationId, entry.beforeState, identity.gmUserId) };
   return { entry, revision: reread.shipState.revision };
 }
@@ -1649,6 +1762,7 @@ function exactReservationReceipt(receipt) {
     && receipt.kind === "voyage.m11-closeout-session-reserved"
     && [receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank)
     && Number.isSafeInteger(receipt.expectedEncounterRevision) && receipt.expectedEncounterRevision >= 0
+    && validArray(receipt.pressureBreachSources)
     && receipt.reservationId === `arcflight-closeout-reservation:${JSON.stringify([receipt.applicationId])}`;
 }
 
@@ -1660,7 +1774,10 @@ function exactCommitReceipt(receipt, entry = null) {
     && validCompletedSnapshot(receipt.completedCloseoutSnapshot)
     && validArray(receipt.encounterEvents)
     && receipt.encounterEvents.every((event) => isPlainObject(event) && EVENT_FIELDS[event.type] && exactKeys(event, EVENT_FIELDS[event.type]))
-    && (!entry || (receipt.encounterEvents.every((event) => validEventRecord(event, entry)) && equal(receipt.encounterEvents, commitEvents(entry))));
+    && validArray(receipt.pressureBreachSources)
+    && (!entry || (validPressureBreachSources(entry, receipt.pressureBreachSources)
+      && receipt.encounterEvents.every((event) => validEventRecord(event, entry, false, sourceForBreachEvent(entry, event, receipt.pressureBreachSources)))
+      && equal(receipt.encounterEvents, commitEvents(entry))));
 }
 
 function reservationMatches(entry, receipt) {
@@ -1672,7 +1789,8 @@ function reservationMatches(entry, receipt) {
     && receipt.sessionId === entry.sessionId
     && receipt.definitionSnapshotId === entry.definitionSnapshotId
     && receipt.shipId === entry.shipId
-    && receipt.expectedEncounterRevision === entry.expectedEncounterRevision;
+    && receipt.expectedEncounterRevision === entry.expectedEncounterRevision
+    && validPressureBreachSources(entry, receipt.pressureBreachSources);
 }
 
 function commitEvents(entry) {
@@ -1692,6 +1810,7 @@ function commitMatches(entry, receipt) {
     && receipt.previousEncounterRevision === entry.expectedEncounterRevision
     && receipt.encounterRevision === entry.resultingEncounterRevision
     && equal(receipt.completedCloseoutSnapshot, entry.completedCloseoutSnapshot)
+    && equal(receipt.pressureBreachSources, entry.sessionReservationReceipt?.pressureBreachSources)
     && equal(receipt.encounterEvents, commitEvents(entry));
 }
 
@@ -1722,7 +1841,7 @@ export async function persistVoyageEncounterApprovedCloseout(request) {
     const actor = resolveActor(requestShipId(value));
     if (!actor) return failure([m10("m10-ship-document-not-found", "shipId")]);
     if (!currentGm(identity.gmUserId)) return failure([m10("m10-active-gm-required", "game.user")]);
-    const projection = projectActor(actor);
+    const projection = projectActor(actor, { deferCollisionApplicationId: identity.applicationId });
     if (projection.errors) return failure(projection.errors);
     const existing = ledgerFor(projection.voyage, identity.applicationId);
     if (existing) {
@@ -1746,7 +1865,7 @@ export async function persistVoyageEncounterApprovedCloseout(request) {
       if (!ledgerIdentityMatches(existing, regeneratedIdentity, regenerated)) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
       if (!equal(existing.events, regenerated.events)
         || !equal(existing.completedCloseoutSnapshot, regenerated.nextCloseoutSnapshot)
-        || !equal(existing.afterState.voidScars, regenerated.nextShipState.voidScars)) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
+        || !equal(existing.afterState, regenerated.nextShipState)) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
       if (existing.status === "prepared-awaiting-session" && equal(projection.gameplay, existing.beforeState)) return success("already-prepared-awaiting-session", existing, projection.shipState.revision);
       if (existing.status === "ship-applied-awaiting-session" && equal(projection.gameplay, existing.afterState)) return success("already-ship-applied-awaiting-session", existing, projection.shipState.revision);
       if (existing.status === "committed") {
@@ -1779,6 +1898,7 @@ export async function persistVoyageEncounterApprovedCloseout(request) {
 
 export async function continueVoyageEncounterCloseoutReservation(request) {
   try {
+    if (hasSharedReceiptReference(request)) return failure([m10("m10-invalid-session-reservation-receipt", "receipt")]);
     const captured = await capturePublicRequest(request, CONTINUE_FIELDS, "m10-continue-closeout-reservation", ["applicationId", "receipt"]);
     if (captured.errors.length > 0) return failure(captured.errors);
     const value = captured.value;
@@ -1787,7 +1907,7 @@ export async function continueVoyageEncounterCloseoutReservation(request) {
     const actor = resolveActor(actorId);
     if (!actor) return failure([m10("m10-ship-document-not-found", "shipId")]);
     if (!currentGm(value.receipt.activeGmUserId)) return failure([m10("m10-active-gm-required", "game.user")]);
-    const projection = projectActor(actor);
+    const projection = projectActor(actor, { allowPersistedCollision: true, deferCollision: true });
     if (projection.errors) return failure(projection.errors);
     const entry = ledgerFor(projection.voyage, value.applicationId);
     if (!entry) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
@@ -1802,7 +1922,7 @@ export async function continueVoyageEncounterCloseoutReservation(request) {
     if (!equal(projection.gameplay, entry.beforeState)) return failure([m10("m10-reconciliation-required", "closeoutLedger")]);
     if (!currentGm(value.receipt.activeGmUserId)) return failure([m10("m10-active-gm-required", "game.user")]);
     if (projection.shipState.revision !== entry.expectedShipRevision) return failure([m10("m10-ship-revision-mismatch", "expectedShipRevision")]);
-    const latest = await rereadAndProject(actor.id);
+    const latest = await rereadAndProject(actor.id, { allowPersistedCollision: true, deferCollision: true });
     if (latest.errors) return failure(latest.errors);
     if (latest.shipState.shipId !== actor.id || latest.shipState.revision !== entry.expectedShipRevision) return failure([m10("m10-ship-revision-mismatch", "expectedShipRevision")]);
     if (!equal(latest.gameplay, entry.beforeState)) return failure([m10("m10-reconciliation-required", "closeoutLedger")]);
@@ -1852,6 +1972,7 @@ export async function verifyVoyageEncounterCloseoutShipCheckpoint(request) {
 
 export async function finalizeVoyageEncounterCloseoutReceipt(request) {
   try {
+    if (hasSharedReceiptReference(request)) return failure([m10("m10-invalid-session-commit-receipt", "receipt")]);
     const captured = await capturePublicRequest(request, FINALIZE_FIELDS, "m10-finalize-closeout-receipt", ["applicationId", "receipt"]);
     if (captured.errors.length > 0) return failure(captured.errors);
     const value = captured.value;
@@ -1859,7 +1980,7 @@ export async function finalizeVoyageEncounterCloseoutReceipt(request) {
     const actor = resolveActor(value.receipt.shipId);
     if (!actor) return failure([m10("m10-ship-document-not-found", "shipId")]);
     if (!currentGm(value.receipt.activeGmUserId)) return failure([m10("m10-active-gm-required", "game.user")]);
-    const projection = projectActor(actor);
+    const projection = projectActor(actor, { allowPersistedCollision: true, deferCollision: true });
     if (projection.errors) return failure(projection.errors);
     const entry = ledgerFor(projection.voyage, value.applicationId);
     if (!entry) return failure([m10("m10-ledger-conflict", "closeoutLedger")]);
