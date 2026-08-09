@@ -1464,7 +1464,8 @@ without changing gameplay revision, and produce this exact receipt:
   sessionId,
   definitionSnapshotId,
   shipId,
-  expectedEncounterRevision
+  expectedEncounterRevision,
+  pressureBreachSources
 }
 ```
 
@@ -1472,8 +1473,42 @@ without changing gameplay revision, and produce this exact receipt:
 `arcflight-closeout-reservation:${JSON.stringify([applicationId])}`. Every
 identity/revision equals the prepared ledger. `activeGmUserId` is the active GM
 authenticated by M11 for this reservation and must equal Foundry's current
-active GM when M10 consumes the receipt. M11 issues no receipt unless its
-durable reservation and live-state verification succeed.
+active GM when M10 consumes the receipt. `pressureBreachSources` is a dense
+array ordered by the recorded `voyage.pressure-breach-applied` events and is
+exactly `[]` when no Breach occurs. For each Breach, its entry has this exact
+key order and shape:
+
+```js
+{
+  breachEventIndex,
+  sourceHazardId,
+  expectedEncounterRevision,
+  closeoutContext: {
+    eventId,
+    sessionId,
+    stageId,
+    roundNumber,
+    phase
+  },
+  pressureSystems,
+  activeHazards,
+  pressureEffect
+}
+```
+
+`breachEventIndex` is zero-based; M10 never invents an M6 event ID.
+`sourceHazardId` equals the immediately preceding
+`voyage.hazard-closeout-consequence-applied.hazardId`.
+`pressureSystems` is the exact state immediately before that closeout
+Pressure effect, `activeHazards` is the exact collection immediately after the
+source Hazard's ordered removal, and `pressureEffect` is the complete Section
+8 closeout effect. M11 must independently read and bind authoritative Event
+Session evidence before issuing the reservation and again immediately before
+the ship mutation; it must not derive these sources from stored ledger events,
+`previousHazard`, or caller-authored data. M11 issues no receipt unless its
+durable reservation and live-state verification succeeds.
+This `pressureBreachSources` extension is receipt-only and does not change the
+exact Section 21 ledger schema.
 
 `continueVoyageEncounterCloseoutReservation(request)` accepts exactly:
 
@@ -1549,7 +1584,8 @@ M11 produce this exact commit receipt:
   previousEncounterRevision,
   encounterRevision,
   completedCloseoutSnapshot,
-  encounterEvents
+  encounterEvents,
+  pressureBreachSources
 }
 ```
 
@@ -1564,7 +1600,14 @@ ledger events whose types are
 `voyage.hazard-closeout-consequence-applied`,
 `voyage.pressure-breach-applied`, or `voyage.closeout-applied`; it contains
 exactly one final closeout event. M11 returns no commit receipt before its
-independently verified session write succeeds.
+independently verified session write succeeds. `pressureBreachSources` must be
+the exact canonical-key-order-sensitive array from the reservation receipt.
+Finalization compares it with the stored reservation receipt, the recorded
+ledger events, and fresh canonical M10/M6 regeneration before writing. Missing,
+malformed, reordered, duplicated, or forged sources fail closed at `receipt`
+with `m10-invalid-session-commit-receipt`; continuation rejects the same source
+failures with `m10-invalid-session-reservation-receipt` at `receipt`. Neither
+path performs a write on failure.
 
 `finalizeVoyageEncounterCloseoutReceipt(request)` accepts exactly:
 
@@ -1805,6 +1848,14 @@ Every implementation task must cover:
   success/retry/mismatch, pre-session-write ship/ledger verification, active-GM
   control transfer, conflict, failed write, failed verification, and
   reconciliation-required behavior; and
+- canonical collision-source receipt coverage: valid `pressureBreachSources: []`
+  for non-collision closeouts; valid collision sources; dense zero-based
+  `breachEventIndex`; source Hazard, context identity/stage/round/phase,
+  expected revision, Pressure-system, active-Hazard, Pressure-effect, M6
+  collision arithmetic/policy/consequence, missing/extra/reordered/duplicated,
+  and forged-source failures; continuation and finalization exact diagnostics
+  with zero writes; and commit-source equality against the reservation receipt
+  and canonical M10/M6 regeneration.
 - no sockets, transport, UI, PF2e Item creation, rolls, random, or time access.
 
 ## 28. Implementation task sequence
@@ -1891,9 +1942,14 @@ Foundry v14 PF2e world:
 7. force a conflicting state and verify reconciliation-required with no
    gameplay overwrite;
 8. change or remove active-GM authority before each write and verify failure;
-9. use the test-only M11 receipt fixture to finalize, reload, and verify the
-   committed ledger/history and ship state remain; and
-10. verify no socket, chat, UI, roll, or Item side effect occurred.
+9. use the test-only M11 receipt fixture, including `pressureBreachSources`, to
+   finalize; verify collision and non-collision source arrays, reload, and
+   verify the committed ledger/history and ship state remain;
+10. mutate or omit a source entry (including index, source Hazard, context,
+    Pressure systems, active Hazards, Pressure effect, collision arithmetic,
+    policy, and consequence), and verify the exact receipt diagnostic and zero
+    writes for continuation/finalization; and
+11. verify no socket, chat, UI, roll, or Item side effect occurred.
 
 ## 30. Contract acceptance criteria
 
