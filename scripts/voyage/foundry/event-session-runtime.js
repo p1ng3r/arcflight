@@ -1,5 +1,6 @@
 import { ARCFLIGHT_MODULE_ID } from "../../config/constants.js";
 import { validateVoyageEncounterState } from "../domain/validation.js";
+import { analyzeVoyageStationAssignments } from "../domain/station-assignments.js";
 
 const VOYAGE_SESSION_PATH = `flags.${ARCFLIGHT_MODULE_ID}.system.voyageSession`;
 const CREATE_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"]);
@@ -20,9 +21,6 @@ const RECOVERY_FIELDS = Object.freeze(["status", "reasonCode", "failedRequestId"
 const PROCESSED_REQUEST_FIELDS = Object.freeze(["requestId", "principalUserId", "projectionKind", "fingerprint", "commandKind", "resultKind", "resultRevision", "response"]);
 const CREATION_COMMAND_KIND = "create-session";
 const COMMAND_KINDS = new Set(["pause", "resume", "station-selection", "station-selection-clear", "station-order", "plan-lock", "action-segment", "reaction", "round-closeout", "emergency-response", "closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
-const PROJECTION_KINDS = new Set(["gm", "operator", "crew", "observer", "none"]);
-const OPERATOR_FIELDS = Object.freeze(["kind", "id", "uuid", "name"]);
-const OPERATOR_KINDS = new Set(["actor", "crewAsset"]);
 const FORBIDDEN_PAYLOAD_KEYS = new Set(["principalUserId", "projectionKind", "fingerprint", "result", "resultKind", "resultRevision", "candidate", "event", "response", "receipt", "nextState", "revision", "authorityEpoch", "authenticatedUserId", "gmUserId", "isGM", "role", "authority", "analysis", "outcome"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const MESSAGES = Object.freeze({
@@ -121,41 +119,44 @@ function containsForbiddenPayloadAuthority(value, ancestors = new Set()) {
     return false;
   } finally { ancestors.delete(value); }
 }
-function validResponse(response, sessionId, requestId) {
-  return exactKeys(response, ["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"])
-    && typeof response.ok === "boolean" && response.requestId === requestId && response.sessionId === sessionId
-    && typeof response.status === "string" && (response.ok ? safeInteger(response.revision) && safeInteger(response.authorityEpoch) : response.revision === null && response.authorityEpoch === null)
-    && (response.projection === null || isPlainObject(response.projection)) && Array.isArray(response.events) && Array.isArray(response.errors) && Array.isArray(response.warnings)
-    && (response.ok ? response.errors.length === 0 : response.errors.length > 0);
-}
-function validProcessedRequests(records, session) {
-  if (!Array.isArray(records)) return false;
-  const ids = new Set();
-  for (const record of records) {
-    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || ids.has(record.requestId)
-      || !nonBlank(record.principalUserId) || !PROJECTION_KINDS.has(record.projectionKind) || !(record.commandKind === CREATION_COMMAND_KIND || COMMAND_KINDS.has(record.commandKind))
-      || !nonBlank(record.resultKind) || !safeInteger(record.resultRevision) || record.resultRevision > session.revision || !validResponse(record.response, session.sessionId, record.requestId)
-      || typeof record.fingerprint !== "string") return false;
-    let tuple;
-    try { tuple = JSON.parse(record.fingerprint); } catch { return false; }
-    if (!Array.isArray(tuple) || tuple.length !== 7 || JSON.stringify(tuple) !== record.fingerprint
-      || tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== record.projectionKind
-      || !safeInteger(tuple[3]) || tuple[3] > session.authorityEpoch || !safeInteger(tuple[4]) || tuple[4] > session.revision
-      || tuple[5] !== record.commandKind || !capture(tuple[6]).ok
-      || (record.response.ok && (record.response.revision > session.revision || record.response.authorityEpoch > session.authorityEpoch))) return false;
-    if (record.commandKind === CREATION_COMMAND_KIND && (record.projectionKind !== "gm" || record.resultKind !== "created" || record.resultRevision !== 0 || tuple[3] !== 0 || tuple[4] !== 0
-      || !exactKeys(tuple[6], ["eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"]))) return false;
-    ids.add(record.requestId);
+function validCreationDefinition(value, session) {
+  if (!isPlainObject(value)) return false;
+  for (const [key, expected] of [["sessionId", session.sessionId], ["eventId", session.eventId], ["definitionSnapshotId", session.definitionSnapshotId], ["shipId", session.shipId]]) {
+    if (Object.hasOwn(value, key) && value[key] !== expected) return false;
   }
   return true;
+}
+function validCreationRecord(record, session) {
+  if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId)
+    || record.principalUserId !== session.activeGmUserId || record.projectionKind !== "gm" || record.commandKind !== CREATION_COMMAND_KIND
+    || record.resultKind !== "created" || record.resultRevision !== 0 || !isPlainObject(record.response) || typeof record.fingerprint !== "string") return false;
+  const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
+  const tuple = parsed.value;
+  if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm" || tuple[3] !== 0 || tuple[4] !== 0 || tuple[5] !== CREATION_COMMAND_KIND
+    || !exactKeys(tuple[6], ["eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"])
+    || tuple[6].eventId !== session.eventId || tuple[6].definitionSnapshotId !== session.definitionSnapshotId || tuple[6].shipId !== session.shipId
+    || !equal(tuple[6].initialEncounterState, session.encounterState) || !validCreationDefinition(tuple[6].eventDefinition, session)) return false;
+  const expectedResponse = success(session, record.requestId);
+  return equal(record.response, expectedResponse);
+}
+
+function parseStoredFingerprint(value) {
+  if (typeof value !== "string") return { ok: false, value: null };
+  try {
+    const parsed = JSON.parse(value);
+    const captured = capture(parsed);
+    if (!captured.ok || !Array.isArray(captured.value) || captured.value.length !== 7) return { ok: false, value: null };
+    if (JSON.stringify(captured.value) !== value) return { ok: false, value: null };
+    return { ok: true, value: captured.value };
+  } catch { return { ok: false, value: null }; }
 }
 function pristineSession(session, documentId) {
   if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentId
     || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId, session.activeGmUserId].every(nonBlank)
-    || !safeInteger(session.revision) || session.sessionState !== "setup" || !safeInteger(session.authorityEpoch) || !validEncounterState(session.encounterState, session)
+    || session.revision !== 0 || session.sessionState !== "setup" || session.authorityEpoch !== 0 || !validEncounterState(session.encounterState, session)
     || session.encounterState.revision !== 0 || session.encounterState.lifecycleState !== "draft" || session.encounterState.phase !== null
     || !Array.isArray(session.events) || session.events.length !== 0 || !Array.isArray(session.checkpoints) || session.checkpoints.length !== 0
-    || !validProcessedRequests(session.processedRequests, session) || !Array.isArray(session.auditHistory) || session.auditHistory.length !== 0
+    || !Array.isArray(session.processedRequests) || session.processedRequests.length !== 1 || !validCreationRecord(session.processedRequests[0], session) || !Array.isArray(session.auditHistory) || session.auditHistory.length !== 0
     || !exactKeys(session.closeout, CLOSEOUT_FIELDS) || session.closeout.status !== "none"
     || !Object.keys(session.closeout).slice(1).every((key) => session.closeout[key] === null)
     || !exactKeys(session.recovery, RECOVERY_FIELDS) || session.recovery.status !== "none"
@@ -208,54 +209,66 @@ function resolveSessionDocument(sessionId, context) {
   return { match: found.matches[0] };
 }
 
-function canonicalUsers(context) {
+function trustedUsers(context) {
   try {
-    const users = context?.users ?? globalThis.game?.users;
-    const values = Array.isArray(users) ? users : users?.contents;
-    return Array.isArray(values) ? values : null;
-  } catch { return null; }
+    const source = context?.users ?? globalThis.game?.users;
+    const values = Array.isArray(source) ? source : source?.contents;
+    const captured = capture(values);
+    if (!captured.ok || !Array.isArray(captured.value)) return { ok: false, users: [] };
+    const users = [], duplicates = new Set();
+    const ids = new Set();
+    for (const entry of captured.value) {
+      if (!isPlainObject(entry) || !nonBlank(entry.id)) return { ok: false, users: [] };
+      if (ids.has(entry.id)) duplicates.add(entry.id);
+      ids.add(entry.id); users.push({ id: entry.id, isGM: entry.isGM, active: entry.active });
+    }
+    return { ok: true, users, duplicates };
+  } catch { return { ok: false, users: [] }; }
+}
+function trustedAuthorityContext(context) {
+  let authenticatedUserId, activeGmUserId;
+  try {
+    authenticatedUserId = context?.authenticatedUserId ?? globalThis.game?.user?.id;
+    activeGmUserId = context?.activeGmUserId ?? globalThis.game?.users?.activeGM?.id;
+  } catch { return { error: diagnostic("m11-authentication-required", "transport.user") }; }
+  if (!nonBlank(authenticatedUserId)) return { error: diagnostic("m11-authentication-required", "transport.user") };
+  const trusted = trustedUsers(context);
+  if (!trusted.ok) return { error: diagnostic("m11-authentication-required", "transport.user") };
+  const principalMatches = trusted.users.filter((user) => user.id === authenticatedUserId);
+  if (principalMatches.length !== 1 || typeof principalMatches[0].isGM !== "boolean" || typeof principalMatches[0].active !== "boolean" || principalMatches[0].active !== true) return { error: diagnostic("m11-authentication-required", "transport.user") };
+  if (!nonBlank(activeGmUserId)) return { error: diagnostic("m11-active-gm-unavailable", "transport.activeGm") };
+  const activeMatches = trusted.users.filter((user) => user.id === activeGmUserId);
+  if (activeMatches.length !== 1 || typeof activeMatches[0].isGM !== "boolean" || typeof activeMatches[0].active !== "boolean" || activeMatches[0].isGM !== true || activeMatches[0].active !== true) return { error: diagnostic("m11-active-gm-unavailable", "transport.activeGm") };
+  if (trusted.duplicates?.size) return { error: diagnostic("m11-authentication-required", "transport.user") };
+  return { authenticatedUserId, user: principalMatches[0], activeGmUserId, activeUser: activeMatches[0], users: trusted.users };
 }
 function authority(context) {
-  const authenticatedUserId = context?.authenticatedUserId ?? globalThis.game?.user?.id;
-  if (!nonBlank(authenticatedUserId)) return { error: diagnostic("m11-authentication-required", "transport.user") };
-  const activeGmUserId = context?.activeGmUserId ?? globalThis.game?.users?.activeGM?.id;
-  const users = canonicalUsers(context);
-  if (!nonBlank(activeGmUserId) || !users) return { error: diagnostic("m11-active-gm-unavailable", "transport.activeGm") };
-  const activeUsers = users.filter((user) => user?.id === activeGmUserId);
-  if (activeUsers.length !== 1 || activeUsers[0]?.isGM !== true) return { error: diagnostic("m11-active-gm-unavailable", "transport.activeGm") };
-  if (authenticatedUserId !== activeGmUserId) return { error: diagnostic("m11-active-gm-required", "transport.activeGm") };
-  return { authenticatedUserId, activeGmUserId, users };
+  const resolved = trustedAuthorityContext(context); if (resolved.error) return resolved;
+  if (resolved.user.isGM !== true || resolved.authenticatedUserId !== resolved.activeGmUserId) return { error: diagnostic("m11-active-gm-required", "transport.activeGm") };
+  return resolved;
 }
-function authenticatedContext(context) {
-  const authenticatedUserId = context?.authenticatedUserId ?? globalThis.game?.user?.id;
-  if (!nonBlank(authenticatedUserId)) return { error: diagnostic("m11-authentication-required", "transport.user") };
-  const users = canonicalUsers(context);
-  if (!users) return { error: diagnostic("m11-authentication-required", "transport.user") };
-  const user = users.find((entry) => entry?.id === authenticatedUserId);
-  if (!user) return { error: diagnostic("m11-authentication-required", "transport.user") };
-  const activeGmUserId = context?.activeGmUserId ?? globalThis.game?.users?.activeGM?.id;
-  const active = users.filter((entry) => entry?.id === activeGmUserId);
-  if (!nonBlank(activeGmUserId) || active.length !== 1 || active[0]?.isGM !== true) return { error: diagnostic("m11-active-gm-unavailable", "transport.activeGm") };
-  return { authenticatedUserId, user, activeGmUserId, activeUser: active[0], users };
-}
+function authenticatedContext(context) { return trustedAuthorityContext(context); }
 function canonicalOperator(value) {
   const captured = capture(value);
-  if (!captured.ok || !exactKeys(captured.value, OPERATOR_FIELDS) || !OPERATOR_KINDS.has(captured.value.kind)
-    || !nonBlank(captured.value.id) || !nonBlank(captured.value.uuid) || !nonBlank(captured.value.name)) return null;
-  return captured.value;
+  if (!captured.ok || captured.value === null) return null;
+  const report = analyzeVoyageStationAssignments([{ stationId: "captain", operator: captured.value }]);
+  return report.valid && report.assignments.length === 1 ? report.assignments[0].operator : null;
 }
 function deriveProjectionKind(authenticated, session, context) {
-  if (authenticated.authenticatedUserId === authenticated.activeGmUserId) return "gm";
+  if (authenticated.user?.isGM === true) return "gm";
   const assignments = session?.encounterState?.stationAssignments;
   let resolvedOperator = null;
   try {
     if (typeof context?.resolveVoyageOperatorForPrincipal === "function") resolvedOperator = canonicalOperator(context.resolveVoyageOperatorForPrincipal(authenticated.authenticatedUserId));
   } catch { resolvedOperator = null; }
   if (resolvedOperator && Array.isArray(assignments)) {
-    const matches = assignments.filter((entry) => equal(entry?.operator, resolvedOperator));
-    if (matches.length === 1) return "operator";
+    const report = analyzeVoyageStationAssignments(assignments);
+    if (report.valid) {
+      const field = Object.hasOwn(resolvedOperator, "uuid") ? "uuid" : "id";
+      const matches = report.assignments.filter((entry) => entry.operator.kind === resolvedOperator.kind && entry.operator[field] === resolvedOperator[field]);
+      if (matches.length === 1) return "operator";
+    }
   }
-  if (authenticated.user?.isCrew === true) return "crew";
   return "observer";
 }
 function creationPayload(value) {
@@ -322,8 +335,8 @@ export async function createVoyageEventSession(request, context = {}) {
   const value = captured.value, identities = requestIdentities(value);
   if (!exactKeys(value, CREATE_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
   if (value.kind !== "voyage.m11-create-session") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
-  if (!nonBlank(value.requestId) || ![value.sessionId, value.eventId, value.definitionSnapshotId, value.shipId].every(nonBlank) || !isPlainObject(value.eventDefinition) || !isPlainObject(value.initialEncounterState)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
   const auth = authority(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.requestId) || ![value.sessionId, value.eventId, value.definitionSnapshotId, value.shipId].every(nonBlank) || !isPlainObject(value.eventDefinition) || !isPlainObject(value.initialEncounterState)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
   const existing = findSessionDocuments(value.sessionId, context); if (existing.error) return failure([existing.error], identities);
   if (existing.matches.length === 1) {
     const existingSession = existing.matches[0].session;
@@ -376,10 +389,11 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   if (!isPlainObject(value) || !Object.hasOwn(value, "requestId") || !nonBlank(value.requestId)) return failure([diagnostic("m11-request-id-required", "request.requestId")], identities);
   if (!exactKeys(value, fields)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
   if (value.kind !== "voyage.m11-command") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
-  if (!nonBlank(value.sessionId) || !nonBlank(value.commandKind) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch) || !isPlainObject(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
   const auth = authenticatedContext(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.sessionId) || !nonBlank(value.commandKind) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch) || !isPlainObject(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
   const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
   const match = resolved.match; if (!pristineSession(match.session, match.documentId)) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  if (match.session.activeGmUserId !== auth.activeGmUserId) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
   const projectionKind = deriveProjectionKind(auth, match.session, context);
   const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
   const replay = replayOrConflict(match.session.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, requestFingerprint, identities); if (replay) return replay;

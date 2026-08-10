@@ -23,19 +23,19 @@ function makeJournalDocument(data, tracker, journals, { id = data._id, flags = d
   return document;
 }
 function makeContext({ journals = [], documentId = "Journal.session-1", definitionValue = definition(), encounterValue = encounter(), create = null, authenticatedUserId = "gm-1", activeGmUserId = "gm-1", users = null, operatorResolver = null } = {}) {
-  const tracker = { creates: 0, updates: 0, deletes: 0, deletedIds: [], createOperations: [], resolverCalls: 0, builderCalls: 0 };
+  const tracker = { creates: 0, updates: 0, deletes: 0, deletedIds: [], createOperations: [], resolverCalls: 0, builderCalls: 0, idCalls: 0, journalScans: 0 };
   const JournalEntry = { async create(data, operation) { tracker.creates += 1; tracker.createOperations.push(operation); const effective = { ...data, _id: operation?.keepId === true ? data._id : "Journal.generated-by-foundry" }; return create ? create(effective, tracker, journals, (options) => makeJournalDocument(effective, tracker, journals, options)) : makeJournalDocument(effective, tracker, journals); } };
-  return {
-    context: {
-      journalEntries: journals, authenticatedUserId, activeGmUserId,
-      users: users ?? [{ id: "gm-1", isGM: true }, { id: "gm-2", isGM: true }, { id: "player-1", isGM: false }],
-      createDocumentId: () => documentId,
-      resolveEventDefinitionSnapshot: async () => { tracker.resolverCalls += 1; return structuredClone(definitionValue); },
-      createInitialEncounterState: async () => { tracker.builderCalls += 1; return structuredClone(encounterValue); },
-      ...(operatorResolver ? { resolveVoyageOperatorForPrincipal: operatorResolver } : {}),
-      JournalEntry, isJournalEntryDocument: (document) => document?.__isJournalEntry === true
-    }, journals, tracker
+  const context = {
+    authenticatedUserId, activeGmUserId,
+    users: users ?? [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }],
+    createDocumentId: () => { tracker.idCalls += 1; return documentId; },
+    resolveEventDefinitionSnapshot: async () => { tracker.resolverCalls += 1; return structuredClone(definitionValue); },
+    createInitialEncounterState: async () => { tracker.builderCalls += 1; return structuredClone(encounterValue); },
+    ...(operatorResolver ? { resolveVoyageOperatorForPrincipal: operatorResolver } : {}),
+    JournalEntry, isJournalEntryDocument: (document) => document?.__isJournalEntry === true
   };
+  Object.defineProperty(context, "journalEntries", { enumerable: true, get() { tracker.journalScans += 1; return journals; } });
+  return { context, journals, tracker };
 }
 function session(document) { return document.__testSource.flags.arcflight.system.voyageSession; }
 function assertFailure(result, code, path, message) { assert.equal(result.ok, false); assert.deepEqual(Object.keys(result), ["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]); assert.equal(result.errors.length, 1); assert.deepEqual(result.errors[0], { code, path, message, severity: "error" }); assert.deepEqual(result.events, []); assert.deepEqual(result.warnings, []); }
@@ -53,12 +53,41 @@ test("GM-only ownership is exact", async () => { const fixture = makeContext(); 
 
 test("authority failures precede document and domain resolution", async () => {
   const cases = [
-    [null, "gm-1", [{ id: "gm-1", isGM: true }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
-    ["gm-1", null, [{ id: "gm-1", isGM: true }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
-    ["player-1", "gm-1", [{ id: "gm-1", isGM: true }, { id: "player-1", isGM: false }], "m11-active-gm-required", "transport.activeGm", "The authenticated user is not the current active GM."],
-    ["gm-1", "player-1", [{ id: "player-1", isGM: false }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."]
+    [null, "gm-1", [{ id: "gm-1", isGM: true, active: true }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
+    ["gm-1", null, [{ id: "gm-1", isGM: true, active: true }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["player-1", "gm-1", [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }], "m11-active-gm-required", "transport.activeGm", "The authenticated user is not the current active GM."],
+    ["gm-1", "player-1", [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["gm-1", "gm-1", [{ id: "gm-1", isGM: true, active: false }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
+    ["gm-1", "gm-1", [{ id: "gm-1", isGM: true }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
+    ["gm-1", "gm-1", [{ id: "gm-1", isGM: true, active: 1 }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
+    ["gm-1", "gm-1", [{ id: "gm-1", isGM: true, active: "true" }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
+    ["gm-1", "gm-1", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-1", isGM: true, active: true }], "m11-authentication-required", "transport.user", "Authenticated transport user is required."],
+    ["gm-2", "gm-1", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: true }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["gm-1", "gm-1", [{ id: "gm-1", isGM: false, active: true }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["gm-2", "gm-1", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: true }], "m11-active-gm-required", "transport.activeGm", "The authenticated user is not the current active GM."],
+    ["gm-1", "gm-2", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: false }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["gm-1", "gm-2", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["gm-1", "gm-2", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: 1 }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."],
+    ["gm-1", "gm-2", [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: "true" }], "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available."]
   ];
-  for (const [authenticatedUserId, activeGmUserId, users, code, path, message] of cases) { const fixture = makeContext({ authenticatedUserId, activeGmUserId, users }); const result = await createVoyageEventSession(request(), fixture.context); assertFailure(result, code, path, message); assert.equal(fixture.tracker.creates, 0); assert.equal(fixture.tracker.resolverCalls, 0); assert.equal(fixture.tracker.builderCalls, 0); assert.equal(fixture.tracker.deletes, 0); }
+  const malformedRequests = [
+    (() => { const value = request(); value.requestId = ""; return value; })(),
+    (() => { const value = request(); value.sessionId = " "; return value; })(),
+    (() => { const value = request(); value.eventId = " "; return value; })(),
+    (() => { const value = request(); value.eventDefinition = null; return value; })(),
+    (() => { const value = request(); value.initialEncounterState = null; return value; })(),
+    request(), request()
+  ];
+  for (const [authenticatedUserId, activeGmUserId, users, code, path, message] of cases) {
+    for (const value of malformedRequests) {
+      const fixture = makeContext({ authenticatedUserId, activeGmUserId, users, definitionValue: { mismatch: true }, encounterValue: { mismatch: true } }); const result = await createVoyageEventSession(value, fixture.context); assertFailure(result, code, path, message); assert.equal(fixture.tracker.journalScans, 0); assert.equal(fixture.tracker.resolverCalls, 0); assert.equal(fixture.tracker.builderCalls, 0); assert.equal(fixture.tracker.idCalls, 0); assert.equal(fixture.tracker.creates, 0); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+    }
+  }
+  const success = makeContext(); assert.equal((await createVoyageEventSession(request(), success.context)).ok, true); assert.equal(success.tracker.idCalls, 1);
+  const inherited = Object.create({ active: true }); inherited.id = "gm-1"; inherited.isGM = true;
+  const accessor = {}; Object.defineProperty(accessor, "id", { enumerable: true, get() { throw new Error("id"); } }); Object.defineProperty(accessor, "isGM", { enumerable: true, value: true }); Object.defineProperty(accessor, "active", { enumerable: true, value: true });
+  const revoked = Proxy.revocable({ id: "gm-1", isGM: true, active: true }, {}); revoked.revoke();
+  for (const users of [[inherited], [accessor], [revoked.proxy]]) { const fixture = makeContext({ users }); assertFailure(await createVoyageEventSession(request(), fixture.context), "m11-authentication-required", "transport.user", "Authenticated transport user is required."); assert.equal(fixture.tracker.journalScans, 0); assert.equal(fixture.tracker.resolverCalls, 0); assert.equal(fixture.tracker.builderCalls, 0); assert.equal(fixture.tracker.idCalls, 0); assert.equal(fixture.tracker.creates, 0); }
 });
 
 test("missing, one, and multiple matching documents have exact precedence", async () => {
@@ -162,24 +191,124 @@ test("request-ID conflict precedes stale revision and unsupported commands never
   assertFailure(dispatchVoyageEventSessionCommand(command(), fixture.context), "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state."); assert.equal(fixture.tracker.creates, 1); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
 });
 
-test("exact command replay returns an isolated stored response and survives reload", async () => {
-  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const stored = session(fixture.journals[0]); const response = { ok: true, requestId: "stored-command", sessionId: "session-1", status: "setup", revision: 0, authorityEpoch: 0, projection: null, events: [], errors: [], warnings: [] }; const payload = {}; const fingerprint = JSON.stringify(["session-1", "gm-1", "gm", 0, 0, "pause", payload]); stored.processedRequests.push({ requestId: "stored-command", principalUserId: "gm-1", projectionKind: "gm", fingerprint, commandKind: "pause", resultKind: "replayed-success", resultRevision: 0, response });
-  const replay = dispatchVoyageEventSessionCommand(command({ requestId: "stored-command" }), fixture.context); assert.deepEqual(replay, response); replay.status = "mutated"; assert.equal(dispatchVoyageEventSessionCommand(command({ requestId: "stored-command" }), fixture.context).status, "setup"); assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true); assert.equal(fixture.tracker.updates, 0);
-  for (const overrides of [{ payload: { changed: true } }, { expectedRevision: 1 }, { authorityEpoch: 1 }, { commandKind: "resume" }]) {
-    const conflict = dispatchVoyageEventSessionCommand(command({ requestId: "stored-command", ...overrides }), fixture.context); assertFailure(conflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+test("Task 2 rejects positive revisions, missing/extra creation records, and all future record kinds", async () => {
+  const mutations = [
+    (stored) => { stored.revision = 1; },
+    (stored) => { stored.authorityEpoch = 1; },
+    (stored) => { stored.processedRequests = []; },
+    (stored) => { stored.processedRequests.push(structuredClone(stored.processedRequests[0])); },
+    (stored) => { stored.processedRequests[0].commandKind = "pause"; },
+    (stored) => { stored.processedRequests[0].resultKind = "replayed-success"; }
+  ];
+  for (const mutate of mutations) {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); mutate(session(fixture.journals[0])); assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
   }
-  const roleConflict = dispatchVoyageEventSessionCommand(command({ requestId: "stored-command" }), makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", activeGmUserId: "gm-1" }).context); assertFailure(roleConflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
 });
 
-test("historical command replay survives later session revision and authority epoch", async () => {
-  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const stored = session(fixture.journals[0]); const response = { ok: true, requestId: "historical-command", sessionId: "session-1", status: "setup", revision: 0, authorityEpoch: 0, projection: null, events: [], errors: [], warnings: [] }; stored.processedRequests.push({ requestId: "historical-command", principalUserId: "gm-1", projectionKind: "gm", fingerprint: JSON.stringify(["session-1", "gm-1", "gm", 0, 0, "pause", {}]), commandKind: "pause", resultKind: "replayed-success", resultRevision: 0, response }); stored.revision = 1; stored.authorityEpoch = 1;
-  const replay = dispatchVoyageEventSessionCommand(command({ requestId: "historical-command" }), fixture.context); assert.deepEqual(replay, response); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0); assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+test("creation record binding rejects every independently tampered identity, fingerprint, payload, and response field", async () => {
+  const mutations = [
+    (record) => { record.principalUserId = "gm-2"; },
+    (record) => { record.projectionKind = "observer"; },
+    (record) => { record.commandKind = "pause"; },
+    (record) => { record.resultKind = "replayed-success"; },
+    (record) => { record.resultRevision = 1; },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[0] = "other-session"; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[1] = "gm-2"; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[2] = "observer"; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[3] = 1; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[4] = 1; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[5] = "pause"; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[6].eventId = "other-event"; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { const tuple = JSON.parse(record.fingerprint); tuple[6].initialEncounterState.primaryShip.id = "other-ship"; record.fingerprint = JSON.stringify(tuple); },
+    (record) => { record.response.status = "failed"; },
+    (record) => { record.response.revision = 1; },
+    (record) => { record.response.authorityEpoch = 1; },
+    (record) => { record.response.projection = {}; },
+    (record) => { record.response.events = [{}]; },
+    (record) => { record.response.errors = [{}]; },
+    (record) => { record.response.warnings = [{}]; }
+  ];
+  for (const mutate of mutations) {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); mutate(session(fixture.journals[0]).processedRequests[0]); assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  }
 });
 
-test("operator role uses only the trusted canonical resolver and durable assignment", async () => {
-  const operator = { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" }; const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator }]; const fixture = makeContext({ encounterValue, operatorResolver: (principal) => principal === "player-1" ? operator : null }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context); const stored = session(fixture.journals[0]); const response = { ok: true, requestId: "operator-command", sessionId: "session-1", status: "setup", revision: 0, authorityEpoch: 0, projection: null, events: [], errors: [], warnings: [] }; stored.processedRequests.push({ requestId: "operator-command", principalUserId: "player-1", projectionKind: "operator", fingerprint: JSON.stringify(["session-1", "player-1", "operator", 0, 0, "pause", {}]), commandKind: "pause", resultKind: "replayed-success", resultRevision: 0, response });
-  const operatorContext = makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", activeGmUserId: "gm-1", operatorResolver: (principal) => principal === "player-1" ? operator : null }).context; assert.deepEqual(dispatchVoyageEventSessionCommand(command({ requestId: "operator-command" }), operatorContext), response);
-  for (const resolver of [() => null, () => [operator], () => ({ ...operator, userId: "player-1" })]) {
-    const observerContext = makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", activeGmUserId: "gm-1", operatorResolver: resolver }).context; assertFailure(dispatchVoyageEventSessionCommand(command({ requestId: "operator-command" }), observerContext), "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+test("stored fingerprints are hostile-safely recaptured in reload and command validation", async () => {
+  const fingerprints = [];
+  for (const key of ["__proto__", "constructor", "prototype"]) {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const record = session(fixture.journals[0]).processedRequests[0]; const tuple = JSON.parse(record.fingerprint); Object.defineProperty(tuple[6].eventDefinition, key, { value: { nested: true }, enumerable: true }); fingerprints.push(JSON.stringify(tuple));
+    const nested = {}; Object.defineProperty(nested, key, { value: true, enumerable: true }); const nestedTuple = JSON.parse(record.fingerprint); nestedTuple[6].eventDefinition.details = { nested }; fingerprints.push(JSON.stringify(nestedTuple));
+  }
+  for (const key of ["__proto__", "constructor", "prototype"]) {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const record = session(fixture.journals[0]).processedRequests[0]; const tuple = JSON.parse(record.fingerprint); const nested = {}; Object.defineProperty(nested, key, { value: true, enumerable: true }); tuple[6].initialEncounterState.metadata = { nested: [nested] }; record.fingerprint = JSON.stringify(tuple); fingerprints.push(record.fingerprint); assert.equal(Object.prototype.polluted, undefined); assert.equal(({}).polluted, undefined); assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assertFailure(dispatchVoyageEventSessionCommand(command(), fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  }
+  const malformed = [
+    "not-json",
+    "[]",
+    "{}",
+    "[1,2,3,4,5,6]",
+    "[\"session-1\",\"gm-1\",\"gm\",0,0,\"create-session\",{}]",
+    "[\"session-1\",\"gm-1\",\"gm\",0,0,\"create-session\",{\"eventId\":\"event-1\",\"eventId\":\"other\"}]"
+  ];
+  for (const fingerprint of [...fingerprints, ...malformed]) {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); session(fixture.journals[0]).processedRequests[0].fingerprint = fingerprint; assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assertFailure(await createVoyageEventSession(request(), fixture.context), "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify."); assert.equal(Object.prototype.polluted, undefined); assert.equal(({}).polluted, undefined); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  }
+});
+
+test("approximately 5000-level stored fingerprints fail closed across every validation path", async () => {
+  let deep = "{}";
+  for (let index = 0; index < 5000; index += 1) deep = `{"x":${deep}}`;
+  const eventDefinition = `{"schemaVersion":1,"eventId":"event-1","definitionSnapshotId":"definition-1","title":"Cinderwake","deep":${deep}}`;
+  const run = async (kind) => {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context);
+    const stored = session(fixture.journals[0]);
+    stored.processedRequests[0].fingerprint = `["session-1","gm-1","gm",0,0,"create-session",{"eventId":"event-1","definitionSnapshotId":"definition-1","shipId":"ship-1","eventDefinition":${eventDefinition},"initialEncounterState":${JSON.stringify(stored.encounterState)}}]`;
+    const beforeDocument = structuredClone(fixture.journals[0].__testSource);
+    const beforeRequest = request();
+    const invoke = kind === "reload" ? () => reloadVoyageEventSession("session-1", fixture.context) : kind === "create" ? () => createVoyageEventSession(request(), fixture.context) : () => dispatchVoyageEventSessionCommand(command(), fixture.context);
+    const expected = kind === "create" ? ["m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify."] : ["m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."];
+    let first; let second;
+    await assert.doesNotReject(async () => { first = await invoke(); });
+    await assert.doesNotReject(async () => { second = await invoke(); });
+    assertFailure(first, ...expected); assertFailure(second, ...expected); assert.deepEqual(second, first);
+    assert.deepEqual(fixture.journals[0].__testSource, beforeDocument); assert.deepEqual(request(), beforeRequest); assert.equal(fixture.tracker.creates, 1); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  };
+  await run("reload"); await run("create"); await run("dispatch");
+});
+
+test("authentication precedes semantic payload checks and active-GM binding", async () => {
+  const unauthenticated = makeContext({ authenticatedUserId: null }); assertFailure(dispatchVoyageEventSessionCommand(command({ payload: { response: { forged: true } } }), unauthenticated.context), "m11-authentication-required", "transport.user", "Authenticated transport user is required."); assert.equal(unauthenticated.tracker.resolverCalls, 0); assert.equal(unauthenticated.tracker.builderCalls, 0); assert.equal(unauthenticated.tracker.creates, 0); assert.equal(unauthenticated.tracker.updates, 0); assert.equal(unauthenticated.tracker.deletes, 0);
+  const disconnectedPlayer = makeContext({ authenticatedUserId: "player-1", users: [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: false }] }); assertFailure(dispatchVoyageEventSessionCommand(command({ payload: { response: { forged: true } } }), disconnectedPlayer.context), "m11-authentication-required", "transport.user", "Authenticated transport user is required.");
+  const missingGm = makeContext({ activeGmUserId: null }); assertFailure(dispatchVoyageEventSessionCommand(command(), missingGm.context), "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available.");
+  const invalidGm = makeContext({ users: [{ id: "gm-1", isGM: false, active: true }] }); assertFailure(dispatchVoyageEventSessionCommand(command(), invalidGm.context), "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available.");
+  const duplicateGm = makeContext({ authenticatedUserId: "gm-2", activeGmUserId: "gm-1", users: [{ id: "gm-1", isGM: true, active: true }, { id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: true }] }); assertFailure(dispatchVoyageEventSessionCommand(command(), duplicateGm.context), "m11-active-gm-unavailable", "transport.activeGm", "No unique active GM is available.");
+  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context);
+  const nonActiveGm = makeContext({ journals: fixture.journals, authenticatedUserId: "gm-2", activeGmUserId: "gm-1" }); assertFailure(dispatchVoyageEventSessionCommand(command({ requestId: "non-active-gm" }), nonActiveGm.context), "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state."); assert.equal(nonActiveGm.tracker.updates, 0); assert.equal(nonActiveGm.tracker.deletes, 0);
+  for (const value of [
+    makeContext({ journals: fixture.journals, activeGmUserId: "gm-2", authenticatedUserId: "player-1" }),
+    makeContext({ journals: fixture.journals, activeGmUserId: "gm-2", authenticatedUserId: "player-1" }),
+    makeContext({ journals: fixture.journals, activeGmUserId: "gm-2", authenticatedUserId: "player-1" })
+  ]) {
+    assertFailure(dispatchVoyageEventSessionCommand(command({ requestId: "request-1", expectedRevision: 99 }), value.context), "m11-control-transfer-required", "authorityEpoch", "Event Session control has transferred."); assert.equal(value.tracker.updates, 0); assert.equal(value.tracker.deletes, 0);
+  }
+  const disconnectedGm = makeContext({ journals: fixture.journals, users: [{ id: "gm-1", isGM: true, active: false }], authenticatedUserId: "gm-1", activeGmUserId: "gm-1" }); assertFailure(dispatchVoyageEventSessionCommand(command(), disconnectedGm.context), "m11-authentication-required", "transport.user", "Authenticated transport user is required.");
+});
+
+test("canonical operator resolver uses existing id/uuid identity semantics without granting from malformed evidence", async () => {
+  const variants = [
+    { kind: "actor", id: "captain" },
+    { kind: "actor", uuid: "Actor.captain" },
+    { kind: "actor", id: "captain", name: "Captain" },
+    { kind: "actor", uuid: "Actor.captain", name: "Captain" },
+    { kind: "actor", uuid: "Actor.captain", name: "Different display name" },
+    { kind: "crewAsset", id: "captain" },
+    { kind: "actor", id: "wrong" },
+    { kind: "actor", uuid: "Actor.wrong" },
+    { kind: "actor" },
+    { kind: "actor", id: "captain", uuid: "Actor.captain" },
+    new Proxy({}, { ownKeys() { throw new Error("hostile"); } })
+  ];
+  for (const resolverValue of variants) {
+    const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" } }]; const fixture = makeContext({ encounterValue, operatorResolver: () => resolverValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context); const result = dispatchVoyageEventSessionCommand(command({ requestId: "operator-request" }), makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", activeGmUserId: "gm-1", operatorResolver: () => resolverValue }).context); assertFailure(result, "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
   }
 });
