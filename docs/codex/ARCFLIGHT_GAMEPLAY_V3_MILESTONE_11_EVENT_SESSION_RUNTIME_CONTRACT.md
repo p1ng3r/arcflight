@@ -375,8 +375,33 @@ command.
 `fingerprint` is the canonical captured JSON tuple
 `JSON.stringify([sessionId, principalUserId, projectionKind, authorityEpoch, expectedRevision, commandKind, payload])`.
 The stored response is the exact isolated response envelope for that principal
-and projection role. Processed request records are never removed by reset,
-reload, recovery, abort, or control transfer.
+and projection role. For the non-dispatch creation API only, `commandKind` is
+the record-only value `"create-session"`, `resultKind` is `"created"`,
+`resultRevision` is `0`, `projectionKind` is `"gm"`, and the fingerprint is
+exactly:
+
+```js
+JSON.stringify([
+  sessionId,
+  principalUserId,
+  "gm",
+  0,
+  0,
+  "create-session",
+  { eventId, definitionSnapshotId, shipId, eventDefinition, initialEncounterState }
+])
+```
+
+`"create-session"` is never accepted as a dispatch `commandKind`. Its stored
+response is the exact isolated successful creation envelope, and exact replay
+requires the same authenticated active GM, derived `gm` role, and complete
+fingerprint. The milestone-wide schema eventually permits historical records
+from every owning command producer, but Task 2 accepts exactly one canonical
+creation record because no gameplay command-result producer exists yet. Each
+later slice must add that command's exact stored-record, result, response,
+projection, and event validator simultaneously; Task 2 never guesses or
+partially validates future records. Processed request records are never
+removed by reset, reload, recovery, abort, or control transfer.
 
 `closeout` is exactly:
 
@@ -541,6 +566,14 @@ is accepted only when:
 4. the session's `activeGmUserId` equals that active GM's `id`; and
 5. the supplied `authorityEpoch` equals the stored epoch.
 
+Creation and dispatch use the same hostile-safe trusted-user resolution
+boundary. In the injected server/test metadata representation, every trusted
+user has exact boolean `isGM` and `active` evidence; the authenticated
+principal and current active-GM record must each be unique, connected, and
+readable. Creation additionally requires those two identities to be the same
+GM; dispatch permits a connected non-GM principal while retaining the stored/
+current active-GM binding.
+
 ### 6.1 Bootstrap authority after GM loss
 
 There is one and only one exception to condition 4: the bootstrap form of
@@ -583,17 +616,39 @@ state.
 Player/operator commands may originate from an authenticated non-GM, but the
 active GM remains the authoritative session owner. Station permissions are
 derived from stored assignments and never from a caller's claimed role.
+Task 2 uses the trusted server-side boundary
+`resolveVoyageOperatorForPrincipal(principalUserId)`. It is transport/server
+evidence, never request data, and returns either `null` or one hostile-safely
+captured canonical operator identity using the existing station-assignment
+schema: `kind` is required and is `actor` or `crewAsset`; at least one of the
+nonblank identities `id` or `uuid` is required; `id`, `uuid`, and `name` are
+otherwise optional, and `name` is never authority. M11 reuses the canonical
+station-assignment analysis boundary, binds by `kind + uuid` when a UUID is
+available or by `kind + id` otherwise, and accepts `operator` only when exactly
+one durable assignment matches. Differing display names do not affect binding;
+malformed, ambiguous, unsafe, or unmatched resolver data never grants
+operator authority. The resolver does not change the durable station-
+assignment schema and Task 2 does not implement projection contents.
 For every command response M11 resolves `projectionKind` from the authenticated
 transport principal and the stored station assignments/permissions: `gm` for
-the GM, `operator` for the principal's assigned station, `crew` for an
-authenticated crew observer, and `observer` for an authenticated read-only
-user. A caller never supplies or overrides this role; an unresolvable role is
+any authenticated connected GM, `operator` for the principal's assigned station, `crew` for an
+authenticated crew observer only when a later owning slice defines an exact
+trusted crew authority; otherwise Task 2 classifies the connected principal as
+`observer`. A caller never supplies or overrides this role; an unresolvable role is
 `m11-projection-not-authorized` with zero writes.
 
 If no active GM exists, mutating commands pause and return
 `m11-active-gm-unavailable`; no gameplay write occurs. A new active GM may
 resume only through the bootstrap transfer/recovery rule above. Only the
 current active-GM client performs mutating JournalEntry writes.
+
+For every ordinary command, after exact session resolution and before request
+replay, stale checks, domain validation, or response return, M11 requires the
+stored `activeGmUserId` to equal Foundry's unique current active GM ID and
+requires the authenticated sender to remain connected. A mismatch returns
+`m11-control-transfer-required` at `authorityEpoch` with zero writes and cannot
+replay an old ordinary-command response. Task 2 does not transfer control or
+perform bootstrap recovery.
 
 Every ordinary transfer uses the same final pre-write binding as bootstrap:
 the executing user is an authenticated connected GM and the unique current
@@ -634,11 +689,31 @@ Exact request keys:
 }
 ```
 
+Creation first captures the request and performs only root-shape and exact-mode
+discrimination. It then resolves the trusted authenticated transport principal
+and Foundry's unique current active GM before inspecting any semantic request
+field, resolving an Event Definition, building an encounter, scanning session
+documents, generating an ID, or preparing a write. Creation requires that the
+authenticated principal is the connected current active GM. In the injected
+server/test metadata boundary, `user.active === true` is the exact connected-
+user evidence; missing, inherited, accessor, non-boolean, duplicated, or
+ambiguous trusted-user metadata fails closed.
+
 The authenticated active GM is transport evidence. `eventDefinition` and
 `initialEncounterState` are captured proposals and are regenerated/validated
 through existing domain boundaries. A duplicate request replays the stored
 creation response; a conflicting request ID or existing session identity fails
 closed.
+
+Creation is not a dispatch command. On first successful creation M11 appends
+exactly one processed-request record using the record-only `commandKind`
+`"create-session"`, `resultKind: "created"`, `resultRevision: 0`,
+`projectionKind: "gm"`, principal equal to the authenticated active GM, and
+the exact zero/zero fingerprint mapping defined in Section 4. Exact creation
+replay returns that isolated successful response without a write. Reuse with
+changed request data, principal, role, or fingerprint returns
+`m11-request-id-conflict`; an existing session with a different request ID
+remains the existing-session identity/write conflict.
 
 The authoritative creation source is an immutable server-side Event Definition
 snapshot resolver keyed by `(eventId, definitionSnapshotId)`. The resolver is
@@ -879,11 +954,11 @@ The canonical precedence for every ordinary mutating API other than
 1. hostile capture;
 2. exact root keys and mode;
 3. transport authentication and active-GM authority;
-4. session resolution and complete stored-session validation;
+4. minimum envelope value validation and session resolution/complete stored-session validation;
 5. request-ID duplicate/conflict handling;
 6. authority-epoch binding;
 7. expected M11 session revision binding;
-8. lifecycle/command authorization;
+8. lifecycle/command authorization and forbidden payload-authority validation;
 9. delegated pure-domain validation and regeneration;
 10. checkpoint validation when required;
 11. candidate/event/revision validation;
@@ -978,16 +1053,27 @@ authority epoch provide authority.
 For an exact request-ID replay, M11 returns the stored isolated response only
 when request ID, principal, projection role, and fingerprint all match. It
 performs no write, emits no new event, and changes no revision, even if the
-current revision has advanced. A reused request ID with any different
+current revision has advanced in a slice that owns that stored record. A reused request ID with any different
 principal, projection role, or canonical fingerprint returns
 `m11-request-id-conflict` with the standard failure envelope, no stored
 response, and zero writes. A new request whose `expectedRevision` differs from
 the live session revision returns `m11-stale-session-revision` with zero
 writes.
 
+Every stored fingerprint is hostile persisted data. M11 parses it inside a
+guarded boundary, immediately hostile-safely recaptures the parsed value, and
+requires a dense seven-element tuple whose canonical reserialization equals the
+stored string. Unsafe object keys, accessors, non-plain values, sparse or
+extra-key arrays, non-finite values, cycles, and reflection failures invalidate
+the session. Task 2 continues to accept only its exact record-only
+`create-session` record; no generic future command record is inferred.
+
 Processed request IDs survive reload, pause, recovery, control transfer,
-abort, and completion. Reload validates the principal/role/fingerprint fields
-before any replay. The replay fingerprint always uses M11's derived role, not a
+abort, and completion. Task 2 stores and replays only its exact creation
+record; any future command record fails closed until its owning slice registers
+the complete canonical validator. Later slices validate historical principal,
+role, authority, revision, result, response, and fingerprint values without
+rewriting them. The replay fingerprint always uses M11's derived role, not a
 request field. A completed session accepts only exact duplicate reads or
 recovery inspection; it never replays gameplay mutation.
 
@@ -1379,6 +1465,14 @@ principal, resolved JournalEntry, Foundry active-GM state, canonical domain
 regeneration, and M11-produced Event Session receipts consumed and validated by
 M10 are the only authorities.
 
+For command payloads, the exact forbidden authority-key boundary includes
+`principalUserId`, `authenticatedUserId`, `gmUserId`, `isGM`, `role`,
+`projectionKind`, `fingerprint`, `result`, `resultKind`, `resultRevision`,
+`candidate`, `event`, `response`, `receipt`, `nextState`, `revision`,
+`authorityEpoch`, `authority`, `analysis`, and `outcome`, including nested
+occurrences. Legitimate domain fields are not rejected merely because they
+contain generic words outside this closed list.
+
 Every failure performs zero session writes, zero Actor writes, emits no socket
 state mutation, returns no partial state/events/projection, and leaves M10
 ledger and ship state unchanged. An exact duplicate replay is write-free and
@@ -1409,9 +1503,16 @@ The M11 implementation must cover:
   election, bootstrap transfer/recovery with null and stale stored GM,
   old-epoch rejection, disconnected/non-GM/non-active control-transfer target,
   final-reread authority/revision drift, and station preservation;
-- unique request success, exact duplicate replay with zero writes, reused ID
-  conflict across principal and projection role, reload replay, and
-  processed-ID retention through recovery;
+- unique request success, exact creation replay with zero writes, the exact
+  record-only `create-session` creation mapping, changed-data/principal/role
+  conflict, exact creation-record tamper rejection, and zero-write reload;
+- trusted operator-resolution witnesses for canonical `kind + id` and
+  `kind + uuid` assignments, optional names, differing display names, wrong
+  kind/identity, ambiguous or malformed resolver data, and caller-authored
+  user fields that never grant operator role;
+- authentication before semantic payload validation, connected-principal
+  rejection, stored/current active-GM mismatch before replay or stale checks,
+  and zero-write authority failures;
 - checkpoints before plan lock, Action Segment, reaction, round closeout,
   Emergency Response, persistent application, and after forward recovery;
 - failed writes, failed rereads, unchanged-before, exact-after, ambiguous
@@ -1515,7 +1616,10 @@ In a Foundry v14 PF2e world:
 M11 implementation must proceed in narrow reviewed slices:
 
 1. session document creation, capture, validation, and reload;
-2. authenticated command envelope and request idempotency;
+2. authenticated command envelope and request idempotency, including only the
+   record-only `create-session` producer/validator and the trusted
+   principal-to-operator resolver; future command records remain rejected until
+   their owning slices add complete validators;
 3. active-GM authority and control transfer;
 4. checkpoint persistence and recovery;
 5. role-filtered projections;
