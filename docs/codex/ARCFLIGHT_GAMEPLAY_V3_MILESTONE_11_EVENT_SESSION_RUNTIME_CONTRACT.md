@@ -375,8 +375,31 @@ command.
 `fingerprint` is the canonical captured JSON tuple
 `JSON.stringify([sessionId, principalUserId, projectionKind, authorityEpoch, expectedRevision, commandKind, payload])`.
 The stored response is the exact isolated response envelope for that principal
-and projection role. Processed request records are never removed by reset,
-reload, recovery, abort, or control transfer.
+and projection role. For the non-dispatch creation API only, `commandKind` is
+the record-only value `"create-session"`, `resultKind` is `"created"`,
+`resultRevision` is `0`, `projectionKind` is `"gm"`, and the fingerprint is
+exactly:
+
+```js
+JSON.stringify([
+  sessionId,
+  principalUserId,
+  "gm",
+  0,
+  0,
+  "create-session",
+  { eventId, definitionSnapshotId, shipId, eventDefinition, initialEncounterState }
+])
+```
+
+`"create-session"` is never accepted as a dispatch `commandKind`. Its stored
+response is the exact isolated successful creation envelope, and exact replay
+requires the same authenticated active GM, derived `gm` role, and complete
+fingerprint. Processed request validation permits historical authority epochs,
+expected revisions, result revisions, and responses when each is a safe
+nonnegative value no greater than the current validated session values; it does
+not rewrite historical records. Processed request records are never removed
+by reset, reload, recovery, abort, or control transfer.
 
 `closeout` is exactly:
 
@@ -583,6 +606,16 @@ state.
 Player/operator commands may originate from an authenticated non-GM, but the
 active GM remains the authoritative session owner. Station permissions are
 derived from stored assignments and never from a caller's claimed role.
+Task 2 uses the trusted server-side boundary
+`resolveVoyageOperatorForPrincipal(principalUserId)`. It is transport/server
+evidence, never request data, and returns either `null` or one hostile-safely
+captured canonical operator identity with the exact existing station-assignment
+key order `{ kind, id, uuid, name }`. M11 accepts `operator` only when that
+identity is structurally and key-order equal to exactly one durable
+`encounterState.stationAssignments[*].operator`; malformed, ambiguous, or
+forged resolver data never grants operator authority. The resolver does not
+change the durable station-assignment schema and Task 2 does not implement
+projection contents.
 For every command response M11 resolves `projectionKind` from the authenticated
 transport principal and the stored station assignments/permissions: `gm` for
 the GM, `operator` for the principal's assigned station, `crew` for an
@@ -639,6 +672,16 @@ The authenticated active GM is transport evidence. `eventDefinition` and
 through existing domain boundaries. A duplicate request replays the stored
 creation response; a conflicting request ID or existing session identity fails
 closed.
+
+Creation is not a dispatch command. On first successful creation M11 appends
+exactly one processed-request record using the record-only `commandKind`
+`"create-session"`, `resultKind: "created"`, `resultRevision: 0`,
+`projectionKind: "gm"`, principal equal to the authenticated active GM, and
+the exact zero/zero fingerprint mapping defined in Section 4. Exact creation
+replay returns that isolated successful response without a write. Reuse with
+changed request data, principal, role, or fingerprint returns
+`m11-request-id-conflict`; an existing session with a different request ID
+remains the existing-session identity/write conflict.
 
 The authoritative creation source is an immutable server-side Event Definition
 snapshot resolver keyed by `(eventId, definitionSnapshotId)`. The resolver is
@@ -987,9 +1030,11 @@ writes.
 
 Processed request IDs survive reload, pause, recovery, control transfer,
 abort, and completion. Reload validates the principal/role/fingerprint fields
-before any replay. The replay fingerprint always uses M11's derived role, not a
-request field. A completed session accepts only exact duplicate reads or
-recovery inspection; it never replays gameplay mutation.
+before any replay while retaining historical safe authority and revision values
+that are no greater than the current validated session values. The replay
+fingerprint always uses M11's derived role, not a request field. A completed
+session accepts only exact duplicate reads or recovery inspection; it never
+replays gameplay mutation.
 
 ## 11. Checkpoints, persistence, and recovery
 
@@ -1379,6 +1424,14 @@ principal, resolved JournalEntry, Foundry active-GM state, canonical domain
 regeneration, and M11-produced Event Session receipts consumed and validated by
 M10 are the only authorities.
 
+For command payloads, the exact forbidden authority-key boundary includes
+`principalUserId`, `authenticatedUserId`, `gmUserId`, `isGM`, `role`,
+`projectionKind`, `fingerprint`, `result`, `resultKind`, `resultRevision`,
+`candidate`, `event`, `response`, `receipt`, `nextState`, `revision`,
+`authorityEpoch`, `authority`, `analysis`, and `outcome`, including nested
+occurrences. Legitimate domain fields are not rejected merely because they
+contain generic words outside this closed list.
+
 Every failure performs zero session writes, zero Actor writes, emits no socket
 state mutation, returns no partial state/events/projection, and leaves M10
 ledger and ship state unchanged. An exact duplicate replay is write-free and
@@ -1409,9 +1462,13 @@ The M11 implementation must cover:
   election, bootstrap transfer/recovery with null and stale stored GM,
   old-epoch rejection, disconnected/non-GM/non-active control-transfer target,
   final-reread authority/revision drift, and station preservation;
-- unique request success, exact duplicate replay with zero writes, reused ID
-  conflict across principal and projection role, reload replay, and
-  processed-ID retention through recovery;
+- unique request success, exact duplicate replay with zero writes, the exact
+  record-only `create-session` creation mapping, reused ID conflict across
+  principal and projection role, historical replay after revision/epoch
+  advancement, reload replay, and processed-ID retention through recovery;
+- trusted operator-resolution witnesses for matching canonical assignments,
+  observers, ambiguous or malformed resolver data, and caller-authored user
+  fields that never grant operator role;
 - checkpoints before plan lock, Action Segment, reaction, round closeout,
   Emergency Response, persistent application, and after forward recovery;
 - failed writes, failed rereads, unchanged-before, exact-after, ambiguous
@@ -1515,7 +1572,9 @@ In a Foundry v14 PF2e world:
 M11 implementation must proceed in narrow reviewed slices:
 
 1. session document creation, capture, validation, and reload;
-2. authenticated command envelope and request idempotency;
+2. authenticated command envelope and request idempotency, including the
+   record-only `create-session` mapping, historical replay validation, and the
+   trusted principal-to-operator resolver;
 3. active-GM authority and control transfer;
 4. checkpoint persistence and recovery;
 5. role-filtered projections;
