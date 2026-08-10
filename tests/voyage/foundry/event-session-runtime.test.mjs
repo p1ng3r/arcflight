@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as runtimeModule from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import {
   createVoyageEventSession,
-  reloadVoyageEventSession,
-  validateVoyageEventSession
+  reloadVoyageEventSession
 } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 import { createVoyageEncounterState } from "../../../scripts/voyage/domain/state.js";
@@ -42,14 +42,25 @@ function request(definitionValue = definition(), encounterValue = encounter()) {
 }
 
 function makeJournalDocument(data, tracker, journals, { id = data._id, flags = data.flags, persist = true } = {}) {
-  const document = {
-    id,
-    name: data.name,
+  const source = {
+    _id: id,
+    name: data.name ?? "Preserved JournalEntry",
     pages: [{ name: "Preserved page", text: { content: "keep" } }],
     ownership: structuredClone(data.ownership),
     folder: { id: "folder-1" },
     sort: 42,
-    flags: structuredClone(flags),
+    flags: structuredClone(flags)
+  };
+  const document = {
+    __isJournalEntry: true,
+    __testSource: source,
+    get id() { return source._id; },
+    get name() { return source.name; },
+    get pages() { return source.pages; },
+    get ownership() { return source.ownership; },
+    get folder() { return source.folder; },
+    get sort() { return source.sort; },
+    toObject() { return source; },
     async update() { tracker.updates += 1; return this; },
     async delete() {
       tracker.deletes += 1;
@@ -84,7 +95,8 @@ function makeContext({ journals = [], documentId = "Journal.session-1", definiti
       createDocumentId: () => documentId,
       resolveEventDefinitionSnapshot: async () => structuredClone(definitionValue),
       createInitialEncounterState: async () => structuredClone(encounterValue),
-      JournalEntry
+      JournalEntry,
+      isJournalEntryDocument: (document) => document?.__isJournalEntry === true
     },
     journals,
     tracker
@@ -92,7 +104,7 @@ function makeContext({ journals = [], documentId = "Journal.session-1", definiti
 }
 
 function session(document) {
-  return document.flags.arcflight.system.voyageSession;
+  return document.__testSource.flags.arcflight.system.voyageSession;
 }
 
 function assertFailure(result, code) {
@@ -111,6 +123,10 @@ function assertExactFailure(result, code, path, message) {
   assertFailure(result, code);
   assert.deepEqual(result.errors, [{ code, path, message, severity: "error" }]);
 }
+
+test("M11 Task 1 exposes only the authorized creation and reload boundaries", () => {
+  assert.deepEqual(Object.keys(runtimeModule).sort(), ["createVoyageEventSession", "reloadVoyageEventSession"]);
+});
 
 function canonicalM10CloseoutM6PressureBreachEvent() {
   const state = encounter();
@@ -260,7 +276,7 @@ test("M11 Task 1 creates exactly one ordinary JournalEntry with the exact state 
   assert.equal(session(journals[0]).encounterState.revision, 0);
   assert.equal(session(journals[0]).encounterState.encounterId, "event-1");
   assert.deepEqual(session(journals[0]).events, []);
-  assert.equal(Object.hasOwn(journals[0].flags.arcflight.system, "voyage"), false);
+  assert.equal(Object.hasOwn(journals[0].__testSource.flags.arcflight.system, "voyage"), false);
 });
 
 test("M11 Task 1 applies GM-only JournalEntry ownership with no player entry", async () => {
@@ -274,6 +290,30 @@ test("M11 Task 1 applies GM-only JournalEntry ownership with no player entry", a
   assert.equal(Object.hasOwn(journals[0].ownership, "player-1"), false);
 });
 
+test("M11 Task 1 uses the Foundry id/toObject boundary and never trusts malformed projections", async () => {
+  const valid = makeContext();
+  const created = await createVoyageEventSession(request(), valid.context);
+  assert.equal(created.ok, true, JSON.stringify(created.errors));
+  assert.equal(reloadVoyageEventSession("session-1", valid.context).ok, true);
+
+  const hostile = makeContext({
+    create(_data, _tracker, _journals, makeDocument) {
+      const document = makeDocument();
+      document.toObject = () => ({ _id: document.id, flags: { arcflight: { system: { voyageSession: { sessionId: "session-1" } } } }, hostile: undefined });
+      return document;
+    }
+  });
+  const hostileResult = await createVoyageEventSession(request(), hostile.context);
+  assertExactFailure(hostileResult, "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify.");
+  assert.equal(hostile.tracker.deletes, 1);
+
+  const failed = makeContext();
+  await createVoyageEventSession(request(), failed.context);
+  failed.journals[0].toObject = () => { throw new Error("toObject failed"); };
+  assertExactFailure(reloadVoyageEventSession("session-1", failed.context), "m11-hostile-data-capture-failed", "$", "M11 data could not be captured safely.");
+  assert.equal(failed.tracker.updates, 0);
+});
+
 test("M11 Task 1 resolves missing and duplicate session documents exactly and writes nothing", async () => {
   const missing = makeContext();
   const missingResult = reloadVoyageEventSession("session-1", missing.context);
@@ -285,10 +325,11 @@ test("M11 Task 1 resolves missing and duplicate session documents exactly and wr
   const encounterValue = encounter();
   const fixture = makeContext({ definitionValue, encounterValue });
   await createVoyageEventSession(request(definitionValue, encounterValue), fixture.context);
-  const duplicate = {
-    id: "Journal.duplicate",
-    flags: structuredClone(fixture.journals[0].flags)
-  };
+  const duplicate = makeJournalDocument({
+    _id: "Journal.duplicate",
+    flags: structuredClone(fixture.journals[0].__testSource.flags),
+    ownership: {}
+  }, fixture.tracker, []);
   fixture.journals.push(duplicate);
   const duplicateResult = reloadVoyageEventSession("session-1", fixture.context);
   assertExactFailure(duplicateResult, "m11-ambiguous-session-document", "sessionId", "More than one Event Session document matched.");
@@ -318,7 +359,7 @@ test("M11 Task 1 treats zero, one, and multiple matching documents as distinct c
   const multiple = makeContext();
   const first = await createVoyageEventSession(request(), multiple.context);
   assert.equal(first.ok, true, JSON.stringify(first.errors));
-  multiple.journals.push({ id: "Journal.duplicate", flags: structuredClone(multiple.journals[0].flags) });
+  multiple.journals.push(makeJournalDocument({ _id: "Journal.duplicate", flags: structuredClone(multiple.journals[0].__testSource.flags), ownership: {} }, multiple.tracker, multiple.journals));
   const ambiguous = await createVoyageEventSession(request(), multiple.context);
   assertExactFailure(ambiguous, "m11-ambiguous-session-document", "sessionId", "More than one Event Session document matched.");
   assert.equal(multiple.tracker.creates, 1);
@@ -332,7 +373,7 @@ test("M11 Task 1 cleans up only its post-create document when full reread verifi
       name: "persisted flag mismatch",
       create(data, tracker, journals, makeDocument) {
         const document = makeDocument();
-        document.flags.arcflight.system.voyageSession.sessionId = "wrong-session";
+        document.__testSource.flags.arcflight.system.voyageSession.sessionId = "wrong-session";
         return document;
       }
     },
@@ -359,12 +400,13 @@ test("M11 Task 1 cleans up only its post-create document when full reread verifi
     assert.deepEqual(fixture.journals, [], scenario.name);
   }
 
-  const preserved = { id: "Journal.preexisting", flags: { unrelatedModule: { preserved: true } } };
+  const preserved = makeJournalDocument({ _id: "Journal.preexisting", flags: { unrelatedModule: { preserved: true } }, ownership: {} }, makeContext().tracker, []);
+  const preservedJournals = [preserved];
   const noPreexistingDelete = makeContext({
-    journals: [preserved],
+    journals: preservedJournals,
     create(data, tracker, journals, makeDocument) {
       const document = makeDocument();
-      document.flags.arcflight.system.voyageSession.sessionId = "wrong-session";
+      document.__testSource.flags.arcflight.system.voyageSession.sessionId = "wrong-session";
       return document;
     }
   });
@@ -373,6 +415,48 @@ test("M11 Task 1 cleans up only its post-create document when full reread verifi
   assert.equal(noPreexistingDelete.tracker.deletes, 1);
   assert.deepEqual(noPreexistingDelete.tracker.deletedIds, ["Journal.session-1"]);
   assert.deepEqual(noPreexistingDelete.journals, [preserved]);
+
+  const failedCleanupScenarios = [
+    {
+      name: "delete rejection",
+      configure(document) { document.delete = async () => { throw new Error("rejected"); }; }
+    },
+    {
+      name: "delete throw",
+      configure(document) { document.delete = () => { throw new Error("thrown"); }; }
+    },
+    {
+      name: "document remains after delete",
+      configure(document, tracker) { document.delete = async () => { tracker.deletes += 1; tracker.deletedIds.push(document.id); }; }
+    },
+    {
+      name: "post-delete collection ambiguity",
+      configure(document, tracker, journals) {
+        document.delete = async () => {
+          tracker.deletes += 1;
+          const index = journals.indexOf(document);
+          if (index >= 0) journals.splice(index, 1);
+          const duplicate = makeJournalDocument({ _id: "Journal.ambiguous", flags: structuredClone(document.__testSource.flags), ownership: {} }, tracker, journals);
+          duplicate.__testSource.flags.arcflight.system.voyageSession.sessionId = "session-1";
+        };
+      }
+    }
+  ];
+  for (const scenario of failedCleanupScenarios) {
+    const fixture = makeContext({
+      create(data, tracker, journals, makeDocument) {
+        const document = makeDocument();
+        document.__testSource.flags.arcflight.system.voyageSession.sessionId = "wrong-session";
+        scenario.configure(document, tracker, journals);
+        return document;
+      }
+    });
+    const failed = await createVoyageEventSession(request(), fixture.context);
+    assertExactFailure(failed, "m11-recovery-required", "recovery", "Event Session requires explicit recovery.");
+    assert.equal(fixture.tracker.creates, 1, scenario.name);
+    assert.equal(fixture.tracker.updates, 0, scenario.name);
+    assert.equal(fixture.tracker.deletes, scenario.name === "delete rejection" || scenario.name === "delete throw" ? 0 : 1, scenario.name);
+  }
 });
 
 test("M11 Task 1 rejects malformed, hostile, inherited, and sparse stored data without writes", async () => {
@@ -392,7 +476,7 @@ test("M11 Task 1 rejects malformed, hostile, inherited, and sparse stored data w
   assert.equal(fixture.tracker.updates, 0);
 
   const inherited = Object.create(session(fixture.journals[0]));
-  fixture.journals[0].flags.arcflight.system.voyageSession = inherited;
+  fixture.journals[0].__testSource.flags.arcflight.system.voyageSession = inherited;
   assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-hostile-data-capture-failed");
   assert.equal(fixture.tracker.updates, 0);
 });
@@ -471,6 +555,8 @@ test("M11 Task 1 enforces JournalEntry/session identity and initial revision bin
 
 test("M11 Task 1 accepts only representative canonical M6, M7, and M10 stored-event shapes", async () => {
   const m6 = canonicalM6PressureBreachEvent();
+  m6.previousRevision = 0;
+  m6.revision = 1;
   const m7 = canonicalM7VoidScarEvent(m6);
   const m10CloseoutM6 = canonicalM10CloseoutM6PressureBreachEvent();
   const m10Persistent = {
@@ -497,8 +583,8 @@ test("M11 Task 1 accepts only representative canonical M6, M7, and M10 stored-ev
     shipRevision: 1
   };
   const witnesses = [
-    { name: "M6 pressure breach", events: [m6], encounterRevision: 4 },
-    { name: "M7 Void Scar", events: [m6, m7], encounterRevision: 4 },
+    { name: "M6 pressure breach", events: [m6], encounterRevision: 1 },
+    { name: "M7 Void Scar", events: [m6, m7], encounterRevision: 1 },
     // M8 and M9 provide the canonical result/proposal inputs. They do not
     // define a persisted Event Session event kind; M10 owns these two events.
     { name: "M10 closeout M6 breach", events: [m10CloseoutM6], encounterRevision: 1 },
@@ -671,14 +757,14 @@ test("M11 Task 1 reload is read-only and leaves JournalEntry non-voyage data unt
   const encounterValue = encounter();
   const fixture = makeContext({ definitionValue, encounterValue });
   await createVoyageEventSession(request(definitionValue, encounterValue), fixture.context);
-  fixture.journals[0].flags.otherModule = { preserved: ["yes"] };
+  fixture.journals[0].__testSource.flags.otherModule = { preserved: ["yes"] };
   fixture.journals[0].ownership.extraGm = 2;
   const before = structuredClone({
     name: fixture.journals[0].name,
     pages: fixture.journals[0].pages,
     ownership: fixture.journals[0].ownership,
     folder: fixture.journals[0].folder,
-    flags: fixture.journals[0].flags
+    flags: fixture.journals[0].__testSource.flags
   });
 
   const result = reloadVoyageEventSession("session-1", fixture.context);
@@ -690,7 +776,7 @@ test("M11 Task 1 reload is read-only and leaves JournalEntry non-voyage data unt
     pages: fixture.journals[0].pages,
     ownership: fixture.journals[0].ownership,
     folder: fixture.journals[0].folder,
-    flags: fixture.journals[0].flags
+    flags: fixture.journals[0].__testSource.flags
   }, before);
 });
 
@@ -711,7 +797,6 @@ test("M11 Task 1 captures caller data before validation and isolates the stored 
   session(fixture.journals[0]).encounterState.playerVisibleInformation = shared;
   session(fixture.journals[0]).encounterState.gmSecretInformation = shared;
   assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
-  assert.equal(validateVoyageEventSession(session(fixture.journals[0]), fixture.journals[0].id), true);
   assert.equal(fixture.tracker.updates, 0);
 });
 

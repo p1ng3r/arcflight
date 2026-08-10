@@ -317,6 +317,7 @@ const MESSAGES = Object.freeze({
   ambiguous: "More than one Event Session document matched.",
   invalid: "Stored Event Session is invalid.",
   write: "Event Session write did not complete or verify.",
+  recovery: "Event Session requires explicit recovery.",
   payload: "Command payload is invalid."
 });
 
@@ -329,6 +330,7 @@ function diagnostic(code, path) {
     "m11-ambiguous-session-document": MESSAGES.ambiguous,
     "m11-invalid-session-document": MESSAGES.invalid,
     "m11-session-write-failed": MESSAGES.write,
+    "m11-recovery-required": MESSAGES.recovery,
     "m11-command-payload-invalid": MESSAGES.payload
   }[code] ?? "M11 data is invalid.";
   return { code, path, message, severity: "error" };
@@ -555,15 +557,37 @@ function validM6PressureSystemMap(value) {
   });
 }
 
+function applyPressureEffects(previous, effects, breachIndex = null) {
+  if (!validM6PressureSystemMap(previous) || !Array.isArray(effects)) return null;
+  const next = Object.fromEntries(VOYAGE_PRESSURE_SYSTEM_IDS.map((id) => [id, { ...previous[id] }]));
+  for (let index = 0; index < effects.length; index += 1) {
+    const effect = effects[index];
+    const system = next[effect?.pressureSystemId];
+    if (!system || !safeInteger(effect?.delta)) return null;
+    const proposed = system.value + effect.delta;
+    if (effect.delta > 0 && proposed > system.capacity) {
+      if (index !== breachIndex) return null;
+      system.value = 0;
+    } else {
+      system.value = Math.max(0, proposed);
+    }
+  }
+  return next;
+}
+
 function validM6PressureAppliedEvent(event, identity) {
-  return exactKeys(event, STORED_EVENT_FIELDS[event.type]) && event.encounterId === identity.eventId
+  if (!(exactKeys(event, STORED_EVENT_FIELDS[event.type]) && event.encounterId === identity.eventId
     && event.lifecycleState === "active" && nonBlank(event.stageId) && safeInteger(event.roundNumber) && PHASES.has(event.phase)
-    && safeInteger(event.pressureEffectCount) && safeInteger(event.standardPressureEffectCount)
-    && safeInteger(event.authoredPressureEffectCount) && event.pressureEffectCount === event.standardPressureEffectCount + event.authoredPressureEffectCount
+    && safeInteger(event.pressureEffectCount) && event.pressureEffectCount >= 0
+    && safeInteger(event.standardPressureEffectCount) && event.standardPressureEffectCount >= 0
+    && safeInteger(event.authoredPressureEffectCount) && event.authoredPressureEffectCount >= 0
+    && event.pressureEffectCount === event.standardPressureEffectCount + event.authoredPressureEffectCount
     && Array.isArray(event.effects) && event.effects.length === event.pressureEffectCount
-    && event.effects.every((effect) => validPressureEffect(effect, identity, event.stageId, event.roundNumber))
+    && event.effects.every((effect, index) => validPressureEffect(effect, identity, event.stageId, event.roundNumber) && effect.sequence === index)
     && validM6PressureSystemMap(event.previousPressureSystems) && validM6PressureSystemMap(event.pressureSystems)
-    && safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1;
+    && safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1)) return false;
+  const expected = applyPressureEffects(event.previousPressureSystems, event.effects);
+  return expected !== null && equal(expected, event.pressureSystems);
 }
 
 function validM6HazardSnapshot(value, identity) {
@@ -630,7 +654,25 @@ function validM6BreachEvidence(event, identity) {
     || !nonBlank(proposal.name) || event.pressureReset.pressureBreachId !== breach.pressureBreachId
     || event.pressureReset.pressureSystemId !== breach.pressureSystemId
     || event.pressureReset.previousValue !== breach.previousValue || event.pressureReset.resetValue !== 0) return false;
-  return event.effects.every((entry) => validPressureEffect(entry, identity, event.stageId, event.roundNumber));
+  return event.effects.every((entry, index) => validPressureEffect(entry, identity, event.stageId, event.roundNumber)
+    && (event.phase === "cleanup-advance" ? safeInteger(entry.sequence) : entry.sequence === index));
+}
+
+function validCollisionOutcome(event, activeHazards) {
+  if (event.collisionOutcome === null) {
+    return !activeHazards.some((hazard) => hazard?.status === "active" && hazard.pressureSystemId === event.breach.pressureSystemId);
+  }
+  const outcome = event.collisionOutcome;
+  if (!exactKeys(outcome, ["kind", "hazardId", "incomingHazardId", "pressureSystemId", "collisionPolicy", "consequence"])) return false;
+  const occupied = activeHazards.filter((hazard) => hazard?.status === "active" && hazard.pressureSystemId === event.breach.pressureSystemId);
+  if (occupied.length !== 1 || outcome.kind !== "hazard-consequence-triggered") return false;
+  const existing = occupied[0];
+  return outcome.hazardId === existing.hazardId
+    && outcome.incomingHazardId === event.hazard.hazardId
+    && outcome.pressureSystemId === event.breach.pressureSystemId
+    && outcome.collisionPolicy === existing.collisionPolicy
+    && isPlainObject(outcome.consequence)
+    && equal(outcome.consequence, existing.metadata?.collision?.consequence);
 }
 
 function validM6PressureBreachEvent(event, identity, activeHazards) {
@@ -641,12 +683,15 @@ function validM6PressureBreachEvent(event, identity, activeHazards) {
     || event.pressureEffectCount !== event.effects?.length || event.appliedEffectCount !== event.effects?.length
     || !validM6PressureSystemMap(event.previousPressureSystems) || !validM6PressureSystemMap(event.pressureSystems)
     || !validM6BreachEvidence(event, identity)
+    || !validCollisionOutcome(event, activeHazards)
     || !safeInteger(event.previousRevision) || !safeInteger(event.revision)
     || event.revision !== event.previousRevision + 1) return false;
   const closeoutEffect = event.effects.length === 1 && validPressureEffect(event.effects[0], identity, event.stageId, event.roundNumber, { closeout: true })
     && event.phase === "cleanup-advance" && event.effects[0].timing === "gm-confirmed"
     && event.effects[0].sourceKind === "hazard-closeout" && event.effects[0].activationSource === "event-closeout"
     && event.effects[0].branch === "no-roll";
+  const expectedPressureSystems = applyPressureEffects(event.previousPressureSystems, event.effects, event.breach.effectIndex);
+  if (!expectedPressureSystems || !equal(expectedPressureSystems, event.pressureSystems)) return false;
   if (!closeoutEffect) return true;
   const regenerated = analyzeVoyagePressureBreachCloseoutTransaction({
     expectedEncounterRevision: event.previousRevision,
@@ -720,10 +765,36 @@ function validM10CloseoutEvent(event, identity) {
     && event.encounterRevision === event.previousEncounterRevision + 1 && safeInteger(event.shipRevision);
 }
 
+function reconstructInitialHazards(events, finalHazards) {
+  if (!Array.isArray(finalHazards)) return null;
+  const hazards = finalHazards.map((hazard) => hazard);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!isPlainObject(event)) return null;
+    if (event.type === "voyage.pressure-breach-applied") {
+      if (event.collisionOutcome === null) {
+        const hazardId = event.hazard?.hazardId;
+        const position = hazards.findIndex((hazard) => hazard?.hazardId === hazardId);
+        if (position >= 0) hazards.splice(position, 1);
+      }
+    } else if (event.type === "voyage.hazard-closeout-consequence-applied" && event.disposition === "removed") {
+      hazards.push(event.previousHazard);
+    } else if (event.type === "voyage.hazard-escalated") {
+      const position = hazards.findIndex((hazard) => hazard?.hazardId === event.hazardId);
+      if (position >= 0) hazards[position] = event.previousHazard;
+    } else if (event.type === "voyage.hazard-resolved") {
+      const position = hazards.findIndex((hazard) => hazard?.hazardId === event.hazardId);
+      if (position < 0) hazards.push(event.previousHazard);
+    }
+  }
+  return hazards;
+}
+
 function validEvents(events, identity, sessionRevision, encounterRevision, activeHazards = []) {
   if (!Array.isArray(events)) return false;
   const m6Events = new Map();
-  const knownHazards = [...activeHazards];
+  const knownHazards = reconstructInitialHazards(events, activeHazards);
+  if (!knownHazards) return false;
   let previousRuntimeRevision = -1;
   let previousEncounterRevision = null;
   let previousShipRevision = null;
@@ -770,8 +841,20 @@ function validEvents(events, identity, sessionRevision, encounterRevision, activ
       closeoutFinalized = true;
     }
     if (eventEncounterRevision) {
-      if (previousEncounterRevision !== null && eventEncounterRevision[0] !== previousEncounterRevision) return false;
+      if (previousEncounterRevision === null ? eventEncounterRevision[0] !== 0 : eventEncounterRevision[0] !== previousEncounterRevision) return false;
       previousEncounterRevision = eventEncounterRevision[1];
+      if (event.type === "voyage.pressure-breach-applied") {
+        if (event.collisionOutcome === null) knownHazards.push(event.hazard);
+      } else if (event.type === "voyage.hazard-closeout-consequence-applied" && event.disposition === "removed") {
+        const position = knownHazards.findIndex((hazard) => hazard?.hazardId === event.hazardId);
+        if (position >= 0) knownHazards.splice(position, 1);
+      } else if (event.type === "voyage.hazard-escalated") {
+        const position = knownHazards.findIndex((hazard) => hazard?.hazardId === event.hazardId);
+        if (position >= 0) knownHazards[position] = event.hazard;
+      } else if (event.type === "voyage.hazard-resolved") {
+        const position = knownHazards.findIndex((hazard) => hazard?.hazardId === event.hazardId);
+        if (position >= 0 && event.hazard.status !== "active") knownHazards.splice(position, 1);
+      }
     }
     if (eventShipRevision) {
       if (previousShipRevision !== null && eventShipRevision[0] !== previousShipRevision) return false;
@@ -779,7 +862,7 @@ function validEvents(events, identity, sessionRevision, encounterRevision, activ
     }
   }
   return previousRuntimeRevision <= sessionRevision
-    && (previousEncounterRevision === null || previousEncounterRevision <= encounterRevision);
+    && (previousEncounterRevision === null ? encounterRevision === 0 : previousEncounterRevision === encounterRevision);
 }
 
 function validAcceptedPlan(value, identity) {
@@ -989,25 +1072,56 @@ function ownData(value, key) {
   }
 }
 
-function readDocumentSession(document) {
+function trustedJournalEntry(document, context = {}) {
   try {
+    if (typeof context.isJournalEntryDocument === "function") return context.isJournalEntryDocument(document) === true;
+    const JournalEntry = context.JournalEntry ?? globalThis.JournalEntry;
+    return typeof JournalEntry === "function" && document instanceof JournalEntry;
+  } catch {
+    return false;
+  }
+}
+
+function readDocumentId(document) {
+  try {
+    const id = document?.id;
+    return nonBlank(id) ? { ok: true, value: id } : { ok: false, value: null };
+  } catch {
+    return { ok: false, value: null };
+  }
+}
+
+function readDocumentSession(document, context = {}) {
+  try {
+    if (!trustedJournalEntry(document, context)) return { ok: false, hostile: true };
     if (document === null || (typeof document !== "object" && typeof document !== "function")) return { ok: false, hostile: true };
-    const id = ownData(document, "id");
-    const flags = ownData(document, "flags");
-    if (!id.ok || !flags.ok || !nonBlank(id.value) || !isPlainObject(flags.value)) return { ok: false, hostile: true };
+    if (typeof document.toObject !== "function") return { ok: false, hostile: true };
+    const sourceResult = capture(document.toObject());
+    if (!sourceResult.ok || !isPlainObject(sourceResult.value)) return { ok: false, hostile: true };
+    const source = sourceResult.value;
+    const sourceId = ownData(source, "_id");
+    const documentId = readDocumentId(document);
+    if (!sourceId.ok || !documentId.ok || sourceId.value !== documentId.value) return { ok: false, hostile: true };
+    const flags = ownData(source, "flags");
+    if (!flags.ok || !isPlainObject(flags.value)) return { ok: false, hostile: true };
     const moduleFlags = ownData(flags.value, ARCFLIGHT_MODULE_ID);
-    if (!moduleFlags.ok) return { ok: true, session: null, documentId: id.value, document };
+    if (!moduleFlags.ok) return { ok: true, session: null, documentId: documentId.value, document };
     if (!isPlainObject(moduleFlags.value)) return { ok: false, hostile: true };
     const system = ownData(moduleFlags.value, "system");
-    if (!system.ok) return { ok: true, session: null, documentId: id.value, document };
+    if (!system.ok) return { ok: true, session: null, documentId: documentId.value, document };
     if (!isPlainObject(system.value)) return { ok: false, hostile: true };
     const voyageSession = ownData(system.value, "voyageSession");
-    if (!voyageSession.ok) return { ok: true, session: null, documentId: id.value, document };
+    if (!voyageSession.ok) return { ok: true, session: null, documentId: documentId.value, document };
     if (!isPlainObject(voyageSession.value)) return { ok: false, hostile: true };
     const sessionId = ownData(voyageSession.value, "sessionId");
     if (!sessionId.ok || !nonBlank(sessionId.value)) return { ok: false, hostile: true };
-    const captured = capture(voyageSession.value);
-    return captured.ok ? { ok: true, session: captured.value, sessionId: sessionId.value, documentId: id.value, document } : { ok: false, hostile: true };
+    return {
+      ok: true,
+      session: voyageSession.value,
+      sessionId: sessionId.value,
+      documentId: documentId.value,
+      document
+    };
   } catch {
     return { ok: false, hostile: true };
   }
@@ -1032,7 +1146,7 @@ function findSessionDocuments(sessionId, context) {
   if (!journal.ok) return { errors: [diagnostic("m11-hostile-data-capture-failed", "$")] };
   const matches = [];
   for (const document of journal.documents) {
-    const captured = readDocumentSession(document);
+    const captured = readDocumentSession(document, context);
     if (!captured.ok) return { errors: [diagnostic("m11-hostile-data-capture-failed", "$")] };
     if (captured.sessionId === sessionId) matches.push(captured);
   }
@@ -1050,18 +1164,20 @@ function resolveSessionDocument(sessionId, context) {
 
 async function cleanupCreatedSessionDocument(document, documentId, sessionId, preexistingDocumentIds, context) {
   try {
-    if (!nonBlank(documentId) || preexistingDocumentIds.has(documentId) || !document || typeof document.delete !== "function") return false;
+    if (!trustedJournalEntry(document, context) || !nonBlank(documentId) || preexistingDocumentIds.has(documentId)
+      || !document || typeof document.delete !== "function") return { ok: false };
     await document.delete();
     const journal = journalDocuments(context);
-    if (!journal.ok) return false;
+    if (!journal.ok) return { ok: false };
     const found = findSessionDocuments(sessionId, context);
-    if (found.errors || found.matches.length !== 0) return false;
-    return !journal.documents.some((candidate) => {
-      const captured = readDocumentSession(candidate);
+    if (found.errors || found.matches.length !== 0) return { ok: false };
+    const remains = journal.documents.some((candidate) => {
+      const captured = readDocumentSession(candidate, context);
       return captured.ok && captured.documentId === documentId;
     });
+    return remains ? { ok: false } : { ok: true };
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 
@@ -1213,9 +1329,9 @@ export async function createVoyageEventSession(request, context = {}) {
   if (!collectionBeforeCreate.ok) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
   const preexistingDocumentIds = new Set();
   for (const candidate of collectionBeforeCreate.documents) {
-    const candidateId = ownData(candidate, "id");
-    if (!candidateId.ok || !nonBlank(candidateId.value)) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
-    preexistingDocumentIds.add(candidateId.value);
+    const candidateRead = readDocumentSession(candidate, context);
+    if (!candidateRead.ok || !nonBlank(candidateRead.documentId)) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    preexistingDocumentIds.add(candidateRead.documentId);
   }
   if (preexistingDocumentIds.has(documentId)) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
   const activeGmUserId = context.activeGmUserId ?? globalThis.game?.users?.activeGM?.id ?? null;
@@ -1235,8 +1351,8 @@ export async function createVoyageEventSession(request, context = {}) {
   } catch {
     return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
   }
-  const returned = readDocumentSession(document);
-  const returnedId = returned.ok ? returned.documentId : ownData(document, "id").value;
+  const returned = readDocumentSession(document, context);
+  const returnedId = returned.ok ? returned.documentId : readDocumentId(document).value;
   const reread = findSessionDocuments(value.sessionId, context);
   const written = reread.matches?.length === 1 ? reread.matches[0] : null;
   const verified = returned.ok && nonBlank(returnedId) && !preexistingDocumentIds.has(returnedId)
@@ -1244,9 +1360,10 @@ export async function createVoyageEventSession(request, context = {}) {
     && written?.document === document && written.documentId === documentId
     && equal(written.session, session) && validateCapturedSession(written.session, documentId);
   if (!verified) {
-    const cleaned = await cleanupCreatedSessionDocument(document, returnedId, value.sessionId, preexistingDocumentIds, context);
-    if (cleaned) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
-    throw new Error("M11 Task 1 cannot verify cleanup of the exact JournalEntry created by this invocation.");
+    const cleanup = await cleanupCreatedSessionDocument(document, returnedId, value.sessionId, preexistingDocumentIds, context);
+    return failure([
+      diagnostic(cleanup.ok ? "m11-session-write-failed" : "m11-recovery-required", cleanup.ok ? VOYAGE_SESSION_PATH : "recovery")
+    ], identities);
   }
   return success(written.session, value.requestId);
 }
@@ -1266,10 +1383,4 @@ export function reloadVoyageEventSession(sessionId, context = {}) {
     return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
   }
   return success(resolved.match.session);
-}
-
-/** Test-facing, non-mutating validation helper. */
-export function validateVoyageEventSession(value, sessionDocumentId) {
-  const captured = capture(value);
-  return captured.ok && nonBlank(sessionDocumentId) && validateCapturedSession(captured.value, sessionDocumentId);
 }
