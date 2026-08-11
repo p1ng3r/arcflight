@@ -21,7 +21,7 @@ const RECOVERY_FIELDS = Object.freeze(["status", "reasonCode", "failedRequestId"
 const CHECKPOINT_FIELDS = Object.freeze(["checkpointId", "kind", "sessionId", "revision", "encounterRevision", "eventCount", "sessionState", "encounterState", "closeout", "authorityEpoch", "invalidated"]);
 const RECOVERY_REQUEST_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "recoveryAction", "reason"]);
 const M11_EVENT_FIELDS = Object.freeze(["type", "sessionId", "eventId", "definitionSnapshotId", "shipId", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "previousRevision", "revision"]);
-const RECOVERY_AUDIT_DETAILS_FIELDS = Object.freeze(["recoveryAction", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "replayedEventCount"]);
+const RECOVERY_AUDIT_DETAILS_FIELDS = Object.freeze(["recoveryAction", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "replayedEventCount", "failedRequestId", "failedRevision"]);
 const PROCESSED_REQUEST_FIELDS = Object.freeze(["requestId", "principalUserId", "projectionKind", "fingerprint", "commandKind", "resultKind", "resultRevision", "response"]);
 const CREATION_COMMAND_KIND = "create-session";
 const TRANSFER_COMMAND_KIND = "control-transfer";
@@ -259,7 +259,9 @@ function validRecoveryAudit(audit, session, record, event, sourceCheckpoint, rep
     && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event)
     && exactKeys(audit.details, RECOVERY_AUDIT_DETAILS_FIELDS) && audit.details.recoveryAuthorityUserId === event.recoveryAuthorityUserId
     && audit.details.sourceCheckpointId === event.sourceCheckpointId && audit.details.sourceCheckpointRevision === event.sourceCheckpointRevision
-    && audit.details.recoveryAction === parsed.value[6].recoveryAction && audit.details.replayedEventCount === replayedEventCount;
+    && audit.details.recoveryAction === parsed.value[6].recoveryAction && audit.details.replayedEventCount === replayedEventCount
+    && nonBlank(audit.details.failedRequestId) && safeInteger(audit.details.failedRevision)
+    && audit.details.failedRevision <= event.previousRevision;
 }
 function validAfterRecoveryCheckpoint(checkpoint, session, record, event, audit, sourceCheckpoint, replayedEventCount, replayedState = null) {
   try {
@@ -275,12 +277,13 @@ function validAfterRecoveryCheckpoint(checkpoint, session, record, event, audit,
       && audit.details.replayedEventCount === replayedEventCount;
   } catch { return false; }
 }
-function validResolvedRecovery(recovery, event, sourceCheckpoint) {
+function validResolvedRecovery(recovery, event, audit, sourceCheckpoint) {
   return exactKeys(recovery, RECOVERY_FIELDS) && recovery.status === "resolved" && recovery.reasonCode === "m11-recovery-required"
     && recovery.checkpointId === sourceCheckpoint.checkpointId && recovery.sourceCheckpointRevision === sourceCheckpoint.revision
     && recovery.recoveryAuthorityUserId === event.recoveryAuthorityUserId
-    && nonBlank(recovery.failedRequestId)
-    && safeInteger(recovery.failedRevision) && recovery.failedRevision <= event.previousRevision;
+    && nonBlank(recovery.failedRequestId) && recovery.failedRequestId === audit.details.failedRequestId
+    && safeInteger(recovery.failedRevision) && recovery.failedRevision === audit.details.failedRevision
+    && recovery.failedRevision <= event.previousRevision;
 }
 function validRequiredRecovery(recovery) {
   return exactKeys(recovery, RECOVERY_FIELDS) && recovery.status === "required" && recovery.reasonCode === "m11-recovery-required"
@@ -305,7 +308,7 @@ function validStoredResponse(response, record, sessionId, authorityEpoch) {
     && SESSION_STATES.has(response.status) && response.projection === null && safeInteger(response.revision) && response.revision === record.resultRevision && safeInteger(response.authorityEpoch) && response.authorityEpoch <= authorityEpoch
     && response.errors.length === 0 && response.warnings.length === 0;
 }
-function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = false, recoveryEnvelope = false } = {}, replayContext = {}) {
+function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = false, recoveryEnvelope: recoveryEnvelopeMode = false } = {}, replayContext = {}) {
   try {
     if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentIdValue
       || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId].every(nonBlank) || !safeInteger(session.revision) || !SESSION_STATES.has(session.sessionState)
@@ -313,21 +316,14 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
       || !validEncounterState(session.encounterState, session) || !lifecycleMappingValid(session) || !Array.isArray(session.events) || !Array.isArray(session.checkpoints)
       || !Array.isArray(session.processedRequests) || !Array.isArray(session.auditHistory) || !validCloseout(session.closeout) || !exactKeys(session.recovery, RECOVERY_FIELDS)
       || !new Set(["none", "required", "resolved"]).has(session.recovery.status)) return false;
+    const immutableEnvelope = recoveryEnvelope(session, documentIdValue);
+    if (!immutableEnvelope || !recoveryStoredRecordsValid(immutableEnvelope, replayContext, session.recovery)) return false;
     if (session.revision === 0) {
       if (session.sessionState !== "setup" || session.encounterState.revision !== 0 || session.encounterState.lifecycleState !== "draft" || session.encounterState.phase !== null
        || session.events.length !== 0 || session.recovery.status !== "none" || session.closeout.status !== "none") return false;
     } else if (session.events.length === 0 && session.checkpoints.length === 0 && session.processedRequests.length === 1 && session.auditHistory.length === 0) return false;
     const events = session.events;
-    let lastRuntimeRevision = null;
-    const runtimeRevisions = new Set();
-    for (const [index, event] of events.entries()) {
-      const captured = capture(event); if (!captured.ok) return false;
-      if (isPlainObject(event) && typeof event.type === "string" && event.type.startsWith("voyage.m11-")) {
-        if (!validRuntimeEvent(event, session, index) || runtimeRevisions.has(event.revision) || (lastRuntimeRevision !== null && event.previousRevision !== lastRuntimeRevision) || (lastRuntimeRevision !== null && event.revision <= lastRuntimeRevision)) return false;
-        runtimeRevisions.add(event.revision);
-        lastRuntimeRevision = event.revision;
-      } else if (!replayContext || replayContext.trustedReplayDependencies !== true || typeof replayContext.replayVoyageEventSessionEvidence !== "function") return false;
-    }
+    if (!replayEventChain(session, replayContext, 0, 0, null)) return false;
     if (!recoveryCheckpointJournalValid(session)) return false;
     if (events.some((event) => !(typeof event?.type === "string" && event.type.startsWith("voyage.m11-")))) {
       const latestCheckpoint = session.checkpoints.at(-1);
@@ -360,7 +356,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
         if (bootstrapAudit) { owner = bootstrapAudit.details.nextActiveGmUserId; expectedAuthorityEpoch += 1; bootstrapRecoveryCount += 1; }
         lastRecoveryRevision = record.resultRevision;
         recoveryCount += 1;
-        latestRecoveryEvidence = { record, event, sourceCheckpoint, recoveryCheckpoint, replayedState };
+        latestRecoveryEvidence = { record, event, audit, sourceCheckpoint, recoveryCheckpoint, replayedState };
       } else return false;
       requestIds.add(record.requestId);
     }
@@ -369,8 +365,8 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
     if (recoveryCount === 0) {
       if (session.recovery.status !== "none" || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
-    } else if (!latestRecoveryEvidence || !validResolvedRecovery(session.recovery, latestRecoveryEvidence.event, latestRecoveryEvidence.sourceCheckpoint)) return false;
-    if (session.activeGmUserId !== null && session.activeGmUserId !== owner && !recoveryEnvelope) return false;
+    } else if (!latestRecoveryEvidence || !validResolvedRecovery(session.recovery, latestRecoveryEvidence.event, latestRecoveryEvidence.audit, latestRecoveryEvidence.sourceCheckpoint)) return false;
+    if (session.activeGmUserId !== null && session.activeGmUserId !== owner && !recoveryEnvelopeMode) return false;
     return true;
   } catch { return false; }
 }
@@ -722,9 +718,10 @@ function recoveryInvalidationValid(checkpoint, envelope) {
     if (!exactKeys(audit, AUDIT_FIELDS) || audit.kind !== "recovery-rebuilt" || !nonBlank(audit.requestId) || !nonBlank(audit.actorUserId)
       || !safeInteger(audit.authorityEpoch) || !safeInteger(audit.previousRevision) || !safeInteger(audit.revision)
       || !validIsoTimestamp(audit.occurredAt) || !exactKeys(audit.details, RECOVERY_AUDIT_DETAILS_FIELDS)
-      || !RECOVERY_ACTIONS.has(audit.details.recoveryAction) || audit.details.sourceCheckpointId !== checkpoint.checkpointId
+      || audit.details.recoveryAction !== "rebuild-latest" || audit.details.sourceCheckpointId !== checkpoint.checkpointId
       || audit.details.sourceCheckpointRevision !== checkpoint.revision || audit.details.recoveryAuthorityUserId !== audit.actorUserId
-      || !safeInteger(audit.details.sourceCheckpointRevision) || !safeInteger(audit.details.replayedEventCount)) return false;
+      || !safeInteger(audit.details.sourceCheckpointRevision) || !safeInteger(audit.details.replayedEventCount)
+      || !nonBlank(audit.details.failedRequestId) || !safeInteger(audit.details.failedRevision)) return false;
     return envelope.events.some((event) => event?.type === "voyage.m11-recovery-rebuilt" && event.revision === audit.revision && event.previousRevision === audit.previousRevision
       && event.sourceCheckpointId === checkpoint.checkpointId && event.sourceCheckpointRevision === checkpoint.revision && event.recoveryAuthorityUserId === audit.actorUserId);
   });
@@ -733,96 +730,133 @@ function recoveryCheckpointJournalValid(envelope) {
   try {
     const ids = new Set(); let previousRevision = -1, previousAuthorityEpoch = -1, previousEventCount = -1;
     const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
-    let previousRuntimeRevision = null;
+    let previousChainRevision = 0;
     for (const event of envelope.events) {
       if (event?.type?.startsWith("voyage.m11-")) {
-        if (!validRuntimeEvent(event, identity, 0) || (previousRuntimeRevision !== null && (event.previousRevision !== previousRuntimeRevision || event.revision <= previousRuntimeRevision))) return false;
-        previousRuntimeRevision = event.revision;
+        if (!validRuntimeEvent(event, identity, 0) || event.previousRevision !== previousChainRevision) return false;
+        previousChainRevision = event.revision;
+      } else {
+        if (!isPlainObject(event) || !safeInteger(event.revision) || !safeInteger(event.previousRevision) || event.previousRevision !== previousChainRevision || event.revision <= previousChainRevision) return false;
+        previousChainRevision = event.revision;
       }
     }
     for (const checkpoint of envelope.checkpoints) {
-      if (!recoveryCheckpointValid(checkpoint, envelope) || ids.has(checkpoint.checkpointId) || checkpoint.revision <= previousRevision || checkpoint.authorityEpoch < previousAuthorityEpoch || checkpoint.eventCount < previousEventCount
-        || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1)
+      if (!recoveryCheckpointValid(checkpoint, envelope)) return false;
+      if (ids.has(checkpoint.checkpointId) || checkpoint.revision <= previousRevision || checkpoint.authorityEpoch < previousAuthorityEpoch || checkpoint.eventCount < previousEventCount
+        || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
+          && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
+            .every((revision) => envelope.events.some((event) => !event?.type?.startsWith("voyage.m11-") && event.revision === revision)))
         || !recoveryInvalidationValid(checkpoint, envelope)) return false;
       for (let index = 0; index < checkpoint.eventCount; index += 1) {
         const event = envelope.events[index];
-        if (!event || !capture(event).ok || (event.type?.startsWith("voyage.m11-") && (!validRuntimeEvent(event, identity, index) || event.revision > checkpoint.revision))) return false;
+        if (!event || !capture(event).ok || !safeInteger(event.revision) || event.revision > checkpoint.revision) return false;
       }
       ids.add(checkpoint.checkpointId); previousRevision = checkpoint.revision; previousAuthorityEpoch = checkpoint.authorityEpoch; previousEventCount = checkpoint.eventCount;
     }
     return true;
   } catch { return false; }
 }
+function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, checkpoint = null) {
+  try {
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    let priorRevision = startRevision, index = startIndex, replayedState = checkpoint ? { sessionState: checkpoint.sessionState, encounterState: capture(checkpoint.encounterState).value, closeout: capture(checkpoint.closeout).value } : null;
+    while (index < envelope.events.length) {
+      const event = envelope.events[index];
+      if (event?.type?.startsWith("voyage.m11-")) {
+        if (!validRuntimeEvent(event, identity, index) || event.previousRevision !== priorRevision) return null;
+        priorRevision = event.revision; index += 1; continue;
+      }
+      const segmentStart = index;
+      while (index < envelope.events.length && !envelope.events[index]?.type?.startsWith("voyage.m11-")) index += 1;
+      const segment = envelope.events.slice(segmentStart, index);
+      const trusted = ownData(context, "trustedReplayDependencies"), replay = ownData(context, "replayVoyageEventSessionEvidence");
+      if (!trusted.ok || trusted.value !== true || !replay.ok || typeof replay.value !== "function") return null;
+      const capturedSegment = capture(segment); if (!capturedSegment.ok) return null;
+      const capturedCheckpoint = checkpoint ? capture(checkpoint) : { ok: true, value: null };
+      if (!capturedCheckpoint.ok) return null;
+      const result = capture(replay.value({ sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, checkpoint: capturedCheckpoint.value, events: capturedSegment.value, startIndex: segmentStart, endIndex: index, previousRevision: priorRevision }));
+      if (!result.ok || !exactKeys(result.value, ["startIndex", "endIndex", "previousRevision", "nextRevision", "sessionState", "encounterState", "closeout"])
+        || result.value.startIndex !== segmentStart || result.value.endIndex !== index || result.value.previousRevision !== priorRevision
+        || !safeInteger(result.value.nextRevision) || result.value.nextRevision <= priorRevision || result.value.nextRevision > envelope.revision || !SESSION_STATES.has(result.value.sessionState)
+        || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout)) return null;
+      for (const ownedEvent of segment) if (!isPlainObject(ownedEvent) || ownedEvent.type?.startsWith("voyage.m11-")) return null;
+      priorRevision = result.value.nextRevision;
+      replayedState = result.value;
+    }
+    return { state: replayedState, revision: priorRevision };
+  } catch { return null; }
+}
 function replayRecoveryEvidence(envelope, checkpoint, context) {
   try {
-    const suffix = envelope.events.slice(checkpoint.eventCount), identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
-    let priorRevision = checkpoint.revision;
-    for (const event of suffix) {
-      const captured = capture(event); if (!captured.ok || !isPlainObject(event)) return null;
-      if (event.type?.startsWith("voyage.m11-")) {
-        if (!validRuntimeEvent(event, identity, 0) || event.previousRevision !== priorRevision || event.revision <= priorRevision) return null;
-        priorRevision = event.revision;
-      } else {
-        const trusted = ownData(context, "trustedReplayDependencies"), replay = ownData(context, "replayVoyageEventSessionEvidence");
-        if (!trusted.ok || trusted.value !== true || !replay.ok || typeof replay.value !== "function") return null;
-        const result = capture(replay.value({ sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, checkpoint: capture(checkpoint).value, events: suffix }));
-        if (!result.ok || !exactKeys(result.value, ["sessionState", "encounterState", "closeout"]) || !SESSION_STATES.has(result.value.sessionState) || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout)) return null;
-        return result.value;
-      }
-    }
-    return { sessionState: checkpoint.sessionState, encounterState: capture(checkpoint.encounterState).value, closeout: capture(checkpoint.closeout).value };
+    const replay = replayEventChain(envelope, context, checkpoint.eventCount, checkpoint.revision, checkpoint);
+    if (!replay || !replay.state) return null;
+    return replay.state;
   } catch { return null; }
 }
 function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = null) {
   try {
-    if (envelope.processedRequests.length < 1) return false;
+    if (!envelope.processedRequests.length || !recoveryCheckpointJournalValid(envelope) || !replayEventChain(envelope, context, 0, 0, null)) return false;
     const ids = new Set();
-    let lastRecoveryRevision = 0, latestRecoveryEvidence = null;
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
-    for (const event of envelope.events) {
-      if (safeInteger(event?.revision) && event.revision > envelope.revision) return false;
-      if (event?.type?.startsWith("voyage.m11-") && !validRuntimeEvent(event, identity, 0)) return false;
-    }
-    for (const audit of envelope.auditHistory) {
-      if (!exactKeys(audit, AUDIT_FIELDS) || !safeInteger(audit.authorityEpoch) || !safeInteger(audit.previousRevision) || !safeInteger(audit.revision)) return false;
-    }
-    for (const record of envelope.processedRequests) {
-      if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || ids.has(record.requestId) || typeof record.fingerprint !== "string" || !isPlainObject(record.response)) return false;
-      const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
-      const tuple = parsed.value; if (tuple[0] !== envelope.sessionId || !nonBlank(record.principalUserId) || tuple[1] !== record.principalUserId || !["gm", "operator", "crew", "observer", "none"].includes(record.projectionKind)
-        || tuple[2] !== record.projectionKind || !safeInteger(tuple[3]) || !safeInteger(tuple[4]) || tuple[3] > envelope.authorityEpoch || tuple[4] > envelope.revision || !safeInteger(record.resultRevision) || record.resultRevision > envelope.revision) return false;
-      if (!validStoredResponse(record.response, record, envelope.sessionId, envelope.authorityEpoch)) return false;
-      if (record.commandKind === CREATION_COMMAND_KIND) {
-        if (record.resultKind !== "created" || record.resultRevision !== 0 || record.projectionKind !== "gm" || tuple[2] !== "gm" || tuple[3] !== 0 || tuple[4] !== 0
-          || !exactKeys(tuple[6], ["eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"])
-          || tuple[6].eventId !== envelope.eventId || tuple[6].definitionSnapshotId !== envelope.definitionSnapshotId || tuple[6].shipId !== envelope.shipId || record.response.events.length !== 0) return false;
-      } else if (record.commandKind === TRANSFER_COMMAND_KIND) {
-        if (record.projectionKind !== "gm" || record.resultKind !== TRANSFER_RESULT_KIND || record.resultRevision !== tuple[4] || record.response.authorityEpoch !== tuple[3] + 1 || record.response.events.length !== 0
-          || !exactKeys(tuple[6], ["targetUserId", "reason"]) || !nonBlank(tuple[6].targetUserId) || !nonBlank(tuple[6].reason)) return false;
+    let owner = null, expectedAuthorityEpoch = 0, lastEvidenceRevision = 0, latestRecoveryEvidence = null, auditIndex = 0;
+    const creation = envelope.processedRequests[0];
+    if (!exactKeys(creation, PROCESSED_REQUEST_FIELDS) || !nonBlank(creation.requestId) || creation.commandKind !== CREATION_COMMAND_KIND || creation.resultKind !== "created"
+      || creation.resultRevision !== 0 || creation.projectionKind !== "gm" || !nonBlank(creation.principalUserId) || !isPlainObject(creation.response)) return false;
+    const creationTuple = parseStoredFingerprint(creation.fingerprint);
+    if (!creationTuple.ok || creationTuple.value[0] !== envelope.sessionId || creationTuple.value[1] !== creation.principalUserId || creationTuple.value[2] !== "gm"
+      || creationTuple.value[3] !== 0 || creationTuple.value[4] !== 0 || creationTuple.value[5] !== CREATION_COMMAND_KIND
+      || !exactKeys(creationTuple.value[6], ["eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"])
+      || creationTuple.value[6].eventId !== envelope.eventId || creationTuple.value[6].definitionSnapshotId !== envelope.definitionSnapshotId || creationTuple.value[6].shipId !== envelope.shipId
+      || !validStoredResponse(creation.response, creation, envelope.sessionId, envelope.authorityEpoch)
+      || !equal(creation.response, { ok: true, requestId: creation.requestId, sessionId: envelope.sessionId, status: "setup", revision: 0, authorityEpoch: 0, projection: null, events: [], errors: [], warnings: [] })) return false;
+    owner = creation.principalUserId; ids.add(creation.requestId);
+    for (let index = 1; index < envelope.processedRequests.length; index += 1) {
+      const record = envelope.processedRequests[index];
+      if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || ids.has(record.requestId) || !nonBlank(record.principalUserId) || !isPlainObject(record.response)) return false;
+      const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== envelope.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== record.projectionKind
+        || !["gm", "operator", "crew", "observer", "none"].includes(record.projectionKind) || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4])
+        || tuple.value[3] > envelope.authorityEpoch || tuple.value[4] > envelope.revision || !safeInteger(record.resultRevision) || record.resultRevision > envelope.revision
+        || record.resultRevision < lastEvidenceRevision || !validStoredResponse(record.response, record, envelope.sessionId, envelope.authorityEpoch)) return false;
+      let audit = null;
+      if (record.commandKind === TRANSFER_COMMAND_KIND) {
+        if (record.projectionKind !== "gm" || record.resultKind !== TRANSFER_RESULT_KIND || tuple.value[2] !== "gm" || tuple.value[3] !== expectedAuthorityEpoch
+          || record.resultRevision !== tuple.value[4] || record.response.authorityEpoch !== expectedAuthorityEpoch + 1 || record.response.events.length !== 0
+          || !exactKeys(tuple.value[6], ["targetUserId", "reason"]) || !nonBlank(tuple.value[6].targetUserId) || !nonBlank(tuple.value[6].reason)) return false;
+        audit = envelope.auditHistory[auditIndex];
+        const bootstrap = owner !== record.principalUserId;
+        if (!audit || !validAudit(audit, envelope, auditIndex, expectedAuthorityEpoch + 1, record.resultRevision, { ...record, reason: tuple.value[6].reason }, owner, tuple.value[6].targetUserId, bootstrap)) return false;
+        owner = tuple.value[6].targetUserId; expectedAuthorityEpoch += 1; auditIndex += 1;
       } else if (record.commandKind === RECOVERY_COMMAND_KIND) {
-        if (record.projectionKind !== "gm" || record.resultKind !== RECOVERY_RESULT_KIND || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision !== tuple[4] + 1
-          || record.resultRevision <= lastRecoveryRevision || record.response.authorityEpoch < tuple[3] || record.response.authorityEpoch > tuple[3] + 1
-          || !exactKeys(tuple[6], ["recoveryAction", "reason"]) || tuple[6].recoveryAction !== "rebuild-latest" || !nonBlank(tuple[6].reason)) return false;
+        if (record.projectionKind !== "gm" || record.resultKind !== RECOVERY_RESULT_KIND || tuple.value[2] !== "gm" || tuple.value[3] !== expectedAuthorityEpoch
+          || tuple.value[4] + 1 !== record.resultRevision || record.resultRevision <= lastEvidenceRevision
+          || !exactKeys(tuple.value[6], ["recoveryAction", "reason"]) || tuple.value[6].recoveryAction !== "rebuild-latest" || !nonBlank(tuple.value[6].reason)) return false;
+        let bootstrapAudit = null;
+        if (owner !== record.principalUserId) {
+          bootstrapAudit = envelope.auditHistory[auditIndex];
+          const previousOwner = bootstrapAudit?.details?.previousActiveGmUserId;
+          if (!bootstrapAudit || (!nonBlank(previousOwner) && previousOwner !== null) || (previousOwner === null && auditIndex !== 0) || (previousOwner !== owner && previousOwner !== null)
+            || !validRecoveryBootstrapAudit(bootstrapAudit, envelope, { requestId: record.requestId, principalUserId: record.principalUserId, reason: tuple.value[6].reason }, expectedAuthorityEpoch + 1, record.resultRevision - 1, previousOwner, record.principalUserId)) return false;
+          auditIndex += 1; expectedAuthorityEpoch += 1; owner = record.principalUserId;
+        }
+        audit = envelope.auditHistory[auditIndex];
+        if (!audit || audit.kind !== "recovery-rebuilt") return false;
         const responseEvent = envelope.events.find((event) => event?.type === "voyage.m11-recovery-rebuilt" && event.revision === record.resultRevision && event.recoveryAuthorityUserId === record.principalUserId);
-        if (!responseEvent || record.response.events.length !== 1 || !equal(record.response.events[0], responseEvent)) return false;
-        const recoveryAudits = envelope.auditHistory.filter((audit) => audit?.requestId === record.requestId && audit.kind === "recovery-rebuilt");
-        const recoveryAuditRecord = recoveryAudits.length === 1 ? recoveryAudits[0] : null;
-        const sourceCheckpoint = recoveryAuditRecord && envelope.checkpoints.find((checkpoint) => checkpoint.checkpointId === responseEvent.sourceCheckpointId && checkpoint.revision === responseEvent.sourceCheckpointRevision);
+        const sourceCheckpoint = responseEvent && envelope.checkpoints.find((checkpoint) => checkpoint.checkpointId === responseEvent.sourceCheckpointId && checkpoint.revision === responseEvent.sourceCheckpointRevision);
         const replayedEventCount = sourceCheckpoint && envelope.events.indexOf(responseEvent) - sourceCheckpoint.eventCount;
-        const recoveryCheckpoint = envelope.checkpoints.find((checkpoint) => checkpoint.kind === "after-recovery" && checkpoint.revision === record.resultRevision);
-        const eventIndex = envelope.events.indexOf(responseEvent);
+        const recoveryCheckpoint = responseEvent && envelope.checkpoints.find((checkpoint) => checkpoint.kind === "after-recovery" && checkpoint.revision === record.resultRevision);
+        const eventIndex = responseEvent && envelope.events.indexOf(responseEvent);
         const replayEnvelope = eventIndex >= 0 ? { ...envelope, events: envelope.events.slice(0, eventIndex + 1) } : null;
         const replayedState = replayEnvelope && sourceCheckpoint && replayRecoveryEvidence(replayEnvelope, sourceCheckpoint, context);
-        if (!recoveryAuditRecord || !sourceCheckpoint || !Number.isSafeInteger(replayedEventCount) || replayedEventCount < 0
-          || !validRecoveryAudit(recoveryAuditRecord, envelope, record, responseEvent, sourceCheckpoint, replayedEventCount, record.response.authorityEpoch)
-          || !recoveryCheckpoint || !replayedState || !validAfterRecoveryCheckpoint(recoveryCheckpoint, envelope, record, responseEvent, recoveryAuditRecord, sourceCheckpoint, replayedEventCount, replayedState)) return false;
-        lastRecoveryRevision = record.resultRevision;
-        latestRecoveryEvidence = { record, event: responseEvent, sourceCheckpoint };
+        if (!sourceCheckpoint || !Number.isSafeInteger(replayedEventCount) || replayedEventCount < 0 || !validRecoveryAudit(audit, envelope, record, responseEvent, sourceCheckpoint, replayedEventCount, record.response.authorityEpoch)
+          || !recoveryCheckpoint || !replayedState || !validAfterRecoveryCheckpoint(recoveryCheckpoint, envelope, record, responseEvent, audit, sourceCheckpoint, replayedEventCount, replayedState)) return false;
+        if (record.response.events.length !== 1 || !equal(record.response.events[0], responseEvent)) return false;
+        lastEvidenceRevision = record.resultRevision; owner = record.principalUserId; latestRecoveryEvidence = { record, event: responseEvent, audit, sourceCheckpoint, recoveryCheckpoint, replayedState }; auditIndex += 1;
       } else return false;
       ids.add(record.requestId);
+      if (record.commandKind === TRANSFER_COMMAND_KIND) lastEvidenceRevision = Math.max(lastEvidenceRevision, record.resultRevision);
     }
-    if (!latestRecoveryEvidence) return true;
-    const resolved = validResolvedRecovery(currentRecovery, latestRecoveryEvidence.event, latestRecoveryEvidence.sourceCheckpoint);
+    if (auditIndex !== envelope.auditHistory.length) return false;
+    if (!latestRecoveryEvidence) return validRequiredRecovery(currentRecovery) || (currentRecovery?.status === "none" && Object.keys(currentRecovery).slice(1).every((key) => currentRecovery[key] === null));
+    const resolved = validResolvedRecovery(currentRecovery, latestRecoveryEvidence.event, latestRecoveryEvidence.audit, latestRecoveryEvidence.sourceCheckpoint);
     const required = validRequiredRecovery(currentRecovery)
       && (currentRecovery.checkpointId === null || currentRecovery.checkpointId === latestRecoveryEvidence.sourceCheckpoint.checkpointId)
       && (currentRecovery.sourceCheckpointRevision === null || currentRecovery.sourceCheckpointRevision === latestRecoveryEvidence.sourceCheckpoint.revision)
@@ -830,11 +864,11 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
     return resolved || required;
   } catch { return false; }
 }
-function recoveryAudit(session, request, authorityContext, sourceCheckpoint, replayedEventCount, previousRevision, revision, occurredAt) {
+function recoveryAudit(session, request, authorityContext, sourceCheckpoint, replayedEventCount, previousRevision, revision, occurredAt, failedRequestId, failedRevision) {
   return {
     auditId: auditId(session.sessionId, session.auditHistory.length, "recovery-rebuilt"), kind: "recovery-rebuilt", sessionId: session.sessionId, requestId: request.requestId,
     actorUserId: authorityContext.authenticatedUserId, authorityEpoch: session.authorityEpoch, previousRevision, revision, occurredAt,
-    details: { recoveryAction: request.recoveryAction, sourceCheckpointId: sourceCheckpoint.checkpointId, sourceCheckpointRevision: sourceCheckpoint.revision, recoveryAuthorityUserId: authorityContext.authenticatedUserId, replayedEventCount }
+    details: { recoveryAction: request.recoveryAction, sourceCheckpointId: sourceCheckpoint.checkpointId, sourceCheckpointRevision: sourceCheckpoint.revision, recoveryAuthorityUserId: authorityContext.authenticatedUserId, replayedEventCount, failedRequestId, failedRevision }
   };
 }
 function recoveryEvent(session, checkpoint, authorityContext, previousRevision, revision) {
@@ -874,7 +908,10 @@ function successWithEvents(session, requestId, events, authorityEpoch = session.
 function buildRecoveryCandidate(baseSession, envelope, source, replayedState, request, authorityContext, requestFingerprint, occurredAt) {
   try {
     const captured = capture(baseSession); if (!captured.ok) return null;
-    const candidate = captured.value, previousRevision = envelope.revision, bootstrap = candidate.activeGmUserId !== authorityContext.activeGmUserId;
+    const candidate = captured.value, previousRevision = envelope.events.length > 0 ? envelope.events.at(-1).revision : envelope.revision, bootstrap = candidate.activeGmUserId !== authorityContext.activeGmUserId;
+    if (!safeInteger(previousRevision) || previousRevision > envelope.revision) return null;
+    const failedRequestId = candidate.recovery?.failedRequestId, failedRevision = candidate.recovery?.failedRevision;
+    if (candidate.recovery?.status !== "required" || !nonBlank(failedRequestId) || !safeInteger(failedRevision) || failedRevision >= previousRevision + 1) return null;
     if (bootstrap) {
       const previousActiveGmUserId = candidate.activeGmUserId;
       candidate.activeGmUserId = authorityContext.activeGmUserId;
@@ -882,7 +919,7 @@ function buildRecoveryCandidate(baseSession, envelope, source, replayedState, re
       candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, "recovery-control-transfer"), kind: "recovery-control-transfer", sessionId: candidate.sessionId, requestId: request.requestId, actorUserId: authorityContext.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision, revision: previousRevision, occurredAt, details: { previousActiveGmUserId, nextActiveGmUserId: authorityContext.activeGmUserId, bootstrap: true, reason: request.reason } });
     }
     candidate.sessionState = replayedState.sessionState; candidate.encounterState = capture(replayedState.encounterState).value; candidate.closeout = capture(replayedState.closeout).value;
-    candidate.recovery = { status: "resolved", reasonCode: "m11-recovery-required", failedRequestId: nonBlank(candidate.recovery?.failedRequestId) ? candidate.recovery.failedRequestId : null, failedRevision: safeInteger(candidate.recovery?.failedRevision) ? candidate.recovery.failedRevision : previousRevision, checkpointId: source.checkpointId, sourceCheckpointRevision: source.revision, recoveryAuthorityUserId: authorityContext.authenticatedUserId };
+    candidate.recovery = { status: "resolved", reasonCode: "m11-recovery-required", failedRequestId, failedRevision, checkpointId: source.checkpointId, sourceCheckpointRevision: source.revision, recoveryAuthorityUserId: authorityContext.authenticatedUserId };
     let maxEvidenceRevision = Math.max(previousRevision, source.revision);
     for (const checkpoint of envelope.checkpoints) if (checkpoint.revision > maxEvidenceRevision) maxEvidenceRevision = checkpoint.revision;
     for (const event of envelope.events) if (safeInteger(event?.revision) && event.revision > maxEvidenceRevision) maxEvidenceRevision = event.revision;
@@ -891,7 +928,7 @@ function buildRecoveryCandidate(baseSession, envelope, source, replayedState, re
     const event = recoveryEvent(candidate, source, authorityContext, previousRevision, candidate.revision);
     if (!validIsoTimestamp(occurredAt)) return null;
     candidate.events.push(event);
-    candidate.auditHistory.push(recoveryAudit(candidate, request, authorityContext, source, Math.max(0, envelope.events.length - source.eventCount), previousRevision, candidate.revision, occurredAt));
+    candidate.auditHistory.push(recoveryAudit(candidate, request, authorityContext, source, Math.max(0, envelope.events.length - source.eventCount), previousRevision, candidate.revision, occurredAt, failedRequestId, failedRevision));
     const checkpoint = recoveryCheckpoint(candidate); if (!checkpoint) return null;
     candidate.checkpoints.push(checkpoint);
     const response = successWithEvents(candidate, request.requestId, [event]);

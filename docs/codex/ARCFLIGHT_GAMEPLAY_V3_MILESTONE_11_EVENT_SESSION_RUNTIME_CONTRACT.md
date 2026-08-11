@@ -1347,6 +1347,17 @@ records are valid only for `recoveryAction: "rebuild-latest"`; persisted
 `abort` or `reconcile-closeout` recovery records are invalid session evidence
 until their owning slices register the complete canonical implementation.
 
+The complete event journal is one chronological revision chain. M11 validates
+each M11 runtime event against the immediately preceding event revision. For
+each contiguous owning-domain segment, the trusted dependency receives only
+that segment and must return the exact ordered metadata
+`{ startIndex, endIndex, previousRevision, nextRevision, sessionState,
+encounterState, closeout }`. The indexes, predecessor, and successor revision
+must bind exactly to the segment boundaries; the dependency may not consume an
+M11 event, skip, reorder, or overlap a segment. Missing, malformed, or
+inconsistent segment metadata fails closed as `m11-unrecoverable-session`
+during recovery and as invalid stored evidence during reload.
+
 The event and checkpoint journals are preserved byte-for-byte as historical
 evidence. Replay regenerates state only through the owning pure-domain APIs,
 the exact M11 runtime-event rules in Section 4, and M10's read-only
@@ -1388,9 +1399,16 @@ That audit record's `details` object has exact order:
   sourceCheckpointId,
   sourceCheckpointRevision,
   recoveryAuthorityUserId,
-  replayedEventCount
+  replayedEventCount,
+  failedRequestId,
+  failedRevision
 }
 ```
+
+`failedRequestId` and `failedRevision` are copied only from the captured
+pre-recovery failure state. The resolved `recovery` object, recovery event,
+audit, and after-recovery checkpoint must agree with that immutable failure
+evidence; caller-supplied replacements are invalid.
 
 The recovery event and audit record must contain the selected source checkpoint
 revision and the authenticated recovery GM. The candidate sets `recovery` to
