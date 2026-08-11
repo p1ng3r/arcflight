@@ -753,7 +753,7 @@ function recoveryCheckpointJournalValid(envelope) {
       }
       ids.add(checkpoint.checkpointId); previousRevision = checkpoint.revision; previousAuthorityEpoch = checkpoint.authorityEpoch; previousEventCount = checkpoint.eventCount;
     }
-    return true;
+    return previousChainRevision === envelope.revision;
   } catch { return false; }
 }
 function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, checkpoint = null) {
@@ -769,6 +769,12 @@ function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, 
       const segmentStart = index;
       while (index < envelope.events.length && !envelope.events[index]?.type?.startsWith("voyage.m11-")) index += 1;
       const segment = envelope.events.slice(segmentStart, index);
+      let segmentRevision = priorRevision;
+      for (const ownedEvent of segment) {
+        if (!isPlainObject(ownedEvent) || !safeInteger(ownedEvent.previousRevision) || !safeInteger(ownedEvent.revision)
+          || ownedEvent.previousRevision !== segmentRevision || ownedEvent.revision !== segmentRevision + 1) return null;
+        segmentRevision = ownedEvent.revision;
+      }
       const trusted = ownData(context, "trustedReplayDependencies"), replay = ownData(context, "replayVoyageEventSessionEvidence");
       if (!trusted.ok || trusted.value !== true || !replay.ok || typeof replay.value !== "function") return null;
       const capturedSegment = capture(segment); if (!capturedSegment.ok) return null;
@@ -777,12 +783,13 @@ function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, 
       const result = capture(replay.value({ sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, checkpoint: capturedCheckpoint.value, events: capturedSegment.value, startIndex: segmentStart, endIndex: index, previousRevision: priorRevision }));
       if (!result.ok || !exactKeys(result.value, ["startIndex", "endIndex", "previousRevision", "nextRevision", "sessionState", "encounterState", "closeout"])
         || result.value.startIndex !== segmentStart || result.value.endIndex !== index || result.value.previousRevision !== priorRevision
-        || !safeInteger(result.value.nextRevision) || result.value.nextRevision <= priorRevision || result.value.nextRevision > envelope.revision || !SESSION_STATES.has(result.value.sessionState)
+        || !safeInteger(result.value.nextRevision) || result.value.nextRevision !== segmentRevision || result.value.nextRevision > envelope.revision || !SESSION_STATES.has(result.value.sessionState)
         || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout)) return null;
       for (const ownedEvent of segment) if (!isPlainObject(ownedEvent) || ownedEvent.type?.startsWith("voyage.m11-")) return null;
       priorRevision = result.value.nextRevision;
       replayedState = result.value;
     }
+    if (startIndex === 0 && startRevision === 0 && checkpoint === null && priorRevision !== envelope.revision) return null;
     return { state: replayedState, revision: priorRevision };
   } catch { return null; }
 }
@@ -792,6 +799,32 @@ function replayRecoveryEvidence(envelope, checkpoint, context) {
     if (!replay || !replay.state) return null;
     return replay.state;
   } catch { return null; }
+}
+function validRecoveryReplayRecord(record, envelope, request, authenticatedUserId, requestFingerprint) {
+  try {
+    const capturedRecord = capture(record); if (!capturedRecord.ok) return false;
+    const value = capturedRecord.value, responseCapture = capture(value?.response); if (!responseCapture.ok) return false;
+    const response = responseCapture.value, parsed = parseStoredFingerprint(value?.fingerprint);
+    if (!exactKeys(value, PROCESSED_REQUEST_FIELDS) || !nonBlank(value.requestId) || value.requestId !== request.requestId
+      || value.principalUserId !== authenticatedUserId || value.projectionKind !== "gm" || value.fingerprint !== requestFingerprint
+      || value.commandKind !== RECOVERY_COMMAND_KIND || value.resultKind !== RECOVERY_RESULT_KIND || !safeInteger(value.resultRevision)
+      || value.resultRevision < 1 || !parsed.ok || !validStoredResponse(response, value, envelope.sessionId, envelope.authorityEpoch)
+      || response.projection !== null || response.events.length !== 1 || response.errors.length !== 0 || response.warnings.length !== 0) return false;
+    const tuple = parsed.value, payload = tuple[6], event = response.events[0];
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const matchingEvent = envelope.events.find((storedEvent) => isPlainObject(storedEvent) && storedEvent.type === event?.type && storedEvent.revision === event?.revision
+      && storedEvent.previousRevision === event?.previousRevision && storedEvent.recoveryAuthorityUserId === event?.recoveryAuthorityUserId && equal(storedEvent, event));
+    const matchingCheckpoint = matchingEvent && envelope.checkpoints.find((checkpoint) => isPlainObject(checkpoint) && checkpoint.kind === "after-recovery"
+      && checkpoint.revision === value.resultRevision && checkpoint.eventCount === envelope.events.indexOf(matchingEvent) + 1 && checkpoint.sessionState === response.status
+      && checkpoint.authorityEpoch === response.authorityEpoch);
+    return tuple[0] === envelope.sessionId && tuple[1] === authenticatedUserId && tuple[2] === "gm"
+      && tuple[3] === request.authorityEpoch && tuple[4] === request.expectedRevision && tuple[5] === RECOVERY_COMMAND_KIND
+      && exactKeys(payload, ["recoveryAction", "reason"]) && payload.recoveryAction === "rebuild-latest" && payload.reason === request.reason
+      && event?.type === "voyage.m11-recovery-rebuilt" && validRuntimeEvent(event, identity, 0)
+      && event.revision === value.resultRevision && event.previousRevision === value.resultRevision - 1
+      && event.recoveryAuthorityUserId === authenticatedUserId
+      && matchingEvent && matchingCheckpoint;
+  } catch { return false; }
 }
 function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = null) {
   try {
@@ -1076,13 +1109,16 @@ async function recoverWithinExclusive(value, identities, descriptor, initialAuth
     const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
     if (resolved.match.documentId !== descriptor.sessionDocumentId) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
     const envelope = recoveryEnvelope(resolved.match.session, resolved.match.documentId);
-    if (!envelope || !recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     const requestFingerprint = fingerprint(value.sessionId, lockedAuth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, RECOVERY_COMMAND_KIND, { recoveryAction: value.recoveryAction, reason: value.reason });
+    if (!envelope) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     const existing = envelope.processedRequests.find((record) => record.requestId === value.requestId);
     if (existing) {
       if (existing.principalUserId !== lockedAuth.authenticatedUserId || existing.projectionKind !== "gm" || existing.fingerprint !== requestFingerprint) return failure([diagnostic("m11-request-id-conflict", "request.requestId")], identities);
+      if (!validRecoveryReplayRecord(existing, envelope, value, lockedAuth.authenticatedUserId, requestFingerprint)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
       const replay = capture(existing.response); return replay.ok ? replay.value : failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     }
+    if (value.recoveryAction !== "rebuild-latest") return failure([diagnostic("m11-command-not-allowed", "request.recoveryAction")], identities);
+    if (!recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     if (value.authorityEpoch !== envelope.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== envelope.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     if (!recoveryCheckpointJournalValid(envelope)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
@@ -1124,16 +1160,18 @@ export async function recoverVoyageEventSession(request, context = {}) {
   if (value.kind !== "voyage.m11-recover-session") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
   if (!nonBlank(value.requestId) || !nonBlank(value.sessionId) || !nonBlank(value.reason) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch) || !RECOVERY_ACTIONS.has(value.recoveryAction)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
   const auth = authority(context, { requireConnection: true }); if (auth.error) return failure([auth.error], identities);
-  if (value.recoveryAction !== "rebuild-latest") return failure([diagnostic("m11-command-not-allowed", "request.recoveryAction")], identities);
   const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
   const envelope = recoveryEnvelope(resolved.match.session, resolved.match.documentId);
-  if (!envelope || !recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
   const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, RECOVERY_COMMAND_KIND, { recoveryAction: value.recoveryAction, reason: value.reason });
+  if (!envelope) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
   const existing = envelope.processedRequests.find((record) => record.requestId === value.requestId);
   if (existing) {
     if (existing.principalUserId !== auth.authenticatedUserId || existing.projectionKind !== "gm" || existing.fingerprint !== requestFingerprint) return failure([diagnostic("m11-request-id-conflict", "request.requestId")], identities);
-    const replay = capture(existing.response); return replay.ok ? replay.value : failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    if (!validRecoveryReplayRecord(existing, envelope, value, auth.authenticatedUserId, requestFingerprint)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
+    const replay = capture(existing.response); return replay.ok ? replay.value : failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
   }
+  if (value.recoveryAction !== "rebuild-latest") return failure([diagnostic("m11-command-not-allowed", "request.recoveryAction")], identities);
+  if (!recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
   const coordinator = transferCoordinator(context); if (coordinator.error) return failure([coordinator.error], identities);
   const descriptor = coordinatorDescriptor(value, resolved.match.documentId, auth);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
