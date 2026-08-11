@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import * as runtime from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
+import { analyzeVoyageEncounterCloseoutPreview } from "../../../scripts/voyage/domain/closeout.js";
+import { analyzeVoyageEncounterCloseoutReview } from "../../../scripts/voyage/domain/closeout-review.js";
+import { analyzeVoyagePressureBreachCloseoutTransaction } from "../../../scripts/voyage/domain/pressure-breach.js";
+import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
+
+const originalFoundryGame = globalThis.game;
+test.afterEach(() => {
+  if (originalFoundryGame === undefined) delete globalThis.game;
+  else globalThis.game = originalFoundryGame;
+});
 
 function definition() { return { schemaVersion: 1, eventId: "event-1", definitionSnapshotId: "definition-1", title: "Cinderwake" }; }
 function encounter() { return { ...createDraftVoyageEncounterDefaults(), encounterId: "event-1", definitionId: "event-1", definitionRef: null, primaryShip: { id: "ship-1", preserved: true } }; }
@@ -42,14 +52,14 @@ function makeJournalDocument(data, tracker, journals, { id = data._id, flags = d
     __isJournalEntry: true, __testSource: source,
     get id() { return source._id; }, get name() { return source.name; }, get pages() { return source.pages; }, get ownership() { return source.ownership; }, get folder() { return source.folder; }, get sort() { return source.sort; },
     toObject() { return source; },
-    async update(payload, options) { tracker.updates += 1; return tracker.updateHandler ? tracker.updateHandler(this, payload, options) : this; },
+    async update(payload, options) { tracker.updates += 1; tracker.updatePayloads.push(structuredClone(payload)); return tracker.updateHandler ? tracker.updateHandler(this, payload, options) : this; },
     async delete() { tracker.deletes += 1; tracker.deletedIds.push(this.id); const index = journals.indexOf(this); if (index >= 0) journals.splice(index, 1); return this; }
   };
   if (persist) journals.push(document);
   return document;
 }
 function makeContext({ journals = [], documentId = "Journal.session-1", definitionValue = definition(), encounterValue = encounter(), create = null, authenticatedUserId = "gm-1", authenticatedConnectionId = authenticatedUserId ? `connection-${authenticatedUserId}` : null, trustedTransportContext = true, activeGmUserId = "gm-1", users = null, operatorResolver = null, update = null, timestamp = "2026-08-10T12:00:00.000Z", coordinator = null } = {}) {
-  const tracker = { creates: 0, updates: 0, deletes: 0, deletedIds: [], createOperations: [], resolverCalls: 0, builderCalls: 0, idCalls: 0, journalScans: 0, updateHandler: update };
+  const tracker = { creates: 0, updates: 0, updatePayloads: [], deletes: 0, deletedIds: [], createOperations: [], resolverCalls: 0, builderCalls: 0, idCalls: 0, journalScans: 0, updateHandler: update };
   const mutationCoordinator = coordinator ?? makeCoordinator();
   const JournalEntry = { async create(data, operation) { tracker.creates += 1; tracker.createOperations.push(operation); const effective = { ...data, _id: operation?.keepId === true ? data._id : "Journal.generated-by-foundry" }; return create ? create(effective, tracker, journals, (options) => makeJournalDocument(effective, tracker, journals, options)) : makeJournalDocument(effective, tracker, journals); } };
   const context = {
@@ -67,6 +77,7 @@ function makeContext({ journals = [], documentId = "Journal.session-1", definiti
   return { context, journals, tracker, coordinator: mutationCoordinator };
 }
 function session(document) { return document.__testSource.flags.arcflight.system.voyageSession; }
+function fixtureSession(fixture) { return session(fixture.journals[0]); }
 function assertFailure(result, code, path, message) { assert.equal(result.ok, false); assert.deepEqual(Object.keys(result), ["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]); assert.equal(result.errors.length, 1); assert.deepEqual(result.errors[0], { code, path, message, severity: "error" }); assert.deepEqual(result.events, []); assert.deepEqual(result.warnings, []); }
 function pristineKeys(value) { assert.deepEqual(Object.keys(value), ["schemaVersion", "sessionDocumentId", "sessionId", "eventId", "definitionSnapshotId", "shipId", "revision", "sessionState", "activeGmUserId", "authorityEpoch", "encounterState", "events", "checkpoints", "processedRequests", "closeout", "recovery", "auditHistory"]); }
 function addRecoveryCheckpoint(stored, kind = "before-plan-lock") {
@@ -76,6 +87,151 @@ function markRecoveryRequired(stored) {
   stored.sessionState = "recovery-required";
   stored.encounterState.lifecycleState = "recovery";
   stored.recovery = { status: "required", reasonCode: "m11-recovery-required", failedRequestId: "failed", failedRevision: stored.revision, checkpointId: null, sourceCheckpointRevision: null, recoveryAuthorityUserId: null };
+}
+
+function task6PreviewRequest() {
+  const closeoutSnapshot = {
+    schemaVersion: 1, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1",
+    encounterRevision: 0, shipRevision: 4, lifecycleState: "active", stageId: "stage-final", roundNumber: 3, phase: "cleanup-advance",
+     completedRoundHistory: { schemaVersion: 1, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", roundCount: 3, rounds: [{ roundId: "round-1", roundNumber: 1, roundResult: "round-success" }, { roundId: "round-2", roundNumber: 2, roundResult: "round-success" }, { roundId: "round-3", roundNumber: 3, roundResult: "round-success" }] },
+    momentum: 0, focusPools: [], pressureSystems: VOYAGE_PRESSURE_SYSTEM_IDS.map((pressureSystemId) => ({ pressureSystemId, value: 0, capacity: 2 })),
+    activeHazards: [], pendingStationBenefitIds: [], unconsumedRiskBidBenefitIds: [], temporaryFocusPenaltyIds: [],
+    roundOrderRestrictions: [], hazardSuppressions: [], temporaryConsequenceIds: []
+  };
+  return {
+    kind: "m10-closeout-preview", sessionId: "session-1", expectedEncounterRevision: 0, expectedShipRevision: 4, closeoutSnapshot,
+    shipState: { shipId: "ship-1", revision: 4, installed: { hullPlatform: "void-skiff" }, hull: { voidScarCapacity: 2 }, voidScars: [] },
+    eventDefinition: { schemaVersion: 1, eventId: "event-1", definitionSnapshotId: "definition-1", roundCount: 3, rounds: [{ roundId: "round-1", roundNumber: 1 }, { roundId: "round-2", roundNumber: 2 }, { roundId: "round-3", roundNumber: 3 }], rewards: [{ rewardId: "reward-1", kind: "item", title: "Reward", description: "A reward.", tags: ["authored"], enhancementIds: [], voidFortune: null, fieldRepairResource: null }], enhancements: [], misfortuneEnhancements: [], misfortunes: [], nextSituations: [{ nextSituationId: "next-1", title: "Next", summary: "Continue.", transitionKind: "delay" }] },
+    rewardAllocation: { eventId: "event-1", sessionId: "session-1", rewardSelections: [{ operation: "add-reward", rewardId: "reward-1", enhancementId: null }] }, negativeSelection: null, closeoutScarDefinitions: [], breakdownDefinitions: [], emergencyResponseEvidence: []
+  };
+}
+
+function task6ActiveSession(fixture) {
+  const stored = session(fixture.journals[0]);
+  addRecoveryCheckpoint(stored);
+  stored.revision = 1;
+  stored.events.push({ type: "voyage.m6-owned-event", evidence: "canonical", previousRevision: 0, revision: 1 });
+  stored.sessionState = "event-closeout-review";
+  stored.encounterState.lifecycleState = "active";
+  stored.encounterState.currentStage = { stageId: "stage-final" };
+  stored.encounterState.roundNumber = 3;
+  stored.encounterState.phase = "cleanup-advance";
+  stored.closeout.status = "review-required";
+  return stored;
+}
+
+function task6CompletedSnapshot() {
+  const snapshot = task6PreviewRequest().closeoutSnapshot;
+  snapshot.lifecycleState = "completed-success";
+  snapshot.encounterRevision = 1;
+  snapshot.shipRevision = 5;
+  return snapshot;
+}
+
+function task6CloseoutEvent(applicationId, closeoutId) {
+  return { type: "voyage.closeout-applied", applicationId, closeoutId, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", overallResult: "overall-success", proposalIds: [], previousEncounterRevision: 0, encounterRevision: 1, shipRevision: 5 };
+}
+
+function task6CollisionHazard() {
+  return {
+    hazardId: "hazard-incoming", encounterId: "event-1", category: "system", status: "active", name: "Incoming hazard",
+    currentEffect: { effectId: "hazard-incoming-effect", description: "A tactical problem." }, activationTiming: { kind: "event-closeout", stationId: null, resultId: null }, removalMethod: { methodId: "address-hazard" },
+    ignoredConsequence: { consequenceId: "hazard-incoming-consequence", kind: "pressure-change", pressureSystemId: "crew-morale", delta: 1, persistentProposal: null }, visibility: "public", sourceKind: "authored-hazard", createdStageId: "stage-final", createdRoundNumber: 3, createdSequence: 1,
+    escalation: { mode: "none", currentStageId: null, stages: [], countdown: null, maximumEscalationReached: false, escalationConsequence: null }, collisionPolicy: "trigger-existing-consequence", duration: { mode: "none", remaining: null, initial: null, decrementTiming: null }, failurePressureSystemId: "crew-morale",
+    resolvedStageId: null, resolvedRoundNumber: null, terminalReason: null, replacedByHazardId: null, metadata: { collision: { consequence: { consequenceId: "hazard-incoming-collision", description: "A collision consequence." } } }, pressureSystemId: "crew-morale", eventAreaId: null,
+    pressureBreachId: null, stationId: "captain", actionId: "closeout-action", pressureEffectId: null, sourceIntentId: null, activationSource: null, branch: "no-roll", sourceTiming: "gm-confirmed", sourceVisibility: "public"
+  };
+}
+
+async function task6PreparedFixture({ checkpoint = null, continuation = null, sourceBuilder = null, completedLifecycle = "completed-success" } = {}) {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const previewRequest = task6PreviewRequest(), preview = analyzeVoyageEncounterCloseoutPreview(previewRequest);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  fixture.context.analyzeVoyageEncounterCloseoutReview = (value) => analyzeVoyageEncounterCloseoutReview(value);
+  const review = analyzeVoyageEncounterCloseoutReview({ kind: "m10-closeout-review", sessionId: "session-1", gmUserId: "gm-1", confirmed: true, previewRequest, suppliedPreview: preview.preview });
+  assert.equal(review.ok, true, JSON.stringify(review.errors));
+  const applicationId = review.applicationPlan.applicationId, closeoutId = review.closeoutId, completedCloseoutSnapshot = task6CompletedSnapshot(), commitEvent = task6CloseoutEvent(applicationId, closeoutId);
+  completedCloseoutSnapshot.lifecycleState = completedLifecycle;
+  fixture.context.persistVoyageEncounterApprovedCloseout = async () => ({ ok: true, status: "prepared-awaiting-session", applicationId, closeoutId, shipId: "ship-1", revision: 4, events: [], errors: [], warnings: [] });
+  fixture.context.continueVoyageEncounterCloseoutReservation = continuation ?? (async () => ({ ok: true, status: "ship-applied-awaiting-session", applicationId, closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] }));
+  fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = checkpoint ?? (async () => ({ ok: true, readyForSessionCommit: true, applicationId, closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] }));
+  fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async () => ({ ok: true, applicationId, closeoutId, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", previousEncounterRevision: 0, encounterRevision: 1, completedCloseoutSnapshot, encounterEvents: [commitEvent], pressureBreachSources: [], errors: [], warnings: [] });
+  fixture.context.finalizeVoyageEncounterCloseoutReceipt = async () => ({ ok: true, status: "committed", applicationId, closeoutId, shipId: "ship-1", revision: 5, events: [commitEvent], errors: [], warnings: [] });
+  fixture.context.buildVoyageEventSessionCompletedEncounterState = () => { const next = structuredClone(stored.encounterState); next.lifecycleState = "completed-success"; next.currentStage = null; next.phase = null; next.revision = 1; return next; };
+  if (sourceBuilder) fixture.context.buildVoyageEventSessionPressureBreachSources = sourceBuilder;
+  const run = (requestId, expectedRevision, commandKind, payload = {}) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "session-1", expectedRevision, authorityEpoch: 0, commandKind, payload }, fixture.context);
+  const reviewResult = await run("task6-review", 1, "closeout-review", { confirmed: true, previewRequest, suppliedPreview: preview.preview });
+  const prepareResult = await run("task6-prepare", 2, "closeout-prepare");
+  assert.equal(reviewResult.ok, true, JSON.stringify(reviewResult.errors)); assert.equal(prepareResult.ok, true, JSON.stringify(prepareResult.errors));
+  return { fixture, run, applicationId, closeoutId, commitEvent, previewRequest, preview, reviewResult, prepareResult };
+}
+
+async function task6CollisionPreparedFixture() {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  const pressureSystems = structuredClone(stored.encounterState.pressureSystems);
+  pressureSystems["crew-morale"].value = 2;
+  const collisionHazard = task6CollisionHazard();
+  const pressureEffect = { pressureEffectId: "arcflight-pressure-effect:collision", encounterId: "event-1", stageId: "stage-final", roundNumber: 3, sequence: 1, stationId: null, actionId: null, pressureSystemId: "crew-morale", delta: 1, timing: "gm-confirmed", sourceKind: "hazard-closeout", sourceIntentId: "hazard-incoming-consequence", activationSource: "event-closeout", branch: "no-roll", visibility: "public" };
+  const hazardEvent = { type: "voyage.hazard-closeout-consequence-applied", applicationId: "pending", closeoutId: "pending", encounterId: "event-1", eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", stageId: "stage-final", roundNumber: 3, phase: "cleanup-advance", hazardId: "hazard-incoming", consequenceId: "hazard-incoming-consequence", consequenceKind: "pressure-change", pressureSystemId: "crew-morale", pressureEffect: structuredClone(pressureEffect), previousHazard: structuredClone(collisionHazard), disposition: "removed", previousEncounterRevision: 1, encounterRevision: 2 };
+  const pressure = analyzeVoyagePressureBreachCloseoutTransaction({ expectedEncounterRevision: 2, closeoutContext: { eventId: "event-1", sessionId: "session-1", stageId: "stage-final", roundNumber: 3, phase: "cleanup-advance" }, pressureSystems: Object.values(pressureSystems), activeHazards: [], pressureEffect: structuredClone(pressureEffect) });
+  assert.equal(pressure.ok, true, JSON.stringify(pressure.errors));
+  stored.events.push(hazardEvent, pressure.event);
+  stored.revision = 3; stored.encounterState.revision = 3;
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ previousRevision }) => ({ startIndex: 0, endIndex: stored.events.length, previousRevision, nextRevision: 3, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const previewRequest = task6PreviewRequest(); previewRequest.expectedEncounterRevision = 3; previewRequest.closeoutSnapshot.encounterRevision = 3;
+  const preview = analyzeVoyageEncounterCloseoutPreview(previewRequest); assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  fixture.context.analyzeVoyageEncounterCloseoutReview = (value) => analyzeVoyageEncounterCloseoutReview(value);
+  const review = analyzeVoyageEncounterCloseoutReview({ kind: "m10-closeout-review", sessionId: "session-1", gmUserId: "gm-1", confirmed: true, previewRequest, suppliedPreview: preview.preview }); assert.equal(review.ok, true, JSON.stringify(review.errors));
+  const applicationId = review.applicationPlan.applicationId, closeoutId = review.closeoutId, completedCloseoutSnapshot = task6CompletedSnapshot(); completedCloseoutSnapshot.encounterRevision = 4;
+  hazardEvent.applicationId = applicationId; hazardEvent.closeoutId = closeoutId;
+  const commitEvent = task6CloseoutEvent(applicationId, closeoutId); commitEvent.previousEncounterRevision = 3; commitEvent.encounterRevision = 4;
+  fixture.context.persistVoyageEncounterApprovedCloseout = async () => ({ ok: true, status: "prepared-awaiting-session", applicationId, closeoutId, shipId: "ship-1", revision: 4, events: [], errors: [], warnings: [] });
+  let reservationSources = null;
+  fixture.context.continueVoyageEncounterCloseoutReservation = async ({ receipt }) => { reservationSources = structuredClone(receipt.pressureBreachSources); return { ok: true, status: "ship-applied-awaiting-session", applicationId, closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] }; };
+  fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = async () => ({ ok: true, readyForSessionCommit: true, applicationId, closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] });
+  fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async () => ({ ok: true, applicationId, closeoutId, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", previousEncounterRevision: 3, encounterRevision: 4, completedCloseoutSnapshot, encounterEvents: [commitEvent], pressureBreachSources: structuredClone(reservationSources), errors: [], warnings: [] });
+  fixture.context.finalizeVoyageEncounterCloseoutReceipt = async () => ({ ok: true, status: "committed", applicationId, closeoutId, shipId: "ship-1", revision: 5, events: [commitEvent], errors: [], warnings: [] });
+  fixture.context.buildVoyageEventSessionCompletedEncounterState = () => { const next = structuredClone(stored.encounterState); next.lifecycleState = "completed-success"; next.currentStage = null; next.phase = null; next.revision = 4; return next; };
+  const run = (requestId, expectedRevision, commandKind, payload = {}) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "session-1", expectedRevision, authorityEpoch: 0, commandKind, payload }, fixture.context);
+  const reviewResult = await run("collision-review", 3, "closeout-review", { confirmed: true, previewRequest, suppliedPreview: preview.preview });
+  const prepareResult = await run("collision-prepare", 4, "closeout-prepare"); assert.equal(reviewResult.ok, true, JSON.stringify(reviewResult.errors)); assert.equal(prepareResult.ok, true, JSON.stringify(prepareResult.errors));
+  return { fixture, run, applicationId, closeoutId, commitEvent, reservationSources: () => reservationSources };
+}
+
+function task6M10Actor() {
+  const actor = {
+    id: "ship-1", type: "vehicle", flags: { arcflight: { enabled: true, actorType: "arcflightShip", sibling: { preserved: true }, unrelated: { keep: true }, system: { installed: { hullPlatform: "void-skiff", components: [{ id: "component-1" }] }, base: { hull: { voidScarCapacity: 2 } }, voyage: { schemaVersion: 1, revision: 4, voidScars: [], disabledSystems: [], rewards: [], resources: [], persistentConsequences: [], eventHistory: [], closeoutLedger: [] } } } }, system: { attributes: { preserved: true } }, items: [{ id: "item-1", type: "equipment" }], updates: [],
+    async update(patch) { this.updates.push(structuredClone(patch)); if (patch["flags.arcflight.system.voyage"] !== undefined) this.flags.arcflight.system.voyage = structuredClone(patch["flags.arcflight.system.voyage"]); if (patch["flags.arcflight.system.voyage.closeoutLedger"] !== undefined) this.flags.arcflight.system.voyage.closeoutLedger = structuredClone(patch["flags.arcflight.system.voyage.closeoutLedger"]); return this; }
+  };
+  actor.getFlag = (moduleId, key) => actor.flags[moduleId]?.[key];
+  return actor;
+}
+
+function installTask6M10Game(actor) {
+  globalThis.game = { user: { id: "gm-1", isGM: true }, users: { activeGM: { id: "gm-1" } }, actors: { get: (id) => id === actor.id ? actor : null, contents: [actor] } };
+}
+
+async function task6CanonicalM10Fixture() {
+  const actor = task6M10Actor(); installTask6M10Game(actor);
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); const stored = task6ActiveSession(fixture);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const previewRequest = task6PreviewRequest(), preview = analyzeVoyageEncounterCloseoutPreview(previewRequest); assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  const entryForCommit = () => actor.flags.arcflight.system.voyage.closeoutLedger[0];
+  fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async () => { const entry = entryForCommit(); const encounterEvents = entry.events.filter((event) => ["voyage.hazard-closeout-consequence-applied", "voyage.pressure-breach-applied", "voyage.closeout-applied"].includes(event.type)); return { ok: true, applicationId: entry.applicationId, closeoutId: entry.closeoutId, eventId: entry.eventId, sessionId: entry.sessionId, definitionSnapshotId: entry.definitionSnapshotId, shipId: entry.shipId, previousEncounterRevision: entry.expectedEncounterRevision, encounterRevision: entry.resultingEncounterRevision, completedCloseoutSnapshot: structuredClone(entry.completedCloseoutSnapshot), encounterEvents: structuredClone(encounterEvents), pressureBreachSources: structuredClone(entry.sessionReservationReceipt?.pressureBreachSources ?? []), errors: [], warnings: [] }; };
+  fixture.context.buildVoyageEventSessionCompletedEncounterState = ({ priorEncounterState }) => { const next = structuredClone(priorEncounterState); next.lifecycleState = "completed-success"; next.currentStage = null; next.phase = null; next.revision = 1; return next; };
+  fixture.context.analyzeVoyageEncounterCloseoutReview = (value) => analyzeVoyageEncounterCloseoutReview(value);
+  const run = (requestId, expectedRevision, commandKind, payload = {}) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "session-1", expectedRevision, authorityEpoch: 0, commandKind, payload }, fixture.context);
+  const review = await run("canonical-review", 1, "closeout-review", { confirmed: true, previewRequest, suppliedPreview: preview.preview }); assert.equal(review.ok, true, JSON.stringify(review.errors));
+  const prepare = await run("canonical-prepare", 2, "closeout-prepare"); assert.equal(prepare.ok, true, JSON.stringify(prepare.errors));
+  return { actor, fixture, run, previewRequest, preview };
 }
 
 test("M11 runtime exposes the Task 5 projection boundary", () => assert.deepEqual(Object.keys(runtime).sort(), ["createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "transferVoyageEventSessionControl"]));
@@ -1138,4 +1294,308 @@ test("recovery replay is coordinator-free while new recovery still requires coor
   const replay = await recoverVoyageEventSession(original, replayContext.context); assert.deepEqual(replay, first); assert.equal(replayContext.tracker.updates, 0);
   const conflict = await recoverVoyageEventSession({ ...original, reason: "changed" }, replayContext.context); assertFailure(conflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(replayContext.tracker.updates, 0);
   const fresh = await recoverVoyageEventSession({ ...original, requestId: "new-recovery" }, replayContext.context); assertFailure(fresh, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(replayContext.tracker.updates, 0);
+});
+
+test("Task 6 closeout commands remain gated until an accepted review state exists", async () => {
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context);
+  let called = 0; fixture.context.analyzeVoyageEncounterCloseoutReview = () => { called += 1; return null; };
+  const result = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "closeout-review-gated", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, commandKind: "closeout-review", payload: { confirmed: true, previewRequest: {}, suppliedPreview: {} } }, fixture.context);
+  assertFailure(result, "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state."); assert.equal(called, 0); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("Task 6 lifecycle gates reject every closeout command before M10 or JournalEntry writes", async () => {
+  for (const commandKind of ["closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]) {
+    const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context);
+    const before = structuredClone(fixture.journals[0].__testSource);
+    const result = await dispatchVoyageEventSessionCommand(command({ requestId: `gate-${commandKind}`, commandKind }), fixture.context);
+    const expected = commandKind === "closeout-reserve" ? ["m11-reservation-not-ready", "closeout", "Event Session is not ready for M10 reservation."] : commandKind === "closeout-session-commit" ? ["m11-commit-not-ready", "closeout", "Event Session is not ready for M10 commit."] : ["m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state."];
+    assertFailure(result, expected[0], expected[1], expected[2]);
+    assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0); assert.deepEqual(fixture.journals[0].__testSource, before);
+  }
+  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const stored = session(fixture.journals[0]);
+  stored.sessionState = "recovery-required"; stored.encounterState.lifecycleState = "recovery"; stored.recovery.status = "required"; stored.recovery.reasonCode = "m11-recovery-required"; stored.recovery.failedRequestId = "failed"; stored.recovery.failedRevision = 0;
+  const result = await dispatchVoyageEventSessionCommand(command({ requestId: "recovery-gate", commandKind: "closeout-prepare" }), fixture.context);
+  assertFailure(result, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(fixture.tracker.updates, 0);
+});
+
+test("Task 6 executes the canonical review, prepare, reserve, checkpoint, and commit flow", async () => {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const previewRequest = task6PreviewRequest();
+  const preview = analyzeVoyageEncounterCloseoutPreview(previewRequest);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  const review = analyzeVoyageEncounterCloseoutReview({ kind: "m10-closeout-review", sessionId: "session-1", gmUserId: "gm-1", confirmed: true, previewRequest, suppliedPreview: preview.preview });
+  assert.equal(review.ok, true, JSON.stringify(review.errors));
+  fixture.context.analyzeVoyageEncounterCloseoutReview = (value) => analyzeVoyageEncounterCloseoutReview(value);
+  const applicationId = review.applicationPlan.applicationId, closeoutId = review.closeoutId;
+  fixture.context.persistVoyageEncounterApprovedCloseout = async () => ({ ok: true, status: "prepared-awaiting-session", applicationId, closeoutId, shipId: "ship-1", revision: 4, events: [], errors: [], warnings: [] });
+  fixture.context.continueVoyageEncounterCloseoutReservation = async () => ({ ok: true, status: "ship-applied-awaiting-session", applicationId, closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] });
+  fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = async () => ({ ok: true, readyForSessionCommit: true, applicationId, closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] });
+  const completedCloseoutSnapshot = task6CompletedSnapshot();
+  const commitEvent = task6CloseoutEvent(applicationId, closeoutId);
+  fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async () => ({ ok: true, applicationId, closeoutId, eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", previousEncounterRevision: 0, encounterRevision: 1, completedCloseoutSnapshot, encounterEvents: [commitEvent], pressureBreachSources: [], errors: [], warnings: [] });
+  fixture.context.finalizeVoyageEncounterCloseoutReceipt = async () => ({ ok: true, status: "committed", applicationId, closeoutId, shipId: "ship-1", revision: 5, events: [commitEvent], errors: [], warnings: [] });
+  fixture.context.buildVoyageEventSessionCompletedEncounterState = () => { const next = structuredClone(stored.encounterState); next.lifecycleState = "completed-success"; next.currentStage = null; next.phase = null; next.revision = 1; return next; };
+  const run = (requestId, expectedRevision, commandKind, payload = {}) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "session-1", expectedRevision, authorityEpoch: 0, commandKind, payload }, fixture.context);
+  const reviewResult = await run("task6-review", 1, "closeout-review", { confirmed: true, previewRequest, suppliedPreview: preview.preview });
+  assert.equal(reviewResult.ok, true, JSON.stringify(reviewResult.errors));
+  const prepareResult = await run("task6-prepare", 2, "closeout-prepare"); assert.equal(prepareResult.ok, true, JSON.stringify(prepareResult.errors));
+  const reserveResult = await run("task6-reserve", 2, "closeout-reserve"); assert.equal(reserveResult.ok, true, JSON.stringify(reserveResult.errors));
+  const checkpointResult = await run("task6-checkpoint", 3, "closeout-ship-apply"); assert.equal(checkpointResult.ok, true, JSON.stringify(checkpointResult.errors));
+  const commitResult = await run("task6-commit", 3, "closeout-session-commit"); assert.equal(commitResult.ok, true, JSON.stringify(commitResult.errors));
+  const completed = session(fixture.journals[0]);
+  assert.equal(completed.sessionState, "completed"); assert.equal(completed.revision, 5);
+  assert.equal(completed.events.filter((event) => event.type === "voyage.m11-closeout-session-commit-pending").length, 1);
+  assert.equal(completed.events.filter((event) => event.type === "voyage.m11-closeout-session-committed").length, 1);
+  assert.equal(completed.auditHistory.filter((audit) => audit.kind === "closeout-session-commit-pending").length, 1);
+  assert.equal(completed.auditHistory.filter((audit) => audit.kind === "closeout-session-committed").length, 1);
+  assert.equal(completed.processedRequests.filter((record) => record.resultKind === "closeout-session-commit-pending").length, 1);
+  assert.equal(completed.processedRequests.filter((record) => record.resultKind === "closeout-session-committed").length, 0);
+});
+
+test("Task 6 reservation verifies the M10 ship checkpoint before writing and safely retries", async () => {
+  const prepared = await task6PreparedFixture();
+  let continuationCalls = 0, checkpointCalls = 0, checkpointReady = false;
+  prepared.fixture.context.continueVoyageEncounterCloseoutReservation = async () => {
+    continuationCalls += 1;
+    return { ok: true, status: continuationCalls === 1 ? "ship-applied-awaiting-session" : "already-ship-applied-awaiting-session", applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] };
+  };
+  prepared.fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = async ({ applicationId, reservationId }) => {
+    checkpointCalls += 1;
+    return checkpointReady
+      ? { ok: true, readyForSessionCommit: true, applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] }
+      : { ok: false, readyForSessionCommit: false, applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, errors: [{ code: "m10-checkpoint-failed", path: "ship", message: "checkpoint failed", severity: "error" }], warnings: [] };
+  };
+  const beforeFailure = structuredClone(fixtureSession(prepared.fixture));
+  const failed = await prepared.run("task6-reserve-failed", 2, "closeout-reserve");
+  assert.equal(failed.ok, false); assert.equal(failed.errors[0].code, "m10-checkpoint-failed"); assert.equal(prepared.fixture.tracker.updates, 2); assert.deepEqual(fixtureSession(prepared.fixture), beforeFailure); assert.equal(continuationCalls, 1); assert.equal(checkpointCalls, 1);
+  checkpointReady = true;
+  const succeeded = await prepared.run("task6-reserve-retry", 2, "closeout-reserve");
+  assert.equal(succeeded.ok, true, JSON.stringify(succeeded.errors)); assert.equal(prepared.fixture.tracker.updates, 3); assert.equal(continuationCalls, 2); assert.equal(checkpointCalls, 2);
+});
+
+test("Task 6 review preserves its canonical response when the persisted update then throws", async () => {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const previewRequest = task6PreviewRequest();
+  const preview = analyzeVoyageEncounterCloseoutPreview(previewRequest);
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  let reviewCalls = 0;
+  fixture.context.analyzeVoyageEncounterCloseoutReview = (value) => { reviewCalls += 1; return analyzeVoyageEncounterCloseoutReview(value); };
+  const expectedReview = analyzeVoyageEncounterCloseoutReview({ kind: "m10-closeout-review", sessionId: "session-1", gmUserId: "gm-1", confirmed: true, previewRequest, suppliedPreview: preview.preview });
+  assert.equal(expectedReview.ok, true, JSON.stringify(expectedReview.errors));
+  let updateCalls = 0;
+  fixture.tracker.updateHandler = (document, payload) => { updateCalls += 1; persistSession(document, payload); throw new Error("persisted-then-throw"); };
+  const reviewRequest = { kind: "voyage.m11-command", requestId: "task6-review-persisted-throw", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, commandKind: "closeout-review", payload: { confirmed: true, previewRequest, suppliedPreview: preview.preview } };
+  const result = await dispatchVoyageEventSessionCommand(reviewRequest, fixture.context);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(reviewCalls, 1); assert.equal(updateCalls, 1);
+  assert.equal(result.events.length, 1); assert.equal(result.events[0].type, "voyage.m11-closeout-review-accepted");
+  const persisted = fixtureSession(fixture);
+  assert.equal(persisted.sessionState, "persistent-application");
+  assert.deepEqual(persisted.closeout.acceptedApplicationPlan.applicationPlan, expectedReview.applicationPlan);
+  assert.deepEqual(persisted.events.at(-1), result.events[0]);
+  assert.equal(persisted.auditHistory.length, 1);
+  assert.equal(persisted.checkpoints.length, 2);
+  assert.equal(persisted.processedRequests.length, 2);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  const replay = await dispatchVoyageEventSessionCommand(reviewRequest, fixture.context);
+  assert.deepEqual(replay, result); assert.equal(reviewCalls, 1); assert.equal(updateCalls, 1);
+});
+
+test("Task 6 prepare and ship history require the persistent-application response status", async () => {
+  const scenarios = [
+    ["closeout-prepare", async () => {
+      const prepared = await task6PreparedFixture();
+      return { fixture: prepared.fixture, replay: () => prepared.run("task6-prepare", 2, "closeout-prepare") };
+    }],
+    ["closeout-ship-apply", async () => {
+      const prepared = await task6PreparedFixture();
+      assert.equal((await prepared.run("status-reserve", 2, "closeout-reserve")).ok, true);
+      assert.equal((await prepared.run("status-ship", 3, "closeout-ship-apply")).ok, true);
+      return { fixture: prepared.fixture, replay: () => prepared.run("status-ship", 3, "closeout-ship-apply") };
+    }]
+  ];
+  for (const [commandKind, setup] of scenarios) {
+    const clean = await setup();
+    const cleanUpdates = clean.fixture.tracker.updates;
+    assert.equal(reloadVoyageEventSession("session-1", clean.fixture.context).ok, true, commandKind);
+    assert.equal((await clean.replay()).ok, true, commandKind);
+    assert.equal(clean.fixture.tracker.updates, cleanUpdates, commandKind);
+    for (const status of ["completed", "paused"]) {
+      const tampered = await setup();
+      const record = fixtureSession(tampered.fixture).processedRequests.find((entry) => entry.commandKind === commandKind);
+      assert.ok(record, commandKind);
+      record.response.status = status;
+      const updates = tampered.fixture.tracker.updates;
+      assertFailure(reloadVoyageEventSession("session-1", tampered.fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+      assert.equal(tampered.fixture.tracker.updates, updates, `${commandKind}:${status}`);
+    }
+  }
+});
+
+test("Task 6 classifies thrown JournalEntry updates from the verified reread", async () => {
+  const persisted = await task6PreparedFixture();
+  let updateCalls = 0;
+  persisted.fixture.tracker.updateHandler = (document, payload) => { updateCalls += 1; persistSession(document, payload); throw new Error("uncertain-after-persist"); };
+  const reserved = await persisted.run("task6-throw-reserve", 2, "closeout-reserve");
+  assert.equal(reserved.ok, true, JSON.stringify(reserved.errors)); assert.equal(updateCalls, 1);
+
+  persisted.fixture.tracker.updateHandler = () => { updateCalls += 1; throw new Error("unchanged"); };
+  const beforeShip = structuredClone(fixtureSession(persisted.fixture));
+  const ship = await persisted.run("task6-throw-ship", 3, "closeout-ship-apply");
+  assertFailure(ship, "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify.");
+  assert.deepEqual(fixtureSession(persisted.fixture), beforeShip);
+});
+
+test("Task 6 persisted commands replay exactly and conflict without another M10 or JournalEntry write", async () => {
+  const prepared = await task6PreparedFixture();
+  let reviewCalls = 0;
+  const originalReview = prepared.fixture.context.analyzeVoyageEncounterCloseoutReview;
+  prepared.fixture.context.analyzeVoyageEncounterCloseoutReview = async (...args) => { reviewCalls += 1; return originalReview(...args); };
+  const reviewReplay = await prepared.run("task6-review", 1, "closeout-review", { confirmed: true, previewRequest: prepared.previewRequest, suppliedPreview: prepared.preview.preview });
+  assert.equal(reviewReplay.ok, true); assert.equal(reviewCalls, 0); const updatesAfterReplay = prepared.fixture.tracker.updates;
+  const conflict = await prepared.run("task6-review", 1, "closeout-review", { confirmed: false, previewRequest: prepared.previewRequest, suppliedPreview: prepared.preview.preview });
+  assert.equal(conflict.ok, false); assert.equal(conflict.errors[0].code, "m11-request-id-conflict"); assert.equal(reviewCalls, 0); assert.equal(prepared.fixture.tracker.updates, updatesAfterReplay);
+  let continuationCalls = 0, checkpointCalls = 0;
+  prepared.fixture.context.continueVoyageEncounterCloseoutReservation = async () => { continuationCalls += 1; return { ok: true, status: "ship-applied-awaiting-session", applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] }; };
+  prepared.fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = async ({ applicationId }) => { checkpointCalls += 1; return { ok: true, readyForSessionCommit: true, applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] }; };
+  const reserved = await prepared.run("task6-reserve", 2, "closeout-reserve"); assert.equal(reserved.ok, true, JSON.stringify(reserved.errors));
+  const reservedReplay = await prepared.run("task6-reserve", 2, "closeout-reserve"); assert.equal(reservedReplay.ok, true); assert.equal(continuationCalls, 1); assert.equal(checkpointCalls, 1);
+  const reservedConflict = await prepared.run("task6-reserve", 2, "closeout-reserve", { forged: true }); assert.equal(reservedConflict.ok, false); assert.equal(reservedConflict.errors[0].code, "m11-request-id-conflict"); assert.equal(continuationCalls, 1); assert.equal(prepared.fixture.tracker.updates, 3);
+});
+
+test("Task 6 replays and conflicts each command without another adapter or JournalEntry write", async () => {
+  const prepared = await task6PreparedFixture();
+  let prepareCalls = 0, continuationCalls = 0, checkpointCalls = 0, resolveCalls = 0, finalizeCalls = 0;
+  const originalPrepare = prepared.fixture.context.persistVoyageEncounterApprovedCloseout;
+  prepared.fixture.context.persistVoyageEncounterApprovedCloseout = async (...args) => { prepareCalls += 1; return originalPrepare(...args); };
+  const prepareUpdates = prepared.fixture.tracker.updates;
+  const prepareReplay = await prepared.run("task6-prepare", 2, "closeout-prepare");
+  assert.deepEqual(prepareReplay, prepared.prepareResult); assert.equal(prepareCalls, 0); assert.equal(prepared.fixture.tracker.updates, prepareUpdates);
+  const prepareConflict = await prepared.run("task6-prepare", 2, "closeout-prepare", { forged: true });
+  assertFailure(prepareConflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(prepareCalls, 0); assert.equal(prepared.fixture.tracker.updates, prepareUpdates);
+
+  prepared.fixture.context.continueVoyageEncounterCloseoutReservation = async (value) => { continuationCalls += 1; return { ok: true, status: "ship-applied-awaiting-session", applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] }; };
+  prepared.fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = async () => { checkpointCalls += 1; return { ok: true, readyForSessionCommit: true, applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] }; };
+  const reserve = await prepared.run("task6-reserve-all", 2, "closeout-reserve"); assert.equal(reserve.ok, true, JSON.stringify(reserve.errors));
+  const reserveUpdates = prepared.fixture.tracker.updates;
+  const reserveReplay = await prepared.run("task6-reserve-all", 2, "closeout-reserve"); assert.deepEqual(reserveReplay, reserve); assert.equal(continuationCalls, 1); assert.equal(checkpointCalls, 1); assert.equal(prepared.fixture.tracker.updates, reserveUpdates);
+  const reserveConflict = await prepared.run("task6-reserve-all", 2, "closeout-reserve", { forged: true }); assertFailure(reserveConflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(continuationCalls, 1); assert.equal(checkpointCalls, 1); assert.equal(prepared.fixture.tracker.updates, reserveUpdates);
+
+  const ship = await prepared.run("task6-ship-all", 3, "closeout-ship-apply"); assert.equal(ship.ok, true, JSON.stringify(ship.errors));
+  const shipUpdates = prepared.fixture.tracker.updates;
+  const shipReplay = await prepared.run("task6-ship-all", 3, "closeout-ship-apply"); assert.deepEqual(shipReplay, ship); assert.equal(checkpointCalls, 2); assert.equal(prepared.fixture.tracker.updates, shipUpdates);
+  const shipConflict = await prepared.run("task6-ship-all", 3, "closeout-ship-apply", { forged: true }); assertFailure(shipConflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(checkpointCalls, 2); assert.equal(prepared.fixture.tracker.updates, shipUpdates);
+
+  const originalResolve = prepared.fixture.context.resolveVoyageEncounterCloseoutCommitEvidence;
+  prepared.fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async (...args) => { resolveCalls += 1; return originalResolve(...args); };
+  const originalFinalize = prepared.fixture.context.finalizeVoyageEncounterCloseoutReceipt;
+  prepared.fixture.context.finalizeVoyageEncounterCloseoutReceipt = async (...args) => { finalizeCalls += 1; return originalFinalize(...args); };
+  const commit = await prepared.run("task6-commit-all", 3, "closeout-session-commit"); assert.equal(commit.ok, true, JSON.stringify(commit.errors));
+  const commitUpdates = prepared.fixture.tracker.updates;
+  const commitReplay = await prepared.run("task6-commit-all", 3, "closeout-session-commit"); const storedCommitResponse = fixtureSession(prepared.fixture).processedRequests.find((record) => record.requestId === "task6-commit-all").response; assert.deepEqual(commitReplay, storedCommitResponse); assert.equal(resolveCalls, 1); assert.equal(finalizeCalls, 1); assert.equal(prepared.fixture.tracker.updates, commitUpdates);
+  const commitConflict = await prepared.run("task6-commit-all", 3, "closeout-session-commit", { forged: true }); assertFailure(commitConflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(resolveCalls, 1); assert.equal(finalizeCalls, 1); assert.equal(prepared.fixture.tracker.updates, commitUpdates);
+});
+
+test("Task 6 accepts canonical completed-failure snapshots", async () => {
+  const prepared = await task6PreparedFixture({ completedLifecycle: "completed-failure" });
+  assert.equal((await prepared.run("completed-failure-reserve", 2, "closeout-reserve")).ok, true);
+  const committed = await prepared.run("completed-failure-commit", 3, "closeout-session-commit");
+  assert.equal(committed.ok, true, JSON.stringify(committed.errors));
+});
+
+test("Task 6 rejects active and paused completed snapshots without persistence or finalization", async () => {
+  for (const lifecycleState of ["active", "paused"]) {
+    const prepared = await task6PreparedFixture();
+    assert.equal((await prepared.run(`nonterminal-${lifecycleState}-reserve`, 2, "closeout-reserve")).ok, true, lifecycleState);
+    const originalResolver = prepared.fixture.context.resolveVoyageEncounterCloseoutCommitEvidence;
+    prepared.fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async (...args) => {
+      const evidence = await originalResolver(...args);
+      evidence.completedCloseoutSnapshot.lifecycleState = lifecycleState;
+      return evidence;
+    };
+    let finalizeCalls = 0;
+    prepared.fixture.context.finalizeVoyageEncounterCloseoutReceipt = async (...args) => {
+      finalizeCalls += 1;
+      return { ok: true, status: "committed", applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, events: [prepared.commitEvent], errors: [], warnings: [] };
+    };
+    const before = structuredClone(fixtureSession(prepared.fixture)), updates = prepared.fixture.tracker.updates;
+    const result = await prepared.run(`nonterminal-${lifecycleState}-commit`, 3, "closeout-session-commit");
+    assertFailure(result, "m11-m10-handoff-invalid", "receipt", "M10 handoff does not match the Event Session.", lifecycleState);
+    assert.equal(prepared.fixture.tracker.updates, updates, lifecycleState);
+    assert.equal(finalizeCalls, 0, lifecycleState);
+    assert.deepEqual(fixtureSession(prepared.fixture), before, lifecycleState);
+  }
+});
+
+test("Task 6 commit-pending retries finalization without repeating reservation or ship mutation", async () => {
+  const prepared = await task6PreparedFixture(); let continuationCalls = 0, checkpointCalls = 0, finalizeCalls = 0;
+  prepared.fixture.context.continueVoyageEncounterCloseoutReservation = async () => { continuationCalls += 1; return { ok: true, status: "ship-applied-awaiting-session", applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, events: [], errors: [], warnings: [] }; };
+  prepared.fixture.context.verifyVoyageEncounterCloseoutShipCheckpoint = async ({ applicationId }) => { checkpointCalls += 1; return { ok: true, readyForSessionCommit: true, applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, errors: [], warnings: [] }; };
+  prepared.fixture.context.finalizeVoyageEncounterCloseoutReceipt = async (value) => { finalizeCalls += 1; if (finalizeCalls === 1) throw new Error("uncertain"); return { ok: true, status: "already-committed", applicationId: prepared.applicationId, closeoutId: prepared.closeoutId, shipId: "ship-1", revision: 5, events: [prepared.commitEvent], errors: [], warnings: [] }; };
+  assert.equal((await prepared.run("task6-reserve", 2, "closeout-reserve")).ok, true);
+  const pending = await prepared.run("task6-commit", 3, "closeout-session-commit"); assert.equal(pending.ok, false); assert.equal(pending.errors[0].code, "m11-m10-handoff-invalid"); assert.equal(fixtureSession(prepared.fixture).closeout.status, "commit-pending");
+  const pendingUpdates = prepared.fixture.tracker.updates, pendingEvidence = fixtureSession(prepared.fixture); assert.equal(pendingEvidence.events.filter((event) => event.type === "voyage.m11-closeout-session-commit-pending").length, 1); assert.equal(pendingEvidence.auditHistory.filter((audit) => audit.kind === "closeout-session-commit-pending").length, 1); assert.equal(pendingEvidence.processedRequests.filter((record) => record.resultKind === "closeout-session-commit-pending").length, 1);
+  const retry = await prepared.run("task6-commit-retry", 4, "closeout-session-commit"); assert.equal(retry.ok, true, JSON.stringify(retry.errors)); assert.equal(fixtureSession(prepared.fixture).closeout.status, "committed"); assert.equal(continuationCalls, 1); assert.equal(checkpointCalls, 3); assert.equal(finalizeCalls, 2); assert.equal(prepared.fixture.tracker.updates, pendingUpdates + 1);
+  const completedEvidence = fixtureSession(prepared.fixture); assert.equal(completedEvidence.revision, 5); assert.equal(completedEvidence.events.filter((event) => event.type === "voyage.m11-closeout-session-commit-pending").length, 1); assert.equal(completedEvidence.events.filter((event) => event.type === "voyage.m11-closeout-session-committed").length, 1); assert.equal(completedEvidence.auditHistory.filter((audit) => audit.kind === "closeout-session-commit-pending").length, 1); assert.equal(completedEvidence.auditHistory.filter((audit) => audit.kind === "closeout-session-committed").length, 1); assert.equal(completedEvidence.processedRequests.filter((record) => record.resultKind === "closeout-session-commit-pending").length, 1); assert.equal(completedEvidence.processedRequests.filter((record) => record.resultKind === "closeout-session-committed").length, 1); assert.equal(completedEvidence.closeout.sessionReservationReceipt.reservationId, completedEvidence.closeout.sessionCommitReceipt.reservationId);
+  const writesAfterCompletion = prepared.fixture.tracker.updates, pendingReplay = await prepared.run("task6-commit", 3, "closeout-session-commit"); assert.deepEqual(pendingReplay, completedEvidence.processedRequests.find((record) => record.requestId === "task6-commit").response); assert.equal(prepared.fixture.tracker.updates, writesAfterCompletion);
+  const retryReplay = await prepared.run("task6-commit-retry", 4, "closeout-session-commit"); assert.deepEqual(retryReplay, completedEvidence.processedRequests.find((record) => record.requestId === "task6-commit-retry").response); assert.equal(prepared.fixture.tracker.updates, writesAfterCompletion);
+  const retryConflict = await prepared.run("task6-commit-retry", 4, "closeout-session-commit", { forged: true }); assertFailure(retryConflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(prepared.fixture.tracker.updates, writesAfterCompletion);
+});
+
+test("Task 6 rejects forged collision sources before M10 reservation or JournalEntry writes", async () => {
+  const prepared = await task6PreparedFixture({ sourceBuilder: () => [{ forged: true }] });
+  const before = structuredClone(fixtureSession(prepared.fixture));
+  const result = await prepared.run("task6-forged-source", 2, "closeout-reserve");
+  assert.equal(result.ok, false); assert.equal(result.errors[0].code, "m11-reservation-not-ready"); assert.equal(prepared.fixture.tracker.updates, 2); assert.deepEqual(fixtureSession(prepared.fixture), before);
+});
+
+test("Task 6 preserves a canonical nonempty collision source through reservation and commit", async () => {
+  const prepared = await task6CollisionPreparedFixture();
+  const reserved = await prepared.run("collision-reserve", 4, "closeout-reserve"); assert.equal(reserved.ok, true, JSON.stringify(reserved.errors));
+  const storedAfterReserve = fixtureSession(prepared.fixture), reservation = storedAfterReserve.closeout.sessionReservationReceipt;
+  assert.ok(Array.isArray(reservation.pressureBreachSources) && reservation.pressureBreachSources.length === 1);
+  assert.deepEqual(reservation.pressureBreachSources, prepared.reservationSources());
+  const committed = await prepared.run("collision-commit", 5, "closeout-session-commit"); assert.equal(committed.ok, true, JSON.stringify(committed.errors));
+  const finalSession = fixtureSession(prepared.fixture), commit = finalSession.closeout.sessionCommitReceipt;
+  assert.deepEqual(commit.pressureBreachSources, reservation.pressureBreachSources);
+  assert.deepEqual(finalSession.closeout.sessionReservationReceipt.pressureBreachSources, reservation.pressureBreachSources);
+  assert.equal(reservation.pressureBreachSources[0].sourceHazardId, "hazard-incoming"); assert.equal(reservation.pressureBreachSources[0].expectedEncounterRevision, 2); assert.equal(reservation.pressureBreachSources[0].breachEventIndex, 0);
+});
+
+test("Task 6 rejects forged commit receipt chains and sources without a write", async () => {
+  const mutations = [
+    (evidence) => { evidence.encounterEvents.push(structuredClone(evidence.encounterEvents.at(-1))); },
+    (evidence) => { evidence.encounterEvents[0].previousEncounterRevision = 2; },
+    (evidence) => { evidence.pressureBreachSources[0].sourceHazardId = "forged-hazard"; }
+  ];
+  for (const mutate of mutations) {
+    const prepared = await task6CollisionPreparedFixture();
+    assert.equal((await prepared.run("receipt-attack-reserve", 4, "closeout-reserve")).ok, true);
+    const original = prepared.fixture.context.resolveVoyageEncounterCloseoutCommitEvidence;
+    prepared.fixture.context.resolveVoyageEncounterCloseoutCommitEvidence = async (...args) => { const evidence = structuredClone(await original(...args)); mutate(evidence); return evidence; };
+    const before = structuredClone(fixtureSession(prepared.fixture)), updates = prepared.fixture.tracker.updates;
+    const result = await prepared.run("receipt-attack-commit", 5, "closeout-session-commit");
+    assertFailure(result, "m11-m10-handoff-invalid", "receipt", "M10 handoff does not match the Event Session.");
+    assert.equal(prepared.fixture.tracker.updates, updates); assert.deepEqual(fixtureSession(prepared.fixture), before);
+  }
+});
+
+test("Task 6 canonical M10 adapters preserve the Actor boundary through finalization", async () => {
+  const integrated = await task6CanonicalM10Fixture();
+  const actor = integrated.actor, before = { system: structuredClone(actor.system), items: structuredClone(actor.items), sibling: structuredClone(actor.flags.arcflight.sibling), unrelated: structuredClone(actor.flags.arcflight.unrelated), installed: structuredClone(actor.flags.arcflight.system.installed) };
+  const reserved = await integrated.run("canonical-reserve", 2, "closeout-reserve"); assert.equal(reserved.ok, true, JSON.stringify(reserved.errors));
+  const checkpoint = await integrated.run("canonical-ship-checkpoint", 3, "closeout-ship-apply"); assert.equal(checkpoint.ok, true, JSON.stringify(checkpoint.errors));
+  const committed = await integrated.run("canonical-commit", 3, "closeout-session-commit"); assert.equal(committed.ok, true, JSON.stringify(committed.errors));
+  assert.deepEqual(actor.system, before.system); assert.deepEqual(actor.items, before.items); assert.deepEqual(actor.flags.arcflight.sibling, before.sibling); assert.deepEqual(actor.flags.arcflight.unrelated, before.unrelated); assert.deepEqual(actor.flags.arcflight.system.installed, before.installed);
+  assert.equal(actor.flags.arcflight.system.voyage.closeoutLedger[0].status, "committed");
+  assert.ok(actor.updates.every((patch) => Object.keys(patch).every((key) => key === "flags.arcflight.system.voyage" || key === "flags.arcflight.system.voyage.closeoutLedger")));
+  assert.ok(integrated.fixture.tracker.updatePayloads.every((payload) => Object.keys(payload).length === 1 && Object.hasOwn(payload, "flags.arcflight.system.voyageSession")));
 });
