@@ -1303,7 +1303,8 @@ minimum immutable recovery envelope has these exact ordered keys:
   authorityEpoch,
   events,
   checkpoints,
-  processedRequests
+  processedRequests,
+  auditHistory
 }
 ```
 
@@ -1311,8 +1312,9 @@ The resolver identifies exactly one JournalEntry by the requested `sessionId`,
 then requires the envelope's `sessionDocumentId` to equal that document's ID;
 all identity fields to be nonblank exact strings; `schemaVersion` to be `1`;
 and `revision` and `authorityEpoch` to be nonnegative safe integers. The
-minimum envelope must also contain dense, own-property, safe-captured event and
-checkpoint journals plus safely captured processed-request records. It rejects
+minimum envelope must also contain dense, own-property, safe-captured event,
+checkpoint, and audit journals plus safely captured processed-request records.
+It rejects
 hostile values, extra/inherited/unsafe keys, accessors, sparse arrays, cycles,
 or mismatched checkpoint identities. A recovery request never supplies a
 JournalEntry ID, an identity, a checkpoint ID, a replay event, a candidate
