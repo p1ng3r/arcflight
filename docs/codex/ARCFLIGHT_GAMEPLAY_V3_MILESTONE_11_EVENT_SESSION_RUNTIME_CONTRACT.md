@@ -284,11 +284,10 @@ produce a partial candidate.
 M11 runtime events defined below. Each domain event retains the exact key order
 and schema owned by its domain contract; M11 adds no wrapper fields and does
 not relabel M6, M7, M8, M9, or M10 events. M11 runtime event kinds are
-registered by their owning slices. The later closeout-owning slice registers
-`voyage.m11-closeout-review-accepted`;
-Task 4 accepts only creation, control-transfer, and recovery runtime evidence,
-so that closeout event is rejected until its owning slice supplies the complete
-canonical audit pairing and accepted closeout-evidence validation. The
+registered by their owning slices. Task 4 rejects the closeout event until its
+owning slice supplies complete canonical evidence; Task 6 is that owning slice.
+Task 6 registers `voyage.m11-closeout-review-accepted` with the same
+fail-closed audit pairing and accepted closeout-evidence validation. The
 Task 4-supported M11 runtime event kind is `voyage.m11-recovery-rebuilt`; it
 has this exact ordered shape:
 
@@ -1586,9 +1585,11 @@ write and returns the M10 failure unchanged.
 
 ### 14.3 Commit receipt
 
-Only after the reserved Event Session closeout is durably written and reread
-verified may M11 produce this exact Event Session commit receipt for M10 to
-consume and validate:
+M11 constructs and validates this exact Event Session commit receipt from the
+trusted M10 evidence resolver, but it persists the receipt only after the
+reserved Event Session evidence has been reread and the read-only M10 ship
+checkpoint has succeeded. The receipt is then durable in the recoverable
+`commit-pending` write for M10 to consume and validate:
 
 ```js
 {
@@ -1621,6 +1622,58 @@ M11 calls `finalizeVoyageEncounterCloseoutReceipt` only after those checks.
 M10 then writes only its ledger status/receipt. M11 never changes a committed
 M10 ledger back to a nonterminal state.
 
+The Foundry adapter exposes one trusted, server-side M10 evidence resolver for
+the commit boundary because the existing public checkpoint API intentionally
+returns no completed snapshot or event ledger. Its exact request is:
+
+```js
+{
+  kind: "m10-resolve-closeout-commit-evidence",
+  applicationId,
+  reservationId,
+  sessionId,
+  eventId,
+  definitionSnapshotId,
+  shipId,
+  expectedEncounterRevision
+}
+```
+
+The resolver is `resolveVoyageEncounterCloseoutCommitEvidence(request)` and is
+trusted runtime context only; no public command may supply or override it. It
+returns the exact ordered envelope `{ ok, applicationId, closeoutId, eventId,
+sessionId, definitionSnapshotId, shipId, previousEncounterRevision,
+encounterRevision, completedCloseoutSnapshot, encounterEvents,
+pressureBreachSources, errors, warnings }`. The adapter must capture and
+validate the complete M10 snapshot, canonical event subsequence, source array,
+identities, and revisions before returning success. M11 recaptures that result,
+requires exact key order and equality to the stored reservation/session
+evidence, and fails closed without a JournalEntry write on any missing,
+malformed, hostile, stale, or throwing resolver result.
+
+After M10 finalization succeeds, M11 uses the trusted adapter
+`buildVoyageEventSessionCompletedEncounterState(request)` to construct the
+canonical completed encounter state. Its exact request key order is
+`{ kind, sessionId, eventId, definitionSnapshotId, shipId,
+priorEncounterState, completedCloseoutSnapshot }`; `kind` is
+`m10-build-completed-encounter-state`. The adapter is trusted runtime context
+only, is never caller-supplied, and must return one captured complete encounter
+state with the existing M11 encounter schema, identities, and completed
+revision/lifecycle bindings. Missing, malformed, hostile, throwing, or
+mismatched output is `m11-m10-handoff-invalid` with no JournalEntry write.
+
+Commit finalization is a recoverable handoff. M11 first persists one
+`commit-pending` Event Session state with the exact commit receipt, runtime
+event, audit, and processed-request record, then calls M10 finalization. The
+session is not marked `completed`/`committed` until M10 returns a verified
+`committed` or `already-committed` result and M11 rereads the pending evidence.
+An M10 failure, throw, or uncertain result leaves the validated nonterminal
+`commit-pending` state intact; it performs no speculative second write and can
+be retried with a fresh request against that durable receipt. Exact replay of
+the original pending request returns its isolated pending response without a
+write. A successful retry finalizes M10 idempotently and performs the one
+terminal Event Session update without appending duplicate receipt evidence.
+
 ## 15. Event ordering and identity bindings
 
 The session event array is append-only and chronological. Domain event order is
@@ -1630,6 +1683,18 @@ the session's `eventId`, `sessionId`, `definitionSnapshotId`, and `shipId`
 according to its owning contract. Domain event revisions bind to
 `encounterState.revision`; M11 runtime event revisions bind to the M11 session
 `revision`.
+
+Task 6 lifecycle authorization is exact and is reread inside the exclusive
+mutation callback: `closeout-review` requires `event-closeout-review` with
+`review-required`; `closeout-prepare` requires `persistent-application` with
+`accepted-for-application`; `closeout-reserve` requires
+`prepared-awaiting-session`; `closeout-ship-apply` requires
+`ship-applied-awaiting-session`; and `closeout-session-commit` requires either
+`ship-applied-awaiting-session` or the recoverable `commit-pending` state.
+Prepare is a record-only M11 idempotency step and appends no runtime event or
+audit; its stored response and accepted evidence are nevertheless validated on
+reload and exact replay. All other mutating closeout steps append their exact
+runtime event/audit pair in the same M11 write.
 
 A successful `closeout-review` is ordered as: the read-only M10 review result,
 then exactly one persisted `voyage.m11-closeout-review-accepted` event and its

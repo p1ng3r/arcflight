@@ -1,6 +1,17 @@
 import { ARCFLIGHT_MODULE_ID } from "../../config/constants.js";
 import { validateVoyageEncounterState } from "../domain/validation.js";
 import { analyzeVoyageStationAssignments } from "../domain/station-assignments.js";
+import { validateVoyageHazardRecord } from "../domain/hazard-schema.js";
+import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../domain/constants.js";
+import { analyzeVoyagePressureBreachCloseoutTransaction } from "../domain/pressure-breach.js";
+import { validateVoyageEncounterCloseoutSnapshot } from "../domain/closeout.js";
+import { analyzeVoyageEncounterCloseoutReview } from "../domain/closeout-review.js";
+import {
+  persistVoyageEncounterApprovedCloseout,
+  continueVoyageEncounterCloseoutReservation,
+  verifyVoyageEncounterCloseoutShipCheckpoint,
+  finalizeVoyageEncounterCloseoutReceipt
+} from "./closeout-persistence.js";
 
 const VOYAGE_SESSION_PATH = `flags.${ARCFLIGHT_MODULE_ID}.system.voyageSession`;
 const CREATE_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"]);
@@ -42,9 +53,26 @@ const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocument
 const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
 const AUDIT_DETAILS_FIELDS = Object.freeze(["previousActiveGmUserId", "nextActiveGmUserId", "bootstrap", "reason"]);
+const CLOSEOUT_AUDIT_DETAILS_FIELDS = Object.freeze(["applicationId", "closeoutId", "previousSessionState", "nextSessionState"]);
+const M10_COMMIT_EVIDENCE_REQUEST_FIELDS = Object.freeze(["kind", "applicationId", "reservationId", "sessionId", "eventId", "definitionSnapshotId", "shipId", "expectedEncounterRevision"]);
+const M10_COMMIT_EVIDENCE_FIELDS = Object.freeze(["ok", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "previousEncounterRevision", "encounterRevision", "completedCloseoutSnapshot", "encounterEvents", "pressureBreachSources", "errors", "warnings"]);
+const M10_COMPLETED_SNAPSHOT_FIELDS = Object.freeze(["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "shipId", "encounterRevision", "shipRevision", "lifecycleState", "stageId", "roundNumber", "phase", "completedRoundHistory", "momentum", "focusPools", "pressureSystems", "activeHazards", "pendingStationBenefitIds", "unconsumedRiskBidBenefitIds", "temporaryFocusPenaltyIds", "roundOrderRestrictions", "hazardSuppressions", "temporaryConsequenceIds"]);
+const PRESSURE_EFFECT_FIELDS = Object.freeze(["pressureEffectId", "encounterId", "stageId", "roundNumber", "sequence", "stationId", "actionId", "pressureSystemId", "delta", "timing", "sourceKind", "sourceIntentId", "activationSource", "branch", "visibility"]);
+const PRESSURE_SYSTEM_FIELDS = Object.freeze(["pressureSystemId", "value", "capacity"]);
+const COMPLETED_HISTORY_FIELDS = Object.freeze(["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "roundCount", "rounds"]);
+const COMPLETED_ROUND_FIELDS = Object.freeze(["roundId", "roundNumber", "roundResult"]);
+const FOCUS_FIELDS = Object.freeze(["operatorId", "stationId", "current", "capacity"]);
+const RESTRICTION_FIELDS = Object.freeze(["restrictionId", "persistence"]);
+const SUPPRESSION_FIELDS = Object.freeze(["suppressionId", "hazardId"]);
+const M10_EVENT_FIELDS = Object.freeze({
+  "voyage.hazard-closeout-consequence-applied": ["type", "applicationId", "closeoutId", "encounterId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "stageId", "roundNumber", "phase", "hazardId", "consequenceId", "consequenceKind", "pressureSystemId", "pressureEffect", "previousHazard", "disposition", "previousEncounterRevision", "encounterRevision"],
+  "voyage.pressure-breach-applied": ["type", "encounterId", "lifecycleState", "stageId", "roundNumber", "phase", "pressureEffectCount", "appliedEffectCount", "breach", "hazard", "collisionOutcome", "voidScarProposal", "pressureReset", "effects", "previousPressureSystems", "pressureSystems", "previousRevision", "revision"],
+  "voyage.closeout-applied": ["type", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "overallResult", "proposalIds", "previousEncounterRevision", "encounterRevision", "shipRevision"]
+});
 const RESPONSE_FIELDS = Object.freeze(["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]);
 const transferLocks = new Map();
 const COMMAND_KINDS = new Set(["pause", "resume", "station-selection", "station-selection-clear", "station-order", "plan-lock", "action-segment", "reaction", "round-closeout", "emergency-response", "closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
+const CLOSEOUT_COMMANDS = new Set(["closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
 const FORBIDDEN_PAYLOAD_KEYS = new Set(["principalUserId", "projectionKind", "fingerprint", "result", "resultKind", "resultRevision", "candidate", "event", "response", "receipt", "nextState", "revision", "authorityEpoch", "authenticatedUserId", "connectionId", "clientId", "gmUserId", "isGM", "role", "authority", "approval", "lease", "coordinator", "exclusive", "runExclusiveSessionMutation", "analysis", "outcome"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const MESSAGES = Object.freeze({
@@ -52,7 +80,7 @@ const MESSAGES = Object.freeze({
   missing: "Exact Event Session document was not resolved.", ambiguous: "More than one Event Session document matched.", invalid: "Stored Event Session is invalid.",
   write: "Event Session write did not complete or verify.", recovery: "Event Session requires explicit recovery.", payload: "Command payload is invalid.",
   authentication: "Authenticated transport user is required.", activeUnavailable: "No unique active GM is available.", activeRequired: "The authenticated user is not the current active GM.", coordinatorRequired: "A trusted cross-client mutation coordinator is required.",
-  targetInvalid: "Control-transfer target must be the unique current active GM.", transferRequired: "Event Session control has transferred."
+  targetInvalid: "Control-transfer target must be the unique current active GM.", transferRequired: "Event Session control has transferred.", closeoutNotConfirmed: "Confirmed closeout review is required before persistent application.", closeoutNotAccepted: "Closeout review did not produce one valid application plan.", handoffInvalid: "M10 handoff does not match the Event Session.", reservationNotReady: "Event Session is not ready for M10 reservation.", commitNotReady: "Event Session is not ready for M10 commit.", projectionUnauthorized: "Authenticated user has no Event Session projection role."
 });
 
 function diagnostic(code, path) {
@@ -62,7 +90,7 @@ function diagnostic(code, path) {
     "m11-session-write-failed": MESSAGES.write, "m11-recovery-required": MESSAGES.recovery, "m11-command-payload-invalid": MESSAGES.payload,
     "m11-request-id-required": "A unique request ID is required.", "m11-request-id-conflict": "Request ID was previously used with different data.",
     "m11-control-transfer-required": MESSAGES.transferRequired, "m11-control-transfer-target-invalid": MESSAGES.targetInvalid, "m11-cross-client-coordinator-required": MESSAGES.coordinatorRequired, "m11-stale-session-revision": "Event Session revision is stale.",
-    "m11-command-not-allowed": "Command is not allowed in the current session state.",
+    "m11-command-not-allowed": "Command is not allowed in the current session state.", "m11-closeout-review-not-confirmed": MESSAGES.closeoutNotConfirmed, "m11-closeout-review-not-accepted": MESSAGES.closeoutNotAccepted, "m11-m10-handoff-invalid": MESSAGES.handoffInvalid, "m11-reservation-not-ready": MESSAGES.reservationNotReady, "m11-commit-not-ready": MESSAGES.commitNotReady, "m11-projection-not-authorized": MESSAGES.projectionUnauthorized,
     "m11-checkpoint-required": "Required Event Session checkpoint is missing.", "m11-checkpoint-mismatch": "Event Session checkpoint does not match current state.",
     "m11-unrecoverable-session": "Immutable Event Session recovery evidence is invalid.",
     "m11-authentication-required": MESSAGES.authentication, "m11-active-gm-unavailable": MESSAGES.activeUnavailable, "m11-active-gm-required": MESSAGES.activeRequired
@@ -206,13 +234,191 @@ function validTransferRecord(record, session, authorityEpoch, audit, previousGm)
     && record.response.events.length === 0
     && validAudit(audit, session, auditIndex, authorityEpoch + 1, record.resultRevision, { ...record, reason: tuple[6].reason }, previousGm, nextGm, bootstrap);
 }
-function validCloseout(closeout) {
+function validCloseout(closeout, session = null) {
   if (!exactKeys(closeout, CLOSEOUT_FIELDS) || !new Set(["none", "review-required", "accepted-for-application", "prepared-awaiting-session", "ship-applied-awaiting-session", "commit-pending", "committed", "reconciliation-required"]).has(closeout.status)) return false;
   if (closeout.status === "none") return Object.keys(closeout).slice(1).every((key) => closeout[key] === null);
-  if (closeout.status === "accepted-for-application") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && isPlainObject(closeout.acceptedApplicationPlan)
+  if (closeout.status === "accepted-for-application") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && exactKeys(closeout.acceptedApplicationPlan, ["previewRequest", "reviewRequest", "applicationPlan"])
     && safeInteger(closeout.expectedEncounterRevision) && safeInteger(closeout.expectedShipRevision)
     && closeout.reservationId === null && closeout.sessionReservationReceipt === null && closeout.sessionCommitReceipt === null;
-  return true;
+  if (closeout.status === "prepared-awaiting-session") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && exactKeys(closeout.acceptedApplicationPlan, ["previewRequest", "reviewRequest", "applicationPlan"])
+    && safeInteger(closeout.expectedEncounterRevision) && safeInteger(closeout.expectedShipRevision) && closeout.reservationId === null && closeout.sessionReservationReceipt === null && closeout.sessionCommitReceipt === null;
+  if (closeout.status === "ship-applied-awaiting-session") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && exactKeys(closeout.acceptedApplicationPlan, ["previewRequest", "reviewRequest", "applicationPlan"])
+    && nonBlank(closeout.reservationId) && safeInteger(closeout.expectedEncounterRevision) && safeInteger(closeout.expectedShipRevision)
+    && exactReservationReceipt(closeout.sessionReservationReceipt, closeout, session) && closeout.sessionCommitReceipt === null;
+  if (closeout.status === "commit-pending") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && exactKeys(closeout.acceptedApplicationPlan, ["previewRequest", "reviewRequest", "applicationPlan"])
+    && nonBlank(closeout.reservationId) && safeInteger(closeout.expectedEncounterRevision) && safeInteger(closeout.expectedShipRevision)
+    && exactReservationReceipt(closeout.sessionReservationReceipt, closeout, session) && exactCommitReceipt(closeout.sessionCommitReceipt, closeout, session);
+  if (closeout.status === "committed") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && exactKeys(closeout.acceptedApplicationPlan, ["previewRequest", "reviewRequest", "applicationPlan"])
+    && nonBlank(closeout.reservationId) && safeInteger(closeout.expectedEncounterRevision) && safeInteger(closeout.expectedShipRevision)
+    && exactReservationReceipt(closeout.sessionReservationReceipt, closeout, session) && exactCommitReceipt(closeout.sessionCommitReceipt, closeout, session);
+  if (closeout.status === "reconciliation-required") return nonBlank(closeout.applicationId) && nonBlank(closeout.closeoutId) && exactKeys(closeout.acceptedApplicationPlan, ["previewRequest", "reviewRequest", "applicationPlan"])
+    && (closeout.reservationId === null || nonBlank(closeout.reservationId)) && safeInteger(closeout.expectedEncounterRevision) && safeInteger(closeout.expectedShipRevision)
+    && (closeout.sessionReservationReceipt === null || exactReservationReceipt(closeout.sessionReservationReceipt, closeout, session))
+    && (closeout.sessionCommitReceipt === null || exactCommitReceipt(closeout.sessionCommitReceipt, closeout, session));
+  return closeout.status === "review-required" && closeout.applicationId === null && closeout.closeoutId === null && closeout.acceptedApplicationPlan === null
+    && closeout.reservationId === null && closeout.expectedEncounterRevision === null && closeout.expectedShipRevision === null && closeout.sessionReservationReceipt === null && closeout.sessionCommitReceipt === null;
+}
+function validStoredCloseoutPlan(closeout, session) {
+  if (!closeout || closeout.status === "none" || closeout.status === "review-required") return true;
+  const evidence = closeout.acceptedApplicationPlan;
+  if (!exactKeys(evidence, ["previewRequest", "reviewRequest", "applicationPlan"]) || !isPlainObject(evidence.previewRequest) || !isPlainObject(evidence.suppliedPreview ?? evidence.reviewRequest?.suppliedPreview)
+    || !exactKeys(evidence.reviewRequest, ["kind", "sessionId", "gmUserId", "confirmed", "previewRequest", "suppliedPreview"]) || evidence.reviewRequest.confirmed !== true
+    || !isPlainObject(evidence.reviewRequest.previewRequest) || !isPlainObject(evidence.reviewRequest.suppliedPreview) || !equal(evidence.previewRequest, evidence.reviewRequest.previewRequest)) return false;
+  const plan = evidence.applicationPlan;
+  if (!(exactKeys(plan, ["schemaVersion", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "expectedEncounterRevision", "expectedShipRevision", "gmUserId", "persistentProposals", "temporaryResetPlan", "expectedPreview"])
+    && plan.schemaVersion === 1 && plan.applicationId === `arcflight-closeout-application:${JSON.stringify([plan.closeoutId])}` && plan.applicationId === closeout.applicationId && plan.closeoutId === closeout.closeoutId && plan.eventId === session.eventId && plan.sessionId === session.sessionId && plan.definitionSnapshotId === session.definitionSnapshotId && plan.shipId === session.shipId && safeInteger(plan.expectedEncounterRevision) && plan.expectedEncounterRevision <= session.encounterState.revision && safeInteger(plan.expectedShipRevision) && plan.expectedEncounterRevision === closeout.expectedEncounterRevision && plan.expectedShipRevision === closeout.expectedShipRevision && evidence.reviewRequest.sessionId === session.sessionId && evidence.reviewRequest.kind === "m10-closeout-review" && evidence.reviewRequest.gmUserId === plan.gmUserId && nonBlank(plan.gmUserId) && Array.isArray(plan.persistentProposals) && isPlainObject(plan.temporaryResetPlan) && isPlainObject(plan.expectedPreview))) return false;
+  try {
+    const regenerated = analyzeVoyageEncounterCloseoutReview(evidence.reviewRequest);
+    return validCloseoutReviewResult(regenerated) && regenerated.closeoutId === plan.closeoutId && equal(regenerated.applicationPlan, plan);
+  } catch { return false; }
+}
+
+const RESERVATION_RECEIPT_FIELDS = Object.freeze(["kind", "reservationId", "activeGmUserId", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "expectedEncounterRevision", "pressureBreachSources"]);
+const COMMIT_RECEIPT_FIELDS = Object.freeze(["kind", "reservationId", "activeGmUserId", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "previousEncounterRevision", "encounterRevision", "completedCloseoutSnapshot", "encounterEvents", "pressureBreachSources"]);
+function validPressureSystemsMap(value) {
+  if (!isPlainObject(value) || Object.keys(value).length !== VOYAGE_PRESSURE_SYSTEM_IDS.length || !VOYAGE_PRESSURE_SYSTEM_IDS.every((id) => Object.hasOwn(value, id))) return false;
+  return VOYAGE_PRESSURE_SYSTEM_IDS.every((id) => exactKeys(value[id], PRESSURE_SYSTEM_FIELDS) && value[id].pressureSystemId === id && safeInteger(value[id].value) && safeInteger(value[id].capacity));
+}
+function validPressureEffect(value, session, source) {
+  return exactKeys(value, PRESSURE_EFFECT_FIELDS) && value.encounterId === session.eventId && value.stageId === source.stageId && value.roundNumber === source.roundNumber
+    && value.sourceKind === "hazard-closeout" && value.timing === "gm-confirmed" && value.activationSource === "event-closeout" && value.branch === "no-roll"
+    && value.stationId === null && value.actionId === null && nonBlank(value.pressureEffectId) && nonBlank(value.sourceIntentId) && VOYAGE_PRESSURE_SYSTEM_IDS.includes(value.pressureSystemId)
+    && safeInteger(value.roundNumber) && safeInteger(value.sequence) && Number.isSafeInteger(value.delta) && value.delta > 0;
+}
+function validPressureSourceShape(source, session, index = null) {
+  if (!exactKeys(source, ["breachEventIndex", "sourceHazardId", "expectedEncounterRevision", "closeoutContext", "pressureSystems", "activeHazards", "pressureEffect"]) || !nonBlank(source.sourceHazardId)
+    || !safeInteger(source.breachEventIndex) || (index !== null && source.breachEventIndex !== index) || !safeInteger(source.expectedEncounterRevision)
+    || !exactKeys(source.closeoutContext, ["eventId", "sessionId", "stageId", "roundNumber", "phase"])
+    || source.closeoutContext.eventId !== session.eventId || source.closeoutContext.sessionId !== session.sessionId || !nonBlank(source.closeoutContext.stageId)
+    || !safeInteger(source.closeoutContext.roundNumber) || source.closeoutContext.phase !== "cleanup-advance" || !validPressureSystemsMap(source.pressureSystems)
+    || !Array.isArray(source.activeHazards) || !isPlainObject(source.pressureEffect)) return false;
+  return source.activeHazards.every((hazard) => validateVoyageHazardRecord(hazard, { mode: "snapshot", expectedEncounterId: session.eventId }).valid)
+    && validPressureEffect(source.pressureEffect, session, source.closeoutContext);
+}
+function canonicalPressureSources(session) {
+  try {
+    const breaches = session.events.filter((event) => event?.type === "voyage.pressure-breach-applied");
+    return breaches.map((event, breachEventIndex) => {
+      const position = session.events.indexOf(event), preceding = session.events[position - 1];
+      if (!preceding || preceding.type !== "voyage.hazard-closeout-consequence-applied") return null;
+      const activeHazards = [];
+      for (let index = position + 1; index < session.events.length; index += 1) {
+        const later = session.events[index];
+        if (later?.type !== "voyage.hazard-closeout-consequence-applied" || activeHazards.some((hazard) => hazard.hazardId === later.hazardId)) continue;
+        const capturedHazard = capture(later.previousHazard);
+        if (!capturedHazard.ok) return null;
+        activeHazards.push(capturedHazard.value);
+      }
+      const pressureSystems = capture(event.previousPressureSystems), pressureEffect = capture(preceding.pressureEffect);
+      if (!pressureSystems.ok || !pressureEffect.ok) return null;
+      return {
+        breachEventIndex,
+        sourceHazardId: preceding.hazardId,
+        expectedEncounterRevision: event.previousRevision,
+        closeoutContext: { eventId: session.eventId, sessionId: session.sessionId, stageId: preceding.stageId, roundNumber: preceding.roundNumber, phase: preceding.phase },
+        pressureSystems: pressureSystems.value,
+        activeHazards,
+        pressureEffect: pressureEffect.value
+      };
+    });
+  } catch { return null; }
+}
+function validPressureSources(sources, session) {
+  const canonical = canonicalPressureSources(session);
+  return Array.isArray(sources) && Array.isArray(canonical) && sources.length === canonical.length
+    && sources.every((source, index) => validPressureSourceShape(source, session, index) && canonical[index] !== null && equal(source, canonical[index]));
+}
+function validCanonicalPressureBreachEvent(event, session) {
+  try {
+    if (!isPlainObject(event) || event.type !== "voyage.pressure-breach-applied" || !exactKeys(event, M10_EVENT_FIELDS[event.type])
+      || event.encounterId !== session.eventId || event.lifecycleState !== "active" || !nonBlank(event.stageId) || !safeInteger(event.roundNumber)
+      || event.phase !== "cleanup-advance" || event.pressureEffectCount !== 1 || event.appliedEffectCount !== 1 || !safeInteger(event.previousRevision) || !safeInteger(event.revision)
+      || event.revision !== event.previousRevision + 1 || !validPressureSystemsMap(event.previousPressureSystems) || !validPressureSystemsMap(event.pressureSystems)
+      || !Array.isArray(event.effects) || event.effects.length !== 1 || !isPlainObject(event.breach) || !isPlainObject(event.hazard) || !isPlainObject(event.voidScarProposal)
+      || !isPlainObject(event.pressureReset) || event.pressureReset.resetValue !== 0 || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureReset.pressureSystemId)) return false;
+    const sources = canonicalPressureSources(session), breachEvents = session.events.filter((candidate) => candidate?.type === "voyage.pressure-breach-applied");
+    const index = breachEvents.findIndex((candidate) => candidate === event || (candidate.revision === event.revision && equal(candidate, event)));
+    const source = index >= 0 ? sources[index] : null;
+    if (source === null) return false;
+    const result = analyzeVoyagePressureBreachCloseoutTransaction({
+      expectedEncounterRevision: event.previousRevision,
+      closeoutContext: { eventId: event.encounterId, sessionId: session.sessionId, stageId: event.stageId, roundNumber: event.roundNumber, phase: event.phase },
+      pressureSystems: Object.values(source.pressureSystems),
+      activeHazards: event.collisionOutcome === null ? [] : source.activeHazards,
+      pressureEffect: source.pressureEffect
+    });
+    return result?.ok === true && result.breachRequired === true && equal(result.event, event);
+  } catch { return false; }
+}
+function validHazardCloseoutEvent(event, session, applicationId, closeoutId) {
+  if (!(event.applicationId === applicationId && event.closeoutId === closeoutId && event.encounterId === session.eventId && event.eventId === session.eventId
+    && event.sessionId === session.sessionId && event.definitionSnapshotId === session.definitionSnapshotId && event.shipId === session.shipId
+    && nonBlank(event.stageId) && safeInteger(event.roundNumber) && event.phase === "cleanup-advance" && nonBlank(event.hazardId) && nonBlank(event.consequenceId)
+    && ["pressure-change", "persistent-consequence"].includes(event.consequenceKind) && event.disposition === "removed" && safeInteger(event.previousEncounterRevision)
+    && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1 && validateVoyageHazardRecord(event.previousHazard, { mode: "snapshot", expectedEncounterId: session.eventId }).valid
+    && event.previousHazard.hazardId === event.hazardId && event.previousHazard.ignoredConsequence?.consequenceId === event.consequenceId
+    && event.previousHazard.ignoredConsequence?.kind === event.consequenceKind)) return false;
+  if (event.consequenceKind === "persistent-consequence") return event.pressureSystemId === null && event.pressureEffect === null && event.previousHazard.ignoredConsequence.pressureSystemId === null;
+  const consequence = event.previousHazard.ignoredConsequence, effect = event.pressureEffect;
+  return VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureSystemId) && consequence.pressureSystemId === event.pressureSystemId && safeInteger(consequence.delta)
+    && isPlainObject(effect) && validPressureEffect(effect, session, { stageId: event.stageId, roundNumber: event.roundNumber })
+    && effect.pressureSystemId === event.pressureSystemId && effect.sourceIntentId === event.consequenceId && effect.delta === consequence.delta
+    && effect.visibility === event.previousHazard.visibility
+    && effect.pressureEffectId === `arcflight-pressure-effect:${JSON.stringify(["hazard-closeout", session.eventId, session.sessionId, event.stageId, event.roundNumber, event.hazardId, event.consequenceId, effect.sequence, effect.pressureSystemId])}`;
+}
+function validM10CommitEvent(event, session, applicationId, closeoutId) {
+  if (!isPlainObject(event) || !M10_EVENT_FIELDS[event.type] || !exactKeys(event, M10_EVENT_FIELDS[event.type])) return false;
+  if (event.type === "voyage.closeout-applied") return event.applicationId === applicationId && event.closeoutId === closeoutId && event.eventId === session.eventId && event.sessionId === session.sessionId && event.definitionSnapshotId === session.definitionSnapshotId && event.shipId === session.shipId && ["overall-success", "overall-failure"].includes(event.overallResult) && Array.isArray(event.proposalIds) && event.proposalIds.every(nonBlank) && new Set(event.proposalIds).size === event.proposalIds.length && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1 && safeInteger(event.shipRevision);
+  if (event.type === "voyage.hazard-closeout-consequence-applied") return validHazardCloseoutEvent(event, session, applicationId, closeoutId);
+  return validCanonicalPressureBreachEvent(event, session);
+}
+function validCompletedSnapshotShape(snapshot, session) {
+  if (!exactKeys(snapshot, M10_COMPLETED_SNAPSHOT_FIELDS) || snapshot.schemaVersion !== 1 || snapshot.eventId !== session.eventId || snapshot.sessionId !== session.sessionId
+    || snapshot.definitionSnapshotId !== session.definitionSnapshotId || snapshot.shipId !== session.shipId || !safeInteger(snapshot.encounterRevision) || !safeInteger(snapshot.shipRevision)
+      || !["completed-success", "completed-failure"].includes(snapshot.lifecycleState) || !nonBlank(snapshot.stageId) || !safeInteger(snapshot.roundNumber) || snapshot.phase !== "cleanup-advance"
+    || !exactKeys(snapshot.completedRoundHistory, COMPLETED_HISTORY_FIELDS) || snapshot.completedRoundHistory.schemaVersion !== 1 || snapshot.completedRoundHistory.eventId !== session.eventId || snapshot.completedRoundHistory.sessionId !== session.sessionId || snapshot.completedRoundHistory.definitionSnapshotId !== session.definitionSnapshotId || !safeInteger(snapshot.completedRoundHistory.roundCount) || !Array.isArray(snapshot.completedRoundHistory.rounds)
+    || !Array.isArray(snapshot.focusPools) || !Array.isArray(snapshot.pressureSystems) || !Array.isArray(snapshot.activeHazards)
+    || !Array.isArray(snapshot.pendingStationBenefitIds) || !Array.isArray(snapshot.unconsumedRiskBidBenefitIds) || !Array.isArray(snapshot.temporaryFocusPenaltyIds)
+    || !Array.isArray(snapshot.roundOrderRestrictions) || !Array.isArray(snapshot.hazardSuppressions) || !Array.isArray(snapshot.temporaryConsequenceIds)) return false;
+  const domainSnapshot = snapshot.lifecycleState.startsWith("completed-") ? { ...snapshot, lifecycleState: "active" } : snapshot;
+  if (validateVoyageEncounterCloseoutSnapshot(domainSnapshot).valid !== true) return false;
+  return snapshot.completedRoundHistory.rounds.every((round) => exactKeys(round, COMPLETED_ROUND_FIELDS) && nonBlank(round.roundId) && safeInteger(round.roundNumber) && ["critical-round-failure", "round-failure", "round-success", "critical-round-success"].includes(round.roundResult))
+     && snapshot.completedRoundHistory.roundCount === snapshot.completedRoundHistory.rounds.length
+     && snapshot.focusPools.every((pool) => exactKeys(pool, FOCUS_FIELDS) && nonBlank(pool.operatorId) && nonBlank(pool.stationId) && safeInteger(pool.current) && safeInteger(pool.capacity))
+    && snapshot.pressureSystems.every((system) => exactKeys(system, PRESSURE_SYSTEM_FIELDS) && VOYAGE_PRESSURE_SYSTEM_IDS.includes(system.pressureSystemId) && safeInteger(system.value) && safeInteger(system.capacity))
+    && snapshot.activeHazards.every((hazard) => validateVoyageHazardRecord(hazard, { mode: "snapshot", expectedEncounterId: session.eventId }).valid)
+    && snapshot.pendingStationBenefitIds.every(nonBlank) && snapshot.unconsumedRiskBidBenefitIds.every(nonBlank) && snapshot.temporaryFocusPenaltyIds.every(nonBlank)
+    && snapshot.roundOrderRestrictions.every((restriction) => exactKeys(restriction, RESTRICTION_FIELDS) && nonBlank(restriction.restrictionId) && nonBlank(restriction.persistence))
+    && snapshot.hazardSuppressions.every((suppression) => exactKeys(suppression, SUPPRESSION_FIELDS) && nonBlank(suppression.suppressionId) && nonBlank(suppression.hazardId))
+    && snapshot.temporaryConsequenceIds.every(nonBlank)
+    && snapshot.activeHazards.length === 0 && snapshot.hazardSuppressions.length === 0 && snapshot.pendingStationBenefitIds.length === 0
+    && snapshot.unconsumedRiskBidBenefitIds.length === 0 && snapshot.temporaryFocusPenaltyIds.length === 0 && snapshot.temporaryConsequenceIds.length === 0;
+}
+function exactReservationReceipt(receipt, closeout = null, session = null) {
+  if (!exactKeys(receipt, RESERVATION_RECEIPT_FIELDS) || receipt.kind !== "voyage.m11-closeout-session-reserved" || ![receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank) || !safeInteger(receipt.expectedEncounterRevision) || !Array.isArray(receipt.pressureBreachSources)) return false;
+  if (receipt.reservationId !== `arcflight-closeout-reservation:${JSON.stringify([receipt.applicationId])}`) return false;
+  if (session && (receipt.eventId !== session.eventId || receipt.sessionId !== session.sessionId || receipt.definitionSnapshotId !== session.definitionSnapshotId || receipt.shipId !== session.shipId || !validPressureSources(receipt.pressureBreachSources, session))) return false;
+  return !closeout || (receipt.applicationId === closeout.applicationId && receipt.closeoutId === closeout.closeoutId && receipt.expectedEncounterRevision === closeout.expectedEncounterRevision);
+}
+function exactCommitReceipt(receipt, closeout = null, session = null) {
+  if (!exactKeys(receipt, COMMIT_RECEIPT_FIELDS) || receipt.kind !== "voyage.m11-closeout-session-committed" || ![receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank) || !safeInteger(receipt.previousEncounterRevision) || !safeInteger(receipt.encounterRevision) || !isPlainObject(receipt.completedCloseoutSnapshot) || !Array.isArray(receipt.encounterEvents) || !Array.isArray(receipt.pressureBreachSources)) return false;
+  if (session && (!validCompletedSnapshotShape(receipt.completedCloseoutSnapshot, session) || receipt.encounterRevision !== receipt.completedCloseoutSnapshot.encounterRevision || !validPressureSources(receipt.pressureBreachSources, session) || receipt.encounterEvents.length === 0 || receipt.encounterEvents.some((event) => !validM10CommitEvent(event, session, receipt.applicationId, receipt.closeoutId)) || !receipt.encounterEvents.some((event) => event.type === "voyage.closeout-applied"))) return false;
+  if (closeout?.sessionReservationReceipt && !equal(receipt.pressureBreachSources, closeout.sessionReservationReceipt.pressureBreachSources)) return false;
+  if (receipt.encounterEvents.length > 0 && receipt.encounterEvents.at(-1)?.type !== "voyage.closeout-applied") return false;
+  return !closeout || (receipt.applicationId === closeout.applicationId && receipt.closeoutId === closeout.closeoutId && receipt.reservationId === closeout.reservationId && receipt.previousEncounterRevision === closeout.expectedEncounterRevision);
+}
+function closeoutLifecycleAllowed(session, commandKind) {
+  if (!session) return false;
+  if (commandKind === "closeout-review") return session.sessionState === "event-closeout-review" && session.closeout.status === "review-required";
+  if (session.sessionState !== "persistent-application") return false;
+  return commandKind === "closeout-prepare" ? session.closeout.status === "accepted-for-application"
+    : commandKind === "closeout-reserve" ? session.closeout.status === "prepared-awaiting-session"
+      : commandKind === "closeout-ship-apply" ? session.closeout.status === "ship-applied-awaiting-session"
+        : commandKind === "closeout-session-commit" ? ["ship-applied-awaiting-session", "commit-pending"].includes(session.closeout.status)
+          : false;
+}
+function m10Function(context, key, fallback) {
+  try { return typeof context?.[key] === "function" ? context[key] : fallback; } catch { return null; }
 }
 function lifecycleMappingValid(session) {
   const mappings = {
@@ -232,6 +438,10 @@ function validRuntimeEvent(event, session, index) {
     || event.definitionSnapshotId !== session.definitionSnapshotId || event.shipId !== session.shipId || !safeInteger(event.previousRevision) || !safeInteger(event.revision)
     || event.revision !== event.previousRevision + 1 || event.revision > session.revision) return false;
   if (event.type === "voyage.m11-recovery-rebuilt") return nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId);
+  if (event.type === "voyage.m11-closeout-review-accepted") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
+  if (event.type === "voyage.m11-closeout-session-reserved") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
+  if (event.type === "voyage.m11-closeout-session-commit-pending") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
+  if (event.type === "voyage.m11-closeout-session-committed") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   return false;
 }
 function validCheckpoint(checkpoint, session, events, index) {
@@ -239,7 +449,7 @@ function validCheckpoint(checkpoint, session, events, index) {
     || checkpoint.sessionId !== session.sessionId || !safeInteger(checkpoint.revision) || !safeInteger(checkpoint.encounterRevision) || !safeInteger(checkpoint.eventCount)
     || checkpoint.revision > session.revision || checkpoint.eventCount > events.length || checkpoint.eventCount < 0 || checkpoint.encounterRevision < 0 || !safeInteger(checkpoint.authorityEpoch)
     || checkpoint.encounterRevision !== checkpoint.encounterState?.revision || !SESSION_STATES.has(checkpoint.sessionState) || typeof checkpoint.invalidated !== "boolean"
-    || !isPlainObject(checkpoint.encounterState) || !validEncounterState(checkpoint.encounterState, session) || !validCloseout(checkpoint.closeout)
+    || !isPlainObject(checkpoint.encounterState) || !validEncounterState(checkpoint.encounterState, session) || !validCloseout(checkpoint.closeout, session)
     || checkpoint.authorityEpoch > session.authorityEpoch || checkpoint.checkpointId !== `arcflight-voyage-checkpoint:${JSON.stringify([session.sessionId, checkpoint.kind, checkpoint.revision])}`) return false;
   return lifecycleMappingValid({ ...session, sessionState: checkpoint.sessionState, encounterState: checkpoint.encounterState });
 }
@@ -314,16 +524,61 @@ function validStoredResponse(response, record, sessionId, authorityEpoch) {
     && SESSION_STATES.has(response.status) && response.projection === null && safeInteger(response.revision) && response.revision === record.resultRevision && safeInteger(response.authorityEpoch) && response.authorityEpoch <= authorityEpoch
     && response.errors.length === 0 && response.warnings.length === 0;
 }
+function validCloseoutAudit(audit, session, record, event, previousState, nextState, historicalEpoch = null, expectedKind = "closeout-review-accepted", expectedEventType = "voyage.m11-closeout-review-accepted") {
+  return exactKeys(audit, AUDIT_FIELDS) && audit.kind === expectedKind
+    && audit.auditId === auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
+    && audit.sessionId === session.sessionId && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId
+    && safeInteger(audit.authorityEpoch) && (historicalEpoch === null ? audit.authorityEpoch === session.authorityEpoch : audit.authorityEpoch === historicalEpoch && historicalEpoch <= session.authorityEpoch) && safeInteger(audit.previousRevision)
+    && safeInteger(audit.revision) && audit.previousRevision + 1 === audit.revision && audit.revision === record.resultRevision
+    && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, CLOSEOUT_AUDIT_DETAILS_FIELDS)
+    && audit.details.applicationId === session.closeout.applicationId && audit.details.closeoutId === session.closeout.closeoutId
+    && audit.details.previousSessionState === previousState && audit.details.nextSessionState === nextState
+    && event?.type === expectedEventType && event.revision === audit.revision && event.previousRevision === audit.previousRevision;
+}
+function validCloseoutRecord(record, session, audit, event) {
+  if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || record.projectionKind !== "gm" || typeof record.fingerprint !== "string" || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
+  const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
+  const tuple = parsed.value;
+  const expectedPayloadKeys = record.commandKind === "closeout-review" ? ["confirmed", "previewRequest", "suppliedPreview"] : [];
+  if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm" || !safeInteger(tuple[3]) || !safeInteger(tuple[4]) || tuple[3] > session.authorityEpoch
+    || tuple[5] !== record.commandKind || !exactKeys(tuple[6], expectedPayloadKeys)) return false;
+  if (!["closeout-prepare", "closeout-ship-apply"].includes(record.commandKind) && tuple[4] + 1 !== record.resultRevision) return false;
+  if (record.commandKind === "closeout-review" && record.resultKind === "closeout-review-accepted") {
+    return session.closeout.status === "accepted-for-application" || session.closeout.status === "prepared-awaiting-session" || session.closeout.status === "ship-applied-awaiting-session" || session.closeout.status === "commit-pending" || session.closeout.status === "committed"
+      ? validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event) && validCloseoutAudit(audit, session, record, event, "event-closeout-review", "persistent-application", tuple[3])
+      : false;
+  }
+  if ((record.commandKind === "closeout-reserve" && record.resultKind === "closeout-session-reserved") || (record.commandKind === "closeout-session-commit" && ["closeout-session-commit-pending", "closeout-session-committed"].includes(record.resultKind))) {
+    const eventType = record.resultKind === "closeout-session-commit-pending" ? "voyage.m11-closeout-session-commit-pending" : record.resultKind === "closeout-session-reserved" ? "voyage.m11-closeout-session-reserved" : "voyage.m11-closeout-session-committed";
+    const auditKind = record.resultKind === "closeout-session-commit-pending" ? "closeout-session-commit-pending" : record.resultKind === "closeout-session-reserved" ? "closeout-session-reserved" : "closeout-session-committed";
+    const nextState = record.resultKind === "closeout-session-committed" ? "completed" : "persistent-application";
+    return validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event)
+      && event?.type === eventType && event.revision === record.resultRevision && event.previousRevision === record.resultRevision - 1
+      && validCloseoutAudit(audit, session, record, event, audit.details?.previousSessionState, nextState, tuple[3], auditKind, eventType)
+      && audit.details.applicationId === session.closeout.applicationId && audit.details.closeoutId === session.closeout.closeoutId;
+  }
+  if (record.commandKind === "closeout-prepare" && record.resultKind === "prepared-awaiting-session") {
+    return tuple[4] === record.resultRevision && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && Array.isArray(record.response.events) && record.response.events.length === 0
+      && ["prepared-awaiting-session", "ship-applied-awaiting-session", "commit-pending", "committed"].includes(session.closeout.status);
+  }
+  if (record.commandKind === "closeout-ship-apply" && record.resultKind === "closeout-ship-checkpoint-verified") {
+    const valid = tuple[4] === record.resultRevision && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
+      && Array.isArray(record.response.events) && record.response.events.length === 0
+      && ["ship-applied-awaiting-session", "commit-pending", "committed"].includes(session.closeout.status);
+    return valid;
+  }
+  return false;
+}
 function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = false, recoveryEnvelope: recoveryEnvelopeMode = false } = {}, replayContext = {}) {
   try {
     if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentIdValue
       || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId].every(nonBlank) || !safeInteger(session.revision) || !SESSION_STATES.has(session.sessionState)
       || (!nonBlank(session.activeGmUserId) && !(allowBootstrapNull && session.activeGmUserId === null)) || !safeInteger(session.authorityEpoch)
       || !validEncounterState(session.encounterState, session) || !lifecycleMappingValid(session) || !Array.isArray(session.events) || !Array.isArray(session.checkpoints)
-      || !Array.isArray(session.processedRequests) || !Array.isArray(session.auditHistory) || !validCloseout(session.closeout) || !exactKeys(session.recovery, RECOVERY_FIELDS)
+       || !Array.isArray(session.processedRequests) || !Array.isArray(session.auditHistory) || !validCloseout(session.closeout, session) || !validStoredCloseoutPlan(session.closeout, session) || !exactKeys(session.recovery, RECOVERY_FIELDS)
       || !new Set(["none", "required", "resolved"]).has(session.recovery.status)) return false;
     const immutableEnvelope = recoveryEnvelope(session, documentIdValue);
-    if (!immutableEnvelope || !recoveryStoredRecordsValid(immutableEnvelope, replayContext, session.recovery)) return false;
+    if (!immutableEnvelope || !recoveryStoredRecordsValid(immutableEnvelope, replayContext, session.recovery, session)) return false;
     if (session.revision === 0) {
       if (session.sessionState !== "setup" || session.encounterState.revision !== 0 || session.encounterState.lifecycleState !== "draft" || session.encounterState.phase !== null
        || session.events.length !== 0 || session.recovery.status !== "none" || session.closeout.status !== "none") return false;
@@ -333,14 +588,14 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     if (!recoveryCheckpointJournalValid(session)) return false;
     if (events.some((event) => !(typeof event?.type === "string" && event.type.startsWith("voyage.m11-")))) {
       const latestCheckpoint = session.checkpoints.at(-1);
-      if (!latestCheckpoint || !replayRecoveryEvidence(session, latestCheckpoint, replayContext)) return false;
+        if (!latestCheckpoint || !replayRecoveryEvidence(session, latestCheckpoint, replayContext)) return false;
     }
     if (session.processedRequests.length < 1 || !validCreationRecord(session.processedRequests[0], session, session.processedRequests[0]?.principalUserId)) return false;
     const requestIds = new Set([session.processedRequests[0].requestId]);
     let owner = session.processedRequests[0].principalUserId, expectedAuthorityEpoch = 0, transferCount = 0, recoveryCount = 0, bootstrapRecoveryCount = 0, lastRecoveryRevision = 0, latestRecoveryEvidence = null;
     for (let index = 1; index < session.processedRequests.length; index += 1) {
       const record = session.processedRequests[index]; if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || requestIds.has(record.requestId)) return false;
-      const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && (record.commandKind === TRANSFER_COMMAND_KIND ? entry.kind.startsWith("control-transfer") : entry.kind === "recovery-rebuilt"));
+      const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && (record.commandKind === TRANSFER_COMMAND_KIND ? entry.kind.startsWith("control-transfer") : record.commandKind === RECOVERY_COMMAND_KIND ? entry.kind === "recovery-rebuilt" : record.commandKind === "closeout-review" ? entry.kind === "closeout-review-accepted" : record.commandKind === "closeout-reserve" ? entry.kind === "closeout-session-reserved" : record.commandKind === "closeout-session-commit" ? ["closeout-session-commit-pending", "closeout-session-committed"].includes(entry.kind) : false));
       if (record.commandKind === TRANSFER_COMMAND_KIND) {
         const tuple = parseStoredFingerprint(record.fingerprint); if (!audit || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || !validTransferRecord(record, session, expectedAuthorityEpoch, audit, owner)) return false;
         owner = tuple.value[6].targetUserId; expectedAuthorityEpoch += 1; transferCount += 1;
@@ -363,12 +618,21 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
         lastRecoveryRevision = record.resultRevision;
         recoveryCount += 1;
         latestRecoveryEvidence = { record, event, audit, sourceCheckpoint, recoveryCheckpoint, replayedState };
+      } else if (record.commandKind === "closeout-prepare") {
+        if (!validCloseoutRecord(record, session, null, null)) return false;
+      } else if (record.commandKind === "closeout-ship-apply") {
+        if (!validCloseoutRecord(record, session, null, null)) return false;
+      } else if (record.commandKind === "closeout-review" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-session-commit") {
+        const eventType = record.commandKind === "closeout-review" ? "voyage.m11-closeout-review-accepted" : record.commandKind === "closeout-reserve" ? "voyage.m11-closeout-session-reserved" : record.resultKind === "closeout-session-commit-pending" ? "voyage.m11-closeout-session-commit-pending" : "voyage.m11-closeout-session-committed";
+        const event = session.events.find((entry) => entry?.type === eventType && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        if (!audit || !event || !validCloseoutRecord(record, session, audit, event)) return false;
+        if (session.events.indexOf(event) !== session.events.length - 1 && session.events.some((entry, eventIndex) => eventIndex > session.events.indexOf(event) && entry.type === eventType)) return false;
       } else return false;
       requestIds.add(record.requestId);
     }
     const storedBootstrapRecoveryCount = session.auditHistory.filter((entry) => entry?.kind === "recovery-control-transfer").length;
     const storedTransferCount = session.auditHistory.filter((entry) => entry?.kind === "control-transfer" || entry?.kind === "control-transfer-bootstrap").length;
-    if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
+    if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount + session.processedRequests.filter((record) => record.commandKind === "closeout-review" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-session-commit").length || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
     if (recoveryCount === 0) {
       if (session.recovery.status !== "none" || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
     } else if (!latestRecoveryEvidence || !validResolvedRecovery(session.recovery, latestRecoveryEvidence.event, latestRecoveryEvidence.audit, latestRecoveryEvidence.sourceCheckpoint)) return false;
@@ -604,6 +868,294 @@ function ownershipForGms(users, levels) {
 }
 function generatedId(context) { try { const generator = context?.createDocumentId ?? globalThis.foundry?.utils?.randomID; const id = typeof generator === "function" ? generator() : globalThis.crypto?.randomUUID?.(); return nonBlank(id) ? id : null; } catch { return null; } }
 
+function closeoutEvent(type, session, previousRevision, revision) {
+  return { type, sessionId: session.sessionId, eventId: session.eventId, definitionSnapshotId: session.definitionSnapshotId, shipId: session.shipId, sourceCheckpointId: null, sourceCheckpointRevision: null, recoveryAuthorityUserId: null, previousRevision, revision };
+}
+function closeoutAudit(session, requestId, actorUserId, authorityEpoch, previousRevision, revision, occurredAt, kind, details) {
+  return { auditId: auditId(session.sessionId, session.auditHistory.length, kind), kind, sessionId: session.sessionId, requestId, actorUserId, authorityEpoch, previousRevision, revision, occurredAt, details };
+}
+function closeoutResponse(candidate, requestId, event = null) {
+  const response = success(candidate, requestId);
+  response.events = event ? [capture(event).value] : [];
+  return response;
+}
+function m10Failure(result) { return isPlainObject(result) && Array.isArray(result.errors) && result.errors.length > 0; }
+function validM10OperationSuccess(result, statuses, session, applicationId, closeoutId) {
+  return isPlainObject(result) && exactKeys(result, ["ok", "status", "applicationId", "closeoutId", "shipId", "revision", "events", "errors", "warnings"])
+    && result.ok === true && statuses.includes(result.status) && result.applicationId === applicationId && result.closeoutId === closeoutId && result.shipId === session.shipId
+    && safeInteger(result.revision) && Array.isArray(result.events) && Array.isArray(result.errors) && result.errors.length === 0 && Array.isArray(result.warnings);
+}
+async function callM10(api, request) { try { if (typeof api !== "function") return null; const result = await api(request); const captured = capture(result); return captured.ok ? captured.value : null; } catch { return null; } }
+function validShipCheckpointResult(result, session, receipt) {
+  return isPlainObject(result) && exactKeys(result, ["ok", "readyForSessionCommit", "applicationId", "closeoutId", "shipId", "revision", "errors", "warnings"])
+    && result.ok === true && result.readyForSessionCommit === true && result.applicationId === receipt.applicationId && result.closeoutId === receipt.closeoutId && result.shipId === receipt.shipId
+    && safeInteger(result.revision) && result.revision === session.closeout.expectedShipRevision + 1 && Array.isArray(result.errors) && result.errors.length === 0 && Array.isArray(result.warnings) && result.warnings.length === 0;
+}
+function closeoutReviewRequest(session, auth, payload) {
+  if (!isPlainObject(payload) || !exactKeys(payload, ["confirmed", "previewRequest", "suppliedPreview"]) || typeof payload.confirmed !== "boolean" || !isPlainObject(payload.previewRequest) || !isPlainObject(payload.suppliedPreview)) return null;
+  return { kind: "m10-closeout-review", sessionId: session.sessionId, gmUserId: auth.authenticatedUserId, confirmed: payload.confirmed, previewRequest: payload.previewRequest, suppliedPreview: payload.suppliedPreview };
+}
+function closeoutPlanEvidence(session) {
+  const plan = session.closeout?.acceptedApplicationPlan;
+  return isPlainObject(plan) && exactKeys(plan, ["previewRequest", "reviewRequest", "applicationPlan"]) && isPlainObject(plan.previewRequest) && isPlainObject(plan.reviewRequest) && isPlainObject(plan.applicationPlan) ? plan : null;
+}
+function validApplicationPlan(plan, session, auth, closeoutId) {
+  const fields = ["schemaVersion", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "expectedEncounterRevision", "expectedShipRevision", "gmUserId", "persistentProposals", "temporaryResetPlan", "expectedPreview"];
+  return exactKeys(plan, fields) && plan.schemaVersion === 1 && plan.applicationId === `arcflight-closeout-application:${JSON.stringify([closeoutId])}` && plan.closeoutId === closeoutId && plan.eventId === session.eventId && plan.sessionId === session.sessionId && plan.definitionSnapshotId === session.definitionSnapshotId && plan.shipId === session.shipId && safeInteger(plan.expectedEncounterRevision) && plan.expectedEncounterRevision === session.encounterState.revision && safeInteger(plan.expectedShipRevision) && plan.gmUserId === auth.authenticatedUserId && Array.isArray(plan.persistentProposals) && isPlainObject(plan.temporaryResetPlan) && isPlainObject(plan.expectedPreview);
+}
+function validCloseoutReviewResult(result) {
+  return isPlainObject(result) && exactKeys(result, ["ok", "readyForEmergencyResponse", "readyForControlledApplication", "closeoutId", "emergencyResponseHandoff", "applicationPlan", "errors", "warnings"])
+    && result.ok === true && result.readyForEmergencyResponse === false && result.readyForControlledApplication === true && nonBlank(result.closeoutId)
+    && result.emergencyResponseHandoff === null && Array.isArray(result.errors) && result.errors.length === 0 && Array.isArray(result.warnings);
+}
+function closeoutResponseForM10(result, requestId, session) {
+  if (!isPlainObject(result)) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId, sessionId: session.sessionId });
+  const out = success(session, requestId);
+  out.status = SESSION_STATES.has(result.status) ? result.status : session.sessionState;
+  out.events = Array.isArray(result.events) ? capture(result.events).value ?? [] : [];
+  out.errors = Array.isArray(result.errors) ? capture(result.errors).value ?? [] : [];
+  out.warnings = Array.isArray(result.warnings) ? capture(result.warnings).value ?? [] : [];
+  return out;
+}
+function sessionWriteClassification(document, sessionId, documentIdValue, candidate, prior, requestId, context, options = {}) {
+  try {
+    const resolved = resolveSessionDocument(sessionId, context);
+    if (resolved.error || resolved.match.documentId !== documentIdValue) return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId });
+    const reread = resolved.match.session;
+    if (equal(reread, candidate) && pristineSession(reread, documentIdValue, { replayContext: context })) {
+      if (options.successResponse) {
+        const isolated = capture(options.successResponse); if (!isolated.ok) return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId });
+        return isolated.value;
+      }
+      return success(reread, requestId);
+    }
+    if (equal(reread, prior)) return failure([diagnostic(options.operationVerified ? "m11-recovery-required" : "m11-session-write-failed", options.operationVerified ? "recovery" : VOYAGE_SESSION_PATH)], { requestId, sessionId });
+    return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId });
+  } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId }); }
+}
+function closeoutBoundary(value, auth, match, context, identities) {
+  const current = authority(context, { requireConnection: true });
+  if (current.error || current.authenticatedUserId !== auth.authenticatedUserId || current.authenticatedConnectionId !== auth.authenticatedConnectionId || current.activeGmUserId !== auth.activeGmUserId) return { error: current.error ?? diagnostic("m11-active-gm-required", "transport.connection") };
+  const resolved = resolveSessionDocument(value.sessionId, context);
+  if (resolved.error) return { error: resolved.error };
+  if (resolved.match.documentId !== match.documentId || resolved.match.session.revision !== value.expectedRevision || resolved.match.session.authorityEpoch !== value.authorityEpoch || resolved.match.session.activeGmUserId !== current.activeGmUserId || !pristineSession(resolved.match.session, resolved.match.documentId, { replayContext: context })) return { error: diagnostic("m11-recovery-required", "recovery") };
+  return { match: resolved.match, auth: current };
+}
+async function dispatchCloseoutCommand(value, identities, auth, match, context, coordinated = false, trustedWitness = null) {
+  const commandKind = value.commandKind;
+  if (!["closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"].includes(commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+  if (!coordinated) {
+    const gm = authority(context, { requireConnection: true }); if (gm.error) return failure([gm.error], identities);
+    const coordinator = transferCoordinator(context); if (coordinator.error) return failure([coordinator.error], identities);
+    const descriptor = coordinatorDescriptor(value, match.documentId, gm); if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+    return runExclusiveTransfer(coordinator, descriptor, (witness) => withTransferLock(value.sessionId, async () => {
+      const locked = authority(context, { requireConnection: true }); if (locked.error) return failure([locked.error], identities);
+      if (locked.authenticatedUserId !== descriptor.authenticatedUserId || locked.authenticatedConnectionId !== descriptor.connectionId || locked.activeGmUserId !== descriptor.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.connection")], identities);
+      const latest = resolveSessionDocument(value.sessionId, context); if (latest.error) return failure([latest.error], identities);
+      if (latest.match.documentId !== descriptor.sessionDocumentId || !pristineSession(latest.match.session, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+      return dispatchCloseoutCommand(value, identities, locked, latest.match, context, true, witness);
+    }), identities, { nonWinnerCode: "m11-control-transfer-required", nonWinnerPath: "authorityEpoch" });
+  }
+  if (match.session.activeGmUserId !== auth.activeGmUserId) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+  const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, commandKind, value.payload);
+  const replay = replayOrConflict(match.session.processedRequests, value.requestId, auth.authenticatedUserId, "gm", requestFingerprint, identities); if (replay) return replay;
+  if (value.authorityEpoch !== match.session.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+  if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+  // Closeout review carries untrusted M10 preview evidence for canonical
+  // re-analysis; the owning M10 validator, not this recursive authority scan,
+  // decides whether that domain evidence is acceptable. Other commands have
+  // no caller-authored domain payload and retain the hostile authority scan.
+  if (commandKind !== "closeout-review" && containsForbiddenPayloadAuthority(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+  const expectedPayloadKeys = commandKind === "closeout-review" ? ["confirmed", "previewRequest", "suppliedPreview"] : [];
+  if (!exactKeys(value.payload, expectedPayloadKeys)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+  if (commandKind === "closeout-ship-apply") {
+    const boundary = closeoutBoundary(value, auth, match, context, identities); if (boundary.error) return failure([boundary.error], identities); match = boundary.match; auth = boundary.auth;
+    if (!closeoutLifecycleAllowed(match.session, commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const plan = closeoutPlanEvidence(match.session); if (!plan || !nonBlank(match.session.closeout.applicationId) || !nonBlank(match.session.closeout.reservationId)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const api = m10Function(context, "verifyVoyageEncounterCloseoutShipCheckpoint", verifyVoyageEncounterCloseoutShipCheckpoint); if (!api) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const result = await callM10(api, { kind: "m10-verify-closeout-ship-checkpoint", applicationId: match.session.closeout.applicationId, reservationId: match.session.closeout.reservationId });
+    if (!validShipCheckpointResult(result, match.session, match.session.closeout.sessionReservationReceipt)) return m10Failure(result) ? failure(result.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    return persistShipCheckpointRecord(match, value, auth, context, result);
+  }
+  if (commandKind === "closeout-review") {
+    const boundary = closeoutBoundary(value, auth, match, context, identities); if (boundary.error) return failure([boundary.error], identities); match = boundary.match; auth = boundary.auth;
+    if (!closeoutLifecycleAllowed(match.session, commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const reviewRequest = closeoutReviewRequest(match.session, auth, value.payload); if (!reviewRequest) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    const api = m10Function(context, "analyzeVoyageEncounterCloseoutReview", analyzeVoyageEncounterCloseoutReview); if (!api) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const review = await callM10(api, reviewRequest);
+    if (!validCloseoutReviewResult(review) || !isPlainObject(review.applicationPlan) || !validApplicationPlan(review.applicationPlan, match.session, auth, review.closeoutId)) return m10Failure(review) ? failure(review.errors, identities) : failure([diagnostic("m11-closeout-review-not-accepted", "closeout")], identities);
+    const reviewedBoundary = closeoutBoundary(value, auth, match, context, identities); if (reviewedBoundary.error) return failure([reviewedBoundary.error], identities); match = reviewedBoundary.match; auth = reviewedBoundary.auth;
+    const plan = capture({ previewRequest: reviewRequest.previewRequest, reviewRequest, applicationPlan: review.applicationPlan }); if (!plan.ok) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const candidateCapture = capture(match.session); if (!candidateCapture.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const candidate = candidateCapture.value, previousRevision = candidate.revision, revision = previousRevision + 1;
+    candidate.revision = revision; candidate.sessionState = "persistent-application";
+    candidate.closeout = { status: "accepted-for-application", applicationId: review.applicationPlan.applicationId, closeoutId: review.closeoutId, acceptedApplicationPlan: plan.value, reservationId: null, expectedEncounterRevision: review.applicationPlan.expectedEncounterRevision, expectedShipRevision: review.applicationPlan.expectedShipRevision, sessionReservationReceipt: null, sessionCommitReceipt: null };
+    const event = closeoutEvent("voyage.m11-closeout-review-accepted", candidate, previousRevision, revision);
+    if (!trustedWitness?.occurredAt) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+    const audit = closeoutAudit(candidate, value.requestId, auth.authenticatedUserId, candidate.authorityEpoch, previousRevision, revision, trustedWitness.occurredAt, "closeout-review-accepted", { applicationId: candidate.closeout.applicationId, closeoutId: candidate.closeout.closeoutId, previousSessionState: "event-closeout-review", nextSessionState: "persistent-application" });
+    candidate.events.push(event); candidate.auditHistory.push(audit);
+    candidate.checkpoints.push({ checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([candidate.sessionId, "before-persistent-application", revision])}`, kind: "before-persistent-application", sessionId: candidate.sessionId, revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length, sessionState: candidate.sessionState, encounterState: capture(candidate.encounterState).value, closeout: capture(candidate.closeout).value, authorityEpoch: candidate.authorityEpoch, invalidated: false });
+    const response = closeoutResponse(candidate, value.requestId, event);
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: requestFingerprint, commandKind, resultKind: "closeout-review-accepted", resultRevision: revision, response });
+    if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, match.session, value.requestId, context); }
+    return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, match.session, value.requestId, context, { successResponse: response });
+  }
+  if (commandKind === "closeout-prepare") {
+    const boundary = closeoutBoundary(value, auth, match, context, identities); if (boundary.error) return failure([boundary.error], identities); match = boundary.match; auth = boundary.auth;
+    if (!closeoutLifecycleAllowed(match.session, commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const plan = closeoutPlanEvidence(match.session); if (!plan) return failure([diagnostic("m11-closeout-review-not-accepted", "closeout")], identities);
+    const api = m10Function(context, "persistVoyageEncounterApprovedCloseout", persistVoyageEncounterApprovedCloseout); if (!api) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const result = await callM10(api, { kind: "m10-persist-approved-closeout", previewRequest: plan.previewRequest, reviewRequest: plan.reviewRequest, applicationPlan: plan.applicationPlan });
+    if (!validM10OperationSuccess(result, ["prepared-awaiting-session", "already-prepared-awaiting-session"], match.session, match.session.closeout.applicationId, match.session.closeout.closeoutId)) return m10Failure(result) ? failure(result.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    return persistPrepareRecord(match, value, auth, context, result);
+  }
+  if (commandKind === "closeout-reserve") {
+    const boundary = closeoutBoundary(value, auth, match, context, identities); if (boundary.error) return failure([boundary.error], identities); match = boundary.match; auth = boundary.auth;
+    if (!closeoutLifecycleAllowed(match.session, commandKind)) return failure([diagnostic("m11-reservation-not-ready", "closeout")], identities);
+    const receipt = buildReservationReceipt(match.session, context); if (!receipt) return failure([diagnostic("m11-reservation-not-ready", "closeout")], identities);
+    const api = m10Function(context, "continueVoyageEncounterCloseoutReservation", continueVoyageEncounterCloseoutReservation); if (!api) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const result = await callM10(api, { kind: "m10-continue-closeout-reservation", applicationId: match.session.closeout.applicationId, receipt });
+    if (!validM10OperationSuccess(result, ["ship-applied-awaiting-session", "already-ship-applied-awaiting-session"], match.session, match.session.closeout.applicationId, match.session.closeout.closeoutId)
+      || result.revision !== match.session.closeout.expectedShipRevision + 1) return m10Failure(result) ? failure(result.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const checkpointApi = m10Function(context, "verifyVoyageEncounterCloseoutShipCheckpoint", verifyVoyageEncounterCloseoutShipCheckpoint); if (!checkpointApi) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const checkpoint = await callM10(checkpointApi, { kind: "m10-verify-closeout-ship-checkpoint", applicationId: receipt.applicationId, reservationId: receipt.reservationId });
+    if (!validShipCheckpointResult(checkpoint, match.session, receipt)) return m10Failure(checkpoint) ? failure(checkpoint.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    return persistCloseoutReceiptState(match, value, auth, context, result, receipt, "ship-applied-awaiting-session", "voyage.m11-closeout-session-reserved", false, trustedWitness);
+  }
+  if (commandKind === "closeout-session-commit") {
+    const boundary = closeoutBoundary(value, auth, match, context, identities); if (boundary.error) return failure([boundary.error], identities); match = boundary.match; auth = boundary.auth;
+    if (!closeoutLifecycleAllowed(match.session, commandKind) || !exactReservationReceipt(match.session.closeout.sessionReservationReceipt, match.session.closeout, match.session)) return failure([diagnostic("m11-commit-not-ready", "closeout")], identities);
+    const receipt = match.session.closeout.status === "commit-pending" ? match.session.closeout.sessionCommitReceipt : await resolveCommitReceipt(match.session, context); if (!receipt || !exactCommitReceipt(receipt, match.session.closeout, match.session)) return failure([diagnostic("m11-m10-handoff-invalid", "receipt")], identities);
+    const checkpointApi = m10Function(context, "verifyVoyageEncounterCloseoutShipCheckpoint", verifyVoyageEncounterCloseoutShipCheckpoint); if (!checkpointApi) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const checkpoint = await callM10(checkpointApi, { kind: "m10-verify-closeout-ship-checkpoint", applicationId: receipt.applicationId, reservationId: receipt.reservationId });
+    if (!validShipCheckpointResult(checkpoint, match.session, match.session.closeout.sessionReservationReceipt)) return m10Failure(checkpoint) ? failure(checkpoint.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const candidateResult = match.session.closeout.status === "commit-pending" ? success(match.session, value.requestId) : await persistCloseoutReceiptState(match, value, auth, context, null, receipt, "commit-pending", "voyage.m11-closeout-session-commit-pending", true, trustedWitness);
+    if (!candidateResult.ok) return candidateResult;
+    const finalizedAuth = authority(context, { requireConnection: true }); if (finalizedAuth.error || finalizedAuth.authenticatedUserId !== auth.authenticatedUserId || finalizedAuth.authenticatedConnectionId !== auth.authenticatedConnectionId || finalizedAuth.activeGmUserId !== auth.activeGmUserId) return failure([finalizedAuth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    const finalizedSession = resolveSessionDocument(value.sessionId, context); if (finalizedSession.error || finalizedSession.match.session.revision !== candidateResult.revision || finalizedSession.match.session.closeout.status !== "commit-pending") return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    const api = m10Function(context, "finalizeVoyageEncounterCloseoutReceipt", finalizeVoyageEncounterCloseoutReceipt); if (!api) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const finalized = await callM10(api, { kind: "m10-finalize-closeout-receipt", applicationId: match.session.closeout.applicationId, receipt });
+    if (!validM10OperationSuccess(finalized, ["committed", "already-committed"], match.session, receipt.applicationId, receipt.closeoutId)
+      || finalized.revision !== receipt.completedCloseoutSnapshot.shipRevision) return m10Failure(finalized) ? failure(finalized.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
+    const finalValue = match.session.closeout.status === "commit-pending" ? value : { ...value, expectedRevision: candidateResult.revision };
+    return finalizePendingCloseoutSession(match, finalValue, auth, context);
+  }
+  return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+}
+function buildReservationReceipt(session, context) {
+  try {
+    for (const key of ["buildVoyageEventSessionPressureBreachSources", "buildPressureBreachSources"]) {
+      if (typeof context?.[key] === "function") {
+        const builtSources = capture(context[key](capture(session).value));
+        if (!builtSources.ok || !Array.isArray(builtSources.value)) return null;
+        const plan = session.closeout.acceptedApplicationPlan?.applicationPlan;
+        if (!isPlainObject(plan)) return null;
+        const customReceipt = { kind: "voyage.m11-closeout-session-reserved", reservationId: `arcflight-closeout-reservation:${JSON.stringify([plan.applicationId])}`, activeGmUserId: session.activeGmUserId, applicationId: plan.applicationId, closeoutId: plan.closeoutId ?? session.closeout.closeoutId, eventId: session.eventId, sessionId: session.sessionId, definitionSnapshotId: session.definitionSnapshotId, shipId: session.shipId, expectedEncounterRevision: session.closeout.expectedEncounterRevision, pressureBreachSources: builtSources.value };
+        return exactReservationReceipt(customReceipt, session.closeout, session) ? customReceipt : null;
+      }
+    }
+    if (typeof context?.buildVoyageEventSessionReservationReceipt === "function") {
+      const built = capture(context.buildVoyageEventSessionReservationReceipt(capture(session).value)); if (built.ok && exactReservationReceipt(built.value, session.closeout, session)) return built.value;
+    }
+    const plan = session.closeout.acceptedApplicationPlan?.applicationPlan;
+    if (!isPlainObject(plan)) return null;
+    const pressureBreachSources = canonicalPressureSources(session);
+    if (!pressureBreachSources) return null;
+    const receipt = { kind: "voyage.m11-closeout-session-reserved", reservationId: `arcflight-closeout-reservation:${JSON.stringify([plan.applicationId])}`, activeGmUserId: session.activeGmUserId, applicationId: plan.applicationId, closeoutId: plan.closeoutId ?? session.closeout.closeoutId, eventId: session.eventId, sessionId: session.sessionId, definitionSnapshotId: session.definitionSnapshotId, shipId: session.shipId, expectedEncounterRevision: session.closeout.expectedEncounterRevision, pressureBreachSources };
+    return exactReservationReceipt(receipt, session.closeout, session) ? receipt : null;
+  } catch { return null; }
+}
+async function resolveCommitReceipt(session, context) {
+  try {
+    const resolver = m10Function(context, "resolveVoyageEncounterCloseoutCommitEvidence", null);
+    const reservation = session.closeout.sessionReservationReceipt;
+    if (!resolver || !exactReservationReceipt(reservation, session.closeout, session)) return null;
+    const request = { kind: "m10-resolve-closeout-commit-evidence", applicationId: reservation.applicationId, reservationId: reservation.reservationId, sessionId: session.sessionId, eventId: session.eventId, definitionSnapshotId: session.definitionSnapshotId, shipId: session.shipId, expectedEncounterRevision: reservation.expectedEncounterRevision };
+    if (!exactKeys(request, M10_COMMIT_EVIDENCE_REQUEST_FIELDS)) return null;
+    const result = await callM10(resolver, request);
+    if (!isPlainObject(result) || !exactKeys(result, M10_COMMIT_EVIDENCE_FIELDS) || result.ok !== true || ![result.applicationId, result.closeoutId, result.eventId, result.sessionId, result.definitionSnapshotId, result.shipId].every(nonBlank)
+      || result.applicationId !== reservation.applicationId || result.eventId !== session.eventId || result.sessionId !== session.sessionId || result.definitionSnapshotId !== session.definitionSnapshotId || result.shipId !== session.shipId
+      || !safeInteger(result.previousEncounterRevision) || result.previousEncounterRevision !== reservation.expectedEncounterRevision || !safeInteger(result.encounterRevision) || !validCompletedSnapshotShape(result.completedCloseoutSnapshot, session) || result.encounterRevision !== result.completedCloseoutSnapshot.encounterRevision
+      || !Array.isArray(result.encounterEvents) || result.encounterEvents.length === 0 || result.encounterEvents.some((event) => !validM10CommitEvent(event, session, result.applicationId, result.closeoutId))
+       || !validPressureSources(result.pressureBreachSources, session) || !equal(result.pressureBreachSources, reservation.pressureBreachSources) || result.errors.length !== 0 || result.warnings.length !== 0) return null;
+    if (!result.encounterEvents.some((event) => event.type === "voyage.closeout-applied")) return null;
+    return { kind: "voyage.m11-closeout-session-committed", reservationId: reservation.reservationId, activeGmUserId: session.activeGmUserId, applicationId: result.applicationId, closeoutId: result.closeoutId, eventId: result.eventId, sessionId: result.sessionId, definitionSnapshotId: result.definitionSnapshotId, shipId: result.shipId, previousEncounterRevision: result.previousEncounterRevision, encounterRevision: result.encounterRevision, completedCloseoutSnapshot: result.completedCloseoutSnapshot, encounterEvents: result.encounterEvents, pressureBreachSources: result.pressureBreachSources };
+  } catch { return null; }
+}
+async function persistPrepareRecord(match, value, auth, context, result) {
+  const boundary = closeoutBoundary(value, auth, match, context, { requestId: value.requestId, sessionId: value.sessionId }); if (boundary.error) return failure([boundary.error], { requestId: value.requestId, sessionId: value.sessionId }); match = boundary.match; auth = boundary.auth;
+  const prior = match.session, captured = capture(prior); if (!captured.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  const candidate = captured.value, response = success(candidate, value.requestId);
+  if (result.status === "prepared-awaiting-session" || result.status === "already-prepared-awaiting-session") candidate.closeout.status = "prepared-awaiting-session";
+  if (result.status === "ship-applied-awaiting-session" || result.status === "already-ship-applied-awaiting-session") candidate.closeout.status = "ship-applied-awaiting-session";
+  if (result.status === "committed" || result.status === "already-committed") candidate.closeout.status = "committed";
+  candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: "closeout-prepare", resultKind: "prepared-awaiting-session", resultRevision: candidate.revision, response });
+  if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { successResponse: response });
+}
+async function persistShipCheckpointRecord(match, value, auth, context, result) {
+  const boundary = closeoutBoundary(value, auth, match, context, { requestId: value.requestId, sessionId: value.sessionId }); if (boundary.error) return failure([boundary.error], { requestId: value.requestId, sessionId: value.sessionId }); match = boundary.match; auth = boundary.auth;
+  const prior = match.session, captured = capture(prior); if (!captured.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  const candidate = captured.value, response = closeoutResponseForM10(result, value.requestId, candidate);
+  if (!response.ok) return response;
+  candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: "closeout-ship-apply", resultKind: "closeout-ship-checkpoint-verified", resultRevision: candidate.revision, response });
+  if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context);
+}
+async function persistCloseoutReceiptState(match, value, auth, context, m10Result, receipt, status, eventType, commit = false, trustedWitness = null) {
+  const boundary = closeoutBoundary(value, auth, match, context, { requestId: value.requestId, sessionId: value.sessionId }); if (boundary.error) return failure([boundary.error], { requestId: value.requestId, sessionId: value.sessionId }); match = boundary.match; auth = boundary.auth;
+  const prior = match.session;
+  const captured = capture(prior); if (!captured.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  const candidate = captured.value, previousRevision = candidate.revision, revision = previousRevision + 1;
+  candidate.revision = revision; candidate.sessionState = status === "committed" ? "completed" : "persistent-application";
+  candidate.closeout.status = status;
+  if (status === "ship-applied-awaiting-session") { candidate.closeout.reservationId = receipt.reservationId; candidate.closeout.sessionReservationReceipt = capture(receipt).value; }
+  if (status === "committed" || status === "commit-pending") {
+    candidate.closeout.reservationId = receipt.reservationId; candidate.closeout.sessionCommitReceipt = capture(receipt).value;
+    if (status === "committed") try {
+      const rebuilt = typeof context?.buildVoyageEventSessionCompletedEncounterState === "function" ? capture(context.buildVoyageEventSessionCompletedEncounterState({ kind: "m10-build-completed-encounter-state", sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, priorEncounterState: capture(candidate.encounterState).value, completedCloseoutSnapshot: receipt.completedCloseoutSnapshot })) : { ok: false };
+      if (!rebuilt.ok || !isPlainObject(rebuilt.value)) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId });
+      candidate.encounterState = rebuilt.value;
+    } catch { return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  }
+  const event = closeoutEvent(eventType, candidate, previousRevision, revision);
+  candidate.events.push(event);
+  const auditKind = status === "committed" ? "closeout-session-committed" : status === "commit-pending" ? "closeout-session-commit-pending" : "closeout-session-reserved";
+  const details = { applicationId: candidate.closeout.applicationId, closeoutId: candidate.closeout.closeoutId, previousSessionState: prior.sessionState, nextSessionState: candidate.sessionState };
+  if (!trustedWitness?.occurredAt) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], { requestId: value.requestId, sessionId: value.sessionId });
+  const audit = closeoutAudit(candidate, value.requestId, auth.authenticatedUserId, candidate.authorityEpoch, previousRevision, revision, trustedWitness.occurredAt, auditKind, details);
+  candidate.auditHistory.push(audit);
+  const response = closeoutResponse(candidate, value.requestId, event);
+  candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: value.commandKind, resultKind: status === "committed" ? "closeout-session-committed" : status === "commit-pending" ? "closeout-session-commit-pending" : "closeout-session-reserved", resultRevision: revision, response });
+  if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { operationVerified: Boolean(m10Result), successResponse: response });
+}
+async function finalizePendingCloseoutSession(match, value, auth, context) {
+  const boundary = closeoutBoundary(value, auth, match, context, { requestId: value.requestId, sessionId: value.sessionId });
+  if (boundary.error) return failure([boundary.error], { requestId: value.requestId, sessionId: value.sessionId });
+  const prior = boundary.match.session;
+  if (!closeoutLifecycleAllowed(prior, "closeout-session-commit") || prior.closeout.status !== "commit-pending") return failure([diagnostic("m11-commit-not-ready", "closeout")], { requestId: value.requestId, sessionId: value.sessionId });
+  const captured = capture(prior); if (!captured.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  const candidate = captured.value;
+  candidate.closeout.status = "committed";
+  candidate.sessionState = "completed";
+  if (typeof context?.buildVoyageEventSessionCompletedEncounterState === "function") {
+    try {
+      const rebuilt = capture(context.buildVoyageEventSessionCompletedEncounterState({ kind: "m10-build-completed-encounter-state", sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, priorEncounterState: capture(candidate.encounterState).value, completedCloseoutSnapshot: candidate.closeout.sessionCommitReceipt?.completedCloseoutSnapshot }));
+      if (!rebuilt.ok || !isPlainObject(rebuilt.value)) return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId });
+      candidate.encounterState = rebuilt.value;
+    } catch { return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  } else return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId });
+  if (!pristineSession(candidate, boundary.match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
+  try { await boundary.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); }
+  catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  return sessionWriteClassification(boundary.match.document, value.sessionId, boundary.match.documentId, candidate, prior, value.requestId, context, { operationVerified: true });
+}
+
 function initialSession(identity, encounter, activeGmUserId) {
   return {
     schemaVersion: 1, sessionDocumentId: identity.sessionDocumentId, sessionId: identity.sessionId, eventId: identity.eventId, definitionSnapshotId: identity.definitionSnapshotId,
@@ -754,7 +1306,7 @@ function recoveryCheckpointValid(checkpoint, envelope) {
     if (!exactKeys(checkpoint, CHECKPOINT_FIELDS) || !CHECKPOINT_KINDS.has(checkpoint.kind) || checkpoint.sessionId !== envelope.sessionId
       || checkpoint.checkpointId !== `arcflight-voyage-checkpoint:${JSON.stringify([envelope.sessionId, checkpoint.kind, checkpoint.revision])}` || !safeInteger(checkpoint.revision) || checkpoint.revision > envelope.revision
       || !safeInteger(checkpoint.encounterRevision) || !safeInteger(checkpoint.eventCount) || checkpoint.eventCount > envelope.events.length || typeof checkpoint.invalidated !== "boolean"
-      || !safeInteger(checkpoint.authorityEpoch) || !SESSION_STATES.has(checkpoint.sessionState) || !isPlainObject(checkpoint.encounterState) || !validCloseout(checkpoint.closeout)
+      || !safeInteger(checkpoint.authorityEpoch) || !SESSION_STATES.has(checkpoint.sessionState) || !isPlainObject(checkpoint.encounterState) || !validCloseout(checkpoint.closeout, envelope)
       || checkpoint.authorityEpoch > envelope.authorityEpoch || !validEncounterState(checkpoint.encounterState, envelope) || !lifecycleMappingValid({ ...envelope, sessionState: checkpoint.sessionState, encounterState: checkpoint.encounterState })) return false;
     return checkpoint.encounterRevision === checkpoint.encounterState.revision;
   } catch { return false; }
@@ -819,7 +1371,7 @@ function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, 
       let segmentRevision = priorRevision;
       for (const ownedEvent of segment) {
         if (!isPlainObject(ownedEvent) || !safeInteger(ownedEvent.previousRevision) || !safeInteger(ownedEvent.revision)
-          || ownedEvent.previousRevision !== segmentRevision || ownedEvent.revision !== segmentRevision + 1) return null;
+           || ownedEvent.previousRevision !== segmentRevision || ownedEvent.revision !== segmentRevision + 1) return null;
         segmentRevision = ownedEvent.revision;
       }
       const trusted = ownData(context, "trustedReplayDependencies"), replay = ownData(context, "replayVoyageEventSessionEvidence");
@@ -831,7 +1383,7 @@ function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, 
       if (!result.ok || !exactKeys(result.value, ["startIndex", "endIndex", "previousRevision", "nextRevision", "sessionState", "encounterState", "closeout"])
         || result.value.startIndex !== segmentStart || result.value.endIndex !== index || result.value.previousRevision !== priorRevision
         || !safeInteger(result.value.nextRevision) || result.value.nextRevision !== segmentRevision || result.value.nextRevision > envelope.revision || !SESSION_STATES.has(result.value.sessionState)
-        || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout)) return null;
+         || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout, envelope)) return null;
       for (const ownedEvent of segment) if (!isPlainObject(ownedEvent) || ownedEvent.type?.startsWith("voyage.m11-")) return null;
       priorRevision = result.value.nextRevision;
       replayedState = result.value;
@@ -873,7 +1425,7 @@ function validRecoveryReplayRecord(record, envelope, request, authenticatedUserI
       && matchingEvent && matchingCheckpoint;
   } catch { return false; }
 }
-function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = null) {
+function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = null, sessionEvidence = null) {
   try {
     if (!envelope.processedRequests.length || !recoveryCheckpointJournalValid(envelope) || !replayEventChain(envelope, context, 0, 0, null)) return false;
     const ids = new Set();
@@ -930,6 +1482,17 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
           || !recoveryCheckpoint || !replayedState || !validAfterRecoveryCheckpoint(recoveryCheckpoint, envelope, record, responseEvent, audit, sourceCheckpoint, replayedEventCount, replayedState)) return false;
         if (record.response.events.length !== 1 || !equal(record.response.events[0], responseEvent)) return false;
         lastEvidenceRevision = record.resultRevision; owner = record.principalUserId; latestRecoveryEvidence = { record, event: responseEvent, audit, sourceCheckpoint, recoveryCheckpoint, replayedState }; auditIndex += 1;
+      } else if (sessionEvidence && (record.commandKind === "closeout-review" || record.commandKind === "closeout-prepare" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-ship-apply" || record.commandKind === "closeout-session-commit")) {
+        if (record.commandKind === "closeout-prepare" || record.commandKind === "closeout-ship-apply") {
+          if (!validCloseoutRecord(record, sessionEvidence, null, null)) return false;
+          ids.add(record.requestId);
+          continue;
+        }
+        const eventType = record.commandKind === "closeout-review" ? "voyage.m11-closeout-review-accepted" : record.commandKind === "closeout-reserve" ? "voyage.m11-closeout-session-reserved" : record.resultKind === "closeout-session-commit-pending" ? "voyage.m11-closeout-session-commit-pending" : "voyage.m11-closeout-session-committed";
+        const event = envelope.events.find((entry) => entry?.type === eventType && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        if (!event || !validCloseoutRecord(record, sessionEvidence, audit, event)) return false;
+        if (record.commandKind !== "closeout-prepare") auditIndex += 1;
       } else return false;
       ids.add(record.requestId);
       if (record.commandKind === TRANSFER_COMMAND_KIND) lastEvidenceRevision = Math.max(lastEvidenceRevision, record.resultRevision);
@@ -1079,7 +1642,7 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   const auth = authenticatedContext(context); if (auth.error) return failure([auth.error], identities);
   if (!nonBlank(value.sessionId) || !nonBlank(value.commandKind) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch) || !isPlainObject(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
   const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
-  const match = resolved.match; if (!pristineSession(match.session, match.documentId)) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const match = resolved.match; if (!pristineSession(match.session, match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
   if (match.session.activeGmUserId !== auth.activeGmUserId) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
   const projectionKind = deriveProjectionKind(auth, match.session, context);
   const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
@@ -1087,7 +1650,8 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   if (value.authorityEpoch !== match.session.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
   if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
   if (!COMMAND_KINDS.has(value.commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
-  if (containsForbiddenPayloadAuthority(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+  if (value.commandKind !== "closeout-review" && containsForbiddenPayloadAuthority(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+  if (CLOSEOUT_COMMANDS.has(value.commandKind)) return dispatchCloseoutCommand(value, identities, auth, match, context);
   return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
 }
 
@@ -1165,7 +1729,7 @@ async function recoverWithinExclusive(value, identities, descriptor, initialAuth
       const replay = capture(existing.response); return replay.ok ? replay.value : failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     }
     if (value.recoveryAction !== "rebuild-latest") return failure([diagnostic("m11-command-not-allowed", "request.recoveryAction")], identities);
-    if (!recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
+    if (!recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery, resolved.match.session)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     if (value.authorityEpoch !== envelope.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== envelope.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     if (!recoveryCheckpointJournalValid(envelope)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
@@ -1180,7 +1744,7 @@ async function recoverWithinExclusive(value, identities, descriptor, initialAuth
     const finalResolved = resolveSessionDocument(value.sessionId, context); if (finalResolved.error) return failure([finalResolved.error], identities);
     if (finalResolved.match.documentId !== descriptor.sessionDocumentId) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
     const finalEnvelope = recoveryEnvelope(finalResolved.match.session, finalResolved.match.documentId);
-    if (!finalEnvelope || !recoveryStoredRecordsValid(finalEnvelope, context, finalResolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
+    if (!finalEnvelope || !recoveryStoredRecordsValid(finalEnvelope, context, finalResolved.match.session.recovery, finalResolved.match.session)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
     const finalExisting = finalEnvelope.processedRequests.find((record) => record.requestId === value.requestId);
     if (finalExisting) {
       if (finalExisting.principalUserId !== finalAuth.authenticatedUserId || finalExisting.projectionKind !== "gm" || finalExisting.fingerprint !== requestFingerprint) return failure([diagnostic("m11-request-id-conflict", "request.requestId")], identities);
@@ -1218,7 +1782,7 @@ export async function recoverVoyageEventSession(request, context = {}) {
     const replay = capture(existing.response); return replay.ok ? replay.value : failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
   }
   if (value.recoveryAction !== "rebuild-latest") return failure([diagnostic("m11-command-not-allowed", "request.recoveryAction")], identities);
-  if (!recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
+  if (!recoveryStoredRecordsValid(envelope, context, resolved.match.session.recovery, resolved.match.session)) return failure([diagnostic("m11-unrecoverable-session", VOYAGE_SESSION_PATH)], identities);
   const coordinator = transferCoordinator(context); if (coordinator.error) return failure([coordinator.error], identities);
   const descriptor = coordinatorDescriptor(value, resolved.match.documentId, auth);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
