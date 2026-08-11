@@ -1342,7 +1342,10 @@ listed checkpoint boundary through this substrate together with their
 canonical domain API. M6-M10 event validators/replay, `reconcile-closeout`,
 and audited `abort` analysis remain owned by those later slices; until an
 owning replay dependency is injected, Task 4 rejects those records/actions
-without a generic substitute.
+without a generic substitute. In this Task 4 slice, persisted recovery
+records are valid only for `recoveryAction: "rebuild-latest"`; persisted
+`abort` or `reconcile-closeout` recovery records are invalid session evidence
+until their owning slices register the complete canonical implementation.
 
 The event and checkpoint journals are preserved byte-for-byte as historical
 evidence. Replay regenerates state only through the owning pure-domain APIs,
@@ -1391,8 +1394,11 @@ That audit record's `details` object has exact order:
 
 The recovery event and audit record must contain the selected source checkpoint
 revision and the authenticated recovery GM. The candidate sets `recovery` to
-`resolved` with the same source checkpoint and recovery authority, captures an
-`after-recovery` checkpoint, and performs one atomic update of only
+`resolved` with the same source checkpoint and recovery authority, regenerates
+the canonical replay result through the pure M11 path or an explicitly
+injected trusted owning replay dependency, captures an `after-recovery`
+checkpoint whose encounter and closeout state equal that regenerated result,
+and performs one atomic update of only
 `flags.arcflight.system.voyageSession`. It then rereads and completely compares
 the flag subtree before returning the standard success envelope with the one
 new recovery event, plus any canonical event required by its selected abort

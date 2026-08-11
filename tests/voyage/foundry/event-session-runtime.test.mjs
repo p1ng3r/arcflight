@@ -859,7 +859,13 @@ test("recovery callback authority drift is write-free and uncertain writes never
   assertFailure(driftResult, "m11-active-gm-required", "transport.connection", "The authenticated user is not the current active GM."); assert.equal(drift.tracker.updates, 0);
   const uncertain = makeContext({ update(document, payload) { persistSession(document, payload); throw new Error("uncertain"); } }); await createVoyageEventSession(request(), uncertain.context); stored = session(uncertain.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
   const uncertainResult = await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: "uncertain-recovery", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, uncertain.context);
-  assertFailure(uncertainResult, "m11-recovery-required", "recovery", "Event Session requires explicit recovery."); assert.equal(uncertain.tracker.updates, 1);
+  assert.equal(uncertainResult.ok, true); assert.equal(uncertainResult.revision, 1); assert.equal(uncertain.tracker.updates, 1);
+  const prior = makeContext({ update() { throw new Error("before persistence"); } }); await createVoyageEventSession(request(), prior.context); stored = session(prior.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+  const priorResult = await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: "prior-recovery", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, prior.context);
+  assertFailure(priorResult, "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify."); assert.equal(prior.tracker.updates, 1);
+  const unknown = makeContext({ update(document, payload) { document.__testSource.flags.arcflight.system.voyageSession.revision = 99; throw new Error("uncertain state"); } }); await createVoyageEventSession(request(), unknown.context); stored = session(unknown.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+  const unknownResult = await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: "unknown-recovery", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, unknown.context);
+  assertFailure(unknownResult, "m11-recovery-required", "recovery", "Event Session requires explicit recovery."); assert.equal(unknown.tracker.updates, 1);
 });
 
 test("every recovery record has exactly one matching after-recovery checkpoint", async () => {
@@ -879,4 +885,76 @@ test("every recovery record has exactly one matching after-recovery checkpoint",
     assertFailure(await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: `after-retry-${name}`, sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, fixture.context), "m11-unrecoverable-session", "flags.arcflight.system.voyageSession", "Immutable Event Session recovery evidence is invalid.", name);
     assert.equal(fixture.tracker.updates, 1, name);
   }
+});
+
+test("stored recovery actions are rebuild-only and recovery projection is canonical", async () => {
+  const actionFixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), actionFixture.context); let stored = session(actionFixture.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+  assert.equal((await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: "action-recovery", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, actionFixture.context)).ok, true);
+  stored = session(actionFixture.journals[0]); const tuple = JSON.parse(stored.processedRequests[1].fingerprint); tuple[6].recoveryAction = "abort"; stored.processedRequests[1].fingerprint = JSON.stringify(tuple);
+  assertFailure(reloadVoyageEventSession("session-1", actionFixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(actionFixture.tracker.updates, 1);
+  const recoveryFields = [
+    ["status", (value) => { value.status = "none"; }],
+    ["reasonCode", (value) => { value.reasonCode = "forged"; }],
+    ["failedRequestId", (value) => { value.failedRequestId = null; }],
+    ["failedRevision", (value) => { value.failedRevision = 99; }],
+    ["checkpointId", (value) => { value.checkpointId = "forged"; }],
+    ["sourceCheckpointRevision", (value) => { value.sourceCheckpointRevision = 99; }],
+    ["recoveryAuthorityUserId", (value) => { value.recoveryAuthorityUserId = "gm-2"; }]
+  ];
+  for (const [name, mutate] of recoveryFields) {
+    const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); stored = session(fixture.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+    assert.equal((await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: `canonical-${name}`, sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, fixture.context)).ok, true, name);
+    mutate(session(fixture.journals[0]).recovery);
+    const reloadResult = reloadVoyageEventSession("session-1", fixture.context); assertFailure(reloadResult, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.", name); assert.equal(fixture.tracker.updates, 1, name);
+  }
+});
+
+test("trusted owning replay regenerates changed state and rejects forged after-recovery state", async () => {
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); let stored = session(fixture.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+  stored.events.push({ type: "voyage.m6-owned-event", evidence: "canonical" });
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ events }) => {
+    assert.equal(events.some((event) => event.type === "voyage.m6-owned-event"), true);
+    const replayedEncounter = structuredClone(encounter()); replayedEncounter.title = "Trusted replay";
+    return { sessionState: "setup", encounterState: replayedEncounter, closeout: structuredClone(stored.closeout) };
+  };
+  const result = await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: "owning-replay", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, fixture.context);
+  assert.equal(result.ok, true, JSON.stringify(result.errors)); stored = session(fixture.journals[0]); assert.equal(stored.encounterState.title, "Trusted replay"); assert.equal(stored.checkpoints.at(-1).encounterState.title, "Trusted replay"); assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  stored.checkpoints.at(-1).encounterState.title = "forged stored state";
+  assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(fixture.tracker.updates, 1);
+});
+
+test("unavailable or noncanonical owning replay dependencies fail recovery without writes", async () => {
+  const variants = [
+    ["missing", (context) => { context.trustedReplayDependencies = true; }],
+    ["untrusted", (context) => { context.trustedReplayDependencies = false; context.replayVoyageEventSessionEvidence = () => ({ sessionState: "setup", encounterState: encounter(), closeout: { status: "none", applicationId: null, closeoutId: null, acceptedApplicationPlan: null, reservationId: null, expectedEncounterRevision: null, expectedShipRevision: null, sessionReservationReceipt: null, sessionCommitReceipt: null } }); }],
+    ["throwing", (context) => { context.trustedReplayDependencies = true; context.replayVoyageEventSessionEvidence = () => { throw new Error("replay"); }; }],
+    ["malformed", (context) => { context.trustedReplayDependencies = true; context.replayVoyageEventSessionEvidence = () => ({ forged: true }); }],
+    ["mismatched", (context) => { context.trustedReplayDependencies = true; context.replayVoyageEventSessionEvidence = () => ({ sessionState: "setup", encounterState: { ...encounter(), encounterId: "wrong" }, closeout: { status: "none", applicationId: null, closeoutId: null, acceptedApplicationPlan: null, reservationId: null, expectedEncounterRevision: null, expectedShipRevision: null, sessionReservationReceipt: null, sessionCommitReceipt: null } }); }]
+  ];
+  for (const [name, configure] of variants) {
+    const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); const stored = session(fixture.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored); stored.events.push({ type: "voyage.m6-owned-event", evidence: "canonical" }); configure(fixture.context);
+    const result = await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: `dependency-${name}`, sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, fixture.context);
+    assertFailure(result, "m11-unrecoverable-session", "flags.arcflight.system.voyageSession", "Immutable Event Session recovery evidence is invalid.", name); assert.equal(fixture.tracker.updates, 0, name);
+  }
+});
+
+test("coordinator null is a contender loss while invalid coordinator behavior is required", async () => {
+  const contender = { async runExclusiveSessionMutation() { return null; } };
+  const fixture = makeContext({ coordinator: contender, update: persistSession }); await createVoyageEventSession(request(), fixture.context);
+  const transfer = await transferVoyageEventSessionControl(transferRequest({ requestId: "contender-loss" }), fixture.context);
+  assertFailure(transfer, "m11-control-transfer-required", "authorityEpoch", "Event Session control has transferred."); assert.equal(fixture.tracker.updates, 0);
+  const recovery = makeContext({ coordinator: contender, update: persistSession }); await createVoyageEventSession(request(), recovery.context); const stored = session(recovery.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+  const recovered = await recoverVoyageEventSession({ kind: "voyage.m11-recover-session", requestId: "recovery-contender-loss", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" }, recovery.context);
+  assertFailure(recovered, "m11-control-transfer-required", "authorityEpoch", "Event Session control has transferred."); assert.equal(recovery.tracker.updates, 0);
+});
+
+test("recovery replay is coordinator-free while new recovery still requires coordination", async () => {
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); let stored = session(fixture.journals[0]); addRecoveryCheckpoint(stored); markRecoveryRequired(stored);
+  const original = { kind: "voyage.m11-recover-session", requestId: "coordinator-free-replay", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, recoveryAction: "rebuild-latest", reason: "repair" };
+  const first = await recoverVoyageEventSession(original, fixture.context); assert.equal(first.ok, true);
+  const replayContext = makeContext({ journals: fixture.journals }); delete replayContext.context.runExclusiveSessionMutation;
+  const replay = await recoverVoyageEventSession(original, replayContext.context); assert.deepEqual(replay, first); assert.equal(replayContext.tracker.updates, 0);
+  const conflict = await recoverVoyageEventSession({ ...original, reason: "changed" }, replayContext.context); assertFailure(conflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(replayContext.tracker.updates, 0);
+  const fresh = await recoverVoyageEventSession({ ...original, requestId: "new-recovery" }, replayContext.context); assertFailure(fresh, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(replayContext.tracker.updates, 0);
 });
