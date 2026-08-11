@@ -1409,6 +1409,37 @@ test("Task 6 review preserves its canonical response when the persisted update t
   assert.deepEqual(replay, result); assert.equal(reviewCalls, 1); assert.equal(updateCalls, 1);
 });
 
+test("Task 6 prepare and ship history require the persistent-application response status", async () => {
+  const scenarios = [
+    ["closeout-prepare", async () => {
+      const prepared = await task6PreparedFixture();
+      return { fixture: prepared.fixture, replay: () => prepared.run("task6-prepare", 2, "closeout-prepare") };
+    }],
+    ["closeout-ship-apply", async () => {
+      const prepared = await task6PreparedFixture();
+      assert.equal((await prepared.run("status-reserve", 2, "closeout-reserve")).ok, true);
+      assert.equal((await prepared.run("status-ship", 3, "closeout-ship-apply")).ok, true);
+      return { fixture: prepared.fixture, replay: () => prepared.run("status-ship", 3, "closeout-ship-apply") };
+    }]
+  ];
+  for (const [commandKind, setup] of scenarios) {
+    const clean = await setup();
+    const cleanUpdates = clean.fixture.tracker.updates;
+    assert.equal(reloadVoyageEventSession("session-1", clean.fixture.context).ok, true, commandKind);
+    assert.equal((await clean.replay()).ok, true, commandKind);
+    assert.equal(clean.fixture.tracker.updates, cleanUpdates, commandKind);
+    for (const status of ["completed", "paused"]) {
+      const tampered = await setup();
+      const record = fixtureSession(tampered.fixture).processedRequests.find((entry) => entry.commandKind === commandKind);
+      assert.ok(record, commandKind);
+      record.response.status = status;
+      const updates = tampered.fixture.tracker.updates;
+      assertFailure(reloadVoyageEventSession("session-1", tampered.fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+      assert.equal(tampered.fixture.tracker.updates, updates, `${commandKind}:${status}`);
+    }
+  }
+});
+
 test("Task 6 classifies thrown JournalEntry updates from the verified reread", async () => {
   const persisted = await task6PreparedFixture();
   let updateCalls = 0;

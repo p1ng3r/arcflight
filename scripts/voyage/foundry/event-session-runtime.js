@@ -632,12 +632,12 @@ function validCloseoutRecord(record, session, audit, event) {
       && audit.details.applicationId === session.closeout.applicationId && audit.details.closeoutId === session.closeout.closeoutId;
   }
   if (record.commandKind === "closeout-prepare" && record.resultKind === "prepared-awaiting-session") {
-    return tuple[4] === record.resultRevision && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && Array.isArray(record.response.events) && record.response.events.length === 0
+    return tuple[4] === record.resultRevision && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && record.response.status === "persistent-application" && Array.isArray(record.response.events) && record.response.events.length === 0
       && ["prepared-awaiting-session", "ship-applied-awaiting-session", "commit-pending", "committed"].includes(session.closeout.status);
   }
   if (record.commandKind === "closeout-ship-apply" && record.resultKind === "closeout-ship-checkpoint-verified") {
     const valid = tuple[4] === record.resultRevision && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
-      && Array.isArray(record.response.events) && record.response.events.length === 0
+      && record.response.status === "persistent-application" && Array.isArray(record.response.events) && record.response.events.length === 0
       && ["ship-applied-awaiting-session", "commit-pending", "committed"].includes(session.closeout.status);
     return valid;
   }
