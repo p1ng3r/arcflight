@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as runtime from "../../../scripts/voyage/foundry/event-session-runtime.js";
-import { createVoyageEventSession, dispatchVoyageEventSessionCommand, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 
 function definition() { return { schemaVersion: 1, eventId: "event-1", definitionSnapshotId: "definition-1", title: "Cinderwake" }; }
@@ -78,7 +78,7 @@ function markRecoveryRequired(stored) {
   stored.recovery = { status: "required", reasonCode: "m11-recovery-required", failedRequestId: "failed", failedRevision: stored.revision, checkpointId: null, sourceCheckpointRevision: null, recoveryAuthorityUserId: null };
 }
 
-test("M11 runtime exposes the Task 4 recovery boundary", () => assert.deepEqual(Object.keys(runtime).sort(), ["createVoyageEventSession", "dispatchVoyageEventSessionCommand", "recoverVoyageEventSession", "reloadVoyageEventSession", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the Task 5 projection boundary", () => assert.deepEqual(Object.keys(runtime).sort(), ["createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);
@@ -348,6 +348,125 @@ test("canonical operator resolver uses existing id/uuid identity semantics witho
   for (const resolverValue of variants) {
     const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" } }]; const fixture = makeContext({ encounterValue, operatorResolver: () => resolverValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context); const result = dispatchVoyageEventSessionCommand(command({ requestId: "operator-request" }), makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", activeGmUserId: "gm-1", operatorResolver: () => resolverValue }).context); assertFailure(result, "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
   }
+});
+
+test("Task 5 derives GM, operator, crew, and observer projections from trusted evidence", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const cases = [
+    ["gm-1", () => { throw new Error("GM resolver must not be consulted"); }, "gm", 0],
+    ["player-1", () => ({ kind: "actor", uuid: "Actor.captain" }), "operator", 1],
+    ["player-1", () => ({ kind: "actor", id: "captain" }), "operator", 1],
+    ["player-1", () => ({ kind: "crewAsset", id: "unassigned" }), "crew", 1],
+    ["player-1", () => null, "observer", 1],
+    ["player-1", () => ({ kind: "actor" }), "observer", 1],
+    ["player-1", () => { throw new Error("resolver"); }, "observer", 1],
+    ["player-1", () => new Proxy({}, { ownKeys() { throw new Error("hostile"); } }), "observer", 1]
+  ];
+  for (const [userId, resolver, role, expectedCalls] of cases) {
+    let calls = 0; const witnessedResolver = () => { calls += 1; return resolver(); };
+    const context = makeContext({ journals: fixture.journals, authenticatedUserId: userId, activeGmUserId: "gm-1", operatorResolver: witnessedResolver });
+    const result = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: `projection-${role}`, sessionId: "session-1", expectedRevision: 0 }, context.context);
+    assert.equal(result.ok, true, `${role}: ${JSON.stringify(result.errors)}`); assert.deepEqual(Object.keys(result.projection), ["schemaVersion", "sessionId", "eventId", "revision", "sessionState", "currentStage", "roundNumber", "phase", "stationAssignments", "committedStationOrder", "currentActingStationId", "momentum", "pressureSystems", "activeHazards", "visibleEvents", "closeoutStatus", "recoveryStatus"]);
+    assert.equal(calls, expectedCalls); assert.equal(result.projection.currentActingStationId, null); assert.deepEqual(result.projection.visibleEvents, []);
+    for (const forbidden of ["encounterState", "gmSecretInformation", "auditHistory", "processedRequests", "activeGmUserId", "authorityEpoch", "connectionId", "principalUserId", "projectionKind", "sessionReservationReceipt", "sessionCommitReceipt", "acceptedApplicationPlan", "privateStationData", "events", "receipts"]) assert.equal(Object.hasOwn(result.projection, forbidden), false, `${role} exposed ${forbidden}`);
+    assert.equal(context.tracker.updates, 0); assert.equal(context.tracker.deletes, 0);
+  }
+});
+
+test("Task 5 read role derivation rejects hostile resolver evidence without elevation or writes", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const shared = {}; const directCycle = { kind: "actor", id: "captain", name: "Captain" }; directCycle.cycle = directCycle;
+  const indirectA = { kind: "actor", id: "captain", name: "Captain" }; const indirectB = { link: indirectA }; indirectA.link = indirectB;
+  const inherited = Object.create({ kind: "actor", id: "captain" });
+  const accessor = {}; Object.defineProperty(accessor, "kind", { enumerable: true, get() { throw new Error("kind getter"); } });
+  const revoked = Proxy.revocable({}, {}); revoked.revoke();
+  const reflectionFailure = new Proxy({}, { ownKeys() { throw new Error("ownKeys"); } });
+  const cases = [
+    () => ({ kind: "actor", id: "captain", name: shared, other: shared }),
+    () => directCycle,
+    () => indirectA,
+    () => inherited,
+    () => accessor,
+    () => revoked.proxy,
+    () => reflectionFailure,
+    () => [{ kind: "actor", id: "captain" }, { kind: "actor", id: "captain" }],
+    () => ({ kind: "actor", id: "captain", uuid: "Actor.other" }),
+    () => ({ kind: "item", id: "captain" }),
+    () => { throw new Error("resolver"); }
+  ];
+  for (const [index, resolver] of cases.entries()) {
+    let calls = 0;
+    const context = makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", activeGmUserId: "gm-1", operatorResolver: () => { calls += 1; return resolver(); } });
+    const result = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: `hostile-projection-${index}`, sessionId: "session-1", expectedRevision: 0 }, context.context);
+    assert.equal(result.ok, true); assert.equal(calls, 1); assert.equal(result.projection.projectionKind, undefined); assert.equal(Object.hasOwn(result.projection, "gmSecretInformation"), false); assert.equal(Object.hasOwn(result.projection, "privateStationData"), false); assert.equal(context.tracker.creates, 0); assert.equal(context.tracker.updates, 0); assert.equal(context.tracker.deletes, 0);
+  }
+});
+
+test("Task 5 projection identities support id and crewAsset uuid binding without role overrides", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "engineer", operator: { kind: "crewAsset", uuid: "Item.engineer", name: "Engineer" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const idContext = makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", operatorResolver: () => ({ kind: "crewAsset", id: "wrong" }) });
+  assert.equal(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "projection-id", sessionId: "session-1", expectedRevision: 0 }, idContext.context).projection !== null, true);
+  const uuidContext = makeContext({ journals: fixture.journals, authenticatedUserId: "player-1", operatorResolver: () => ({ kind: "crewAsset", uuid: "Item.engineer" }) });
+  assert.equal(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "projection-uuid", sessionId: "session-1", expectedRevision: 0 }, uuidContext.context).ok, true);
+  const override = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "projection-override", sessionId: "session-1", expectedRevision: 0, projectionKind: "gm" }, uuidContext.context);
+  assertFailure(override, "m11-invalid-request-shape", "request", "Request shape, order, or root values are invalid."); assert.equal(uuidContext.tracker.updates, 0); assert.equal(uuidContext.tracker.deletes, 0);
+});
+
+test("Task 5 reads require a connected authenticated principal but not active-GM authority", async () => {
+  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context);
+  const noActiveGm = makeContext({ journals: fixture.journals, activeGmUserId: null });
+  assert.equal(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "read-no-active-gm", sessionId: "session-1", expectedRevision: 0 }, noActiveGm.context).ok, true);
+  for (const mutate of [
+    (context) => { context.trustedTransportContext = false; },
+    (context) => { context.authenticatedConnectionId = ""; },
+    (context) => { context.authenticatedUserId = null; },
+    (context) => { context.users = [{ id: "player-1", isGM: false, active: false }]; }
+  ]) {
+    const context = makeContext({ journals: fixture.journals, authenticatedUserId: "player-1" }); mutate(context.context);
+    assertFailure(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "read-auth-failure", sessionId: "session-1", expectedRevision: 0 }, context.context), "m11-authentication-required", "transport.user", "Authenticated transport user is required."); assert.equal(context.tracker.updates, 0); assert.equal(context.tracker.deletes, 0);
+  }
+});
+
+test("Task 5 projection precedence derives roles only after valid session evidence", async () => {
+  const projectionRequest = (overrides = {}) => ({ kind: "voyage.m11-read-projection", requestId: "projection-order", sessionId: "session-1", expectedRevision: 0, ...overrides });
+  let missingCalls = 0;
+  const missing = makeContext({ authenticatedUserId: "player-1", operatorResolver: () => { missingCalls += 1; return { kind: "actor", id: "captain" }; } });
+  assertFailure(readVoyageEventSessionProjection(projectionRequest(), missing.context), "m11-session-document-not-found", "sessionId", "Exact Event Session document was not resolved."); assert.equal(missingCalls, 0); assert.equal(missing.tracker.creates, 0); assert.equal(missing.tracker.updates, 0); assert.equal(missing.tracker.deletes, 0);
+
+  const ambiguous = makeContext(); await createVoyageEventSession(request(), ambiguous.context); ambiguous.context.authenticatedUserId = "player-1"; ambiguous.context.authenticatedConnectionId = "connection-player-1"; const duplicate = makeJournalDocument({ _id: "Journal.projection-duplicate", flags: structuredClone(ambiguous.journals[0].__testSource.flags), ownership: {} }, ambiguous.tracker, []); ambiguous.journals.push(duplicate);
+  let ambiguousCalls = 0; ambiguous.context.resolveVoyageOperatorForPrincipal = () => { ambiguousCalls += 1; return { kind: "actor", id: "captain" }; };
+  assertFailure(readVoyageEventSessionProjection(projectionRequest(), ambiguous.context), "m11-ambiguous-session-document", "sessionId", "More than one Event Session document matched."); assert.equal(ambiguousCalls, 0); assert.equal(ambiguous.tracker.creates, 1); assert.equal(ambiguous.tracker.updates, 0); assert.equal(ambiguous.tracker.deletes, 0);
+
+  const invalid = makeContext(); await createVoyageEventSession(request(), invalid.context); invalid.context.authenticatedUserId = "player-1"; invalid.context.authenticatedConnectionId = "connection-player-1"; session(invalid.journals[0]).sessionState = "forged";
+  let invalidCalls = 0; invalid.context.resolveVoyageOperatorForPrincipal = () => { invalidCalls += 1; return { kind: "actor", id: "captain" }; };
+  assertFailure(readVoyageEventSessionProjection(projectionRequest(), invalid.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(invalidCalls, 0); assert.equal(invalid.tracker.creates, 1); assert.equal(invalid.tracker.updates, 0); assert.equal(invalid.tracker.deletes, 0);
+
+  const valid = makeContext(); await createVoyageEventSession(request(), valid.context); valid.context.authenticatedUserId = "player-1"; valid.context.authenticatedConnectionId = "connection-player-1"; let validCalls = 0; valid.context.resolveVoyageOperatorForPrincipal = () => { validCalls += 1; return { kind: "actor", id: "captain" }; };
+  assertFailure(readVoyageEventSessionProjection(projectionRequest({ requestId: "projection-stale", expectedRevision: 1 }), valid.context), "m11-stale-session-revision", "expectedRevision", "Event Session revision is stale."); assert.equal(validCalls, 1); assert.equal(valid.tracker.updates, 0); assert.equal(valid.tracker.deletes, 0);
+  validCalls = 0; assertFailure(readVoyageEventSessionProjection(projectionRequest({ requestId: "request-1" }), valid.context), "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(validCalls, 1); assert.equal(valid.tracker.updates, 0); assert.equal(valid.tracker.deletes, 0);
+  validCalls = 0; const result = readVoyageEventSessionProjection(projectionRequest({ requestId: "projection-valid" }), valid.context); assert.equal(result.ok, true); assert.equal(validCalls, 1); assert.deepEqual(Object.keys(result.projection), ["schemaVersion", "sessionId", "eventId", "revision", "sessionState", "currentStage", "roundNumber", "phase", "stationAssignments", "committedStationOrder", "currentActingStationId", "momentum", "pressureSystems", "activeHazards", "visibleEvents", "closeoutStatus", "recoveryStatus"]); assert.equal(result.projection.projectionKind, undefined); assert.equal(result.projection.authorityEpoch, undefined); assert.equal(result.projection.privateStationData, undefined); assert.equal(valid.tracker.updates, 0); assert.equal(valid.tracker.deletes, 0);
+});
+
+test("Task 5 projection reads are isolated, stale-safe, and never replay mutation responses", async () => {
+  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const requestValue = { kind: "voyage.m11-read-projection", requestId: "projection-isolated", sessionId: "session-1", expectedRevision: 0 };
+  const before = structuredClone(requestValue); const first = readVoyageEventSessionProjection(requestValue, fixture.context); assert.equal(first.ok, true); first.projection.stationAssignments.push({ forged: true }); first.projection.visibleEvents.push({ secret: true });
+  const second = readVoyageEventSessionProjection(requestValue, fixture.context); assert.equal(second.ok, true); assert.deepEqual(second.projection.visibleEvents, []); assert.deepEqual(requestValue, before); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  const conflict = readVoyageEventSessionProjection({ ...requestValue, requestId: "request-1" }, fixture.context); assertFailure(conflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  assertFailure(readVoyageEventSessionProjection({ ...requestValue, requestId: "stale-read", expectedRevision: 1 }, fixture.context), "m11-stale-session-revision", "expectedRevision", "Event Session revision is stale.");
+  assertFailure(readVoyageEventSessionProjection({ ...requestValue, requestId: "missing-read", sessionId: "missing" }, fixture.context), "m11-session-document-not-found", "sessionId", "Exact Event Session document was not resolved.");
+});
+
+test("Task 5 projection resolution preserves exact missing, ambiguous, invalid, and hostile failures", async () => {
+  const missing = makeContext(); assertFailure(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "projection-missing", sessionId: "session-1", expectedRevision: 0 }, missing.context), "m11-session-document-not-found", "sessionId", "Exact Event Session document was not resolved.");
+  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); const duplicate = makeJournalDocument({ _id: "Journal.duplicate", flags: structuredClone(fixture.journals[0].__testSource.flags), ownership: {} }, fixture.tracker, []); fixture.journals.push(duplicate);
+  assertFailure(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "projection-ambiguous", sessionId: "session-1", expectedRevision: 0 }, fixture.context), "m11-ambiguous-session-document", "sessionId", "More than one Event Session document matched.");
+  const invalid = makeContext(); await createVoyageEventSession(request(), invalid.context); session(invalid.journals[0]).sessionState = "forged";
+  assertFailure(readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "projection-invalid", sessionId: "session-1", expectedRevision: 0 }, invalid.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+  const hostile = makeContext(); const hostileRequest = { kind: "voyage.m11-read-projection", requestId: "projection-hostile", sessionId: "session-1", expectedRevision: 0 }; Object.defineProperty(hostileRequest, "sessionId", { enumerable: true, get() { throw new Error("session"); } });
+  assertFailure(readVoyageEventSessionProjection(hostileRequest, hostile.context), "m11-hostile-data-capture-failed", "$", "M11 data could not be captured safely."); assert.equal(hostile.tracker.creates, 0); assert.equal(hostile.tracker.updates, 0); assert.equal(hostile.tracker.deletes, 0);
 });
 
 test("ordinary control transfer reauthorizes the current GM with one exact write and audit pair", async () => {

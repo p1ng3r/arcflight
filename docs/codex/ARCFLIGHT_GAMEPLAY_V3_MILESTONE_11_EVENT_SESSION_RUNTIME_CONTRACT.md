@@ -729,13 +729,16 @@ one durable assignment matches. Differing display names do not affect binding;
 malformed, ambiguous, unsafe, or unmatched resolver data never grants
 operator authority. The resolver does not change the durable station-
 assignment schema and Task 2 does not implement projection contents.
-For every command response M11 resolves `projectionKind` from the authenticated
-transport principal and the stored station assignments/permissions: `gm` for
-any authenticated connected GM, `operator` for the principal's assigned station, `crew` for an
-authenticated crew observer only when a later owning slice defines an exact
-trusted crew authority; otherwise Task 2 classifies the connected principal as
-`observer`. A caller never supplies or overrides this role; an unresolvable role is
-`m11-projection-not-authorized` with zero writes.
+For every command response and projection read, M11 resolves `projectionKind`
+from the authenticated connected principal and the stored station assignments;
+the caller never supplies or overrides it. Any authenticated connected GM is
+`gm`. For a non-GM, a trusted resolver result is captured and canonicalized by
+the existing station-assignment rules. Exactly one matching durable assignment
+is `operator`; a canonical resolver identity with zero matching assignments is
+`crew`; absent, malformed, ambiguous, throwing, inherited, accessor-backed,
+hostile, or otherwise unresolvable resolver data is `observer`. The resolver
+never changes the durable station-assignment schema, and a role is never
+elevated from caller-authored identity or assignment data.
 
 If no active GM exists, mutating commands pause and return
 `m11-active-gm-unavailable`; no gameplay write occurs. A new active GM may
@@ -1127,13 +1130,19 @@ The canonical precedence for every ordinary mutating API other than
 13. reread and exact verification; and
 14. response projection.
 
-No later category may run after an earlier category fails. Reads use this
-reduced precedence: hostile capture; exact root keys/mode; authenticated
-transport and server-derived projection role; exact session resolution and
-complete stored-session validation; request-ID duplicate/conflict handling;
-expected M11 session-revision binding; and regenerated projection. Reads never
-require an active GM, an authority epoch, or caller-selected `projectionKind`,
-and never write.
+No later category may run after an earlier category fails. Projection reads use
+this exact precedence: minimal request-root and projection-mode validation;
+trusted authenticated connected-principal resolution; exact unique session
+document resolution; hostile-safe capture and complete stored-session
+validation; exactly one internal derivation of the trusted projection role from
+that authenticated principal and the validated durable station assignments;
+expected M11 session-revision binding; request-ID duplicate/conflict handling;
+and regenerated isolated projection construction. Role derivation never runs
+for a missing, ambiguous, malformed, or invalid session. It does run after a
+valid session is resolved even when stale-revision or request-ID conflict
+handling later fails. The role is never caller-supplied or exposed in the
+public projection. Reads never require an active GM, an authority epoch, or
+caller-selected `projectionKind`, and never write.
 
 `recoverVoyageEventSession` uses this exact special precedence so recovery does
 not require ordinary complete current-session validation:
@@ -1461,14 +1470,21 @@ selection, and reaction data. Crew and observer projections contain public
 mechanical state only. Hidden data is omitted, not sent and hidden by UI.
 
 Projection construction never mutates the stored session or increments a
-revision. M11 derives the projection role from the authenticated user's GM
-status and the durable station assignment after resolving the current session;
-a public request contains no `projectionKind` field. A projection request
-cannot return `encounterState` directly, and projections are regenerated only
-for their authenticated principal. Players can neither read the raw
-JournalEntry nor receive `gmSecretInformation`, processed responses, authority
-data, private station data, or another principal's projection through ordinary
-JournalEntry permissions or the transport API.
+revision. Task 5 derives the trusted role before constructing the common
+projection, even when the currently authorized common field set is identical
+for multiple non-GM roles. Task 5 returns only the common root above: no public request contains
+`projectionKind`, and no role-specific extension fields are fabricated here.
+`currentActingStationId` is `null` and `visibleEvents` is `[]` until their
+owning slices register canonical sources and filtering rules. Later producer-
+owned slices may add exact GM, operator, crew, or observer details only when
+their contracts define those fields. A projection request cannot return
+`encounterState` directly, and projections are regenerated only for the
+authenticated principal. Players can neither read the raw JournalEntry nor
+receive GM secrets, processed responses, authority data, private station data,
+or another principal's projection through ordinary JournalEntry permissions or
+the transport API. Projection reads never append a processed-request record;
+reuse of a stored mutation request ID is `m11-request-id-conflict` and never
+returns that mutation response.
 
 When a command response is stored in `processedRequests`, its projection is
 bound to that record's authenticated `principalUserId` and `projectionKind`.
