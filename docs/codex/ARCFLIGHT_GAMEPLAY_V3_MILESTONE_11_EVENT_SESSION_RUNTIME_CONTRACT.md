@@ -397,11 +397,12 @@ response is the exact isolated successful creation envelope, and exact replay
 requires the same authenticated active GM, derived `gm` role, and complete
 fingerprint. The milestone-wide schema eventually permits historical records
 from every owning command producer, but Task 2 accepts exactly one canonical
-creation record because no gameplay command-result producer exists yet. Each
-later slice must add that command's exact stored-record, result, response,
-projection, and event validator simultaneously; Task 2 never guesses or
-partially validates future records. Processed request records are never
-removed by reset, reload, recovery, abort, or control transfer.
+creation record because no gameplay command-result producer exists yet. Task 3
+adds exactly one record-only transfer mapping below; every later slice must add
+that command's exact stored-record, result, response, projection, and event
+validator simultaneously. Earlier slices never guess or partially validate
+future records. Processed request records are never removed by reset, reload,
+recovery, abort, or control transfer.
 
 `closeout` is exactly:
 
@@ -574,13 +575,100 @@ readable. Creation additionally requires those two identities to be the same
 GM; dispatch permits a connected non-GM principal while retaining the stored/
 current active-GM binding.
 
-### 6.1 Bootstrap authority after GM loss
+### 6.1 Cross-client control-transfer coordinator
+
+Task 3 does not expose an uncoordinated control-transfer mutator. The concrete
+Foundry transport/runtime slice owns a trusted cross-client coordinator and
+injects it into the M11 runtime context. The exact dependency is:
+
+```js
+runExclusiveSessionMutation(authorityDescriptor, callback)
+```
+
+The injected context must carry `trustedTransportContext: true`, a nonblank
+`authenticatedConnectionId`, and the callable coordinator above. These are
+trusted server/transport metadata, never request fields. The coordinator
+descriptor is a frozen plain object with this exact key order:
+
+```js
+{
+  sessionId,
+  sessionDocumentId,
+  expectedRevision,
+  expectedAuthorityEpoch,
+  authenticatedUserId,
+  connectionId,
+  activeGmUserId
+}
+```
+
+Every value is captured and bound to the current authenticated principal,
+trusted connection, unique active GM, exact JournalEntry identity, and the
+request's expected revision/epoch. A missing, malformed, untrusted, or
+non-exclusive coordinator fails closed with
+`m11-cross-client-coordinator-required` at `transport.coordinator`, with zero
+session writes. The caller cannot supply or influence the coordinator,
+descriptor, lease, connection identity, or callback through a request.
+
+The coordinator owns the cross-browser mutation lease. Exactly one connection
+may own a session/epoch lease; contenders from another connection, including a
+second client logged in as the same user, do not enter the persistence
+callback and receive `m11-control-transfer-required` at `authorityEpoch`.
+The coordinator invokes the supplied callback at most once and must return
+either `null` before callback entry for a rejected contender, or the exact
+isolated result returned by that callback. A non-null result without callback
+entry, a second callback invocation, a callback-result mismatch, or `null`
+after callback entry is invalid coordinator behavior and fails closed with
+`m11-cross-client-coordinator-required` at `transport.coordinator`.
+
+The coordinator supplies the callback a frozen, hostile-safe transport witness
+with exact key order:
+
+```js
+{
+  connectionId,
+  occurredAt
+}
+```
+
+`connectionId` must equal the descriptor connection and `occurredAt` must be a
+server/transport-generated canonical ISO-8601 UTC timestamp. Task 3 never uses
+a client-clock fallback. M11 captures and isolates the callback result before
+it leaves the boundary and never accepts a coordinator-supplied fabricated
+response. The coordinator releases its lease on success, rejection, exception,
+update failure, and post-write verification failure. Task 3 only defines and
+validates this boundary; the later transport slice supplies the concrete
+server-side implementation. A module-local per-session mutex remains
+defense-in-depth inside the callback and is never treated as cross-client
+serialization.
+
+Before coordinator acquisition, M11 resolves and completely validates the
+exact session document, constructs the canonical transfer fingerprint, and
+checks `processedRequests`. An exact replay returns its isolated stored
+response with zero writes and does not require or invoke the coordinator; a
+changed request ID returns `m11-request-id-conflict` with zero writes. A new
+request alone proceeds to coordinator acquisition; stale epoch handling is
+deferred until the exclusive callback so an in-flight valid write can win.
+
+Inside the exclusive callback M11 acquires that local mutex, freshly resolves
+and validates the JournalEntry, rereads trusted user/connection/active-GM
+metadata, verifies that the winning descriptor still matches, rechecks replay,
+revision, epoch, owner, and target identity, uses only the coordinator's
+transport witness timestamp, performs one update, and rereads the complete
+result. A changed connection or authority fails before update; an uncertain
+result returns `m11-recovery-required` without a speculative second update.
+
+### 6.2 Bootstrap authority after GM loss
 
 There is one and only one exception to condition 4: the bootstrap form of
 `transferVoyageEventSessionControl` or `recoverVoyageEventSession` may be
-accepted when the stored `activeGmUserId` is `null`, unavailable (disconnected
-or no longer a GM), or no longer Foundry's current active GM. The exception is
-valid only when all of the following are true:
+accepted when the stored `activeGmUserId` is unavailable (disconnected or no
+longer a GM), no longer Foundry's current active GM, or is the exact null-owner
+sentinel of a valid bootstrap fixture. Task 3 does not produce paused or
+recovery-required sessions; it accepts the null sentinel only at this transfer
+boundary, never treats an empty string as null, and never broadens the rule
+into Task 4 recovery. The exception is valid only when all of the following
+are true:
 
 1. the transport principal is authenticated, connected, a GM, and exactly
    Foundry's unique current `game.users.activeGM`;
@@ -592,6 +680,13 @@ valid only when all of the following are true:
 5. `authorityEpoch` equals the latest reread stored epoch; and
 6. the JournalEntry is reread and the active-GM/identity/revision checks are
    repeated immediately before the one update.
+
+For Task 3, the null-owner fixture is limited to an otherwise complete
+creation-only `setup` session at authority epoch zero, with the null value used
+only as the unavailable prior owner for this transfer boundary. A pre-transfer
+null fixture is not a reload or ordinary-dispatch success; after the verified
+bootstrap update, the resulting nonblank owner and bootstrap audit are part of
+the canonical reloadable transfer history.
 
 The bootstrap update sets `activeGmUserId` to the current active GM, increments
 `authorityEpoch` by exactly one, leaves both revisions, station
@@ -834,13 +929,74 @@ Exact request keys:
 }
 ```
 
-Only the authenticated current GM may transfer control, except the Section 6.1
-bootstrap transfer by the newly elected current active GM. At the final
-pre-write reread, both the executing user and `targetUserId` must identify the
-connected GM that is exactly Foundry's unique current
-`game.users.activeGM.id`; bootstrap additionally requires a null, unavailable,
-or no-longer-active stored GM. It never changes station assignment. The command
-writes only the authority fields and audit record.
+`kind` is `voyage.m11-transfer-control`. `requestId`, `sessionId`,
+`targetUserId`, and `reason` are nonblank strings; the two numeric fields are
+nonnegative safe integers. The caller cannot supply the previous GM, next
+state/epoch, bootstrap flag, audit ID, actor identity, timestamp, processed
+result, response, or candidate session. Transfer is not a dispatch
+`commandKind`; its record-only processed-request mapping is exactly
+`commandKind: "control-transfer"`, `resultKind: "control-transferred"`,
+`projectionKind: "gm"`, unchanged `resultRevision`, and fingerprint:
+
+```js
+JSON.stringify([sessionId, principalUserId, "gm", suppliedAuthorityEpoch,
+  expectedRevision, "control-transfer", { targetUserId, reason }])
+```
+
+An exact replay returns the stored isolated response with zero writes even when
+its epoch is historical. Any changed request identity, principal, role, target,
+reason, epoch, or revision is `m11-request-id-conflict`; a new request with an
+old epoch is `m11-control-transfer-required`.
+
+After hostile-safe capture, exact mode/shape validation, and trusted connected
+active-GM authentication, M11 performs the exact JournalEntry resolution,
+complete Task 3 session validation, canonical fingerprint construction, and
+`processedRequests` replay/conflict check before coordinator entry. Exact
+replay and request-ID conflict therefore remain write-free and coordinator-free,
+including after later authority-epoch advances. Only a request ID with no
+stored match enters the coordinator; its stale epoch is decided by the
+coordinator callback's fresh final reread rather than by a pre-entry stale
+return. The callback repeats replay/conflict checking for queued identical
+requests that arrive before the winner persists.
+
+At the final pre-write reread, the executing principal is authenticated,
+connected, a GM, and exactly Foundry's unique current
+`game.users.activeGM.id`; the target is also connected, a GM, and exactly that
+same current active-GM ID. An ordinary reauthorization has the same stored and
+current GM and records `bootstrap: false`; bootstrap adopts a valid nonblank
+stale, unavailable, disconnected, no-longer-GM, or different stored GM and
+records `bootstrap: true`. A changed winning connection fails with
+`m11-active-gm-required` at `transport.connection` before the update. Task 3
+does not fabricate a null owner; its only null use is the exact setup fixture
+described in Section 6.2. Broader null-owner recovery remains reserved for
+later valid paused or `recovery-required` sessions.
+
+Transfer leaves both revisions, lifecycle/phase, encounter state, station
+assignments, events, checkpoints, closeout, and recovery unchanged. It
+increments `authorityEpoch` once, changes only `activeGmUserId`, appends one
+processed record and one audit record, and verifies one atomic JournalEntry
+update. Audit records use exact ordered details
+`{ previousActiveGmUserId, nextActiveGmUserId, bootstrap, reason }`, the
+canonical audit-ID formula from Section 4, the unchanged session revision for
+both revision fields, the resulting epoch, bound session/request/actor IDs,
+and a server-generated ISO-8601 UTC timestamp. Only creation and these
+canonical Task 3 transfer records are accepted by the Task 3 reload validator;
+all later record kinds fail closed.
+
+The trusted cross-client coordinator above is the sole authority for entering
+the control-transfer persistence callback. The module-local asynchronous
+critical section keyed by exact Event Session identity is defense-in-depth
+inside that callback only. `JournalEntry.update` is not a compare-and-set
+operation and cannot provide cross-client serialization. The coordinator must
+therefore reject a same-session contender before its callback, returning
+`m11-control-transfer-required` at `authorityEpoch`; the local mutex separately
+prevents same-runtime overlap, with independent locks for different sessions.
+Both coordinator and local sections release on every success, failure,
+exception, update failure, and verification path. A coordinator that fabricates
+an envelope without callback entry, returns a different envelope, invokes the
+callback twice, or returns `null` after callback entry is invalid and returns
+`m11-cross-client-coordinator-required` at `transport.coordinator` without a
+second persistence attempt.
 
 ### `recoverVoyageEventSession(request)`
 
@@ -864,7 +1020,7 @@ special forward-only validator in Section 11 rather than ordinary complete
 current-session validation. It resolves the latest completely valid canonical
 checkpoint and replays validated append-only evidence from that checkpoint.
 When bootstrap recovery is used, the executing current active GM adopts
-ownership under Section 6.1 before the selected recovery action; no gameplay
+ownership under Section 6.2 before the selected recovery action; no gameplay
 state is changed by that adoption itself.
 
 ### `abortVoyageEventSession(request)`
@@ -979,7 +1135,7 @@ not require ordinary complete current-session validation:
 
 1. hostile capture;
 2. exact root keys, mode, nonblank reason, and recognized recovery action;
-3. transport authentication, unique-active-GM authority, and the Section 6.1
+3. transport authentication, unique-active-GM authority, and the Section 6.2
    bootstrap rule where needed;
 4. exact JournalEntry resolution and hostile-safe minimum recovery-envelope
    capture;
@@ -1012,6 +1168,7 @@ returns no partial recovery candidate.
 | `m11-authentication-required` | `transport.user` | Authenticated transport user is required. |
 | `m11-active-gm-unavailable` | `transport.activeGm` | No unique active GM is available. |
 | `m11-active-gm-required` | `transport.activeGm` | The authenticated user is not the current active GM. |
+| `m11-cross-client-coordinator-required` | `transport.coordinator` | A trusted cross-client mutation coordinator is required. |
 | `m11-session-document-not-found` | `sessionId` | Exact Event Session document was not resolved. |
 | `m11-ambiguous-session-document` | `sessionId` | More than one Event Session document matched. |
 | `m11-invalid-session-document` | `flags.arcflight.system.voyageSession` | Stored Event Session is invalid. |
@@ -1070,12 +1227,13 @@ the session. Task 2 continues to accept only its exact record-only
 
 Processed request IDs survive reload, pause, recovery, control transfer,
 abort, and completion. Task 2 stores and replays only its exact creation
-record; any future command record fails closed until its owning slice registers
-the complete canonical validator. Later slices validate historical principal,
-role, authority, revision, result, response, and fingerprint values without
-rewriting them. The replay fingerprint always uses M11's derived role, not a
-request field. A completed session accepts only exact duplicate reads or
-recovery inspection; it never replays gameplay mutation.
+record; Task 3 additionally stores and replays only its exact
+`control-transfer` record. Any later command record fails closed until its
+owning slice registers the complete canonical validator. Later slices validate
+historical principal, role, authority, revision, result, response, and
+fingerprint values without rewriting them. The replay fingerprint always uses
+M11's derived role, not a request field. A completed session accepts only exact
+duplicate reads or recovery inspection; it never replays gameplay mutation.
 
 ## 11. Checkpoints, persistence, and recovery
 
@@ -1280,7 +1438,7 @@ operation.
 When the active GM disconnects, M11 rejects mutating commands, preserves the
 latest persisted state, and emits no speculative projection. Foundry's newly
 elected active GM may issue `transferVoyageEventSessionControl` or
-`recoverVoyageEventSession` only through the Section 6.1 bootstrap exception;
+`recoverVoyageEventSession` only through the Section 6.2 bootstrap exception;
 that command increments `authorityEpoch` and records the transfer without
 changing either revision. A recovery action then uses the forward-only rebuild
 in Section 11.1. Old authority epochs cannot mutate or replay a new command,
@@ -1500,12 +1658,22 @@ The M11 implementation must cover:
   authority rejection, stale revision, wrong authority epoch, and exact
   failure sentinels;
 - authentication failure, no active GM, non-GM GM-only command, active-GM
-  election, bootstrap transfer/recovery with null and stale stored GM,
+  election, Task 3 bootstrap transfer with stale stored GM, and later-slice
+  bootstrap recovery with its valid null-owner state,
   old-epoch rejection, disconnected/non-GM/non-active control-transfer target,
   final-reread authority/revision drift, and station preservation;
 - unique request success, exact creation replay with zero writes, the exact
   record-only `create-session` creation mapping, changed-data/principal/role
   conflict, exact creation-record tamper rejection, and zero-write reload;
+- Task 3 control-transfer request order and record-only mapping, ordinary and
+  bootstrap audit pairing, dense authority-epoch continuity, historical replay
+  before and after transfer without coordinator entry, same-request concurrent
+  replay, trusted cross-client coordinator descriptors and frozen transport
+  witnesses, same-user different-connection contention, callback provenance
+  failures (fabricated/mismatched/double invocation), missing/rejected
+  coordinator zero-write failures, final active-GM/connection reread, one-write
+  verification, server-generated audit timestamps, and exact
+  write-failure/recovery classification;
 - trusted operator-resolution witnesses for canonical `kind + id` and
   `kind + uuid` assignments, optional names, differing display names, wrong
   kind/identity, ambiguous or malformed resolver data, and caller-authored

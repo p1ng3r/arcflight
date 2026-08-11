@@ -20,14 +20,24 @@ const CLOSEOUT_FIELDS = Object.freeze(["status", "applicationId", "closeoutId", 
 const RECOVERY_FIELDS = Object.freeze(["status", "reasonCode", "failedRequestId", "failedRevision", "checkpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId"]);
 const PROCESSED_REQUEST_FIELDS = Object.freeze(["requestId", "principalUserId", "projectionKind", "fingerprint", "commandKind", "resultKind", "resultRevision", "response"]);
 const CREATION_COMMAND_KIND = "create-session";
+const TRANSFER_COMMAND_KIND = "control-transfer";
+const TRANSFER_RESULT_KIND = "control-transferred";
+const TRANSFER_REQUEST_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "targetUserId", "reason"]);
+const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
+const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
+const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
+const AUDIT_DETAILS_FIELDS = Object.freeze(["previousActiveGmUserId", "nextActiveGmUserId", "bootstrap", "reason"]);
+const RESPONSE_FIELDS = Object.freeze(["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]);
+const transferLocks = new Map();
 const COMMAND_KINDS = new Set(["pause", "resume", "station-selection", "station-selection-clear", "station-order", "plan-lock", "action-segment", "reaction", "round-closeout", "emergency-response", "closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
-const FORBIDDEN_PAYLOAD_KEYS = new Set(["principalUserId", "projectionKind", "fingerprint", "result", "resultKind", "resultRevision", "candidate", "event", "response", "receipt", "nextState", "revision", "authorityEpoch", "authenticatedUserId", "gmUserId", "isGM", "role", "authority", "analysis", "outcome"]);
+const FORBIDDEN_PAYLOAD_KEYS = new Set(["principalUserId", "projectionKind", "fingerprint", "result", "resultKind", "resultRevision", "candidate", "event", "response", "receipt", "nextState", "revision", "authorityEpoch", "authenticatedUserId", "connectionId", "clientId", "gmUserId", "isGM", "role", "authority", "approval", "lease", "coordinator", "exclusive", "runExclusiveSessionMutation", "analysis", "outcome"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const MESSAGES = Object.freeze({
   hostile: "M11 data could not be captured safely.", shape: "Request shape, order, or root values are invalid.", mode: "The requested M11 API mode is invalid.",
   missing: "Exact Event Session document was not resolved.", ambiguous: "More than one Event Session document matched.", invalid: "Stored Event Session is invalid.",
   write: "Event Session write did not complete or verify.", recovery: "Event Session requires explicit recovery.", payload: "Command payload is invalid.",
-  authentication: "Authenticated transport user is required.", activeUnavailable: "No unique active GM is available.", activeRequired: "The authenticated user is not the current active GM."
+  authentication: "Authenticated transport user is required.", activeUnavailable: "No unique active GM is available.", activeRequired: "The authenticated user is not the current active GM.", coordinatorRequired: "A trusted cross-client mutation coordinator is required.",
+  targetInvalid: "Control-transfer target must be the unique current active GM.", transferRequired: "Event Session control has transferred."
 });
 
 function diagnostic(code, path) {
@@ -36,7 +46,7 @@ function diagnostic(code, path) {
     "m11-session-document-not-found": MESSAGES.missing, "m11-ambiguous-session-document": MESSAGES.ambiguous, "m11-invalid-session-document": MESSAGES.invalid,
     "m11-session-write-failed": MESSAGES.write, "m11-recovery-required": MESSAGES.recovery, "m11-command-payload-invalid": MESSAGES.payload,
     "m11-request-id-required": "A unique request ID is required.", "m11-request-id-conflict": "Request ID was previously used with different data.",
-    "m11-control-transfer-required": "Event Session control has transferred.", "m11-stale-session-revision": "Event Session revision is stale.",
+    "m11-control-transfer-required": MESSAGES.transferRequired, "m11-control-transfer-target-invalid": MESSAGES.targetInvalid, "m11-cross-client-coordinator-required": MESSAGES.coordinatorRequired, "m11-stale-session-revision": "Event Session revision is stale.",
     "m11-command-not-allowed": "Command is not allowed in the current session state.",
     "m11-authentication-required": MESSAGES.authentication, "m11-active-gm-unavailable": MESSAGES.activeUnavailable, "m11-active-gm-required": MESSAGES.activeRequired
   };
@@ -47,8 +57,8 @@ function failure(errors, identities = {}) {
   return { ok: false, requestId: identities.requestId ?? null, sessionId: identities.sessionId ?? null, status: "failed", revision: null, authorityEpoch: null, projection: null, events: [], errors, warnings: [] };
 }
 
-function success(session, requestId = null) {
-  return { ok: true, requestId, sessionId: session.sessionId, status: session.sessionState, revision: session.revision, authorityEpoch: session.authorityEpoch, projection: null, events: [], errors: [], warnings: [] };
+function success(session, requestId = null, authorityEpoch = session.authorityEpoch) {
+  return { ok: true, requestId, sessionId: session.sessionId, status: session.sessionState, revision: session.revision, authorityEpoch, projection: null, events: [], errors: [], warnings: [] };
 }
 
 function isPlainObject(value) {
@@ -126,9 +136,9 @@ function validCreationDefinition(value, session) {
   }
   return true;
 }
-function validCreationRecord(record, session) {
-  if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId)
-    || record.principalUserId !== session.activeGmUserId || record.projectionKind !== "gm" || record.commandKind !== CREATION_COMMAND_KIND
+function validCreationRecord(record, session, initialGmUserId) {
+  if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || !nonBlank(initialGmUserId)
+    || record.principalUserId !== initialGmUserId || record.projectionKind !== "gm" || record.commandKind !== CREATION_COMMAND_KIND
     || record.resultKind !== "created" || record.resultRevision !== 0 || !isPlainObject(record.response) || typeof record.fingerprint !== "string") return false;
   const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
   const tuple = parsed.value;
@@ -136,7 +146,7 @@ function validCreationRecord(record, session) {
     || !exactKeys(tuple[6], ["eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"])
     || tuple[6].eventId !== session.eventId || tuple[6].definitionSnapshotId !== session.definitionSnapshotId || tuple[6].shipId !== session.shipId
     || !equal(tuple[6].initialEncounterState, session.encounterState) || !validCreationDefinition(tuple[6].eventDefinition, session)) return false;
-  const expectedResponse = success(session, record.requestId);
+  const expectedResponse = success(session, record.requestId, 0);
   return equal(record.response, expectedResponse);
 }
 
@@ -150,18 +160,61 @@ function parseStoredFingerprint(value) {
     return { ok: true, value: captured.value };
   } catch { return { ok: false, value: null }; }
 }
-function pristineSession(session, documentId) {
-  if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentId
-    || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId, session.activeGmUserId].every(nonBlank)
-    || session.revision !== 0 || session.sessionState !== "setup" || session.authorityEpoch !== 0 || !validEncounterState(session.encounterState, session)
-    || session.encounterState.revision !== 0 || session.encounterState.lifecycleState !== "draft" || session.encounterState.phase !== null
-    || !Array.isArray(session.events) || session.events.length !== 0 || !Array.isArray(session.checkpoints) || session.checkpoints.length !== 0
-    || !Array.isArray(session.processedRequests) || session.processedRequests.length !== 1 || !validCreationRecord(session.processedRequests[0], session) || !Array.isArray(session.auditHistory) || session.auditHistory.length !== 0
-    || !exactKeys(session.closeout, CLOSEOUT_FIELDS) || session.closeout.status !== "none"
-    || !Object.keys(session.closeout).slice(1).every((key) => session.closeout[key] === null)
-    || !exactKeys(session.recovery, RECOVERY_FIELDS) || session.recovery.status !== "none"
-    || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
-  return session.encounterState.lifecycleState === "draft" && session.encounterState.phase === null;
+function validIsoTimestamp(value) {
+  try { return typeof value === "string" && nonBlank(value) && new Date(value).toISOString() === value; } catch { return false; }
+}
+function auditId(sessionId, index, kind) { return `arcflight-voyage-audit:${JSON.stringify([sessionId, index, kind])}`; }
+function validAudit(record, session, index, request, previousGm, nextGm, bootstrap) {
+  return exactKeys(record, AUDIT_FIELDS) && record.auditId === auditId(session.sessionId, index, record.kind)
+    && (record.kind === "control-transfer" || record.kind === "control-transfer-bootstrap")
+    && record.sessionId === session.sessionId && record.requestId === request.requestId
+    && nonBlank(record.actorUserId) && record.actorUserId === request.principalUserId && record.authorityEpoch === index + 1
+    && record.previousRevision === session.revision && record.revision === session.revision && validIsoTimestamp(record.occurredAt)
+    && (nonBlank(previousGm) || (previousGm === null && bootstrap === true)) && nonBlank(nextGm) && exactKeys(record.details, AUDIT_DETAILS_FIELDS) && record.details.previousActiveGmUserId === previousGm
+    && record.details.nextActiveGmUserId === nextGm && record.details.bootstrap === bootstrap && nonBlank(record.details.reason)
+    && record.details.reason === request.reason && record.kind === (bootstrap ? "control-transfer-bootstrap" : "control-transfer");
+}
+function validTransferRecord(record, session, index, audit, previousGm) {
+  if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || record.projectionKind !== "gm"
+    || record.commandKind !== TRANSFER_COMMAND_KIND || record.resultKind !== TRANSFER_RESULT_KIND || record.resultRevision !== session.revision
+    || !isPlainObject(record.response) || typeof record.fingerprint !== "string") return false;
+  const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
+  const tuple = parsed.value;
+  if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm" || tuple[3] !== index || tuple[4] !== session.revision || tuple[5] !== TRANSFER_COMMAND_KIND
+    || !exactKeys(tuple[6], ["targetUserId", "reason"]) || !nonBlank(tuple[6].targetUserId) || !nonBlank(tuple[6].reason)) return false;
+  const nextGm = tuple[6].targetUserId, bootstrap = previousGm !== nextGm;
+  if (record.response && (!equal(record.response, success(session, record.requestId, index + 1)) || !validAudit(audit, session, index, { ...record, reason: tuple[6].reason }, previousGm, nextGm, bootstrap))) return false;
+  return true;
+}
+function pristineSession(session, documentId, { allowBootstrapNull = false } = {}) {
+  try {
+    const nullBootstrapState = session?.activeGmUserId === null && allowBootstrapNull && session?.authorityEpoch === 0;
+    if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentId
+      || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId].every(nonBlank) || (!nonBlank(session.activeGmUserId) && !nullBootstrapState)
+      || session.revision !== 0 || session.sessionState !== "setup" || !safeInteger(session.authorityEpoch) || !validEncounterState(session.encounterState, session)
+      || session.encounterState.revision !== 0 || session.encounterState.lifecycleState !== "draft" || session.encounterState.phase !== null
+      || !Array.isArray(session.events) || session.events.length !== 0 || !Array.isArray(session.checkpoints) || session.checkpoints.length !== 0
+      || !Array.isArray(session.processedRequests) || session.processedRequests.length < 1 || !Array.isArray(session.auditHistory)
+      || session.processedRequests.length !== session.authorityEpoch + 1 || session.auditHistory.length !== session.authorityEpoch
+      || !validCreationRecord(session.processedRequests[0], session, session.processedRequests[0]?.principalUserId)
+      || !exactKeys(session.closeout, CLOSEOUT_FIELDS) || session.closeout.status !== "none"
+      || !Object.keys(session.closeout).slice(1).every((key) => session.closeout[key] === null)
+      || !exactKeys(session.recovery, RECOVERY_FIELDS) || session.recovery.status !== "none"
+      || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
+    let owner = session.processedRequests[0].principalUserId;
+    const requestIds = new Set([session.processedRequests[0].requestId]);
+    for (let index = 0; index < session.authorityEpoch; index += 1) {
+      const request = session.processedRequests[index + 1], audit = session.auditHistory[index];
+      const auditPrevious = audit?.details?.previousActiveGmUserId;
+      const transferPrevious = index === 0 && auditPrevious === null ? null : owner;
+      if (!exactKeys(request, PROCESSED_REQUEST_FIELDS) || requestIds.has(request.requestId) || !validTransferRecord(request, session, index, audit, transferPrevious)) return false;
+      if (auditPrevious !== transferPrevious) return false;
+      requestIds.add(request.requestId);
+      const tuple = parseStoredFingerprint(request.fingerprint); if (!tuple.ok) return false;
+      owner = tuple.value[6].targetUserId;
+    }
+    return (session.activeGmUserId === null && allowBootstrapNull && session.authorityEpoch === 0) || owner === session.activeGmUserId;
+  } catch { return false; }
 }
 
 function trustedJournalEntry(document, context = {}) {
@@ -226,10 +279,12 @@ function trustedUsers(context) {
   } catch { return { ok: false, users: [] }; }
 }
 function trustedAuthorityContext(context) {
-  let authenticatedUserId, activeGmUserId;
+  let authenticatedUserId, activeGmUserId, authenticatedConnectionId, trustedTransportContext;
   try {
     authenticatedUserId = context?.authenticatedUserId ?? globalThis.game?.user?.id;
     activeGmUserId = context?.activeGmUserId ?? globalThis.game?.users?.activeGM?.id;
+    authenticatedConnectionId = context?.authenticatedConnectionId;
+    trustedTransportContext = context?.trustedTransportContext;
   } catch { return { error: diagnostic("m11-authentication-required", "transport.user") }; }
   if (!nonBlank(authenticatedUserId)) return { error: diagnostic("m11-authentication-required", "transport.user") };
   const trusted = trustedUsers(context);
@@ -240,14 +295,36 @@ function trustedAuthorityContext(context) {
   const activeMatches = trusted.users.filter((user) => user.id === activeGmUserId);
   if (activeMatches.length !== 1 || typeof activeMatches[0].isGM !== "boolean" || typeof activeMatches[0].active !== "boolean" || activeMatches[0].isGM !== true || activeMatches[0].active !== true) return { error: diagnostic("m11-active-gm-unavailable", "transport.activeGm") };
   if (trusted.duplicates?.size) return { error: diagnostic("m11-authentication-required", "transport.user") };
-  return { authenticatedUserId, user: principalMatches[0], activeGmUserId, activeUser: activeMatches[0], users: trusted.users };
+  return { authenticatedUserId, authenticatedConnectionId, trustedTransportContext, user: principalMatches[0], activeGmUserId, activeUser: activeMatches[0], users: trusted.users };
 }
-function authority(context) {
+function authority(context, { requireConnection = false } = {}) {
   const resolved = trustedAuthorityContext(context); if (resolved.error) return resolved;
   if (resolved.user.isGM !== true || resolved.authenticatedUserId !== resolved.activeGmUserId) return { error: diagnostic("m11-active-gm-required", "transport.activeGm") };
+  if (requireConnection && (resolved.trustedTransportContext !== true || !nonBlank(resolved.authenticatedConnectionId))) return { error: diagnostic("m11-cross-client-coordinator-required", "transport.coordinator") };
   return resolved;
 }
 function authenticatedContext(context) { return trustedAuthorityContext(context); }
+function transferCoordinator(context) {
+  try {
+    const operation = ownData(context, "runExclusiveSessionMutation"), trust = ownData(context, "trustedTransportContext");
+    if (!operation.ok || !trust.ok || trust.value !== true || typeof operation.value !== "function") return { error: diagnostic("m11-cross-client-coordinator-required", "transport.coordinator") };
+    return { operation: operation.value };
+  } catch { return { error: diagnostic("m11-cross-client-coordinator-required", "transport.coordinator") };
+  }
+}
+function coordinatorDescriptor(value, documentIdValue, authorityContext) {
+  const descriptor = {
+    sessionId: value.sessionId,
+    sessionDocumentId: documentIdValue,
+    expectedRevision: value.expectedRevision,
+    expectedAuthorityEpoch: value.authorityEpoch,
+    authenticatedUserId: authorityContext.authenticatedUserId,
+    connectionId: authorityContext.authenticatedConnectionId,
+    activeGmUserId: authorityContext.activeGmUserId
+  };
+  return exactKeys(descriptor, TRANSFER_COORDINATOR_FIELDS) && TRANSFER_COORDINATOR_FIELDS.every((key) => nonBlank(descriptor[key]) || (key === "expectedRevision" || key === "expectedAuthorityEpoch")) && safeInteger(descriptor.expectedRevision) && safeInteger(descriptor.expectedAuthorityEpoch)
+    ? Object.freeze(descriptor) : null;
+}
 function canonicalOperator(value) {
   const captured = capture(value);
   if (!captured.ok || captured.value === null) return null;
@@ -312,6 +389,103 @@ function sourceSnapshot(document, context) {
 }
 function collectionUnchanged(before, after, beforeSources, context) {
   return before.length === after.length && before.every((entry, index) => entry === after[index] && equal(beforeSources[index], sourceSnapshot(after[index], context)));
+}
+function transportWitness(value, descriptor) {
+  try {
+    const captured = capture(value);
+    if (!captured.ok || !exactKeys(captured.value, TRANSPORT_WITNESS_FIELDS)
+      || captured.value.connectionId !== descriptor.connectionId || !validIsoTimestamp(captured.value.occurredAt)) return null;
+    return Object.freeze(captured.value);
+  } catch { return null; }
+}
+function targetIsCurrentActiveGm(targetUserId, authorityContext) {
+  if (targetUserId !== authorityContext.activeGmUserId) return false;
+  const matches = authorityContext.users.filter((user) => user.id === targetUserId);
+  return matches.length === 1 && matches[0].isGM === true && matches[0].active === true;
+}
+function transferRecord(session, value, authorityContext, bootstrap, response) {
+  const payload = { targetUserId: value.targetUserId, reason: value.reason };
+  return {
+    requestId: value.requestId,
+    principalUserId: authorityContext.authenticatedUserId,
+    projectionKind: "gm",
+    fingerprint: fingerprint(value.sessionId, authorityContext.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, TRANSFER_COMMAND_KIND, payload),
+    commandKind: TRANSFER_COMMAND_KIND,
+    resultKind: TRANSFER_RESULT_KIND,
+    resultRevision: session.revision,
+    response
+  };
+}
+function transferAudit(session, value, authorityContext, previousGm, bootstrap, occurredAt) {
+  const nextEpoch = session.authorityEpoch + 1;
+  const kind = bootstrap ? "control-transfer-bootstrap" : "control-transfer";
+  return {
+    auditId: auditId(session.sessionId, session.auditHistory.length, kind),
+    kind,
+    sessionId: session.sessionId,
+    requestId: value.requestId,
+    actorUserId: authorityContext.authenticatedUserId,
+    authorityEpoch: nextEpoch,
+    previousRevision: session.revision,
+    revision: session.revision,
+    occurredAt,
+    details: { previousActiveGmUserId: previousGm, nextActiveGmUserId: authorityContext.activeGmUserId, bootstrap, reason: value.reason }
+  };
+}
+function classifyTransferWrite(document, sessionId, documentIdValue, candidate, previous, requestId, context, options = {}) {
+  try {
+    const resolved = resolveSessionDocument(sessionId, context);
+    if (resolved.error || resolved.match.documentId !== documentIdValue) return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId });
+    if (equal(resolved.match.session, candidate) && pristineSession(resolved.match.session, documentIdValue, options)) return success(resolved.match.session, requestId);
+    if (equal(resolved.match.session, previous) && pristineSession(resolved.match.session, documentIdValue, options)) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId, sessionId });
+    return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId });
+  } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId, sessionId }); }
+}
+async function withTransferLock(sessionId, operation) {
+  const prior = transferLocks.get(sessionId) ?? Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const queued = prior.then(() => gate);
+  transferLocks.set(sessionId, queued);
+  await prior;
+  try { return await operation(); }
+  finally {
+    release();
+    if (transferLocks.get(sessionId) === queued) transferLocks.delete(sessionId);
+  }
+}
+function validTransferEnvelope(value) { return isPlainObject(value) && exactKeys(value, RESPONSE_FIELDS) && typeof value.ok === "boolean" && Array.isArray(value.events) && Array.isArray(value.errors) && Array.isArray(value.warnings); }
+async function runExclusiveTransfer(coordinator, descriptor, callback, identities) {
+  let callbackStarted = false, callbackCount = 0, invalid = false, callbackResult = null;
+  const guardedCallback = async (witness) => {
+    callbackCount += 1;
+    if (callbackCount !== 1) { invalid = true; throw new Error("M11 coordinator callback invoked more than once."); }
+    callbackStarted = true;
+    const capturedWitness = transportWitness(witness, descriptor);
+    if (!capturedWitness) { invalid = true; throw new Error("M11 coordinator transport witness is invalid."); }
+    let result;
+    try { result = await callback(capturedWitness); }
+    catch (error) { invalid = true; throw error; }
+    const capturedResult = capture(result);
+    if (!capturedResult.ok || !validTransferEnvelope(capturedResult.value)) { invalid = true; throw new Error("M11 coordinator callback result is invalid."); }
+    callbackResult = capturedResult.value;
+    const outbound = capture(callbackResult);
+    if (!outbound.ok) { invalid = true; throw new Error("M11 coordinator callback result could not be isolated."); }
+    return outbound.value;
+  };
+  let result;
+  try { result = await coordinator.operation(descriptor, guardedCallback); }
+  catch { return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities); }
+  if (invalid) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  if (!callbackStarted) {
+    return result === null
+      ? failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities)
+      : failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  }
+  if (result === null) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  const returned = capture(result);
+  if (!returned.ok || !equal(returned.value, callbackResult)) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  return callbackResult;
 }
 
 async function cleanupExact(document, expectedId, sessionId, beforeDocuments, context) {
@@ -402,6 +576,64 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   if (!COMMAND_KINDS.has(value.commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
   if (containsForbiddenPayloadAuthority(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
   return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+}
+
+export async function transferVoyageEventSessionControl(request, context = {}) {
+  const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
+  const value = captured.value, identities = requestIdentities(value);
+  if (!isPlainObject(value) || !Object.hasOwn(value, "requestId") || !nonBlank(value.requestId)) return failure([diagnostic("m11-request-id-required", "request.requestId")], identities);
+  if (!exactKeys(value, TRANSFER_REQUEST_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  if (value.kind !== "voyage.m11-transfer-control") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
+  const auth = authority(context, { requireConnection: true }); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.sessionId) || !nonBlank(value.targetUserId) || !nonBlank(value.reason) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  const initialResolved = resolveSessionDocument(value.sessionId, context); if (initialResolved.error) return failure([initialResolved.error], identities);
+  if (!pristineSession(initialResolved.match.session, initialResolved.match.documentId, { allowBootstrapNull: true })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, TRANSFER_COMMAND_KIND, { targetUserId: value.targetUserId, reason: value.reason });
+  const earlyReplay = replayOrConflict(initialResolved.match.session.processedRequests, value.requestId, auth.authenticatedUserId, "gm", requestFingerprint, identities); if (earlyReplay) return earlyReplay;
+  const coordinator = transferCoordinator(context); if (coordinator.error) return failure([coordinator.error], identities);
+  const descriptor = coordinatorDescriptor(value, initialResolved.match.documentId, auth);
+  if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  return runExclusiveTransfer(coordinator, descriptor, (trustedWitness) => withTransferLock(value.sessionId, async () => {
+    const lockedAuth = authority(context, { requireConnection: true }); if (lockedAuth.error) return failure([lockedAuth.error], identities);
+    if (lockedAuth.authenticatedUserId !== descriptor.authenticatedUserId || lockedAuth.authenticatedConnectionId !== descriptor.connectionId || lockedAuth.activeGmUserId !== descriptor.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+    const match = resolved.match;
+    if (match.documentId !== descriptor.sessionDocumentId) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    if (!pristineSession(match.session, match.documentId, { allowBootstrapNull: true })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const replay = replayOrConflict(match.session.processedRequests, value.requestId, lockedAuth.authenticatedUserId, "gm", requestFingerprint, identities); if (replay) return replay;
+    if (!targetIsCurrentActiveGm(value.targetUserId, lockedAuth)) return failure([diagnostic("m11-control-transfer-target-invalid", "request.targetUserId")], identities);
+    if (value.authorityEpoch !== match.session.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+    if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+    const previous = match.session;
+    const previousGm = previous.activeGmUserId, bootstrap = previousGm !== lockedAuth.activeGmUserId, occurredAt = trustedWitness.occurredAt;
+    const finalAuth = authority(context, { requireConnection: true }); if (finalAuth.error) return failure([finalAuth.error], identities);
+    if (finalAuth.authenticatedUserId !== descriptor.authenticatedUserId || finalAuth.authenticatedConnectionId !== descriptor.connectionId || finalAuth.activeGmUserId !== descriptor.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    if (!targetIsCurrentActiveGm(value.targetUserId, finalAuth)) return failure([diagnostic("m11-control-transfer-target-invalid", "request.targetUserId")], identities);
+    const finalResolved = resolveSessionDocument(value.sessionId, context); if (finalResolved.error) return failure([finalResolved.error], identities);
+    if (finalResolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(finalResolved.match.session, descriptor.sessionDocumentId, { allowBootstrapNull: true })) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    const latest = finalResolved.match.session;
+    const finalReplay = replayOrConflict(latest.processedRequests, value.requestId, finalAuth.authenticatedUserId, "gm", requestFingerprint, identities); if (finalReplay) return finalReplay;
+    if (latest.activeGmUserId !== previousGm) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    if (value.authorityEpoch !== latest.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+    if (value.expectedRevision !== latest.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+    let candidateCapture;
+    try { candidateCapture = capture(latest); } catch { candidateCapture = { ok: false }; }
+    if (!candidateCapture.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const candidate = candidateCapture.value;
+    candidate.activeGmUserId = finalAuth.activeGmUserId;
+    candidate.authorityEpoch = latest.authorityEpoch + 1;
+    const response = success(candidate, value.requestId);
+    const record = transferRecord(latest, value, finalAuth, bootstrap, response);
+    const audit = transferAudit(latest, value, finalAuth, previousGm, bootstrap, occurredAt);
+    candidate.processedRequests.push(record); candidate.auditHistory.push(audit);
+    if (!pristineSession(candidate, descriptor.sessionDocumentId)) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    try {
+      await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false });
+    } catch {
+      return classifyTransferWrite(match.document, value.sessionId, descriptor.sessionDocumentId, candidate, previous, value.requestId, context, { allowBootstrapNull: true });
+    }
+    return classifyTransferWrite(match.document, value.sessionId, descriptor.sessionDocumentId, candidate, previous, value.requestId, context, { allowBootstrapNull: true });
+  }), identities);
 }
 
 export function reloadVoyageEventSession(sessionId, context = {}) {
