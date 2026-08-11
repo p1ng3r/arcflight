@@ -54,6 +54,12 @@ const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
 const AUDIT_DETAILS_FIELDS = Object.freeze(["previousActiveGmUserId", "nextActiveGmUserId", "bootstrap", "reason"]);
 const CLOSEOUT_AUDIT_DETAILS_FIELDS = Object.freeze(["applicationId", "closeoutId", "previousSessionState", "nextSessionState"]);
+const CLOSEOUT_AUDIT_TRANSITIONS = Object.freeze({
+  "closeout-review-accepted": Object.freeze(["event-closeout-review", "persistent-application"]),
+  "closeout-session-reserved": Object.freeze(["persistent-application", "persistent-application"]),
+  "closeout-session-commit-pending": Object.freeze(["persistent-application", "persistent-application"]),
+  "closeout-session-committed": Object.freeze(["persistent-application", "completed"])
+});
 const M10_COMMIT_EVIDENCE_REQUEST_FIELDS = Object.freeze(["kind", "applicationId", "reservationId", "sessionId", "eventId", "definitionSnapshotId", "shipId", "expectedEncounterRevision"]);
 const M10_COMMIT_EVIDENCE_FIELDS = Object.freeze(["ok", "applicationId", "closeoutId", "eventId", "sessionId", "definitionSnapshotId", "shipId", "previousEncounterRevision", "encounterRevision", "completedCloseoutSnapshot", "encounterEvents", "pressureBreachSources", "errors", "warnings"]);
 const M10_COMPLETED_SNAPSHOT_FIELDS = Object.freeze(["schemaVersion", "eventId", "sessionId", "definitionSnapshotId", "shipId", "encounterRevision", "shipRevision", "lifecycleState", "stageId", "roundNumber", "phase", "completedRoundHistory", "momentum", "focusPools", "pressureSystems", "activeHazards", "pendingStationBenefitIds", "unconsumedRiskBidBenefitIds", "temporaryFocusPenaltyIds", "roundOrderRestrictions", "hazardSuppressions", "temporaryConsequenceIds"]);
@@ -328,7 +334,7 @@ function validPressureSources(sources, session) {
   return Array.isArray(sources) && Array.isArray(canonical) && sources.length === canonical.length
     && sources.every((source, index) => validPressureSourceShape(source, session, index) && canonical[index] !== null && equal(source, canonical[index]));
 }
-function validCanonicalPressureBreachEvent(event, session) {
+function validCanonicalPressureBreachEvent(event, session, sourceOverride = null) {
   try {
     if (!isPlainObject(event) || event.type !== "voyage.pressure-breach-applied" || !exactKeys(event, M10_EVENT_FIELDS[event.type])
       || event.encounterId !== session.eventId || event.lifecycleState !== "active" || !nonBlank(event.stageId) || !safeInteger(event.roundNumber)
@@ -338,7 +344,7 @@ function validCanonicalPressureBreachEvent(event, session) {
       || !isPlainObject(event.pressureReset) || event.pressureReset.resetValue !== 0 || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(event.pressureReset.pressureSystemId)) return false;
     const sources = canonicalPressureSources(session), breachEvents = session.events.filter((candidate) => candidate?.type === "voyage.pressure-breach-applied");
     const index = breachEvents.findIndex((candidate) => candidate === event || (candidate.revision === event.revision && equal(candidate, event)));
-    const source = index >= 0 ? sources[index] : null;
+    const source = sourceOverride ?? (index >= 0 ? sources[index] : null);
     if (source === null) return false;
     const result = analyzeVoyagePressureBreachCloseoutTransaction({
       expectedEncounterRevision: event.previousRevision,
@@ -349,6 +355,25 @@ function validCanonicalPressureBreachEvent(event, session) {
     });
     return result?.ok === true && result.breachRequired === true && equal(result.event, event);
   } catch { return false; }
+}
+function validReceiptPressureSources(sources, session, events) {
+  if (!Array.isArray(sources) || !Array.isArray(events)) return false;
+  const breachEvents = events.filter((event) => event?.type === "voyage.pressure-breach-applied");
+  if (sources.length !== breachEvents.length) return false;
+  return sources.every((source, index) => {
+    const event = breachEvents[index], eventPosition = events.indexOf(event), preceding = eventPosition > 0 ? events[eventPosition - 1] : null;
+    if (!validPressureSourceShape(source, session, index) || !preceding || preceding.type !== "voyage.hazard-closeout-consequence-applied"
+      || source.sourceHazardId !== preceding.hazardId || source.expectedEncounterRevision !== event.previousRevision
+      || preceding.encounterRevision !== event.previousRevision || source.closeoutContext.stageId !== preceding.stageId
+      || source.closeoutContext.roundNumber !== preceding.roundNumber || !equal(source.pressureSystems, event.previousPressureSystems)
+      || !equal(source.pressureEffect, preceding.pressureEffect)) return false;
+    const laterHazards = [];
+    for (let position = eventPosition + 1; position < events.length; position += 1) {
+      const later = events[position];
+      if (later?.type === "voyage.hazard-closeout-consequence-applied" && !laterHazards.some((hazard) => hazard.hazardId === later.hazardId)) laterHazards.push(later.previousHazard);
+    }
+    return equal(source.activeHazards, laterHazards) && validCanonicalPressureBreachEvent(event, session, source);
+  });
 }
 function validHazardCloseoutEvent(event, session, applicationId, closeoutId) {
   if (!(event.applicationId === applicationId && event.closeoutId === closeoutId && event.encounterId === session.eventId && event.eventId === session.eventId
@@ -366,11 +391,11 @@ function validHazardCloseoutEvent(event, session, applicationId, closeoutId) {
     && effect.visibility === event.previousHazard.visibility
     && effect.pressureEffectId === `arcflight-pressure-effect:${JSON.stringify(["hazard-closeout", session.eventId, session.sessionId, event.stageId, event.roundNumber, event.hazardId, event.consequenceId, effect.sequence, effect.pressureSystemId])}`;
 }
-function validM10CommitEvent(event, session, applicationId, closeoutId) {
+function validM10CommitEvent(event, session, applicationId, closeoutId, pressureSource = null) {
   if (!isPlainObject(event) || !M10_EVENT_FIELDS[event.type] || !exactKeys(event, M10_EVENT_FIELDS[event.type])) return false;
   if (event.type === "voyage.closeout-applied") return event.applicationId === applicationId && event.closeoutId === closeoutId && event.eventId === session.eventId && event.sessionId === session.sessionId && event.definitionSnapshotId === session.definitionSnapshotId && event.shipId === session.shipId && ["overall-success", "overall-failure"].includes(event.overallResult) && Array.isArray(event.proposalIds) && event.proposalIds.every(nonBlank) && new Set(event.proposalIds).size === event.proposalIds.length && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1 && safeInteger(event.shipRevision);
   if (event.type === "voyage.hazard-closeout-consequence-applied") return validHazardCloseoutEvent(event, session, applicationId, closeoutId);
-  return validCanonicalPressureBreachEvent(event, session);
+  return validCanonicalPressureBreachEvent(event, session, pressureSource);
 }
 function validCompletedSnapshotShape(snapshot, session) {
   if (!exactKeys(snapshot, M10_COMPLETED_SNAPSHOT_FIELDS) || snapshot.schemaVersion !== 1 || snapshot.eventId !== session.eventId || snapshot.sessionId !== session.sessionId
@@ -395,14 +420,22 @@ function validCompletedSnapshotShape(snapshot, session) {
     && snapshot.unconsumedRiskBidBenefitIds.length === 0 && snapshot.temporaryFocusPenaltyIds.length === 0 && snapshot.temporaryConsequenceIds.length === 0;
 }
 function exactReservationReceipt(receipt, closeout = null, session = null) {
-  if (!exactKeys(receipt, RESERVATION_RECEIPT_FIELDS) || receipt.kind !== "voyage.m11-closeout-session-reserved" || ![receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank) || !safeInteger(receipt.expectedEncounterRevision) || !Array.isArray(receipt.pressureBreachSources)) return false;
+  if (!exactKeys(receipt, RESERVATION_RECEIPT_FIELDS) || receipt.kind !== "voyage.m11-closeout-session-reserved" || ![receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank) || !safeInteger(receipt.expectedEncounterRevision) || receipt.expectedEncounterRevision < 0 || !Array.isArray(receipt.pressureBreachSources)) return false;
   if (receipt.reservationId !== `arcflight-closeout-reservation:${JSON.stringify([receipt.applicationId])}`) return false;
   if (session && (receipt.eventId !== session.eventId || receipt.sessionId !== session.sessionId || receipt.definitionSnapshotId !== session.definitionSnapshotId || receipt.shipId !== session.shipId || !validPressureSources(receipt.pressureBreachSources, session))) return false;
   return !closeout || (receipt.applicationId === closeout.applicationId && receipt.closeoutId === closeout.closeoutId && receipt.expectedEncounterRevision === closeout.expectedEncounterRevision);
 }
 function exactCommitReceipt(receipt, closeout = null, session = null) {
-  if (!exactKeys(receipt, COMMIT_RECEIPT_FIELDS) || receipt.kind !== "voyage.m11-closeout-session-committed" || ![receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank) || !safeInteger(receipt.previousEncounterRevision) || !safeInteger(receipt.encounterRevision) || !isPlainObject(receipt.completedCloseoutSnapshot) || !Array.isArray(receipt.encounterEvents) || !Array.isArray(receipt.pressureBreachSources)) return false;
-  if (session && (!validCompletedSnapshotShape(receipt.completedCloseoutSnapshot, session) || receipt.encounterRevision !== receipt.completedCloseoutSnapshot.encounterRevision || !validPressureSources(receipt.pressureBreachSources, session) || receipt.encounterEvents.length === 0 || receipt.encounterEvents.some((event) => !validM10CommitEvent(event, session, receipt.applicationId, receipt.closeoutId)) || !receipt.encounterEvents.some((event) => event.type === "voyage.closeout-applied"))) return false;
+  if (!exactKeys(receipt, COMMIT_RECEIPT_FIELDS) || receipt.kind !== "voyage.m11-closeout-session-committed" || ![receipt.reservationId, receipt.activeGmUserId, receipt.applicationId, receipt.closeoutId, receipt.eventId, receipt.sessionId, receipt.definitionSnapshotId, receipt.shipId].every(nonBlank) || !safeInteger(receipt.previousEncounterRevision) || receipt.previousEncounterRevision < 0 || !safeInteger(receipt.encounterRevision) || receipt.encounterRevision < 0 || !isPlainObject(receipt.completedCloseoutSnapshot) || !Array.isArray(receipt.encounterEvents) || !Array.isArray(receipt.pressureBreachSources)) return false;
+  if (session) {
+    let sourceIndex = 0;
+    const eventsValid = receipt.encounterEvents.every((event) => {
+      const source = event?.type === "voyage.pressure-breach-applied" ? receipt.pressureBreachSources[sourceIndex++] : null;
+      return validM10CommitEvent(event, session, receipt.applicationId, receipt.closeoutId, source);
+    });
+    if (!validCompletedSnapshotShape(receipt.completedCloseoutSnapshot, session) || receipt.encounterRevision !== receipt.completedCloseoutSnapshot.encounterRevision
+      || !eventsValid || !validCommitEventChain(receipt, session)) return false;
+  }
   if (closeout?.sessionReservationReceipt && !equal(receipt.pressureBreachSources, closeout.sessionReservationReceipt.pressureBreachSources)) return false;
   if (receipt.encounterEvents.length > 0 && receipt.encounterEvents.at(-1)?.type !== "voyage.closeout-applied") return false;
   return !closeout || (receipt.applicationId === closeout.applicationId && receipt.closeoutId === closeout.closeoutId && receipt.reservationId === closeout.reservationId && receipt.previousEncounterRevision === closeout.expectedEncounterRevision);
@@ -443,6 +476,10 @@ function validRuntimeEvent(event, session, index) {
   if (event.type === "voyage.m11-closeout-session-commit-pending") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-committed") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   return false;
+}
+function storedEventRevisionPair(event) {
+  if (event?.type === "voyage.hazard-closeout-consequence-applied" || event?.type === "voyage.closeout-applied") return [event.previousEncounterRevision, event.encounterRevision];
+  return [event?.previousRevision, event?.revision];
 }
 function validCheckpoint(checkpoint, session, events, index) {
   if (!exactKeys(checkpoint, CHECKPOINT_FIELDS) || !nonBlank(checkpoint.checkpointId) || !CHECKPOINT_KINDS.has(checkpoint.kind)
@@ -524,7 +561,12 @@ function validStoredResponse(response, record, sessionId, authorityEpoch) {
     && SESSION_STATES.has(response.status) && response.projection === null && safeInteger(response.revision) && response.revision === record.resultRevision && safeInteger(response.authorityEpoch) && response.authorityEpoch <= authorityEpoch
     && response.errors.length === 0 && response.warnings.length === 0;
 }
-function validCloseoutAudit(audit, session, record, event, previousState, nextState, historicalEpoch = null, expectedKind = "closeout-review-accepted", expectedEventType = "voyage.m11-closeout-review-accepted") {
+function closeoutAuditTransition(kind) {
+  return CLOSEOUT_AUDIT_TRANSITIONS[kind] ?? null;
+}
+function validCloseoutAudit(audit, session, record, event, historicalEpoch = null, expectedKind = "closeout-review-accepted", expectedEventType = "voyage.m11-closeout-review-accepted") {
+  const transition = closeoutAuditTransition(expectedKind);
+  if (!transition) return false;
   return exactKeys(audit, AUDIT_FIELDS) && audit.kind === expectedKind
     && audit.auditId === auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
     && audit.sessionId === session.sessionId && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId
@@ -532,8 +574,41 @@ function validCloseoutAudit(audit, session, record, event, previousState, nextSt
     && safeInteger(audit.revision) && audit.previousRevision + 1 === audit.revision && audit.revision === record.resultRevision
     && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, CLOSEOUT_AUDIT_DETAILS_FIELDS)
     && audit.details.applicationId === session.closeout.applicationId && audit.details.closeoutId === session.closeout.closeoutId
-    && audit.details.previousSessionState === previousState && audit.details.nextSessionState === nextState
+    && audit.details.previousSessionState === transition[0] && audit.details.nextSessionState === transition[1]
     && event?.type === expectedEventType && event.revision === audit.revision && event.previousRevision === audit.previousRevision;
+}
+function commitEventRevisionPair(event) {
+  if (event?.type === "voyage.hazard-closeout-consequence-applied" || event?.type === "voyage.closeout-applied") return [event.previousEncounterRevision, event.encounterRevision];
+  if (event?.type === "voyage.pressure-breach-applied") return [event.previousRevision, event.revision];
+  return null;
+}
+function validCommitEventChain(receipt, session) {
+  const events = receipt.encounterEvents;
+  if (!Array.isArray(events) || events.length === 0 || events.at(-1)?.type !== "voyage.closeout-applied") return false;
+  const revisions = new Set(), identities = new Set(), hazards = new Set(), breaches = new Set();
+  let encounterRevision = receipt.previousEncounterRevision;
+  let finalCount = 0;
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index], pair = commitEventRevisionPair(event);
+    if (!pair || !safeInteger(pair[0]) || pair[0] < 0 || !safeInteger(pair[1]) || pair[1] < 0 || pair[1] !== pair[0] + 1 || pair[0] !== encounterRevision || revisions.has(pair[1])) return false;
+    revisions.add(pair[1]);
+    const identity = event.type === "voyage.pressure-breach-applied" ? event.breach?.pressureBreachId : event.type === "voyage.hazard-closeout-consequence-applied" ? `${event.hazardId}:${event.consequenceId}` : `${event.eventId}:${event.closeoutId}`;
+    if (!nonBlank(identity) || identities.has(identity)) return false;
+    identities.add(identity);
+    if (event.type === "voyage.hazard-closeout-consequence-applied") {
+      if (hazards.has(event.hazardId)) return false;
+      hazards.add(event.hazardId);
+    } else if (event.type === "voyage.pressure-breach-applied") {
+      if (index === 0 || events[index - 1].type !== "voyage.hazard-closeout-consequence-applied" || breaches.has(event.breach.pressureBreachId)) return false;
+      breaches.add(event.breach.pressureBreachId);
+    } else if (event.type === "voyage.closeout-applied") {
+      finalCount += 1;
+      if (index !== events.length - 1 || finalCount !== 1) return false;
+    }
+    encounterRevision = pair[1];
+  }
+  if (finalCount !== 1 || encounterRevision !== receipt.encounterRevision || receipt.encounterRevision !== receipt.completedCloseoutSnapshot.encounterRevision) return false;
+  return Array.isArray(receipt.pressureBreachSources) && (validPressureSources(receipt.pressureBreachSources, session) || validReceiptPressureSources(receipt.pressureBreachSources, session, events));
 }
 function validCloseoutRecord(record, session, audit, event) {
   if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || record.projectionKind !== "gm" || typeof record.fingerprint !== "string" || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
@@ -541,20 +616,19 @@ function validCloseoutRecord(record, session, audit, event) {
   const tuple = parsed.value;
   const expectedPayloadKeys = record.commandKind === "closeout-review" ? ["confirmed", "previewRequest", "suppliedPreview"] : [];
   if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm" || !safeInteger(tuple[3]) || !safeInteger(tuple[4]) || tuple[3] > session.authorityEpoch
-    || tuple[5] !== record.commandKind || !exactKeys(tuple[6], expectedPayloadKeys)) return false;
+    || tuple[5] !== record.commandKind || !exactKeys(tuple[6], expectedPayloadKeys) || !safeInteger(record.response.authorityEpoch) || record.response.authorityEpoch !== tuple[3]) return false;
   if (!["closeout-prepare", "closeout-ship-apply"].includes(record.commandKind) && tuple[4] + 1 !== record.resultRevision) return false;
   if (record.commandKind === "closeout-review" && record.resultKind === "closeout-review-accepted") {
     return session.closeout.status === "accepted-for-application" || session.closeout.status === "prepared-awaiting-session" || session.closeout.status === "ship-applied-awaiting-session" || session.closeout.status === "commit-pending" || session.closeout.status === "committed"
-      ? validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event) && validCloseoutAudit(audit, session, record, event, "event-closeout-review", "persistent-application", tuple[3])
+      ? validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && record.response.status === "persistent-application" && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event) && validCloseoutAudit(audit, session, record, event, tuple[3])
       : false;
   }
   if ((record.commandKind === "closeout-reserve" && record.resultKind === "closeout-session-reserved") || (record.commandKind === "closeout-session-commit" && ["closeout-session-commit-pending", "closeout-session-committed"].includes(record.resultKind))) {
     const eventType = record.resultKind === "closeout-session-commit-pending" ? "voyage.m11-closeout-session-commit-pending" : record.resultKind === "closeout-session-reserved" ? "voyage.m11-closeout-session-reserved" : "voyage.m11-closeout-session-committed";
     const auditKind = record.resultKind === "closeout-session-commit-pending" ? "closeout-session-commit-pending" : record.resultKind === "closeout-session-reserved" ? "closeout-session-reserved" : "closeout-session-committed";
-    const nextState = record.resultKind === "closeout-session-committed" ? "completed" : "persistent-application";
-    return validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event)
+    return validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && record.response.status === (record.resultKind === "closeout-session-committed" ? "completed" : "persistent-application") && Array.isArray(record.response.events) && record.response.events.length === 1 && equal(record.response.events[0], event)
       && event?.type === eventType && event.revision === record.resultRevision && event.previousRevision === record.resultRevision - 1
-      && validCloseoutAudit(audit, session, record, event, audit.details?.previousSessionState, nextState, tuple[3], auditKind, eventType)
+      && validCloseoutAudit(audit, session, record, event, tuple[3], auditKind, eventType)
       && audit.details.applicationId === session.closeout.applicationId && audit.details.closeoutId === session.closeout.closeoutId;
   }
   if (record.commandKind === "closeout-prepare" && record.resultKind === "prepared-awaiting-session") {
@@ -568,6 +642,28 @@ function validCloseoutRecord(record, session, audit, event) {
     return valid;
   }
   return false;
+}
+function validTerminalCloseoutEvidence(session) {
+  try {
+    if (session.sessionState !== "completed" || session.closeout.status !== "committed") return false;
+    const events = session.events.filter((entry) => entry?.type === "voyage.m11-closeout-session-committed");
+    const audits = session.auditHistory.filter((entry) => entry?.kind === "closeout-session-committed");
+    const pendingRecords = session.processedRequests.filter((record) => record.commandKind === "closeout-session-commit" && record.resultKind === "closeout-session-commit-pending");
+    const committedRecords = session.processedRequests.filter((record) => record.commandKind === "closeout-session-commit" && record.resultKind === "closeout-session-committed");
+    if (events.length !== 1 || audits.length !== 1 || pendingRecords.length !== 1 || committedRecords.length > 1) return false;
+    const event = events[0], audit = audits[0], record = committedRecords[0] ?? pendingRecords[0];
+    if (!validRuntimeEvent(event, session, session.events.indexOf(event)) || event.revision !== session.revision || event.previousRevision !== session.revision - 1) return false;
+    if (committedRecords.length === 0) {
+      if (!exactKeys(audit, AUDIT_FIELDS) || audit.kind !== "closeout-session-committed" || audit.auditId !== auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
+        || audit.sessionId !== session.sessionId || audit.requestId !== pendingRecords[0].requestId || audit.actorUserId !== pendingRecords[0].principalUserId
+        || audit.authorityEpoch !== session.authorityEpoch || audit.previousRevision !== event.previousRevision || audit.revision !== event.revision || !validIsoTimestamp(audit.occurredAt)
+        || !exactKeys(audit.details, CLOSEOUT_AUDIT_DETAILS_FIELDS) || audit.details.applicationId !== session.closeout.applicationId || audit.details.closeoutId !== session.closeout.closeoutId
+        || audit.details.previousSessionState !== "persistent-application" || audit.details.nextSessionState !== "completed") return false;
+    } else if (!validCloseoutAudit(audit, session, record, event, parseStoredFingerprint(record.fingerprint).value[3], "closeout-session-committed", "voyage.m11-closeout-session-committed")) return false;
+    if (committedRecords.length === 1) return validCloseoutRecord(record, session, audit, event);
+    return audit.requestId === pendingRecords[0].requestId && audit.actorUserId === pendingRecords[0].principalUserId
+      && validStoredResponse(pendingRecords[0].response, pendingRecords[0], session.sessionId, session.authorityEpoch);
+  } catch { return false; }
 }
 function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = false, recoveryEnvelope: recoveryEnvelopeMode = false } = {}, replayContext = {}) {
   try {
@@ -630,9 +726,13 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
       } else return false;
       requestIds.add(record.requestId);
     }
+    if (session.sessionState === "completed" || session.closeout.status === "committed") {
+      if (!validTerminalCloseoutEvidence(session)) return false;
+    }
     const storedBootstrapRecoveryCount = session.auditHistory.filter((entry) => entry?.kind === "recovery-control-transfer").length;
     const storedTransferCount = session.auditHistory.filter((entry) => entry?.kind === "control-transfer" || entry?.kind === "control-transfer-bootstrap").length;
-    if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount + session.processedRequests.filter((record) => record.commandKind === "closeout-review" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-session-commit").length || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
+    const closeoutAuditCount = session.auditHistory.filter((entry) => Object.hasOwn(CLOSEOUT_AUDIT_TRANSITIONS, entry?.kind)).length;
+    if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount + closeoutAuditCount || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
     if (recoveryCount === 0) {
       if (session.recovery.status !== "none" || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
     } else if (!latestRecoveryEvidence || !validResolvedRecovery(session.recovery, latestRecoveryEvidence.event, latestRecoveryEvidence.audit, latestRecoveryEvidence.sourceCheckpoint)) return false;
@@ -998,7 +1098,7 @@ async function dispatchCloseoutCommand(value, identities, auth, match, context, 
     const response = closeoutResponse(candidate, value.requestId, event);
     candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: requestFingerprint, commandKind, resultKind: "closeout-review-accepted", resultRevision: revision, response });
     if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
-    try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, match.session, value.requestId, context); }
+    try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, match.session, value.requestId, context, { successResponse: response }); }
     return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, match.session, value.requestId, context, { successResponse: response });
   }
   if (commandKind === "closeout-prepare") {
@@ -1039,7 +1139,7 @@ async function dispatchCloseoutCommand(value, identities, auth, match, context, 
     if (!validM10OperationSuccess(finalized, ["committed", "already-committed"], match.session, receipt.applicationId, receipt.closeoutId)
       || finalized.revision !== receipt.completedCloseoutSnapshot.shipRevision) return m10Failure(finalized) ? failure(finalized.errors, identities) : failure([diagnostic("m11-m10-handoff-invalid", "m10")], identities);
     const finalValue = match.session.closeout.status === "commit-pending" ? value : { ...value, expectedRevision: candidateResult.revision };
-    return finalizePendingCloseoutSession(match, finalValue, auth, context);
+    return finalizePendingCloseoutSession(match, finalValue, auth, context, trustedWitness);
   }
   return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
 }
@@ -1077,8 +1177,12 @@ async function resolveCommitReceipt(session, context) {
     if (!isPlainObject(result) || !exactKeys(result, M10_COMMIT_EVIDENCE_FIELDS) || result.ok !== true || ![result.applicationId, result.closeoutId, result.eventId, result.sessionId, result.definitionSnapshotId, result.shipId].every(nonBlank)
       || result.applicationId !== reservation.applicationId || result.eventId !== session.eventId || result.sessionId !== session.sessionId || result.definitionSnapshotId !== session.definitionSnapshotId || result.shipId !== session.shipId
       || !safeInteger(result.previousEncounterRevision) || result.previousEncounterRevision !== reservation.expectedEncounterRevision || !safeInteger(result.encounterRevision) || !validCompletedSnapshotShape(result.completedCloseoutSnapshot, session) || result.encounterRevision !== result.completedCloseoutSnapshot.encounterRevision
-      || !Array.isArray(result.encounterEvents) || result.encounterEvents.length === 0 || result.encounterEvents.some((event) => !validM10CommitEvent(event, session, result.applicationId, result.closeoutId))
-       || !validPressureSources(result.pressureBreachSources, session) || !equal(result.pressureBreachSources, reservation.pressureBreachSources) || result.errors.length !== 0 || result.warnings.length !== 0) return null;
+      || !Array.isArray(result.encounterEvents) || result.encounterEvents.length === 0
+      || !Array.isArray(result.pressureBreachSources) || !equal(result.pressureBreachSources, reservation.pressureBreachSources)
+      || !result.errors || result.errors.length !== 0 || !result.warnings || result.warnings.length !== 0) return null;
+    let sourceIndex = 0;
+    if (!result.encounterEvents.every((event) => validM10CommitEvent(event, session, result.applicationId, result.closeoutId, event?.type === "voyage.pressure-breach-applied" ? result.pressureBreachSources[sourceIndex++] : null))
+      || (!validPressureSources(result.pressureBreachSources, session) && !validReceiptPressureSources(result.pressureBreachSources, session, result.encounterEvents))) return null;
     if (!result.encounterEvents.some((event) => event.type === "voyage.closeout-applied")) return null;
     return { kind: "voyage.m11-closeout-session-committed", reservationId: reservation.reservationId, activeGmUserId: session.activeGmUserId, applicationId: result.applicationId, closeoutId: result.closeoutId, eventId: result.eventId, sessionId: result.sessionId, definitionSnapshotId: result.definitionSnapshotId, shipId: result.shipId, previousEncounterRevision: result.previousEncounterRevision, encounterRevision: result.encounterRevision, completedCloseoutSnapshot: result.completedCloseoutSnapshot, encounterEvents: result.encounterEvents, pressureBreachSources: result.pressureBreachSources };
   } catch { return null; }
@@ -1092,7 +1196,7 @@ async function persistPrepareRecord(match, value, auth, context, result) {
   if (result.status === "committed" || result.status === "already-committed") candidate.closeout.status = "committed";
   candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: "closeout-prepare", resultKind: "prepared-awaiting-session", resultRevision: candidate.revision, response });
   if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
-  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { successResponse: response }); }
   return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { successResponse: response });
 }
 async function persistShipCheckpointRecord(match, value, auth, context, result) {
@@ -1102,8 +1206,8 @@ async function persistShipCheckpointRecord(match, value, auth, context, result) 
   if (!response.ok) return response;
   candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: "closeout-ship-apply", resultKind: "closeout-ship-checkpoint-verified", resultRevision: candidate.revision, response });
   if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
-  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
-  return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context);
+  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { successResponse: response }); }
+  return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { successResponse: response });
 }
 async function persistCloseoutReceiptState(match, value, auth, context, m10Result, receipt, status, eventType, commit = false, trustedWitness = null) {
   const boundary = closeoutBoundary(value, auth, match, context, { requestId: value.requestId, sessionId: value.sessionId }); if (boundary.error) return failure([boundary.error], { requestId: value.requestId, sessionId: value.sessionId }); match = boundary.match; auth = boundary.auth;
@@ -1131,16 +1235,17 @@ async function persistCloseoutReceiptState(match, value, auth, context, m10Resul
   const response = closeoutResponse(candidate, value.requestId, event);
   candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: value.commandKind, resultKind: status === "committed" ? "closeout-session-committed" : status === "commit-pending" ? "closeout-session-commit-pending" : "closeout-session-reserved", resultRevision: revision, response });
   if (!pristineSession(candidate, match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
-  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
+  try { await match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { operationVerified: Boolean(m10Result), successResponse: response }); }
   return sessionWriteClassification(match.document, value.sessionId, match.documentId, candidate, prior, value.requestId, context, { operationVerified: Boolean(m10Result), successResponse: response });
 }
-async function finalizePendingCloseoutSession(match, value, auth, context) {
+async function finalizePendingCloseoutSession(match, value, auth, context, trustedWitness = null) {
   const boundary = closeoutBoundary(value, auth, match, context, { requestId: value.requestId, sessionId: value.sessionId });
   if (boundary.error) return failure([boundary.error], { requestId: value.requestId, sessionId: value.sessionId });
   const prior = boundary.match.session;
   if (!closeoutLifecycleAllowed(prior, "closeout-session-commit") || prior.closeout.status !== "commit-pending") return failure([diagnostic("m11-commit-not-ready", "closeout")], { requestId: value.requestId, sessionId: value.sessionId });
   const captured = capture(prior); if (!captured.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
-  const candidate = captured.value;
+  const candidate = captured.value, previousRevision = candidate.revision, revision = previousRevision + 1;
+  candidate.revision = revision;
   candidate.closeout.status = "committed";
   candidate.sessionState = "completed";
   if (typeof context?.buildVoyageEventSessionCompletedEncounterState === "function") {
@@ -1150,10 +1255,21 @@ async function finalizePendingCloseoutSession(match, value, auth, context) {
       candidate.encounterState = rebuilt.value;
     } catch { return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId }); }
   } else return failure([diagnostic("m11-m10-handoff-invalid", "m10")], { requestId: value.requestId, sessionId: value.sessionId });
+  if (!trustedWitness?.occurredAt) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], { requestId: value.requestId, sessionId: value.sessionId });
+  const pendingRecord = candidate.processedRequests.find((record) => record.commandKind === "closeout-session-commit" && record.resultKind === "closeout-session-commit-pending");
+  if (!pendingRecord) return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId });
+  const event = closeoutEvent("voyage.m11-closeout-session-committed", candidate, previousRevision, revision);
+  candidate.events.push(event);
+  const audit = closeoutAudit(candidate, value.requestId, auth.authenticatedUserId, candidate.authorityEpoch, previousRevision, revision, trustedWitness.occurredAt, "closeout-session-committed", { applicationId: candidate.closeout.applicationId, closeoutId: candidate.closeout.closeoutId, previousSessionState: "persistent-application", nextSessionState: "completed" });
+  candidate.auditHistory.push(audit);
+  const response = closeoutResponse(candidate, value.requestId, event);
+  if (!pendingRecord || pendingRecord.requestId !== value.requestId) {
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload), commandKind: "closeout-session-commit", resultKind: "closeout-session-committed", resultRevision: revision, response });
+  }
   if (!pristineSession(candidate, boundary.match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { requestId: value.requestId, sessionId: value.sessionId });
   try { await boundary.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); }
-  catch { return failure([diagnostic("m11-recovery-required", "recovery")], { requestId: value.requestId, sessionId: value.sessionId }); }
-  return sessionWriteClassification(boundary.match.document, value.sessionId, boundary.match.documentId, candidate, prior, value.requestId, context, { operationVerified: true });
+  catch { return sessionWriteClassification(boundary.match.document, value.sessionId, boundary.match.documentId, candidate, prior, value.requestId, context, { operationVerified: true, successResponse: response }); }
+  return sessionWriteClassification(boundary.match.document, value.sessionId, boundary.match.documentId, candidate, prior, value.requestId, context, { operationVerified: true, successResponse: response });
 }
 
 function initialSession(identity, encounter, activeGmUserId) {
@@ -1335,8 +1451,9 @@ function recoveryCheckpointJournalValid(envelope) {
         if (!validRuntimeEvent(event, identity, 0) || event.previousRevision !== previousChainRevision) return false;
         previousChainRevision = event.revision;
       } else {
-        if (!isPlainObject(event) || !safeInteger(event.revision) || !safeInteger(event.previousRevision) || event.previousRevision !== previousChainRevision || event.revision <= previousChainRevision) return false;
-        previousChainRevision = event.revision;
+        const pair = storedEventRevisionPair(event);
+        if (!isPlainObject(event) || !safeInteger(pair[1]) || !safeInteger(pair[0]) || pair[0] !== previousChainRevision || pair[1] <= previousChainRevision) return false;
+        previousChainRevision = pair[1];
       }
     }
     for (const checkpoint of envelope.checkpoints) {
@@ -1344,11 +1461,12 @@ function recoveryCheckpointJournalValid(envelope) {
       if (ids.has(checkpoint.checkpointId) || checkpoint.revision <= previousRevision || checkpoint.authorityEpoch < previousAuthorityEpoch || checkpoint.eventCount < previousEventCount
         || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
           && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
-            .every((revision) => envelope.events.some((event) => !event?.type?.startsWith("voyage.m11-") && event.revision === revision)))
+            .every((revision) => envelope.events.some((event) => !event?.type?.startsWith("voyage.m11-") && storedEventRevisionPair(event)[1] === revision)))
         || !recoveryInvalidationValid(checkpoint, envelope)) return false;
       for (let index = 0; index < checkpoint.eventCount; index += 1) {
         const event = envelope.events[index];
-        if (!event || !capture(event).ok || !safeInteger(event.revision) || event.revision > checkpoint.revision) return false;
+        const pair = storedEventRevisionPair(event);
+        if (!event || !capture(event).ok || !safeInteger(pair[1]) || pair[1] > checkpoint.revision) return false;
       }
       ids.add(checkpoint.checkpointId); previousRevision = checkpoint.revision; previousAuthorityEpoch = checkpoint.authorityEpoch; previousEventCount = checkpoint.eventCount;
     }
@@ -1370,9 +1488,10 @@ function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, 
       const segment = envelope.events.slice(segmentStart, index);
       let segmentRevision = priorRevision;
       for (const ownedEvent of segment) {
-        if (!isPlainObject(ownedEvent) || !safeInteger(ownedEvent.previousRevision) || !safeInteger(ownedEvent.revision)
-           || ownedEvent.previousRevision !== segmentRevision || ownedEvent.revision !== segmentRevision + 1) return null;
-        segmentRevision = ownedEvent.revision;
+        const pair = storedEventRevisionPair(ownedEvent);
+        if (!isPlainObject(ownedEvent) || !safeInteger(pair[0]) || !safeInteger(pair[1])
+           || pair[0] !== segmentRevision || pair[1] !== segmentRevision + 1) return null;
+        segmentRevision = pair[1];
       }
       const trusted = ownData(context, "trustedReplayDependencies"), replay = ownData(context, "replayVoyageEventSessionEvidence");
       if (!trusted.ok || trusted.value !== true || !replay.ok || typeof replay.value !== "function") return null;
@@ -1383,7 +1502,7 @@ function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, 
       if (!result.ok || !exactKeys(result.value, ["startIndex", "endIndex", "previousRevision", "nextRevision", "sessionState", "encounterState", "closeout"])
         || result.value.startIndex !== segmentStart || result.value.endIndex !== index || result.value.previousRevision !== priorRevision
         || !safeInteger(result.value.nextRevision) || result.value.nextRevision !== segmentRevision || result.value.nextRevision > envelope.revision || !SESSION_STATES.has(result.value.sessionState)
-         || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout, envelope)) return null;
+        || !validEncounterState(result.value.encounterState, envelope) || !validCloseout(result.value.closeout, envelope)) return null;
       for (const ownedEvent of segment) if (!isPlainObject(ownedEvent) || ownedEvent.type?.startsWith("voyage.m11-")) return null;
       priorRevision = result.value.nextRevision;
       replayedState = result.value;
@@ -1497,6 +1616,10 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
       ids.add(record.requestId);
       if (record.commandKind === TRANSFER_COMMAND_KIND) lastEvidenceRevision = Math.max(lastEvidenceRevision, record.resultRevision);
     }
+    if (sessionEvidence?.sessionState === "completed" || sessionEvidence?.closeout.status === "committed") {
+      if (!validTerminalCloseoutEvidence(sessionEvidence)) return false;
+      if (!sessionEvidence.processedRequests.some((record) => record.commandKind === "closeout-session-commit" && record.resultKind === "closeout-session-committed")) auditIndex += 1;
+    }
     if (auditIndex !== envelope.auditHistory.length) return false;
     if (!latestRecoveryEvidence) return validRequiredRecovery(currentRecovery) || (currentRecovery?.status === "none" && Object.keys(currentRecovery).slice(1).every((key) => currentRecovery[key] === null));
     const resolved = validResolvedRecovery(currentRecovery, latestRecoveryEvidence.event, latestRecoveryEvidence.audit, latestRecoveryEvidence.sourceCheckpoint);
@@ -1551,7 +1674,8 @@ function successWithEvents(session, requestId, events, authorityEpoch = session.
 function buildRecoveryCandidate(baseSession, envelope, source, replayedState, request, authorityContext, requestFingerprint, occurredAt) {
   try {
     const captured = capture(baseSession); if (!captured.ok) return null;
-    const candidate = captured.value, previousRevision = envelope.events.length > 0 ? envelope.events.at(-1).revision : envelope.revision, bootstrap = candidate.activeGmUserId !== authorityContext.activeGmUserId;
+    const lastEventPair = envelope.events.length > 0 ? storedEventRevisionPair(envelope.events.at(-1)) : null;
+    const candidate = captured.value, previousRevision = lastEventPair ? lastEventPair[1] : envelope.revision, bootstrap = candidate.activeGmUserId !== authorityContext.activeGmUserId;
     if (!safeInteger(previousRevision) || previousRevision > envelope.revision) return null;
     const failedRequestId = candidate.recovery?.failedRequestId, failedRevision = candidate.recovery?.failedRevision;
     if (candidate.recovery?.status !== "required" || !nonBlank(failedRequestId) || !safeInteger(failedRevision) || failedRevision >= previousRevision + 1) return null;
@@ -1565,7 +1689,7 @@ function buildRecoveryCandidate(baseSession, envelope, source, replayedState, re
     candidate.recovery = { status: "resolved", reasonCode: "m11-recovery-required", failedRequestId, failedRevision, checkpointId: source.checkpointId, sourceCheckpointRevision: source.revision, recoveryAuthorityUserId: authorityContext.authenticatedUserId };
     let maxEvidenceRevision = Math.max(previousRevision, source.revision);
     for (const checkpoint of envelope.checkpoints) if (checkpoint.revision > maxEvidenceRevision) maxEvidenceRevision = checkpoint.revision;
-    for (const event of envelope.events) if (safeInteger(event?.revision) && event.revision > maxEvidenceRevision) maxEvidenceRevision = event.revision;
+    for (const event of envelope.events) { const pair = storedEventRevisionPair(event); if (safeInteger(pair[1]) && pair[1] > maxEvidenceRevision) maxEvidenceRevision = pair[1]; }
     for (const record of envelope.processedRequests) if (record.resultRevision > maxEvidenceRevision) maxEvidenceRevision = record.resultRevision;
     candidate.revision = maxEvidenceRevision + 1;
     const event = recoveryEvent(candidate, source, authorityContext, previousRevision, candidate.revision);

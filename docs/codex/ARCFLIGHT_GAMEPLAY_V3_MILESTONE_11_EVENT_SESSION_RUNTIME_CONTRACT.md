@@ -1671,8 +1671,14 @@ An M10 failure, throw, or uncertain result leaves the validated nonterminal
 `commit-pending` state intact; it performs no speculative second write and can
 be retried with a fresh request against that durable receipt. Exact replay of
 the original pending request returns its isolated pending response without a
-write. A successful retry finalizes M10 idempotently and performs the one
-terminal Event Session update without appending duplicate receipt evidence.
+write. A successful retry finalizes M10 idempotently and performs one terminal
+Event Session update. That update is one forward M11 revision: it appends
+exactly one `voyage.m11-closeout-session-committed` runtime event and matching
+`closeout-session-committed` audit while preserving the existing receipt. A
+direct completion retains the original pending processed-request record, so
+its exact replay remains the pending response; a fresh retry appends exactly
+one committed processed-request record for that retry. No duplicate pending,
+receipt, event, or audit evidence is appended.
 
 ## 15. Event ordering and identity bindings
 
