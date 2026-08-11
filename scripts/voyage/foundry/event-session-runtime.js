@@ -32,6 +32,12 @@ const RECOVERY_ACTIONS = new Set(["rebuild-latest", "reconcile-closeout", "abort
 const CHECKPOINT_KINDS = new Set(["before-plan-lock", "before-action-segment", "before-reaction", "before-round-closeout", "before-emergency-response", "before-persistent-application", "after-recovery"]);
 const SESSION_STATES = new Set(["setup", "round-introduction", "crew-planning", "plan-locked", "station-resolution", "round-closeout", "next-round", "event-closeout-review", "persistent-application", "completed", "paused", "emergency-response", "aborted", "recovery-required"]);
 const TRANSFER_REQUEST_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "targetUserId", "reason"]);
+const READ_PROJECTION_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision"]);
+const PROJECTION_FIELDS = Object.freeze([
+  "schemaVersion", "sessionId", "eventId", "revision", "sessionState", "currentStage", "roundNumber", "phase",
+  "stationAssignments", "committedStationOrder", "currentActingStationId", "momentum", "pressureSystems", "activeHazards",
+  "visibleEvents", "closeoutStatus", "recoveryStatus"
+]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
 const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
@@ -489,6 +495,18 @@ function authority(context, { requireConnection = false } = {}) {
   return resolved;
 }
 function authenticatedContext(context) { return trustedAuthorityContext(context); }
+function projectionPrincipal(context) {
+  try {
+    const authenticatedUserId = context?.authenticatedUserId ?? globalThis.game?.user?.id;
+    const authenticatedConnectionId = context?.authenticatedConnectionId;
+    const trustedTransportContext = context?.trustedTransportContext;
+    if (!nonBlank(authenticatedUserId) || trustedTransportContext !== true || !nonBlank(authenticatedConnectionId)) return { error: diagnostic("m11-authentication-required", "transport.user") };
+    const trusted = trustedUsers(context); if (!trusted.ok || trusted.duplicates?.size) return { error: diagnostic("m11-authentication-required", "transport.user") };
+    const matches = trusted.users.filter((user) => user.id === authenticatedUserId);
+    if (matches.length !== 1 || typeof matches[0].isGM !== "boolean" || typeof matches[0].active !== "boolean" || matches[0].active !== true) return { error: diagnostic("m11-authentication-required", "transport.user") };
+    return { authenticatedUserId, authenticatedConnectionId, trustedTransportContext, user: matches[0], users: trusted.users };
+  } catch { return { error: diagnostic("m11-authentication-required", "transport.user") }; }
+}
 function transferCoordinator(context) {
   try {
     const operation = ownData(context, "runExclusiveSessionMutation"), trust = ownData(context, "trustedTransportContext");
@@ -529,9 +547,38 @@ function deriveProjectionKind(authenticated, session, context) {
       const field = Object.hasOwn(resolvedOperator, "uuid") ? "uuid" : "id";
       const matches = report.assignments.filter((entry) => entry.operator.kind === resolvedOperator.kind && entry.operator[field] === resolvedOperator[field]);
       if (matches.length === 1) return "operator";
+      if (matches.length === 0) return "crew";
     }
   }
   return "observer";
+}
+function buildSessionProjection(session, projectionKind) {
+  try {
+    const projectionFields = projectionKind === "gm" || projectionKind === "operator" || projectionKind === "crew" || projectionKind === "observer" ? PROJECTION_FIELDS : null;
+    if (!projectionFields) return null;
+    const captured = capture(session); if (!captured.ok || !isPlainObject(captured.value) || !isPlainObject(captured.value.encounterState)) return null;
+    const value = captured.value, encounter = value.encounterState;
+    const projection = {
+      schemaVersion: value.schemaVersion,
+      sessionId: value.sessionId,
+      eventId: value.eventId,
+      revision: value.revision,
+      sessionState: value.sessionState,
+      currentStage: encounter.currentStage,
+      roundNumber: encounter.roundNumber,
+      phase: encounter.phase,
+      stationAssignments: encounter.stationAssignments,
+      committedStationOrder: encounter.committedStationOrder,
+      currentActingStationId: null,
+      momentum: encounter.momentum,
+      pressureSystems: encounter.pressureSystems,
+      activeHazards: encounter.activeHazards,
+      visibleEvents: [],
+      closeoutStatus: value.closeout.status,
+      recoveryStatus: value.recovery.status
+    };
+    const isolated = capture(projection); return isolated.ok && exactKeys(isolated.value, projectionFields) ? isolated.value : null;
+  } catch { return null; }
 }
 function creationPayload(value) {
   return { eventId: value.eventId, definitionSnapshotId: value.definitionSnapshotId, shipId: value.shipId, eventDefinition: value.eventDefinition, initialEncounterState: value.initialEncounterState };
@@ -1176,6 +1223,26 @@ export async function recoverVoyageEventSession(request, context = {}) {
   const descriptor = coordinatorDescriptor(value, resolved.match.documentId, auth);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
   return runExclusiveTransfer(coordinator, descriptor, (trustedWitness) => recoverWithinExclusive(value, identities, descriptor, auth, trustedWitness, context), identities);
+}
+
+export function readVoyageEventSessionProjection(request, context = {}) {
+  const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
+  const value = captured.value, identities = requestIdentities(value);
+  if (!exactKeys(value, READ_PROJECTION_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  if (value.kind !== "voyage.m11-read-projection") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
+  const auth = projectionPrincipal(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.requestId) || !nonBlank(value.sessionId) || !safeInteger(value.expectedRevision)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+  const match = resolved.match;
+  if (!pristineSession(match.session, match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const projectionKind = deriveProjectionKind(auth, match.session, context);
+  if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+  if (match.session.processedRequests.some((record) => record.requestId === value.requestId)) return failure([diagnostic("m11-request-id-conflict", "request.requestId")], identities);
+  const projection = buildSessionProjection(match.session, projectionKind);
+  if (!projection) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const response = success(match.session, value.requestId);
+  response.projection = capture(projection).value;
+  return response;
 }
 
 export function reloadVoyageEventSession(sessionId, context = {}) {
