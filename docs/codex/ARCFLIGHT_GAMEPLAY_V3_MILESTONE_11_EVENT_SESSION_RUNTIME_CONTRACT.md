@@ -614,20 +614,49 @@ The coordinator owns the cross-browser mutation lease. Exactly one connection
 may own a session/epoch lease; contenders from another connection, including a
 second client logged in as the same user, do not enter the persistence
 callback and receive `m11-control-transfer-required` at `authorityEpoch`.
-The coordinator returns the callback's exact result for the winner and `null`
-for a loser, and releases its lease on success, rejection, exception, update
-failure, and post-write verification failure. Task 3 only defines and validates
-this boundary; the later transport slice supplies the concrete server-side
-implementation. A module-local per-session mutex remains defense-in-depth
-inside the callback and is never treated as cross-client serialization.
+The coordinator invokes the supplied callback at most once and must return
+either `null` before callback entry for a rejected contender, or the exact
+isolated result returned by that callback. A non-null result without callback
+entry, a second callback invocation, a callback-result mismatch, or `null`
+after callback entry is invalid coordinator behavior and fails closed with
+`m11-cross-client-coordinator-required` at `transport.coordinator`.
+
+The coordinator supplies the callback a frozen, hostile-safe transport witness
+with exact key order:
+
+```js
+{
+  connectionId,
+  occurredAt
+}
+```
+
+`connectionId` must equal the descriptor connection and `occurredAt` must be a
+server/transport-generated canonical ISO-8601 UTC timestamp. Task 3 never uses
+a client-clock fallback. M11 captures and isolates the callback result before
+it leaves the boundary and never accepts a coordinator-supplied fabricated
+response. The coordinator releases its lease on success, rejection, exception,
+update failure, and post-write verification failure. Task 3 only defines and
+validates this boundary; the later transport slice supplies the concrete
+server-side implementation. A module-local per-session mutex remains
+defense-in-depth inside the callback and is never treated as cross-client
+serialization.
+
+Before coordinator acquisition, M11 resolves and completely validates the
+exact session document, constructs the canonical transfer fingerprint, and
+checks `processedRequests`. An exact replay returns its isolated stored
+response with zero writes and does not require or invoke the coordinator; a
+changed request ID returns `m11-request-id-conflict` with zero writes. A new
+request alone proceeds to coordinator acquisition; stale epoch handling is
+deferred until the exclusive callback so an in-flight valid write can win.
 
 Inside the exclusive callback M11 acquires that local mutex, freshly resolves
 and validates the JournalEntry, rereads trusted user/connection/active-GM
 metadata, verifies that the winning descriptor still matches, rechecks replay,
-revision, epoch, owner, and target identity, performs one update, and rereads
-the complete result. A changed connection or authority fails before update;
-an uncertain result returns `m11-recovery-required` without a speculative
-second update.
+revision, epoch, owner, and target identity, uses only the coordinator's
+transport witness timestamp, performs one update, and rereads the complete
+result. A changed connection or authority fails before update; an uncertain
+result returns `m11-recovery-required` without a speculative second update.
 
 ### 6.2 Bootstrap authority after GM loss
 
@@ -919,6 +948,17 @@ its epoch is historical. Any changed request identity, principal, role, target,
 reason, epoch, or revision is `m11-request-id-conflict`; a new request with an
 old epoch is `m11-control-transfer-required`.
 
+After hostile-safe capture, exact mode/shape validation, and trusted connected
+active-GM authentication, M11 performs the exact JournalEntry resolution,
+complete Task 3 session validation, canonical fingerprint construction, and
+`processedRequests` replay/conflict check before coordinator entry. Exact
+replay and request-ID conflict therefore remain write-free and coordinator-free,
+including after later authority-epoch advances. Only a request ID with no
+stored match enters the coordinator; its stale epoch is decided by the
+coordinator callback's fresh final reread rather than by a pre-entry stale
+return. The callback repeats replay/conflict checking for queued identical
+requests that arrive before the winner persists.
+
 At the final pre-write reread, the executing principal is authenticated,
 connected, a GM, and exactly Foundry's unique current
 `game.users.activeGM.id`; the target is also connected, a GM, and exactly that
@@ -952,7 +992,11 @@ therefore reject a same-session contender before its callback, returning
 `m11-control-transfer-required` at `authorityEpoch`; the local mutex separately
 prevents same-runtime overlap, with independent locks for different sessions.
 Both coordinator and local sections release on every success, failure,
-exception, update failure, and verification path.
+exception, update failure, and verification path. A coordinator that fabricates
+an envelope without callback entry, returns a different envelope, invokes the
+callback twice, or returns `null` after callback entry is invalid and returns
+`m11-cross-client-coordinator-required` at `transport.coordinator` without a
+second persistence attempt.
 
 ### `recoverVoyageEventSession(request)`
 
@@ -1623,10 +1667,13 @@ The M11 implementation must cover:
   conflict, exact creation-record tamper rejection, and zero-write reload;
 - Task 3 control-transfer request order and record-only mapping, ordinary and
   bootstrap audit pairing, dense authority-epoch continuity, historical replay
-  after transfer, trusted cross-client coordinator descriptors, same-user
-  different-connection contention, missing/rejected coordinator zero-write
-  failures, final active-GM/connection reread, one-write verification, and
-  exact write-failure/recovery classification;
+  before and after transfer without coordinator entry, same-request concurrent
+  replay, trusted cross-client coordinator descriptors and frozen transport
+  witnesses, same-user different-connection contention, callback provenance
+  failures (fabricated/mismatched/double invocation), missing/rejected
+  coordinator zero-write failures, final active-GM/connection reread, one-write
+  verification, server-generated audit timestamps, and exact
+  write-failure/recovery classification;
 - trusted operator-resolution witnesses for canonical `kind + id` and
   `kind + uuid` assignments, optional names, differing display names, wrong
   kind/identity, ambiguous or malformed resolver data, and caller-authored

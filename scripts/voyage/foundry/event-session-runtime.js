@@ -24,6 +24,7 @@ const TRANSFER_COMMAND_KIND = "control-transfer";
 const TRANSFER_RESULT_KIND = "control-transferred";
 const TRANSFER_REQUEST_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "targetUserId", "reason"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
+const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
 const AUDIT_DETAILS_FIELDS = Object.freeze(["previousActiveGmUserId", "nextActiveGmUserId", "bootstrap", "reason"]);
 const RESPONSE_FIELDS = Object.freeze(["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]);
@@ -389,10 +390,12 @@ function sourceSnapshot(document, context) {
 function collectionUnchanged(before, after, beforeSources, context) {
   return before.length === after.length && before.every((entry, index) => entry === after[index] && equal(beforeSources[index], sourceSnapshot(after[index], context)));
 }
-function trustedTimestamp(context) {
+function transportWitness(value, descriptor) {
   try {
-    const value = typeof context?.createVoyageTimestamp === "function" ? context.createVoyageTimestamp() : new Date().toISOString();
-    return validIsoTimestamp(value) ? value : null;
+    const captured = capture(value);
+    if (!captured.ok || !exactKeys(captured.value, TRANSPORT_WITNESS_FIELDS)
+      || captured.value.connectionId !== descriptor.connectionId || !validIsoTimestamp(captured.value.occurredAt)) return null;
+    return Object.freeze(captured.value);
   } catch { return null; }
 }
 function targetIsCurrentActiveGm(targetUserId, authorityContext) {
@@ -453,11 +456,36 @@ async function withTransferLock(sessionId, operation) {
 }
 function validTransferEnvelope(value) { return isPlainObject(value) && exactKeys(value, RESPONSE_FIELDS) && typeof value.ok === "boolean" && Array.isArray(value.events) && Array.isArray(value.errors) && Array.isArray(value.warnings); }
 async function runExclusiveTransfer(coordinator, descriptor, callback, identities) {
+  let callbackStarted = false, callbackCount = 0, invalid = false, callbackResult = null;
+  const guardedCallback = async (witness) => {
+    callbackCount += 1;
+    if (callbackCount !== 1) { invalid = true; throw new Error("M11 coordinator callback invoked more than once."); }
+    callbackStarted = true;
+    const capturedWitness = transportWitness(witness, descriptor);
+    if (!capturedWitness) { invalid = true; throw new Error("M11 coordinator transport witness is invalid."); }
+    let result;
+    try { result = await callback(capturedWitness); }
+    catch (error) { invalid = true; throw error; }
+    const capturedResult = capture(result);
+    if (!capturedResult.ok || !validTransferEnvelope(capturedResult.value)) { invalid = true; throw new Error("M11 coordinator callback result is invalid."); }
+    callbackResult = capturedResult.value;
+    const outbound = capture(callbackResult);
+    if (!outbound.ok) { invalid = true; throw new Error("M11 coordinator callback result could not be isolated."); }
+    return outbound.value;
+  };
   let result;
-  try { result = await coordinator.operation(descriptor, callback); }
+  try { result = await coordinator.operation(descriptor, guardedCallback); }
   catch { return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities); }
-  if (result === null) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
-  return validTransferEnvelope(result) ? result : failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  if (invalid) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  if (!callbackStarted) {
+    return result === null
+      ? failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities)
+      : failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  }
+  if (result === null) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  const returned = capture(result);
+  if (!returned.ok || !equal(returned.value, callbackResult)) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  return callbackResult;
 }
 
 async function cleanupExact(document, expectedId, sessionId, beforeDocuments, context) {
@@ -558,25 +586,26 @@ export async function transferVoyageEventSessionControl(request, context = {}) {
   if (value.kind !== "voyage.m11-transfer-control") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
   const auth = authority(context, { requireConnection: true }); if (auth.error) return failure([auth.error], identities);
   if (!nonBlank(value.sessionId) || !nonBlank(value.targetUserId) || !nonBlank(value.reason) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
-  const coordinator = transferCoordinator(context); if (coordinator.error) return failure([coordinator.error], identities);
   const initialResolved = resolveSessionDocument(value.sessionId, context); if (initialResolved.error) return failure([initialResolved.error], identities);
+  if (!pristineSession(initialResolved.match.session, initialResolved.match.documentId, { allowBootstrapNull: true })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, TRANSFER_COMMAND_KIND, { targetUserId: value.targetUserId, reason: value.reason });
+  const earlyReplay = replayOrConflict(initialResolved.match.session.processedRequests, value.requestId, auth.authenticatedUserId, "gm", requestFingerprint, identities); if (earlyReplay) return earlyReplay;
+  const coordinator = transferCoordinator(context); if (coordinator.error) return failure([coordinator.error], identities);
   const descriptor = coordinatorDescriptor(value, initialResolved.match.documentId, auth);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
-  return runExclusiveTransfer(coordinator, descriptor, () => withTransferLock(value.sessionId, async () => {
+  return runExclusiveTransfer(coordinator, descriptor, (trustedWitness) => withTransferLock(value.sessionId, async () => {
     const lockedAuth = authority(context, { requireConnection: true }); if (lockedAuth.error) return failure([lockedAuth.error], identities);
     if (lockedAuth.authenticatedUserId !== descriptor.authenticatedUserId || lockedAuth.authenticatedConnectionId !== descriptor.connectionId || lockedAuth.activeGmUserId !== descriptor.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.connection")], identities);
     const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
     const match = resolved.match;
     if (match.documentId !== descriptor.sessionDocumentId) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
     if (!pristineSession(match.session, match.documentId, { allowBootstrapNull: true })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
-    const requestFingerprint = fingerprint(value.sessionId, lockedAuth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, TRANSFER_COMMAND_KIND, { targetUserId: value.targetUserId, reason: value.reason });
     const replay = replayOrConflict(match.session.processedRequests, value.requestId, lockedAuth.authenticatedUserId, "gm", requestFingerprint, identities); if (replay) return replay;
     if (!targetIsCurrentActiveGm(value.targetUserId, lockedAuth)) return failure([diagnostic("m11-control-transfer-target-invalid", "request.targetUserId")], identities);
     if (value.authorityEpoch !== match.session.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     const previous = match.session;
-    const previousGm = previous.activeGmUserId, bootstrap = previousGm !== lockedAuth.activeGmUserId, occurredAt = trustedTimestamp(context);
-    if (!occurredAt) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    const previousGm = previous.activeGmUserId, bootstrap = previousGm !== lockedAuth.activeGmUserId, occurredAt = trustedWitness.occurredAt;
     const finalAuth = authority(context, { requireConnection: true }); if (finalAuth.error) return failure([finalAuth.error], identities);
     if (finalAuth.authenticatedUserId !== descriptor.authenticatedUserId || finalAuth.authenticatedConnectionId !== descriptor.connectionId || finalAuth.activeGmUserId !== descriptor.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.connection")], identities);
     if (!targetIsCurrentActiveGm(value.targetUserId, finalAuth)) return failure([diagnostic("m11-control-transfer-target-invalid", "request.targetUserId")], identities);

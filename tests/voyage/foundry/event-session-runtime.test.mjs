@@ -13,14 +13,14 @@ function command(overrides = {}) { return { kind: "voyage.m11-command", requestI
 function transferRequest(overrides = {}) { return { kind: "voyage.m11-transfer-control", requestId: "transfer-1", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, targetUserId: "gm-1", reason: "election" , ...overrides }; }
 function persistSession(document, payload) { document.__testSource.flags.arcflight.system.voyageSession = structuredClone(payload["flags.arcflight.system.voyageSession"]); return document; }
 function deferred() { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; }
-function makeCoordinator({ rejectContenders = false, immediate = false } = {}) {
+function makeCoordinator({ rejectContenders = false, immediate = false, occurredAt = "2026-08-10T12:00:00.000Z" } = {}) {
   const queues = new Map(), active = new Set();
   return {
-    descriptors: [], callbacks: 0, releases: 0,
+    descriptors: [], callbacks: 0, releases: 0, witnessFactory: (descriptor) => ({ connectionId: descriptor.connectionId, occurredAt }),
     async runExclusiveSessionMutation(descriptor, callback) {
       this.descriptors.push(structuredClone(descriptor));
       if (rejectContenders && active.has(descriptor.sessionId)) return null;
-      if (immediate) { this.callbacks += 1; try { return await callback(); } finally { this.releases += 1; } }
+      if (immediate) { this.callbacks += 1; try { return await callback(this.witnessFactory(descriptor)); } finally { this.releases += 1; } }
       const prior = queues.get(descriptor.sessionId) ?? Promise.resolve();
       let release;
       const gate = new Promise((resolve) => { release = resolve; });
@@ -28,7 +28,7 @@ function makeCoordinator({ rejectContenders = false, immediate = false } = {}) {
       queues.set(descriptor.sessionId, queued);
       await prior;
       active.add(descriptor.sessionId); this.callbacks += 1;
-      try { return await callback(); }
+      try { return await callback(this.witnessFactory(descriptor)); }
       finally {
         active.delete(descriptor.sessionId); release(); this.releases += 1;
         if (queues.get(descriptor.sessionId) === queued) queues.delete(descriptor.sessionId);
@@ -370,14 +370,42 @@ test("bootstrap transfer adopts the connected current GM and preserves historica
   assert.equal(fixture.tracker.updates, 1); assert.equal(context.tracker.updates, 0);
 });
 
-test("exact historical transfer replay is isolated and write-free; changed data and old-epoch new requests conflict", async () => {
+test("exact historical transfer replay is isolated and write-free before coordinator entry; changed data and old-epoch new requests conflict", async () => {
   const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context);
   const first = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.equal(first.ok, true);
-  const replay = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.deepEqual(replay, first); replay.status = "mutated";
-  assert.equal((await transferVoyageEventSessionControl(transferRequest(), fixture.context)).status, "setup"); assert.equal(fixture.tracker.updates, 1);
+  const replayBeforeAdvance = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.deepEqual(replayBeforeAdvance, first); replayBeforeAdvance.status = "mutated";
+  assert.equal(fixture.coordinator.callbacks, 1); assert.equal(fixture.tracker.updates, 1);
+  const second = await transferVoyageEventSessionControl(transferRequest({ requestId: "transfer-2", authorityEpoch: 1 }), fixture.context); assert.equal(second.ok, true);
+  const callbacksBeforeReplay = fixture.coordinator.callbacks, updatesBeforeReplay = fixture.tracker.updates;
+  const replayAfterAdvance = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.deepEqual(replayAfterAdvance, first);
+  assert.equal(fixture.coordinator.callbacks, callbacksBeforeReplay); assert.equal(fixture.tracker.updates, updatesBeforeReplay);
   assertFailure(await transferVoyageEventSessionControl(transferRequest({ reason: "changed" }), fixture.context), "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
-  assertFailure(await transferVoyageEventSessionControl(transferRequest({ requestId: "transfer-2", authorityEpoch: 0 }), fixture.context), "m11-control-transfer-required", "authorityEpoch", "Event Session control has transferred.");
-  assert.equal(fixture.tracker.updates, 1); assert.equal(fixture.tracker.deletes, 0);
+  assertFailure(await transferVoyageEventSessionControl(transferRequest({ requestId: "transfer-2", authorityEpoch: 0 }), fixture.context), "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+  assertFailure(await transferVoyageEventSessionControl(transferRequest({ requestId: "transfer-3", authorityEpoch: 0 }), fixture.context), "m11-control-transfer-required", "authorityEpoch", "Event Session control has transferred.");
+  assert.equal(fixture.tracker.updates, 2); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("historical replay bypasses a coordinator that rejects old epochs", async () => {
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context);
+  const first = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.equal(first.ok, true);
+  const second = await transferVoyageEventSessionControl(transferRequest({ requestId: "transfer-2", authorityEpoch: 1 }), fixture.context); assert.equal(second.ok, true);
+  let invocations = 0;
+  fixture.context.runExclusiveSessionMutation = async (descriptor) => { invocations += 1; if (descriptor.expectedAuthorityEpoch < session(fixture.journals[0]).authorityEpoch) throw new Error("stale lease"); return null; };
+  const replay = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.deepEqual(replay, first); assert.equal(invocations, 0); assert.equal(fixture.tracker.updates, 2);
+});
+
+test("historical request-ID conflicts cover target, reason, principal, revision, and epoch changes", async () => {
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); assert.equal((await transferVoyageEventSessionControl(transferRequest(), fixture.context)).ok, true);
+  const variants = [
+    transferRequest({ targetUserId: "gm-2" }),
+    transferRequest({ reason: "changed" }),
+    transferRequest({ expectedRevision: 1 }),
+    transferRequest({ authorityEpoch: 1 })
+  ];
+  for (const value of variants) assertFailure(await transferVoyageEventSessionControl(value, fixture.context), "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+  const principalFixture = makeContext({ journals: fixture.journals, authenticatedUserId: "gm-2", activeGmUserId: "gm-2", update: persistSession });
+  assertFailure(await transferVoyageEventSessionControl(transferRequest(), principalFixture.context), "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+  assert.equal(fixture.tracker.updates, 1); assert.equal(principalFixture.tracker.updates, 0);
 });
 
 test("multiple transfers preserve dense epoch continuity and reload historical records", async () => {
@@ -422,6 +450,14 @@ test("same-session transfers serialize and the queued loser observes the advance
   assert.equal(updateCalls, 1); assert.equal(fixture.tracker.updates, 1); assert.equal(session(fixture.journals[0]).authorityEpoch, 1); assert.equal(session(fixture.journals[0]).processedRequests.length, 2); assert.equal(session(fixture.journals[0]).auditHistory.length, 1);
 });
 
+test("two simultaneous identical new requests persist once and the queued caller replays", async () => {
+  const entered = deferred(), release = deferred(); let updateCalls = 0;
+  const fixture = makeContext({ update: async (document, payload) => { updateCalls += 1; entered.resolve(); await release.promise; return persistSession(document, payload); } }); await createVoyageEventSession(request(), fixture.context);
+  const first = transferVoyageEventSessionControl(transferRequest({ requestId: "same-transfer" }), fixture.context); await entered.promise;
+  const second = transferVoyageEventSessionControl(transferRequest({ requestId: "same-transfer" }), fixture.context); release.resolve();
+  const [winner, replay] = await Promise.all([first, second]); assert.equal(winner.ok, true); assert.deepEqual(replay, winner); assert.equal(updateCalls, 1); assert.equal(fixture.tracker.updates, 1); assert.equal(session(fixture.journals[0]).processedRequests.length, 2); assert.equal(session(fixture.journals[0]).auditHistory.length, 1);
+});
+
 test("three same-runtime callers cannot overlap or delete a newer local lock", async () => {
   const enteredA = deferred(), enteredB = deferred(), releaseA = deferred(), releaseB = deferred(); let updateCalls = 0;
   const fixture = makeContext({ coordinator: makeCoordinator({ immediate: true }), update: async (document, payload) => { updateCalls += 1; if (updateCalls === 1) { enteredA.resolve(); await releaseA.promise; } if (updateCalls === 2) { enteredB.resolve(); await releaseB.promise; } return persistSession(document, payload); } });
@@ -456,7 +492,7 @@ test("a failed transfer releases its session lock for a later valid call", async
   const recovered = await transferVoyageEventSessionControl(transferRequest({ requestId: "retry-transfer" }), fixture.context); assert.equal(recovered.ok, true); assert.equal(fixture.tracker.updates, 2);
 });
 
-test("transfer requires trusted coordinator evidence before any JournalEntry resolution", async () => {
+test("transfer requires trusted coordinator evidence after replay preflight and before persistence", async () => {
   for (const mutate of [
     (context) => { delete context.runExclusiveSessionMutation; },
     (context) => { context.trustedTransportContext = false; },
@@ -464,7 +500,7 @@ test("transfer requires trusted coordinator evidence before any JournalEntry res
   ]) {
     const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); const scans = fixture.tracker.journalScans; mutate(fixture.context);
     const result = await transferVoyageEventSessionControl(transferRequest(), fixture.context);
-    assertFailure(result, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(fixture.tracker.journalScans, scans); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+    assertFailure(result, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.ok(fixture.tracker.journalScans >= scans); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
   }
 });
 
@@ -473,6 +509,31 @@ test("coordinator descriptor binds document, revisions, user, connection, and ac
   assert.equal((await transferVoyageEventSessionControl(transferRequest(), fixture.context)).ok, true);
   assert.deepEqual(Object.keys(fixture.coordinator.descriptors[0]), ["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
   assert.deepEqual(fixture.coordinator.descriptors[0], { sessionId: "session-1", sessionDocumentId: "Journal.session-1", expectedRevision: 0, expectedAuthorityEpoch: 0, authenticatedUserId: "gm-1", connectionId: "connection-gm-1", activeGmUserId: "gm-1" }); assert.equal(fixture.coordinator.releases, 1);
+});
+
+test("coordinator callback requires a frozen transport witness", async () => {
+  let witnessed = null;
+  const coordinator = { async runExclusiveSessionMutation(descriptor, callback) { witnessed = { keys: Object.keys({ connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" }), result: await callback(Object.freeze({ connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" })) }; return witnessed.result; } };
+  const fixture = makeContext({ coordinator, update: persistSession }); await createVoyageEventSession(request(), fixture.context); const result = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assert.equal(result.ok, true); assert.deepEqual(witnessed.keys, ["connectionId", "occurredAt"]); assert.equal(fixture.tracker.updates, 1);
+});
+
+test("fabricated coordinator success without callback fails closed", async () => {
+  const coordinator = { async runExclusiveSessionMutation() { return { ok: true, requestId: "fake", sessionId: "session-1", status: "setup", revision: 0, authorityEpoch: 1, projection: null, events: [], errors: [], warnings: [] }; } };
+  const fixture = makeContext({ coordinator }); await createVoyageEventSession(request(), fixture.context); const result = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assertFailure(result, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("coordinator returning a different envelope than the callback fails without false success", async () => {
+  const coordinator = { async runExclusiveSessionMutation(descriptor, callback) { const result = await callback({ connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" }); return { ...result, authorityEpoch: result.authorityEpoch + 1 }; } };
+  const fixture = makeContext({ coordinator, update: persistSession }); await createVoyageEventSession(request(), fixture.context); const result = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assertFailure(result, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(fixture.tracker.updates, 1); assert.equal(session(fixture.journals[0]).processedRequests.length, 2); assert.equal(session(fixture.journals[0]).auditHistory.length, 1);
+});
+
+test("coordinator callback invoked twice is invalid and cannot duplicate persistence", async () => {
+  const coordinator = { async runExclusiveSessionMutation(descriptor, callback) { const witness = { connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" }; const result = await callback(witness); try { await callback(witness); } catch {} return result; } };
+  const fixture = makeContext({ coordinator, update: persistSession }); await createVoyageEventSession(request(), fixture.context); const result = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assertFailure(result, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(fixture.tracker.updates, 1); assert.equal(session(fixture.journals[0]).processedRequests.length, 2); assert.equal(session(fixture.journals[0]).auditHistory.length, 1);
+});
+
+test("invalid transport witness has no client-clock fallback", async () => {
+  const coordinator = makeCoordinator({ occurredAt: "not-a-timestamp" }); const fixture = makeContext({ coordinator, timestamp: "2026-08-10T12:00:00.000Z", update: persistSession }); await createVoyageEventSession(request(), fixture.context); const result = await transferVoyageEventSessionControl(transferRequest(), fixture.context); assertFailure(result, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
 });
 
 test("two independent clients with one same-user coordinator elect one winner", async () => {
@@ -486,16 +547,16 @@ test("two independent clients with one same-user coordinator elect one winner", 
 });
 
 test("coordinator rejection and exceptions release authority without writes and permit retry", async () => {
-  let attempts = 0, releases = 0; const coordinator = { async runExclusiveSessionMutation(_descriptor, callback) { attempts += 1; if (attempts === 1) { releases += 1; throw new Error("coordinator rejected"); } try { return await callback(); } finally { releases += 1; } } };
+  let attempts = 0, releases = 0; const coordinator = { async runExclusiveSessionMutation(descriptor, callback) { attempts += 1; if (attempts === 1) { releases += 1; throw new Error("coordinator rejected"); } try { return await callback({ connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" }); } finally { releases += 1; } } };
   const fixture = makeContext({ coordinator, update: persistSession }); await createVoyageEventSession(request(), fixture.context);
   const rejected = await transferVoyageEventSessionControl(transferRequest({ requestId: "rejected" }), fixture.context); assertFailure(rejected, "m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required."); assert.equal(fixture.tracker.updates, 0);
   const retried = await transferVoyageEventSessionControl(transferRequest({ requestId: "retried" }), fixture.context); assert.equal(retried.ok, true); assert.equal(fixture.tracker.updates, 1); assert.equal(releases, 2);
 });
 
 test("winning coordinator connection drift fails before update", async () => {
-  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); fixture.context.createVoyageTimestamp = () => { fixture.context.authenticatedConnectionId = "connection-drifted"; return "2026-08-10T12:00:00.000Z"; };
+  const fixture = makeContext({ update: persistSession }); await createVoyageEventSession(request(), fixture.context); fixture.coordinator.witnessFactory = (descriptor) => { fixture.context.authenticatedConnectionId = "connection-drifted"; return { connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" }; };
   const result = await transferVoyageEventSessionControl(transferRequest({ requestId: "connection-drift" }), fixture.context); assertFailure(result, "m11-active-gm-required", "transport.connection", "The authenticated user is not the current active GM."); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.coordinator.releases, 1);
-  const activeGmDrift = makeContext({ update: persistSession }); await createVoyageEventSession(request(), activeGmDrift.context); activeGmDrift.context.createVoyageTimestamp = () => { activeGmDrift.context.activeGmUserId = "gm-2"; return "2026-08-10T12:00:00.000Z"; };
+  const activeGmDrift = makeContext({ update: persistSession }); await createVoyageEventSession(request(), activeGmDrift.context); activeGmDrift.coordinator.witnessFactory = (descriptor) => { activeGmDrift.context.activeGmUserId = "gm-2"; return { connectionId: descriptor.connectionId, occurredAt: "2026-08-10T12:00:00.000Z" }; };
   const activeResult = await transferVoyageEventSessionControl(transferRequest({ requestId: "active-gm-drift" }), activeGmDrift.context); assertFailure(activeResult, "m11-active-gm-required", "transport.activeGm", "The authenticated user is not the current active GM."); assert.equal(activeGmDrift.tracker.updates, 0); assert.equal(activeGmDrift.coordinator.releases, 1);
 });
 
