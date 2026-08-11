@@ -283,8 +283,13 @@ produce a partial candidate.
 `events` is a dense append-only array of canonical domain events and the exact
 M11 runtime events defined below. Each domain event retains the exact key order
 and schema owned by its domain contract; M11 adds no wrapper fields and does
-not relabel M6, M7, M8, M9, or M10 events. The only M11 runtime event kinds are
-`voyage.m11-closeout-review-accepted` and `voyage.m11-recovery-rebuilt`; each
+not relabel M6, M7, M8, M9, or M10 events. M11 runtime event kinds are
+registered by their owning slices. The later closeout-owning slice registers
+`voyage.m11-closeout-review-accepted`;
+Task 4 accepts only creation, control-transfer, and recovery runtime evidence,
+so that closeout event is rejected until its owning slice supplies the complete
+canonical audit pairing and accepted closeout-evidence validation. The
+Task 4-supported M11 runtime event kind is `voyage.m11-recovery-rebuilt`; it
 has this exact ordered shape:
 
 ```js
@@ -302,15 +307,15 @@ has this exact ordered shape:
 }
 ```
 
-For `voyage.m11-closeout-review-accepted`, `sourceCheckpointId`,
-`sourceCheckpointRevision`, and `recoveryAuthorityUserId` are `null`. For
-`voyage.m11-recovery-rebuilt`, they identify the recovered checkpoint and the
-authenticated GM who performed recovery. `previousRevision` and `revision` are
+For `voyage.m11-recovery-rebuilt`, `sourceCheckpointId`,
+`sourceCheckpointRevision`, and `recoveryAuthorityUserId` identify the recovered
+checkpoint and the authenticated GM who performed recovery. `previousRevision` and `revision` are
 the M11 session revisions, and `revision === previousRevision + 1`.
 
-Every `voyage.m11-closeout-review-accepted` event is accompanied by exactly
-one `auditHistory` record with `kind: "closeout-review-accepted"` and this
-exact ordered `details` object:
+The later closeout-owning slice, not Task 4, validates that every
+`voyage.m11-closeout-review-accepted` event is accompanied by exactly one
+`auditHistory` record with `kind: "closeout-review-accepted"` and this exact
+ordered `details` object:
 
 ```js
 {
@@ -1329,6 +1334,14 @@ are true:
    state succeeds and produces the recovered state required by the selected
    recovery action.
 
+Task 4 supplies the hostile-safe checkpoint capture/validation and
+forward-recovery substrate only. The command-owning later slices wire each
+listed checkpoint boundary through this substrate together with their
+canonical domain API. M6-M10 event validators/replay, `reconcile-closeout`,
+and audited `abort` analysis remain owned by those later slices; until an
+owning replay dependency is injected, Task 4 rejects those records/actions
+without a generic substitute.
+
 The event and checkpoint journals are preserved byte-for-byte as historical
 evidence. Replay regenerates state only through the owning pure-domain APIs,
 the exact M11 runtime-event rules in Section 4, and M10's read-only
@@ -1337,11 +1350,13 @@ projection, caller-supplied result, stored M10 ledger event, or a caller
 candidate. Replay must validate all processed request/principal/derived-role
 bindings before it may return any duplicate response.
 
-For `rebuild-latest`, M11 rebuilds the latest valid recoverable state. For
-`reconcile-closeout`, it rebuilds first and then runs the required M10
-reconciliation against the rebuilt exact receipt evidence. For `abort`, it
-rebuilds first and then runs only the canonical authored abort analysis; any
-persistent consequence still uses the ordinary M10 review/application path.
+For `rebuild-latest`, M11 rebuilds the latest valid recoverable state through
+Task 4-supported evidence or an explicitly injected trusted owning replay
+dependency. `reconcile-closeout` remains deferred to the M10 orchestration
+slice and `abort` remains deferred to the audited abort slice; Task 4 returns
+the existing `m11-command-not-allowed` diagnostic at
+`request.recoveryAction` for those actions until their owning slice is
+present.
 No recovery action rerolls, duplicates Pressure or Hazards, reapplies a Scar,
 downgrades a committed M10 ledger, removes a processed request, invalidates a
 historical event, or overwrites an earlier checkpoint.
@@ -1352,8 +1367,15 @@ receives exactly one new M11 session revision, which is greater than every
 safely validated M11 session revision in the envelope, checkpoint journal,
 processed-request results, and M11 runtime-event journal. It appends
 exactly one `voyage.m11-recovery-rebuilt` event and an audit record with
-`kind: "recovery-rebuilt"`. That audit record's `details` object has exact
-order:
+`kind: "recovery-rebuilt"`.
+
+Historical processed-request result revisions, audit authority epochs, and
+runtime-event revisions remain bound to the values established by their own
+fingerprints, events, and checkpoint boundaries. Reload never rebinds an old
+record to the current revision or authority epoch; runtime-event revisions are
+unique and their `previousRevision` values form a strict chronological chain.
+
+That audit record's `details` object has exact order:
 
 ```js
 {
